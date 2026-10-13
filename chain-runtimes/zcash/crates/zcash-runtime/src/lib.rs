@@ -1,27 +1,28 @@
 //! # OneKey Zcash Runtime
 //!
-//! 官方 `librustzcash` 之上的最薄绑定层。
+//! A thin binding layer over the official `librustzcash`.
 //!
-//! ## 设计边界
+//! ## Scope
 //!
-//! 留在这一侧（wasm / Rust）的只有三类东西：
+//! Only three things live on this side:
 //!
-//! 1. **密码学与协议** —— 扫链的 trial decryption、witness 与承诺树维护、
-//!    交易构造与选币。这些跨边界成本高、且错了会丢钱，必须留在原地。
-//! 2. **平台胶水** —— 时钟、随机数、存储 VFS。std 在 wasm32 上不提供的那些。
-//! 3. **形状转换** —— 把 Rust 的富类型转成 JSON 交给宿主。
+//! 1. **Cryptography and protocol**: trial decryption, witness and commitment
+//!    tree maintenance, transaction building and note selection. Costly to move
+//!    across the boundary, and mistakes lose funds.
+//! 2. **Platform glue**: clock, randomness, storage VFS, which std lacks on wasm32.
+//! 3. **Shape conversion**: Rust types to JSON for the host.
 //!
-//! 明确**不**放在这一侧的：调度（什么时候扫、扫哪段）、账户与 birthday 管理、
-//! 缓存策略、进度展示、错误重试。那些属于宿主 TS，改起来快、看得见、能打断点。
+//! Scheduling, account and birthday management, caching, progress and retries
+//! belong to the host.
 //!
-//! ## 接口形状
+//! ## Interface
 //!
-//! 动词少、数据简单。每次调用是一次完整往返，wasm 不持有跨调用的会话状态
-//! （数据库除外）。这样宿主侧出问题永远能自己修，wasm 侧只在协议变化时才动。
+//! Few verbs, simple data. Each call is a full round trip; apart from the
+//! database, wasm holds no state across calls.
 
-// ── 全平台：钱包核心 ────────────────────────────────────────────────────
-// 这几个模块在 wasm32、aarch64-apple-ios、Android 上都编译。
-// 也就是说移动端**可以**跑完整的钱包逻辑，不必退化成 keys-only。
+// ── All platforms: wallet core ─────────────────────────────────────────
+// Builds on wasm32, aarch64-apple-ios and Android, so mobile can run the full
+// wallet, not just keys.
 pub mod account;
 pub mod blockcache;
 mod circuit_keys;
@@ -35,13 +36,12 @@ pub mod storage;
 pub mod tx_state;
 pub mod wallet;
 
-// 网络与扫链现在是全平台的：浏览器走 gRPC-web，原生走 tonic transport。
-// 这也让我们能在本机原生环境复现浏览器里的问题 —— 那边可以上真调试器。
+// Network and sync: gRPC-web in browsers, tonic transport natively.
 pub mod network;
 pub mod perf;
 pub mod sync;
 
-// 跨调用状态用 thread_local，只在单线程的 wasm 宿主里成立。
+// Cross-call state uses thread_local, valid only in the single-threaded wasm host.
 #[cfg(target_arch = "wasm32")]
 pub mod runtime;
 
@@ -50,7 +50,7 @@ pub mod bindgen;
 
 pub use error::{ErrorCode, Result, RuntimeError};
 
-/// 本 runtime 依赖的官方 crate 版本，供宿主自检与日志使用。
+/// Upstream crate versions this runtime is built on, for host checks and logs.
 pub fn dependency_versions() -> serde_json::Value {
     serde_json::json!({
         "zcash_client_backend": "0.24.0",

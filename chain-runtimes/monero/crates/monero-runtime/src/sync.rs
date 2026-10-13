@@ -1,15 +1,14 @@
-//! 同步编排：拉块 → 扫描 → 记进度。**有界推进，永不跑到底。**
+//! Sync orchestration: fetch blocks, scan, record progress. Bounded; never runs to completion.
 //!
-//! 一次调用最多处理 `max_blocks` 个块，然后带进度返回。要不要接着调由宿主
-//! 决定 —— 这是「调度归 TS」那条边界。理由是具体的：跑到底的函数在浏览器和
-//! 移动端上无法中断、无法看进度、无法让出线程，页面直接冻住。
+//! One call processes at most `max_blocks` blocks and returns progress; the host
+//! decides whether to call again. A run-to-completion call cannot be interrupted,
+//! report progress, or yield on browsers and mobile, so the page would freeze.
 //!
-//! ## 扫描进度按身份独立记账
+//! ## Scan progress is tracked per identity
 //!
-//! `scan_ranges` 带 `identity_id`。这和 Zcash 那边不一样 —— 那边承诺树要求
-//! 全库连续扫描，于是「用 A 的密钥扫过的区间被标记为全库已扫」，暂停中的账户
-//! 会永久漏掉那一段，只能靠宿主保管的游标补救。Monero 没有承诺树、不要求
-//! 连续扫描，各身份各记各的，从根上没有这个坑。
+//! `scan_ranges` is keyed by `identity_id`. Unlike Zcash, Monero has no commitment
+//! tree that forces wallet-wide contiguous scanning, so each identity tracks its
+//! own progress and a paused account never loses a span scanned for another.
 
 use futures_util::stream::{self, StreamExt, TryStreamExt};
 use monero_daemon_rpc::prelude::*;
@@ -22,17 +21,18 @@ use crate::perf::now_ms;
 use crate::scan::{self, ScanOutcome};
 use crate::wallet::Db;
 
-/// 单次调用的块数上限。
+/// Per-call block cap.
 ///
-/// 不是性能调优参数，是**卡死防线**：宿主传个巨大的值会让这次调用跑上几分钟
-/// 且中途无法中断。真正的批量由宿主按实测吞吐决定。
+/// A hang guard, not a tuning knob: a huge value would make one call run for
+/// minutes with no way to interrupt it. The host sizes batches from measured throughput.
 pub const MAX_BLOCKS_PER_CALL: u64 = 1_000;
 
 /// Limit per-block fallback requests to three, leaving the host's fourth
 /// stream slot available for a chain-tip probe or another privacy chain.
 pub const FETCH_CONCURRENCY: usize = 3;
 
-/// 问链尖。**不碰钱包库** —— 建账户时需要它来定 birthday，而那一刻库还没建。
+/// Fetch the chain tip without touching the wallet DB: account creation needs it
+/// for the birthday before the DB exists.
 pub async fn chain_tip(daemon: &Daemon) -> Result<u64> {
     let n = daemon
         .latest_block_number()
@@ -41,9 +41,9 @@ pub async fn chain_tip(daemon: &Daemon) -> Result<u64> {
     Ok(n as u64)
 }
 
-/// 把链尖告诉某个身份：据此算出还要扫哪一段。
+/// Tell an identity the chain tip and queue the range it still needs to scan.
 ///
-/// 新身份的待扫区间是 `[birthday, tip]`；已有进度的则是 `(已扫到, tip]`。
+/// A new identity queues `[birthday, tip]`; one with progress queues `(scanned_to, tip]`.
 pub fn update_chain_tip(db: &mut Db, identity_id: i64, tip: u64) -> Result<()> {
     let identity = db.identity_by_id(identity_id)?;
     let scanned_to = scanned_to_height(db, identity_id)?;
@@ -52,7 +52,7 @@ pub fn update_chain_tip(db: &mut Db, identity_id: i64, tip: u64) -> Result<()> {
         .unwrap_or(identity.birthday_height);
 
     if start > tip {
-        return Ok(()); // 已经追上链尖，没有待扫区间
+        return Ok(()); // Already at the tip; nothing to queue
     }
 
     db.conn()
@@ -66,11 +66,11 @@ pub fn update_chain_tip(db: &mut Db, identity_id: i64, tip: u64) -> Result<()> {
     Ok(())
 }
 
-/// 该身份已经连续扫到哪个高度（含）。没扫过任何块时返回 `None`。
+/// Highest height this identity has scanned contiguously (inclusive); `None` if nothing scanned.
 ///
-/// 读的是 `identities.scanned_to_height` 而**不是** `blocks` 表的 max —— 后者
-/// 是全局的，会让一个已追到链尖的身份把另一个还在回补的身份的进度推到链尖，
-/// 那段历史就被永久跳过。
+/// Reads `identities.scanned_to_height`, not `max` over the global `blocks` table:
+/// that would let a caught-up identity push a backfilling identity's progress to
+/// the tip, permanently skipping that history.
 pub fn scanned_to_height(db: &Db, identity_id: i64) -> Result<Option<u64>> {
     Ok(db
         .conn()
@@ -85,7 +85,7 @@ pub fn scanned_to_height(db: &Db, identity_id: i64) -> Result<Option<u64>> {
         .map(|h| h as u64))
 }
 
-/// 推进该身份的扫描进度。只进不退 —— 回退走 `rewind_and_requeue`。
+/// Advance this identity's scan progress. Monotonic; rewinds go through `rewind_and_requeue`.
 fn advance_scanned_to(db: &Db, identity_id: i64, height: u64) -> Result<()> {
     db.conn()
         .execute(
@@ -98,7 +98,7 @@ fn advance_scanned_to(db: &Db, identity_id: i64, height: u64) -> Result<()> {
     Ok(())
 }
 
-/// 取当前最靠前的待扫区间。
+/// The lowest pending scan range.
 fn next_range(db: &Db, identity_id: i64) -> Result<Option<(u64, u64)>> {
     db.conn()
         .query_row(
@@ -111,15 +111,16 @@ fn next_range(db: &Db, identity_id: i64) -> Result<Option<(u64, u64)>> {
         .map_err(|e| db_err("nextRange", e))
 }
 
-/// 把已扫完的 `[start, scanned_through]` 从待扫区间里销掉。
+/// Remove the scanned span `[start, scanned_through]` from the pending ranges.
 ///
-/// 待扫区间**可能互相重叠**：重扫（`rewind_and_requeue`）会从回退高度重新排一段，
-/// 而原来的尾部区间还在队列里。只处理"起点等于 `start`"的那一条、再把余下部分
-/// 普通 INSERT 回去，一旦余下的起点正好是另一条区间的起点就撞主键 —— 整步回滚，
-/// 下一步从同一处开始、再撞，扫描永远原地踏步。
+/// Pending ranges can overlap: `rewind_and_requeue` queues a span from the rewind
+/// height while the old tail range is still queued. Consuming only the range that
+/// starts at `start` and re-inserting the remainder with a plain INSERT collides on
+/// the primary key when the remainder starts where another range does; the step
+/// rolls back and scanning never advances.
 ///
-/// 所以这里对**每一条**与已扫段相交的区间都减去已扫段，余下部分以 upsert
-/// 合并（同起点取更远的终点）。重叠在此被逐步消化，不再需要区间互不相交这个前提。
+/// So the scanned span is subtracted from every overlapping range and remainders
+/// are upserted (same start keeps the farther end). Ranges need not be disjoint.
 fn consume_range(db: &mut Db, identity_id: i64, start: u64, scanned_through: u64) -> Result<()> {
     let tx = db
         .conn_mut()
@@ -162,11 +163,11 @@ fn consume_range(db: &mut Db, identity_id: i64, start: u64, scanned_through: u64
             params![identity_id, range_start],
         )
         .map_err(|e| db_err("consumeRange", e))?;
-        // 已扫段之前的部分（按最低起点取区间时不会出现，保留以防万一）。
+        // Part before the scanned span (unreachable when taking the lowest start; kept defensively).
         if range_start < scanned_from {
             upsert(range_start, scanned_from)?;
         }
-        // 已扫段之后的部分。
+        // Part after the scanned span.
         if range_end > resume_at {
             upsert(resume_at, range_end)?;
         }
@@ -176,12 +177,13 @@ fn consume_range(db: &mut Db, identity_id: i64, start: u64, scanned_through: u64
 }
 
 thread_local! {
-    /// 批量路径对哪个节点、从什么时候起判定不可用。换节点即重新尝试。
+    /// Node the batch path was judged unusable for, and since when. A different node is tried again.
     static BLOCKS_BIN_UNSUPPORTED_BY: std::cell::RefCell<Option<(String, f64)>> =
         const { std::cell::RefCell::new(None) };
 }
 
-/// 判定不可用之后多久再试批量。一次截断或代理改写的回包不该让好节点整个会话都走慢路。
+/// Retry delay for the batch path. One truncated or proxy-rewritten response must
+/// not keep a good node on the slow path all session.
 const BLOCKS_BIN_RETRY_AFTER_MS: f64 = 10.0 * 60.0 * 1000.0;
 
 fn blocks_bin_skipped_for(node: Option<&str>, now: f64) -> bool {
@@ -191,11 +193,12 @@ fn blocks_bin_skipped_for(node: Option<&str>, now: f64) -> bool {
     })
 }
 
-/// 先走批量（`get_blocks.bin`，一次往返一整批），节点不配合时退回逐块并发。
+/// Try the batch path (`get_blocks.bin`, one round trip per batch) first; fall back
+/// to concurrent per-block fetches if the node does not cooperate.
 ///
-/// 只有**协议**层面的失败（节点不支持、格式不符、数量对不上）才会让这个节点
-/// 暂时跳过批量路径（见 `BLOCKS_BIN_RETRY_AFTER_MS`）；网络失败照常上抛，这一步
-/// 失败、下一轮重试 —— 一次超时不能让一个好节点从此降级。
+/// Only protocol failures (unsupported, malformed, count mismatch) skip the batch
+/// path for this node (see `BLOCKS_BIN_RETRY_AFTER_MS`). Network failures propagate
+/// and the next step retries; one timeout must not downgrade a good node.
 async fn fetch_blocks(
     daemon: &Daemon,
     start: u64,
@@ -217,7 +220,7 @@ async fn fetch_blocks(
             Err(crate::blocks_bin::BlocksBinError::Protocol(detail)) => {
                 BLOCKS_BIN_UNSUPPORTED_BY
                     .with(|c| *c.borrow_mut() = node.clone().map(|url| (url, now_ms())));
-                // 放弃的原因随这一步的结果回给宿主，只报这一次。
+                // Report why the batch path was abandoned with this step's result, once.
                 let blocks = fetch_scannable_blocks(daemon, start, last).await?;
                 return Ok((
                     blocks,
@@ -236,21 +239,20 @@ async fn fetch_blocks(
     ))
 }
 
-/// 取 `[start, last]` 的可扫描块，按高度排好。
+/// Fetch scannable blocks for `[start, last]`, ordered by height.
 ///
-/// 批量路径（`blocks_bin`）不可用时的退路。
+/// Fallback when the batch path (`blocks_bin`) is unusable.
 ///
-/// **不走** `contiguous_scannable_blocks`。它先试批量的 `get_blocks.bin`，但
-/// 已发布的 monerod（截至 v0.18.5.1）在 `prune=true` 时不回 `prunable_hash`
-/// （monero-project/monero#10120，修复 #10652 只在 master），monero-oxide 为了
-/// 能校验交易哈希就整批放弃、回退逐块 JSON —— 于是每一步都**白下一整包再扔掉**，
-/// 再串行地一块一块取。对今天的任何公共节点，那次批量尝试都注定失败。
+/// Does not use `contiguous_scannable_blocks`: it tries `get_blocks.bin` first, but
+/// released monerod (through v0.18.5.1) omits `prunable_hash` when `prune=true`
+/// (monero-project/monero#10120; fix #10652 is master-only), so monero-oxide drops
+/// the whole batch and falls back to serial per-block JSON, wasting a full download
+/// every step.
 ///
-/// 这里直接逐块取、N 路并发。每块仍经上游校验（编号正确、交易与区块的交易
-/// 列表一致）；块与块之间的衔接（高度连续、前驱哈希、RingCT 游标）由
-/// `scan::scan_blocks` 独立校验，所以完整性保障一条不少。`buffered` 保持
-/// 提交顺序，结果天然按高度排列。
-///
+/// Instead fetch per block with N-way concurrency. Upstream still validates each
+/// block (number, transactions match the block's tx list); cross-block continuity
+/// (heights, previous hash, RingCT cursor) is checked by `scan::scan_blocks`.
+/// `buffered` preserves order, so results are sorted by height.
 async fn fetch_scannable_blocks(
     daemon: &Daemon,
     start: u64,
@@ -268,10 +270,10 @@ async fn fetch_scannable_blocks(
         .await
 }
 
-/// 一次有界推进。
+/// One bounded step.
 ///
-/// 返回进度 JSON；`done` 表示已经没有待扫区间。**本函数永远不会自己循环到
-/// 同步完成** —— 宿主拿到进度后自己决定要不要接着调。
+/// Returns progress JSON; `done` means no pending ranges remain. Never loops to
+/// completion; the host decides whether to call again.
 pub async fn step(
     db: &mut Db,
     daemon: &Daemon,
@@ -294,26 +296,25 @@ pub async fn step(
         return Ok(v);
     };
 
-    // 区间是左闭右开（end 是"第一个还没扫的高度之后"），上游要的是闭区间。
+    // Ranges are half-open (`end` is exclusive); upstream takes a closed range.
     let last = (start + max_blocks - 1).min(end.saturating_sub(1));
     if last < start {
         return Ok(progress(db, identity_id, &ScanOutcome::default(), true)?);
     }
 
-    // 分段打点。扫得慢的时候，「慢在拉块还是慢在解密」是完全不同的两件事，
-    // 而在浏览器里两者的表现一模一样（界面不动）—— 只能靠打点区分。
-    // 公共节点单次往返可达几百毫秒，不分开量就会把网络延迟误判成算力不足。
+    // Time download and scan separately: both look the same in a browser (a frozen
+    // UI), and public-node latency would otherwise be misread as CPU cost.
     let t0 = now_ms();
 
     let (blocks, fetched_via, fetch_note, prefetch_hit) = fetch_blocks(daemon, start, last).await?;
 
-    // 流水线：扫这一批之前，先把下一批的请求发出去（wallet2 同款）。起点按实际
-    // 拿到的块算 —— 只拿到部分前缀时，下一步从断点开始，预取也得从那里开始。
+    // Pipeline: request the next batch before scanning this one (as wallet2 does).
+    // Start from the blocks actually received, since a partial prefix resumes there.
     if fetched_via == "blocksBin" {
         let next = start + blocks.len() as u64;
         if let (Some(url), true) = (crate::network::current_node_url(), next < end) {
-            // 与下一步的请求一致：同样受 max_blocks 与区间终点约束，大小取
-            // 这一次请求之后调整过的批量。
+            // Same bounds as the next step's request (max_blocks, range end), sized by the
+            // batch as adjusted after this request.
             crate::blocks_bin::prefetch(&url, next, (end - next).min(max_blocks)).await;
         }
     }
@@ -321,8 +322,8 @@ pub async fn step(
     let t_downloaded = now_ms();
 
     if blocks.is_empty() {
-        // 节点对一个非空区间返回了零个块 —— 它没有守协议。
-        // **不能当成"扫完了"静默推进**，那会让这段高度被永远跳过。
+        // Zero blocks for a non-empty range violates the protocol. Advancing as if
+        // scanned would skip this span forever.
         return Err(RuntimeError::with(
             ErrorCode::MalformedNodeResponse,
             json!({ "operation": "contiguousScannableBlocks", "from": start, "to": last }),
@@ -331,8 +332,9 @@ pub async fn step(
 
     db.ensure_subaddress_lookahead(identity_id)?;
     let mut outcome = scan::scan_blocks(db, identity_id, &blocks)?;
-    // 收到钱的子地址靠近窗口末尾时窗口会扩大；用新窗口重扫同一批（块已在手，
-    // 落库幂等），这批里后面发给新登记子地址的钱才不会漏。
+    // Funds near the end of the subaddress window grow it; rescan the same batch with
+    // the new window (blocks in hand, writes idempotent) so later funds to the newly
+    // registered subaddresses are not missed.
     while outcome.outputs_found > 0 && db.ensure_subaddress_lookahead(identity_id)? > 0 {
         outcome = scan::scan_blocks(db, identity_id, &blocks)?;
     }
@@ -372,9 +374,9 @@ fn progress(db: &Db, identity_id: i64, outcome: &ScanOutcome, done: bool) -> Res
     Ok(v)
 }
 
-/// 只读：当前的扫描进度，不发任何网络请求。
+/// Read-only scan progress; makes no network requests.
 ///
-/// 同步卡住时用它确认 runtime 到底想扫哪一段 —— 不用猜。
+/// Shows which ranges the runtime intends to scan when sync appears stuck.
 pub fn peek(db: &Db, identity_id: i64) -> Result<Value> {
     let mut stmt = db
         .conn()
@@ -397,17 +399,18 @@ pub fn peek(db: &Db, identity_id: i64) -> Result<Value> {
     Ok(json!({
         "ranges": ranges,
         "scannedToHeight": scanned_to_height(db, identity_id)?,
-        // 回补起点以运行时为准：宿主存的生日可能与这里不一致（重新启用不会改已有身份的生日）。
+        // The runtime's birthday is authoritative: the host's may differ (re-enabling
+        // keeps an existing identity's birthday).
         "birthdayHeight": db.identity_by_id(identity_id)?.birthday_height,
     }))
 }
 
-/// 重组恢复：回退到指定高度，并把那之上的区间重新排进待扫队列。
+/// Reorg recovery: rewind to `height` and requeue everything above it.
 pub fn rewind_and_requeue(db: &mut Db, identity_id: i64, height: u64, tip: u64) -> Result<Value> {
     scan::rewind_to(db, identity_id, height)?;
-    // 进度也要退。不退的话下一轮会从一个已经被丢弃的高度接着扫，
-    // 中间那段永远不会被重新覆盖。一块都没扫过的保持 NULL：当成 0 会让
-    // 下一次 update_chain_tip 从创世块排队。
+    // Rewind progress too, or the next step resumes from a discarded height and the
+    // gap is never rescanned. Keep NULL if nothing was scanned: 0 would make the next
+    // `update_chain_tip` queue from genesis.
     db.conn()
         .execute(
             "UPDATE identities SET scanned_to_height = min(scanned_to_height, ?2)
@@ -415,14 +418,15 @@ pub fn rewind_and_requeue(db: &mut Db, identity_id: i64, height: u64, tip: u64) 
             params![identity_id, height as i64],
         )
         .map_err(|e| db_err("rewindScannedTo", e))?;
-    // 往生日之前重扫（用户选了更早的日期）：生日跟着提前，进度才有正确的起点。
+    // Rescan before the birthday (user picked an earlier date): move the birthday
+    // back so progress starts there.
     db.conn()
         .execute(
             "UPDATE identities SET birthday_height = ?2 WHERE id = ?1 AND birthday_height > ?2",
             params![identity_id, (height + 1) as i64],
         )
         .map_err(|e| db_err("rewindBirthday", e))?;
-    // 回退后那一段要重扫。直接排进队列，不依赖宿主记得再调一次 update_chain_tip。
+    // Requeue the rewound span here instead of relying on the host to call `update_chain_tip`.
     if tip > height {
         db.conn()
             .execute(
@@ -447,20 +451,20 @@ mod tests {
         assert!(next_range(&db, id).unwrap().is_none());
         let p = peek(&db, id).unwrap();
         assert_eq!(p["ranges"].as_array().unwrap().len(), 0);
-        assert_eq!(p["birthdayHeight"], 100, "进度的起点取运行时的生日");
+        assert_eq!(p["birthdayHeight"], 100, "starts at the runtime's birthday");
     }
 
     #[test]
     fn learning_the_tip_queues_the_backfill_range() {
         let (mut db, id) = db_with_identity(); // birthday = 100
         update_chain_tip(&mut db, id, 150).unwrap();
-        let (start, end) = next_range(&db, id).unwrap().expect("应当排上队");
-        assert_eq!(start, 100, "从 birthday 起扫");
-        assert_eq!(end, 151, "区间左闭右开");
+        let (start, end) = next_range(&db, id).unwrap().expect("should be queued");
+        assert_eq!(start, 100, "scans from the birthday");
+        assert_eq!(end, 151, "ranges are half-open");
     }
 
-    /// 链尖前进时只该抬高终点，不该产生第二条重叠区间 —— 重叠会导致同一段
-    /// 被扫两遍，浪费带宽还让进度显示倒退。
+    /// Advancing the tip extends the range end; a second overlapping range would
+    /// rescan the same span and make progress go backwards.
     #[test]
     fn advancing_the_tip_extends_rather_than_duplicates() {
         let (mut db, id) = db_with_identity();
@@ -468,11 +472,11 @@ mod tests {
         update_chain_tip(&mut db, id, 200).unwrap();
         let ranges = peek(&db, id).unwrap();
         let ranges = ranges["ranges"].as_array().unwrap();
-        assert_eq!(ranges.len(), 1, "只该有一条区间");
+        assert_eq!(ranges.len(), 1, "should have one range");
         assert_eq!(ranges[0]["end"], 201);
     }
 
-    /// 链尖不动时重复调用必须幂等。
+    /// Repeating the same tip is idempotent.
     #[test]
     fn the_same_tip_twice_changes_nothing() {
         let (mut db, id) = db_with_identity();
@@ -482,8 +486,9 @@ mod tests {
         assert_eq!(before, peek(&db, id).unwrap());
     }
 
-    /// **回归**：重扫排进来的区间与旧的尾部区间重叠，余下部分的起点正好落在
-    /// 另一条区间的起点上。旧实现撞主键、整步回滚，扫描原地踏步（插件实测）。
+    /// Regression: a requeued range overlaps the old tail range and the remainder
+    /// starts exactly at another range's start. This used to collide on the primary
+    /// key and roll back the step, stalling the scan.
     #[test]
     fn consuming_across_overlapping_ranges_merges_instead_of_colliding() {
         let (mut db, id) = db_with_identity();
@@ -495,7 +500,7 @@ mod tests {
                 )
                 .unwrap();
         }
-        consume_range(&mut db, id, 100, 160).expect("不能再撞主键");
+        consume_range(&mut db, id, 100, 160).expect("must not collide on the primary key");
         let ranges: Vec<(i64, i64)> = db
             .conn()
             .prepare("SELECT start_height, end_height FROM scan_ranges WHERE identity_id = ?1 ORDER BY start_height")
@@ -507,7 +512,7 @@ mod tests {
         assert_eq!(ranges, vec![(161, 250)]);
     }
 
-    /// 已扫段横跨一条完全被覆盖的区间：那条区间整条消失，不留下重复扫描。
+    /// A range fully covered by the scanned span is removed, leaving no duplicate scan.
     #[test]
     fn a_range_fully_covered_by_the_scan_disappears() {
         let (mut db, id) = db_with_identity();
@@ -536,7 +541,7 @@ mod tests {
         let (mut db, id) = db_with_identity();
         update_chain_tip(&mut db, id, 200).unwrap();
         consume_range(&mut db, id, 100, 149).unwrap();
-        let (start, end) = next_range(&db, id).unwrap().expect("剩余部分还在");
+        let (start, end) = next_range(&db, id).unwrap().expect("remainder queued");
         assert_eq!((start, end), (150, 201));
     }
 
@@ -548,31 +553,31 @@ mod tests {
         assert!(next_range(&db, id).unwrap().is_none());
     }
 
-    /// 单次调用的块数有硬上限：宿主传个巨大的值会让这次调用跑上几分钟且
-    /// 中途无法中断，页面直接冻住。
+    /// The per-call block cap is hard: a huge value would run for minutes with no
+    /// way to interrupt it, freezing the page.
     #[test]
     fn max_blocks_is_clamped_and_zero_is_rejected() {
         assert_eq!(u64::MAX.min(MAX_BLOCKS_PER_CALL), MAX_BLOCKS_PER_CALL);
-        // 0 会让 `start + max_blocks - 1` 下溢，必须挡在入口
+        // 0 would underflow `start + max_blocks - 1`; it is rejected at the entry
         assert!(MAX_BLOCKS_PER_CALL > 0);
     }
 
-    /// **回归测试。** 扫描进度曾经是从全局 `blocks` 表取 `max(height)` 的，
-    /// 而那张表所有身份共享 —— 一个追到链尖的身份会把另一个还在回补的身份的
-    /// 进度一起"推"到链尖，那段历史就被永久跳过、再也不会重扫。
+    /// Regression: progress used to be `max(height)` over the shared `blocks` table,
+    /// so a caught-up identity pushed a backfilling identity's progress to the tip
+    /// and that history was never scanned.
     #[test]
     fn two_identities_keep_independent_progress() {
         use crate::wallet::testing::key_bytes;
 
         let (mut db, a) = db_with_identity(); // birthday 100
         let (spend, mut view) = key_bytes();
-        view[1] = 3; // 换一个观察密钥，造出第二个不同的身份
+        view[1] = 3; // Different view key for a distinct second identity
         let b = db.add_identity("acct-2", &spend, &view, 100).unwrap().id;
 
         update_chain_tip(&mut db, a, 1_000).unwrap();
         update_chain_tip(&mut db, b, 1_000).unwrap();
 
-        // A 一路扫到链尖，B 一块没扫
+        // A scans to the tip; B scans nothing
         consume_range(&mut db, a, 100, 1_000).unwrap();
         advance_scanned_to(&db, a, 1_000).unwrap();
 
@@ -580,12 +585,12 @@ mod tests {
         assert_eq!(
             scanned_to_height(&db, b).unwrap(),
             None,
-            "B 一块都没扫过，进度必须仍是 None"
+            "B scanned nothing, so its progress must stay None"
         );
 
-        // B 的待扫区间必须原封不动，仍从它的 birthday 起
-        let (start, _) = next_range(&db, b).unwrap().expect("B 的区间还在");
-        assert_eq!(start, 100, "B 的起点不该被 A 的进度带跑");
+        // B's pending range is untouched and still starts at its birthday
+        let (start, _) = next_range(&db, b).unwrap().expect("B's range still queued");
+        assert_eq!(start, 100, "B's start must not follow A's progress");
     }
 
     #[test]
@@ -596,7 +601,7 @@ mod tests {
         assert!(next_range(&db, id).unwrap().is_none());
 
         rewind_and_requeue(&mut db, id, 180, 200).unwrap();
-        let (start, end) = next_range(&db, id).unwrap().expect("回退后应重新排队");
+        let (start, end) = next_range(&db, id).unwrap().expect("rewind should requeue");
         assert_eq!((start, end), (181, 201));
     }
 
@@ -611,25 +616,25 @@ mod tests {
         ));
     }
 
-    /// 一块都没扫过就重扫（清缓存、换起点）：不能从创世块开始排队。
+    /// Rescanning before any step (cache cleared, new start) must not queue from genesis.
     #[test]
     fn rewinding_before_the_first_step_does_not_queue_from_genesis() {
-        let (mut db, id) = db_with_identity(); // 生日 100
+        let (mut db, id) = db_with_identity(); // birthday 100
         rewind_and_requeue(&mut db, id, 100, 200).unwrap();
         update_chain_tip(&mut db, id, 200).unwrap();
 
         assert_eq!(scanned_to_height(&db, id).unwrap(), None);
-        let (start, _) = next_range(&db, id).unwrap().expect("有待扫区间");
+        let (start, _) = next_range(&db, id).unwrap().expect("a range is pending");
         assert_eq!(start, 100);
     }
 
-    /// 用户选了比生日更早的日期重扫：生日跟着提前，进度的起点才对。
+    /// Rescanning from before the birthday moves the birthday back so progress starts there.
     #[test]
     fn rewinding_before_the_birthday_moves_the_birthday() {
-        let (mut db, id) = db_with_identity(); // 生日 100
+        let (mut db, id) = db_with_identity(); // birthday 100
         rewind_and_requeue(&mut db, id, 49, 200).unwrap();
         assert_eq!(db.identity_by_id(id).unwrap().birthday_height, 50);
-        let (start, _) = next_range(&db, id).unwrap().expect("有待扫区间");
+        let (start, _) = next_range(&db, id).unwrap().expect("a range is pending");
         assert_eq!(start, 50);
     }
 }

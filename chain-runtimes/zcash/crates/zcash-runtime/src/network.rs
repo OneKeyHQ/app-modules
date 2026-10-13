@@ -1,10 +1,10 @@
-//! lightwalletd 网络层。
+//! lightwalletd network layer.
 //!
-//! 浏览器里跑不了原生 gRPC（没有 HTTP/2 裸连接），所以走 gRPC-web：
-//! `tonic-web-wasm-client` 把 tonic 生成的客户端接到 fetch 上。
+//! Browsers have no raw HTTP/2, so wasm uses gRPC-web: `tonic-web-wasm-client`
+//! runs the tonic-generated client over fetch.
 //!
-//! 版本约束：`tonic-web-wasm-client` 必须 >= 0.9.1。0.8.0 在流结束时不转发
-//! gRPC trailer，会让 `get_block_range` 这类流式调用永远等不到结束标志。
+//! Requires `tonic-web-wasm-client` >= 0.9.1; 0.8.0 drops gRPC trailers at stream
+//! end, so streaming calls like `get_block_range` never complete.
 
 use zcash_client_backend::proto::service::{
     compact_tx_streamer_client::CompactTxStreamerClient, BlockId, ChainSpec, TreeState,
@@ -24,8 +24,8 @@ pub fn set_request_handler(handler: Option<js_sys::Function>) {
     REQUEST_HANDLER.with(|slot| *slot.borrow_mut() = handler);
 }
 
-// 浏览器走 gRPC-web（没有原生 HTTP/2 裸连接），原生目标走 tonic 自带 transport。
-// 上层的 `LightClient` 签名在两边一致，`chain_tip` / `tree_state` 等函数不用分叉。
+// wasm uses gRPC-web; native uses tonic's own transport. `LightClient` has the
+// same signature on both, so `chain_tip` / `tree_state` etc. need no cfg split.
 #[cfg(target_arch = "wasm32")]
 pub type Transport = tonic_web_wasm_client::Client;
 
@@ -34,18 +34,16 @@ pub type Transport = tonic::transport::Channel;
 
 pub type LightClient = CompactTxStreamerClient<Transport>;
 
-/// `operation` 是稳定的机器可读标识（不是文案），宿主可据此区分是哪一步失败。
+/// `operation` is a stable machine-readable id (not text) naming the failed step.
 fn net_err(operation: &str, e: impl std::fmt::Display) -> RuntimeError {
     RuntimeError::with(ErrorCode::NetworkError, json!({ "operation": operation })).detail(e)
 }
 
-/// 把一个网络 future 套上超时。
+/// Wrap a network future in a timeout.
 ///
-/// **为什么必须有**：wasm 里挂死的调用宿主无法取消 —— 没有线程可以中断，
-/// Promise 也不会自己 reject。一个不返回的 gRPC 调用会让整个钱包永久卡住，
-/// 而且没有任何错误信息。加超时把「挂死」变成「可处理的错误」。
-///
-/// 实测踩过：`get_block_range` 在某些情况下不返回也不报错。
+/// In wasm the host cannot cancel a hung call (no thread to interrupt, the
+/// Promise never rejects), so a gRPC call that never returns would wedge the
+/// wallet silently. `get_block_range` can hang this way.
 #[cfg(target_arch = "wasm32")]
 pub async fn with_timeout<T>(
     fut: impl std::future::Future<Output = Result<T>>,
@@ -63,7 +61,7 @@ pub async fn with_timeout<T>(
     }
 }
 
-/// 原生目标用 tokio 的定时器。
+/// Native targets use the tokio timer.
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn with_timeout<T>(
     fut: impl std::future::Future<Output = Result<T>>,
@@ -83,12 +81,12 @@ fn timeout_err(operation: &str, timeout_ms: u32) -> RuntimeError {
     )
 }
 
-/// 默认网络超时。单次 gRPC 调用超过这个时长基本可以判定为挂死。
+/// Default network timeout; a single gRPC call exceeding it is treated as hung.
 pub const DEFAULT_TIMEOUT_MS: u32 = 30_000;
 
-/// 建立一个 lightwalletd 客户端。`base_url` 形如 `https://host:port`。
+/// Build a lightwalletd client. `base_url` looks like `https://host:port`.
 ///
-/// 不做网络往返 —— 真正的连接发生在第一次调用时。
+/// No network round trip; the connection happens on the first call.
 #[cfg(target_arch = "wasm32")]
 pub fn connect(base_url: &str) -> Result<LightClient> {
     if base_url.is_empty() {
@@ -97,9 +95,9 @@ pub fn connect(base_url: &str) -> Result<LightClient> {
             json!({ "reason": "emptyUrl" }),
         ));
     }
-    // 明文会把「这个钱包在查哪些地址」直接暴露给链路上的任何人。原生那条路
-    // 靠 `https://` 前缀决定要不要配 TLS，浏览器这条路之前什么都收 —— 补齐，
-    // 免得哪天开放自定义节点或某个备用地址写错时静默降级。
+    // Plaintext would expose which addresses this wallet queries to anyone on the
+    // path. Require https so a custom node or mistyped fallback URL cannot
+    // silently downgrade.
     if !base_url.starts_with("https://") {
         return Err(RuntimeError::with(
             ErrorCode::LightwalletdNotConfigured,
@@ -116,7 +114,7 @@ pub fn connect(base_url: &str) -> Result<LightClient> {
     ))
 }
 
-/// 原生目标的连接。与 wasm 版不同，这里会真的建链接，所以是 async。
+/// Native connect. Unlike wasm this actually opens the connection, hence async.
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn connect_native(base_url: &str) -> Result<LightClient> {
     if base_url.is_empty() {
@@ -125,7 +123,7 @@ pub async fn connect_native(base_url: &str) -> Result<LightClient> {
             json!({ "reason": "emptyUrl" }),
         ));
     }
-    // https 端点必须显式配 TLS —— tonic 0.14 不会自动启用根证书。
+    // https endpoints need explicit TLS; tonic 0.14 does not enable root certs by default.
     let mut endpoint = tonic::transport::Channel::from_shared(base_url.to_owned())
         .map_err(|e| net_err("parseEndpoint", e))?;
     if base_url.starts_with("https://") {
@@ -140,7 +138,7 @@ pub async fn connect_native(base_url: &str) -> Result<LightClient> {
     Ok(CompactTxStreamerClient::new(channel))
 }
 
-/// 当前链尖高度。
+/// Current chain tip height.
 pub async fn chain_tip(client: &mut LightClient) -> Result<u32> {
     let block = with_timeout(
         async {
@@ -162,13 +160,14 @@ pub async fn chain_tip(client: &mut LightClient) -> Result<u32> {
     })
 }
 
-/// 把已签名的交易提交给 lightwalletd。
+/// Submit a signed transaction to lightwalletd.
 ///
-/// lightwalletd 的 `SendTransaction` **不用 gRPC 错误表示业务失败** —— 调用成功返回，
-/// 但 `SendResponse.error_code != 0` 表示节点拒绝了这笔交易。只看 `Result::Ok`
-/// 会把「被拒绝」当成「已广播」，这是这条链路上最容易漏的一步。
+/// `SendTransaction` does not signal node errors via gRPC status: the call
+/// succeeds but `SendResponse.error_code != 0` means the node did not accept the
+/// transaction.
 ///
-/// 拒绝抛 `BROADCAST_REJECTED`（不可重试），网络本身出错才抛 `NETWORK_ERROR`。
+/// Definite rejections return `BROADCAST_REJECTED` (not retryable), other node
+/// errors `BROADCAST_OUTCOME_UNKNOWN`, transport failures `NETWORK_ERROR`.
 pub async fn broadcast(client: &mut LightClient, tx_bytes: Vec<u8>) -> Result<()> {
     use zcash_client_backend::proto::service::RawTransaction;
 
@@ -177,7 +176,7 @@ pub async fn broadcast(client: &mut LightClient, tx_bytes: Vec<u8>) -> Result<()
             client
                 .send_transaction(RawTransaction {
                     data: tx_bytes,
-                    // 广播时高度未知；lightwalletd 忽略该字段。
+                    // Height is unknown at broadcast; lightwalletd ignores it.
                     height: 0,
                 })
                 .await
@@ -235,21 +234,21 @@ fn broadcast_outcome_ambiguous(message: &str) -> bool {
     .any(|needle| message.contains(needle))
 }
 
-/// 只有能确定这份字节**永远上不了链**的回复才算拒收。
+/// Only replies proving these bytes can never be mined count as a rejection.
 ///
-/// 拒收会让宿主显示失败、不再把它当在途交易，用户随之重发；而原交易占着的
-/// note 要到过期高度才回来，重发只能换一批 note 去花。原交易若其实已经传播
-/// 出去（上一次超时其实发出去了，或节点一边转发一边回错），两笔都会上链。
-/// 所以这里是白名单：共识上无效（证明、签名、金额、分支不对）或已过期。
-/// 节点忙、内存池满、同步落后、非标准这类临时或策略性回复都不算 —— 记成
-/// 结局未知，同步时重播，过期后自然了结。
+/// A rejection makes the host show a failure and the user resend with other
+/// notes (the original's notes stay locked until expiry). If the original
+/// actually propagated, both would be mined. So this is an allowlist:
+/// consensus-invalid (proof, signature, value, branch) or expired. Transient or
+/// policy replies (busy, mempool full, lagging, non-standard) are an unknown
+/// outcome, rebroadcast during sync until mined or expired.
 fn broadcast_definitely_invalid(message: &str) -> bool {
     if broadcast_outcome_ambiguous(message) {
         return false;
     }
     let message = message.to_lowercase();
-    // zcashd: main.cpp 的共识检查拒因。`tx-expiring-soon` 是策略（还剩几块
-    // 才过期，别的节点仍可能打包），不在其列。
+    // zcashd: consensus reject reasons from main.cpp. `tx-expiring-soon` is policy
+    // (other nodes may still mine it) and is excluded.
     ["bad-txns-", "bad-tx-", "tx-overwinter-expired"]
         .iter()
         .any(|needle| message.contains(needle))
@@ -271,13 +270,11 @@ fn broadcast_already_known(message: &str) -> bool {
     .any(|needle| message.contains(needle))
 }
 
-/// 诊断：取单个区块并给出结构摘要，不做任何扫描、不写库。
+/// Diagnostic: fetch one block and return a structural summary. No scanning, no writes.
 ///
-/// 存在的理由：浏览器走 gRPC-web 代理、原生走真 gRPC，**两边可能根本不是同一个
-/// 服务端**，返回的 compact block 未必一致。排查「同一高度在 wasm 上出问题、
-/// 在原生上正常」时，必须先确认两边拿到的数据是不是同一份，否则一切对比都不成立。
-///
-/// 摘要里带上各池的计数：某个池只在一边出现，就说明是服务端差异而非计算差异。
+/// wasm (gRPC-web proxy) and native (gRPC) may hit different servers returning
+/// different compact blocks; compare summaries before comparing behavior. Per-pool
+/// counts show whether a difference comes from the server rather than computation.
 pub async fn block_summary(client: &mut LightClient, height: u32) -> Result<String> {
     use futures_util::TryStreamExt;
     use zcash_client_backend::proto::service::BlockRange;
@@ -321,7 +318,7 @@ pub async fn block_summary(client: &mut LightClient, height: u32) -> Result<Stri
     Ok(json!({
         "height": height,
         "found": true,
-        // protobuf 编码长度 + 校验和：两边只要有一个 bit 不同就能看出来
+        // protobuf encoded length + checksum: any differing bit shows up
         "encodedLen": prost::Message::encoded_len(&block),
         "checksum": fnv1a(&prost::Message::encode_to_vec(&block)),
         "vtx": block.vtx.len(),
@@ -333,7 +330,7 @@ pub async fn block_summary(client: &mut LightClient, height: u32) -> Result<Stri
     .to_string())
 }
 
-/// FNV-1a：只用来比对两端拿到的字节是否一致，不做任何安全用途。
+/// FNV-1a, only for comparing bytes across endpoints; not for security.
 fn fnv1a(bytes: &[u8]) -> String {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for b in bytes {
@@ -343,10 +340,10 @@ fn fnv1a(bytes: &[u8]) -> String {
     format!("{h:016x}")
 }
 
-/// 取指定高度的 treestate。
+/// Fetch the treestate at `height`.
 ///
-/// 导入账户时需要它：`AccountBirthday` 要知道 birthday 高度之前的承诺树状态，
-/// 否则新账户无法为之后收到的 note 计算 witness。
+/// Needed for account import: `AccountBirthday` requires the commitment tree state
+/// preceding the birthday height to compute witnesses for notes received later.
 pub async fn tree_state(client: &mut LightClient, height: u32) -> Result<TreeState> {
     let ts = with_timeout(
         async {
@@ -399,7 +396,8 @@ mod tests {
         }
     }
 
-    // 拒收是白名单：没把握的回复一律是「结局未知」，交易留在途、继续重播。
+    // Rejection is an allowlist: any uncertain reply is an unknown outcome and
+    // the tx stays pending for rebroadcast.
     #[test]
     fn only_consensus_invalid_or_expired_replies_count_as_a_rejection() {
         for message in [

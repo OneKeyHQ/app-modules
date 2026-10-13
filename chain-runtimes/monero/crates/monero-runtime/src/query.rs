@@ -1,7 +1,7 @@
-//! 余额、历史与可花输出的查询。
+//! Balance, history and spendable-output queries.
 //!
-//! 这一层是选 SQLite 而非内存方案的**直接兑现**：分页、按高度筛选、按子地址
-//! 聚合都是索引查询，不是在内存对象上过滤。历史再长也不需要把全部数据读进来。
+//! Paging, height filters and per-subaddress aggregation are indexed SQLite
+//! queries, so long histories are never loaded into memory.
 
 use monero_wallet::WalletOutput;
 use rusqlite::{params, OptionalExtension};
@@ -10,34 +10,35 @@ use serde_json::{json, Value};
 use crate::error::{db_err, ErrorCode, Result, RuntimeError};
 use crate::wallet::Db;
 
-/// Monero 协议对**所有**输出的固定锁定期：10 个确认。
+/// Consensus lock on **all** outputs: 10 confirmations.
 ///
-/// 这不是我们的策略，是共识规则 —— 未满 10 块的输出构不进环，节点会拒。
-/// 额外时间锁（`additional_timelock`）是在这之上的附加约束。
+/// Younger outputs cannot be used in a ring; nodes reject them.
+/// `additional_timelock` applies on top of this.
 pub const COINBASE_AND_STANDARD_LOCK: u64 = 10;
 
 #[derive(Debug, Default, Clone)]
 pub struct Balance {
-    /// 全部未花输出之和。
+    /// Sum of all unspent outputs.
     pub total_atomic: u128,
-    /// 其中当前可花的部分（已过 10 块锁定且额外时间锁已满足，且未被预留）。
+    /// Spendable now: past the 10-block lock and any extra timelock, and not reserved.
     pub unlocked_atomic: u128,
-    /// 被在途交易预留的部分。已计入 total，但不可再次选中。
+    /// Reserved by in-flight sends. Counted in total, not selectable.
     pub locked_by_reservation_atomic: u128,
-    /// 待核实：还没有 key image、又出现在某个环里的输出金额。**这部分可能已经
-    /// 被花掉**，要等宿主补算 key image 才知道；从没进过环的一定没花，不算在内。
+    /// Outputs without a key image that appear in some ring. **May already be
+    /// spent** until the host supplies key images; outputs never seen in a ring
+    /// are certainly unspent and excluded.
     pub unverifiable_atomic: u128,
-    /// 自己发出、还没上链的交易的找零。已计入 total（锁定，不可花），wallet2 同款。
+    /// Change from own unconfirmed sends. Counted in total but locked, as in wallet2.
     pub pending_change_atomic: u128,
-    /// 还没有 key image 的未花输出笔数。大于 0 时发送前要先补算 key image
-    /// （选币只选有 key image 的输出）。
+    /// Unspent outputs lacking a key image. If > 0, compute key images before
+    /// sending (selection only uses outputs with one).
     pub outputs_without_key_image: u64,
 }
 
 impl Balance {
     pub fn to_json(&self) -> Value {
-        // 金额一律用字符串跨边界：piconero 的上限超过 JS 的
-        // Number.MAX_SAFE_INTEGER，走数字会静默丢精度。
+        // Amounts cross the boundary as strings: piconero values exceed JS
+        // Number.MAX_SAFE_INTEGER.
         json!({
             "totalAtomic": self.total_atomic.to_string(),
             "unlockedAtomic": self.unlocked_atomic.to_string(),
@@ -49,8 +50,8 @@ impl Balance {
     }
 }
 
-/// 算余额。`chain_tip` 用于判断锁定期；给 `None` 表示还不知道链尖，
-/// 此时一律按「未解锁」处理 —— 宁可显示 0 可用，也不要让用户去花一笔构不进环的钱。
+/// Computes the balance. `chain_tip` drives the lock check; `None` (tip unknown)
+/// treats everything as locked rather than offer funds that cannot be spent.
 pub fn balance(db: &Db, identity_id: i64, chain_tip: Option<u64>) -> Result<Balance> {
     let mut stmt = db
         .conn()
@@ -95,8 +96,8 @@ pub fn balance(db: &Db, identity_id: i64, chain_tip: Option<u64>) -> Result<Bala
         if no_key_image {
             b.outputs_without_key_image += 1;
         }
-        // 没进过任何环的钱一定没花；只有进过环、又还没 key image 的才待核实。
-        // 待核实的不算可用：它可能已经花掉了。
+        // Only outputs seen in a ring and lacking a key image are unverifiable;
+        // they may be spent, so they are not counted as unlocked.
         if no_key_image && maybe_spent {
             b.unverifiable_atomic += amount;
             continue;
@@ -111,7 +112,7 @@ pub fn balance(db: &Db, identity_id: i64, chain_tip: Option<u64>) -> Result<Bala
             }
         }
     }
-    // 在途交易的找零：上链扫到前不在 outputs 里，但它是用户的钱。
+    // Pending change is not in `outputs` until scanned, but belongs to the user.
     let change: Vec<Option<String>> = db
         .conn()
         .prepare(
@@ -132,11 +133,11 @@ pub fn balance(db: &Db, identity_id: i64, chain_tip: Option<u64>) -> Result<Bala
     Ok(b)
 }
 
-/// 一笔输出此刻能不能花。
+/// Whether an output is spendable now.
 ///
-/// 两个条件都要满足：过了协议固定的 10 块锁定；额外时间锁（若有）也已过。
-/// `additional_timelock` 存的是原始值 —— 小于 5 亿按块高解释，否则按 Unix
-/// 时间戳解释，这是 Monero 的约定（`CRYPTONOTE_MAX_BLOCK_NUMBER`）。
+/// Requires both the 10-block lock and any additional timelock to have passed.
+/// `additional_timelock` is raw: below 500M it is a height, otherwise a Unix
+/// timestamp (`CRYPTONOTE_MAX_BLOCK_NUMBER`).
 pub fn is_unlocked(height: u64, additional_timelock: u64, chain_tip: u64) -> bool {
     const MAX_BLOCK_NUMBER: u64 = 500_000_000;
 
@@ -149,16 +150,15 @@ pub fn is_unlocked(height: u64, additional_timelock: u64, chain_tip: u64) -> boo
     if additional_timelock < MAX_BLOCK_NUMBER {
         chain_tip >= additional_timelock
     } else {
-        // 时间戳形式的锁没法只靠链高判断。保守处理：**当作仍锁定**。
-        // 让用户等，比让他构一笔必然被拒的交易好。
+        // Timestamp locks cannot be judged from height alone; treat as locked.
         false
     }
 }
 
-/// 一笔可花输出的**元信息**，不含反序列化后的密码学对象。
+/// Spendable output **metadata**, without the deserialized crypto object.
 ///
-/// 筛选与展示只需要这些列。把 blob 的反序列化推迟到真正要构造交易的那一刻，
-/// 免得为了挑两个输出把五百个都解一遍 —— 那是内存方案的毛病，不该在这里复现。
+/// Enough for selection and display; blobs are deserialized only when building
+/// the transaction.
 #[derive(Debug, Clone)]
 pub struct SpendableRow {
     pub id: i64,
@@ -167,10 +167,10 @@ pub struct SpendableRow {
     pub height: u64,
 }
 
-/// 取当前可花的输出元信息，金额降序（大额优先，减少输入数量从而降低手续费）。
+/// Currently spendable outputs, largest first (fewer inputs, lower fee).
 ///
-/// 只返回**有 key image** 的输出：没有 key image 就无法确认它没被花掉，
-/// 拿它构造交易有双花风险，节点会拒。
+/// Only outputs **with a key image**: without one we cannot tell whether it is
+/// already spent, and the node would reject a double spend.
 pub fn spendable_rows(db: &Db, identity_id: i64, chain_tip: u64) -> Result<Vec<SpendableRow>> {
     let mut stmt = db
         .conn()
@@ -222,13 +222,13 @@ pub fn spendable_rows(db: &Db, identity_id: i64, chain_tip: u64) -> Result<Vec<S
     Ok(out)
 }
 
-/// 把一笔输出的 blob 读回成 monero-oxide 的对象。
+/// Deserializes an output blob into the monero-oxide object.
 ///
-/// **参与密码学的一律走这里**。`outputs` 表上那些抽出来的列只用于筛选与展示，
-/// 不是另一份真相 —— 拿它们去重建对象就是在自己实现一遍序列化，早晚出错。
+/// **All cryptographic use goes through here.** The extracted columns on
+/// `outputs` are for filtering and display only, not a second source of truth.
 ///
-/// blob 读不回来意味着库损坏，明确报错而不是跳过：静默跳过会表现为
-/// 「这笔钱凭空消失」，比报错难查得多。
+/// An unreadable blob means a corrupt database; error out rather than skip,
+/// which would make funds silently vanish.
 pub fn load_output(db: &Db, output_id: i64) -> Result<WalletOutput> {
     let blob: Vec<u8> = db
         .conn()
@@ -247,15 +247,14 @@ pub fn load_output(db: &Db, output_id: i64) -> Result<WalletOutput> {
     WalletOutput::read(&mut blob.as_slice()).map_err(|e| {
         db_err(
             "deserializeOutput",
-            format!("输出 {output_id} 的 blob 读不回来: {e}"),
+            format!("cannot read blob of output {output_id}: {e}"),
         )
     })
 }
 
-/// 交易历史，按高度倒序分页。
+/// Transaction history, paged, newest height first.
 pub fn history(db: &Db, identity_id: i64, limit: u32, offset: u32) -> Result<Value> {
-    // 限制上界：宿主传个巨大的 limit 会把整段历史读进内存，那正是我们选
-    // SQLite 想避免的事。
+    // Cap the page size so a huge limit cannot load the whole history.
     let limit = limit.clamp(1, 500);
 
     let mut stmt = db
@@ -307,7 +306,7 @@ pub fn history(db: &Db, identity_id: i64, limit: u32, offset: u32) -> Result<Val
     Ok(json!({ "items": items, "total": total, "limit": limit, "offset": offset }))
 }
 
-/// 单笔交易详情。
+/// Details of a single transaction.
 pub fn transaction_details(db: &Db, identity_id: i64, txid_hex: &str) -> Result<Value> {
     let txid = hex::decode(txid_hex).map_err(|_| {
         RuntimeError::with(
@@ -387,7 +386,7 @@ mod tests {
     ) -> i64 {
         let ki: Option<Vec<u8>> = with_key_image.then(|| {
             let mut k = vec![0u8; 32];
-            // 每个输出一个不同的 key image，免得唯一性问题掩盖 bug
+            // Distinct key image per output so uniqueness issues do not mask bugs
             k[0] = (amount % 251) as u8;
             k[1] = (height % 251) as u8;
             k
@@ -410,29 +409,28 @@ mod tests {
         db.conn().last_insert_rowid()
     }
 
-    /// 10 块锁定是共识规则，不是我们的策略 —— 未满 10 块的输出构不进环。
+    /// The 10-block lock is consensus: younger outputs cannot be used in a ring.
     #[test]
     fn the_ten_block_lock_is_enforced() {
-        assert!(!is_unlocked(100, 0, 100), "同高度必然锁定");
-        assert!(!is_unlocked(100, 0, 109), "差一块也是锁定");
-        assert!(is_unlocked(100, 0, 110), "满 10 块解锁");
+        assert!(!is_unlocked(100, 0, 100), "locked at the same height");
+        assert!(!is_unlocked(100, 0, 109), "locked one block short");
+        assert!(is_unlocked(100, 0, 110), "unlocked after 10 blocks");
     }
 
     #[test]
     fn additional_block_timelock_is_honoured() {
-        // 额外锁到 200 块：即使过了 10 块锁也还不能花
+        // Extra lock to height 200: still locked after the 10-block lock
         assert!(!is_unlocked(100, 200, 150));
         assert!(is_unlocked(100, 200, 200));
     }
 
-    /// 时间戳形式的时间锁光靠链高判断不了。保守当作仍锁定 —— 让用户等，
-    /// 好过让他构一笔必然被节点拒绝的交易。
+    /// Timestamp timelocks cannot be judged from height; treat as locked.
     #[test]
     fn timestamp_timelocks_are_treated_as_locked() {
         assert!(!is_unlocked(100, 1_700_000_000, 999_999));
     }
 
-    /// 不知道链尖时可用余额必须是 0，不能乐观放行。
+    /// With an unknown chain tip the unlocked balance must be 0.
     #[test]
     fn unknown_chain_tip_means_nothing_is_spendable() {
         let (db, id) = db_with_identity();
@@ -442,8 +440,9 @@ mod tests {
         assert_eq!(b.unlocked_atomic, 0);
     }
 
-    /// 没 key image、又进过某个环的输出**可能已经被花掉**，必须单独报出来；
-    /// 从没进过环的一定没花（花它必然要把它放进环），不能算成待核实。
+    /// Outputs without a key image seen in a ring **may be spent** and are
+    /// reported separately; never-ringed ones are certainly unspent (spending
+    /// requires a ring).
     #[test]
     fn only_outputs_seen_in_a_ring_are_pending_verification() {
         let (db, id) = db_with_identity();
@@ -461,11 +460,14 @@ mod tests {
         let b = balance(&db, id, Some(100)).unwrap();
         assert_eq!(b.total_atomic, 1_200);
         assert_eq!(b.unverifiable_atomic, 200);
-        assert_eq!(b.unlocked_atomic, 1_000, "可能已花的不算可用");
+        assert_eq!(
+            b.unlocked_atomic, 1_000,
+            "possibly spent outputs are not unlocked"
+        );
     }
 
-    /// 被在途交易预留的输出仍计入总额，但不可再次选中 —— 不锁会让同一笔
-    /// 输出被两笔交易同时花掉，第二笔必然被网络拒绝。
+    /// Reserved outputs count toward total but are not selectable, so two
+    /// sends cannot spend the same output.
     #[test]
     fn reserved_outputs_are_excluded_from_unlocked_and_from_selection() {
         let (db, id) = db_with_identity();
@@ -484,11 +486,11 @@ mod tests {
         assert_eq!(b.unlocked_atomic, 400);
 
         let spendable = spendable_rows(&db, id, 100).unwrap();
-        assert_eq!(spendable.len(), 1, "被预留的不能再被选中");
+        assert_eq!(spendable.len(), 1, "reserved outputs must not be selected");
         assert_eq!(spendable[0].amount_atomic, 400);
     }
 
-    /// 用户在确认页退出不会通知 runtime；过期的预留不能永远锁着钱。
+    /// Abandoning the confirm screen does not notify the runtime; expired reservations must release funds.
     #[test]
     fn an_expired_reservation_no_longer_holds_its_outputs() {
         let (db, id) = db_with_identity();
@@ -506,7 +508,7 @@ mod tests {
         assert_eq!(spendable_rows(&db, id, 100).unwrap().len(), 1);
     }
 
-    /// 已花的输出不再计入任何口径。
+    /// Spent outputs drop out of every balance figure.
     #[test]
     fn spent_outputs_leave_the_balance() {
         let (db, id) = db_with_identity();
@@ -518,8 +520,8 @@ mod tests {
         assert_eq!(b.total_atomic, 0);
     }
 
-    /// 自己广播还没上链的：时间取广播时间（不然每次读都是「现在」），
-    /// 金额取广播时记下的，失败要标出来。
+    /// An unconfirmed own send reports its broadcast time (not "now"), the
+    /// recorded amount, and failure.
     #[test]
     fn a_pending_send_reports_its_broadcast_time_amount_and_failure() {
         let (db, id) = db_with_identity();
@@ -537,8 +539,7 @@ mod tests {
         assert_eq!(item["outgoingAtomic"], "1234");
     }
 
-    /// 历史分页的上界必须有硬限制 —— 宿主传个巨大的 limit 会把整段历史读进
-    /// 内存，那正是选 SQLite 要避免的。
+    /// History page size has a hard cap.
     #[test]
     fn history_limit_is_clamped() {
         let (db, id) = db_with_identity();

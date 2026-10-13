@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
-# 构建浏览器可用的 wasm 包。
+# Build the browser wasm packages.
 #
-# 前置条件：
-#   1. wasm32-unknown-unknown target：rustup target add wasm32-unknown-unknown
-#   2. 支持 wasm32 的 clang。macOS 自带的 Apple clang **不支持**，会报
-#      "No available targets are compatible with triple wasm32-unknown-unknown"。
-#      用 Homebrew 的：brew install llvm
-#      （secp256k1-sys 自带 wasm sysroot，只是需要一个能产 wasm 的 clang。）
-#   3. wasm-pack：cargo install wasm-pack
+# Prerequisites:
+#   1. wasm32-unknown-unknown target: rustup target add wasm32-unknown-unknown
+#   2. A clang that targets wasm32. Apple clang does not ("No available targets
+#      are compatible with triple wasm32-unknown-unknown"); use brew install llvm.
+#      (secp256k1-sys ships its own wasm sysroot; it only needs the compiler.)
+#   3. wasm-pack: cargo install wasm-pack
 #
-# 用法：
+# Usage:
 #   bash scripts/build-wasm.sh            # release
 #   PROFILE=dev bash scripts/build-wasm.sh
 
@@ -26,7 +25,7 @@ fi
 RUST_TOOLCHAIN="$(python3 -c 'import sys, tomllib; print(tomllib.load(open(sys.argv[1], "rb"))["toolchain"]["channel"])' "${ROOT}/rust-toolchain.toml")"
 rustup run "${RUST_TOOLCHAIN}" rustc --version
 
-# 找一个能编 wasm32 的 clang
+# Find a clang that can compile for wasm32.
 pick_clang() {
   for c in "${CC_wasm32_unknown_unknown:-}" \
            /opt/homebrew/opt/llvm/bin/clang \
@@ -41,21 +40,21 @@ pick_clang() {
 }
 
 if ! CLANG="$(pick_clang)"; then
-  echo "错误：找不到支持 wasm32 的 clang。" >&2
-  echo "      macOS 请先 brew install llvm（Apple clang 不支持 wasm32 目标）。" >&2
+  echo "Error: no clang with wasm32 support found." >&2
+  echo "       On macOS run brew install llvm (Apple clang lacks the wasm32 target)." >&2
   exit 1
 fi
-echo "==> 使用 clang: ${CLANG}"
+echo "==> Using clang: ${CLANG}"
 
 export CC_wasm32_unknown_unknown="${CLANG}"
 export AR_wasm32_unknown_unknown="${AR_wasm32_unknown_unknown:-$(dirname "${CLANG}")/llvm-ar}"
 
 bash "${ROOT}/scripts/vendor-deps.sh" "$@"
 
-# --mode no-install 找不到 wasm-opt 只会打一行 INFO 然后跳过：产物不报错地胖一倍
-#（函数名段不剥、不做 -O）。release 必须有它。
+# With --mode no-install a missing wasm-opt is only an INFO line and the output
+# silently doubles in size. Release requires it.
 if [ "${PROFILE}" = "release" ] && ! command -v wasm-opt >/dev/null 2>&1; then
-  echo "✗ 找不到 wasm-opt（Binaryen），release 产物会不经优化直接输出" >&2
+  echo "✗ wasm-opt (Binaryen) not found; release output would be unoptimized" >&2
   exit 1
 fi
 
@@ -63,24 +62,24 @@ echo "==> wasm-pack build (${PROFILE})"
 cd "${ROOT}/crates/zcash-runtime"
 case "${PROFILE}" in
   release) rustup run "${RUST_TOOLCHAIN}" wasm-pack build --mode no-install --locked --target web --out-dir "${OUT}" --release ;;
-  # 优化照旧，但保留名字段。wasm 里的 panic 只给函数序号，没有它就只能靠
-  # 通读依赖去猜是谁调的 —— 而 --dev 会让 Halo2 证明慢到不可用。
+  # Optimized but keeps the name section, which wasm panic stacks need.
+  # --dev would make Halo2 proving unusably slow.
   profiling) rustup run "${RUST_TOOLCHAIN}" wasm-pack build --mode no-install --locked --target web --out-dir "${OUT}" --profiling ;;
   *) rustup run "${RUST_TOOLCHAIN}" wasm-pack build --mode no-install --locked --target web --out-dir "${OUT}" --dev ;;
 esac
 
-echo "==> 产物"
+echo "==> Artifacts"
 ls -lh "${OUT}"/*.wasm | awk '{print "   ", $9, $5}'
 
-echo "==> 构建 storage benchmark"
+echo "==> Building storage benchmark"
 (cd "${ROOT}/crates/zcash-storage-benchmark" && \
   rustup run "${RUST_TOOLCHAIN}" wasm-pack build --mode no-install --locked --target web --out-dir "${ROOT}/pkg/storage-benchmark" --release)
 
-# keys 包必须一起构建。只建 runtime 会让宿主用到过期的 keys 产物，
-# 而那种不一致极难从现象反推（接口存在、行为却是旧的）。
-echo "==> 构建 onekey-zcash-keys"
+# Always rebuild the keys package too, so the host never pairs a fresh runtime
+# with a stale keys build.
+echo "==> Building onekey-zcash-keys"
 (cd "${ROOT}/crates/zcash-keys-runtime" && rustup run "${RUST_TOOLCHAIN}" wasm-pack build --mode no-install --locked --target web --out-dir "${ROOT}/pkg-keys" --release)
-echo "产物：$(du -h "${ROOT}"/pkg/*.wasm "${ROOT}"/pkg-keys/*.wasm "${ROOT}"/pkg/storage-benchmark/*.wasm | tr '\n' ' ')"
+echo "Artifacts: $(du -h "${ROOT}"/pkg/*.wasm "${ROOT}"/pkg-keys/*.wasm "${ROOT}"/pkg/storage-benchmark/*.wasm | tr '\n' ' ')"
 
 if [ "${OUT}" = "${ROOT}/pkg" ]; then
   python3 "${ROOT}/scripts/package-release.py" prepare

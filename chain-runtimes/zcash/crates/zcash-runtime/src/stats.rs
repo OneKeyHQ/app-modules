@@ -1,14 +1,12 @@
-//! 存储用量统计。**只读，固定 SQL，不改任何数据。**
+//! Storage usage stats. Read-only, fixed SQL.
 //!
-//! 存在的理由：`diagSelfCheck` 只能报出表 / 视图 / 索引的**数量**，答不了
-//! 「哪一组数据占了多少字节」。没有这个数，任何裁剪都是盲改 —— 先量再改。
+//! Reports bytes per data group, which `diagSelfCheck` (object counts only) cannot.
 //!
-//! 刻意**不**提供「执行任意 SQL」的接口：那等于把数据库交给宿主，
-//! 一条写错的语句就能删掉仍待证明的 anchor。这里的每条查询都是写死的。
+//! There is deliberately no arbitrary-SQL entry point: one bad statement could
+//! delete anchors still needed for proving.
 //!
-//! 所有 SQL 里的表名与列名都来自 `wallet.rs::tests::dump_schema` 的实测输出，
-//! 不是照文档抄的 —— 表名写错时 SQLite 会报错而不是安静返回 0，但列名写错
-//! 在某些聚合下会返回 NULL，所以两者都必须对着真实 schema 核过。
+//! Table and column names come from `wallet.rs::tests::dump_schema`. A wrong
+//! column name can yield NULL under some aggregates instead of an error.
 
 use crate::error::{ErrorCode, Result, RuntimeError};
 use rusqlite::Connection;
@@ -24,7 +22,7 @@ fn count(conn: &Connection, sql: &str, op: &str) -> Result<i64> {
         .map_err(|e| db_err(op, e))
 }
 
-/// `SUM` 在空表上返回 NULL，直接 `get::<i64>` 会失败 —— 用 Option 接住并归零。
+/// `SUM` over an empty table is NULL; map it to 0.
 fn sum(conn: &Connection, sql: &str, op: &str) -> Result<i64> {
     conn.query_row(sql, [], |r| r.get::<_, Option<i64>>(0))
         .map(|v| v.unwrap_or(0))
@@ -37,11 +35,11 @@ fn opt_i64(conn: &Connection, sql: &str, op: &str) -> Result<Value> {
         .map_err(|e| db_err(op, e))
 }
 
-/// 一棵树的用量。三个池的表名只差前缀，所以共用这一段。
+/// Usage for one pool's tree; pool tables differ only by prefix.
 fn tree_stats(conn: &Connection, prefix: &str) -> Result<Value> {
     Ok(json!({
         "shards": count(conn, &format!("SELECT COUNT(*) FROM {prefix}_tree_shards"), "shards")?,
-        // shard_data 是聚合后的树分片，通常是数据库里最大的 BLOB 列。
+        // shard_data is usually the largest BLOB column in the database.
         "shardBytes": sum(
             conn,
             &format!("SELECT SUM(LENGTH(shard_data)) FROM {prefix}_tree_shards"),
@@ -52,9 +50,8 @@ fn tree_stats(conn: &Connection, prefix: &str) -> Result<Value> {
             &format!("SELECT COUNT(*) FROM {prefix}_tree_checkpoints"),
             "checkpoints",
         )?,
-        // ZIP-318 的 durable anchor。它们**不受**普通 100 深度上限约束，
-        // 而 runtime 目前没有任何回收路径，所以这个数只会单调增长 ——
-        // 这正是需要先量出来的东西。
+        // ZIP-318 durable anchors. Not bound by the 100-checkpoint limit and
+        // never pruned by the runtime, so this only grows.
         "retained": count(
             conn,
             &format!("SELECT COUNT(*) FROM {prefix}_tree_retained_checkpoints"),
@@ -68,9 +65,9 @@ fn tree_stats(conn: &Connection, prefix: &str) -> Result<Value> {
     }))
 }
 
-/// 分组统计当前钱包库的用量，JSON 字符串。
+/// Storage usage of the wallet database by group, as a JSON string.
 pub fn storage_stats(conn: &Connection) -> Result<String> {
-    // 总量走 PRAGMA：`dbstat` 虚拟表未必编进当前 SQLite，PRAGMA 一定在。
+    // Totals use PRAGMA; the `dbstat` virtual table may not be compiled in.
     let page_size = count(conn, "PRAGMA page_size", "pageSize")?;
     let page_count = count(conn, "PRAGMA page_count", "pageCount")?;
     let free_pages = count(conn, "PRAGMA freelist_count", "freelistCount")?;
@@ -80,16 +77,15 @@ pub fn storage_stats(conn: &Connection) -> Result<String> {
             "pageSize": page_size,
             "pageCount": page_count,
             "freePages": free_pages,
-            // 页数 × 页大小。这是**逻辑**大小，不等于 IndexedDB 的物理占用 ——
-            // 那边有写放大、旧版本页和异步刷盘，两个数不该互相外推。
+            // Logical size only; IndexedDB physical usage differs (write
+            // amplification, stale pages, async flushes).
             "logicalBytes": page_size * page_count,
         },
         "scan": {
             "minHeight": opt_i64(conn, "SELECT MIN(height) FROM blocks", "minHeight")?,
             "maxHeight": opt_i64(conn, "SELECT MAX(height) FROM blocks", "maxHeight")?,
-            // 严格随「已扫块数」线性增长，是最明确的线性项。
-            // 注意：它不是 compact block 本身，每行只有 height/hash/time 和三池的
-            // 树大小与 action 计数。
+            // Grows linearly with scanned blocks. Rows hold height/hash/time and
+            // per-pool tree sizes and action counts, not compact blocks.
             "blockRows": count(conn, "SELECT COUNT(*) FROM blocks", "blockRows")?,
             "rangeRows": count(conn, "SELECT COUNT(*) FROM scan_queue", "rangeRows")?,
         },
@@ -102,7 +98,7 @@ pub fn storage_stats(conn: &Connection) -> Result<String> {
             "accounts": count(conn, "SELECT COUNT(*) FROM accounts", "accounts")?,
             "addresses": count(conn, "SELECT COUNT(*) FROM addresses", "addresses")?,
             "transactions": count(conn, "SELECT COUNT(*) FROM transactions", "transactions")?,
-            // 完整交易字节，只在本钱包构造或做过 enhancement 后才有。
+            // Full transaction bytes, present only for own or enhanced transactions.
             "rawTxBytes": sum(conn, "SELECT SUM(LENGTH(raw)) FROM transactions", "rawTxBytes")?,
             "notes": count(
                 conn,
@@ -125,8 +121,8 @@ pub fn storage_stats(conn: &Connection) -> Result<String> {
                 "transparentOutputs",
             )?,
         },
-        // 有界或有删除路径的几组。官方把 nullifier_map 裁到最近 100 块，
-        // 所以这里的数**不该**随链头无限增长 —— 长了说明裁剪没生效。
+        // Bounded or pruned groups. Upstream prunes nullifier_map to the last
+        // 100 blocks, so steady growth here means pruning is not working.
         "transient": {
             "nullifiers": count(conn, "SELECT COUNT(*) FROM nullifier_map", "nullifiers")?,
             "locators": count(conn, "SELECT COUNT(*) FROM tx_locator_map", "locators")?,
@@ -152,7 +148,7 @@ pub fn storage_stats(conn: &Connection) -> Result<String> {
                 "SELECT COUNT(*) FROM orchard_ironwood_migration_transactions",
                 "migrationTxs",
             )?,
-            // 在途 migration 的 PCZT 可能不小，且按次数单调增长。
+            // In-flight migration PCZTs can be large and grow with each run.
             "pcztBytes": sum(
                 conn,
                 "SELECT SUM(LENGTH(pczt)) FROM orchard_ironwood_migration_transactions",
@@ -211,20 +207,19 @@ pub fn database_health(conn: &Connection) -> Result<String> {
 mod tests {
     use super::*;
 
-    /// 空库上跑一遍。目的不是看数字，是证明**每条 SQL 的表名和列名都真实存在** ——
-    /// 写错的话 SQLite 会在这里报错，而不是等到线上安静地返回 0。
+    /// Runs on an empty database to prove every table and column in the SQL exists.
     #[test]
     fn every_query_matches_the_real_schema() {
         let path = std::env::temp_dir().join("zr-stats-schema-check.sqlite");
         let _ = std::fs::remove_file(&path);
-        let db = crate::wallet::open_and_migrate("test", path.to_str().unwrap()).expect("迁移");
+        let db = crate::wallet::open_and_migrate("test", path.to_str().unwrap()).expect("migrate");
         drop(db);
 
-        let conn = crate::storage::open_connection(path.to_str().unwrap()).expect("开连接");
-        let out = storage_stats(&conn).expect("统计不应失败");
-        let v: Value = serde_json::from_str(&out).expect("应是合法 JSON");
+        let conn = crate::storage::open_connection(path.to_str().unwrap()).expect("open");
+        let out = storage_stats(&conn).expect("storage stats");
+        let v: Value = serde_json::from_str(&out).expect("valid JSON");
 
-        // 空库也必须报出结构，而不是缺字段。
+        // An empty database still reports every field.
         for group in [
             "sqlite",
             "scan",
@@ -233,7 +228,7 @@ mod tests {
             "transient",
             "poolMigration",
         ] {
-            assert!(v.get(group).is_some(), "缺少分组 {group}");
+            assert!(v.get(group).is_some(), "missing group {group}");
         }
         for pool in ["sapling", "orchard", "ironwood"] {
             let t = &v["trees"][pool];
@@ -244,13 +239,13 @@ mod tests {
                 "retained",
                 "marksRemoved",
             ] {
-                assert!(t.get(k).is_some(), "{pool} 缺少 {k}");
+                assert!(t.get(k).is_some(), "{pool} missing {k}");
             }
         }
-        // 空库没有扫过块，高度必须是 null 而不是 0 —— 0 会被误读成「扫到创世块」。
+        // Unscanned heights are null, not 0, which would read as genesis.
         assert!(v["scan"]["minHeight"].is_null());
         assert!(v["scan"]["maxHeight"].is_null());
-        // 页大小必须是真数，否则 logicalBytes 没有意义。
+        // A real page size, or logicalBytes is meaningless.
         assert!(v["sqlite"]["pageSize"].as_i64().unwrap_or(0) > 0);
         assert!(v["sqlite"]["logicalBytes"].as_i64().unwrap_or(0) > 0);
 

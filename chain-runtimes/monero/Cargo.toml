@@ -8,29 +8,28 @@ edition = "2021"
 license = "Apache-2.0"
 rust-version = "1.85"
 
-# ── monero-oxide：独立 Rust 实现，MIT，no_std ────────────────────────────
+# ── monero-oxide: independent Rust implementation, MIT, no_std ───────────
 #
-# 选它而不是 wallet2 的理由见 development/research。要点：四端统一 wasm、
-# 产物约 226 KB、不需要跨源隔离、不需要 C++ 交叉编译链。
+# Chosen over wallet2 (see development/research): one wasm build for all
+# platforms, ~226 KB output, no cross-origin isolation, no C++ cross toolchain.
 #
-# 代价是它**不提供任何存储层**：`Scanner` 是纯函数（register_subaddress +
-# scan(block) -> outputs），钱包状态全部由我们自己落 SQLite。这个工作区存在
-# 的意义就是那一层。
+# It has no storage layer: `Scanner` is pure (register_subaddress +
+# scan(block) -> outputs). This workspace persists wallet state to SQLite.
 [workspace.dependencies]
 monero-wallet = { version = "0.2", default-features = false, features = ["std"] }
 monero-address = { version = "0.1", default-features = false, features = ["std"] }
 monero-daemon-rpc = { version = "0.2", default-features = false, features = ["std"] }
 monero-interface = { version = "0.2", default-features = false, features = ["std"] }
-# get_blocks.bin 的请求与解析（blocks_bin.rs）。与 monero-daemon-rpc 用同一个。
+# get_blocks.bin request and parsing (blocks_bin.rs); same version as monero-daemon-rpc uses.
 monero-epee = { version = "0.2", default-features = false }
 
-# SQLite on wasm：与 Zcash runtime 同一套组合。rusqlite 不开 "bundled"
-# （那会在构建期编译 SQLite 的 C 源码，而 wasm32 没有 libc sysroot），
-# 改由 sqlite-wasm-rs 提供 sqlite3 符号。
+# SQLite on wasm, same setup as the Zcash runtime. rusqlite without "bundled"
+# (wasm32 has no libc sysroot for SQLite's C sources); sqlite-wasm-rs provides
+# the sqlite3 symbols.
 rusqlite = { version = "0.37", default-features = false }
 sqlite-wasm-rs = "0.5"
-# OPFS 同步访问 VFS。Zcash runtime 那边 vendor 了一份带落盘屏障补丁的，
-# 这里先用发布版；等两条链都落 main，VFS 与 build.rs 一起抽成共享件。
+# OPFS sync-access VFS. The Zcash runtime vendors a copy patched with a
+# durability barrier; this uses the released crate.
 sqlite-wasm-vfs = "0.2"
 
 serde = { version = "1", features = ["derive"] }
@@ -38,7 +37,7 @@ serde_json = "1"
 thiserror = "2"
 hex = "0.4"
 rand_core = { version = "0.6", features = ["getrandom"] }
-# 必须与 monero-oxide 用的同一大版本，否则 Scalar/Point 类型对不上。
+# Must match monero-oxide's major version so Scalar/Point types line up.
 curve25519-dalek = { version = "4", default-features = false }
 zeroize = { version = "1", features = ["zeroize_derive"] }
 
@@ -47,10 +46,10 @@ gloo-timers = { version = "0.3", features = ["futures"] }
 js-sys = "0.3"
 wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = ["Request", "RequestInit", "Response", "Headers"] }
-# 原生侧只用于本机诊断与集成测试，不进出厂产物 —— 用默认 feature 就好。
-# 关掉默认 feature 会让连接在传输层直接失败（实测：curl 通、它不通）。
+# Native-only (diagnostics and integration tests), not shipped. Keep default
+# features: without them connections fail at the transport layer.
 reqwest = "0.12"
 futures-lite = "2"
 futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
-# 原生传输走 reqwest，它要 Tokio reactor；集成测试因此需要一个运行时。
+# reqwest needs a Tokio reactor, so native integration tests need a runtime.
 tokio = { version = "1", features = ["rt", "macros", "time"] }

@@ -14,11 +14,10 @@ use zcash_primitives::transaction::builder::{BuildConfig, Builder, BundlePadding
 use zcash_primitives::transaction::fees::fixed::FeeRule as FixedFeeRule;
 use zcash_protocol::memo::MemoBytes;
 
-/// 本模块实际提供的入口。定义在实现旁边，删改实现必然改到这里。
+/// Entry points this module provides, kept next to the implementation.
 ///
-/// 宿主必须先查能力再调：这四个函数是后加的，装到旧 wasm 时缺的是导出本身，
-/// 直接调只会得到 `undefined is not a function` —— 那看起来像 app 崩了，
-/// 而不是一次「本版本不支持」。
+/// Hosts must check these capabilities before calling: older wasm builds lack
+/// the exports entirely, so a direct call fails with `undefined is not a function`.
 pub const SHIELD_CREATE_WITH_SEED: bool = true;
 pub const SHIELD_CREATE_WITH_ACCOUNT_XPRV: bool = true;
 pub const SHIELD_SIGN_WITH_SEED: bool = true;
@@ -688,12 +687,12 @@ mod tests {
             let request = request.to_string();
             let quote: Value = serde_json::from_str(&quote_json(&request).unwrap()).unwrap();
             let folded = 100_000 - amount.parse::<u64>().unwrap();
-            assert_eq!(quote["feeZat"], folded.to_string(), "零头应当并进手续费");
+            assert_eq!(quote["feeZat"], folded.to_string(), "surplus goes to fee");
             if hardware {
                 create_with_account_xpub(&request, &account_xpub(), &fingerprint)
-                    .expect("硬件路径按报价的手续费构造");
+                    .expect("hardware path builds with the quoted fee");
             } else {
-                create(&request, &SEED).expect("软件路径按报价的手续费构造");
+                create(&request, &SEED).expect("software path builds with the quoted fee");
             }
         }
     }
@@ -924,12 +923,11 @@ mod tests {
         }
     }
 
-    /// `pcztSignWithSeed` 是通用签名入口，PCZT 从宿主传进来。上游 `Signer` 的
-    /// 文档把语义校验的责任明确留给调用方，所以那一侧必须自己守 `SIGHASH_ALL`：
-    /// 非 ALL 的签名盖不住输出，拿到已签交易的人能改收款地址。
+    /// `pcztSignWithSeed` signs host-supplied PCZTs, and upstream `Signer` leaves
+    /// semantic checks to the caller, so it must enforce `SIGHASH_ALL` itself.
     ///
-    /// 正向用例同时钉住另一件事：屏蔽 PCZT 的 ironwood action 只有输出、
-    /// 没有可签的 spend，**部分池签不上是正常的**，不能改成「每池全签」。
+    /// The positive case also pins that a pool with nothing signable is fine: the
+    /// shielding PCZT's Ironwood actions are outputs only.
     #[test]
     fn generic_signer_requires_sighash_all_on_transparent_inputs() {
         use zcash_protocol::consensus::Network;
@@ -938,17 +936,17 @@ mod tests {
         let original = create(&request, &SEED).unwrap();
 
         crate::sign::sign_pczt_with_seed(Network::MainNetwork, &SEED, 0, &original)
-            .expect("未改动的屏蔽 PCZT 应当能签");
+            .expect("unmodified shielding PCZT must sign");
 
         let modified = mutate(&original, |value| {
             value["transparent"]["inputs"][0]["sighash_type"] = 2.into();
         });
         let e = crate::sign::sign_pczt_with_seed(Network::MainNetwork, &SEED, 0, &modified)
-            .expect_err("sighash_type 不是 ALL 必须拒签");
+            .expect_err("non-ALL sighash_type must be rejected");
         assert_eq!(e.code, ErrorCode::PcztSignFailed);
         assert!(
             format!("{:?}", e.detail).contains("transparentInputSighashNotAll"),
-            "应指出是 sighash 策略问题，实际 {e:?}"
+            "expected a sighash policy error, got {e:?}"
         );
     }
 

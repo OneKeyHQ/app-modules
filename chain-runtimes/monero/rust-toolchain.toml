@@ -1,10 +1,5 @@
-# 跟当前 stable 走，不钉死版本号。
-#
-# 这**不是** MSRV —— crate 声明的最低版本是 1.85（见 Cargo.toml 的
-# `rust-version`）。若用 mise 等工具管理 Rust，请让它同样跟随 stable，
-# 否则这里的声明与实际使用的工具链会不一致。
-#
-# 如果将来需要可复现的 wasm 产物（逐字节一致），再换成具体版本号。
+# Tracks current stable. This is not the MSRV, which is `rust-version` in
+# Cargo.toml (1.85). Pin a version if byte-reproducible wasm builds are needed.
 [toolchain]
 channel = "stable"
 profile = "minimal"

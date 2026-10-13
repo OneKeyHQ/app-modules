@@ -1,10 +1,8 @@
-//! 跨调用的运行时状态。
+//! Cross-call runtime state.
 //!
-//! 按边界原则，wasm 侧**不持有会话状态** —— 唯一的例外是那个数据库连接和
-//! lightwalletd 客户端，因为每次调用都重开代价太高（重开要重跑一遍迁移检查）。
-//!
-//! 除此之外没有任何缓存、没有定时器、没有后台任务。宿主 TS 每调一次，
-//! 这里就完整做完一次并返回。
+//! Only the database connection and the lightwalletd client are kept, since
+//! reopening per call would rerun migration checks. No caches, timers or
+//! background tasks.
 
 use std::cell::{Cell, RefCell};
 
@@ -15,37 +13,34 @@ use crate::wallet::Db;
 thread_local! {
     static DB: RefCell<Option<Db>> = const { RefCell::new(None) };
     static CLIENT: RefCell<Option<LightClient>> = const { RefCell::new(None) };
-    // 历史查询走 v_transactions 视图，而 WalletDb 不对外暴露内部连接，
-    // 所以记住库名，需要时另开一条只读连接（同 VFS、同库名 = 同一份数据）。
+    // WalletDb does not expose its connection, so history queries on
+    // v_transactions open a separate read connection by name (same VFS, same data).
     static DB_NAME: RefCell<Option<String>> = const { RefCell::new(None) };
 
-    // ── 并发防线 ────────────────────────────────────────────────────────
+    // ── Reentrancy guard ────────────────────────────────────────────────
     //
-    // 异步操作会把 DB 从这里**取走**，跨 await 持有，结束后放回。这中间宿主
-    // 完全可以再发起别的调用 —— wasm 是单线程，但 await 让重入变得可能。
+    // Async operations take DB out, hold it across awaits and put it back; the
+    // host can call in meanwhile. Unguarded race:
+    //   1. A is in syncStep with DB(A) taken
+    //   2. B calls openWallet(B); DB_NAME becomes B
+    //   3. A finishes and puts DB(A) back while DB_NAME says B
+    // Every later call then silently hits the wrong wallet, possibly spending
+    // A's notes in B's transactions.
     //
-    // 没有防线时的真实竞态：
-    //   1. A 在 syncStep，DB(A) 已被取走
-    //   2. B 调 openWallet(B)，DB_NAME 变成 B
-    //   3. A 结束，把 DB(A) 放回 —— 此刻 DB_NAME 说 B，实际却是 A
-    // 之后所有操作都在错误的库上进行，而且看不出来：历史串库、余额串库、
-    // 甚至可能用 A 的 note 去发 B 的交易。
-    //
-    // 防线主力是 BUSY：它在期间拒绝一切会切换钱包的操作。GENERATION 是它后面
-    // 的兜底，但**当前不可达** —— 采样发生在置位 BUSY 之后，而 set_db/close 都
-    // 被 BUSY 挡住，世代号在守卫存活期间不可能变。留着是为了将来出现「跨 await
-    // 却不持 BUSY」的路径时仍有第二道，不要据此认为现在有两道独立防线。
+    // BUSY is the real guard: it refuses wallet switches meanwhile. GENERATION is
+    // a fallback that is currently unreachable (it is sampled after BUSY is set
+    // and set_db/close are blocked by BUSY); it covers future paths that await
+    // without holding BUSY. It is not a second independent guard today.
     static BUSY: Cell<bool> = const { Cell::new(false) };
     static GENERATION: Cell<u64> = const { Cell::new(0) };
 
-    // 客户端有自己的世代号。DB 的那道防线盖不住它：`setLightwalletdUrl` 换端点
-    // 时**不**碰 DB，GENERATION 不动，于是一次在途的 `getChainTip` 结束后会把
-    // 旧端点原样盖回去，之后所有同步都在跟上一个网络的 lightwalletd 说话。
+    // The client has its own generation: `setLightwalletdUrl` does not touch DB,
+    // so without it an in-flight `getChainTip` would restore the old endpoint.
     static CLIENT_GENERATION: Cell<u64> = const { Cell::new(0) };
 }
 
-/// 取走客户端前采样；放回前比对。不相等说明期间端点被换掉或关掉了，手上这个
-/// 已经作废 —— 丢弃它，而不是覆盖当前的。
+/// Sampled before taking the client and compared before putting it back; a
+/// mismatch means the endpoint changed or closed, so the stale client is dropped.
 fn client_generation() -> u64 {
     CLIENT_GENERATION.with(Cell::get)
 }
@@ -56,7 +51,7 @@ fn put_client_back(client: LightClient, sampled: u64) {
     }
 }
 
-/// 正在进行一次异步操作时，任何切换钱包的调用都必须被拒绝。
+/// Refuses wallet-switching calls while an async operation is running.
 fn assert_idle(operation: &str) -> Result<()> {
     if BUSY.with(Cell::get) {
         return Err(RuntimeError::with(
@@ -67,22 +62,20 @@ fn assert_idle(operation: &str) -> Result<()> {
     Ok(())
 }
 
-/// 持有期间标记 BUSY，析构时**一定**清除 —— 包括提前返回和 panic 展开。
+/// Sets BUSY while held and always clears it on drop, including early returns
+/// and panic unwinds.
 ///
-/// ## 它覆盖哪个窗口，不覆盖哪个
+/// A wasm-bindgen `async fn` body starts only after the current synchronous
+/// block, so there are two windows:
 ///
-/// wasm-bindgen 的 `async fn` 返回的 Promise 是排进微任务队列的，函数体要等
-/// 当前同步块结束才开始跑。所以存在两个不同的窗口：
+/// - **After the call, before the body runs**: nothing is taken yet, so
+///   `openWallet` succeeds and the operation runs on the new wallet. The host's
+///   `withWalletLease` serializes this; the runtime cannot without making exports
+///   return Promises synchronously (typing every result as `any`).
+/// - **During awaits in the body**: DB is taken; BUSY blocks switching or closing.
 ///
-/// - **调用之后、函数体开始之前**：此时还没取走任何东西，`openWallet` 会成功，
-///   随后那次操作作用在新库上。这是调用方的时序错误，由宿主侧的租约
-///   （`withWalletLease`）负责序列化，runtime 这里拦不住 —— 拦得住的唯一办法是
-///   把导出改成同步返回 Promise，代价是所有返回值退化成 `any`，不值得。
-/// - **函数体开始之后、await 期间**：DB 已被取走，此时切库/关库才是真正危险的，
-///   这个窗口由 BUSY 拦住。
-///
-/// 不变量则由 generation 独立保证：无论哪个窗口，异步返回时都不会用一个
-/// 已经作废的钱包覆盖当前的。
+/// Generation ensures that in either window a stale wallet never overwrites the
+/// current one.
 struct BusyGuard {
     generation: u64,
 }
@@ -92,13 +85,13 @@ impl BusyGuard {
         assert_idle(operation)?;
         BUSY.with(|b| b.set(true));
         Ok(Self {
-            // 采样点就是「取走 DB 的那一刻」—— 早于此的切库不算陈旧，
-            // 那只是这次操作作用在了新库上；晚于此的才是。
+            // Sampled when DB is taken: a switch before this is not stale (the
+            // operation just runs on the new wallet); one after is.
             generation: GENERATION.with(Cell::get),
         })
     }
 
-    /// 这次操作开始之后，钱包有没有被换掉/关掉。
+    /// Whether the wallet was switched or closed since the operation started.
     fn stale(&self) -> bool {
         self.generation != GENERATION.with(Cell::get)
     }
@@ -122,8 +115,8 @@ fn not_open() -> RuntimeError {
     RuntimeError::new(ErrorCode::WalletNotOpen)
 }
 
-/// 库不在手上时说清楚是哪种：被一次异步操作借走（稍后重试即可）还是真没开
-/// （宿主要重开）。混成 NOT_OPEN 会让宿主在扫链途中把一个好好的钱包重开一遍。
+/// Distinguishes a DB borrowed by an async operation (retry later) from one
+/// not open (host must reopen), so the host does not reopen a wallet mid-sync.
 fn db_unavailable(operation: &str) -> RuntimeError {
     if BUSY.with(Cell::get) {
         RuntimeError::with(
@@ -139,8 +132,8 @@ fn no_client() -> RuntimeError {
     RuntimeError::new(ErrorCode::LightwalletdNotConfigured)
 }
 
-/// 打开钱包。正在进行异步操作时会被拒绝 —— 中途换库会让那次操作把结果写到
-/// 错误的地方，而且没有任何迹象。
+/// Opens a wallet. Refused during an async operation, which would otherwise
+/// silently write its results to the wrong wallet.
 pub fn set_db(db: Db, db_name: &str) -> Result<()> {
     assert_idle("openWallet")?;
     DB.with(|c| *c.borrow_mut() = Some(db));
@@ -149,7 +142,7 @@ pub fn set_db(db: Db, db_name: &str) -> Result<()> {
     Ok(())
 }
 
-/// 另开一条连接做只读查询（历史等）。
+/// Opens a separate connection for read-only queries such as history.
 pub fn with_read_conn<T>(f: impl FnOnce(&rusqlite::Connection) -> Result<T>) -> Result<T> {
     let name = DB_NAME.with(|c| c.borrow().clone()).ok_or_else(not_open)?;
     let conn = crate::storage::open_connection(&name)?;
@@ -161,10 +154,10 @@ pub fn set_client(client: LightClient) {
     bump_client_generation();
 }
 
-/// 借出数据库做一次同步操作。
+/// Lends the database for a synchronous operation.
 ///
-/// 用「取出 → 使用 → 放回」而不是长期持有 `RefCell` 借用，
-/// 这样即便 `f` 里再次进入本模块也不会 panic。
+/// Take, use, put back rather than holding a `RefCell` borrow, so reentry from
+/// `f` does not panic.
 pub fn with_db<T>(f: impl FnOnce(&mut Db) -> Result<T>) -> Result<T> {
     let mut db = DB
         .with(|c| c.borrow_mut().take())
@@ -174,17 +167,16 @@ pub fn with_db<T>(f: impl FnOnce(&mut Db) -> Result<T>) -> Result<T> {
     out
 }
 
-/// 借出数据库与网络客户端做一次异步操作（扫链、导入账户）。
+/// Lends the database and client for an async operation (sync, account import).
 ///
-/// 同样是取出再放回 —— 异步过程中不持有任何 `RefCell` 借用，
-/// 这是在 wasm 单线程上跨 await 安全共享状态的关键。
+/// No `RefCell` borrow is held across awaits.
 pub async fn with_db_and_client<T, F, Fut>(f: F) -> Result<T>
 where
     F: FnOnce(Db, LightClient) -> Fut,
     Fut: std::future::Future<Output = (Db, LightClient, Result<T>)>,
 {
-    // 先拿锁再取 DB，两者之间没有 await，所以 generation 的采样点与取走 DB
-    // 是同一时刻 —— 这正是「陈旧」判定成立的前提。
+    // No await between acquiring the guard and taking DB, so the generation is
+    // sampled at the moment DB is taken; staleness relies on this.
     let guard = BusyGuard::acquire("walletOperation")?;
     let client_gen = client_generation();
     let db = DB.with(|c| c.borrow_mut().take()).ok_or_else(not_open)?;
@@ -198,8 +190,8 @@ where
 
     let (db, client, out) = f(db, client).await;
 
-    // 期间钱包被换掉/关掉时，**丢弃**手上这个而不是放回去。
-    // 放回去等于让一个已经作废的钱包覆盖当前的，那正是串库的源头。
+    // If the wallet was switched or closed meanwhile, drop this one rather than
+    // overwrite the current wallet with a stale one.
     if guard.stale() {
         drop(db);
     } else {
@@ -209,11 +201,11 @@ where
     out
 }
 
-/// 只借出网络客户端，**不要求钱包库已打开**。
+/// Lends only the client; no wallet needs to be open.
 ///
-/// 建新账户时链尖是先决条件：宿主要用它定 birthday，而那一刻库还没建。
-/// 如果取链尖也要求先开库，这条路必然失败、失败又被吞成 null，
-/// 结果 birthday 退回 Sapling 激活高度，新助记词也要从头扫。
+/// New accounts need the chain tip for their birthday before the database
+/// exists. Requiring an open wallet here would fall back to the Sapling
+/// activation birthday and force a full scan.
 pub async fn with_client<T, F, Fut>(f: F) -> Result<T>
 where
     F: FnOnce(LightClient) -> Fut,
@@ -228,15 +220,15 @@ where
     result
 }
 
-/// 当前打开的库名。删除库前要用它判断是不是正在用的那个。
+/// Name of the open database, checked before deleting a database.
 pub fn open_db_name() -> Option<String> {
     DB_NAME.with(|c| c.borrow().clone())
 }
 
-/// 关闭钱包，释放数据库与客户端。用于账户删除或切换网络。
+/// Closes the wallet, releasing the database and client (account removal,
+/// network switch).
 ///
-/// 异步操作进行中会被拒绝：那次操作手上还握着 DB，此时清空只会让它结束后
-/// 把一个本该消失的钱包放回来。
+/// Refused during an async operation, which holds DB and would put it back.
 pub fn close() -> Result<()> {
     assert_idle("closeWallet")?;
     DB.with(|c| *c.borrow_mut() = None);

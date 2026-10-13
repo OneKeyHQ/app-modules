@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 #
-# 构建 wasm 产物到 pkg/。
+# Build the wasm package into pkg/.
 #
-# 前置：
-#   1. rustup（toolchain 由 rust-toolchain.toml 锁定）
-#   2. wasm-pack：cargo install wasm-pack
-#   3. **llvm-ar** —— macOS 自带的 /usr/bin/ar 读不懂 wasm 目标文件，会把编译好
-#      的 .o 静默打成空归档，链接期报一串 `undefined symbol: sqlite3_*`。
-#      归档器由 .cargo/config.toml 指定，这里只做存在性检查给出可读提示。
+# Requires:
+#   1. rustup (toolchain set by rust-toolchain.toml)
+#   2. wasm-pack: cargo install wasm-pack
+#   3. llvm-ar, configured in .cargo/config.toml. macOS /usr/bin/ar silently
+#      writes empty archives for wasm objects (`undefined symbol: sqlite3_*`).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -16,16 +15,16 @@ OUT="${ROOT}/pkg"
 
 AR="$(sed -n 's/^AR_wasm32_unknown_unknown = "\(.*\)"/\1/p' "${ROOT}/.cargo/config.toml")"
 if [[ -n "${AR}" && ! -x "${AR}" ]]; then
-  echo "✗ 找不到 ${AR}" >&2
-  echo "  wasm 目标需要 llvm-ar；系统自带的 ar 会静默产出空归档。" >&2
-  echo "  装一个：brew install llvm" >&2
+  echo "✗ ${AR} not found" >&2
+  echo "  wasm targets need llvm-ar; the system ar silently writes empty archives." >&2
+  echo "  install it: brew install llvm" >&2
   exit 1
 fi
 
-# --mode no-install 找不到 wasm-opt 只会打一行 INFO 然后跳过：产物不报错地胖
-#（函数名段不剥、不做 -O）。release 必须有它。
+# With --mode no-install, a missing wasm-opt is only logged and skipped, leaving
+# an unoptimized output. Release builds require it.
 if [ "${PROFILE}" = "release" ] && ! command -v wasm-opt >/dev/null 2>&1; then
-  echo "✗ 找不到 wasm-opt（Binaryen），release 产物会不经优化直接输出" >&2
+  echo "✗ wasm-opt (Binaryen) not found; the release build would be unoptimized" >&2
   exit 1
 fi
 
@@ -37,5 +36,5 @@ case "${PROFILE}" in
   *) wasm-pack build --mode no-install --locked --target web --out-dir "${OUT}" --dev ;;
 esac
 
-echo "==> 产物"
+echo "==> output"
 du -h "${OUT}"/*.wasm

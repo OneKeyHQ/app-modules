@@ -1,10 +1,8 @@
-//! 跨调用的会话状态。
+//! Session state across calls.
 //!
-//! 按边界原则，wasm 侧**不持有会话状态** —— 唯一的例外是数据库连接和节点
-//! 客户端，因为每次调用都重开代价太高（重开要重跑一遍迁移检查）。
-//!
-//! 除此之外没有缓存、没有定时器、没有后台任务。宿主每调一次，这里完整做完
-//! 一次并返回。
+//! The wasm side holds no session state except the database connection and
+//! node client, which are too costly to reopen per call (migration checks).
+//! No caches, timers or background tasks: each host call runs to completion.
 
 use std::cell::{Cell, RefCell};
 
@@ -16,26 +14,26 @@ use monero_wallet::address::Network;
 thread_local! {
     static DB: RefCell<Option<Db>> = const { RefCell::new(None) };
     static DAEMON: RefCell<Option<Daemon>> = const { RefCell::new(None) };
-    /// 当前节点所在的网络，连接时按创世块认定。与 DAEMON 同进同出。
+    /// Network of the current node, from its genesis block at connect. Set and cleared with DAEMON.
     static DAEMON_NETWORK: Cell<Option<Network>> = const { Cell::new(None) };
     static DB_NAME: RefCell<Option<String>> = const { RefCell::new(None) };
 
-    // ── 并发防线 ────────────────────────────────────────────────────────
+    // ── Concurrency guards ──────────────────────────────────────────────
     //
-    // 异步操作会把 DB 从这里**取走**，跨 await 持有，结束后放回。这中间宿主
-    // 完全可以再发起别的调用 —— wasm 是单线程，但 await 让重入变得可能。
+    // Async operations take DB out of here across awaits and put it back
+    // after. wasm is single-threaded, but awaits allow re-entrant host calls.
     //
-    // 没有防线时的真实竞态：
-    //   1. A 在扫链，DB(A) 已被取走
-    //   2. B 调 openWallet(B)，DB_NAME 变成 B
-    //   3. A 结束，把 DB(A) 放回 —— 此刻 DB_NAME 说 B，实际却是 A
-    // 之后所有操作都在错误的库上进行，而且看不出来。
+    // Race without guards:
+    //   1. A is scanning with DB(A) taken
+    //   2. B calls openWallet(B); DB_NAME becomes B
+    //   3. A finishes and puts DB(A) back, while DB_NAME says B
+    // Every later operation then silently hits the wrong database.
     static BUSY: Cell<bool> = const { Cell::new(false) };
     static GENERATION: Cell<u64> = const { Cell::new(0) };
 
-    // 节点客户端有**自己的**世代号。DB 那道防线盖不住它：换节点时不碰 DB，
-    // GENERATION 不动，于是一次在途的取链尖结束后会把旧节点原样盖回去，
-    // 之后所有请求都发给上一个节点。
+    // The node client has its **own** generation. Switching nodes leaves DB
+    // and GENERATION untouched, so without it an in-flight tip fetch would
+    // restore the old node and route all later requests there.
     static DAEMON_GENERATION: Cell<u64> = const { Cell::new(0) };
 }
 
@@ -49,7 +47,7 @@ fn assert_idle(operation: &str) -> Result<()> {
     Ok(())
 }
 
-/// 持有期间标记 BUSY，析构时**一定**清除 —— 包括提前返回与 panic 展开。
+/// Sets BUSY while held; Drop **always** clears it, including early returns and panic unwinding.
 struct BusyGuard;
 
 impl BusyGuard {
@@ -78,8 +76,8 @@ fn daemon_generation() -> u64 {
     DAEMON_GENERATION.with(Cell::get)
 }
 
-/// 取走客户端前采样，放回前比对。不相等说明期间节点被换掉或关掉了，
-/// 手上这个已经作废 —— 丢弃它，而不是覆盖当前的。
+/// `sampled` is taken before the client is borrowed. A mismatch means the node
+/// was replaced or closed meanwhile, so drop the stale client instead.
 fn put_daemon_back(daemon: Daemon, sampled: u64) {
     if daemon_generation() == sampled {
         DAEMON.with(|c| *c.borrow_mut() = Some(daemon));
@@ -94,8 +92,8 @@ fn no_daemon() -> RuntimeError {
     RuntimeError::new(ErrorCode::NodeNotConfigured)
 }
 
-/// 打开钱包。正在进行异步操作时会被拒绝 —— 中途换库会让那次操作把结果写到
-/// 错误的地方，而且没有任何迹象。
+/// Opens a wallet. Refused while an async operation is in flight, which would
+/// otherwise silently write its results to the wrong database.
 pub fn set_db(db: Db, db_name: &str) -> Result<()> {
     assert_idle("openWallet")?;
     DB.with(|c| *c.borrow_mut() = Some(db));
@@ -110,8 +108,8 @@ pub fn set_daemon(daemon: Daemon, network: Network) {
     bump_daemon_generation();
 }
 
-/// 钱包库与节点必须在同一个网络上。不一致时什么都不做：测试网钱包连着主网
-/// 节点扫到的是真 XMR，发出去的也是。
+/// Wallet and node must be on the same network. A testnet wallet on a mainnet
+/// node would scan and send real XMR.
 fn check_node_network(node: Option<Network>, wallet: Network) -> Result<()> {
     if node == Some(wallet) {
         return Ok(());
@@ -125,12 +123,12 @@ fn check_node_network(node: Option<Network>, wallet: Network) -> Result<()> {
     ))
 }
 
-/// 当前节点所在的网络（连接时按创世块认定）。没有节点时为 `None`。
+/// Network of the current node (by genesis block at connect); `None` without a node.
 pub fn daemon_network() -> Option<Network> {
     DAEMON_NETWORK.with(Cell::get)
 }
 
-/// 断开当前节点。借出中的客户端放回时按世代号作废，不会复活。
+/// Disconnects the node. A borrowed client is discarded on return via the generation check.
 pub fn clear_daemon() {
     DAEMON.with(|c| *c.borrow_mut() = None);
     DAEMON_NETWORK.with(|n| n.set(None));
@@ -141,7 +139,7 @@ pub fn open_db_name() -> Option<String> {
     DB_NAME.with(|c| c.borrow().clone())
 }
 
-/// 关闭钱包，释放数据库与客户端。用于账户删除或切换网络。
+/// Closes the wallet, dropping the database and client. Used for account deletion or network switches.
 pub fn close() -> Result<()> {
     assert_idle("closeWallet")?;
     DB.with(|c| *c.borrow_mut() = None);
@@ -153,7 +151,7 @@ pub fn close() -> Result<()> {
     Ok(())
 }
 
-/// 借出数据库做一次同步操作。
+/// Borrows the database for a synchronous operation.
 pub fn with_db<T>(f: impl FnOnce(&mut Db) -> Result<T>) -> Result<T> {
     let _guard = BusyGuard::acquire("walletOperation")?;
     DB.with(|c| {
@@ -163,7 +161,7 @@ pub fn with_db<T>(f: impl FnOnce(&mut Db) -> Result<T>) -> Result<T> {
     })
 }
 
-/// 只读借出。
+/// Read-only borrow.
 pub fn with_db_read<T>(f: impl FnOnce(&Db) -> Result<T>) -> Result<T> {
     DB.with(|c| {
         let slot = c.borrow();
@@ -172,10 +170,9 @@ pub fn with_db_read<T>(f: impl FnOnce(&Db) -> Result<T>) -> Result<T> {
     })
 }
 
-/// 借出数据库与节点客户端做一次异步操作。
+/// Borrows the database and node client for an async operation.
 ///
-/// 用「取出 → 使用 → 放回」而不是长期持有 `RefCell` 借用：异步过程中不持有
-/// 任何借用，这是在 wasm 单线程上跨 await 安全共享状态的关键。
+/// Take, use, put back: no `RefCell` borrow is held across awaits.
 pub async fn with_db_and_daemon<T, F, Fut>(f: F) -> Result<T>
 where
     F: FnOnce(Db, Daemon) -> Fut,
@@ -201,8 +198,8 @@ where
 
     let (db, daemon, out) = f(db, daemon).await;
 
-    // 期间钱包被换掉/关掉时，**丢弃**手上这个而不是放回去。
-    // 放回去等于让一个已经作废的钱包覆盖当前的，那正是串库的源头。
+    // If the wallet was replaced or closed meanwhile, **drop** this one;
+    // putting it back would overwrite the current wallet.
     if GENERATION.with(Cell::get) != generation {
         drop(db);
     } else {
@@ -213,9 +210,9 @@ where
     out
 }
 
-/// 只借出节点客户端，**不要求钱包库已打开**。
+/// Borrows only the node client; **no wallet needs to be open**.
 ///
-/// 建账户时链尖是先决条件：宿主要用它定 birthday，而那一刻库还没建。
+/// Account creation needs the chain tip for the birthday before the database exists.
 pub async fn with_daemon<T, F, Fut>(f: F) -> Result<T>
 where
     F: FnOnce(Daemon) -> Fut,
@@ -235,11 +232,11 @@ mod tests {
     use super::*;
     use monero_wallet::address::Network;
 
-    // 测试各跑在自己的线程上，thread_local 天然隔离，互不干扰。
+    // Each test runs on its own thread, so thread_locals are isolated.
 
     fn open_memory_db() {
-        let db = Db::open(":memory:", Network::Mainnet).expect("内存库");
-        set_db(db, ":memory:").expect("开库");
+        let db = Db::open(":memory:", Network::Mainnet).expect("in-memory db");
+        set_db(db, ":memory:").expect("open db");
     }
 
     #[test]
@@ -260,33 +257,33 @@ mod tests {
         );
     }
 
-    /// 借出期间不许换库。换了会让那次操作把结果写到错误的地方，而且没有
-    /// 任何迹象 —— 这是最难查的一类 bug。
+    /// The wallet cannot be switched while borrowed, or the operation would
+    /// silently write to the wrong database.
     #[test]
     fn switching_the_wallet_is_refused_while_an_operation_holds_it() {
         open_memory_db();
         let result = with_db(|_| {
-            // 模拟「操作进行中，宿主又来开库」
-            let db2 = Db::open(":memory:", Network::Mainnet).expect("第二个库");
+            // Host opens a wallet while an operation is in progress
+            let db2 = Db::open(":memory:", Network::Mainnet).expect("second db");
             Ok(set_db(db2, "other").map(|_| ()).unwrap_err().code)
         })
         .unwrap();
         assert_eq!(result, ErrorCode::WalletBusy);
     }
 
-    /// 守卫析构时一定清 BUSY —— 包括提前返回那条路。否则一次失败会把
-    /// runtime 永久卡在 BUSY，表现为「之后什么都做不了」。
+    /// The guard clears BUSY on the error path too; otherwise one failure
+    /// would wedge the runtime in BUSY forever.
     #[test]
     fn the_busy_flag_is_cleared_even_when_the_operation_fails() {
         open_memory_db();
         let _ = with_db(|_| -> Result<()> { Err(RuntimeError::new(ErrorCode::InvalidRequest)) });
-        assert!(!BUSY.with(Cell::get), "失败路径也必须清 BUSY");
-        // 清干净了才能接着用
-        with_db(|_| Ok(())).expect("失败之后应当还能继续操作");
+        assert!(!BUSY.with(Cell::get), "BUSY must be cleared on failure");
+        // Usable again afterwards
+        with_db(|_| Ok(())).expect("operations should work after a failure");
     }
 
-    /// 没配节点时，要求节点的操作必须报 NODE_NOT_CONFIGURED，
-    /// 而不是笼统的网络错误 —— 两者的处置完全不同。
+    /// Without a node, node operations report NODE_NOT_CONFIGURED rather than a
+    /// generic network error; the host handles them differently.
     #[test]
     fn daemon_operations_report_a_missing_node_distinctly() {
         open_memory_db();
@@ -295,9 +292,9 @@ mod tests {
         }))
         .unwrap_err();
         assert_eq!(e.code, ErrorCode::NodeNotConfigured);
-        // 借不到客户端时 DB 必须被放回去，否则钱包就凭空关了
-        assert!(open_db_name().is_some(), "失败不该顺手把库弄丢");
-        with_db_read(|_| Ok(())).expect("库应当还在");
+        // DB must be put back when no client is available, or the wallet silently closes
+        assert!(open_db_name().is_some(), "failure must not drop the db");
+        with_db_read(|_| Ok(())).expect("db should still be open");
     }
 
     #[test]
@@ -313,17 +310,21 @@ mod tests {
         }
     }
 
-    /// 关库必须让在途的客户端借用作废。否则它结束时会把旧节点盖回去，
-    /// 之后所有请求都发给上一个节点。
+    /// Closing invalidates an in-flight client borrow, so it cannot restore
+    /// the old node when it finishes.
     #[test]
     fn closing_invalidates_an_in_flight_daemon_borrow() {
         let sampled = daemon_generation();
-        assert_eq!(daemon_generation(), sampled, "无事发生时采样应稳定");
-        close().expect("空状态下关闭应当成功");
+        assert_eq!(
+            daemon_generation(),
+            sampled,
+            "generation is stable when nothing happens"
+        );
+        close().expect("close should succeed on empty state");
         assert_ne!(
             daemon_generation(),
             sampled,
-            "close 之后在途借用必须被判作废"
+            "in-flight borrow must be invalid after close"
         );
     }
 }

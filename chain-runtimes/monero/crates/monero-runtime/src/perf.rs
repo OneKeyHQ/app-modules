@@ -1,9 +1,7 @@
-//! 计时打点。
+//! Timing.
 //!
-//! 扫得慢的时候，「慢在拉块还是慢在解密」是完全不同的两件事，而在浏览器里
-//! 两者的表现一模一样（界面不动）。实测公共节点单次 RPC 往返可达 490ms，
-//! 不把两段分开量，就会把网络延迟误判成算力不足 —— 那会让整条技术路线的
-//! 结论反过来。
+//! Fetch and scan time are measured separately: public node RPC round trips can
+//! reach ~490 ms, which would otherwise read as slow decryption.
 
 #[cfg(target_arch = "wasm32")]
 pub fn now_ms() -> f64 {

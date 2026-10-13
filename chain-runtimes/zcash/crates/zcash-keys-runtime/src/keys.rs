@@ -1,7 +1,7 @@
-//! 密钥派生。
+//! Key derivation.
 //!
-//! 种子和 USK 的生命周期严格控制在本模块内：入口接收字节、出口只给
-//! UFVK 与地址，中间副本用完即 `zeroize`。
+//! Seeds and USKs never leave this module: input is seed bytes, output is only
+//! UFVKs and addresses.
 
 use zcash_keys::keys::{UnifiedFullViewingKey, UnifiedSpendingKey};
 use zcash_protocol::consensus::Network;
@@ -46,10 +46,9 @@ pub fn validate_address(network: &str, encoded: &str) -> Result<bool> {
     Ok(supported_recipient(&params, encoded).is_some())
 }
 
-/// 测试专用：从助记词派生 UFVK。
+/// Test-only: derive a UFVK from a mnemonic.
 ///
-/// 出厂产物不收助记词 —— 宿主只传种子字节。留着它是为了让金标向量测试
-/// 能直接喂参考实现用的助记词。
+/// Shipped builds never take a mnemonic; the host passes seed bytes only.
 #[cfg(test)]
 pub(crate) fn ufvk_from_mnemonic(
     network: &str,
@@ -63,10 +62,11 @@ pub(crate) fn ufvk_from_mnemonic(
     ufvk_from_seed_bytes(params, seed.as_ref(), account_index)
 }
 
-/// 从原始种子字节派生 UFVK。
+/// Derive a UFVK from raw seed bytes.
 ///
-/// 调用方给的切片本 crate 不持有。注意中间的 `UnifiedSpendingKey` 上游没有
-/// `ZeroizeOnDrop`，析构后仍留在线性内存里 —— 擦除责任在宿主那一侧。
+/// The seed slice is borrowed, not retained. Upstream `UnifiedSpendingKey` is not
+/// `ZeroizeOnDrop`, so the intermediate USK stays in linear memory after drop;
+/// wiping is the host's responsibility.
 pub fn ufvk_from_seed_bytes(params: Network, seed: &[u8], account_index: u32) -> Result<String> {
     if seed.len() < 32 {
         return Err(KeysError::with(
@@ -91,22 +91,17 @@ pub fn ufvk_from_seed_bytes(params: Network, seed: &[u8], account_index: u32) ->
     Ok(ufvk.encode(&params))
 }
 
-/// UA 里包含哪些 receiver。**这是隐私策略，不是协议事实** ——
-/// 带不带 transparent receiver 决定了对方能不能用公开方式付给你，
-/// 也决定了这个地址会不会把你的透明活动和屏蔽活动关联起来。所以由宿主指定。
+/// Receivers to include in a UA. This is a privacy policy chosen by the host:
+/// a transparent receiver links the user's transparent and shielded activity.
+/// The runtime only checks that the combination is valid.
 ///
-/// Runtime 只负责校验组合在协议上是否成立。
-///
-/// **任何取值都不含 Sapling receiver。** 本 runtime 不能花 Sapling（不带它的
-/// prover），地址里放一个 Sapling receiver，只认 Sapling 的付款方就会把钱打
-/// 进一个这里花不出去的池子。`"shielded"` 因此与 `"orchard"` 相同，保留这个
-/// 取值只为不打断已有的调用方。
+/// No policy includes a Sapling receiver: this runtime cannot spend Sapling, so
+/// Sapling-only senders would pay into an unspendable pool. `"shielded"` is
+/// therefore an alias of `"orchard"`, kept for existing callers.
 fn receiver_policy(name: &str) -> Result<zcash_keys::keys::UnifiedAddressRequest> {
     use zcash_keys::keys::{ReceiverRequirement::*, UnifiedAddressRequest as R};
     match name {
-        // 空串不再当作 `"all"`。缺省最省事的那个取值恰好是隐私上最贵的一个：
-        // 带 transparent receiver 的 UA 会把用户的透明活动和屏蔽活动绑在
-        // 同一个字符串里，而调用方什么都没写，也就什么都没同意。
+        // No default: an empty policy must not silently select the least private option.
         "all" => Ok(R::unsafe_custom(Require, Omit, Allow)),
         "shielded" | "orchard" => Ok(R::ORCHARD),
         other => Err(KeysError::with(
@@ -116,9 +111,9 @@ fn receiver_policy(name: &str) -> Result<zcash_keys::keys::UnifiedAddressRequest
     }
 }
 
-/// 从 UFVK 取统一地址（UA）。不涉及任何私钥。
+/// Derive the Unified Address from a UFVK. No spending key involved.
 ///
-/// `policy` 决定包含哪些 receiver：`"all"` / `"shielded"` / `"orchard"`。
+/// `policy` selects the receivers: `"all"` / `"shielded"` / `"orchard"`.
 pub fn unified_address_with(network: &str, ufvk_str: &str, policy: &str) -> Result<String> {
     let params = parse_network(network)?;
     let ufvk = UnifiedFullViewingKey::decode(&params, ufvk_str)
@@ -131,16 +126,17 @@ pub fn unified_address_with(network: &str, ufvk_str: &str, policy: &str) -> Resu
     Ok(addr.encode(&params))
 }
 
-/// 从 UFVK 取透明收款地址（t 地址）。不涉及任何私钥、不需要钱包库。
+/// Derive the transparent receiving address (t-address) from a UFVK. No
+/// spending key or wallet database involved.
 ///
-/// 与 UA 是同一份 UFVK 的两种呈现：UA 是包含多个 receiver 的统一地址，
-/// 这里取出其中的透明 receiver 单独编码。交易所之类只认 t 地址的场合要用它。
+/// This is the transparent receiver of the `"all"` UA, encoded on its own for
+/// counterparties that only accept t-addresses.
 pub fn transparent_address(network: &str, ufvk_str: &str) -> Result<String> {
     let params = parse_network(network)?;
     let ufvk = UnifiedFullViewingKey::decode(&params, ufvk_str)
         .map_err(|e| KeysError::new(ErrorCode::InvalidUfvk).detail(e))?;
 
-    // 与 `"all"` 取同一个地址，保证这里的 t 地址就是 UA 里的透明 receiver。
+    // Same address as `"all"`, so this matches the UA's transparent receiver.
     let (addr, _) = ufvk
         .default_address(receiver_policy("all")?)
         .map_err(|e| KeysError::new(ErrorCode::DeriveFailed).detail(format!("{e:?}")))?;
@@ -157,9 +153,9 @@ pub fn transparent_address(network: &str, ufvk_str: &str) -> Result<String> {
     ))
 }
 
-/// UFVK 里的透明账户公钥，BIP32 账户层（m/44'/133'/account'）：
-/// 32 字节 chain code || 33 字节压缩公钥，hex。宿主据此拼 xpub，
-/// 硬件账户无需再向设备额外要一次透明 xpub。
+/// Transparent account public key from the UFVK at the BIP32 account level
+/// (m/44'/133'/account'), hex of 32-byte chain code || 33-byte compressed key.
+/// The host builds the xpub from it without asking a hardware device again.
 pub fn transparent_account_pubkey(network: &str, ufvk_str: &str) -> Result<String> {
     let params = parse_network(network)?;
     let ufvk = UnifiedFullViewingKey::decode(&params, ufvk_str)
@@ -190,17 +186,17 @@ pub fn seed_fingerprint(seed: &[u8]) -> Result<String> {
 mod tests {
     use super::*;
 
-    /// 指纹是**标准值**且被宿主持久化当账户身份。这条测试锁死它：
-    /// 实现哪天漂了，存量账户会全部失配，而那种故障很难从现象反推。
+    /// The fingerprint is a standard value persisted as account identity; any
+    /// drift would orphan existing accounts.
     #[test]
     fn seed_fingerprint_is_stable() {
         let seed = [0x42u8; 64];
         let fp = seed_fingerprint(&seed).unwrap();
-        assert_eq!(fp.len(), 64, "32 字节 → 64 位 hex");
-        assert_eq!(fp, seed_fingerprint(&seed).unwrap(), "同一种子必须同一指纹");
-        // 换一个种子必须变
+        assert_eq!(fp.len(), 64, "32 bytes -> 64 hex chars");
+        assert_eq!(fp, seed_fingerprint(&seed).unwrap(), "must be stable");
+        // A different seed must change it.
         assert_ne!(fp, seed_fingerprint(&[0x43u8; 64]).unwrap());
-        // 长度不足要拒绝，而不是算出一个看似合理的值
+        // Short seeds are rejected rather than fingerprinted.
         assert!(seed_fingerprint(&[0u8; 16]).is_err());
     }
 
@@ -208,10 +204,10 @@ mod tests {
     fn transparent_address_from_ufvk_is_t_prefixed() {
         let ufvk = ufvk_from_mnemonic("test", TEST_MNEMONIC, 0).unwrap();
         let t = transparent_address("test", &ufvk).unwrap();
-        assert!(t.starts_with("tm"), "testnet t 地址前缀应为 tm，实际 {t}");
+        assert!(t.starts_with("tm"), "expected a tm t-address, got {t}");
         let ua = unified_address_with("test", &ufvk, "all").unwrap();
-        assert!(ua.starts_with("utest"), "UA 前缀应为 utest");
-        assert_ne!(t, ua, "t 地址与 UA 是两种呈现，不该相同");
+        assert!(ua.starts_with("utest"), "UA must start with utest");
+        assert_ne!(t, ua, "t-address and UA must differ");
     }
 
     #[test]
@@ -226,7 +222,7 @@ mod tests {
                 let receivers = address.items();
                 assert!(
                     !receivers.iter().any(|r| matches!(r, Receiver::Sapling(_))),
-                    "{network}/{policy} 不能含 Sapling receiver"
+                    "{network}/{policy} must not contain a Sapling receiver"
                 );
                 assert!(receivers.iter().any(|r| matches!(r, Receiver::Orchard(_))));
                 assert_eq!(
@@ -235,13 +231,13 @@ mod tests {
                     "{network}/{policy}"
                 );
             }
-            // 「all」里的透明 receiver 必须就是单独给出的那个 t 地址（/0/0）。
+            // The transparent receiver in "all" must be the standalone t-address (/0/0).
             let params = parse_network(network).unwrap();
             let all = unified_address_with(network, &ufvk, "all").unwrap();
             let Some(zcash_keys::address::Address::Unified(all)) =
                 zcash_keys::address::Address::decode(&params, &all)
             else {
-                panic!("{network}: 应解析为 UA");
+                panic!("{network}: expected a UA");
             };
             assert_eq!(
                 zcash_keys::encoding::encode_transparent_address_p(
@@ -253,7 +249,7 @@ mod tests {
         }
     }
 
-    // 公开测试向量，切勿用于真实资金。
+    // Public test vector; never use for real funds.
     const TEST_MNEMONIC: &str =
         "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 
@@ -298,12 +294,11 @@ mod tests {
         let tag = &hex_key[64..66];
         assert!(
             tag == "02" || tag == "03",
-            "压缩公钥前缀应为 02/03，实际 {tag}"
+            "compressed key prefix must be 02/03, got {tag}"
         );
     }
 
-    /// 省略 / 留空 receiver 策略曾经等于选中 `"all"` —— 那是隐私上最贵的取值，
-    /// 而调用方什么都没写，也就什么都没同意。
+    /// An omitted or empty receiver policy must not default to `"all"`.
     #[test]
     fn receiver_policy_has_no_default() {
         assert!(receiver_policy("all").is_ok());
@@ -325,21 +320,21 @@ mod tests {
     #[test]
     fn short_seed_is_rejected() {
         let err = ufvk_from_seed_bytes(Network::TestNetwork, &[0u8; 16], 0);
-        assert!(err.is_err(), "过短的种子必须拒绝");
+        assert!(err.is_err(), "short seed must be rejected");
     }
 
     #[test]
     fn derives_ufvk_and_address() {
-        let ufvk = ufvk_from_mnemonic("test", TEST_MNEMONIC, 0).expect("应能派生");
+        let ufvk = ufvk_from_mnemonic("test", TEST_MNEMONIC, 0).expect("derive UFVK");
         assert!(
             ufvk.starts_with("uview"),
-            "testnet UFVK 前缀应为 uview，实际 {ufvk}"
+            "testnet UFVK must start with uview, got {ufvk}"
         );
 
-        let addr = unified_address_with("test", &ufvk, "all").expect("应能取地址");
+        let addr = unified_address_with("test", &ufvk, "all").expect("derive address");
         assert!(
             addr.starts_with("utest"),
-            "testnet UA 前缀应为 utest，实际 {addr}"
+            "testnet UA must start with utest, got {addr}"
         );
     }
 
@@ -347,15 +342,16 @@ mod tests {
     fn different_accounts_differ() {
         let a = ufvk_from_mnemonic("test", TEST_MNEMONIC, 0).unwrap();
         let b = ufvk_from_mnemonic("test", TEST_MNEMONIC, 1).unwrap();
-        assert_ne!(a, b, "不同账户序号必须派生出不同的 UFVK");
+        assert_ne!(a, b, "different accounts must derive different UFVKs");
     }
 
-    /// 与硬件固件的互通向量（2026-08-25 对齐），路径 m/32'/133'/account'。
+    /// Parity vectors from the independent hardware firmware implementation,
+    /// path m/32'/133'/account'.
     ///
-    /// 硬件侧向量是固件独立实现产出的：UFVK 不含 sapling 项、UA 为
-    /// orchard+p2pkh 组合，所以**不比整串，比同名项的字节** —— 指纹、
-    /// orchard FVK（96B）、transparent 公钥（65B）、两个 receiver。任何一侧
-    /// 的路径、币种或 diversifier 策略漂移都会在这里炸。
+    /// The firmware UFVK has no Sapling item and its UA is orchard+p2pkh, so this
+    /// compares item bytes rather than whole strings: fingerprint, Orchard FVK
+    /// (96B), transparent pubkey (65B), and both receivers. Drift in path, coin
+    /// type, or diversifier policy on either side fails here.
     #[test]
     fn hardware_parity_vectors() {
         use zcash_address::unified::{Container, Encoding, Fvk, Receiver, Ufvk};
@@ -376,17 +372,17 @@ mod tests {
             ),
         ];
 
-        let parsed = bip0039::Mnemonic::<bip0039::English>::from_phrase(MNEMONIC).expect("助记词");
+        let parsed = bip0039::Mnemonic::<bip0039::English>::from_phrase(MNEMONIC).expect("BIP39");
         let seed = parsed.to_seed("");
         assert_eq!(
             seed_fingerprint(seed.as_ref()).unwrap(),
             FINGERPRINT,
-            "种子指纹与硬件不一致"
+            "seed fingerprint differs from hardware"
         );
 
-        // UFVK 里的 orchard / transparent 项字节。
+        // Orchard / transparent item bytes of a UFVK.
         let fvk_items = |s: &str| {
-            let (_, u) = Ufvk::decode(s).expect("解析 UFVK");
+            let (_, u) = Ufvk::decode(s).expect("decode UFVK");
             let mut orchard = None;
             let mut p2pkh = None;
             for item in u.items() {
@@ -396,11 +392,11 @@ mod tests {
                     _ => {}
                 }
             }
-            (orchard.expect("缺 orchard 项"), p2pkh.expect("缺 p2pkh 项"))
+            (orchard.expect("orchard item"), p2pkh.expect("p2pkh item"))
         };
-        // UA 里的 orchard / p2pkh receiver 字节。
+        // Orchard / p2pkh receiver bytes of a UA.
         let ua_receivers = |s: &str| {
-            let (_, a) = zcash_address::unified::Address::decode(s).expect("解析 UA");
+            let (_, a) = zcash_address::unified::Address::decode(s).expect("decode UA");
             let mut orchard = None;
             let mut p2pkh = None;
             for item in a.items() {
@@ -411,24 +407,24 @@ mod tests {
                 }
             }
             (
-                orchard.expect("缺 orchard receiver"),
-                p2pkh.expect("缺 p2pkh receiver"),
+                orchard.expect("missing orchard receiver"),
+                p2pkh.expect("missing p2pkh receiver"),
             )
         };
 
         for (account, hw_ufvk, hw_ua) in HW {
-            let ours = ufvk_from_mnemonic("main", MNEMONIC, account).expect("派生 UFVK");
+            let ours = ufvk_from_mnemonic("main", MNEMONIC, account).expect("derive UFVK");
             assert_eq!(
                 fvk_items(&ours),
                 fvk_items(hw_ufvk),
-                "account {account}: FVK 项字节与硬件不一致"
+                "account {account}: FVK item bytes differ from hardware"
             );
-            // 我们带 p2pkh receiver 的组装是 "all"；只取它的 receiver 字节比对。
+            // "all" is our policy with a p2pkh receiver; compare receiver bytes only.
             let our_ua = unified_address_with("main", &ours, "all").expect("UA");
             assert_eq!(
                 ua_receivers(&our_ua),
                 ua_receivers(hw_ua),
-                "account {account}: 地址 receiver 字节与硬件不一致"
+                "account {account}: address receiver bytes differ from hardware"
             );
         }
     }
@@ -438,7 +434,7 @@ mod tests {
 mod ua_inspect {
     fn receivers(ua: &str) -> Vec<String> {
         use zcash_address::unified::{Container, Encoding};
-        let (_, parsed) = zcash_address::unified::Address::decode(ua).expect("解析 UA");
+        let (_, parsed) = zcash_address::unified::Address::decode(ua).expect("decode UA");
         parsed
             .items()
             .iter()
@@ -452,11 +448,11 @@ mod ua_inspect {
             .collect()
     }
 
-    /// 打印某助记词的收款地址，供本机手工测试（要水龙头的币）用。
-    /// 需要 `ZR_MNEMONIC`，未设置时直接跳过，所以常规 `cargo test` 不受影响。
+    /// Print receiving addresses for a mnemonic, for manual testing (e.g. faucet
+    /// funds). Skipped unless `ZR_MNEMONIC` is set.
     ///
-    /// 同时打印每种 policy 的 receiver 组成 —— 收款地址里混进不可花的 receiver
-    /// 会让打进来的钱永远取不出来，这条是唯一能提前看见它的地方。
+    /// Also prints each policy's receivers, since an unspendable receiver in a
+    /// receiving address would strand incoming funds.
     #[test]
     fn print_receiving_addresses() {
         let mnemonic = std::env::var("ZR_MNEMONIC").unwrap_or_default();
@@ -469,22 +465,21 @@ mod ua_inspect {
             .and_then(|v| v.parse().ok())
             .unwrap_or(0);
         let ufvk =
-            super::ufvk_from_mnemonic(&network, mnemonic.trim(), account).expect("派生 UFVK");
+            super::ufvk_from_mnemonic(&network, mnemonic.trim(), account).expect("derive UFVK");
 
-        // 与硬件对向量用的完整三元组：指纹 → UFVK → 地址，粗到细，
-        // 哪一级先岔开，问题就在那一级对应的派生步骤里。
+        // Fingerprint -> UFVK -> address, for comparing against hardware level by level.
         let parsed =
-            bip0039::Mnemonic::<bip0039::English>::from_phrase(mnemonic.trim()).expect("助记词");
+            bip0039::Mnemonic::<bip0039::English>::from_phrase(mnemonic.trim()).expect("mnemonic");
         let seed = parsed.to_seed("");
         println!("network      {network}  account {account}");
         println!(
             "fingerprint  {}",
-            super::seed_fingerprint(seed.as_ref()).expect("指纹")
+            super::seed_fingerprint(seed.as_ref()).expect("fingerprint")
         );
         println!("ufvk         {ufvk}");
         println!(
             "t-addr       {}",
-            super::transparent_address(&network, &ufvk).expect("t 地址")
+            super::transparent_address(&network, &ufvk).expect("t-address")
         );
         for policy in ["all", "shielded", "orchard"] {
             let ua = super::unified_address_with(&network, &ufvk, policy).expect("UA");
@@ -493,9 +488,9 @@ mod ua_inspect {
         }
     }
 
-    /// 解析一个 UFVK（uview…），列出它包含哪些密钥项。
-    /// 与硬件对派生时用：整串不等先看项集合 —— 项集合不同是组装差异，
-    /// 项集合相同而字节不同才是真正的派生差异。
+    /// Decode a UFVK (uview...) and list its key items. Differing item sets mean
+    /// an encoding difference; same items with different bytes mean a derivation
+    /// difference.
     #[test]
     fn inspect_external_ufvk() {
         let s = std::env::var("ZR_UFVK").unwrap_or_default();
@@ -504,20 +499,19 @@ mod ua_inspect {
         }
         use zcash_address::unified::{Container, Encoding, Fvk, Ufvk};
         let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
-        let (net, parsed) = Ufvk::decode(&s).expect("解析 UFVK");
-        println!("网络: {net:?}");
+        let (net, parsed) = Ufvk::decode(&s).expect("decode UFVK");
+        println!("network: {net:?}");
         for item in parsed.items() {
             match &item {
                 Fvk::Orchard(d) => println!("  orchard          {}", hex(d)),
                 Fvk::Sapling(d) => println!("  sapling          {}", hex(d)),
                 Fvk::P2pkh(d) => println!("  transparent-p2pkh {}", hex(d)),
-                other => println!("  其他密钥项: {other:?}"),
+                other => println!("  other key item: {other:?}"),
             }
         }
     }
 
-    /// 解析一个 UA，列出它包含哪些 receiver。
-    /// 用来看别的钱包实际给用户的收款地址里放了什么。
+    /// Decode a UA and list its receivers, e.g. to inspect other wallets' addresses.
     #[test]
     fn inspect_external_ua() {
         let ua = std::env::var("ZR_UA").unwrap_or_default();
@@ -526,8 +520,8 @@ mod ua_inspect {
         }
         use zcash_address::unified::{Container, Encoding};
         let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
-        let (net, parsed) = zcash_address::unified::Address::decode(&ua).expect("解析 UA");
-        println!("网络: {net:?}");
+        let (net, parsed) = zcash_address::unified::Address::decode(&ua).expect("decode UA");
+        println!("network: {net:?}");
         for item in parsed.items() {
             match &item {
                 zcash_address::unified::Receiver::Orchard(d) => {
@@ -542,7 +536,7 @@ mod ua_inspect {
                 zcash_address::unified::Receiver::P2sh(d) => {
                     println!("  transparent-p2sh {}", hex(d));
                 }
-                other => println!("  其他 receiver: {other:?}"),
+                other => println!("  other receiver: {other:?}"),
             }
         }
     }

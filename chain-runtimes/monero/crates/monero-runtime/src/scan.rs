@@ -1,34 +1,35 @@
-//! 扫描：把区块喂给 monero-oxide 的 `Scanner`，把产出落进 SQLite。
+//! Scanning: feeds blocks to the monero-oxide `Scanner` and persists results to SQLite.
 //!
-//! ## 有界推进
+//! ## Bounded steps
 //!
-//! 这里**永远不会**自己循环到同步完成。调用方给一批块、拿一个结果，要不要
-//! 接着扫由宿主决定 —— 这正是「调度归 TS」那条边界。理由和 Zcash 那边一样：
-//! 跑到底的函数在浏览器和移动端上无法中断、无法看进度、无法让出主线程。
+//! Never loops to full sync. The caller passes a batch and gets one result; the
+//! host decides whether to continue, since a run-to-completion call cannot be
+//! interrupted, report progress, or yield the main thread on web and mobile.
 //!
-//! ## 三道校验，每一道都有具体的失败故事
+//! ## Three checks
 //!
-//! 1. **块连续性** —— `header.previous` 必须等于我们记录的上一块哈希。对不上
-//!    就是重组（或节点在骗人），向上报 `REORG_DETECTED` 带精确高度。
+//! 1. **Block continuity**: `header.previous` must equal the recorded previous
+//!    hash. A mismatch is a reorg (or a lying node), reported as
+//!    `REORG_DETECTED` with the exact height.
 //!
-//! 2. **RingCT 输出索引** —— 上游 `ScannableBlock` 的文档明确写着
-//!    `output_index_for_first_ringct_output` **无法验证**，并要求客户端自己维护
-//!    这个索引、与节点声称的比对，不一致应当断开。这里就是那个自己维护的实现：
-//!    扫完一块后按「本块 v2 交易的输出总数」推进游标，下一块拿它对账。
-//!    索引错了的后果是构环时取错输出，交易被网络拒绝 —— 而且很难从现象反推。
+//! 2. **RingCT output index**: upstream `ScannableBlock` documents that
+//!    `output_index_for_first_ringct_output` cannot be verified and the client
+//!    must track and compare it. The cursor advances by the block's v2 output
+//!    count and the next block is checked against it. A wrong index picks the
+//!    wrong ring members and the transaction is rejected.
 //!
-//! 3. **批内高度递增** —— 节点乱序返回时直接拒绝，不要试图自己排序：
-//!    能乱序就说明对端不可信，排好序继续扫等于替它掩盖问题。
+//! 3. **Increasing heights within a batch**: out-of-order blocks are rejected,
+//!    not sorted, because an out-of-order peer is untrusted.
 //!
-//! ## 花费检测的协议限制
+//! ## Spend detection limits
 //!
-//! Monero 的观察钱包**无法独立判断自己的输出有没有被花掉** —— 判断需要
-//! key image，而 key image 需要花费私钥。这不是实现取舍，是协议性质。
+//! A view-only wallet cannot tell whether its outputs were spent: that needs
+//! key images, which need the private spend key. This is a protocol property.
 //!
-//! 所以这里的做法是：`outputs.key_image` 由宿主通过 [`crate::spend::import_key_images`]
-//! 在解锁时补齐；扫描时拿已知的 key image 去撞链上交易的输入。没补齐 key image
-//! 的输出**检测不到花费**，余额会偏高 —— 这一点必须让宿主知道，见
-//! [`ScanOutcome::outputs_without_key_image`]。
+//! The host fills `outputs.key_image` via [`crate::spend::import_key_images`]
+//! on unlock; scanning matches known key images against transaction inputs.
+//! Outputs without a key image cannot be detected as spent, so the balance may
+//! be overstated; see [`ScanOutcome::outputs_without_key_image`].
 
 use std::collections::{HashMap, HashSet};
 
@@ -45,10 +46,10 @@ use crate::error::{db_err, ErrorCode, Result, RuntimeError};
 use crate::schema::REORG_WINDOW_BLOCKS;
 use crate::wallet::Db;
 
-/// 检测到重组时建议回退多少块。
+/// Suggested rewind depth on a detected reorg.
 ///
-/// Monero 的重组极少超过几块；退太多让用户重扫大段历史，退太少可能没退到
-/// 分叉点之前、下一轮继续撞同一个错。宿主在重复失败时应自行加大。
+/// Monero reorgs rarely exceed a few blocks. Too deep forces a long rescan; too
+/// shallow may not pass the fork point. The host should increase it on repeated failures.
 pub const REORG_REWIND_BLOCKS: u64 = 10;
 
 #[derive(Debug, Default, Clone)]
@@ -56,25 +57,25 @@ pub struct ScanOutcome {
     pub blocks_scanned: u64,
     pub outputs_found: usize,
     pub spends_detected: usize,
-    /// 本批记下的「可能的花费」条数（环里含我的、还不知道 key image 的输出）。
+    /// Possible spends recorded in this batch (our outputs without a key image seen in a ring).
     pub possible_spends: usize,
     pub from_height: Option<u64>,
     pub to_height: Option<u64>,
-    /// 还没有 key image 的输出数。**大于 0 意味着余额可能偏高** ——
-    /// 这些输出即使已经被花掉，扫描也检测不出来。
+    /// Outputs without a key image. Greater than 0 means the balance may be
+    /// overstated: spends of these outputs cannot be detected.
     pub outputs_without_key_image: i64,
-    /// 拉块耗时（毫秒）。与 `ms_scan` 分开报，因为「网络慢」和「解密慢」
-    /// 在界面上长得一模一样，但结论完全相反。
+    /// Block download time in ms. Reported apart from `ms_scan` to tell a slow
+    /// network from slow decryption.
     pub ms_download: u32,
-    /// 试解密与落库耗时（毫秒）。
+    /// Trial decryption and persistence time in ms.
     pub ms_scan: u32,
-    /// 这一批块是怎么取来的：`blocksBin`（一次批量）或 `perBlock`（逐块并发）。
+    /// How the batch was fetched: `blocksBin` (one bulk request) or `perBlock` (concurrent per block).
     pub fetched_via: &'static str,
-    /// 批量路径这一步被放弃的原因。只在放弃发生的那一步出现。
+    /// Why the bulk path was abandoned; set only on the step where that happened.
     pub fetch_note: Option<String>,
-    /// 这一步的第一批是否直接用上了上一步预取的请求。
+    /// Whether this step's first batch used the request prefetched by the previous step.
     pub prefetch_hit: bool,
-    /// 这一步之后的批量大小（下一个请求要多少块）。
+    /// Batch size after this step (blocks in the next request).
     pub batch_blocks: u64,
 }
 
@@ -98,10 +99,10 @@ impl ScanOutcome {
     }
 }
 
-/// 本块里 RingCT 输出的数量。
+/// Number of RingCT outputs in the block.
 ///
-/// 只有 v2 交易能产出 RingCT 输出（v1 不能），矿工交易也算在内且排在最前。
-/// 这是我们**独立于节点**推算全局输出序号的依据 —— 上游要求客户端这么做。
+/// Only v2 transactions produce RingCT outputs; the miner transaction counts
+/// and comes first. Used to derive global output indices independently of the node.
 fn ringct_output_count(block: &ScannableBlock) -> u64 {
     fn count(tx: &Transaction<impl monero_wallet::transaction::PotentiallyPruned>) -> u64 {
         match tx {
@@ -112,17 +113,17 @@ fn ringct_output_count(block: &ScannableBlock) -> u64 {
     count(block.block.miner_transaction()) + block.transactions.iter().map(count).sum::<u64>()
 }
 
-/// 本块所有交易输入里的 key image，连同它所属交易的 txid。
+/// Key images of all inputs in the block, with the txid of their transaction.
 ///
-/// txid 取自 `block.block.transactions`（块头里的 txid 列表），它与
-/// `block.transactions`（交易体）一一对应且同序 —— 上游的
-/// `expand_to_scannable_block` 就是按这个列表去拉的交易体。
+/// Txids come from `block.block.transactions`, which matches
+/// `block.transactions` one to one and in order (upstream
+/// `expand_to_scannable_block` fetches bodies from that list).
 ///
-/// **不能用 `Transaction::hash()`**：这里的交易是 `Pruned` 形态，V2 交易算
-/// 哈希需要 prunable hash，而裁剪掉的正是它。
+/// Not `Transaction::hash()`: these are `Pruned` transactions, and a V2 hash
+/// needs the prunable hash that was pruned.
 ///
-/// 两个列表长度对不上说明节点给的块自相矛盾，直接拒绝而不是凑合对齐 ——
-/// 错位会把花费记到别人的交易上。
+/// A length mismatch means an inconsistent block and is rejected; misalignment
+/// would attribute spends to the wrong transaction.
 fn key_images_in(block: &ScannableBlock) -> Result<Vec<([u8; 32], [u8; 32])>> {
     if block.block.transactions.len() != block.transactions.len() {
         return Err(RuntimeError::with(
@@ -152,9 +153,9 @@ fn key_images_in(block: &ScannableBlock) -> Result<Vec<([u8; 32], [u8; 32])>> {
     Ok(out)
 }
 
-/// 块里每个输入引用的环：`(key image, 所在交易, 金额类, 环成员的绝对全局序号)`。
+/// Rings referenced by each input: `(key image, txid, amount pool, absolute global member indices)`.
 ///
-/// `key_offsets` 是相对差分：第一个是绝对序号，之后每个是与前一个的间隔。
+/// `key_offsets` are deltas: the first is absolute, each next is relative to the previous.
 fn ring_references_in(block: &ScannableBlock) -> Vec<RingReference> {
     let mut out = Vec::new();
     for (txid, tx) in block
@@ -188,7 +189,7 @@ fn ring_references_in(block: &ScannableBlock) -> Vec<RingReference> {
     out
 }
 
-/// 一条可能的花费：我的某笔输出出现在某个输入的环里。
+/// A possible spend: one of our outputs appears in an input's ring.
 struct PossibleSpend {
     out_txid: [u8; 32],
     out_index: u64,
@@ -201,13 +202,13 @@ struct PossibleSpend {
 struct RingReference {
     key_image: [u8; 32],
     spend_txid: [u8; 32],
-    /// `None`/`Some(0)`：RingCT 池；其余为老式按金额分池（2017 年前）。
+    /// `None`/`Some(0)`: RingCT pool; otherwise a pre-2017 per-amount pool.
     amount: Option<u64>,
     members: Vec<u64>,
 }
 
-/// 还没有 key image 的未花输出，按全局序号索引：`(txid, index_in_tx, 金额)`。
-/// 只有它们需要「可能的花费」—— 有 key image 的由正常的花费检测负责。
+/// Unspent outputs without a key image, by global index: `(txid, index_in_tx, amount)`.
+/// Only these need possible spends; outputs with a key image use normal spend detection.
 type RingCandidates = HashMap<u64, Vec<([u8; 32], u64, u64)>>;
 
 fn load_ring_candidates(db: &Db, identity_id: i64) -> Result<RingCandidates> {
@@ -239,8 +240,9 @@ fn load_ring_candidates(db: &Db, identity_id: i64) -> Result<RingCandidates> {
     Ok(map)
 }
 
-/// 一个输入的环里含我的哪些输出。老式按金额分池的输出还要金额相同才算；
-/// RingCT 输入只按序号 —— 多报只会多一条「可能」，漏报才会让花费认不出。
+/// Our outputs in an input's ring. Pre-RingCT inputs also require a matching
+/// amount; RingCT inputs match by index only, since a false positive is
+/// harmless and a miss hides a spend.
 fn ring_matches<'a>(
     candidates: &'a RingCandidates,
     reference: &'a RingReference,
@@ -254,24 +256,22 @@ fn ring_matches<'a>(
         .filter(move |(_, _, amount)| pool.is_none_or(|p| p == *amount))
 }
 
-/// 每条交易的公钥：`(R, additional)`，按 txid 索引。
+/// Transaction public keys `(R, additional)` by txid.
 ///
-/// ## 为什么要单独留一份
+/// ## Why kept separately
 ///
-/// monero-oxide 把「R + 输出序号 + 子地址」整条推导折叠成 `WalletOutput` 上的
-/// 一个 `key_offset` 标量，**然后就把 R 丢了**。软件签名只要
-/// `spend + key_offset`，所以缺了也看不出来。
+/// monero-oxide folds the R + output index + subaddress derivation into a
+/// `key_offset` scalar on `WalletOutput` and drops R. Software signing only
+/// needs `spend + key_offset`.
 ///
-/// 固件不接受 `key_offset`。它要 `real_out_tx_key` 自己推导一次性私钥和
-/// key image —— 接受宿主算好的偏移量，等于让一个恶意宿主指挥设备拿任意密钥
-/// 签名。所以硬件那条路必须有 R。
+/// Firmware does not accept `key_offset`; it derives the one-time key and key
+/// image from `real_out_tx_key` itself, since accepting a host-computed offset
+/// would let a malicious host make the device sign with any key.
 ///
-/// 而 R 只在扫描这一刻手里有：事后要么全量重扫，要么拿 txid 去找节点要回那条
-/// 交易 —— 后者等于直接告诉节点「我对这笔感兴趣」，把扫全链换来的隐私当场
-/// 还回去。所以在这里留下来，哪怕现在还没有硬件可接。
+/// R is only available at scan time; recovering it later needs a full rescan
+/// or asking the node for the transaction by txid, which leaks interest in it.
 fn tx_public_keys_in(block: &ScannableBlock) -> Vec<([u8; 32], Vec<u8>, Option<Vec<u8>>)> {
-    // 长度不齐的情况由 `key_images_in` 统一报错；这里取不到就跳过，
-    // 不重复报同一个错。
+    // Length mismatches are reported by `key_images_in`; skip here.
     let mut out = Vec::new();
     for (txid, tx) in block
         .block
@@ -286,10 +286,10 @@ fn tx_public_keys_in(block: &ScannableBlock) -> Vec<([u8; 32], Vec<u8>, Option<V
     out
 }
 
-/// 从一条交易的 `extra` 里取出 `(R, additional)`，各自 32 字节一个顺序拼接。
+/// Extracts `(R, additional)` from a transaction `extra`, each as concatenated 32-byte keys.
 ///
-/// 拆成纯函数是为了能用真实链上数据钉住 —— 扫描路径本身要造一个完整的
-/// `ScannableBlock` 才跑得起来，那种 fixture 只会测到我们自己的假设。
+/// A pure function so it can be tested against real chain data without
+/// building a full `ScannableBlock`.
 fn tx_public_keys_from_extra(extra: &[u8]) -> Option<(Vec<u8>, Option<Vec<u8>>)> {
     fn flatten(points: &[monero_wallet::ed25519::Point]) -> Vec<u8> {
         let mut out = Vec::with_capacity(points.len() * 32);
@@ -304,9 +304,9 @@ fn tx_public_keys_from_extra(extra: &[u8]) -> Option<(Vec<u8>, Option<Vec<u8>>)>
     Some((flatten(&keys), additional.as_deref().map(flatten)))
 }
 
-/// 扫描一批块并落库。**整批一个事务**：要么全成，要么一块都不留。
+/// Scans and persists a batch of blocks in one transaction: all or nothing.
 ///
-/// 块必须按高度升序、且彼此连续。调用方（宿主）负责按区间取块。
+/// Blocks must be contiguous in ascending height. The host fetches them by range.
 pub fn scan_blocks(
     db: &mut Db,
     identity_id: i64,
@@ -323,34 +323,34 @@ pub fn scan_blocks(
 
     let mut scanner = Scanner::new(identity.view_pair.clone());
     for (major, minor) in &subaddresses {
-        // (0,0) 进不了库（schema 有 CHECK），所以这里 None 不可能发生；
-        // 真发生了说明有人绕过了约束直接写库，宁可跳过也不要 panic。
+        // The schema CHECK excludes (0,0), so None means the constraint was
+        // bypassed; skip rather than panic.
         if let Some(index) = SubaddressIndex::new(*major, *minor) {
             scanner.register_subaddress(index);
         }
     }
 
-    // 我们自己维护的 key image 集合，用于花费检测。
+    // Known key images, for spend detection.
     let known_key_images = load_key_images(db, identity_id)?;
-    // 还不知道 key image 的输出，用环成员比对记下「可能的花费」。
+    // Outputs without a key image, matched against ring members as possible spends.
     let mut ring_candidates = load_ring_candidates(db, identity_id)?;
     let mut possible_spends: Vec<PossibleSpend> = Vec::new();
 
     let mut outcome = ScanOutcome::default();
     let mut found: Vec<(u64, WalletOutput)> = Vec::new();
-    // txid -> (R, additional)。只留我们真正收到输出的那些交易的。
+    // txid -> (R, additional), only for transactions that paid us.
     let mut tx_pub_keys: HashMap<[u8; 32], (Vec<u8>, Option<Vec<u8>>)> = HashMap::new();
     let mut spends: Vec<(u64, [u8; 32], [u8; 32])> = Vec::new(); // (height, key_image, txid)
     let mut block_rows: Vec<(u64, [u8; 32], Option<u64>, u64)> = Vec::new(); // (height, hash, ringct_next, ts)
 
-    // 批起点的前一块：用于连续性与 RingCT 游标对账。
+    // Block before the batch start, for continuity and RingCT cursor checks.
     let first_height = blocks[0].block.number() as u64;
     let mut prev = previous_block_state(db, identity_id, first_height)?;
 
     for block in blocks {
         let height = block.block.number() as u64;
 
-        // ── 1. 批内必须严格递增且连续 ──────────────────────────────────
+        // ── 1. Heights must be strictly increasing and contiguous ─────────
         if let Some((prev_height, _, _)) = prev {
             if height != prev_height + 1 {
                 return Err(RuntimeError::with(
@@ -364,7 +364,7 @@ pub fn scan_blocks(
             }
         }
 
-        // ── 2. 前驱哈希对账 —— 重组检测 ────────────────────────────────
+        // ── 2. Previous hash check: reorg detection ──────────────────────
         if let Some((_, prev_hash, _)) = prev {
             if block.block.header.previous != prev_hash {
                 return Err(RuntimeError::with(
@@ -377,7 +377,7 @@ pub fn scan_blocks(
             }
         }
 
-        // ── 3. RingCT 索引对账 —— 上游要求客户端独立维护并比对 ─────────
+        // ── 3. RingCT index check (upstream requires client-side tracking) ─
         if let (Some((_, _, Some(expected_next))), Some(claimed)) =
             (prev, block.output_index_for_first_ringct_output)
         {
@@ -399,19 +399,18 @@ pub fn scan_blocks(
                 RuntimeError::with(ErrorCode::ScanFailed, json!({ "height": height }))
                     .detail(format!("{e:?}"))
             })?
-            // 额外时间锁由查询层按当前链高判断，这里全部收下 ——
-            // 丢掉锁定中的输出会让它们永远不再出现（我们不会重扫这一段）。
+            // Timelocks are evaluated by the query layer against the current
+            // height; dropping locked outputs here would lose them for good.
             .ignore_additional_timelock();
 
         if !outputs.is_empty() {
-            // 只在这一块确实有我们的输出时才解析 extra —— 绝大多数块一个都
-            // 没有，为它们全量解析是白花 CPU。
+            // Parse extra only for blocks that paid us; most blocks do not.
             for (txid, keys, additional) in tx_public_keys_in(block) {
                 tx_pub_keys.insert(txid, (keys, additional));
             }
         }
-        // 先比对本块的输入，再把本块收到的钱加进候选：刚收到的钱至少锁 10 块，
-        // 不可能在同一块被花。
+        // Match inputs before adding this block's outputs as candidates: new
+        // outputs are locked for at least 10 blocks and cannot be spent in the same block.
         for reference in ring_references_in(block) {
             if known_key_images.contains_key(&reference.key_image) {
                 continue;
@@ -441,15 +440,14 @@ pub fn scan_blocks(
 
         for (key_image, txid) in key_images_in(block)? {
             if known_key_images.contains_key(&key_image) {
-                // txid 必须是**花费这笔输出的那条交易**，不是块哈希 ——
-                // 记错了历史详情会指向一条不相干的交易。
+                // The spending transaction's txid, not the block hash.
                 spends.push((height, key_image, txid));
             }
         }
 
-        // 游标的依据：优先用上一块推出来的，其次用节点声称的起点。
-        // 两者都没有时**保持未知**，绝不退化成 0 —— 那会让下一块的对账
-        // 拿真实序号去比 0，报出一个假的 RINGCT_INDEX_MISMATCH。
+        // Cursor base: the previous block's cursor, else the node's claimed
+        // start. With neither, stay unknown; falling back to 0 would raise a
+        // false RINGCT_INDEX_MISMATCH on the next block.
         let next_ringct = prev
             .and_then(|(_, _, n)| n)
             .or(block.output_index_for_first_ringct_output)
@@ -485,7 +483,7 @@ pub fn scan_blocks(
     Ok(outcome)
 }
 
-/// 取某高度前一块的 (高度, 哈希, 扫完后的 RingCT 游标)。
+/// (height, hash, RingCT cursor after it) of the block before `height`.
 fn previous_block_state(
     db: &Db,
     identity_id: i64,
@@ -509,13 +507,14 @@ fn previous_block_state(
         .map_err(|e| db_err("previousBlockState", e))?
         .map(|(h, hash, next)| {
             let hash = <[u8; 32]>::try_from(hash.as_slice())
-                .map_err(|_| db_err("previousBlockState", "块哈希长度不是 32"))?;
+                .map_err(|_| db_err("previousBlockState", "block hash is not 32 bytes"))?;
             Ok((h, hash, next))
         })
         .transpose()
 }
 
-/// 未花的，加上被自己广播、还没上链的交易花掉的：后者上链时要靠 key image 命中才能确认。
+/// Unspent outputs plus those spent by our own unconfirmed broadcasts, which
+/// are confirmed by a key image match once mined.
 fn load_key_images(db: &Db, identity_id: i64) -> Result<HashMap<[u8; 32], i64>> {
     let mut stmt = db
         .conn()
@@ -571,7 +570,8 @@ fn persist(
         .map_err(|e| db_err("beginScanCommit", e))?;
 
     let mut seen_txids: HashSet<[u8; 32]> = HashSet::new();
-    // 交易时间跟交易行一起存：块表会裁剪到链尖附近，回补扫到的交易一旦所在块被裁，联表就拿不到时间。
+    // Store the time on the transaction row: `blocks` is pruned near the tip,
+    // so backfilled transactions cannot join for it later.
     let block_time: HashMap<u64, i64> = block_rows
         .iter()
         .map(|(h, _, _, ts)| (*h, *ts as i64))
@@ -590,8 +590,8 @@ fn persist(
         )? {
             continue;
         }
-        // `INSERT OR IGNORE`：重扫同一段区间必须幂等，否则余额翻倍。
-        // 唯一约束是 (identity_id, txid, index_in_tx)。
+        // `INSERT OR IGNORE`: rescans must be idempotent or balances double.
+        // Unique key is (identity_id, txid, index_in_tx).
         tx.execute(
             "INSERT OR IGNORE INTO outputs
                (identity_id, blob, txid, global_index, index_in_tx, amount_atomic,
@@ -661,7 +661,7 @@ fn persist(
         .map_err(|e| db_err("insertOutgoingTransaction", e))?;
     }
 
-    // 幂等：重扫同一段会遇到同样的环引用。
+    // Idempotent: rescans hit the same ring references.
     for ps in possible_spends {
         tx.execute(
             "INSERT OR IGNORE INTO possible_spends
@@ -695,9 +695,7 @@ fn persist(
         .map_err(|e| db_err("insertBlock", e))?;
     }
 
-    // 裁剪块表：只留链尖往前 REORG_WINDOW_BLOCKS 块。
-    // 不裁剪的话这张表会随链高无限增长 —— 那正是我们批评 wallet2 内存模型
-    // 时说的那件事，自己不能犯。
+    // Keep only REORG_WINDOW_BLOCKS below the tip so the table does not grow with the chain.
     if let Some((tip, _, _, _)) = block_rows.last() {
         let floor = tip.saturating_sub(REORG_WINDOW_BLOCKS);
         tx.execute(
@@ -710,9 +708,9 @@ fn persist(
     tx.commit().map_err(|e| db_err("commitScan", e))
 }
 
-/// 燃烧 bug：同一个一次性公钥出现在另一笔输出里。它们只有一笔能花（花一笔就烧掉
-/// 其余），所以只认最先看到的那笔，后来的不入账 —— 宁可少算，不能把花不掉的钱
-/// 算进余额。同一笔输出重扫不算重复。
+/// Burning bug: the same one-time key in another output. Only one is spendable,
+/// so only the first seen is counted, never overstating the balance. A rescan
+/// of the same output is not a duplicate.
 fn is_burning_duplicate(
     conn: &rusqlite::Connection,
     identity_id: i64,
@@ -744,19 +742,20 @@ fn timelock_to_i64(timelock: monero_wallet::transaction::Timelock) -> i64 {
     }
 }
 
-/// 回退到指定高度：丢掉该高度**之上**的全部扫描结果。
+/// Rewinds to `height`, dropping all scan results above it.
 ///
-/// **破坏性。** 用于重组恢复。例外是自己广播过的交易：它所在的块被重组掉，
-/// 交易通常回到交易池、稍后重新上链。删掉它会让它花的输入重新可选，用户
-/// 换一批输入再发一次，两笔都上链。所以它退回在途（高度清空），输入保持
-/// 已花，交给在途检查与扫描判定。
+/// Destructive; used for reorg recovery. Our own broadcasts are kept: a
+/// reorged-out send usually returns to the pool and is mined again, and
+/// releasing its inputs could let a second send with other inputs also confirm.
+/// They revert to pending (height cleared) with inputs still spent, left to
+/// the pending check and scanning.
 pub fn rewind_to(db: &mut Db, identity_id: i64, height: u64) -> Result<()> {
     let tx = db
         .conn_mut()
         .transaction()
         .map_err(|e| db_err("beginRewind", e))?;
 
-    // 放在撤销花费标记之前：下面那条按「在途交易」保留标记。
+    // Must run before clearing spend marks: that step keeps marks for pending transactions.
     tx.execute(
         "UPDATE transactions SET height = NULL, failed = 0, pool_checked_at = NULL
          WHERE identity_id = ?1 AND height > ?2 AND sent_at IS NOT NULL",
@@ -770,8 +769,8 @@ pub fn rewind_to(db: &mut Db, identity_id: i64, height: u64) -> Result<()> {
     )
     .map_err(|e| db_err("rewindOutputs", e))?;
 
-    // 花费标记也要撤销：那笔花费所在的块可能已经不在链上了。
-    // 自己广播、还没上链的不撤：它的高度只是广播时的链尖，撤了会被再次选中。
+    // Clear spend marks above the height, except for our pending sends: their
+    // height is only the tip at broadcast, and clearing would make the inputs selectable again.
     tx.execute(
         "UPDATE outputs SET spent_at_height = NULL, spent_in_txid = NULL
          WHERE identity_id = ?1 AND spent_at_height > ?2
@@ -807,33 +806,33 @@ mod tests {
     use super::*;
     use crate::wallet::testing::db_with_identity;
 
-    /// 用真实主网块验证环引用的换算：相对差分要累加成严格递增的绝对序号，
-    /// 当前共识环大小 16，全部是 RingCT 输入。
+    /// On real mainnet blocks, ring offsets resolve to strictly increasing
+    /// absolute indices; ring size is 16 and all inputs are RingCT.
     #[test]
     fn ring_references_resolve_to_increasing_absolute_positions_on_real_blocks() {
         let blocks = crate::blocks_bin::parse_response(
             include_bytes!("../tests/fixtures/get_blocks_bin_3768621.bin"),
             3_768_621,
         )
-        .expect("解析真实响应");
+        .expect("parse real response");
         let references: Vec<RingReference> = blocks.iter().flat_map(ring_references_in).collect();
         assert!(!references.is_empty());
         let mut key_images = HashSet::new();
         for reference in &references {
             assert_eq!(reference.members.len(), 16);
             assert!(reference.members.windows(2).all(|w| w[0] < w[1]));
-            assert_eq!(reference.amount.unwrap_or(0), 0, "RingCT 输入");
-            assert!(key_images.insert(reference.key_image), "key image 不应重复");
+            assert_eq!(reference.amount.unwrap_or(0), 0, "RingCT input");
+            assert!(key_images.insert(reference.key_image), "unique key images");
         }
 
-        // 我的一笔输出若恰好是某个环的成员，就被记为可能的花费。
+        // An output of ours that is a ring member is a possible spend.
         let target = &references[0];
         let mut candidates = RingCandidates::new();
         candidates.insert(target.members[5], vec![([7; 32], 1, 12_345)]);
         assert_eq!(ring_matches(&candidates, target).count(), 1);
     }
 
-    /// 老式按金额分池的输入，序号只在同一金额池内有意义。
+    /// Pre-RingCT input indices are only meaningful within the same amount pool.
     #[test]
     fn a_pre_ringct_input_matches_only_outputs_of_its_amount() {
         let reference = RingReference {
@@ -850,15 +849,12 @@ mod tests {
     }
     use rusqlite::params;
 
-    /// 真实主网交易向量。
+    /// Real mainnet vector.
     ///
-    /// 取自 mainnet 高度 3767756 的交易
-    /// `097edcb40a4345c0e83c41e8631b9e71173389270694e7a7499d3c2fa17951bb`。
-    /// 结构是 `01`(TxPublicKey) + 32 字节 R + `02 09 01`(Nonce/加密 payment id)
-    /// + 8 字节。
-    ///
-    /// 用真数据而不是自己拼一个 extra：自己拼只会测到我们对格式的理解，
-    /// 而这里要证明的恰恰是对真实链上数据的理解没错。
+    /// Transaction
+    /// `097edcb40a4345c0e83c41e8631b9e71173389270694e7a7499d3c2fa17951bb`
+    /// at mainnet height 3767756. Layout: `01` (TxPublicKey) + 32-byte R +
+    /// `02 09 01` (nonce / encrypted payment id) + 8 bytes.
     #[test]
     fn the_transaction_public_key_is_read_from_a_real_mainnet_extra() {
         let extra = hex::decode(
@@ -867,32 +863,28 @@ mod tests {
         )
         .unwrap();
 
-        let (keys, additional) = tx_public_keys_from_extra(&extra).expect("应当解析出交易公钥");
+        let (keys, additional) = tx_public_keys_from_extra(&extra).expect("parse tx public key");
         assert_eq!(
             hex::encode(&keys),
             "d3c8b566d9fd0bff3f93448591ec257cc8bf813e1aaa808e97254a5c65ea1660"
         );
-        assert_eq!(keys.len(), 32, "单个 R 就是 32 字节，不要多也不要少");
-        // 这笔交易发给主地址，没有 additional keys。空 Vec 和 None 是两回事：
-        // 前者表示「有 0 个」，后者表示「没有这个字段」。
+        assert_eq!(keys.len(), 32, "a single R is exactly 32 bytes");
+        // Sent to a primary address, so no additional keys: None, not an empty Vec.
         assert_eq!(additional, None);
     }
 
-    /// 空 extra 不是错误，只是没有公钥 —— 不能 panic，也不能当成解析失败去
-    /// 中断整批扫描。
+    /// An empty extra has no keys; it must not panic or abort the batch.
     #[test]
     fn an_extra_without_keys_yields_nothing_rather_than_failing() {
         assert!(tx_public_keys_from_extra(&[]).is_none());
     }
 
-    /// **回归测试。** RingCT 游标曾经在「没有依据」时退化成 0。
+    /// An unknown RingCT cursor is stored as NULL, not 0.
     ///
-    /// 触发路径：从链中段开始扫，而起始块恰好没有 RingCT 输出（节点因此给的
-    /// `output_index_for_first_ringct_output` 是 None）。游标存成 0 之后，
-    /// 下一块拿真实序号（几千万）来比对 0，报出一个**假的**
-    /// `RINGCT_INDEX_MISMATCH` —— 把一个诚实的节点判成作恶，扫描直接卡死。
-    ///
-    /// 正确行为：没有依据就存 NULL，对账跳过，等拿到真实锚点再开始比。
+    /// Starting mid-chain at a block without RingCT outputs leaves
+    /// `output_index_for_first_ringct_output` as None. Storing 0 would raise a
+    /// false `RINGCT_INDEX_MISMATCH` against an honest node on the next block;
+    /// NULL skips the check until a real anchor is known.
     #[test]
     fn an_unknown_ringct_cursor_is_stored_as_null_not_zero() {
         let (db, id) = db_with_identity();
@@ -902,16 +894,16 @@ mod tests {
                  VALUES (?1, ?2, ?3, NULL, 0)",
                 params![id, 3_000_000i64, &vec![7u8; 32]],
             )
-            .expect("游标应当允许 NULL");
+            .expect("cursor should allow NULL");
 
-        let prev = previous_block_state(&db, id, 3_000_001).expect("读前一块");
-        let (height, _, cursor) = prev.expect("前一块应当在");
+        let prev = previous_block_state(&db, id, 3_000_001).expect("read previous block");
+        let (height, _, cursor) = prev.expect("previous block should exist");
         assert_eq!(height, 3_000_000);
-        assert_eq!(cursor, None, "未知必须是 None，不能是 Some(0)");
+        assert_eq!(cursor, None, "unknown must be None, not Some(0)");
     }
 
-    /// 一个身份回滚不能动另一个身份的锚点：否则另一个身份在新链上接着扫，
-    /// 看不出重组，孤块里的钱留在余额里。
+    /// One identity's rewind must not touch another's anchors, or the other
+    /// would miss the reorg and keep orphaned funds in its balance.
     #[test]
     fn one_identity_rewinding_leaves_the_others_anchors_alone() {
         let (mut db, a) = db_with_identity();
@@ -956,12 +948,12 @@ mod tests {
         assert!(is_burning_duplicate(db.conn(), id, &key, &[2u8; 32], 0).unwrap());
         assert!(
             !is_burning_duplicate(db.conn(), id, &key, &[1u8; 32], 0).unwrap(),
-            "同一笔重扫不算"
+            "rescanning the same output is not a duplicate"
         );
         assert!(!is_burning_duplicate(db.conn(), id, &[5u8; 32], &[2u8; 32], 0).unwrap());
     }
 
-    /// 有依据时游标正常推进。
+    /// A known cursor round-trips.
     #[test]
     fn a_known_ringct_cursor_round_trips() {
         let (db, id) = db_with_identity();
@@ -976,7 +968,7 @@ mod tests {
         assert_eq!(cursor, Some(82_000_000));
     }
 
-    /// 回补扫到的交易，所在块随后被裁出块表，时间也不能丢（否则界面显示 1970）。
+    /// A backfilled transaction keeps its time after its block is pruned (otherwise the UI shows 1970).
     #[test]
     fn a_transaction_keeps_its_time_after_its_block_is_pruned() {
         let (mut db, id) = db_with_identity();
@@ -1008,14 +1000,14 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(pruned, 0, "块本身应当已被裁掉");
+        assert_eq!(pruned, 0, "the block itself should be pruned");
 
         let history = crate::query::history(&db, id, 10, 0).unwrap();
         assert_eq!(history["items"][0]["timestamp"], 1_700_000_000);
     }
 
-    /// 自己广播的交易上链：输出早在广播时标了已花，扫到时仍要按 key image 认出来，
-    /// 把交易从待确认转成已确认，高度改成真实上链高度。
+    /// Our broadcast is mined: outputs already marked spent at broadcast must
+    /// still match by key image, confirming the transaction at its mined height.
     #[test]
     fn our_broadcast_spend_is_confirmed_when_its_block_is_scanned() {
         let (mut db, id) = db_with_identity();
@@ -1043,7 +1035,7 @@ mod tests {
         assert_eq!(
             known.get(&key_image),
             Some(&output_id),
-            "待确认的花费也要参与比对"
+            "pending spends must be matched too"
         );
 
         persist(
@@ -1078,7 +1070,7 @@ mod tests {
         assert_eq!(spent_at, mined_at as i64);
         assert!(
             load_key_images(&db, id).unwrap().is_empty(),
-            "确认后不再参与比对"
+            "confirmed spends are no longer matched"
         );
     }
 
@@ -1111,7 +1103,7 @@ mod tests {
         assert_eq!(spent_in, Some(txid.to_vec()));
     }
 
-    /// 自己发出、已上链的交易所在块被重组掉：退回在途，输入不放回。
+    /// Our confirmed send reorged out reverts to pending; inputs stay spent.
     #[test]
     fn a_rewind_turns_our_confirmed_send_back_into_a_pending_one() {
         let (mut db, id) = db_with_identity();
@@ -1148,7 +1140,7 @@ mod tests {
         assert_eq!(
             rows,
             vec![(ours.to_vec(), None)],
-            "自己的退回在途，扫到的照删"
+            "our send reverts to pending, scanned ones are deleted"
         );
         let spent: Vec<Option<Vec<u8>>> = db
             .conn()
@@ -1161,11 +1153,12 @@ mod tests {
         assert_eq!(spent, vec![Some(ours.to_vec()), None]);
     }
 
-    /// 空批次是合法的 no-op，不该报错也不该动任何状态。
+    /// An empty batch is a no-op: no error, no state change.
     #[test]
     fn an_empty_batch_is_a_harmless_no_op() {
         let (mut db, id) = db_with_identity();
-        let outcome = scan_blocks(&mut db, id, &[]).expect("空批次");
+        let outcome = scan_blocks(&mut db, id, &[]).expect("empty batch");
+
         assert_eq!(outcome.blocks_scanned, 0);
         assert_eq!(outcome.outputs_found, 0);
         assert!(outcome.from_height.is_none());

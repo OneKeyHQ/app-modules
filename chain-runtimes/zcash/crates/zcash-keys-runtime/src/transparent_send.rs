@@ -427,10 +427,8 @@ fn plan_transaction(request: TransparentTxRequest) -> Result<TransactionPlan> {
                 serde_json::json!({ "field": "change.derivationPath", "reason": "internalScopeRequired" }),
             ));
         }
-        // 找零序号必须落在签名时的扫描范围内。PCZT 不把派生路径交给
-        // `sign_transparent_inputs`，那边只能按序号试到 `TRANSPARENT_SCAN_GAP`；
-        // 序号更大的找零是「钥匙还在、钱包再也签不出来」的钱。宿主当前把找零
-        // 固定在 .../1/0，这条只是把那个事实钉成契约。
+        // The change index must be within the signer's scan range
+        // (`TRANSPARENT_SCAN_GAP`); change beyond it could never be signed.
         if change_path.index >= crate::sign::TRANSPARENT_SCAN_GAP {
             return Err(KeysError::with(
                 ErrorCode::InvalidDerivationPath,
@@ -450,16 +448,12 @@ fn plan_transaction(request: TransparentTxRequest) -> Result<TransactionPlan> {
             .ok_or_else(|| amount_error("recipientTotal"))?;
         let change_raw = input_total_raw.saturating_sub(needed_with_change);
 
-        // 找零养不起自己时，把这点零头并进手续费、发一笔无找零的交易。
+        // If change cannot pay for its own output, add it to the fee and send
+        // without change (like upstream `DustAction::AddDustToFee`).
         //
-        // 这里原本有两条失败路：找零 < MARGINAL_FEE 抛 DustChange，钱不够再加
-        // 一个输出抛 InsufficientFunds。后者是假话 —— 钱是够的，只是不够养一个
-        // 找零输出；而「零头进手续费」的无找零交易完全成立。上游屏蔽路径的
-        // `DustAction::AddDustToFee` 就是这个做法，透明这边缺了。
-        //
-        // 走到这里已经确定 input_total > send_total + fee_without_change，所以
-        // 减法不会下溢，付出的手续费也一定不低于最低要求。多付的上限是
-        // fee_with_change + MARGINAL_FEE，量级在万分之一 ZEC 以内。
+        // input_total > send_total + fee_without_change holds here, so the
+        // subtraction cannot underflow and the fee meets the minimum. Overpayment
+        // is bounded by fee_with_change + MARGINAL_FEE.
         if input_total_raw < needed_with_change || change_raw < MARGINAL_FEE.into_u64() {
             let fee_raw = input_total_raw - send_total_raw;
             (parse_zatoshis_u64(fee_raw, "fee")?, None)
@@ -1060,11 +1054,11 @@ mod tests {
         assert_eq!(built.spent_outpoints, quote.spent_outpoints);
     }
 
-    /// 找零够不上 dust 门槛时，零头并进手续费发无找零交易 —— 不是拒绝。
+    /// Sub-dust change is added to the fee instead of failing.
     ///
-    /// 100,000 的 UTXO 发 88,000：有找零和无找零的手续费都是 10,000（ZIP-317
-    /// 1-in 两档都落在 grace 2），富余 2,000 养不起一个找零输出。改之前这里
-    /// 直接抛 DustChange，用户只能改金额 —— 而这笔交易本身完全成立。
+    /// Sending 88,000 from a 100,000 UTXO: the fee is 10,000 with or without
+    /// change (ZIP-317, 1-in stays within grace 2), and the 2,000 surplus cannot
+    /// fund a change output.
     #[test]
     fn sub_dust_change_goes_into_the_fee_instead_of_failing() {
         let mut request: serde_json::Value =
@@ -1075,18 +1069,17 @@ mod tests {
         let quote: TransparentQuote = serde_json::from_str(&quote_json(&request).unwrap()).unwrap();
         assert_eq!(quote.send_amount_zat, "88000");
         assert_eq!(quote.change_zat, "0");
-        assert_eq!(quote.fee_zat, "12000", "富余应全部进手续费");
+        assert_eq!(quote.fee_zat, "12000", "surplus must all go to the fee");
 
         let built: TransparentBuildResult =
             serde_json::from_str(&build_with_seed_json(&request, &seed()).unwrap()).unwrap();
         assert_eq!(built.fee_zat, "12000");
     }
 
-    /// 同一个死区的另一半，改之前报的是**假的「余额不足」**。
+    /// A surplus between the two fee tiers is not insufficient funds.
     ///
-    /// 1-in/3-out 时 fee_without_change=15,000、fee_with_change=20,000。富余
-    /// 17,000 落在两者之间：加不起找零输出，但无找零的交易成立。旧代码在
-    /// `checked_sub` 上下溢，直接告诉用户钱不够。
+    /// 1-in/3-out: fee_without_change=15,000, fee_with_change=20,000. A 17,000
+    /// surplus cannot fund change, but the no-change transaction is valid.
     #[test]
     fn surplus_between_the_two_fee_tiers_is_not_reported_as_insufficient_funds() {
         let mut request: serde_json::Value =
@@ -1104,7 +1097,7 @@ mod tests {
         assert_eq!(quote.fee_zat, "17000");
     }
 
-    /// 找零序号必须落在签名端的扫描范围内，否则找零变成签不出来的钱。
+    /// The change index must be within the signer's scan range.
     #[test]
     fn rejects_change_index_outside_the_signing_scan_range() {
         let mut request: serde_json::Value =
@@ -1113,7 +1106,7 @@ mod tests {
         let e = quote_json(&request.to_string()).unwrap_err();
         assert_eq!(e.code, ErrorCode::InvalidDerivationPath);
 
-        // 范围内的仍然放行
+        // In range is still accepted.
         request["change"]["derivationPath"] = "m/44'/133'/0'/1/39".into();
         assert!(quote_json(&request.to_string()).is_ok());
     }

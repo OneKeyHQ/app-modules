@@ -1,29 +1,29 @@
-//! 错误契约。与 `onekey-zcash-runtime` 完全同构：
-//! **稳定错误码 + 结构化参数，Rust 侧不产出面向用户的文案。**
+//! Error contract, same shape as `onekey-zcash-runtime`: stable error codes plus
+//! structured params. Rust never produces user-facing text.
 //!
-//! 两个包的错误码取值空间不重叠，宿主可以用同一套 catch 逻辑处理。
+//! The two crates' code sets do not overlap, so hosts can share one handler.
 
 use serde_json::{json, Map, Value};
 use std::fmt;
 
-/// 稳定错误码。只允许追加，不允许改动已有取值的含义。
+/// Stable error codes. Append only; never change the meaning of an existing code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorCode {
-    /// 网络名不是 "main" / "test"。参数：`{ value }`
+    /// Network is not "main" / "test". Params: `{ value }`
     InvalidNetwork,
-    /// 助记词无法解析。
+    /// Mnemonic cannot be parsed.
     InvalidMnemonic,
-    /// 种子过短。参数：`{ byteLen, min }`
+    /// Seed is too short. Params: `{ byteLen, min }`
     InvalidSeed,
-    /// 账户序号越界。参数：`{ value }`
+    /// Account index out of range. Params: `{ value }`
     InvalidAccountIndex,
-    /// UFVK 无法解析。
+    /// UFVK cannot be parsed.
     InvalidUfvk,
-    /// 密钥派生失败。
+    /// Key derivation failed.
     DeriveFailed,
-    /// PCZT 解析失败。
+    /// PCZT cannot be parsed.
     PcztParseFailed,
-    /// PCZT 签名失败。参数：`{ orchardActions }`（能取到时）
+    /// PCZT signing failed. Params: `{ orchardActions }` when available.
     PcztSignFailed,
     /// The stateless transparent transaction request is malformed.
     InvalidTransactionRequest,
@@ -97,12 +97,12 @@ impl ErrorCode {
 #[derive(Debug)]
 pub struct KeysError {
     pub code: ErrorCode,
-    /// 结构化参数，供宿主填 i18n 占位符。永远是 JSON 对象。
+    /// Structured params for host i18n placeholders. Always a JSON object.
     pub params: Value,
-    /// 上游原始报错，**仅用于日志**。
+    /// Raw upstream error, for logs only.
     ///
-    /// 注意：本包处理密钥材料，任何 detail 都不得包含种子、USK 或其派生物。
-    /// 上游库的错误只描述结构问题，不回显输入，所以直接透传是安全的。
+    /// Must never contain seeds, USKs, or anything derived from them. Upstream
+    /// errors describe structure and do not echo input, so passing them through is safe.
     pub detail: Option<String>,
 }
 
@@ -147,7 +147,7 @@ impl std::error::Error for KeysError {}
 
 pub type Result<T> = std::result::Result<T, KeysError>;
 
-/// 抛给 JS：`Error` 上挂 `code` / `params` / `detail`。
+/// Thrown to JS as an `Error` carrying `code` / `params` / `detail`.
 #[cfg(target_arch = "wasm32")]
 impl From<KeysError> for wasm_bindgen::JsValue {
     fn from(e: KeysError) -> Self {
@@ -212,10 +212,10 @@ mod tests {
         let mut seen = std::collections::HashSet::new();
         for c in all {
             let s = c.as_str();
-            assert!(seen.insert(s), "错误码重复: {s}");
+            assert!(seen.insert(s), "duplicate error code: {s}");
             assert!(
                 s.chars().all(|ch| ch.is_ascii_uppercase() || ch == '_'),
-                "格式不对: {s}"
+                "malformed error code: {s}"
             );
         }
     }

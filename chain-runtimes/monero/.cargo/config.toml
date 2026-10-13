@@ -1,8 +1,5 @@
-# macOS 上 /usr/bin/ar 读不懂 wasm 目标文件：38 个编译好的 .o 会被**静默**打成
-# 一个 96 字节的空归档，链接期表现为一串 `undefined symbol: sqlite3_*`，
-# 而编译阶段不报任何错。
-#
-# 排查提示：本机 clang 是能编 wasm32 的（别往编译器上查），坏的是归档器。
-# cc crate 读 AR_<target> 形式的环境变量。
+# macOS /usr/bin/ar cannot read wasm object files and silently writes an empty
+# archive, which surfaces at link time as `undefined symbol: sqlite3_*`.
+# Use LLVM's ar; the cc crate reads AR_<target>.
 [env]
 AR_wasm32_unknown_unknown = "/opt/homebrew/opt/llvm/bin/llvm-ar"

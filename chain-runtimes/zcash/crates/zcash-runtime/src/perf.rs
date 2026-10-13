@@ -1,5 +1,5 @@
-//! 临时性能打点：宿主打开开关后，每个重导出的耗时打到 console。
-//! 与宿主侧 `[PRIV-PERF]` 同前缀，一个过滤器看全链路。
+//! Temporary perf tracing: when enabled by the host, logs each export's duration
+//! to the console. Shares the host's `[PRIV-PERF]` prefix so one filter covers both.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -13,7 +13,7 @@ pub fn is_enabled() -> bool {
     ENABLED.load(Ordering::Relaxed)
 }
 
-/// 作用域结束（含跨 await 的 async 函数返回）时打一条耗时。
+/// Logs the elapsed time when dropped, including across awaits in async fns.
 pub struct Span {
     name: &'static str,
     started_ms: f64,

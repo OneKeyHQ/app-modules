@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "OneKey Monero Runtime — monero-oxide 之上的钱包状态层（SQLite 落盘）"
+description = "OneKey Monero Runtime: wallet state over monero-oxide, persisted in SQLite"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -26,16 +26,15 @@ rand_core.workspace = true
 curve25519-dalek.workspace = true
 zeroize.workspace = true
 
-# wasm32 专属：SQLite 的 wasm 实现与 JS 互操作。原生目标（本机调试与测试）
-# 用系统 SQLite，不需要这些。
+# Native targets (local debugging and tests).
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-# 原生传输：让浏览器里出的问题能在本机上真调试器复现。
+# Native transport, to reproduce browser issues under a native debugger.
 reqwest.workspace = true
-# 原生侧的重试退避（blocks_bin::backoff）。reqwest 本就跑在 Tokio 上。
+# Native retry backoff (blocks_bin::backoff); reqwest already runs on Tokio.
 tokio.workspace = true
 
 [dev-dependencies]
-# 集成测试要直接构造地址取公钥
+# Integration tests build addresses to extract public keys.
 monero-wallet.workspace = true
 futures-lite.workspace = true
 tokio.workspace = true
@@ -48,7 +47,6 @@ gloo-timers.workspace = true
 js-sys.workspace = true
 wasm-bindgen-futures.workspace = true
 web-sys.workspace = true
-# monero-oxide 整条链走 rand_core 0.6 → getrandom 0.2，而 0.2 在
-# wasm32-unknown-unknown 上必须显式打开旧式的 "js" feature 才能编译。
-# 这条依赖我们代码里一次都不直接用，纯粹是为了把 feature 打开。
+# Not used directly: enables the legacy "js" feature that getrandom 0.2 (via
+# monero-oxide's rand_core 0.6) needs on wasm32-unknown-unknown.
 getrandom_02 = { package = "getrandom", version = "0.2", features = ["js"] }

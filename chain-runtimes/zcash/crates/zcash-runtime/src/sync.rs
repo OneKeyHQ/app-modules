@@ -1,19 +1,13 @@
-//! 扫链：**真正有界**的推进。
+//! Chain scanning with bounded progress.
 //!
-//! ## 为什么不用 `zcash_client_backend::sync::run`
+//! `zcash_client_backend::sync::run` loops until fully synced (`batch_size` only
+//! sizes each batch), so callers cannot interrupt, observe progress, or yield the
+//! main thread. This module drives the upstream public APIs in two parts:
 //!
-//! 上游那个函数内部是 `while running(...) {}` —— 它跑到**完全同步为止**。
-//! `batch_size` 只控制单批区块数，不控制批数。也就是说它不是「推进一步」，
-//! 而是「同步到底」：调用方无法中断、无法看进度、无法在中途让出主线程。
+//! - [`prepare`]: one-off setup (subtree roots, chain tip). Slow; once per sync.
+//! - [`step`]: scans at most `max_batches` batches, then returns progress.
 //!
-//! 实测在 testnet 上一次调用 900 秒未返回。对浏览器和移动端都不可接受。
-//!
-//! 所以这里自己驱动上游的公开 API，拆成两段：
-//!
-//! - [`prepare`] —— 一次性准备（下载子树根、更新链尖）。慢，但每轮同步只做一次。
-//! - [`step`] —— 有界推进：最多扫 `max_batches` 批，然后带进度返回。
-//!
-//! 宿主拿到进度后自己决定要不要接着调 —— 这正是「调度归 TS」那条边界。
+//! The host decides whether to call again; scheduling belongs to TS.
 
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
@@ -42,11 +36,11 @@ use crate::error::{ErrorCode, Result, RuntimeError};
 use crate::network::LightClient;
 use crate::wallet::Db;
 
-/// 在上游建议的区间里按优先级挑一个。
+/// Pick a range from the upstream suggestions by priority.
 ///
-/// `None` 表示「随便，按上游给的顺序」—— 上游本就把 ChainTip 排在 Historic 前面。
-/// 指定优先级时只在同优先级里挑；挑不到就返回 None，让调用方知道这条 lane 空了，
-/// 而不是悄悄去扫另一条 lane（那会让宿主的进度显示和实际发生的事对不上）。
+/// `None` means any, in upstream order (ChainTip before Historic). With a priority,
+/// only that lane is considered; `None` is returned when it is empty rather than
+/// silently scanning another lane, which would desync host progress reporting.
 fn pick_range(suggested: &[ScanRange], preferred: Option<ScanPriority>) -> Option<ScanRange> {
     suggested
         .iter()
@@ -54,7 +48,7 @@ fn pick_range(suggested: &[ScanRange], preferred: Option<ScanPriority>) -> Optio
         .cloned()
 }
 
-/// 宿主可以指定的优先级。字符串而非数字：数字在跨边界时无从校验。
+/// Host-selectable priority. Strings, not numbers, so values are checkable across the boundary.
 pub fn parse_priority(name: &str) -> Result<Option<ScanPriority>> {
     Ok(match name {
         "" | "any" => None,
@@ -72,10 +66,10 @@ pub fn parse_priority(name: &str) -> Result<Option<ScanPriority>> {
     })
 }
 
-/// 检测到重组时建议回退多少块。
+/// Suggested rewind depth on reorg.
 ///
-/// Zcash 的最终性很快，深重组极罕见；退太多会让用户重扫大段历史，退太少则可能
-/// 没退到分叉点之前、下一轮继续撞连续性错误。宿主可以在重复失败时自行加大。
+/// Deep reorgs are rare on Zcash; too deep forces a long rescan, too shallow may
+/// not pass the fork point. Hosts may increase it on repeated failures.
 const REORG_REWIND_BLOCKS: u32 = 10;
 
 fn net_err(operation: &str, e: impl std::fmt::Display) -> RuntimeError {
@@ -86,7 +80,7 @@ fn db_err(operation: &str, e: impl std::fmt::Display) -> RuntimeError {
     RuntimeError::with(ErrorCode::DatabaseError, json!({ "operation": operation })).detail(e)
 }
 
-/// 拉取某个池的全部子树根。
+/// Fetch all subtree roots for one pool.
 async fn subtree_roots<H: HashSer>(
     client: &mut LightClient,
     protocol: service::ShieldedProtocol,
@@ -131,13 +125,12 @@ async fn subtree_roots<H: HashSer>(
     Ok(roots)
 }
 
-/// 一次性准备：把三个池的子树根灌进钱包，并更新链尖。
+/// One-off setup: load subtree roots for all three pools and update the chain tip.
 ///
-/// **这是首次同步最慢的一步**（要下载全部子树根），且与 `batch_size` 无关 ——
-/// 这正是之前 `syncAdvance` 看起来「卡住」的原因。把它单独暴露出来，
-/// 宿主就能给出「正在准备」这样的独立进度，而不是干等一个不返回的调用。
+/// The slowest step of a first sync (downloads every subtree root), independent of
+/// `batch_size`; exposed separately so the host can report it as its own phase.
 ///
-/// 每轮同步开始时调一次即可。重复调用是幂等的，但会重新下载，没必要。
+/// Idempotent, but each call re-downloads everything.
 pub async fn prepare(db: &mut Db, client: &mut LightClient) -> Result<String> {
     let sapling: Vec<CommitmentTreeRoot<sapling::Node>> = subtree_roots(
         client,
@@ -182,11 +175,11 @@ pub async fn prepare(db: &mut Db, client: &mut LightClient) -> Result<String> {
     .to_string())
 }
 
-/// 只更新链尖，不碰子树根。
+/// Update only the chain tip, leaving subtree roots untouched.
 ///
-/// 子树根是凝固的历史（新分片几天才完成一个），`prepare` 却每次从索引 0
-/// 全量重下约 1900 条 —— 主网实测 7.4s。每轮同步真正的新信息只有链尖，
-/// 一个 unary 调用。`prepare` 留给开库后的第一次。
+/// Subtree roots change rarely (a new shard every few days) while `prepare`
+/// refetches all ~1900 from index 0 (~7.4s on mainnet). Use `prepare` once after
+/// opening the wallet and this unary call for later syncs.
 pub async fn tip(db: &mut Db, client: &mut LightClient) -> Result<String> {
     let tip = crate::network::chain_tip(client).await?;
     db.update_chain_tip(BlockHeight::from_u32(tip))
@@ -194,10 +187,10 @@ pub async fn tip(db: &mut Db, client: &mut LightClient) -> Result<String> {
     Ok(json!({ "chainTip": tip }).to_string())
 }
 
-/// 有界推进：最多处理 `max_batches` 批，每批 `batch_size` 个区块。
+/// Bounded progress: at most `max_batches` batches of `batch_size` blocks.
 ///
-/// 返回进度 JSON，`done` 表示「已经没有待扫区间」。宿主据此决定是否继续调 ——
-/// 本函数**永远不会**自己循环到同步完成。
+/// Returns progress JSON; `done` means no ranges remain. Never loops to full sync;
+/// the host decides whether to call again.
 pub async fn step(
     db: &mut Db,
     client: &mut LightClient,
@@ -224,8 +217,7 @@ pub async fn step(
 
     let mut batches_done = 0u32;
     let mut blocks_scanned = 0u64;
-    // 分阶段累计耗时。扫描慢的时候，「慢在下载还是慢在扫描」是完全不同的两件事，
-    // 而在浏览器里两者的表现一模一样（页面不动），只能靠打点区分。
+    // Per-phase timings: in the browser slow download and slow scan look identical.
     let (mut ms_download, mut ms_treestate, mut ms_scan) = (0.0f64, 0.0f64, 0.0f64);
     let (mut scanned_from, mut scanned_to) = (None::<u32>, None::<u32>);
     let mut scanned_priority: Option<String> = None;
@@ -235,14 +227,14 @@ pub async fn step(
             .suggest_scan_ranges()
             .map_err(|e| db_err("suggestScanRanges", e))?;
 
-        // 按宿主给的优先级挑区间。**选择权在宿主，但候选只能来自上游建议** ——
-        // 这样「先追链尖还是先回填历史」这类调度决策回到 App，而
-        // 「哪些区间扫了才是安全的」仍由协议实现说了算，宿主没法乱指高度。
+        // The host picks the priority, but candidates come only from upstream
+        // suggestions: scheduling stays with the app, while which ranges are safe
+        // to scan stays with the protocol implementation.
         let Some(range) = pick_range(&suggested, preferred) else {
-            break; // 该优先级下没有待扫区间
+            break; // no pending ranges at this priority
         };
 
-        // 只取这一批，剩下的留给下一次调用 —— 这就是「有界」的全部含义。
+        // Take only this batch; the rest is left for later calls.
         let start = range.block_range().start;
         if scanned_from.is_none() {
             scanned_from = Some(u32::from(start));
@@ -251,15 +243,14 @@ pub async fn step(
 
         let t_start = now_ms();
 
-        // 下载：失败先原批重试一次，再对半收缩，地板 32 块。
+        // Download: on failure retry the same batch once, then halve, down to 32 blocks.
         //
-        // 2022 spam 墙区段（约 171 万~195 万高度）一批 500 块可达几十 MB，
-        // 固定超时在慢链路上永远下不完 —— 不收缩的重试是原地撞墙，换端点
-        // 也一样（哪台服务器这段都这么大）。成功的批量跨调用记忆（下方
-        // thread_local）：不记忆时每轮都从常规值重爬梯子，在墙里等于每轮
-        // 白烧两次超时；记住上次成功值、成功后再倍增回去，梯子只爬一次，
-        // 出墙后几轮内自动恢复常规批量。wasm 单线程，thread_local 即会话级；
-        // 载体重启后回到常规值，自愈。
+        // In the 2022 spam range (heights ~1.71M-1.95M) a 500-block batch can be
+        // tens of MB and never finishes on slow links under a fixed timeout, on any
+        // server. The successful size is remembered across calls (thread_local
+        // below, session-scoped on single-threaded wasm) and doubled back up after
+        // successes, so the shrink happens once and normal size recovers after the
+        // spam range.
         const MIN_DOWNLOAD_BATCH: u32 = 32;
         thread_local! {
             static DOWNLOAD_BATCH_HINT: std::cell::Cell<u32> =
@@ -280,10 +271,10 @@ pub async fn step(
             let candidate = ScanRange::from_parts(start..attempt_end, range.priority());
             let candidate_len = candidate.len();
             trace(&format!(
-                "step: 下载 {candidate_len} 块 @{}",
+                "step: download {candidate_len} blocks @{}",
                 u32::from(start)
             ));
-            // 超时在 download_batch 内部按「停滞」判定；这里只兜真失败。
+            // download_batch times out on stalls; only real failures reach here.
             let _ = candidate_len;
             match download_batch(client, &cache, &candidate).await {
                 Ok(got) => break (candidate, got),
@@ -293,20 +284,20 @@ pub async fn step(
                     }
                     if same_size_retry > 0 {
                         same_size_retry -= 1;
-                        trace("step: 下载失败，原批重试");
+                        trace("step: download failed, retrying same batch");
                         continue;
                     }
                     if attempt_len <= MIN_DOWNLOAD_BATCH {
                         return Err(e);
                     }
                     attempt_len = std::cmp::max(MIN_DOWNLOAD_BATCH, attempt_len / 2);
-                    trace(&format!("step: 下载超时，批量对半 -> {attempt_len}"));
+                    trace(&format!("step: download timeout, halving -> {attempt_len}"));
                 }
             }
         };
-        // 缩过就记住缩后的值并清空连胜；**整批**（非链尖小批）在记忆值上
-        // 连胜三次才向上探一档 —— 小批成功或单次侥幸都不算数，否则记忆值
-        // 被顶回超时区来回震荡，每隔一轮就白烧一次探测超时。
+        // After shrinking, remember the size and reset the streak. Grow one step only
+        // after three consecutive full batches at the remembered size (small tip
+        // batches do not count), so the hint does not oscillate back into timeouts.
         if attempt_len < initial_len {
             DOWNLOAD_BATCH_HINT.with(|h| h.set(attempt_len));
             DOWNLOAD_BATCH_STREAK.with(|s| s.set(0));
@@ -320,20 +311,18 @@ pub async fn step(
                 let grown = std::cmp::min(batch_size, attempt_len.saturating_mul(2));
                 DOWNLOAD_BATCH_HINT.with(|h| h.set(grown));
                 DOWNLOAD_BATCH_STREAK.with(|s| s.set(0));
-                trace(&format!("step: 批量上探 -> {grown}"));
+                trace(&format!("step: growing batch -> {grown}"));
             }
         }
-        // 预算截断时实际入库的可能少于请求区间，扫描终点以实收为准。
+        // A budget cut may store fewer blocks than requested; scan only what arrived.
         let _ = &batch;
         scanned_to = Some(u32::from(start) + batch_len as u32);
         let t_downloaded = now_ms();
         ms_download += t_downloaded - t_start;
 
-        // 钳位到 Sapling 激活高度之后。
-        //
-        // lightwalletd 在 Sapling 激活之前**没有 treestate**，而它对这种请求的
-        // 错误响应会让 wasm 侧的 gRPC 调用**永久挂起** —— 不是报错，是不返回。
-        // 这个坑我们自己的代码库早有记录（zcashWebSdk.ts 的 birthday 钳位）。
+        // Clamp to Sapling activation: lightwalletd has no treestate before it, and its
+        // error reply hangs the wasm gRPC call forever (see the birthday clamp in
+        // zcashWebSdk.ts).
         let anchor = anchor_height(&params, start);
 
         let chain_state = crate::network::with_timeout(
@@ -356,10 +345,9 @@ pub async fn step(
 
         let t_treestate = now_ms();
         ms_treestate += t_treestate - t_downloaded;
-        trace(&format!("step: 开始扫描 {batch_len} 块"));
+        trace(&format!("step: scanning {batch_len} blocks"));
 
-        // 重组在 scan_blocks_inline 内部按**类型**分类成 REORG_DETECTED
-        // （带精确 atHeight）—— 这里不再做字符串嗅探。
+        // scan_blocks_inline maps reorgs to REORG_DETECTED by error type (exact atHeight).
         scan_blocks_inline(
             &params,
             &cache,
@@ -371,7 +359,7 @@ pub async fn step(
         )?;
 
         ms_scan += now_ms() - t_treestate;
-        trace(&format!("step: 扫描完成，累计 {ms_scan:.0}ms"));
+        trace(&format!("step: scan done, total {ms_scan:.0}ms"));
 
         blocks_scanned += batch_len as u64;
 
@@ -390,7 +378,7 @@ pub async fn step(
         Ok(0)
     };
 
-    // 扫完之后重新问一次，把剩余量报给宿主做进度条。
+    // Re-query to report remaining work for the host progress bar.
     let remaining = db
         .suggest_scan_ranges()
         .map_err(|e| db_err("suggestScanRanges", e))?;
@@ -405,7 +393,7 @@ pub async fn step(
         "blocksScanned": blocks_scanned,
         "remainingBlocks": remaining_blocks,
         "remainingRanges": remaining.len(),
-        // 这次实际扫的是哪一段、什么优先级 —— 宿主据此把进度归到正确的 lane
+        // Range and priority actually scanned, so the host attributes progress to the right lane
         "scannedFrom": scanned_from,
         "scannedTo": scanned_to,
         "scannedPriority": scanned_priority,
@@ -553,28 +541,22 @@ fn parse_enhancement(data: &[u8], branch: BranchId, expected: TxId) -> Result<Tr
     Ok(tx)
 }
 
-/// 就地扫描一批区块并落库。**不使用上游的 `scan_cached_blocks`。**
+/// Scan a batch of blocks inline and store the results, without upstream
+/// `scan_cached_blocks`.
 ///
-/// ## 为什么不能用 `scan_cached_blocks`
-///
-/// 它内部把试解密交给批量 runner：
+/// `scan_cached_blocks` hands trial decryption to a batch runner:
 ///
 /// ```text
 /// Tasks::run_task()  ->  rayon::spawn_fifo(|| task.run())
 /// ```
 ///
-/// 而 `scan_cached_blocks` 用的正是 `Tasks for ()`，该实现只覆写了 `add_task`，
-/// **没有覆写 `run_task`**，于是仍然走 rayon。wasm32 单线程环境下 rayon 全局线程池
-/// 没有工作线程，任务被排队但永远不会执行；随后 `BatchReceiver::into_results()`
-/// 在通道上等一个永远不来的结果，**把主线程彻底堵死**。
+/// Its `Tasks for ()` overrides `add_task` but not `run_task`, so tasks still go to
+/// rayon. On single-threaded wasm32 the rayon pool has no workers, and
+/// `BatchReceiver::into_results()` blocks the main thread forever at the first
+/// block with shielded outputs.
 ///
-/// 表现极具迷惑性：空区块不会产生批次，所以扫描一路正常，直到遇到**第一个含
-/// 屏蔽输出的区块**才卡住 —— 看起来像「批量大到某个阈值就挂」，实际与批量无关。
-/// 页面无响应、无错误、超时定时器不触发，连 CDP 都服务不了。
-///
-/// 这里改用公开的 `scanning::scan_block`（它等价于 `runners = None`），
-/// 试解密就地完成，不碰 rayon。代价是失去批量试解密的摊销优化（批量求逆），
-/// 换来的是在单线程目标上能正确工作，且**不需要 fork 上游**。
+/// `scanning::scan_block` (equivalent to `runners = None`) decrypts inline without
+/// rayon, at the cost of batched-inversion amortization and without forking upstream.
 fn scan_blocks_inline<IvkTag>(
     params: &zcash_protocol::consensus::Network,
     cache: &MemoryBlockCache,
@@ -607,10 +589,9 @@ where
             Ok(())
         })
         .map_err(|e| match &e {
-            // 链重组：上游的**类型化**判定（和参考循环同一个谓词）。这里是错误
-            // 还带着类型的最后一刻 —— 一旦 format 成字符串再去嗅探变体名，就是
-            // 上一个 bug 的形状：匹配串写错，重组识别静默失效，钱包在同一高度
-            // 死循环整夜。at_height 也因此是精确值，不再用批起点估。
+            // Reorg: classify by the typed upstream predicate (same as the reference
+            // loop) while the error is still typed; string matching can silently
+            // miss it. This also gives an exact at_height.
             ChainError::Scan(scan_err) if scan_err.is_continuity_error() => {
                 let at = u32::from(scan_err.at_height());
                 RuntimeError::with(
@@ -696,13 +677,11 @@ fn orchard_only_ufvk(
         .map_err(|e| RuntimeError::new(ErrorCode::InvalidUfvk).detail(e))
 }
 
-/// 单个账户的同步完成度。**不发网络请求。**
+/// Sync completeness for a single account. No network requests.
 ///
-/// 共享库里所有账户共用一条扫描队列，所以「全库剩余多少」对单个账户是误导的：
-/// 刚加进来的账户会把全库进度拉回去，让早就扫完的账户看起来也没好。
-///
-/// 这里的判据是：**高于该账户 birthday 的待扫区间**才与它有关。低于 birthday
-/// 的区间是别的账户的历史，与它无关。
+/// All accounts in a shared database share one scan queue, so whole-database
+/// progress is misleading per account. Only pending ranges above this account's
+/// birthday count; ranges below it belong to other accounts' history.
 pub fn account_status(db: &Db, account_uuid: &str) -> Result<String> {
     let account_id = crate::account::parse_account_id(db, account_uuid)?;
     let birthday = u32::from(
@@ -714,7 +693,7 @@ pub fn account_status(db: &Db, account_uuid: &str) -> Result<String> {
         .suggest_scan_ranges()
         .map_err(|e| db_err("suggestScanRanges", e))?;
 
-    // 只算与这个账户有关的那部分
+    // Count only the part relevant to this account
     let mut remaining: u64 = 0;
     let mut lowest_pending: Option<u32> = None;
     for r in &ranges {
@@ -732,7 +711,7 @@ pub fn account_status(db: &Db, account_uuid: &str) -> Result<String> {
         .map_err(|e| db_err("walletSummary", e))?;
     let chain_tip = summary.as_ref().map(|s| u32::from(s.chain_tip_height()));
 
-    // 扫到哪了 = 与本账户相关的最低待扫高度；没有待扫就是已追到链尖。
+    // Scanned height = lowest pending height for this account, else the chain tip.
     let scanned_to = lowest_pending.or(chain_tip);
 
     Ok(json!({
@@ -745,10 +724,9 @@ pub fn account_status(db: &Db, account_uuid: &str) -> Result<String> {
     .to_string())
 }
 
-/// 只读：钱包当前建议扫描哪些区间。**不发任何网络请求。**
+/// Read-only: the ranges the wallet currently suggests scanning. No network requests.
 ///
-/// 用途有二：给宿主做进度条；以及在同步卡住时确认它到底想扫哪一段 ——
-/// 不用猜，直接看。
+/// For host progress bars and for inspecting what a stuck sync is trying to scan.
 pub fn peek(db: &Db) -> Result<String> {
     let ranges = db
         .suggest_scan_ranges()
@@ -770,12 +748,10 @@ pub fn peek(db: &Db) -> Result<String> {
     Ok(json!({ "ranges": items, "totalBlocks": total }).to_string())
 }
 
-/// 诊断探针：只做**下载**，不扫描、不写库。返回各阶段耗时。
+/// Diagnostic probe: download only, no scan, no writes. Returns per-phase timings.
 ///
-/// 用来把「网络慢/挂」与「扫描慢/挂」分开 —— 这两者在浏览器里的表现完全一样
-/// （都是页面无响应），但成因和修法完全不同。
-///
-/// 也可以当网络健康检查用：它不改变任何钱包状态。
+/// Separates a slow or hung network from a slow or hung scan, which look the same
+/// in the browser. Also usable as a network health check; no wallet state changes.
 pub async fn probe_download(db: &Db, client: &mut LightClient, batch_size: u32) -> Result<String> {
     let t0 = now_ms();
 
@@ -842,8 +818,7 @@ fn now_ms() -> f64 {
         .unwrap_or(0.0)
 }
 
-/// 阶段打点。一次调用要跑很久时，最后一条打点就指出它停在哪个阶段 ——
-/// 浏览器里除此之外看不到任何东西。
+/// Phase trace. When a call runs long, the last trace shows which phase it is in.
 #[cfg(target_arch = "wasm32")]
 pub(crate) fn trace(msg: &str) {
     #[wasm_bindgen::prelude::wasm_bindgen]
@@ -864,10 +839,10 @@ pub(crate) fn trace(msg: &str) {
     }
 }
 
-/// 取 `start - 1` 作为锚点，但不低于 Sapling 激活高度。
+/// Anchor at `start - 1`, but not below Sapling activation.
 ///
-/// 低于该高度时 lightwalletd 没有 treestate，其错误响应会让 wasm 的 gRPC
-/// 调用永久挂起（不是返回错误），所以必须在发请求前钳住。
+/// lightwalletd has no treestate below it, and its error reply hangs the wasm
+/// gRPC call forever instead of failing, so clamp before requesting.
 fn anchor_height(params: &zcash_protocol::consensus::Network, start: BlockHeight) -> u32 {
     let sapling = params
         .activation_height(NetworkUpgrade::Sapling)
@@ -876,17 +851,17 @@ fn anchor_height(params: &zcash_protocol::consensus::Network, start: BlockHeight
     u32::from(start).saturating_sub(1).max(sapling)
 }
 
-/// 软预算：块还在到达时不判死，但总时长过线后**把已到手的连续前缀拿去扫**，
-/// 不再等剩余的块。超时语义因此从「总时长一刀切」变成「停滞才是死」——
-/// 一个健康推进的大批（spam 墙里 500 块几十 MB）不再被硬杀重下；
-/// 慢链路的每一秒都变成已入库的块，批量大小由实际吞吐逐秒决定。
+/// Soft download budget. Past it, scan the contiguous prefix received so far
+/// instead of waiting for the rest; only a stall is fatal. A large but progressing
+/// batch (500 spam-range blocks, tens of MB) is not killed and refetched.
 const DOWNLOAD_SOFT_BUDGET_MS: f64 = 30_000.0;
 
-/// 流式下载一段区块并写入缓存，返回**实际入库的块数**（连续前缀）。
+/// Stream a block range into the cache; returns the number of blocks stored
+/// (a contiguous prefix).
 ///
-/// 每条流消息各自套 DEFAULT_TIMEOUT_MS 的**停滞**超时：只有一颗块都没
-/// 收到过的停滞才向上抛错（交给调用方重试/对半）；已有收获的停滞和
-/// 预算超线一样，截断收工。
+/// Each stream item has its own DEFAULT_TIMEOUT_MS stall timeout. A stall before
+/// any block arrives is an error (caller retries or halves); a later stall, like
+/// the budget, truncates.
 
 async fn download_batch(
     client: &mut LightClient,
@@ -923,7 +898,7 @@ async fn download_batch(
     let mut blocks = Vec::new();
     loop {
         if !blocks.is_empty() && now_ms() - started > DOWNLOAD_SOFT_BUDGET_MS {
-            trace(&format!("step: 下载达预算，截断扫已获 {} 块", blocks.len()));
+            trace(&format!("step: over budget, scan {} blocks", blocks.len()));
             break;
         }
         let next = crate::network::with_timeout(
@@ -939,12 +914,12 @@ async fn download_batch(
         .await;
         match next {
             Ok(Some(block)) => blocks.push(block),
-            Ok(None) => break, // 流正常结束（整批到齐）
+            Ok(None) => break, // stream ended normally (full batch)
             Err(e) => {
                 if blocks.is_empty() {
-                    return Err(e); // 真停滞且颗粒无收
+                    return Err(e); // stalled with nothing received
                 }
-                trace(&format!("step: 下载停滞，截断扫已获 {} 块", blocks.len()));
+                trace(&format!("step: stalled, scan {} blocks", blocks.len()));
                 break;
             }
         }
@@ -963,8 +938,9 @@ async fn download_batch(
     Ok(got)
 }
 
-/// 节点回的块必须从区间起点开始、逐块连续、不越过终点（右开）。截断的前缀
-/// 是合法的（下载有预算）；乱序、重复、跳号或区间外的块不能进缓存。
+/// Blocks must start at the range start, be contiguous, and stay below the
+/// exclusive end. A truncated prefix is valid (download budget); out-of-order,
+/// duplicate, skipped, or out-of-range blocks must not enter the cache.
 fn check_block_sequence(
     start: u32,
     end_exclusive: u32,
@@ -984,12 +960,14 @@ fn check_block_sequence(
     Ok(())
 }
 
-/// 回退钱包到指定高度，让之后的同步重扫这段区间。
+/// Rewind the wallet to `height` so later syncs rescan above it.
 ///
-/// **破坏性**：该高度之上的扫描结果（note、witness、承诺树检查点）会被丢弃。
-/// 已广播的交易不受影响（它们在链上），但本地未确认记录可能丢失。
+/// Destructive: scan results above the height (notes, witnesses, commitment tree
+/// checkpoints) are discarded. Broadcast transactions are unaffected on chain,
+/// but local unconfirmed records may be lost.
 ///
-/// 返回实际回退到的高度：上游可能因承诺树检查点位置退得比请求的更靠前。
+/// Returns the actual height, which may be lower than requested because of
+/// checkpoint positions.
 pub fn rewind_to(db: &mut Db, height: u32) -> Result<u32> {
     let target = BlockHeight::from_u32(height);
     let actual = db
@@ -1125,10 +1103,10 @@ mod tests {
     fn anchor_never_precedes_sapling_activation() {
         for net in [Network::MainNetwork, Network::TestNetwork] {
             let sapling = u32::from(net.activation_height(NetworkUpgrade::Sapling).unwrap());
-            // 请求高度远早于 Sapling —— 必须被抬到激活高度，否则 gRPC 会挂死
+            // Far below Sapling: must clamp to activation or gRPC hangs
             assert_eq!(anchor_height(&net, BlockHeight::from_u32(1)), sapling);
             assert_eq!(anchor_height(&net, BlockHeight::from_u32(sapling)), sapling);
-            // 正常情况取 start - 1
+            // Normally start - 1
             let h = sapling + 1000;
             assert_eq!(anchor_height(&net, BlockHeight::from_u32(h)), h - 1);
         }

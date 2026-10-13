@@ -1,6 +1,5 @@
-//! 账户导入与读取。
-//!
-//! 只做「看账」所需：导入 UFVK、读余额。私钥、地址派生与签名不在这条路径上。
+//! Account import and reads: UFVK import and balances. No private keys,
+//! address derivation or signing on this path.
 
 use zcash_client_backend::data_api::wallet::ConfirmationsPolicy;
 use zcash_client_backend::data_api::{
@@ -13,12 +12,10 @@ use crate::network::{self, LightClient};
 use crate::wallet::Db;
 use serde_json::json;
 
-/// 导入一个只读账户（UFVK）。
+/// Imports an account from a UFVK.
 ///
-/// `birthday_height` 是「这个账户最早可能收到 note 的高度」。它决定扫描起点，
-/// 也决定首次同步要花多久 —— 设成当天的链尖高度，新建账户就几乎不用扫历史。
-///
-/// 需要一次网络往返取 birthday 前一个区块的 treestate。
+/// `birthday_height` is the earliest height the account can have received a
+/// note; scanning starts there. Fetches the tree state of the block before it.
 pub async fn import_ufvk(
     db: &mut Db,
     client: &mut LightClient,
@@ -32,8 +29,9 @@ pub async fn import_ufvk(
     let ufvk = UnifiedFullViewingKey::decode(&params, ufvk_str)
         .map_err(|e| RuntimeError::new(ErrorCode::InvalidUfvk).detail(e))?;
 
-    // 宿主知道种子指纹 + 账户序号时，账户按「可花费」导入：PCZT 里的 change 输出
-    // 会带上 zip32_derivation，签名器（软件/硬件）据此确认找零回到自己。
+    // With a seed fingerprint and account index the account is imported as
+    // spending, so PCZT change outputs carry zip32_derivation and signers can
+    // verify change returns to the wallet.
     let purpose = match derivation {
         Some((fingerprint_hex, account_index)) => AccountPurpose::Spending {
             derivation: Some(parse_zip32_derivation(fingerprint_hex, account_index)?),
@@ -41,8 +39,7 @@ pub async fn import_ufvk(
         None => AccountPurpose::ViewOnly,
     };
 
-    // treestate 取的是 birthday 的前一个区块：账户从 birthday 起开始观察，
-    // 所以需要「birthday 之前」的树状态作为锚点。
+    // The account starts at the birthday, so the anchor is the tree state just before it.
     let anchor_height = birthday_height.saturating_sub(1);
     let treestate = network::tree_state(client, anchor_height).await?;
     check_birthday_tree_state(&treestate, anchor_height, &params)?;
@@ -94,7 +91,7 @@ fn parse_zip32_derivation(fingerprint_hex: &str, account_index: u32) -> Result<Z
     ))
 }
 
-/// 账户余额，JSON。`minConfirmations` 为 0 时把未确认也算进来。
+/// Account balance as JSON.
 pub fn balance_json(db: &Db, account_uuid: &str, policy: ConfirmationsPolicy) -> Result<String> {
     let account_id = parse_account_id(db, account_uuid)?;
 
@@ -106,8 +103,8 @@ pub fn balance_json(db: &Db, account_uuid: &str, policy: ConfirmationsPolicy) ->
         .detail(e)
     })?;
 
-    // 还没扫到任何区块时没有摘要。这是一个明确的状态，用错误码表达，
-    // 不要在返回值里塞中文原因 —— 那是宿主的文案。
+    // No summary before any block is scanned; reported as an error code, with
+    // user-facing text left to the host.
     let Some(summary) = summary else {
         return Err(RuntimeError::new(ErrorCode::NotSynced));
     };
@@ -119,20 +116,15 @@ pub fn balance_json(db: &Db, account_uuid: &str, policy: ConfirmationsPolicy) ->
         )
     })?;
 
-    // 每个池各自报全五个量，**不做任何跨池合并**。
-    //
-    // 合并是产品决策，不是事实。比如「可花的屏蔽余额」在本钱包等于
-    // orchard + ironwood（sapling 因为裁掉了证明参数只读），但那是钱包当下的
-    // 策略，不是链上的性质 —— 焊进 runtime 就意味着策略一变 runtime 就在说谎。
-    // 而且合并会抹掉「钱在哪个池」，那恰恰是池明细 UI 要展示的东西。
-    //
-    // 宿主要什么口径的合计，自己加。
+    // Each pool reports all five values with no cross-pool merging: which pools
+    // count as spendable is wallet policy, not chain fact, and per-pool detail is
+    // shown in the UI. The host computes any totals it needs.
     let pool = |b: &zcash_client_backend::data_api::Balance| {
         serde_json::json!({
             "spendable": u64::from(b.spendable_value()),
             "pendingChange": u64::from(b.change_pending_confirmation()),
             "pendingSpendable": u64::from(b.value_pending_spendability()),
-            // 被某个 PCZT 提案占住的部分（见 send.rs 的 reservation）
+            // Reserved by a PCZT proposal (see the reservation in send.rs).
             "locked": u64::from(b.locked_value()),
             "total": u64::from(b.total()),
         })
@@ -156,9 +148,8 @@ pub fn balance_json(db: &Db, account_uuid: &str, policy: ConfirmationsPolicy) ->
         "orchard": pool(balances.orchard_balance()),
         "ironwood": pool(balances.ironwood_balance()),
 
-        // 透明余额也分开报：coinbase 有不同的成熟规则，而且只能走
-        // `propose_shielding_coinbase` 屏蔽，宿主的屏蔽路径碰不到它。
-        // 并成一个数就看不出这个差别了。
+        // Coinbase is reported separately: it has its own maturity rules and can
+        // only be shielded via `propose_shielding_coinbase`.
         "transparentRegular": pool(balances.unshielded_regular_balance()),
         "transparentCoinbase": pool(balances.unshielded_coinbase_balance()),
 
@@ -168,10 +159,8 @@ pub fn balance_json(db: &Db, account_uuid: &str, policy: ConfirmationsPolicy) ->
     .to_string())
 }
 
-/// 从共享库里移除单个账户。
-///
-/// 共享库下删除**不能**是删库 —— 那会连累其他钱包的账户。库只在最后一个账户
-/// 也被删掉之后才该丢弃，那由宿主判断。
+/// Removes one account from the shared database. Deleting the database would
+/// remove other wallets' accounts; the host drops it after the last account.
 pub fn remove_account(db: &mut Db, account_uuid: &str) -> Result<()> {
     let account_id = parse_account_id(db, account_uuid)?;
     db.transactionally_with_extension(|wallet, ext| {
@@ -186,11 +175,11 @@ pub fn remove_account(db: &mut Db, account_uuid: &str) -> Result<()> {
     })
 }
 
-/// 按 UFVK 查这个库里的账户，找不到返回 `"null"`。
+/// Finds the account with this UFVK, or returns `"null"`.
 ///
-/// 共享库下这是**定位账户的唯一正确方式**：一份库装着全部钱包的全部账户，
-/// 不能假设第一个就是要找的那个；而 runtime 的 UUID 在 purge 之后会变，
-/// 也不能缓存。UFVK 是宿主手上稳定且唯一的键。
+/// This is how to locate an account in the shared database: it holds every
+/// wallet's accounts, and runtime UUIDs change after a purge. The UFVK is the
+/// host's stable unique key.
 pub fn account_by_ufvk(db: &Db, ufvk_str: &str) -> Result<String> {
     let params = *db.params();
     let target = UnifiedFullViewingKey::decode(&params, ufvk_str)
@@ -221,7 +210,7 @@ pub fn account_by_ufvk(db: &Db, ufvk_str: &str) -> Result<String> {
     Ok("null".to_string())
 }
 
-/// 列出本地已有账户，JSON 数组。
+/// Local account UUIDs as a JSON array.
 pub fn list_accounts_json(db: &Db) -> Result<String> {
     let ids = db.get_account_ids().map_err(|e| {
         RuntimeError::with(
@@ -260,7 +249,7 @@ fn uuid_from_str(s: &str) -> Result<uuid::Uuid> {
     })
 }
 
-/// 构造确认数策略。两个门槛都必须 >= 1，且 trusted <= untrusted。
+/// Builds a confirmations policy. Both thresholds must be >= 1 and trusted <= untrusted.
 pub fn confirmations_policy(
     trusted: u32,
     untrusted: u32,
@@ -277,10 +266,10 @@ pub fn confirmations_policy(
     ConfirmationsPolicy::new(t, u, allow_zero_conf_shielding).map_err(|e| bad().detail(e))
 }
 
-/// 生日取自服务端给的树状态：上游按它报的高度 + 1 定生日，不核对是不是
-/// 我们要的那一块。报高了，生日之前那段收款永远不扫；报错了网络，整个账户
-/// 都在别的链上。所以高度必须正好是请求的那一块，网络（服务端给了的话）
-/// 必须是钱包的网络。
+/// Upstream sets the birthday to the server's reported tree state height + 1
+/// without checking it. A height too high skips earlier receipts forever and a
+/// wrong network puts the account on another chain, so the height must equal
+/// the request and the network (if given) must match the wallet.
 fn check_birthday_tree_state(
     treestate: &zcash_client_backend::proto::service::TreeState,
     anchor_height: u32,
