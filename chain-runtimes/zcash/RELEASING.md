@@ -10,8 +10,8 @@ it, and wasm-pack generates the npm versions from those crates. Update the three
 workspace entries in `Cargo.lock` with `cargo check --workspace --offline` and
 review the lockfile diff; dependency upgrades are a separate change.
 
-The first candidate is `0.1.0-rc.1` on the npm `rc` tag. After acceptance, release
-`0.1.0` on `latest`; subsequent compatible fixes can use `0.1.1`. Runtime and keys
+Release candidates use `X.Y.Z-rc.N` on the npm `rc` tag; final releases use
+`latest`. Runtime and keys
 always share a version and source commit. The benchmark is shipped as a runtime
 subdirectory to preserve the App developer tools' existing import path; it is
 not a third published package and production App bundles still exclude it.
@@ -51,21 +51,9 @@ other fails, do not consume the version until both exist. Restore the exact
 verified artifact from that workflow run and publish only the missing package;
 never overwrite an existing version or rebuild different bytes under that version.
 
-## App cutover and acceptance
+## App cutover
 
 Until the pair exists on npm, keep the App's local `portal:` dependencies. Once
 both packages have been published, replace both entries in
 `packages/core/package.json` with the same exact version and update `yarn.lock`
 through the App repository's dependency workflow. Do not use a version range.
-
-Validate the actual packed/published files, rather than the larger portal folder:
-
-- The worker can resolve JS, types and WASM for both packages, and the developer
-  storage benchmark import resolves from the runtime package.
-- Desktop and Extension: start, scan, restart and restore progress.
-- iOS and Android: foreground scan, pause/resume and relaunch recovery.
-- Exercise the supported receive/send paths, including transparent shielding and
-  interrupted broadcast recovery, using the same candidate artifacts.
-
-Native Rust tests do not replace wasm32 OPFS durability tests or four-platform
-acceptance. The candidate's mainnet/real-funds scope must be recorded explicitly.

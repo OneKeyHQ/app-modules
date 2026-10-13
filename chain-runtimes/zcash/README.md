@@ -10,17 +10,6 @@
 
 ---
 
-## 这个项目为什么存在
-
-此前的实现建在 `ChainSafe/WebZjs` 的 fork 上，使用 `zcash_client_memory` 作为存储后端。
-那个 crate 从未发布到 crates.io，维持它需要 vendor 大量代码，并在每次
-`zcash_client_backend` 升版时自行重迁。
-
-本项目改用 `zcash_client_sqlite`：它就在 librustzcash 仓库里，与 `zcash_client_backend`
-**同日发版**，也是官方 Android / iOS SDK 与 `zallet` 的存储层。
-
----
-
 ## 同一套 Rust / WASM，所有 App 端共用
 
 `onekey-zcash-keys` 负责派生和签名，不依赖 SQLite、网络、扫描器或 prover。
@@ -235,16 +224,7 @@ scripts/vendor-deps.sh      校验官方发布版并施加已记录的 patch
 scripts/build-wasm.sh       构建
 ```
 
----
-
-## 参考实现（读，不依赖）
-
-- `ChainSafe/WebZjs` —— grpc-web 接线、wasm 线程池初始化的经验。
-  注意 `tonic-web-wasm-client` 必须 ≥ 0.9.1（0.8.0 会丢 gRPC trailer）。
-- `zcash/zcash-android-wallet-sdk` 的 `backend-lib/` —— ECC 的 Rust FFI 层，
-  是「该暴露什么、按什么粒度」的参照。
-
-### Stateless transparent funding of Unified recipients
+## Stateless transparent funding of Unified recipients
 
 `transparentTxQuote` accepts mainnet t1/t3/tex recipients and Unified recipients with an
 Orchard receiver (an Ironwood output after NU6.3). It uses only the host-supplied

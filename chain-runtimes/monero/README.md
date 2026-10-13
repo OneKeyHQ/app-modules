@@ -3,22 +3,6 @@
 monero-oxide 之上的钱包状态层。**它提供密码学、扫描器与交易构造；存储这一层
 是我们自己写的，因为上游不提供。**
 
-## 为什么是这条路
-
-三条路都量过：
-
-| | 我们要写 | 出厂体积 | 插件端 | 落盘 |
-|---|---|---|---|---|
-| monero-ts（wallet2 编 wasm） | 最少 | 6.2 MB JS | 可以 | ✗ 整块序列化 |
-| wallet2 + monero_c | 1.5–2.5k 行 | — | **不行**（零 wasm 支持） | ✓ |
-| **monero-oxide + SQLite** | 6–8.5k 行 | **3.37 MB / gzip 1.06 MB** | 可以 | **✓ 增量写** |
-
-决定性的是最后一列。monero-ts 把整个钱包放在 wasm 内存里，持久化只能
-`getData()` 整块序列化再写出去 —— 历史越长每次保存越贵，写一半崩了丢全部。
-这里是增量写 + 事务，和 Zcash runtime 同一个模型。
-
-代价写在明面上：多出来的六到八千行**正确性归我们自己**，上游不兜底。
-
 ## 结构
 
 ```
@@ -66,6 +50,7 @@ bindgen.rs   wasm 边界
 ./scripts/build-wasm.sh          # release 到 pkg/
 cargo test --workspace           # 原生测试
 cargo check --workspace --target wasm32-unknown-unknown
+./scripts/build-node-pkg.sh && node scripts/smoke.js   # wasm 端到端冒烟
 ```
 
 **macOS 上必须有 llvm-ar**（`brew install llvm`）。系统自带的 `/usr/bin/ar`

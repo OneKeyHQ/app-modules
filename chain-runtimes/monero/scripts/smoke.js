@@ -3,7 +3,7 @@
  * End-to-end smoke test against the real wasm build: derive -> open DB ->
  * add account -> subaddress -> balance -> scan queue -> coin selection.
  *
- * Offline by default; set XMR_NODE_URL to also run the node checks.
+ * Offline by default; set XMR_NODE to also run the node checks.
  *
  *   ./scripts/build-node-pkg.sh && node scripts/smoke.js
  */
@@ -61,24 +61,34 @@ check('identity stored', diag.counts.identities, 1);
 check('subaddress stored', diag.counts.subaddresses, 1);
 
 // Signing is pure computation. Bad input must be rejected, never passed on to broadcast.
-for (const [label, hex, reason] of [
-  ['non-hex input', 'zz', 'notHex'],
-  ['an unsignable transaction', '00010203', 'notASignableTransaction'],
+const review = JSON.stringify({
+  network: 'mainnet',
+  fromAddress: a.primaryAddress,
+  toAddress: a.primaryAddress,
+  amountAtomic: '1000',
+  feeAtomic: '0',
+  changeAtomic: '0',
+  isMaxSend: false,
+});
+for (const [label, hex, req, field] of [
+  ['non-hex input', 'zz', review, 'signableHex'],
+  ['an unsignable transaction', '00010203', review, 'signableHex'],
+  ['a malformed review', '00010203', '{}', 'reviewRequest'],
 ]) {
   try {
-    rt.signTransaction(hex, '00'.repeat(32));
+    rt.signTransaction(hex, '00'.repeat(32), req);
     check(`signing rejects ${label}`, 'succeeded', 'failed');
   } catch (e) {
     const err = JSON.parse(e.message ?? e);
-    check(`signing rejects ${label}`, err.params.reason, reason);
+    check(`signing rejects ${label}`, err.params.field, field);
   }
 }
 
-// Node checks; skipped (and reported as skipped) without XMR_NODE_URL.
+// Node checks; skipped (and reported as skipped) without XMR_NODE.
 async function online() {
-  const url = process.env.XMR_NODE_URL;
+  const url = process.env.XMR_NODE;
   if (!url) {
-    console.log('\n(skipping node checks: XMR_NODE_URL not set)');
+    console.log('\n(skipping node checks: XMR_NODE not set)');
     return;
   }
   console.log(`\nnode checks against ${url}`);
