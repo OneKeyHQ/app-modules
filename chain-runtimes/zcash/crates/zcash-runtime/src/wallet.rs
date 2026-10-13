@@ -1,8 +1,7 @@
-//! 钱包数据库的打开与初始化。
+//! Opening and initializing the wallet database.
 //!
-//! 这里只做三件事：接上存储、组装 `WalletDb`、跑 schema 迁移。
-//! 钱包的协议逻辑全部来自 `zcash_client_sqlite` / `zcash_client_backend`，
-//! 本 crate 不实现任何 Zcash 语义。
+//! Connects storage, builds the `WalletDb` and runs schema migrations. All
+//! wallet protocol logic comes from `zcash_client_sqlite` / `zcash_client_backend`.
 
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
@@ -14,10 +13,10 @@ use crate::error::{ErrorCode, Result, RuntimeError};
 use crate::storage;
 use serde_json::json;
 
-/// 本 runtime 使用的具体 `WalletDb` 组合。
+/// The concrete `WalletDb` used by this runtime.
 pub type Db = WalletDb<rusqlite::Connection, Network, HostClock, ChaCha20Rng>;
 
-/// 网络选择。跨 wasm 边界时用字符串，不暴露 Rust 枚举形状。
+/// Parses the network name passed across the wasm boundary.
 pub fn parse_network(s: &str) -> Result<Network> {
     match s {
         "main" => Ok(Network::MainNetwork),
@@ -29,17 +28,14 @@ pub fn parse_network(s: &str) -> Result<Network> {
     }
 }
 
-/// 打开（必要时创建）钱包数据库，并把 schema 迁移到当前库版本。
-///
-/// `init_wallet_db` 是幂等的：每次打开都跑一遍是安全且推荐的做法。
-/// 它会跑完 `zcash_client_sqlite` 的全部 migration —— 这也是我们验证
-/// SQL 方言与存储层是否真的可用的最强证据。
+/// Opens (creating if needed) the wallet database and migrates it to the
+/// current schema. Migration is idempotent and runs on every open.
 pub fn open_and_migrate(network: &str, db_name: &str) -> Result<Db> {
     let params = parse_network(network)?;
     let conn = storage::open_connection(db_name)?;
 
-    // RNG 只用于库内部的非密钥用途（如 migration id、临时值）。
-    // 密钥材料不经过它，也不经过本 crate 的任何路径。
+    // Used only for non-key purposes inside the library (migration ids, nonces).
+    // No key material passes through it or through this crate.
     let rng = ChaCha20Rng::from_seed(random_seed()?);
 
     let mut db = WalletDb::from_connection(conn, params, HostClock, rng);
@@ -55,7 +51,7 @@ pub fn open_and_migrate(network: &str, db_name: &str) -> Result<Db> {
     Ok(db)
 }
 
-/// 32 字节随机种子。wasm 上走宿主的 crypto.getRandomValues。
+/// 32-byte random seed; on wasm this uses the host's crypto.getRandomValues.
 fn random_seed() -> Result<[u8; 32]> {
     let mut seed = [0u8; 32];
     getrandom::fill(&mut seed).map_err(|e| {
@@ -83,13 +79,13 @@ mod tests {
 
     #[test]
     fn seed_is_not_all_zero() {
-        let s = random_seed().expect("应能取到随机数");
+        let s = random_seed().expect("random bytes available");
         assert_ne!(s, [0u8; 32]);
     }
 
-    /// 打印迁移后的真实 schema。`storageStats` 的 SQL 必须照着这份写 ——
-    /// 表名靠记忆或靠外部文档写，出错时只会安静地返回 0，而不是报错。
-    /// 需要 `ZR_DUMP_SCHEMA=1`，未设置时直接跳过。
+    /// Prints the migrated schema. `storageStats` SQL must follow it: a wrong
+    /// table name silently returns 0 instead of failing. Runs only with
+    /// `ZR_DUMP_SCHEMA=1`.
     #[test]
     fn dump_schema() {
         if std::env::var("ZR_DUMP_SCHEMA")
@@ -100,19 +96,19 @@ mod tests {
         }
         let path = std::env::temp_dir().join("zr-schema-dump.sqlite");
         let _ = std::fs::remove_file(&path);
-        let db = open_and_migrate("test", path.to_str().unwrap()).expect("迁移");
+        let db = open_and_migrate("test", path.to_str().unwrap()).expect("migrate");
         drop(db);
 
-        let conn = crate::storage::open_connection(path.to_str().unwrap()).expect("开连接");
+        let conn = crate::storage::open_connection(path.to_str().unwrap()).expect("open");
         let mut stmt = conn
             .prepare("SELECT type, name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name")
-            .expect("查 sqlite_master");
+            .expect("query sqlite_master");
         let rows: Vec<(String, String)> = stmt
             .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
-            .expect("遍历")
-            .map(|r| r.expect("行"))
+            .expect("iterate rows")
+            .map(|r| r.expect("row"))
             .collect();
-        // 统计要按 BLOB 列求和，所以列名也得是实测的。
+        // Stats sum BLOB columns, so column names must come from the real schema.
         for t in [
             "blocks",
             "transactions",
@@ -130,11 +126,11 @@ mod tests {
         ] {
             let mut s = conn
                 .prepare(&format!("PRAGMA table_info({t})"))
-                .expect("列");
+                .expect("table_info");
             let cols: Vec<String> = s
                 .query_map([], |r| r.get::<_, String>(1))
-                .expect("遍历列")
-                .map(|r| r.expect("列名"))
+                .expect("iterate columns")
+                .map(|r| r.expect("column name"))
                 .collect();
             println!("-- {t}: {}", cols.join(", "));
         }

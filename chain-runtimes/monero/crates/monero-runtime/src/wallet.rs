@@ -1,12 +1,12 @@
-//! 钱包库句柄与身份管理。
+//! Wallet database handle and identity management.
 //!
-//! 一个 identity = 一对观察密钥 = 宿主眼里的一个账户。库是**共享的**：
-//! 多个 identity 共用一个 SQLite 文件，各自有独立的扫描进度。
+//! One identity = one view key pair = one host account. Identities **share** a
+//! SQLite file, each with its own scan progress.
 //!
-//! 这一点和 Zcash 有个关键差别：Zcash 的扫描队列是全库共享的（承诺树要求
-//! 连续扫描），所以「用 A 的 key 扫过的区间会被标记为全库已扫」，暂停的账户
-//! 会漏掉那段。Monero 没有承诺树、不要求连续扫描，**扫描进度按 identity 独立
-//! 记账**（`scan_ranges.identity_id`），从根上不存在那个坑。
+//! Unlike Zcash, whose scan queue is database-wide (the commitment tree needs
+//! contiguous scanning), Monero has no commitment tree, so **scan progress is
+//! per identity** (`scan_ranges.identity_id`) and a paused account never misses
+//! ranges scanned for another.
 
 use monero_wallet::{address::Network, ViewPair};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -16,7 +16,7 @@ use crate::error::{db_err, ErrorCode, Result, RuntimeError};
 use crate::keys::{self, network_name};
 use crate::schema;
 
-/// 账户 0 下，收过钱的最大子地址之后保持登记的空闲子地址数（同比特币的 gap limit）。
+/// Unused subaddresses kept registered past the highest used one in account 0 (like Bitcoin's gap limit).
 pub const SUBADDRESS_LOOKAHEAD: u32 = 20;
 
 pub struct Db {
@@ -24,7 +24,7 @@ pub struct Db {
     network: Network,
 }
 
-/// 库里的一个身份。
+/// An identity in the database.
 pub struct Identity {
     pub id: i64,
     pub uuid: String,
@@ -34,13 +34,13 @@ pub struct Identity {
 }
 
 impl Db {
-    /// 打开（或新建）一个钱包库并跑迁移。
+    /// Opens (or creates) a wallet database and runs migrations.
     pub fn open(db_name: &str, network: Network) -> Result<Self> {
         let conn = crate::storage::open_connection(db_name)?;
         schema::migrate(&conn)?;
 
-        // 网络是库级不变量：同一个文件里混两个网络的身份，扫描会把
-        // stagenet 的块喂给 mainnet 的密钥，表现为「怎么扫都扫不到钱」。
+        // Network is a per-database invariant; mixing networks would feed one
+        // network's blocks to another's keys and silently find nothing.
         let existing: Option<String> = conn
             .query_row("SELECT network FROM wallet_meta WHERE id = 0", [], |r| {
                 r.get(0)
@@ -84,10 +84,10 @@ impl Db {
         &mut self.conn
     }
 
-    /// 注册一个身份。已存在时按 uuid 幂等返回原有的那个。
+    /// Registers an identity; idempotent by uuid.
     ///
-    /// `birthday_height` 决定回补起点。宿主给不出来时应当给链尖而不是 0 ——
-    /// 给 0 会让新钱包从创世块扫起，那是几天而不是几秒。
+    /// `birthday_height` is where backfill starts. Without one the host should
+    /// pass the chain tip, not 0, which would scan from genesis.
     pub fn add_identity(
         &mut self,
         uuid: &str,
@@ -111,12 +111,13 @@ impl Db {
             if address == primary {
                 return self.identity_by_id(id);
             }
-            // 同一个账户标识换了密钥（重置后新建的钱包沿用了旧标识）：旧数据属于一个
-            // 已经不在的钱包，留着会被当成新钱包的，删掉。
+            // Same account id with new keys (a reset wallet reused the id): the
+            // old data belongs to a gone wallet and would be attributed to the
+            // new one, so delete it.
             self.remove_identity(uuid)?;
         }
 
-        // 同一套密钥换了标识（删掉钱包后重新导入）：扫描数据仍然有效，改挂到新标识下。
+        // Same keys under a new id (deleted and reimported): keep the scan data under the new id.
         let by_address: Option<i64> = self
             .conn
             .query_row(
@@ -158,9 +159,9 @@ impl Db {
                 .map_err(|e| db_err("insertIdentity", e))?;
                 let id = tx.last_insert_rowid();
 
-                // 新身份的初始待扫区间：从 birthday 到 birthday（空区间），
-                // 真正的终点由 `update_chain_tip` 在拿到链尖后补上。这样
-                // 「还没问过链尖」和「已经扫完」在库里是两种不同的状态。
+                // Initial scan range is empty (birthday..birthday); `update_chain_tip`
+                // extends it once the tip is known, so "tip never fetched" and
+                // "fully scanned" stay distinct states.
                 tx.commit().map_err(|e| db_err("commitAddIdentity", e))?;
                 id
             }
@@ -230,10 +231,10 @@ impl Db {
             .map_err(|e| db_err("listIdentities", e))
     }
 
-    /// 删除一个身份连同它的全部数据。**不可逆。**
+    /// Deletes an identity and all its data. **Irreversible.**
     ///
-    /// 级联由外键负责（`PRAGMA foreign_keys = ON` 在 open_connection 里开）。
-    /// 留下孤儿行不只是脏数据，是隐私问题 —— 「删钱包」必须真的删干净。
+    /// Foreign-key cascades do the work (`PRAGMA foreign_keys = ON` in
+    /// open_connection). Orphan rows would be a privacy leak.
     pub fn remove_identity(&mut self, uuid: &str) -> Result<bool> {
         let n = self
             .conn
@@ -242,7 +243,7 @@ impl Db {
         Ok(n > 0)
     }
 
-    /// 登记一个子地址。扫描前这些会被灌进 Scanner —— **没登记的收不到**。
+    /// Registers a subaddress. These are fed to the Scanner; **unregistered ones receive nothing**.
     pub fn register_subaddress(
         &mut self,
         identity_id: i64,
@@ -262,9 +263,9 @@ impl Db {
         Ok(address)
     }
 
-    /// 保证账户 0 下「收过钱的最大子地址序号 + SUBADDRESS_LOOKAHEAD」以内都已登记。
-    /// 返回新登记了几个。扫描只认登记过的子地址；成本只在登记时（每个一次标量乘），
-    /// 扫描是反推公钥后查表，不随数量增长。
+    /// Ensures account 0 has subaddresses registered up to the highest used minor
+    /// + SUBADDRESS_LOOKAHEAD; returns how many were added. Cost is one scalar
+    /// multiplication per registration; scanning is a table lookup.
     pub fn ensure_subaddress_lookahead(&mut self, identity_id: i64) -> Result<u32> {
         let (highest_used, highest_registered): (i64, i64) = self
             .conn
@@ -287,7 +288,7 @@ impl Db {
         Ok(added)
     }
 
-    /// 取该身份已登记的全部子地址序号。
+    /// All registered subaddress indices of the identity.
     pub fn subaddress_indices(&self, identity_id: i64) -> Result<Vec<(u32, u32)>> {
         let mut stmt = self
             .conn
@@ -325,7 +326,7 @@ pub(crate) mod testing {
 
     pub const ADDR: &str = "44AFFq5kSiGBoZ4NMDwYtN18obc8AemS33DBLWs3H7otXft3XjrpDtQGv7SqSsaBYBb98uNbr2VBBEt7f2wfn3RVGQBEP3A";
 
-    /// 一对能用的测试密钥：花费公钥取自已知地址，观察私钥用小标量。
+    /// Test keys: spend key from a known address, a small scalar as view key.
     pub fn key_bytes() -> ([u8; 32], [u8; 32]) {
         use monero_wallet::address::MoneroAddress;
         let addr = MoneroAddress::from_str(Network::Mainnet, ADDR).unwrap();
@@ -336,7 +337,7 @@ pub(crate) mod testing {
     }
 
     pub fn db() -> Db {
-        Db::open(":memory:", Network::Mainnet).expect("内存库")
+        Db::open(":memory:", Network::Mainnet).expect("in-memory db")
     }
 
     pub fn db_with_identity() -> (Db, i64) {
@@ -344,7 +345,7 @@ pub(crate) mod testing {
         let (spend, view) = key_bytes();
         let id = db
             .add_identity("acct-1", &spend, &view, 100)
-            .expect("建身份")
+            .expect("add identity")
             .id;
         (db, id)
     }
@@ -389,7 +390,7 @@ mod tests {
         assert_eq!(
             db.ensure_subaddress_lookahead(id).unwrap(),
             0,
-            "已够就不再登记"
+            "no registration once the window is full"
         );
     }
 
@@ -423,8 +424,8 @@ mod tests {
         assert_eq!(outputs, 0);
     }
 
-    /// 删了钱包又导入同一套助记词：新标识、同密钥，扫描数据照用，不能因为主地址
-    /// 唯一约束而建不出来。
+    /// Reimport after deletion (new id, same keys) reuses the scan data and must
+    /// not trip the primary-address unique constraint.
     #[test]
     fn the_same_keys_under_a_new_account_id_keep_their_scan() {
         let (mut db, old) = db_with_identity();
@@ -442,13 +443,15 @@ mod tests {
         let (spend, view) = key_bytes();
         let a = db.add_identity("acct-1", &spend, &view, 100).unwrap();
         let b = db.add_identity("acct-1", &spend, &view, 999).unwrap();
-        assert_eq!(a.id, b.id, "同一 uuid 必须复用同一行");
-        assert_eq!(b.birthday_height, 100, "重复注册不应改写已有的 birthday");
+        assert_eq!(a.id, b.id, "same uuid must reuse the row");
+        assert_eq!(
+            b.birthday_height, 100,
+            "re-registration must not overwrite the birthday"
+        );
         assert_eq!(db.list_identities().unwrap().len(), 1);
     }
 
-    /// 库级网络不变量：同一个文件混两个网络会让扫描静默失效
-    /// （拿 stagenet 的块喂 mainnet 的密钥，表现为「怎么扫都扫不到」）。
+    /// Per-database network invariant: mixing networks silently breaks scanning.
     #[test]
     fn a_database_refuses_a_different_network() {
         let conn = crate::storage::open_connection(":memory:").unwrap();
@@ -458,7 +461,7 @@ mod tests {
             [],
         )
         .unwrap();
-        // 用同一条连接模拟「已有库」，再以 mainnet 打开应当被拒
+        // Simulate an existing testnet database; opening it as mainnet must fail
         let recorded: String = conn
             .query_row("SELECT network FROM wallet_meta WHERE id = 0", [], |r| {
                 r.get(0)
@@ -477,17 +480,17 @@ mod tests {
         assert_eq!(by_id.primary_address, by_uuid.primary_address);
         assert!(
             by_id.primary_address.starts_with('4'),
-            "主网主地址以 4 开头"
+            "mainnet primary address starts with 4"
         );
     }
 
     #[test]
     fn missing_identity_is_account_not_found_not_a_database_error() {
         let db = db();
-        // Identity 内含 ViewPair，上游刻意不实现 Debug（免得密钥被打进日志），
-        // 所以这里不能用 unwrap_err —— 那要求 Ok 类型可 Debug。
+        // Identity holds a ViewPair, which deliberately lacks Debug (keeps keys
+        // out of logs), so unwrap_err is unavailable.
         match db.identity_by_uuid("nope") {
-            Ok(_) => panic!("不存在的身份不该查得到"),
+            Ok(_) => panic!("missing identity must not be found"),
             Err(e) => assert_eq!(e.code, ErrorCode::AccountNotFound),
         }
     }
@@ -499,7 +502,7 @@ mod tests {
         let b = db.register_subaddress(id, 1, 0, None).unwrap();
         assert_ne!(a, b);
         assert_eq!(db.subaddress_indices(id).unwrap(), vec![(0, 1), (1, 0)]);
-        // 重复登记同一个序号是幂等的，不该产生第二行
+        // Re-registering an index is idempotent
         db.register_subaddress(id, 0, 1, Some("改个标签")).unwrap();
         assert_eq!(db.subaddress_indices(id).unwrap().len(), 2);
     }
@@ -512,7 +515,7 @@ mod tests {
         assert!(db.subaddress_indices(id).unwrap().is_empty());
         assert!(
             !db.remove_identity("acct-1").unwrap(),
-            "删第二次应当返回 false"
+            "second delete should return false"
         );
     }
 }

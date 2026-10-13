@@ -1,18 +1,18 @@
-//! 对**真实节点**的集成测试。默认全部跳过。
+//! Integration tests against a **real node**. All skipped by default.
 //!
 //! ```bash
-//! # 你自己的节点，或一个可信的公共节点（建议 https）
+//! # Your own node, or a trusted public one (https recommended)
 //! XMR_NODE=<monerod RPC URL> cargo test --test live_node -- --nocapture
 //!
-//! # 想扫自己的钱包（只需要观察密钥，不需要花费私钥）
+//! # Scan your own wallet (view keys only, no spend key)
 //! XMR_NODE=... \
-//! XMR_SPEND_PUB=<64位hex> XMR_VIEW_PRIV=<64位hex> XMR_BIRTHDAY=3000000 \
+//! XMR_SPEND_PUB=<64 hex chars> XMR_VIEW_PRIV=<64 hex chars> XMR_BIRTHDAY=3000000 \
 //!   cargo test --test live_node -- --nocapture
 //! ```
 //!
-//! 为什么要有这个：单元测试用的是构造出来的数据，**扫描循环的三道校验和
-//! RingCT 索引推算从没在真实链上跑过**。那些校验一旦写错，表现是「扫不到钱」
-//! 或者「一直报重组」，而不是编译错误。
+//! Unit tests use synthetic data; these exercise the scan loop checks and
+//! RingCT index derivation on the real chain, where bugs show up as missing
+//! funds or spurious reorgs rather than compile errors.
 
 use onekey_monero_runtime::{keys, network, scan, sync, wallet};
 
@@ -22,70 +22,73 @@ fn node() -> Option<String> {
         .filter(|s| !s.trim().is_empty())
 }
 
-/// 原生传输走 `reqwest`，它需要 Tokio 的 reactor —— 用 `futures_lite::block_on`
-/// 会在第一次发请求时 panic「there is no reactor running」。
+/// Native transport uses `reqwest`, which needs a Tokio reactor;
+/// `futures_lite::block_on` panics with "there is no reactor running".
 fn block_on<F: std::future::Future>(f: F) -> F::Output {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .expect("Tokio 运行时")
+        .expect("Tokio runtime")
         .block_on(f)
 }
 
-/// 最基本的连通性：能连上、能问到链尖。
+/// Basic connectivity: connect and read the chain tip.
 #[test]
 fn connects_and_reads_the_chain_tip() {
     let Some(url) = node() else {
-        eprintln!("跳过：未设置 XMR_NODE");
+        eprintln!("skipped: XMR_NODE not set");
         return;
     };
 
     block_on(async {
-        let (daemon, _) = network::connect(&url).await.expect("连接节点");
-        let tip = sync::chain_tip(&daemon).await.expect("取链尖");
-        println!("链尖 = {tip}");
-        assert!(tip > 3_000_000, "主网高度早就过 300 万了，{tip} 不合理");
+        let (daemon, _) = network::connect(&url).await.expect("connect to node");
+        let tip = sync::chain_tip(&daemon).await.expect("fetch chain tip");
+        println!("chain tip = {tip}");
+        assert!(
+            tip > 3_000_000,
+            "mainnet is well past height 3M; {tip} is implausible"
+        );
     });
 }
 
-/// **这条是真正要跑的。** 扫一小段真实区块，验证：
+/// **The key live test.** Scans a short range of real blocks and checks:
 ///
-/// - 块能拉下来并被上游接受为 `ScannableBlock`
-/// - 我们的连续性校验不会对合法链误报重组
-/// - 我们独立推算的 RingCT 游标与节点声称的一致
+/// - blocks download and upstream accepts them as `ScannableBlock`
+/// - continuity checks raise no false reorgs on a valid chain
+/// - our independently derived RingCT cursor matches the node's claim
 ///
-/// 最后一条是重点：上游明说这个字段不可验证、要求客户端自己算并比对。
-/// 如果我们的推算逻辑错了，这里会报 `RINGCT_INDEX_MISMATCH` —— 那说明是
-/// **我们**错了，不是节点在作恶。
+/// Upstream says the last field is unverifiable and clients must compute and
+/// compare it. A `RINGCT_INDEX_MISMATCH` here means **our** derivation is
+/// wrong, not a malicious node.
 #[test]
 fn scans_real_blocks_without_false_alarms() {
     let Some(url) = node() else {
-        eprintln!("跳过：未设置 XMR_NODE");
+        eprintln!("skipped: XMR_NODE not set");
         return;
     };
 
     block_on(async {
-        let (daemon, _) = network::connect(&url).await.expect("连接节点");
-        let tip = sync::chain_tip(&daemon).await.expect("取链尖");
+        let (daemon, _) = network::connect(&url).await.expect("connect to node");
+        let tip = sync::chain_tip(&daemon).await.expect("fetch chain tip");
 
-        // 从链尖往回 200 块开始扫 40 块：足够覆盖有交易的块，又不至于太慢。
+        // Start 200 blocks below the tip: enough to hit transactions, still fast.
         let start = tip.saturating_sub(200);
         let count = 40u64;
 
-        let mut db =
-            wallet::Db::open(":memory:", keys::parse_network("mainnet").unwrap()).expect("内存库");
+        let mut db = wallet::Db::open(":memory:", keys::parse_network("mainnet").unwrap())
+            .expect("in-memory db");
         let (spend, view) = throwaway_keys();
         let identity = db
             .add_identity("live", &spend, &view, start)
-            .expect("建身份");
+            .expect("add identity");
 
-        sync::update_chain_tip(&mut db, identity.id, tip).expect("告知链尖");
+        sync::update_chain_tip(&mut db, identity.id, tip).expect("update chain tip");
 
         let mut scanned = 0u64;
         for _ in 0..count {
             let progress = sync::step(&mut db, &daemon, identity.id, 10)
                 .await
-                .expect("扫描不该失败 —— 失败意味着我们的校验逻辑对合法链误报了");
+                .expect("scan must not fail; a failure means our checks flagged a valid chain");
             let n = progress["blocksScanned"].as_u64().unwrap_or(0);
             if n == 0 {
                 break;
@@ -96,15 +99,18 @@ fn scans_real_blocks_without_false_alarms() {
             }
         }
 
-        println!("扫了 {scanned} 块，从 {start} 起");
-        assert!(scanned > 0, "一块都没扫到，说明拉块或扫描路径断了");
+        println!("scanned {scanned} blocks from {start}");
+        assert!(
+            scanned > 0,
+            "no blocks scanned; fetch or scan path is broken"
+        );
     });
 }
 
-/// 用你自己的观察密钥扫一段，看能不能扫到输出。
+/// Scans a range with your own view keys to check outputs are found.
 ///
-/// 需要 `XMR_SPEND_PUB` / `XMR_VIEW_PRIV` / `XMR_BIRTHDAY`。
-/// **只要观察密钥，不需要花费私钥** —— 这条测试本身就是那个边界的证明。
+/// Needs `XMR_SPEND_PUB` / `XMR_VIEW_PRIV` / `XMR_BIRTHDAY`.
+/// **View keys only, no spend key.**
 #[test]
 fn scans_a_real_wallet_if_view_keys_are_supplied() {
     let (Some(url), Ok(spend_hex), Ok(view_hex)) = (
@@ -112,7 +118,7 @@ fn scans_a_real_wallet_if_view_keys_are_supplied() {
         std::env::var("XMR_SPEND_PUB"),
         std::env::var("XMR_VIEW_PRIV"),
     ) else {
-        eprintln!("跳过：未设置 XMR_NODE / XMR_SPEND_PUB / XMR_VIEW_PRIV");
+        eprintln!("skipped: XMR_NODE / XMR_SPEND_PUB / XMR_VIEW_PRIV not set");
         return;
     };
 
@@ -120,27 +126,27 @@ fn scans_a_real_wallet_if_view_keys_are_supplied() {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
-    let spend = hex::decode(spend_hex.trim()).expect("XMR_SPEND_PUB 必须是 hex");
-    let view = hex::decode(view_hex.trim()).expect("XMR_VIEW_PRIV 必须是 hex");
+    let spend = hex::decode(spend_hex.trim()).expect("XMR_SPEND_PUB must be hex");
+    let view = hex::decode(view_hex.trim()).expect("XMR_VIEW_PRIV must be hex");
 
     block_on(async {
-        let (daemon, _) = network::connect(&url).await.expect("连接节点");
-        let tip = sync::chain_tip(&daemon).await.expect("取链尖");
+        let (daemon, _) = network::connect(&url).await.expect("connect to node");
+        let tip = sync::chain_tip(&daemon).await.expect("fetch chain tip");
 
-        let mut db =
-            wallet::Db::open(":memory:", keys::parse_network("mainnet").unwrap()).expect("内存库");
+        let mut db = wallet::Db::open(":memory:", keys::parse_network("mainnet").unwrap())
+            .expect("in-memory db");
         let identity = db
             .add_identity("live-wallet", &spend, &view, birthday)
-            .expect("建身份");
-        println!("主地址 = {}", identity.primary_address);
+            .expect("add identity");
+        println!("primary address = {}", identity.primary_address);
 
-        // 常用的几个子地址也登记上 —— 没登记的收不到。
+        // Register common subaddresses; unregistered ones receive nothing.
         for minor in 1..=5 {
             db.register_subaddress(identity.id, 0, minor, None)
-                .expect("登记子地址");
+                .expect("register subaddress");
         }
 
-        sync::update_chain_tip(&mut db, identity.id, tip).expect("告知链尖");
+        sync::update_chain_tip(&mut db, identity.id, tip).expect("update chain tip");
 
         let budget_blocks = std::env::var("XMR_SCAN_BLOCKS")
             .ok()
@@ -152,7 +158,7 @@ fn scans_a_real_wallet_if_view_keys_are_supplied() {
         while scanned < budget_blocks {
             let progress = sync::step(&mut db, &daemon, identity.id, 100)
                 .await
-                .expect("扫描");
+                .expect("scan");
             let n = progress["blocksScanned"].as_u64().unwrap_or(0);
             if n == 0 || progress["done"].as_bool().unwrap_or(false) {
                 break;
@@ -161,65 +167,67 @@ fn scans_a_real_wallet_if_view_keys_are_supplied() {
         }
         let elapsed = started.elapsed();
 
-        // 这就是明天要看的那个数字。
+        // Scan throughput.
         println!(
-            "扫了 {scanned} 块，耗时 {:.1}s，{:.1} 块/秒",
+            "scanned {scanned} blocks in {:.1}s, {:.1} blocks/s",
             elapsed.as_secs_f64(),
             scanned as f64 / elapsed.as_secs_f64().max(0.001)
         );
 
         let balance =
-            onekey_monero_runtime::query::balance(&db, identity.id, Some(tip)).expect("算余额");
+            onekey_monero_runtime::query::balance(&db, identity.id, Some(tip)).expect("balance");
         println!(
-            "总额 {} / 可用 {} / 不可验证 {}",
+            "total {} / unlocked {} / unverifiable {}",
             balance.total_atomic, balance.unlocked_atomic, balance.unverifiable_atomic
         );
     });
 }
 
-/// 回退必须真的把那一段清掉并重新排队。
+/// Rewind must actually clear the range and requeue it.
 #[test]
 fn rewind_actually_rolls_back_and_requeues() {
     let Some(url) = node() else {
-        eprintln!("跳过：未设置 XMR_NODE");
+        eprintln!("skipped: XMR_NODE not set");
         return;
     };
 
     block_on(async {
-        let (daemon, _) = network::connect(&url).await.expect("连接节点");
-        let tip = sync::chain_tip(&daemon).await.expect("取链尖");
+        let (daemon, _) = network::connect(&url).await.expect("connect to node");
+        let tip = sync::chain_tip(&daemon).await.expect("fetch chain tip");
         let start = tip.saturating_sub(50);
 
-        let mut db =
-            wallet::Db::open(":memory:", keys::parse_network("mainnet").unwrap()).expect("内存库");
+        let mut db = wallet::Db::open(":memory:", keys::parse_network("mainnet").unwrap())
+            .expect("in-memory db");
         let (spend, view) = throwaway_keys();
-        let identity = db.add_identity("rw", &spend, &view, start).expect("建身份");
-        sync::update_chain_tip(&mut db, identity.id, tip).expect("告知链尖");
+        let identity = db
+            .add_identity("rw", &spend, &view, start)
+            .expect("add identity");
+        sync::update_chain_tip(&mut db, identity.id, tip).expect("update chain tip");
 
         sync::step(&mut db, &daemon, identity.id, 20)
             .await
-            .expect("先扫一段");
-        let before = sync::scanned_to_height(&db, identity.id).expect("进度");
-        assert!(before.is_some(), "应当已经有进度");
+            .expect("initial scan");
+        let before = sync::scanned_to_height(&db, identity.id).expect("progress");
+        assert!(before.is_some(), "progress should exist");
 
         let target = start + 5;
-        sync::rewind_and_requeue(&mut db, identity.id, target, tip).expect("回退");
+        sync::rewind_and_requeue(&mut db, identity.id, target, tip).expect("rewind");
 
-        let after = sync::scanned_to_height(&db, identity.id).expect("进度");
+        let after = sync::scanned_to_height(&db, identity.id).expect("progress");
         assert!(
             after.unwrap_or(0) <= target,
-            "回退之后进度必须不高于目标高度，否则中间那段永远不会重扫"
+            "progress must not exceed the target after rewind, or the gap is never rescanned"
         );
 
-        let peek = sync::peek(&db, identity.id).expect("看队列");
+        let peek = sync::peek(&db, identity.id).expect("peek queue");
         assert!(
             !peek["ranges"].as_array().unwrap().is_empty(),
-            "回退之后必须有待扫区间"
+            "ranges must be queued after rewind"
         );
     });
 }
 
-/// 一对不对应任何真实钱包的观察密钥，用来测扫描机制本身。
+/// View keys matching no real wallet, for testing the scan machinery.
 fn throwaway_keys() -> ([u8; 32], [u8; 32]) {
     use monero_wallet::address::{MoneroAddress, Network};
     const ADDR: &str = "44AFFq5kSiGBoZ4NMDwYtN18obc8AemS33DBLWs3H7otXft3XjrpDtQGv7SqSsaBYBb98uNbr2VBBEt7f2wfn3RVGQBEP3A";
@@ -231,13 +239,16 @@ fn throwaway_keys() -> ([u8; 32], [u8; 32]) {
 
 #[test]
 fn reorg_detection_rejects_a_gap() {
-    // 这条不需要网络：构造一个跳号的场景，确认我们报的是重组而不是静默跳过。
-    let mut db =
-        wallet::Db::open(":memory:", keys::parse_network("mainnet").unwrap()).expect("内存库");
+    // Offline: a gap must be reported as a reorg, not silently skipped.
+    let mut db = wallet::Db::open(":memory:", keys::parse_network("mainnet").unwrap())
+        .expect("in-memory db");
     let (spend, view) = throwaway_keys();
-    let identity = db.add_identity("gap", &spend, &view, 0).expect("建身份");
+    let identity = db
+        .add_identity("gap", &spend, &view, 0)
+        .expect("add identity");
 
-    // 空批次是合法的 no-op，不该报错
-    let outcome = scan::scan_blocks(&mut db, identity.id, &[]).expect("空批次应当无害");
+    // An empty batch is a valid no-op
+    let outcome =
+        scan::scan_blocks(&mut db, identity.id, &[]).expect("empty batch should be harmless");
     assert_eq!(outcome.blocks_scanned, 0);
 }

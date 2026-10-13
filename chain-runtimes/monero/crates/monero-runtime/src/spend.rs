@@ -1,18 +1,18 @@
-//! 花费路径：key image 导入、交易构造、签名、广播。
+//! Spend path: key image import, transaction construction, signing, broadcast.
 //!
-//! ## 花费私钥在这里出现，且只在这里
+//! ## The private spend key appears only here
 //!
-//! 它由宿主在每次调用时传进来，用完即擦，**永远不落库、不跨 wasm 边界返回**。
-//! 想审计「私钥去了哪」，看这一个文件。
+//! The host passes it per call; it is zeroized after use, never persisted, and
+//! never returned across the wasm boundary.
 //!
-//! ## 为什么需要导入 key image
+//! ## Why key images are imported
 //!
-//! Monero 的观察钱包无法独立判断自己的输出有没有被花掉 —— 判断需要 key image，
-//! 而 key image = `(花费私钥 + 输出偏移) × H(输出公钥)`，绕不开花费私钥。
-//! 这是协议性质，不是实现取舍。
+//! A view-only wallet cannot tell whether its outputs were spent: that needs
+//! the key image `(spend key + output offset) × H(output key)`, which requires
+//! the private spend key.
 //!
-//! 所以扫描只能记下输出，花费状态要等宿主在解锁时调一次
-//! [`import_key_images`] 才补得齐。补齐之前余额会**偏高**（已花的看起来还在）。
+//! Scanning records outputs only; spend state is complete once the host calls
+//! [`import_key_images`] on unlock. Until then the balance may be overstated.
 
 use std::collections::HashMap;
 
@@ -32,20 +32,19 @@ use crate::keys;
 use crate::query;
 use crate::wallet::Db;
 
-/// 环大小。当前共识值是 16（含真实成员）。
+/// Ring size. Current consensus is 16, including the real member.
 ///
-/// 写死而不是问节点：节点说小了会让交易在隐私上被削弱且可能被拒，
-/// 这个值应当跟着硬分叉走，由我们发版控制。
+/// Hardcoded rather than asked of the node: a smaller value weakens privacy
+/// and may be rejected. It changes with hard forks via our releases.
 pub const RING_LEN: u8 = 16;
 
-/// 从花费私钥算出某笔输出的 key image。
+/// Computes an output's key image from the private spend key.
 ///
-/// 公式与上游 `SignableTransaction::sign` 内部一致：
-/// `key_image = (spend + key_offset) × biased_hash(output_key)`。
+/// Same formula as upstream `SignableTransaction::sign`:
+/// `key_image = (spend + key_offset) × biased_hash(output_key)`.
 ///
-/// 顺带校验了密钥是否真的对应这笔输出 —— 不对应就说明宿主传错了账户的种子，
-/// 这时必须报错而不是算出一个无意义的 key image 存进库里（那会让花费检测
-/// 永远撞不上，表现为「这笔钱花了但钱包还显示在」）。
+/// Also checks that the key owns the output. A mismatch (wrong account seed)
+/// errors instead of storing a meaningless key image that would never match a spend.
 fn key_image_for(output: &WalletOutput, spend: &Zeroizing<Scalar>) -> Result<[u8; 32]> {
     use core::ops::Deref;
 
@@ -71,13 +70,12 @@ fn key_image_for(output: &WalletOutput, spend: &Zeroizing<Scalar>) -> Result<[u8
     Ok(image.compress().to_bytes())
 }
 
-/// 给还没有 key image 的输出补齐 key image。
+/// Fills in key images for outputs that lack one, enabling spend detection.
 ///
-/// 补齐之后花费检测才能工作。
-///
-/// 补齐之前已经发生的花费靠扫描时记下的「可能的花费」追认：一笔输出算出的
-/// key image 若出现在它的某条可能花费里，那条就是真的花费。之后的花费由正常
-/// 扫描识别，所以这笔输出的可能花费记录随即清掉。
+/// Earlier spends are confirmed from possible spends recorded while scanning:
+/// if the computed key image appears in one of the output's possible spends,
+/// that is the real spend. Later spends are caught by normal scanning, so the
+/// output's possible spends are then cleared.
 pub fn import_key_images(
     db: &mut Db,
     identity_id: i64,
@@ -105,14 +103,14 @@ pub fn import_key_images(
     let mut computed = Vec::with_capacity(pending.len());
     for (id, blob, txid, index) in pending {
         let output = WalletOutput::read(&mut blob.as_slice())
-            .map_err(|e| db_err("deserializeOutput", format!("输出 {id}: {e}")))?;
+            .map_err(|e| db_err("deserializeOutput", format!("output {id}: {e}")))?;
         computed.push((id, key_image_for(&output, &spend)?, txid, index));
     }
     apply_key_images(db, identity_id, &computed)
 }
 
-/// 写回算好的 key image，并用「可能的花费」追认早已发生的花费。
-/// 与计算分开，好让比对逻辑脱离真实输出单独测试。
+/// Stores computed key images and confirms earlier spends from possible spends.
+/// Separate from computation so the matching can be tested without real outputs.
 fn apply_key_images(
     db: &mut Db,
     identity_id: i64,
@@ -174,11 +172,11 @@ fn apply_key_images(
     })
 }
 
-/// `import_key_images` 的结果。
+/// Result of `import_key_images`.
 pub struct KeyImageImport {
-    /// 这次补算了几笔输出的 key image。
+    /// Outputs whose key image was computed.
     pub imported: usize,
-    /// 其中几笔借「可能的花费」追认为早已花掉。
+    /// Of those, outputs confirmed as already spent via possible spends.
     pub spends_found: usize,
 }
 
@@ -198,24 +196,24 @@ fn parse_spend_key(bytes: &[u8]) -> Result<Zeroizing<Scalar>> {
     Ok(Zeroizing::new(scalar))
 }
 
-/// 一笔待发交易的收款项。
+/// A payment in a pending transaction.
 #[derive(Debug, Clone)]
 pub struct Payment {
     pub address: MoneroAddress,
     pub amount_atomic: u64,
 }
 
-/// 选币结果与预留。
+/// Input selection result.
 #[derive(Debug, Clone)]
 pub struct Selection {
     pub output_ids: Vec<i64>,
     pub total_atomic: u64,
 }
 
-/// 选币：大额优先，凑够 `needed` 为止。
+/// Selects inputs largest first until `needed` is covered.
 ///
-/// 大额优先的理由是手续费：Monero 按交易重量计费，输入越少越便宜。代价是
-/// 会更快把大额输出打碎 —— 这个取舍和 wallet2 的默认行为一致。
+/// Fees are by weight, so fewer inputs are cheaper, at the cost of breaking up
+/// large outputs sooner; this matches wallet2's default.
 pub fn select_inputs(
     db: &Db,
     identity_id: i64,
@@ -257,38 +255,40 @@ pub fn select_inputs(
     })
 }
 
-/// 未签名的预留一小时后作废：用户在确认页退出不会通知这里。
+/// Unsigned reservations expire after an hour; leaving the confirm screen is not reported here.
 pub const RESERVATION_TTL_SECS: i64 = 60 * 60;
 
-/// 已签名、但没走到广播的预留一天后作废。
+/// Signed reservations that never reached broadcast expire after a day.
 ///
-/// 广播会在发出前把输入标已花、写在途记录，所以留到这里的签名从没发出去
-/// （设备上拒绝、取消、签完被杀）。永远锁着，下一笔就只能换一批输入花；
-/// 那份旧签名万一之后又被广播，两笔都会上链。放开后同一批输入重新排在
-/// 选币的前面，两笔争同一批 key image，链上只会成一笔。
+/// Broadcast marks inputs spent and records the send before publishing, so a
+/// signed reservation left here was never sent (rejected on device, cancelled,
+/// killed after signing). Locking it forever would push the next send onto
+/// other inputs, and if the old signature were broadcast later both would
+/// confirm. Released, the same inputs are selected first again, so both
+/// transactions share key images and at most one can confirm.
 pub const SIGNED_RESERVATION_TTL_SECS: i64 = 24 * 60 * 60;
 
-/// 仍然有效的预留的下限时间：`locked_at` 大于它才算数。
+/// Reservations with `locked_at` after this are live.
 pub fn reservation_cutoff() -> i64 {
     crate::wallet::now_secs() - RESERVATION_TTL_SECS
 }
 
-/// 已签名预留的下限时间：`signed_at` 大于它才算数。
+/// Signed reservations with `signed_at` after this are live.
 pub fn signed_reservation_cutoff() -> i64 {
     crate::wallet::now_secs() - SIGNED_RESERVATION_TTL_SECS
 }
 
-/// 预留选中的输出，防止被第二笔在途交易重复选中。
+/// Reserves selected outputs so a second in-flight transaction cannot select them.
 ///
-/// 不预留的后果很具体：两笔交易花同一个输出，第二笔必然被网络拒绝，
-/// 而用户看到的是「莫名其妙失败」。
+/// Otherwise two transactions could spend the same output and the second would
+/// be rejected by the network.
 pub fn reserve(db: &mut Db, reservation_id: &str, output_ids: &[i64]) -> Result<()> {
     let now = crate::wallet::now_secs();
     let tx = db
         .conn_mut()
         .transaction()
         .map_err(|e| db_err("beginReserve", e))?;
-    // 用户在确认页退出不会通知这里，作废的预留只能在这时清掉。
+    // Leaving the confirm screen is not reported, so expired reservations are cleared here.
     tx.execute(
         "DELETE FROM locked_outputs
          WHERE (signed_at IS NULL AND locked_at <= ?1) OR signed_at <= ?2",
@@ -299,8 +299,8 @@ pub fn reserve(db: &mut Db, reservation_id: &str, output_ids: &[i64]) -> Result<
     )
     .map_err(|e| db_err("expireReservations", e))?;
     for id in output_ids {
-        // 已被别人预留时这里会因为主键冲突而失败 —— 那正是我们要的：
-        // 宁可这笔构造不出来，也不要构造出一笔注定被拒的交易。
+        // Fails on primary key conflict if already reserved: better to fail
+        // here than build a transaction that will be rejected.
         tx.execute(
             "INSERT INTO locked_outputs (output_id, reservation_id, locked_at) VALUES (?1, ?2, ?3)",
             params![id, reservation_id, now],
@@ -308,7 +308,7 @@ pub fn reserve(db: &mut Db, reservation_id: &str, output_ids: &[i64]) -> Result<
         .map_err(|e| {
             db_err(
                 "reserveOutput",
-                format!("输出 {id} 可能已被另一笔在途交易预留: {e}"),
+                format!("output {id} may be reserved by another pending send: {e}"),
             )
         })?;
     }
@@ -360,10 +360,10 @@ pub fn mark_signed(db: &mut Db, reservation_id: &str, expected_inputs: u32) -> R
     Ok(marked)
 }
 
-/// 放掉本身份所有没签名的预留。
+/// Releases all unsigned reservations of this identity.
 ///
-/// 用户在确认页返回、改完再下一步时不会通知这里；新的一次准备就说明前一次
-/// 没签名的已经没人要了。签了名的不动：它可能正在广播。
+/// Going back from the confirm screen is not reported; a new prepare means the
+/// earlier unsigned ones are abandoned. Signed ones stay: they may be broadcasting.
 fn release_unsigned(db: &Db, identity_id: i64) -> Result<usize> {
     db.conn()
         .execute(
@@ -375,7 +375,7 @@ fn release_unsigned(db: &Db, identity_id: i64) -> Result<usize> {
         .map_err(|e| db_err("releaseUnsignedReservations", e))
 }
 
-/// 释放预留（用户取消，或构造失败）。
+/// Releases a reservation (user cancelled or construction failed).
 pub fn release(db: &Db, reservation_id: &str) -> Result<usize> {
     let n = db
         .conn()
@@ -387,21 +387,17 @@ pub fn release(db: &Db, reservation_id: &str) -> Result<usize> {
     Ok(n)
 }
 
-/// 一笔构造完成、等待签名的交易。
+/// A constructed transaction awaiting signature.
 pub struct Prepared {
     pub signable: SignableTransaction,
     pub output_ids: Vec<i64>,
     pub inputs_atomic: u64,
-    /// 收款方实际收到的总额。max-send 时这是反算出来的，不等于宿主传入的值。
+    /// Total received by recipients. For max-send it is derived, not the host's input.
     pub amount_atomic: u64,
     pub fee_atomic: u64,
 }
 
-/// 给一个输出取一环诱饵。
-///
-/// 诱饵必须在**当前**链高上选：用旧高度会让环成员分布偏离当下的链上分布，
-/// 那是可被统计分析利用的指纹。
-/// monerod 的拒收原因按标志拼接，双花写作 "double spend"。
+/// monerod joins rejection reasons by flag; a double spend reads "double spend".
 fn is_double_spend(error: &RuntimeError) -> bool {
     error
         .detail
@@ -409,10 +405,11 @@ fn is_double_spend(error: &RuntimeError) -> bool {
         .is_some_and(|reason| reason.to_lowercase().contains("double spend"))
 }
 
-/// 一次构造里所有输入共用同一份 RingCT 输出分布。
+/// Shares one RingCT output distribution across all inputs of a construction.
 ///
-/// 上游每选一组诱饵都向节点要一次整条链的分布（约 18MB），N 个输入就下 N 份，
-/// 移动端经宿主转发很容易超时。范围相同就复用，节点只问一次。
+/// Upstream fetches the full-chain distribution (about 18MB) per decoy
+/// selection, N times for N inputs, which easily times out when relayed through
+/// the host on mobile. Same range is reused, so the node is asked once.
 struct CachedDecoys<'a, P> {
     inner: &'a P,
     distributions:
@@ -492,6 +489,10 @@ impl<P: monero_wallet::interface::ProvidesDecoys>
     }
 }
 
+/// Picks a ring of decoys for one output.
+///
+/// Decoys must be selected at the current height; a stale height skews the
+/// ring distribution into a statistical fingerprint.
 async fn ring_for<R: RngCore + CryptoRng + Send + Sync>(
     db: &Db,
     decoy_source: &impl monero_wallet::interface::ProvidesDecoys,
@@ -511,9 +512,9 @@ async fn ring_for<R: RngCore + CryptoRng + Send + Sync>(
         })
 }
 
-/// 取一组输出的环，已经取过的直接复用。
+/// Rings for a set of outputs, reusing ones already fetched.
 ///
-/// 复用不是优化细节：每个输入要十几个诱饵，重取一轮就是十几个网络往返。
+/// Each ring costs a dozen or more network round trips.
 async fn rings_for<R: RngCore + CryptoRng + Send + Sync>(
     db: &Db,
     decoy_source: &impl monero_wallet::interface::ProvidesDecoys,
@@ -533,7 +534,7 @@ async fn rings_for<R: RngCore + CryptoRng + Send + Sync>(
     Ok(inputs)
 }
 
-/// 组装一笔 `SignableTransaction`。找零永远回到本账户主地址。
+/// Assembles a `SignableTransaction`. Change always goes to the account's primary address.
 fn assemble<R: RngCore + CryptoRng>(
     identity: &crate::wallet::Identity,
     rng: &mut R,
@@ -544,8 +545,8 @@ fn assemble<R: RngCore + CryptoRng>(
 ) -> std::result::Result<SignableTransaction, monero_wallet::send::SendError> {
     let change = Change::new(identity.view_pair.clone(), None);
 
-    // `outgoing_view_key` 给这笔交易的确定性 RNG 做种子。**绝不能跨交易复用**
-    // —— 上游文档明写复用会导致临时秘密被重复使用。每次现取。
+    // `outgoing_view_key` seeds this transaction's deterministic RNG. Never reuse
+    // it across transactions (upstream: reuse repeats ephemeral secrets).
     let mut ovk = Zeroizing::new([0u8; 32]);
     rng.fill_bytes(ovk.as_mut());
 
@@ -565,16 +566,16 @@ fn build_error(e: monero_wallet::send::SendError) -> RuntimeError {
         .detail(format!("{e:?}"))
 }
 
-/// 选币 + 构造，**不需要花费私钥**。
+/// Selects inputs and constructs a transaction; no private spend key needed.
 ///
-/// 返回的 `Prepared` 带着这笔交易真正要付的手续费，宿主据此在确认页上显示 ——
-/// 显示的数就是会扣的数。在别处照抄一遍上游的重量公式只会让两个数慢慢分家。
+/// `Prepared` carries the actual fee, which the host shows on the confirm
+/// screen, so the displayed fee is the one charged.
 ///
-/// ## 为什么要迭代
+/// ## Why iterate
 ///
-/// 手续费按交易重量算，重量取决于输入个数，而要凑几个输入又取决于手续费。
-/// 先按「只够付金额」选一轮，让上游把真实手续费算出来（`NotEnoughFunds` 里
-/// 带着它），不够就按新的目标再选。实测两轮收敛。
+/// The fee depends on weight, weight on input count, and input count on the
+/// fee. The first round covers the amount only; upstream reports the real fee
+/// in `NotEnoughFunds`, and selection repeats with the new target. Converges in two rounds in practice.
 #[allow(clippy::too_many_arguments)]
 pub async fn prepare<R: RngCore + CryptoRng + Send + Sync>(
     db: &Db,
@@ -598,8 +599,8 @@ pub async fn prepare<R: RngCore + CryptoRng + Send + Sync>(
     let mut cache: HashMap<i64, OutputWithDecoys> = HashMap::new();
     let mut needed = out_total;
 
-    // 三轮：第一轮不含手续费，第二轮按真实手续费重选，第三轮兜住「补的输入
-    // 又把手续费抬上去了」。再不收敛就是钱确实不够。
+    // Three rounds: without fee, with the real fee, and once more in case the
+    // added inputs raised the fee. Not converging means insufficient funds.
     for _ in 0..3 {
         let selection = select_inputs(db, identity_id, chain_tip, needed)?;
         let inputs = rings_for(
@@ -635,10 +636,10 @@ pub async fn prepare<R: RngCore + CryptoRng + Send + Sync>(
                 necessary_fee: Some(fee),
                 ..
             }) => {
-                // 上游算出了真实手续费，按它重新定目标。
+                // Retarget using the fee computed by upstream.
                 let next = outputs.checked_add(fee).ok_or_else(overflow)?;
                 if next <= needed {
-                    // 目标没往上走却仍然构不出来：再循环也是同一个结果。
+                    // Target did not grow; another round would fail the same way.
                     return Err(insufficient(selection.total_atomic, next));
                 }
                 needed = next;
@@ -650,13 +651,13 @@ pub async fn prepare<R: RngCore + CryptoRng + Send + Sync>(
     Err(insufficient(0, needed))
 }
 
-/// 把这个账户当前能花的**全部**输出发给一个地址。
+/// Sends all currently spendable outputs to one address.
 ///
-/// 不能靠「不给找零输出」来实现 —— 上游明写那样会把余数全部并进手续费，
-/// 等于白送矿工。正确做法是先拿到这笔交易真实的手续费，再反算金额。
+/// Omitting the change output would, per upstream, add the remainder to the
+/// fee. Instead the real fee is obtained first and the amount derived.
 ///
-/// 金额不影响交易重量（RingCT 的金额是定长密文），所以先用 1 piconero 试
-/// 构一次拿手续费，再用 `总额 - 手续费` 正式构造，两次重量一致。
+/// Amounts do not affect weight (RingCT amounts are fixed-size), so a probe
+/// with 1 piconero gives the fee, then `total - fee` is built with the same weight.
 #[allow(clippy::too_many_arguments)]
 pub async fn prepare_max<R: RngCore + CryptoRng + Send + Sync>(
     db: &Db,
@@ -688,8 +689,7 @@ pub async fn prepare_max<R: RngCore + CryptoRng + Send + Sync>(
     let mut cache: HashMap<i64, OutputWithDecoys> = HashMap::new();
     let inputs = rings_for(db, decoy_source, rng, &output_ids, chain_tip, &mut cache).await?;
 
-    // 试构一次只为拿手续费。成功失败都给得出：成功读 `necessary_fee()`，
-    // 失败时 `NotEnoughFunds` 里也带着它。
+    // Probe for the fee: `necessary_fee()` on success, or from `NotEnoughFunds`.
     let fee_atomic = match assemble(
         &identity,
         rng,
@@ -759,9 +759,9 @@ fn insufficient(available: u64, needed: u64) -> RuntimeError {
     )
 }
 
-/// 签名一笔已构造的交易。**不碰网络，不碰数据库。**
+/// Signs a constructed transaction. No network or database access.
 ///
-/// `spend_private` 用完即擦。返回可直接广播的交易字节与 txid。
+/// `spend_private` is zeroized after use. Returns broadcastable bytes and the txid.
 pub fn sign_prepared<R: RngCore + CryptoRng>(
     signable: SignableTransaction,
     rng: &mut R,
@@ -776,7 +776,7 @@ pub fn sign_prepared<R: RngCore + CryptoRng>(
     Ok((signed.serialize(), txid))
 }
 
-/// 广播。**不可逆。**
+/// Broadcasts. Irreversible.
 pub async fn broadcast(daemon: &crate::network::Daemon, raw: &[u8]) -> Result<()> {
     use monero_daemon_rpc::prelude::*;
 
@@ -794,7 +794,7 @@ pub async fn broadcast(daemon: &crate::network::Daemon, raw: &[u8]) -> Result<()
     })
 }
 
-/// 校验一个收款地址并解析金额，给宿主一个统一的入口。
+/// Validates a recipient address and parses the amount.
 pub fn parse_payment(
     network: monero_wallet::address::Network,
     address: &str,
@@ -874,16 +874,16 @@ mod tests {
             .unwrap();
     }
 
-    /// 补算出的 key image 若出现在这笔输出的某条可能花费里，那条就是真花费：
-    /// 标成已花、补一条出账记录。只是被别人当诱饵的（key image 对不上）不算。
+    /// A computed key image found in the output's possible spends confirms that
+    /// spend (marked spent, outgoing record added). Use as someone else's decoy does not count.
     #[test]
     fn a_key_image_found_among_possible_spends_confirms_an_earlier_spend() {
         let (mut db, id) = db_with_identity();
         let spent = add_output(&db, id, 700, 10, false);
         let decoyed = add_output(&db, id, 300, 11, false);
-        add_possible_spend(&db, id, 10, 0xAA, 0x51, 30); // 真的：key image 对得上
-        add_possible_spend(&db, id, 10, 0xBB, 0x52, 31); // 别人拿它当诱饵
-        add_possible_spend(&db, id, 11, 0xCC, 0x53, 32); // 别人拿它当诱饵
+        add_possible_spend(&db, id, 10, 0xAA, 0x51, 30); // real: key image matches
+        add_possible_spend(&db, id, 10, 0xBB, 0x52, 31); // used as a decoy
+        add_possible_spend(&db, id, 11, 0xCC, 0x53, 32); // used as a decoy
 
         let result = apply_key_images(
             &mut db,
@@ -913,7 +913,7 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(decoyed_spent, None, "只是被当诱饵，没花");
+        assert_eq!(decoyed_spent, None, "only used as a decoy, not spent");
 
         let (direction, out_height): (String, i64) = db
             .conn()
@@ -928,7 +928,7 @@ mod tests {
             .conn()
             .query_row("SELECT count(*) FROM possible_spends", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(left, 0, "有了 key image 的输出不再需要可能花费记录");
+        assert_eq!(left, 0, "key-imaged outputs need no possible spends");
     }
 
     // Invalid transaction bytes must fail before signing, even with a review attached.
@@ -944,8 +944,8 @@ mod tests {
         assert_eq!(e.params["reason"], "transactionDoesNotMatchReview");
     }
 
-    /// 金额相加溢出必须报错而不是回绕。回绕会让一笔「收款方总额 0」的交易
-    /// 被当成合法请求构造出去。
+    /// Amount overflow must error, not wrap; wrapping could build a transaction
+    /// paying a total of 0.
     #[test]
     fn payment_totals_do_not_wrap_on_overflow() {
         let address = keys::parse_address(
@@ -975,7 +975,7 @@ mod tests {
         assert_eq!(e.params["byteLen"], 31);
     }
 
-    /// 大额优先：Monero 按重量计费，输入越少越便宜。
+    /// Largest first: fees are by weight, so fewer inputs are cheaper.
     #[test]
     fn selection_prefers_large_outputs_and_stops_once_covered() {
         let (db, id) = db_with_identity();
@@ -984,7 +984,7 @@ mod tests {
         add_output(&db, id, 500, 12, true);
 
         let s = select_inputs(&db, id, 100, 1_000).unwrap();
-        assert_eq!(s.total_atomic, 1_400, "900 + 500 就够了，不该再拿 100");
+        assert_eq!(s.total_atomic, 1_400, "900 + 500 suffice; skip the 100");
         assert_eq!(s.output_ids.len(), 2);
     }
 
@@ -998,8 +998,7 @@ mod tests {
         assert_eq!(e.params["availableAtomic"], "100");
     }
 
-    /// 没有 key image 的输出不能参与花费 —— 无法确认它没被花掉，
-    /// 拿它构造交易有双花风险。
+    /// Outputs without a key image are never spent: their unspent status is unknown.
     #[test]
     fn outputs_without_key_images_are_never_selected() {
         let (db, id) = db_with_identity();
@@ -1008,15 +1007,15 @@ mod tests {
         assert_eq!(e.params["reason"], "insufficientUnlockedFunds");
     }
 
-    /// 锁定期内的输出也不能选 —— 构不进环，节点会拒。
+    /// Locked outputs are not selected; the node would reject them.
     #[test]
     fn locked_outputs_are_not_selected() {
         let (db, id) = db_with_identity();
         add_output(&db, id, 5_000, 95, true);
-        // 链尖 100，输出在 95：差 5 块，未满 10 块锁定
+        // Tip 100, output at 95: within the 10-block lock
         let e = select_inputs(&db, id, 100, 1_000).unwrap_err();
         assert_eq!(e.params["reason"], "insufficientUnlockedFunds");
-        // 到 105 就够了
+        // Unlocked at 105
         assert!(select_inputs(&db, id, 105, 1_000).is_ok());
     }
 
@@ -1030,11 +1029,10 @@ mod tests {
                 params![a, reservation_cutoff() - 1],
             )
             .unwrap();
-        reserve(&mut db, "new", &[a]).expect("过期的预留不该挡路");
+        reserve(&mut db, "new", &[a]).expect("expired reservation must not block");
     }
 
-    /// 用户离开确认页后，下一次准备发送放掉没签名的预留；签了名的可能正在
-    /// 广播，要留着。
+    /// A new prepare releases unsigned reservations; signed ones may be broadcasting and stay.
     #[test]
     fn a_new_send_releases_only_unsigned_reservations() {
         let (mut db, id) = db_with_identity();
@@ -1107,7 +1105,7 @@ mod tests {
                 .locked_by_reservation_atomic,
             0
         );
-        reserve(&mut db, "replacement", &[input]).expect("过期的签名预留让位");
+        reserve(&mut db, "replacement", &[input]).expect("expired signed reservation gives way");
     }
 
     #[test]
@@ -1132,7 +1130,7 @@ mod tests {
         assert!(reserve(&mut db, "replacement", &[input]).is_err());
     }
 
-    /// wallet2 同款：待确认发送的找零计入总余额（锁定），不计入可用；判失败后不再计。
+    /// As wallet2: pending change counts in the total (locked), not unlocked, until the send fails.
     #[test]
     fn pending_change_counts_in_total_until_the_send_fails() {
         let (db, id) = db_with_identity();
@@ -1172,7 +1170,7 @@ mod tests {
         assert_eq!(b.total_atomic, 500);
     }
 
-    /// 广播后按交易里的 key image 标已花：预留过期或被释放了也不能漏记。
+    /// Broadcast marks inputs spent by the transaction's key images, even if the reservation is gone.
     #[test]
     fn a_broadcast_marks_its_inputs_by_key_image_without_a_reservation() {
         let (db, id) = db_with_identity();
@@ -1221,7 +1219,7 @@ mod tests {
         assert_eq!(outgoing.as_deref(), Some("123"));
     }
 
-    /// 记账在广播之前：被拒时只撤这一次新建的记录；重发同一笔不算新建。
+    /// Recorded before broadcast: a rejection undoes only a fresh record; a retry is not fresh.
     #[test]
     fn a_rejected_first_broadcast_is_undone_but_a_retry_is_not_fresh() {
         let (mut db, id) = db_with_identity();
@@ -1248,14 +1246,14 @@ mod tests {
             .unwrap()
         };
 
-        assert!(record(&db), "第一次是新建");
+        assert!(record(&db), "first record is fresh");
         assert!(
             crate::query::spendable_rows(&db, id, 10_000)
                 .unwrap()
                 .is_empty(),
-            "广播前输入就已不可选"
+            "inputs are unselectable before broadcast"
         );
-        assert!(!record(&db), "同一笔再记一次不是新建");
+        assert!(!record(&db), "recording the same tx again is not fresh");
 
         undo_recorded_broadcast(&db, id, &txid).unwrap();
         assert_eq!(
@@ -1266,24 +1264,23 @@ mod tests {
             .conn()
             .query_row("SELECT count(*) FROM transactions", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(rows, 0, "被拒的交易不留在历史里");
+        assert_eq!(rows, 0, "rejected transaction is not kept in history");
     }
 
-    /// 同一笔输出不能被两个预留同时持有 —— 否则两笔交易花同一个输出，
-    /// 第二笔必然被网络拒绝。
+    /// An output cannot be held by two reservations at once.
     #[test]
     fn an_output_cannot_be_reserved_twice() {
         let (mut db, id) = db_with_identity();
         let a = add_output(&db, id, 5_000, 10, true);
         reserve(&mut db, "r1", &[a]).unwrap();
-        assert!(reserve(&mut db, "r2", &[a]).is_err(), "第二次预留必须失败");
+        assert!(reserve(&mut db, "r2", &[a]).is_err(), "already reserved");
         assert_eq!(release(&db, "r1").unwrap(), 1);
-        reserve(&mut db, "r2", &[a]).expect("释放后可以重新预留");
+        reserve(&mut db, "r2", &[a]).expect("can reserve again after release");
     }
 
     #[test]
     fn releasing_an_unknown_reservation_is_a_no_op() {
-        let (mut db, _) = db_with_identity();
+        let (db, _) = db_with_identity();
         assert_eq!(release(&db, "nope").unwrap(), 0);
     }
 
@@ -1296,7 +1293,7 @@ mod tests {
         assert!(parse_payment(Network::Mainnet, addr, "1000").is_ok());
     }
 
-    /// 金额走字符串跨边界：piconero 上限超过 JS 的 MAX_SAFE_INTEGER。
+    /// Amounts cross the boundary as strings: piconero values exceed JS MAX_SAFE_INTEGER.
     #[test]
     fn large_amounts_survive_the_string_boundary() {
         let addr = crate::wallet::testing::ADDR;
@@ -1313,18 +1310,18 @@ mod tests {
     }
 }
 
-// ── 端到端发送 ──────────────────────────────────────────────────────────
+// ── End-to-end send ─────────────────────────────────────────────────────
 
-/// 各优先级手续费率的上限（piconero / weight）。
+/// Fee rate cap per priority (piconero / weight).
 ///
-/// 上游 `fee_rate` 强制要求给一个上限，理由很实在：**手续费率来自节点，
-/// 而节点可能撒谎**。报一个天价费率会让用户把余额全付成手续费。
+/// Upstream `fee_rate` requires a cap because the rate comes from the node,
+/// which may lie; an absurd rate could spend the balance on fees.
 ///
-/// monerod 的四档是基础费率的固定倍数，主网现值为 20,000 / 80,000 /
-/// 320,000 / 4,000,000。基础费率随区块奖励与区块大小中位数算出：交易一多
-/// 区块变大，费率反而下降；尾部发行固定后奖励也不再变。所以各档按现值留
-/// 5 倍余量，正常波动碰不到，挡得住数量级级别的胡说。碰到上限的结果是这一档
-/// 发不出去，不会多付。
+/// monerod's four tiers are fixed multiples of the base fee, currently 20,000 /
+/// 80,000 / 320,000 / 4,000,000 on mainnet. The base fee derives from block
+/// reward and median block size: busier blocks lower it, and tail emission
+/// fixes the reward. Caps leave 5x headroom over current values. Hitting a cap
+/// fails the send at that tier; it never overpays.
 pub fn max_fee_per_weight(priority: monero_wallet::interface::FeePriority) -> u64 {
     use monero_wallet::interface::FeePriority;
     match priority {
@@ -1335,15 +1332,16 @@ pub fn max_fee_per_weight(priority: monero_wallet::interface::FeePriority) -> u6
     }
 }
 
-/// 手续费的取整单位（piconero）。
+/// Fee quantization mask (piconero).
 ///
-/// 这不是价格，是 monerod 写死的常量（`PER_KB_FEE_QUANTIZATION_DECIMALS = 8`，
-/// 即 10^(12-8)），不随网络繁忙变化。上游拿节点给的值把手续费向上取整到它的
-/// 整数倍，不设上限 —— 节点报一个大 mask，手续费就跟着翻几百倍。所以只认这一个值。
+/// A monerod constant (`PER_KB_FEE_QUANTIZATION_DECIMALS = 8`, i.e.
+/// 10^(12-8)), not a price. Upstream rounds the fee up to a multiple of the
+/// node-supplied mask with no cap, so a large mask would multiply the fee;
+/// only this value is accepted.
 pub const FEE_QUANTIZATION_MASK: u64 = 10_000;
 
-/// 上游 `FeeRate` 不暴露 mask，只能从它的序列化里取：先 per_weight 后 mask，
-/// 各 8 字节小端。布局由测试钉住，上游改了会先在测试里炸。
+/// Upstream `FeeRate` does not expose the mask; read it from the serialization
+/// (per_weight then mask, 8 bytes LE each). The layout is pinned by a test.
 fn fee_mask(rate: &monero_wallet::interface::FeeRate) -> Option<u64> {
     let bytes = rate.serialize();
     Some(u64::from_le_bytes(bytes.get(8..16)?.try_into().ok()?))
@@ -1364,7 +1362,7 @@ fn check_fee_rate(rate: &monero_wallet::interface::FeeRate) -> Result<()> {
     Ok(())
 }
 
-/// 手续费优先级。字符串而非数字：数字跨边界时无从校验。
+/// Fee priority, as a string so it can be validated across the boundary.
 pub fn parse_priority(name: &str) -> Result<monero_wallet::interface::FeePriority> {
     use monero_wallet::interface::FeePriority;
     Ok(match name {
@@ -1385,24 +1383,24 @@ pub fn parse_priority(name: &str) -> Result<monero_wallet::interface::FeePriorit
     })
 }
 
-/// 构造一笔待签名交易并预留输入。**不需要花费私钥，不广播。**
+/// Constructs a transaction to sign and reserves its inputs. No private spend
+/// key needed; does not broadcast.
 ///
-/// ## `signableHex` 里有私有 view key
+/// ## `signableHex` contains the private view key
 ///
-/// 上游把整个 viewing pair 写进找零输出（`ChangeEnum::Standard`）——
-/// Monero 的钱包协议按「发送方能看到自己的找零」来做优化，所以它要 view key。
-/// 不带 view key 的那个变体 `Change::fingerprintable` 上游明确警告
-/// 「You MUST assume this will harm your privacy」，所以不能为了躲这个去换。
+/// Upstream writes the full view pair into the change (`ChangeEnum::Standard`)
+/// so the sender can see its own change. The keyless variant
+/// `Change::fingerprintable` is documented upstream as "You MUST assume this
+/// will harm your privacy", so it is not used.
 ///
-/// 结论：这个产物**等价于 view key**，不是一份无害的未签名交易。任何
-/// 「导出去别处签」的设计都必须把它当 view key 对待 —— 拿到它的人能看见
-/// 这个账户收到过的每一笔钱。
+/// The output is therefore equivalent to a view key: whoever holds it can see
+/// every payment this account received. Any export-to-sign design must treat it so.
 ///
-/// `recipients` 是 `(地址, piconero 金额)`。`max_send` 为真时只接受一个收款方，
-/// 金额由「当前可花总额 − 手续费」反算，传入的金额被忽略。
+/// `recipients` are `(address, piconero amount)`. With `max_send`, exactly one
+/// recipient is allowed and the amount is spendable total minus fee; the given amount is ignored.
 ///
-/// 返回的 `feeAtomic` 是这笔交易真正要付的手续费：确认页显示它，签名时不会
-/// 再变。`amountAtomic` 同理 —— max-send 下它才是收款方实际收到的数。
+/// The returned `feeAtomic` is the fee actually paid and does not change at
+/// signing; `amountAtomic` is what the recipient actually receives under max-send.
 #[allow(clippy::too_many_arguments)]
 pub async fn prepare_for_host(
     db: &mut Db,
@@ -1426,12 +1424,12 @@ pub async fn prepare_for_host(
         })?;
     check_fee_rate(&rate)?;
 
-    // 当前共识：CLSAG + Bulletproofs+。跟着硬分叉走，由我们发版控制，
-    // 不问节点 —— 节点说错了交易会被全网拒绝。
+    // Current consensus: CLSAG + Bulletproofs+. Set by our releases per hard
+    // fork, not by the node; a wrong type is rejected network-wide.
     let rct_type = monero_wallet::ringct::RctType::ClsagBulletproofPlus;
     let mut rng = rand_core::OsRng;
 
-    // 放在选输入之前：被放弃的预留占着的输出要能被这一次选中。
+    // Before selection, so outputs held by abandoned reservations can be selected.
     release_unsigned(db, identity_id)?;
     let decoys = CachedDecoys::new(daemon);
 
@@ -1477,7 +1475,7 @@ pub async fn prepare_for_host(
         .saturating_sub(prepared.amount_atomic)
         .saturating_sub(prepared.fee_atomic);
 
-    // 预留放在最后：前面任何一步失败都不该留下锁住的输出。
+    // Reserve last so an earlier failure leaves no outputs locked.
     reserve(db, reservation_id, &prepared.output_ids)?;
 
     Ok(json!({
@@ -1491,7 +1489,7 @@ pub async fn prepare_for_host(
     }))
 }
 
-/// 签名一笔已构造的交易。**不碰网络、不碰数据库。**
+/// Signs a constructed transaction. No network or database access.
 pub fn sign_for_host(signable_hex: &str, spend_private: &[u8], review_json: &str) -> Result<Value> {
     let request = crate::review::parse_request(review_json)?;
     let signable = crate::review::verify(signable_hex, &request, Some(spend_private))?;
@@ -1504,19 +1502,20 @@ pub fn sign_for_host(signable_hex: &str, spend_private: &[u8], review_json: &str
     }))
 }
 
-/// 自己发出的一笔交易的金额（只有广播时知道）。
+/// Amounts of our own send, known only at broadcast.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SentAmounts {
-    /// 付出去的总额（收款 + 手续费）。
+    /// Total paid out (destinations + fee).
     pub outgoing_atomic: Option<u64>,
-    /// 找零：上链前计入总余额（锁定），wallet2 同款。
+    /// Change, counted in the total (locked) balance until mined, as wallet2.
     pub change_atomic: Option<u64>,
 }
 
-/// 广播前的记账：输入标已花、记一条在途转出、释放预留。一个事务。
+/// Pre-broadcast bookkeeping in one transaction: mark inputs spent, record a
+/// pending send, release the reservation.
 ///
-/// 返回这条在途记录是不是这一次新建的。已有记录说明同一笔交易以前发过
-/// （重试同一份签名），那次的结局可能已经是「节点收下了」。
+/// Returns whether the record is fresh. An existing record means the same
+/// transaction was sent before (a retry), which the node may have accepted.
 fn record_broadcast(
     db: &Db,
     identity_id: i64,
@@ -1579,7 +1578,7 @@ fn record_broadcast(
     Ok(!existed)
 }
 
-/// 撤销这一次新建的在途记录：节点明确拒收，这笔不会上链，输入放回可用。
+/// Undoes a fresh pending record after an explicit rejection; the inputs become spendable again.
 fn undo_recorded_broadcast(db: &Db, identity_id: i64, txid: &[u8; 32]) -> Result<()> {
     let tx_db = db
         .conn()
@@ -1601,11 +1600,12 @@ fn undo_recorded_broadcast(db: &Db, identity_id: i64, txid: &[u8; 32]) -> Result
     tx_db.commit().map_err(|e| db_err("commitUndoSend", e))
 }
 
-/// 记账，然后广播一笔已签名的交易。**不可逆。**
+/// Records, then broadcasts a signed transaction. Irreversible.
 ///
-/// 先记账再广播：输入先标已花、先有一条在途记录，之后任何一刻被打断
-/// （Worker 被杀、回包丢失），重启后这笔都看得见，输入也不会被下一笔选中
-/// 而换一批去花 —— 换一批花，两笔都会上链，用户付两次。
+/// Recording first marks inputs spent and creates a pending record, so an
+/// interruption (worker killed, response lost) leaves the send visible and its
+/// inputs unselectable. Otherwise the next send could use other inputs and both
+/// would confirm, paying twice.
 pub async fn broadcast_signed(
     db: &Db,
     daemon: &crate::network::Daemon,
@@ -1626,8 +1626,8 @@ pub async fn broadcast_signed(
         .map_err(|e| db_err("parseSignedTransaction", e))?;
     let txid = tx.hash();
 
-    // 按交易自己的 key image 标，不靠预留：预留可能已经过期，或者签名失败
-    // 释放后又拿同一份签名重发。
+    // Mark by the transaction's own key images, not the reservation, which may
+    // have expired or been released before the same signature is resent.
     let key_images: Vec<[u8; 32]> = tx
         .prefix()
         .inputs
@@ -1639,7 +1639,7 @@ pub async fn broadcast_signed(
             _ => None,
         })
         .collect();
-    // 记不上账就不发：这时什么都还没发生，报错是真话。
+    // If recording fails, do not send; nothing has happened yet.
     let fresh = record_broadcast(
         db,
         identity_id,
@@ -1650,12 +1650,13 @@ pub async fn broadcast_signed(
         amounts,
     )?;
 
-    // 明确拒收说明这笔不会上链：这次新建的记录撤掉，输入放回可用。
-    // 其余错误分不清节点收没收到：记录留着，输入不会被重选；节点真没收到的话，
-    // 在途检查过了扩散期会判失败并放回输入。
-    // 「双花」也可能是这笔自己早已上链（回包丢过、重试了同一份签名），同样当
-    // 不确定处理。以前发过的同一笔（`fresh` 为假）被拒也当不确定：上一次的
-    // 结局可能是节点收下了。
+    // An explicit rejection means it will not confirm: undo the fresh record
+    // and release the inputs. Other errors are uncertain: keep the record so the
+    // inputs are not reselected; the pending check fails it after the
+    // propagation window if the node never got it.
+    // "double spend" may be this transaction already mined (lost response,
+    // retried signature), so it is uncertain too, as is a rejection of a
+    // non-fresh record, which the node may have accepted earlier.
     let unknown = match broadcast(daemon, &raw).await {
         Ok(()) => None,
         Err(e) if e.code == ErrorCode::BroadcastRejected && !is_double_spend(&e) && fresh => {
@@ -1736,7 +1737,7 @@ mod double_spend_tests {
         assert_eq!(
             fee_mask(&rate),
             Some(FEE_QUANTIZATION_MASK),
-            "序列化布局变了"
+            "serialization layout changed"
         );
         check_fee_rate(&rate).unwrap();
         for mask in [1, 9_999, 10_001, 10_000_000_000] {
@@ -1747,7 +1748,8 @@ mod double_spend_tests {
         }
     }
 
-    /// 主网现值（2026-10）各档都要能发，且离上限至少 5 倍。
+    /// Current mainnet rates (2026-10) fit every tier with at least 5x headroom.
+
     #[test]
     fn current_mainnet_fee_rates_fit_every_priority() {
         use monero_wallet::interface::FeePriority;

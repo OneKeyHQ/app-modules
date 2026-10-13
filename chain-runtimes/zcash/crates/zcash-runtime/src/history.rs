@@ -1,37 +1,24 @@
-//! 交易历史。
+//! Transaction history.
 //!
-//! ## 为什么直接查视图
+//! Upstream `WalletRead::get_tx_history` is test-only (its return type lives in
+//! `testing`), so this reads the `v_transactions` view maintained by
+//! `zcash_client_sqlite`, as the official Android / iOS SDKs do.
 //!
-//! `zcash_client_backend` 的 `WalletRead::get_tx_history` 上游明确标注为 **test-only**
-//! （「production use could return a very large number of results; either pagination or a
-//! streaming design will be necessary to stabilize this feature」），返回类型还在
-//! `testing` 模块下。不能拿它做生产接口。
+//! Column names are not checked at compile time: run the `history_smoke` test
+//! after upgrading `zcash_client_sqlite`. Failures are `DATABASE_ERROR` with
+//! `params.operation = "history"`.
 //!
-//! 所以走 `zcash_client_sqlite` 维护的 `v_transactions` 视图 —— 这也是官方
-//! Android / iOS SDK 的做法。视图由上游随 schema 一起演进，我们只读不改。
-//!
-//! ## 耦合风险
-//!
-//! 直接查视图意味着依赖它的列名。升级 `zcash_client_sqlite` 时列可能变化，
-//! 而那**不会**在 Rust 编译期报错，只会在运行时查询失败。因此：
-//!
-//! - 本模块的查询列表集中在一处，升级时先跑一次 `history_smoke` 测试；
-//! - 出错时抛 `DATABASE_ERROR` 且 `params.operation = "history"`，便于定位。
-//!
-//! ## 边界
-//!
-//! 这里只做**取数与分页**，不做展示模型 —— 「这笔算收入还是支出」「显示成什么文案」
-//! 属于宿主。返回的是中性事实：金额增量、是否找零、note 计数、时间戳。
+//! Returns neutral facts (deltas, change, note counts, timestamps); classifying
+//! and labelling transactions is up to the host.
 
 use serde_json::json;
 
 use crate::error::{ErrorCode, Result, RuntimeError};
 
-/// 账户 UUID 在官方 schema 里是 **BLOB**（16 字节原始值），不是文本。
+/// Account UUIDs are 16-byte BLOBs in the upstream schema, not text.
 ///
-/// 用 36 字符的连字符形式去绑定，SQLite 不会报错，只会**一行都匹配不上** ——
-/// 于是历史、计数、详情全部恒空，而且看起来像「还没同步出数据」。
-/// 这个坑代价很高：坏查询和空钱包的返回值完全一样，测试很容易假绿。
+/// Binding the hyphenated string matches no rows without any error, which is
+/// indistinguishable from an empty wallet.
 pub(crate) fn uuid_blob(account_uuid: &str) -> Result<Vec<u8>> {
     uuid::Uuid::parse_str(account_uuid)
         .map(|u| u.as_bytes().to_vec())
@@ -43,7 +30,7 @@ pub(crate) fn uuid_blob(account_uuid: &str) -> Result<Vec<u8>> {
         })
 }
 
-/// 每页最多返回多少条，防止宿主一次拉爆内存。
+/// Maximum rows per page.
 pub const MAX_PAGE_SIZE: u32 = 500;
 
 fn db_err(e: impl std::fmt::Display) -> RuntimeError {
@@ -147,10 +134,9 @@ const NON_SAPLING_ACTIVITY: &str = "(
   )
 )";
 
-/// 分页读取某账户的交易历史，返回 JSON 数组。
+/// A page of an account's transaction history as a JSON array.
 ///
-/// 排序：未上链的排在最前（`mined_height IS NULL`），其余按高度倒序。
-/// 这样用户刚发出的交易立刻可见。
+/// Unmined transactions come first, then by height descending.
 pub fn list(
     conn: &rusqlite::Connection,
     account_uuid: &str,
@@ -190,7 +176,7 @@ pub fn list(
     serde_json::to_string(&out).map_err(db_err)
 }
 
-/// 一行 `v_transactions` → JSON。列表与详情共用，保证两处字段完全一致。
+/// A `v_transactions` row as JSON; shared by list and details so fields match.
 fn row_to_json(row: &rusqlite::Row<'_>) -> rusqlite::Result<serde_json::Value> {
     let txid: Vec<u8> = row.get(0)?;
     let per_pool_entries = row
@@ -231,7 +217,7 @@ fn row_to_json(row: &rusqlite::Row<'_>) -> rusqlite::Result<serde_json::Value> {
         .map(|(pool, delta)| (pool.to_string(), serde_json::Value::String(delta)))
         .collect::<serde_json::Map<_, _>>();
     Ok(json!({
-        // txid 以显示序（大端）给出，与区块浏览器一致。
+        // Display (big-endian) order, as block explorers show it.
         "txid": hex_display_order(&txid),
         "minedHeight": row.get::<_, Option<u32>>(1)?,
         "blockTime": row.get::<_, Option<i64>>(2)?,
@@ -244,10 +230,9 @@ fn row_to_json(row: &rusqlite::Row<'_>) -> rusqlite::Result<serde_json::Value> {
         "receivedNoteCount": row.get::<_, Option<i64>>(9)?.unwrap_or(0),
         "memoCount": row.get::<_, Option<i64>>(10)?.unwrap_or(0),
         "isShielding": row.get::<_, Option<bool>>(11)?.unwrap_or(false),
-        // 本账户在这笔交易里的方向性金额（视图现成列）。宿主用它们分类与
-        // 显示：sent 的显示金额 = spent - received - fee（不含手续费的净额），
-        // 自转/屏蔽的显示金额 = received —— 直接用 balance_delta 会把屏蔽
-        // 显示成一笔「手续费大小」的交易。
+        // Account-side amounts. Hosts show sends as spent - received - fee and
+        // self-transfers/shielding as received; balance_delta would show a
+        // shielding transaction as just its fee.
         "totalSpentZat": row.get::<_, Option<i64>>(12)?,
         "totalReceivedZat": row.get::<_, Option<i64>>(13)?,
         // Preserve exact upstream pool identifiers. The host may aggregate
@@ -259,17 +244,17 @@ fn row_to_json(row: &rusqlite::Row<'_>) -> rusqlite::Result<serde_json::Value> {
         "perPoolBalanceDeltaZat": per_pool_balance_delta_zat,
         "broadcastState": row.get::<_, Option<String>>(15)?,
         "recipient": row.get::<_, Option<String>>(16)?,
-        // 本账户发出、且不属于本账户任何地址的输出数。为 0 且有花费 = 内部
-        // 转移（屏蔽 / 提到自己的透明地址 / 池间搬家），与 fee 是否已知无关 ——
-        // fee 未知时靠 spent-received 判方向会把自转误判成外发。
+        // Outputs sent to addresses outside this account. Zero with spends means
+        // an internal transfer, whether or not the fee is known; inferring from
+        // spent - received misreads self-transfers as sends when the fee is unknown.
         "externalOutputCount": row.get::<_, i64>(17)?,
     }))
 }
 
-/// 单笔交易详情。查不到返回 `null`（JSON），不抛错 ——
-/// 「这笔不在钱包里」是正常状态，不是故障：外部 txid、已被回滚的交易都会走到这里。
+/// One transaction's details, or JSON `null` if it is not in the wallet
+/// (foreign txid, rolled back); that is not an error.
 pub fn details(conn: &rusqlite::Connection, account_uuid: &str, txid: &str) -> Result<String> {
-    // 库里 txid 存的是内部序（小端），入参是显示序（大端），先翻回去。
+    // Stored in internal (little-endian) order; the input is display order.
     let internal = display_order_to_internal(txid)?;
 
     let sql = format!(
@@ -294,20 +279,19 @@ pub fn details(conn: &rusqlite::Connection, account_uuid: &str, txid: &str) -> R
     }
 }
 
-/// 单笔交易的**逐笔明细**：本账户被花掉的、收到的，以及发给外部的输出。
+/// Per-output breakdown of one transaction: outputs this account spent,
+/// received, and sent externally.
 ///
-/// 数据来自 `v_tx_outputs` —— `zcash_client_sqlite` 维护的每输出一行的视图，
-/// 官方 SDK 取交易详情走的也是它。三段的判定规则：
+/// Reads `v_tx_outputs`, the per-output view the official SDKs also use:
 ///
-/// - `received`：`to_account_uuid` 是本账户（`is_change` 区分找零与真收款）
+/// - `received`: `to_account_uuid` is this account (`is_change` marks change)
 /// - `external`: sent by this account to an unknown or different account,
 ///   including another account registered in this wallet database.
-///   **只有自己发的交易才看得到收款地址**，
-///   别人发给别人的输出我们既解不开也不该出现在这里
-/// - `spent`：本账户在更早交易里收到、且被这笔花掉的输出，走 `v_received_output_spends`
+///   Recipient addresses are only known for our own sends.
+/// - `spent`: outputs received earlier and spent here, via `v_received_output_spends`
 ///
-/// 池号沿用上游编码：0=transparent, 2=sapling, 3=orchard, 4=ironwood。
-/// 这里原样透出数字并附字符串名，宿主不必自己记这套映射。
+/// Pools use upstream codes (0=transparent, 2=sapling, 3=orchard, 4=ironwood),
+/// returned with their names.
 pub fn details_outputs(
     conn: &rusqlite::Connection,
     account_uuid: &str,
@@ -337,7 +321,7 @@ pub fn details_outputs(
                 .unwrap_or(false);
             let memo: Option<Vec<u8>> = row.get(3).map_err(db_err)?;
             let address: Option<String> = row.get(4).map_err(db_err)?;
-            // 同理：读出来也是 BLOB，按 String 读会直接报列类型错误
+            // Account UUIDs are BLOBs; reading them as String fails.
             let to_acct: Option<Vec<u8>> = row.get(5).map_err(db_err)?;
             let from_acct: Option<Vec<u8>> = row.get(6).map_err(db_err)?;
 
@@ -374,9 +358,9 @@ pub fn details_outputs(
 
     let mut spent = Vec::new();
     {
-        // 本账户收到的输出中，被这笔交易花掉的那些。
-        // 连接键是 (pool, id_within_pool_table) ↔ (pool, received_output_id)。
-        // `v_received_output_spends` 里没有 output_index，别拿它当连接键。
+        // This account's received outputs spent by this transaction. Join on
+        // (pool, id_within_pool_table) = (pool, received_output_id);
+        // `v_received_output_spends` has no output_index.
         let mut stmt = conn
             .prepare(
                 "SELECT ro.pool, ro.value, addr.address
@@ -416,7 +400,7 @@ pub fn details_outputs(
     .map_err(db_err)
 }
 
-/// 上游的池编码。数字是存储层的事实，名字是给宿主省一次查表。
+/// Name for an upstream pool code.
 fn pool_name(pool: i64) -> &'static str {
     match pool {
         0 => "transparent",
@@ -486,7 +470,7 @@ fn memo_details(bytes: &[u8]) -> (Option<String>, Option<serde_json::Value>) {
     )
 }
 
-/// 显示序（大端 hex）→ 内部序（小端字节）。
+/// Display order (big-endian hex) to internal order (little-endian bytes).
 pub(crate) fn display_order_to_internal(txid: &str) -> Result<Vec<u8>> {
     let bytes = hex_decode(txid)
         .ok_or_else(|| RuntimeError::with(ErrorCode::InvalidTxid, json!({ "value": txid })))?;
@@ -505,7 +489,7 @@ fn hex_decode(s: &str) -> Option<Vec<u8>> {
     hex::decode(s).ok()
 }
 
-/// txid 在库里以内部序（小端）存储，浏览器展示用大端。翻转后转 hex。
+/// Stored (little-endian) txid to display-order hex.
 pub(crate) fn hex_display_order(txid_le: &[u8]) -> String {
     txid_le.iter().rev().map(|b| format!("{b:02x}")).collect()
 }
@@ -590,7 +574,7 @@ mod tests {
 
     #[test]
     fn rejects_bad_page_size() {
-        // 用一个内存库即可，查询根本不会执行到。
+        // Validation fails before any query runs.
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         for bad in [0, MAX_PAGE_SIZE + 1] {
             let e = list(&conn, "whatever", bad, 0).unwrap_err();

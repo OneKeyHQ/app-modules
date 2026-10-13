@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "OneKey Zcash Runtime — 官方 librustzcash 之上的最薄 wasm 绑定层"
+description = "OneKey Zcash Runtime: a thin wasm binding over librustzcash"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -41,11 +41,8 @@ futures-util.workspace = true
 sapling.workspace = true
 uuid.workspace = true
 
-# wasm32 专属：SQLite 的 wasm 实现与 IndexedDB VFS，以及 JS 互操作。
-# 非 wasm 目标（原生桌面/移动/测试）不需要这些 —— 那里 rusqlite 直接用
-# 系统或 bundled 的 SQLite 即可。
-# 原生目标：给同一个 tonic 追加 transport（feature 是并集，wasm 侧不受影响）。
-# 有了它就能在本机复现浏览器里的问题 —— 原生环境可以上真调试器。
+# Native targets: add tonic transport (features are additive; wasm is unaffected)
+# so browser issues can be reproduced natively under a debugger.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tonic = { workspace = true, features = ["transport", "tls-ring", "tls-webpki-roots"] }
 tokio = { workspace = true }
@@ -69,28 +66,28 @@ tracing-wasm = { workspace = true, optional = true }
 tracing-subscriber = { workspace = true, optional = true }
 getrandom = { workspace = true, features = ["wasm_js"] }
 tonic-web-wasm-client.workspace = true
-# 本 crate 不直接用 time —— 打开它只为传递 feature。zcash_client_backend 记
-# `created` 时绕过注入的 Clock，直接调 time::OffsetDateTime::now_utc()；不开这个
-# feature 它就落到 SystemTime::now()，而 wasm32-unknown-unknown 上 std 没有时间源，
-# 于是 pcztSubmit 落库时 panic（"time not implemented on this platform"）。
+# Not used directly; only enables the feature. zcash_client_backend records
+# `created` via time::OffsetDateTime::now_utc(), bypassing the injected Clock.
+# Without wasm-bindgen it falls back to SystemTime::now(), which panics on
+# wasm32-unknown-unknown ("time not implemented on this platform") in pcztSubmit.
 time = { version = "0.3", features = ["wasm-bindgen"] }
 
 [dev-dependencies]
 futures = "0.3"
 
-# wasm-pack 默认跑 `wasm-opt -O`；-Oz 更激进地压体积。
-# 代价是构建慢一些，运行时性能差异对我们这类 IO 密集的负载可忽略。
+# wasm-pack defaults to `wasm-opt -O`; -Oz shrinks further at the cost of build
+# time, with negligible runtime impact on this IO-bound workload.
 [package.metadata.wasm-pack.profile.release]
-# 不开 --enable-simd：实测（decrypt-share.html，主网 500 块×2 轮）SIMD128 只快
-# ~2%（曲线库无专门 SIMD 路径，自动向量化吃不到），却抬高老 WebView 的兼容门槛。
+# No --enable-simd: measured ~2% faster on mainnet (decrypt-share.html, 500
+# blocks x2) since the curve libraries have no SIMD paths, and it breaks old WebViews.
 wasm-opt = ["-Oz", "--enable-bulk-memory", "--enable-nontrapping-float-to-int"]
 
-# 排查用档：保持 cargo 的优化（否则 Halo2 证明慢到不可用），但不跑 wasm-opt ——
-# 它会剥掉 name 段，而 wasm 的 panic 栈只有函数序号，没有名字就无从下手。
+# Debug profile: keep cargo optimizations (Halo2 proving is unusable without
+# them) but skip wasm-opt, which strips the name section panic stacks need.
 [package.metadata.wasm-pack.profile.profiling]
 wasm-opt = false
 
 [features]
-# 把 zcash_client_backend 的 tracing 事件转到浏览器 console。
-# 只在排查时开 —— 日志量很大，且会显著拖慢扫描。
+# Forward zcash_client_backend tracing events to the browser console.
+# Debugging only: very verbose and slows scanning noticeably.
 debug-tracing = ["dep:tracing-wasm", "dep:tracing-subscriber"]

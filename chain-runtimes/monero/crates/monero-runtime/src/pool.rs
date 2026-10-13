@@ -1,9 +1,11 @@
-//! 自己广播、还没上链的交易是否还活着。
+//! Liveness of our own broadcast, unconfirmed transactions.
 //!
-//! 照 wallet2 `process_unconfirmed_transfer`：广播超过 [`TX_PROPAGATION_TIMEOUT_SECS`]
-//! 仍然不在节点那里，判失败，把它花的输出放回可用。不放的话那笔钱永远锁着。
+//! Like wallet2 `process_unconfirmed_transfer`: a send still unknown to the node
+//! [`TX_PROPAGATION_TIMEOUT_SECS`] after broadcast is marked failed and its inputs
+//! are released, otherwise those funds stay locked.
 //!
-//! 上链的不归这里管：扫描按 key image 认出来，交易行自然拿到高度（也会清掉失败标记）。
+//! Confirmed sends are handled by scanning via key images, which sets the height
+//! and clears the failed flag.
 
 use rusqlite::params;
 use serde_json::Value;
@@ -12,15 +14,15 @@ use crate::error::{db_err, Result};
 use crate::network::Daemon;
 use crate::wallet::{now_secs, Db};
 
-/// wallet2 同值。短于 Dandelion++ 的扩散时间会把刚发的交易误判失败。
+/// Same as wallet2. Shorter than Dandelion++ propagation would fail fresh sends.
 pub const TX_PROPAGATION_TIMEOUT_SECS: i64 = 500;
 
-/// 同一笔在途交易两次询问节点的最小间隔。扫链一步几秒一次，不能每步都问。
+/// Minimum interval between node checks of the same pending send; sync steps run every few seconds.
 const POOL_RECHECK_SECS: i64 = 60;
 
 const RESPONSE_SIZE_LIMIT: usize = 4 * 1024 * 1024;
 
-/// 该问节点的在途交易：已过扩散期、没判过失败、最近没问过。
+/// Pending sends to check: past the propagation timeout, not failed, not checked recently.
 fn due_pending(db: &Db, identity_id: i64, now: i64) -> Result<Vec<[u8; 32]>> {
     let mut stmt = db
         .conn()
@@ -50,13 +52,14 @@ fn due_pending(db: &Db, identity_id: i64, now: i64) -> Result<Vec<[u8; 32]>> {
         .collect())
 }
 
-/// 节点明确说不认识的交易。回包不像样就一个都不算 —— 宁可晚判，不可误判。
+/// Transactions the node explicitly reports missing. A malformed response counts
+/// none, so a send is never failed on an unclear answer.
 fn missed_in(response: &str) -> Option<Vec<[u8; 32]>> {
     let v: Value = serde_json::from_str(response).ok()?;
     if v.get("status").and_then(Value::as_str) != Some("OK") {
         return None;
     }
-    // epee 对空数组可能直接省略字段
+    // epee may omit empty arrays.
     let Some(missed) = v.get("missed_tx") else {
         return Some(Vec::new());
     };
@@ -82,10 +85,10 @@ fn mark_checked(db: &Db, identity_id: i64, txids: &[[u8; 32]], now: i64) -> Resu
     Ok(())
 }
 
-/// 判失败：交易留着（历史里显示失败），它花的输出放回可用。
+/// Mark a send failed: keep the transaction (shown as failed) and release its inputs.
 ///
-/// `spent_in_txid` 保留：这条失败交易的金额还要靠它算；将来这笔输出被别的交易
-/// 花掉时会被覆盖。
+/// `spent_in_txid` is kept to compute the failed transaction's amount; a later
+/// spend of the output overwrites it.
 pub(crate) fn mark_failed(db: &Db, identity_id: i64, txid: &[u8; 32]) -> Result<()> {
     let tx = db
         .conn()
@@ -106,9 +109,10 @@ pub(crate) fn mark_failed(db: &Db, identity_id: i64, txid: &[u8; 32]) -> Result<
     tx.commit().map_err(|e| db_err("commitMarkFailed", e))
 }
 
-/// 问一次节点，把不在的判失败。返回判了几笔。
+/// Query the node once and mark missing sends failed; returns how many.
 ///
-/// 节点不可达或回包异常时什么都不改：失败判定只能来自节点明确的「不认识」。
+/// Changes nothing if the node is unreachable or the response is malformed: only
+/// an explicit "missing" fails a send.
 pub async fn check_pending(db: &Db, daemon: &Daemon, identity_id: i64) -> Result<usize> {
     let now = now_secs();
     let due = due_pending(db, identity_id, now)?;
@@ -175,7 +179,7 @@ mod tests {
         assert_eq!(due_pending(&db, id, now).unwrap(), vec![[2u8; 32]]);
 
         mark_checked(&db, id, &[[2u8; 32]], now).unwrap();
-        assert!(due_pending(&db, id, now + 1).unwrap().is_empty(), "刚问过");
+        assert!(due_pending(&db, id, now + 1).unwrap().is_empty(), "recent");
         assert_eq!(
             due_pending(&db, id, now + POOL_RECHECK_SECS).unwrap(),
             vec![[2u8; 32]]
@@ -207,10 +211,10 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(spent_at, None, "输出回到可用");
+        assert_eq!(spent_at, None, "output released");
         assert!(
             due_pending(&db, id, i64::MAX / 2).unwrap().is_empty(),
-            "判过就不再问"
+            "failed sends are not rechecked"
         );
     }
 

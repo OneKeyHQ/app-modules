@@ -1,19 +1,11 @@
-//! 把 wasm 版 SQLite 接到链接器上。
+//! Links the wasm SQLite build.
 //!
-//! 背景：我们用 `rusqlite` 但不开 `bundled` feature —— 那会在构建期编译 SQLite
-//! 的 C 源码，而 wasm32 没有 libc sysroot。关掉之后 libsqlite3-sys 转而发出
-//! `-l sqlite3`，让链接器去找现成的库。
+//! `rusqlite` is used without `bundled` (wasm32 has no libc sysroot to compile
+//! SQLite's C sources), so libsqlite3-sys emits `-l sqlite3`. On wasm32 the library
+//! comes from `sqlite-wasm-rs` as `libwsqlite3.a`; this script copies it into
+//! OUT_DIR as `libsqlite3.a` and adds that to the search path, so no RUSTFLAGS are needed.
 //!
-//! **这份是 `chain-runtimes/zcash/crates/zcash-runtime/build.rs` 的副本**（实测
-//! 仅 8 行注释差异）。与链无关，本该抽成一个共享 crate —— 但两条链目前在各自
-//! 未合并的分支上，抽了没有共同祖先可放。**两条都落 main 之后第一件事就是抽它**，
-//! 改这里记得同步改另一份。
-//!
-//! 在 wasm32 上这份现成的库由 `sqlite-wasm-rs` 提供，但它产出的归档叫
-//! `libwsqlite3.a`（名字里有个 w）。本脚本把它按链接器要的名字复制一份到我们
-//! 自己的 OUT_DIR，并把该目录加进搜索路径。
-//!
-//! 这样调用方不需要任何手工的 RUSTFLAGS —— `cargo build` 直接可用。
+//! Duplicate of `chain-runtimes/zcash/crates/zcash-runtime/build.rs`; keep them in sync.
 
 use std::path::{Path, PathBuf};
 
@@ -22,25 +14,25 @@ fn main() {
 
     let target = std::env::var("TARGET").unwrap_or_default();
     if !target.starts_with("wasm32") {
-        // 原生目标用系统或 bundled 的 SQLite，无需干预。
+        // Native targets use system or bundled SQLite.
         return;
     }
 
-    let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR 应由 cargo 提供"));
+    let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR is set by cargo"));
 
     let Some(src) = find_wasm_sqlite_archive(&out_dir) else {
-        // 不直接 panic：留一条可读的提示，让链接期的报错有据可查。
+        // Warn instead of panicking so a later link error has context.
         println!(
-            "cargo::warning=未找到 sqlite-wasm-rs 的 libwsqlite3.a；\
-             若链接期报 `unable to find library -lsqlite3`，请确认 sqlite-wasm-rs \
-             在依赖图中且目标为 wasm32"
+            "cargo::warning=libwsqlite3.a from sqlite-wasm-rs not found; \
+             if linking fails with `unable to find library -lsqlite3`, check that \
+             sqlite-wasm-rs is in the dependency graph and the target is wasm32"
         );
         return;
     };
 
     let dst = out_dir.join("libsqlite3.a");
     if let Err(e) = std::fs::copy(&src, &dst) {
-        println!("cargo::warning=复制 {} 失败: {e}", src.display());
+        println!("cargo::warning=failed to copy {}: {e}", src.display());
         return;
     }
 
@@ -48,12 +40,11 @@ fn main() {
     println!("cargo::rerun-if-changed={}", src.display());
 }
 
-/// 从我们的 OUT_DIR 往上找到 `.../build/` 目录，再在里面定位
-/// `sqlite-wasm-rs-*/out/libwsqlite3.a`。
+/// Locate `sqlite-wasm-rs-*/out/libwsqlite3.a` under the `.../build/` directory above OUT_DIR.
 ///
-/// 依赖的构建脚本先于依赖方运行，所以这个文件此刻必然已经存在。
+/// Dependency build scripts run first, so the archive already exists.
 fn find_wasm_sqlite_archive(out_dir: &Path) -> Option<PathBuf> {
-    // OUT_DIR 形如 target/<triple>/<profile>/build/<pkg>-<hash>/out
+    // OUT_DIR is target/<triple>/<profile>/build/<pkg>-<hash>/out
     let build_root = out_dir.parent()?.parent()?;
     for entry in std::fs::read_dir(build_root).ok()? {
         let Ok(entry) = entry else { continue };

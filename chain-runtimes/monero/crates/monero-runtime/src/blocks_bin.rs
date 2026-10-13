@@ -1,28 +1,32 @@
-//! 批量取块：`get_blocks.bin`，按 wallet2 的信任模型。
+//! Batch block fetch via `get_blocks.bin`, using wallet2's trust model.
 //!
-//! 一次请求拿回一整批块，连同块里的交易和扫描要用的输出索引 —— 逐块取要
-//! 3～4 次往返一块，这里是一次往返几十上百块。
+//! One request returns a whole batch of blocks with their transactions and the
+//! output indices scanning needs, instead of 3-4 round trips per block.
 //!
-//! ## 为什么不直接用 monero-oxide 自带的那条
+//! ## Why not monero-oxide's built-in path
 //!
-//! 它也走 `get_blocks.bin`，但坚持**用交易内容反算哈希、再与区块头的交易哈希
-//! 清单比对**。剪枝交易要反算哈希得有节点给的 `prunable_hash`，而已发布的
-//! monerod（截至 v0.18.5.1）把它发成全零（monero-project/monero#10120，修复
-//! #10652 只在 master）。于是它每次都整批放弃，退回逐块 JSON。
+//! It also uses `get_blocks.bin` but recomputes transaction hashes from content and
+//! checks them against the block header's hash list. Pruned transactions need the
+//! node's `prunable_hash` for that, and released monerod (through v0.18.5.1) sends
+//! it as all zeros (monero-project/monero#10120; fix #10652 is master-only), so it
+//! always drops the batch and falls back to per-block JSON.
 //!
-//! ## 这里的信任模型（与 wallet2、Cake、Feather 相同）
+//! ## Trust model (same as wallet2, Cake, Feather)
 //!
-//! 直接采用区块头里的交易哈希清单，不以交易内容反算去验证。代价：恶意节点
-//! 可以在真实哈希下塞假的交易内容，让余额显示失真（虚报或藏掉一笔到账）；
-//! 偷不走钱 —— 花费要私钥，拿假输出去花会被网络拒绝。wallet2 见
-//! `wallet2::process_new_blockchain_entry`，它用的就是 `b.tx_hashes[idx]`。
+//! The header's transaction hash list is trusted; content is not re-hashed against
+//! it. Cost: a malicious node can serve fake transaction content under real hashes
+//! and distort the displayed balance (inflate or hide an incoming payment). It
+//! cannot steal funds: spending needs the private key, and the network rejects
+//! spends of fake outputs. See `wallet2::process_new_blockchain_entry`, which uses
+//! `b.tx_hashes[idx]`.
 //!
-//! 仍然做的检查：交易数与区块头清单一致、每块的输出索引条数与交易输出数一致、
-//! 块高从请求起点连续。块与块之间的衔接（前驱哈希、RingCT 游标）照旧由
-//! `scan::scan_blocks` 校验。
+//! Still checked: transaction count matches the header list, each block's output
+//! index lists match its transaction outputs, and heights are contiguous from the
+//! requested start. Cross-block continuity (previous hash, RingCT cursor) is
+//! checked by `scan::scan_blocks`.
 //!
-//! 请求格式与解析骨架取自 monero-oxide 的 `monero-daemon-rpc`
-//! （`src/bin_rpc/blocks_bin.rs`、`epee.rs`，MIT）。
+//! Request format and parser skeleton follow monero-oxide's `monero-daemon-rpc`
+//! (`src/bin_rpc/blocks_bin.rs`, `epee.rs`, MIT).
 
 use std::{
     cell::{Cell, RefCell},
@@ -42,13 +46,13 @@ use monero_wallet::{
 use crate::network::{Transport, MAX_RESPONSE_BYTES};
 use crate::perf::now_ms;
 
-/// 批量路径的失败分两种，处理方式截然不同。
+/// Batch-path failures, handled differently.
 #[derive(Debug)]
 pub enum BlocksBinError {
-    /// 网络问题：这一步失败，下一轮重试。不能据此判定节点不支持。
+    /// Network failure: this step fails and the next retries. Not evidence the node lacks support.
     Network(String),
-    /// 节点回的东西不对（不支持、格式不符、数量对不上）：对这个节点不再走
-    /// 批量路径，退回逐块。
+    /// Bad node response (unsupported, malformed, count mismatch): stop using the batch
+    /// path for this node and fetch per block.
     Protocol(String),
 }
 
@@ -60,30 +64,30 @@ fn epee_err(e: EpeeError) -> BlocksBinError {
     protocol(format!("epee: {e:?}"))
 }
 
-// ── 批量大小：自适应，上限与 wallet2 相同 ─────────────────────────────────
+// ── Batch size: adaptive, capped as in wallet2 ─────────────────────────────
 //
-// wallet2 每次 `getblocks.bin` 不设上限，节点最多回 1000 块 / 2 万笔交易。在好
-// 网络上那是最快的；在翻墙、抖动的网络上一个十几 MB 的请求可能迟迟走不完。
-// 所以大小随实测调整：快就翻倍，一路涨到 1000；慢或失败就减半，最低 10 块。
-// 一步只发一个请求、拿到就扫、就落库 —— 块是一个请求一个请求地"滴"进来的，
-// 前面拿到的不会因为后面的慢而作废。
+// wallet2 sends `getblocks.bin` uncapped; the node returns at most 1000 blocks /
+// 20k transactions. That is fastest on a good link, but a multi-MB request may never
+// finish on a tunneled or jittery one. So the size adapts: double when fast, up to
+// 1000; halve when slow or failed, down to 10. Each step sends one request and scans
+// and stores what it gets, so a slow later request never discards earlier blocks.
 
-/// 与 wallet2 / monerod 的单次上限一致（`COMMAND_RPC_GET_BLOCKS_FAST_MAX_BLOCK_COUNT`）。
+/// Per-request cap of wallet2 / monerod (`COMMAND_RPC_GET_BLOCKS_FAST_MAX_BLOCK_COUNT`).
 pub const MAX_BATCH_BLOCKS: u64 = 1000;
-/// 再慢的网络也至少这么多一批，否则往返开销压过数据本身。
+/// Floor even on slow links; below it round-trip overhead dominates.
 pub const MIN_BATCH_BLOCKS: u64 = 10;
-/// 起步大小：不知道网络如何时，一个请求十秒内能走完的量级。
+/// Starting size on an unknown link: roughly what one request delivers within ten seconds.
 pub const INITIAL_BATCH_BLOCKS: u64 = 100;
-/// 比这快就加倍。
+/// Double when faster than this.
 const GROW_BELOW_MS: f64 = 8_000.0;
-/// 比这慢就减半。
+/// Halve when slower than this.
 const SHRINK_ABOVE_MS: f64 = 25_000.0;
 
 thread_local! {
     static BATCH_BLOCKS: Cell<u64> = const { Cell::new(INITIAL_BATCH_BLOCKS) };
 }
 
-/// 下一个请求要多少块。
+/// Block count for the next request.
 pub fn batch_blocks() -> u64 {
     BATCH_BLOCKS.with(Cell::get)
 }
@@ -103,19 +107,18 @@ fn record_failure() {
     BATCH_BLOCKS.with(|size| size.set((size.get() / 2).max(MIN_BATCH_BLOCKS)));
 }
 
-// ── 请求与流水线 ─────────────────────────────────────────────────────────
+// ── Requests and pipelining ────────────────────────────────────────────────
 //
-// 一次只发一个请求，与 wallet2 相同。插件实测（2026-09-23，cakewallet 节点）：
-// 三路并发时每一步都是阶梯状 —— 第一个请求 1～4 s 回来，另外两个要 17～38 s：
-// 节点在排队（monerod 生成 `get_blocks.bin` 要占区块链数据库的锁，公共节点也
-// 可能按 IP 限并发）。提速靠流水线（`prefetch`）：扫这一批的同时，下一批已经
-// 在路上。
+// One request at a time, as in wallet2. Concurrent requests to a public node are
+// served one after another (monerod holds the blockchain DB lock while building
+// `get_blocks.bin`, and nodes may limit per-IP concurrency). The speedup comes from
+// pipelining (`prefetch`): the next batch is in flight while this one is scanned.
 
-/// 一个请求的结果，以及它从发出到完成用了多久（预取的从预取那一刻算起）。
+/// A request's result and its duration from send to completion (from send time for a prefetch).
 type RequestOutcome = (Result<Vec<ScannableBlock>, BlocksBinError>, f64);
 type RequestFuture = Pin<Box<dyn Future<Output = RequestOutcome>>>;
 
-/// 已经发出、结果还没被取走的下一个请求。
+/// The next request, already sent, whose result has not been taken.
 struct Prefetch {
     url: String,
     start: u64,
@@ -130,7 +133,7 @@ thread_local! {
 fn request_future(url: &str, start: u64, count: u64) -> RequestFuture {
     let url = url.to_owned();
     Box::pin(async move {
-        // 第一次被 poll 时请求才真正发出，计时也从这里开始。
+        // The request is sent, and timing starts, on first poll.
         let started = now_ms();
         let transport = Transport::new(&url);
         let result = request_once(&transport, start, count).await;
@@ -138,8 +141,8 @@ fn request_future(url: &str, start: u64, count: u64) -> RequestFuture {
     })
 }
 
-/// 取走与这一段完全吻合的预取结果。不吻合（换了节点、回退重扫、区间变了）
-/// 就丢掉 —— 宁可重发，也不能拿错一段数据。
+/// Take the prefetched result only if it matches this span exactly. Otherwise (node
+/// changed, rewind, range changed) drop it: refetching beats using the wrong data.
 fn take_prefetched(url: &str, start: u64, count: u64) -> Option<RequestFuture> {
     PREFETCH.with(|slot| match slot.borrow_mut().take() {
         Some(p) if p.url == url && p.start == start && p.count == count => Some(p.future),
@@ -147,14 +150,15 @@ fn take_prefetched(url: &str, start: u64, count: u64) -> Option<RequestFuture> {
     })
 }
 
-/// 取回的块，以及它们是否来自上一步的预取。
+/// Fetched blocks, and whether they came from the previous step's prefetch.
 pub struct Fetched {
     pub blocks: Vec<ScannableBlock>,
     pub prefetch_hit: bool,
 }
 
-/// 网络失败时的重试退避（毫秒），长度即额外重试次数。每次重试把请求减半 ——
-/// 一个在当前网络上走不完的大请求，拆小了往往就能走完。协议错误不重试。
+/// Backoff (ms) before retrying a network failure; the length is the number of extra
+/// retries. Each retry halves the request, since a smaller one often completes where a
+/// large one cannot. Protocol errors are not retried.
 const RETRY_BACKOFF_MS: [u32; 2] = [500, 1500];
 
 async fn backoff(ms: u32) {
@@ -164,11 +168,12 @@ async fn backoff(ms: u32) {
     tokio::time::sleep(std::time::Duration::from_millis(u64::from(ms))).await;
 }
 
-/// 从 `start` 起取至多 `limit` 块，按高度排好。`start` 必须非零 —— monerod
-/// 只在 `start_height` 非零时才认这个字段。
+/// Fetch up to `limit` blocks from `start`, ordered by height. `start` must be
+/// nonzero: monerod ignores `start_height` when it is zero.
 ///
-/// 只发**一个**请求（失败时以更小的请求重试），节点给多少就收多少：它可能因为
-/// 2 万笔交易的上限少给，剩下的由下一步接着要。
+/// Sends one request (retried smaller on failure) and accepts however many blocks
+/// the node returns; it may return fewer due to the 20k-transaction cap, and the
+/// next step requests the rest.
 pub async fn fetch(base_url: &str, start: u64, limit: u64) -> Result<Fetched, BlocksBinError> {
     if start == 0 {
         return Err(protocol("get_blocks.bin cannot start at the genesis block"));
@@ -208,12 +213,14 @@ pub async fn fetch(base_url: &str, start: u64, limit: u64) -> Result<Fetched, Bl
     }
 }
 
-/// 现在就发出从 `start` 起、按当前批量大小（不超过 `limit`）的请求，结果留给下一步。
+/// Send the request from `start` now, sized by the current batch (at most `limit`),
+/// and keep the result for the next step.
 ///
-/// wallet2 的做法（`wallet2::refresh`："pull the next set of blocks while we're
-/// processing the current one"）。在 wasm 里不需要线程：请求一旦发出，响应由
-/// 浏览器 / 宿主接收，与我们这边是否在扫描无关。这里只 poll 一次把请求发出去，
-/// 下一步开头再 await 它 —— 扫描、回到宿主的那段空档、落库，全都和下载重叠。
+/// As in `wallet2::refresh` ("pull the next set of blocks while we're processing
+/// the current one"). wasm needs no thread: once sent, the browser / host receives
+/// the response whether or not we are scanning. This polls once to send it and the
+/// next step awaits it, so scanning, the return to the host and DB writes all
+/// overlap the download.
 pub async fn prefetch(base_url: &str, start: u64, limit: u64) {
     let count = batch_blocks().min(limit);
     if start == 0 || count == 0 {
@@ -228,7 +235,7 @@ pub async fn prefetch(base_url: &str, start: u64, limit: u64) {
         Poll::Ready(())
     })
     .await;
-    // 已完成的 future 不能再 poll，结果单独收好。
+    // A completed future must not be polled again; keep its result separately.
     let future: RequestFuture = match ready {
         Some(outcome) => Box::pin(futures_util::future::ready(outcome)),
         None => future,
@@ -243,7 +250,8 @@ pub async fn prefetch(base_url: &str, start: u64, limit: u64) {
     });
 }
 
-/// 一个请求。节点多给（早于 0.18.4.3 不认 `max_block_count`）就截掉，少给就照收。
+/// One request. Extra blocks (nodes before 0.18.4.3 ignore `max_block_count`) are
+/// truncated; fewer are accepted.
 async fn request_once(
     transport: &Transport,
     start: u64,
@@ -274,7 +282,7 @@ fn build_request(start_height: u64, max_block_count: u64) -> Vec<u8> {
     let mut request = Vec::with_capacity(64);
     request.extend(HEADER);
     request.push(VERSION);
-    // 三个字段。epee 的 varint 低两位是长度标记，00 表示一字节。
+    // Three fields. The low two bits of an epee varint mark its length; 00 means one byte.
     request.push(3 << 2);
 
     push_key(&mut request, "prune");
@@ -285,7 +293,7 @@ fn build_request(start_height: u64, max_block_count: u64) -> Vec<u8> {
     request.push(Type::Uint64 as u8);
     request.extend(start_height.to_le_bytes());
 
-    // 0.18.4.3 起才有；更老的节点忽略它，由 `fetch` 截断。
+    // Added in 0.18.4.3; older nodes ignore it and `fetch` truncates.
     push_key(&mut request, "max_block_count");
     request.push(Type::Uint64 as u8);
     request.extend(max_block_count.to_le_bytes());
@@ -293,7 +301,7 @@ fn build_request(start_height: u64, max_block_count: u64) -> Vec<u8> {
     request
 }
 
-/// 一块：区块本身、剪枝后的非矿工交易、以及每笔交易（矿工交易在前）的输出索引。
+/// One block: the block and its pruned non-miner transactions.
 struct RawBlock {
     block: Block,
     transactions: Vec<Transaction<Pruned>>,
@@ -322,7 +330,7 @@ fn read_block<'e>(entry: EpeeEntry<'e, '_, &'e [u8]>) -> Result<RawBlock, Blocks
                     let mut transaction = None;
                     while let Some(tx_field) = tx_fields.next() {
                         let (tx_key, tx_value) = tx_field.map_err(epee_err)?;
-                        // `prunable_hash` 被刻意忽略：见模块说明。
+                        // `prunable_hash` is deliberately ignored; see the module docs.
                         if tx_key.consume() == b"blob" {
                             let mut encoding = tx_value.to_str().map_err(epee_err)?.consume();
                             let parsed = Transaction::<Pruned>::read(&mut encoding)
@@ -347,7 +355,7 @@ fn read_block<'e>(entry: EpeeEntry<'e, '_, &'e [u8]>) -> Result<RawBlock, Blocks
     })
 }
 
-/// `output_indices`：块 → 交易（矿工交易在前）→ 该交易每个输出的全局索引。
+/// `output_indices`: block -> transaction (miner first) -> global index of each output.
 fn read_output_indices<'e>(
     entry: EpeeEntry<'e, '_, &'e [u8]>,
 ) -> Result<Vec<Vec<Vec<u64>>>, BlocksBinError> {
@@ -434,7 +442,7 @@ pub(crate) fn parse_response(
                 "expected block {expected}, node sent {height}"
             )));
         }
-        // 与区块头的交易哈希清单对数 —— 我们信任的正是那份清单。
+        // Check against the header's transaction hash list, which is what we trust.
         if raw.transactions.len() != raw.block.transactions.len() {
             return Err(protocol(format!(
                 "block {height}: header lists {} transactions, node sent {}",
@@ -450,7 +458,8 @@ pub(crate) fn parse_response(
             )));
         }
 
-        // 本块第一个 RingCT 输出的全局索引：第一笔非 V1 且有输出的交易的首个索引。
+        // Global index of this block's first RingCT output: the first index of the first
+        // non-V1 transaction with outputs.
         let miner = raw.block.miner_transaction();
         let mut first_ringct = None;
         let shapes = std::iter::once((
@@ -488,7 +497,7 @@ pub(crate) fn parse_response(
 mod tests {
     use super::*;
 
-    /// 请求字节必须与 monero-oxide 发出的逐字一致：它是经过节点验证的格式。
+    /// Request bytes must match monero-oxide's byte for byte; nodes are known to accept that layout.
     #[test]
     fn the_request_matches_the_upstream_layout() {
         let request = build_request(3_000_000, 50);
@@ -502,7 +511,7 @@ mod tests {
         assert!(request.ends_with(&50u64.to_le_bytes()));
     }
 
-    /// 快就加倍到 1000 封顶，慢或失败就减半到 10 保底。
+    /// Doubles up to 1000 when fast; halves down to 10 when slow or failed.
     #[test]
     fn the_batch_grows_on_fast_requests_and_shrinks_on_slow_or_failed_ones() {
         BATCH_BLOCKS.with(|b| b.set(INITIAL_BATCH_BLOCKS));
@@ -511,7 +520,7 @@ mod tests {
         }
         assert_eq!(batch_blocks(), MAX_BATCH_BLOCKS);
         record_success(15_000.0);
-        assert_eq!(batch_blocks(), MAX_BATCH_BLOCKS, "中速不动");
+        assert_eq!(batch_blocks(), MAX_BATCH_BLOCKS, "steady at medium speed");
         record_success(40_000.0);
         assert_eq!(batch_blocks(), MAX_BATCH_BLOCKS / 2);
         for _ in 0..20 {
@@ -521,7 +530,7 @@ mod tests {
         BATCH_BLOCKS.with(|b| b.set(INITIAL_BATCH_BLOCKS));
     }
 
-    /// 预取只在完全吻合时被取走；不吻合的一律丢弃，槽位同时被清空。
+    /// A prefetch is taken only by an exact match; a mismatch discards it and clears the slot.
     #[test]
     fn a_prefetch_is_taken_only_by_the_exact_same_request() {
         let park = |url: &str, start: u64, count: u64| {
@@ -538,20 +547,20 @@ mod tests {
         assert!(take_prefetched("https://a", 100, 20).is_some());
         assert!(
             take_prefetched("https://a", 100, 20).is_none(),
-            "取走即清空"
+            "taking clears the slot"
         );
 
         park("https://a", 100, 20);
-        assert!(take_prefetched("https://b", 100, 20).is_none(), "换了节点");
+        assert!(take_prefetched("https://b", 100, 20).is_none(), "new node");
         park("https://a", 100, 20);
         assert!(
             take_prefetched("https://a", 101, 20).is_none(),
-            "起点变了（回退、部分前缀）"
+            "different start (rewind, partial prefix)"
         );
         park("https://a", 100, 20);
         assert!(
             take_prefetched("https://a", 100, 7).is_none(),
-            "区间长度变了"
+            "different count"
         );
     }
 
@@ -563,13 +572,13 @@ mod tests {
         assert!(matches!(e, BlocksBinError::Protocol(_)));
     }
 
-    /// 真实节点的真实响应（xmr-node.cakewallet.com，2026-09-23，
-    /// start_height=3768621、max_block_count=2），经桌面主进程抓取。
-    /// 验证的是整条解析：区块、剪枝交易、输出索引、首个 RingCT 索引。
+    /// A real node response (xmr-node.cakewallet.com, 2026-09-23, start_height=3768621,
+    /// max_block_count=2), captured via the desktop main process. Covers the full parse:
+    /// blocks, pruned transactions, output indices, first RingCT index.
     #[test]
     fn parses_a_real_node_response() {
         let bytes = include_bytes!("../tests/fixtures/get_blocks_bin_3768621.bin");
-        let blocks = parse_response(bytes, 3_768_621).expect("解析真实响应");
+        let blocks = parse_response(bytes, 3_768_621).expect("parse real response");
         eprintln!(
             "node returned {} blocks: {:?}",
             blocks.len(),
@@ -586,14 +595,14 @@ mod tests {
         for (i, b) in blocks.iter().enumerate() {
             assert_eq!(b.block.number() as u64, 3_768_621 + i as u64);
             assert_eq!(b.transactions.len(), b.block.transactions.len());
-            // 每块至少有矿工交易的输出，所以一定有首个 RingCT 索引。
+            // Every block has miner outputs, so a first RingCT index always exists.
             assert!(b.output_index_for_first_ringct_output.is_some());
         }
-        // 前驱哈希首尾相接：确认块真的是连续的一段。
+        // Previous hashes chain: the blocks really are contiguous.
         for pair in blocks.windows(2) {
             assert_eq!(pair[1].block.header.previous, pair[0].block.hash());
         }
-        // RingCT 游标首尾相接：下一块的首个索引 = 这一块首个索引 + 这一块的输出总数。
+        // RingCT cursor chains: next first index = this first index + this block's output count.
         for pair in blocks.windows(2) {
             let outputs: u64 =
                 std::iter::once(pair[0].block.miner_transaction().prefix().outputs.len())
@@ -614,7 +623,8 @@ mod tests {
         }
     }
 
-    /// 扫描耗时基准（原生，release 下更准）。夹具太大不入库，按需抓：
+    /// Scan cost benchmark (native; release is more accurate). The fixture is too large
+    /// to commit; capture it on demand:
     /// `XMR_BLOCKS_BIN=/path/to/get_blocks.bin XMR_BLOCKS_BIN_START=3767000 \
     ///  cargo test --release --lib scan_cost -- --nocapture`
     #[test]
@@ -623,20 +633,20 @@ mod tests {
             std::env::var("XMR_BLOCKS_BIN"),
             std::env::var("XMR_BLOCKS_BIN_START"),
         ) else {
-            eprintln!("跳过：未设置 XMR_BLOCKS_BIN / XMR_BLOCKS_BIN_START");
+            eprintln!("skipped: XMR_BLOCKS_BIN / XMR_BLOCKS_BIN_START not set");
             return;
         };
         let start: u64 = start.parse().unwrap();
         let bytes = std::fs::read(path).unwrap();
         let t0 = std::time::Instant::now();
-        let blocks = parse_response(&bytes, start).expect("解析");
+        let blocks = parse_response(&bytes, start).expect("parse");
         let parse_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
         let mut db = crate::wallet::testing::db();
         let (spend, view) = crate::wallet::testing::key_bytes();
         let id = db.add_identity("bench", &spend, &view, start).unwrap().id;
         let t1 = std::time::Instant::now();
-        crate::scan::scan_blocks(&mut db, id, &blocks).expect("扫描");
+        crate::scan::scan_blocks(&mut db, id, &blocks).expect("scan");
         let scan_ms = t1.elapsed().as_secs_f64() * 1000.0;
         let txs: usize = blocks.iter().map(|b| b.transactions.len()).sum();
         eprintln!(

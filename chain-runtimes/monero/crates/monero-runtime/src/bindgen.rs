@@ -1,17 +1,18 @@
-//! 面向宿主的 wasm 接口。
+//! Host-facing wasm interface.
 //!
-//! ## 形状约定
+//! ## Conventions
 //!
-//! - 返回值一律是 **JSON 字符串**，宿主 `JSON.parse` 即可。错误也是 JSON
-//!   （`{ code, params, detail }`），所以宿主不必区分 Error 与非 Error 两条路。
-//! - **金额一律用字符串**。piconero 的上限远超 JS 的 `Number.MAX_SAFE_INTEGER`，
-//!   走数字会静默丢精度 —— 那是最坏的一类 bug，因为它不报错。
-//! - 密钥材料**只进不出**：种子与花费私钥可以传进来，绝不作为返回值出去。
+//! - Every return value is a JSON string for the host to `JSON.parse`. Errors are
+//!   JSON too (`{ code, params, detail }`), so the host needs no separate Error path.
+//! - Amounts are always strings: piconero values exceed JS `Number.MAX_SAFE_INTEGER`,
+//!   and numbers would silently lose precision.
+//! - Key material goes in, never out: seeds and spend keys may be passed in but are
+//!   never returned.
 //!
-//! ## 调度不在这里
+//! ## No scheduling here
 //!
-//! 什么时候扫、扫多少、失败怎么退避 —— 全归宿主。这里每个导出都是一次
-//! 完整的往返，绝不自己循环。
+//! When to scan, how much, and how to back off on failure belong to the host. Each
+//! export is one complete round trip and never loops.
 
 use wasm_bindgen::prelude::*;
 
@@ -24,20 +25,20 @@ fn json(value: serde_json::Value) -> std::result::Result<String, JsValue> {
     Ok(value.to_string())
 }
 
-/// 装上持久化存储。**必须在开任何库之前调用一次。**
+/// Install persistent storage. Must be called once before opening any DB.
 #[wasm_bindgen(js_name = init)]
 pub async fn init() -> std::result::Result<(), JsValue> {
     storage::install_persistent_vfs().await?;
     Ok(())
 }
 
-/// 本 runtime 锁定的上游版本，供宿主自检与日志使用。
+/// Upstream versions pinned by this runtime, for host self-checks and logs.
 #[wasm_bindgen(js_name = dependencyVersions)]
 pub fn dependency_versions() -> String {
     crate::dependency_versions().to_string()
 }
 
-/// 打开（或新建）一个钱包库。
+/// Open (or create) a wallet DB.
 #[wasm_bindgen(js_name = openWallet)]
 pub fn open_wallet(db_name: &str, network: &str) -> std::result::Result<String, JsValue> {
     let net = keys::parse_network(network)?;
@@ -52,11 +53,11 @@ pub fn close_wallet() -> std::result::Result<(), JsValue> {
     Ok(())
 }
 
-/// 配置节点地址，空串表示停用。**没有内置默认值** —— 内置一个等于替用户决定
-/// 把 IP 和查询交给谁，那是隐私决策，不该藏在 runtime 里。
+/// Set the node URL; an empty string disables it. No built-in default: one would
+/// decide for the user who sees their IP and queries.
 ///
-/// 先断开旧节点再连新的：用户换掉或停用一个节点后，它不能再收到任何请求，
-/// 哪怕新节点连不上 —— 那时就是没有节点。
+/// The old node is dropped before connecting the new one: a replaced or disabled
+/// node must receive no further requests, even if the new one fails to connect.
 #[wasm_bindgen(js_name = setNodeUrl)]
 pub async fn set_node_url(url: &str) -> std::result::Result<(), JsValue> {
     runtime::clear_daemon();
@@ -69,11 +70,12 @@ pub async fn set_node_url(url: &str) -> std::result::Result<(), JsValue> {
     Ok(())
 }
 
-/// 问链尖。**不要求钱包库已打开** —— 建账户时要用它定 birthday，
-/// 而那一刻库还没建。
+/// Fetch the chain tip. Does not require an open wallet DB: account creation needs
+/// it for the birthday before the DB exists.
 ///
-/// 返回 `{ height, network }`：`network` 是节点所在的链（按创世块认定）。
-/// 这一步还没有钱包库可比对，宿主定 birthday 前须确认它与要建的钱包一致。
+/// Returns `{ height, network }`, where `network` is the node's chain (by genesis
+/// block). There is no wallet DB to compare against yet, so the host must check it
+/// matches the wallet being created before setting the birthday.
 #[wasm_bindgen(js_name = chainTip)]
 pub async fn chain_tip() -> std::result::Result<String, JsValue> {
     let tip: u64 = runtime::with_daemon(|daemon| async move {
@@ -87,10 +89,10 @@ pub async fn chain_tip() -> std::result::Result<String, JsValue> {
     }))
 }
 
-/// 注册一个身份（观察密钥对）。
+/// Register an identity (view key pair).
 ///
-/// `spendPublicKeyHex` 与 `viewPrivateKeyHex` 都是 32 字节的十六进制。
-/// **花费私钥不在这里** —— 它只在签名时传入，见 `signAndBroadcast`。
+/// `spendPublicKeyHex` and `viewPrivateKeyHex` are 32-byte hex. The spend private
+/// key is not taken here; it is passed only for signing (see `signTransaction`).
 #[wasm_bindgen(js_name = addAccount)]
 pub fn add_account(
     uuid: &str,
@@ -124,16 +126,17 @@ pub fn list_accounts() -> std::result::Result<String, JsValue> {
     json(serde_json::json!({ "items": items }))
 }
 
-/// 删除一个身份连同它的全部数据。**不可逆。**
+/// Delete an identity and all its data. Irreversible.
 #[wasm_bindgen(js_name = removeAccount)]
 pub fn remove_account(uuid: &str) -> std::result::Result<String, JsValue> {
     let removed = runtime::with_db(|db| db.remove_identity(uuid))?;
     json(serde_json::json!({ "removed": removed }))
 }
 
-/// 删除整个钱包库文件（app 重置、存储重建）。**不可逆。**
+/// Delete the whole wallet DB file (app reset, storage rebuild). Irreversible.
 ///
-/// 不打开库：版本不认或已损坏的库也删得掉。删的是当前打开的库时先关掉它。
+/// Does not open the DB, so unsupported-version or corrupt DBs can still be deleted.
+/// Closes the DB first if it is the one currently open.
 #[wasm_bindgen(js_name = deleteWallet)]
 pub async fn delete_wallet(db_name: String) -> std::result::Result<String, JsValue> {
     if runtime::open_db_name().as_deref() == Some(db_name.as_str()) {
@@ -143,7 +146,7 @@ pub async fn delete_wallet(db_name: String) -> std::result::Result<String, JsVal
     json(serde_json::json!({ "deleted": deleted }))
 }
 
-/// 登记一个子地址并返回它的地址串。**没登记的地址收到的钱扫不到。**
+/// Register a subaddress and return its address. Funds to unregistered subaddresses go undetected.
 #[wasm_bindgen(js_name = registerSubaddress)]
 pub fn register_subaddress(
     account_id: i64,
@@ -156,7 +159,7 @@ pub fn register_subaddress(
     json(serde_json::json!({ "address": address, "major": major, "minor": minor }))
 }
 
-/// 把链尖告诉某个身份，据此排出待扫区间。
+/// Tell an identity the chain tip and queue its pending scan ranges.
 #[wasm_bindgen(js_name = updateChainTip)]
 pub fn update_chain_tip(account_id: i64, tip: u64) -> std::result::Result<String, JsValue> {
     runtime::with_db(|db| sync::update_chain_tip(db, account_id, tip))?;
@@ -164,9 +167,9 @@ pub fn update_chain_tip(account_id: i64, tip: u64) -> std::result::Result<String
     json(progress)
 }
 
-/// 一次有界推进：最多扫 `maxBlocks` 个块然后带进度返回。
+/// One bounded step: scan at most `maxBlocks` blocks and return progress.
 ///
-/// **本函数永远不会自己循环到同步完成。** 宿主拿到进度后自己决定是否再调。
+/// Never loops to completion; the host decides whether to call again.
 #[wasm_bindgen(js_name = syncStep)]
 pub async fn sync_step(account_id: i64, max_blocks: u64) -> std::result::Result<String, JsValue> {
     let progress = runtime::with_db_and_daemon(|mut db, daemon| async move {
@@ -177,22 +180,22 @@ pub async fn sync_step(account_id: i64, max_blocks: u64) -> std::result::Result<
     json(progress)
 }
 
-/// 只读：当前扫描进度，不发网络请求。同步卡住时用它确认到底想扫哪一段。
+/// Read-only scan progress; no network requests. Shows which ranges sync intends to scan.
 #[wasm_bindgen(js_name = syncPeek)]
 pub fn sync_peek(account_id: i64) -> std::result::Result<String, JsValue> {
     let v = runtime::with_db_read(|db| sync::peek(db, account_id))?;
     json(v)
 }
 
-/// 重组恢复：回退到指定高度并把那之上的区间重新排队。**破坏性。**
+/// Reorg recovery: rewind to `height` and requeue everything above it. Destructive.
 #[wasm_bindgen(js_name = rewindTo)]
 pub fn rewind_to(account_id: i64, height: u64, tip: u64) -> std::result::Result<String, JsValue> {
     let v = runtime::with_db(|db| sync::rewind_and_requeue(db, account_id, height, tip))?;
     json(v)
 }
 
-/// 余额。`chainTip` 传 `null` 表示还不知道链尖 —— 此时可用余额一律按 0 报，
-/// 宁可显示 0，也不要让用户去花一笔构不进环的钱。
+/// Balance. `chainTip` = `null` means the tip is unknown; spendable is then reported
+/// as 0 rather than invite a spend that cannot be built.
 #[wasm_bindgen(js_name = balance)]
 pub fn balance(account_id: i64, chain_tip: Option<u64>) -> std::result::Result<String, JsValue> {
     let b = runtime::with_db_read(|db| query::balance(db, account_id, chain_tip))?;
@@ -214,11 +217,11 @@ pub fn transaction_details(
     json(v)
 }
 
-/// 补齐 key image，让花费检测能工作。
+/// Import key images so spend detection works.
 ///
-/// **必须在解锁时尽早调用。** 补齐之前余额会偏高：已经被花掉的输出看起来还在，
-/// 因为观察钱包在协议上无法独立判断花费。补齐只影响之后扫的块 —— 之前发生的
-/// 花费要靠回退重扫才能识别。
+/// Call as early as possible after unlock. Until then the balance is too high: a
+/// view-only wallet cannot detect spends, so spent outputs still look unspent. This
+/// only affects blocks scanned afterwards; earlier spends need a rewind and rescan.
 #[wasm_bindgen(js_name = importKeyImages)]
 pub fn import_key_images(
     account_id: i64,
@@ -232,15 +235,14 @@ pub fn import_key_images(
     }))
 }
 
-/// 从 BIP-32 派生出来的私钥造出 Monero 的观察材料与主地址。
+/// Derive Monero view material and the primary address from a BIP-32-derived private key.
 ///
-/// **不需要开库、不需要节点** —— 纯派生。这正是「地址可以先建、扫链之后再
-/// 手动打开」那条产品路径的基础。
+/// Pure derivation: no DB, no node, so an address can exist before any scanning.
 ///
-/// 约定与 OneKey V4 一致（`spend = sc_reduce32(key)`、`view = keccak(spend)`）。
-/// 换约定会让老用户导入同一套助记词后看到空钱包。
+/// Matches OneKey V4 (`spend = sc_reduce32(key)`, `view = keccak(spend)`). Changing
+/// it would show existing users an empty wallet after importing the same mnemonic.
 ///
-/// **不返回花费私钥** —— 它就是调用方传进来的那个，没必要再跨一次边界。
+/// Does not return the spend private key; the caller already has it.
 #[wasm_bindgen(js_name = deriveAccount)]
 pub fn derive_account(
     network: &str,
@@ -256,7 +258,7 @@ pub fn derive_account(
     }))
 }
 
-/// 从 BIP-32 私钥算出签名用的花费标量。与 `deriveAccount` 同一个约简。
+/// Spend scalar for signing, from a BIP-32 private key. Same reduction as `deriveAccount`.
 #[wasm_bindgen(js_name = spendScalar)]
 pub fn spend_scalar(bip32_private_key_hex: &str) -> std::result::Result<String, JsValue> {
     let raw = Zeroizing::new(decode_hex(bip32_private_key_hex, "bip32PrivateKeyHex")?);
@@ -264,7 +266,7 @@ pub fn spend_scalar(bip32_private_key_hex: &str) -> std::result::Result<String, 
     Ok(hex::encode(*scalar))
 }
 
-/// 派生一个子地址。纯派生，不开库。
+/// Derive a subaddress. Pure derivation; no DB.
 #[wasm_bindgen(js_name = deriveSubaddress)]
 pub fn derive_subaddress(
     network: &str,
@@ -281,7 +283,7 @@ pub fn derive_subaddress(
     json(serde_json::json!({ "address": address, "major": major, "minor": minor }))
 }
 
-/// 校验一个收款地址是否合法且属于该网络。
+/// Check that a recipient address is valid and belongs to this network.
 #[wasm_bindgen(js_name = validateAddress)]
 pub fn validate_address(network: &str, address: &str) -> std::result::Result<bool, JsValue> {
     let net = keys::parse_network(network)?;
@@ -298,29 +300,28 @@ pub fn mark_reservation_signed(
     json(serde_json::json!({ "marked": n }))
 }
 
-/// 释放一次预留（用户取消，或构造失败）。
+/// Release a reservation (user cancelled or construction failed).
 #[wasm_bindgen(js_name = releaseReservation)]
 pub fn release_reservation(reservation_id: &str) -> std::result::Result<String, JsValue> {
     let n = runtime::with_db(|db| spend::release(db, reservation_id))?;
     json(serde_json::json!({ "released": n }))
 }
 
-/// 把网络请求交给宿主去发，而不是在 wasm 里 `fetch`。
+/// Hand network requests to the host instead of `fetch`ing in wasm.
 ///
-/// `handler` 形如 `(url, contentType, body: Uint8Array) => Promise<Uint8Array>`。
-/// 传 `undefined` 卸载。
+/// `handler` is `(url, contentType, body: Uint8Array) => Promise<Uint8Array>`;
+/// `undefined` uninstalls it.
 ///
-/// wasm 里的 fetch 受浏览器的混合内容与 CORS 管，而 monerod 默认不发 CORS 头
-/// —— 2026-09-22 实测 12 家公共节点只有 1 家可用。把请求交回宿主，插件的
-/// background、桌面主进程、移动端原生都不受那两条规则管，于是全网节点可用。
-///
-/// 和性能无关：纯扫描只占总耗时 0.4%，受限的是可达性不是速度。
+/// In-wasm fetch is bound by browser mixed-content and CORS rules, and monerod sends
+/// no CORS headers by default, so few public nodes are reachable. The extension
+/// background, desktop main process and mobile native code are not bound by those
+/// rules, so any node is reachable through them.
 #[wasm_bindgen(js_name = setRequestHandler)]
 pub fn set_request_handler(handler: Option<js_sys::Function>) {
     crate::network::set_host_handler(handler);
 }
 
-/// 诊断：库是否健在、各表行数、逻辑大小。**不发网络请求。**
+/// Diagnostics: DB health, per-table row counts, logical size. No network requests.
 #[wasm_bindgen(js_name = diagDatabase)]
 pub fn diag_database() -> std::result::Result<String, JsValue> {
     let v = runtime::with_db_read(|db| {
@@ -371,21 +372,22 @@ fn decode_hex(value: &str, field: &str) -> Result<Vec<u8>> {
     })
 }
 
-// ── 花费路径 ────────────────────────────────────────────────────────────
+// ── Spend path ─────────────────────────────────────────────────────────────
 
-/// 选币、构造、预留。**不需要花费私钥，不广播。**
+/// Select inputs, build and reserve. Needs no spend private key; does not broadcast.
 ///
-/// `recipientsJson` 形如 `[{ "address": "...", "amountAtomic": "1000000000000" }]`。
+/// `recipientsJson` is `[{ "address": "...", "amountAtomic": "1000000000000" }]`.
 ///
-/// `maxSend` 为真时只接受一个收款方，金额由「当前可花总额 − 手续费」反算，
-/// 传入的金额被忽略 —— 不能靠「不给找零」实现，那样余数会全部并进手续费。
+/// With `maxSend`, exactly one recipient is accepted and its amount is computed as
+/// spendable total minus fee; the passed amount is ignored. Merely omitting change
+/// would fold the remainder into the fee.
 ///
-/// 返回 `{ reservationId, signableHex, feeAtomic, amountAtomic, changeAtomic,
-/// inputsAtomic, inputCount }`。`feeAtomic` 和 `amountAtomic` 是这笔交易真正
-/// 会用的数：确认页显示它们，签名时不会再变。
+/// Returns `{ reservationId, signableHex, feeAtomic, amountAtomic, changeAtomic,
+/// inputsAtomic, inputCount }`. `feeAtomic` and `amountAtomic` are what the
+/// transaction will use: the confirmation page shows them and signing keeps them.
 ///
-/// 失败不会留下预留。成功后必须走 `signTransaction` + `broadcastTransaction`，
-/// 或者显式 `releaseReservation` —— 否则那些输出会一直锁着。
+/// Failure leaves no reservation. On success the host must call `signTransaction` +
+/// `broadcastTransaction`, or `releaseReservation`; otherwise the inputs stay locked.
 #[wasm_bindgen(js_name = prepareTransaction)]
 pub async fn prepare_transaction(
     account_id: i64,
@@ -437,11 +439,11 @@ pub async fn prepare_transaction(
     json(v)
 }
 
-/// 签名一笔已构造的交易。**不碰网络、不碰数据库、不广播。**
+/// Sign a prepared transaction. No network, no DB, no broadcast.
 ///
-/// `spendPrivateKeyHex` 用完即擦，绝不落库、绝不返回。
-/// 返回 `{ txid, rawHex, sizeBytes }` —— txid 在签名这一刻就定下来了，
-/// 宿主据此在广播之前就能建立待确认记录。
+/// `spendPrivateKeyHex` is wiped after use, never stored or returned.
+/// Returns `{ txid, rawHex, sizeBytes }`; the txid is fixed at signing, so the host
+/// can record the pending transaction before broadcasting.
 #[wasm_bindgen(js_name = signTransaction)]
 pub fn sign_transaction(
     signable_hex: &str,
@@ -463,10 +465,11 @@ pub fn verify_transaction(
     Ok(())
 }
 
-/// 广播一笔已签名的交易。**不可逆。**
+/// Broadcast a signed transaction. Irreversible.
 ///
-/// 节点接受或结果不确定（网络错误）都记账：被花的输出标记掉，交易进在途，
-/// 返回 `broadcast: accepted | unknown`。只有节点明确拒收才报错并放回输入。
+/// Accepted and uncertain (network error) outcomes are both recorded: spent outputs
+/// are marked, the transaction goes in flight, and `broadcast: accepted | unknown` is
+/// returned. Only an explicit node rejection errors and releases the inputs.
 #[wasm_bindgen(js_name = broadcastTransaction)]
 pub async fn broadcast_transaction(
     account_id: i64,
@@ -478,7 +481,8 @@ pub async fn broadcast_transaction(
 ) -> std::result::Result<String, JsValue> {
     let raw = raw_hex.to_owned();
     let reservation = reservation_id.to_owned();
-    // 十进制串：u64 过不了宿主桥。只用于显示与余额，格式不对就当没给。
+    // Decimal strings: u64 cannot cross the host bridge. Used only for display and
+    // balance; malformed values count as absent.
     let amounts = spend::SentAmounts {
         outgoing_atomic: outgoing_atomic.and_then(|a| a.parse::<u64>().ok()),
         change_atomic: change_atomic.and_then(|a| a.parse::<u64>().ok()),

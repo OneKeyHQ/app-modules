@@ -1,6 +1,6 @@
-//! 面向宿主的密钥接口。
+//! Host-facing key API.
 //!
-//! 出口只有 UFVK 与地址 —— 种子和花费密钥永远不跨这条边界。
+//! Seeds and spending keys never cross this boundary outward.
 
 use wasm_bindgen::prelude::*;
 use zeroize::Zeroizing;
@@ -13,13 +13,11 @@ pub fn validate_address(network: &str, address: &str) -> Result<bool, JsValue> {
     Ok(keys::validate_address(network, address)?)
 }
 
-/// 从 UFVK 取统一地址。纯公开材料，不涉及私钥。
+/// Derive the Unified Address from a UFVK. Public material only.
 ///
-/// `receiverPolicy` 决定 UA 里包含哪些 receiver：`"all"` / `"shielded"` /
-/// `"orchard"`。**这是隐私策略，由宿主决定，没有缺省值** —— 带 transparent
-/// receiver 的地址别人可以用公开方式付给你，代价是把你的透明与屏蔽活动关联
-/// 起来。省略这个参数曾经等于选中 `"all"`，也就是那个代价最大的取值：调用方
-/// 什么都没写，却替用户做了这个决定。
+/// `receiverPolicy` selects the receivers: `"all"` / `"shielded"` / `"orchard"`.
+/// It is a host privacy decision with no default: a transparent receiver links
+/// the user's transparent and shielded activity.
 #[wasm_bindgen(js_name = unifiedAddress)]
 pub fn unified_address(
     network: &str,
@@ -29,9 +27,7 @@ pub fn unified_address(
     Ok(keys::unified_address_with(network, ufvk, receiver_policy)?)
 }
 
-/// 从**种子字节**派生 UFVK。
-///
-/// 助记词只在解密那一刻出现一次，之后全程传种子 —— 本边界不收助记词。
+/// Derive a UFVK from seed bytes. This boundary never accepts a mnemonic.
 #[wasm_bindgen(js_name = ufvkFromSeed)]
 pub fn ufvk_from_seed(network: &str, seed: Vec<u8>, account_index: u32) -> Result<String, JsValue> {
     // Own and wipe the original bindgen allocation, including on validation errors.
@@ -41,10 +37,10 @@ pub fn ufvk_from_seed(network: &str, seed: Vec<u8>, account_index: u32) -> Resul
     Ok(keys::ufvk_from_seed_bytes(params, &seed, account_index)?)
 }
 
-/// 用**种子字节**给 PCZT 签名。整个方案里唯一接触花费密钥的接口之一。
+/// Sign a PCZT with seed bytes after verifying it against the reviewed payment.
 ///
-/// 花费密钥在 Rust 侧从种子现场派生、用完即弃，不跨边界返回。
-/// 调用方负责擦除自己那份种子 —— 这一侧擦不了 JS 堆上的副本。
+/// Spending keys are derived in Rust and never returned. The caller wipes its
+/// own seed copy; this side cannot wipe the JS heap.
 #[wasm_bindgen(js_name = pcztSignWithSeed)]
 pub fn pczt_sign_with_seed(
     network: &str,
@@ -70,20 +66,19 @@ pub fn pczt_verify_review(pczt_bytes: Vec<u8>, review_json: &str) -> Result<(), 
     Ok(review::verify_json(&pczt_bytes, review_json)?)
 }
 
-/// 从 UFVK 取透明收款地址（t 地址）。离线可算，不需要钱包库。
+/// Derive the transparent receiving address (t-address) from a UFVK, offline.
 #[wasm_bindgen(js_name = transparentAddressFromUfvk)]
 pub fn transparent_address_from_ufvk(network: &str, ufvk: &str) -> Result<String, JsValue> {
     Ok(keys::transparent_address(network, ufvk)?)
 }
 
-/// UFVK 的透明账户公钥（chain code || 压缩公钥，hex）。见 keys::transparent_account_pubkey。
+/// Transparent account pubkey (chain code || compressed key, hex). See `keys::transparent_account_pubkey`.
 #[wasm_bindgen(js_name = transparentAccountPubKeyFromUfvk)]
 pub fn transparent_account_pubkey_from_ufvk(network: &str, ufvk: &str) -> Result<String, JsValue> {
     Ok(keys::transparent_account_pubkey(network, ufvk)?)
 }
 
-/// 种子指纹（ZIP-32 标准值）。宿主拿它当账户身份持久化，
-/// 所以必须与标准一致 —— 不能另发明一套哈希。
+/// Standard ZIP-32 seed fingerprint, persisted by the host as account identity.
 #[wasm_bindgen(js_name = seedFingerprint)]
 pub fn seed_fingerprint(seed: Vec<u8>) -> Result<String, JsValue> {
     let seed = Zeroizing::new(seed);
@@ -125,8 +120,8 @@ pub fn transparent_tx_build_with_account_xprv(
     )?)
 }
 
-/// keys 侧**实际**能签什么。与 runtime 的 `capabilities()` 合并后才是完整判断：
-/// 一笔交易要能发出去，证明和签名两边都得支持同一种 bundle。
+/// What the keys side can sign. Combine with the runtime's `capabilities()`:
+/// a bundle is usable only if both proving and signing support it.
 #[wasm_bindgen(js_name = keysCapabilities)]
 pub fn keys_capabilities() -> String {
     serde_json::json!({
@@ -185,7 +180,7 @@ pub fn transparent_tx_combine_hardware_signed(
     )?)
 }
 
-/// 本 crate 锁定的官方依赖版本。
+/// Pinned upstream dependency versions.
 #[wasm_bindgen(js_name = keysDependencyVersions)]
 pub fn dependency_versions() -> String {
     crate::dependency_versions().to_string()

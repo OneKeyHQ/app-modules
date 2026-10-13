@@ -1,29 +1,27 @@
-//! 破坏性操作前的统一闸门。
+//! Shared gate for destructive operations.
 //!
-//! 这些操作会丢掉扫描结果、账户或整个库。它们共用一个判断：钱包现在是不是
-//! 「闲着」—— 没有在途提案、没有未落块的花费、没有未确认结局的广播。
+//! Operations that drop scan results, accounts or the whole database require
+//! the wallet to be idle: no in-flight proposals, no unmined spends, no
+//! broadcasts with an unknown outcome.
 //!
-//! ## 为什么问库而不是问进程
-//!
-//! 原来「有没有在途提案」问的是 `send` 里的进程内 map。Worker 一重启它就是
-//! 空的，闸门于是静默放行，而锁本身还在 SQLite 里 —— 正是「用户刷新了页面，
-//! 然后点了删除」这条路。锁是持久化的，判断也必须是。
+//! The check reads the database, not process memory: output locks persist in
+//! SQLite and survive a Worker restart, so the check must as well.
 
 use serde_json::json;
 
 use crate::error::{ErrorCode, Result, RuntimeError};
 use crate::history::uuid_blob;
 
-/// 输出锁算不算「忙」。
+/// Whether output locks count as busy.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum LockPolicy {
-    /// 未过期的锁就拒绝：可能有人正在证明或签名这批 note。
+    /// Refuse on any unexpired lock: those notes may be being proven or signed.
     Blocking,
-    /// 锁正是这个操作要清的东西，拿它当拒绝理由等于让修复按钮永远点不动。
+    /// The operation clears the locks itself, so they cannot block it.
     Ignored,
 }
 
-/// 带锁的四张表。上游按池分表，锁列在每张表上各有一份。
+/// Tables with lock columns; upstream keeps one per pool.
 const LOCKABLE_TABLES: [&str; 4] = [
     "sapling_received_notes",
     "orchard_received_notes",
@@ -35,7 +33,7 @@ fn db_err(operation: &str, error: impl std::fmt::Display) -> RuntimeError {
     RuntimeError::with(ErrorCode::DatabaseError, json!({ "operation": operation })).detail(error)
 }
 
-/// 链尖。与上游 `chain_tip_height` 同源：扫描区间是右开的，所以减一。
+/// Chain tip, as upstream `chain_tip_height`: scan ranges are end-exclusive, hence -1.
 fn chain_tip(conn: &rusqlite::Connection) -> Result<Option<u32>> {
     conn.query_row("SELECT MAX(block_range_end) FROM scan_queue", [], |row| {
         row.get::<_, Option<u32>>(0)
@@ -44,10 +42,10 @@ fn chain_tip(conn: &rusqlite::Connection) -> Result<Option<u32>> {
     .map_err(|e| db_err("walletIdleChainTip", e))
 }
 
-/// 这个账户（`None` = 整个库）名下还有没有未过期的输出锁。
+/// Whether the account (`None` = whole database) has unexpired output locks.
 fn has_live_locks(conn: &rusqlite::Connection, account_uuid: Option<&str>) -> Result<bool> {
-    // 链尖未知时不做过期判断：宁可报忙，也不要因为读不到高度就把一批
-    // 正在签名的 note 判成空闲。
+    // With an unknown tip, treat every lock as live: report busy rather than
+    // free notes that may be mid-signing.
     let tip = chain_tip(conn)?;
     let account_filter = account_uuid
         .map(|uuid| uuid_blob(uuid).map(Some))
@@ -76,7 +74,8 @@ fn has_live_locks(conn: &rusqlite::Connection, account_uuid: Option<&str>) -> Re
     Ok(false)
 }
 
-/// 已花出去但还没落块、也还没过期的交易。回退或删除会把它的记录一起丢掉。
+/// Spending transactions that are neither mined nor expired; a rewind or delete
+/// would lose their records.
 fn has_unsettled_outgoing(conn: &rusqlite::Connection, account_uuid: Option<&str>) -> Result<bool> {
     let account_filter = account_uuid
         .map(|uuid| uuid_blob(uuid).map(Some))
@@ -97,7 +96,7 @@ fn has_unsettled_outgoing(conn: &rusqlite::Connection, account_uuid: Option<&str
     .map_err(|e| db_err("walletIdleOutgoing", e))
 }
 
-/// 已授权广播、结局还没确定的交易。这份状态不是可重建的扫描缓存。
+/// Authorized broadcasts with no known outcome. This state cannot be rebuilt by rescanning.
 fn has_unresolved_broadcast(
     conn: &rusqlite::Connection,
     account_uuid: Option<&str>,
@@ -126,8 +125,8 @@ fn has_unresolved_broadcast(
     .map_err(|e| db_err("walletIdleBroadcast", e))
 }
 
-/// 钱包不空闲就拒绝。`account_uuid` 为 `None` 时判整个库 —— 回退和删库影响
-/// 的是共享库里的每一个账户，只看当前这个会漏掉别人的在途交易。
+/// Errors with `WalletBusy` unless the wallet is idle. Pass `None` for operations
+/// that affect every account in the shared database (rewind, delete).
 pub fn assert_idle(
     conn: &rusqlite::Connection,
     account_uuid: Option<&str>,
@@ -159,9 +158,8 @@ mod tests {
     use super::*;
     use rusqlite::Connection;
 
-    /// 在真实迁移出来的库上跑一遍。目的不是看结果，是证明**每条 SQL 的表名和
-    /// 列名都真实存在** —— 写错的话 SQLite 在这里就报错，而不是等到线上把
-    /// 「读不出来」当成「钱包空闲」然后删库。
+    /// Runs against a migrated database to prove every table and column in the
+    /// SQL exists, so a typo fails here rather than reading as "idle".
     #[test]
     fn every_query_matches_the_real_schema() {
         let path =
@@ -213,7 +211,7 @@ mod tests {
         }
     }
 
-    /// 这是整个改动的理由：锁在库里，进程内那张表重启就空了。
+    /// Locks persist in the database, so they block after a restart.
     #[test]
     fn a_persisted_lock_blocks_the_account_that_holds_it() {
         let conn = Connection::open_in_memory().unwrap();
@@ -221,7 +219,7 @@ mod tests {
         let owner = uuid::Uuid::from_u128(1).to_string();
         let other = uuid::Uuid::from_u128(2).to_string();
 
-        // 还没有锁：谁都空闲。
+        // No locks yet: idle.
         assert!(assert_idle(&conn, Some(&owner), "removeAccount", LockPolicy::Blocking).is_ok());
 
         conn.execute(
@@ -236,11 +234,11 @@ mod tests {
         assert_eq!(err.params["activeReservation"], true);
         assert_eq!(err.params["operation"], "removeAccount");
 
-        // 别人的账户不受影响；整库判则看得见。
+        // Other accounts are unaffected; the whole-database check sees it.
         assert!(assert_idle(&conn, Some(&other), "removeAccount", LockPolicy::Blocking).is_ok());
         assert!(assert_idle(&conn, None, "rewindTo", LockPolicy::Blocking).is_err());
 
-        // clearLockedOutputs 清的就是它，不能拿它当拒绝理由。
+        // clearLockedOutputs clears this lock, so it must not be refused.
         assert!(assert_idle(
             &conn,
             Some(&owner),
@@ -255,7 +253,7 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         fixture(&conn);
         let owner = uuid::Uuid::from_u128(1).to_string();
-        // 链尖 1000（scan_queue 右开），过期高度 900 已经过去了。
+        // Tip is 1000 (scan_queue is end-exclusive); expiry 900 has passed.
         conn.execute(
             "INSERT INTO orchard_received_notes VALUES (1, ?1, 900)",
             rusqlite::params![[7_u8; 32]],
@@ -264,8 +262,8 @@ mod tests {
         assert!(assert_idle(&conn, Some(&owner), "removeAccount", LockPolicy::Blocking).is_ok());
     }
 
-    /// 广播还没有结局的时候，连「修复」按钮也不能动锁 —— 解锁等于把正在被
-    /// 一笔待确认交易花掉的 note 放回可选池。
+    /// With an unresolved broadcast even the repair path must not unlock: that
+    /// would return notes spent by a pending transaction to the selectable pool.
     #[test]
     fn an_unresolved_broadcast_blocks_even_the_repair_path() {
         let conn = Connection::open_in_memory().unwrap();

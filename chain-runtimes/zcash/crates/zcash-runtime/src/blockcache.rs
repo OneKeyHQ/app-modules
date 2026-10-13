@@ -1,13 +1,9 @@
-//! 内存版 compact block 缓存。
+//! In-memory compact block cache.
 //!
-//! `zcash_client_backend::sync::run` 需要一个 `BlockCache`，官方在
-//! `zcash_client_sqlite` 里提供的是文件系统版（`FsBlockDb`），浏览器用不了。
-//!
-//! 这里用内存实现，理由是 compact block 是**过程性数据**：下载 → 扫描 → 用完即弃。
-//! 真正需要持久化的是扫描结果（note、witness、承诺树），那些由 `zcash_client_sqlite`
-//! 写进 SQLite，已经落在 IndexedDB 上。
-//!
-//! 内存占用受 `sync::run` 的 `batch_size` 约束：一次只保留正在扫的那一批。
+//! `zcash_client_backend::sync::run` needs a `BlockCache`; upstream's `FsBlockDb`
+//! needs a filesystem. Compact blocks are transient (download, scan, discard);
+//! scan results are persisted by `zcash_client_sqlite`. Memory is bounded by the
+//! `sync::run` batch size.
 
 use std::collections::BTreeMap;
 use std::ops::Range;
@@ -36,7 +32,7 @@ impl MemoryBlockCache {
         }
     }
 
-    /// 当前缓存的区块数量，供宿主观测内存占用。
+    /// Number of cached blocks, for observing memory use.
     pub fn len(&self) -> usize {
         self.blocks.lock().map(|b| b.len()).unwrap_or(0)
     }
@@ -49,18 +45,18 @@ impl MemoryBlockCache {
         let r = range.block_range();
         u32::from(r.start)..u32::from(r.end)
     }
-    /// 写入一批区块。缓存是过程性数据，重复写入同一高度即覆盖。
+    /// Inserts blocks; an existing height is overwritten.
     pub fn insert(&self, compact_blocks: Vec<CompactBlock>) -> Result<(), CacheError> {
         let mut blocks = self.blocks.lock().map_err(|_| poisoned())?;
         for b in compact_blocks {
             let h = u32::try_from(b.height)
-                .map_err(|_| CacheError(format!("区块高度超出范围: {}", b.height)))?;
+                .map_err(|_| CacheError(format!("block height out of range: {}", b.height)))?;
             blocks.insert(h, b);
         }
         Ok(())
     }
 
-    /// 扫完即弃：删掉一段区间，把内存还回去。
+    /// Drops a scanned range to free memory.
     pub fn delete(&self, range: &ScanRange) -> Result<(), CacheError> {
         let mut blocks = self.blocks.lock().map_err(|_| poisoned())?;
         let r = Self::range_of(range);
@@ -72,7 +68,7 @@ impl MemoryBlockCache {
     }
 }
 
-/// 缓存自身的错误。内存实现里唯一可能的失败是锁中毒。
+/// Cache error. In memory, the only failure is a poisoned lock.
 #[derive(Debug)]
 pub struct CacheError(pub String);
 
@@ -85,7 +81,7 @@ impl std::fmt::Display for CacheError {
 impl std::error::Error for CacheError {}
 
 fn poisoned() -> CacheError {
-    CacheError("内部锁中毒（上一次持锁时发生了 panic）".into())
+    CacheError("internal lock poisoned (a previous holder panicked)".into())
 }
 
 impl BlockSource for MemoryBlockCache {
@@ -100,16 +96,14 @@ impl BlockSource for MemoryBlockCache {
     where
         F: FnMut(CompactBlock) -> Result<(), error::Error<WalletErrT, Self::Error>>,
     {
-        // 交出去的必须是**从 from_height 起的连续前缀**，允许短读。
+        // Hand out only a contiguous prefix starting at from_height; short reads
+        // are allowed. A gap would surface upstream as `BlockHeightDiscontinuity`,
+        // which `is_continuity_error()` treats as a reorg, so a block missing on
+        // the server would trigger a destructive rewind that hits the same gap again.
         //
-        // 这条契约不是形式主义：调用方拿 `prior` 的元数据去接续扫描，喂给它一段
-        // 跳号的块会被上游判成 `BlockHeightDiscontinuity`，而那个错误 是
-        // `is_continuity_error()` 的真值 —— 于是服务端漏块会被当成链重组，触发
-        // 破坏性回退、重下、再撞同一个洞。宁可短读让下一轮重来。
-        //
-        // 先在持锁时收集，再释放锁，最后才执行回调：回调会写钱包库，而上游有
-        // 可能在那条路径上再次读取本缓存。`std::sync::Mutex` 不可重入，同一线程
-        // 二次加锁在 wasm 单线程环境下就是永久死锁。
+        // Collect under the lock and release it before calling back: the callback
+        // writes the wallet and upstream may read this cache again on that path.
+        // `std::sync::Mutex` is not reentrant, so that would deadlock on wasm.
         let selected: Vec<CompactBlock> = {
             let blocks = self
                 .blocks
@@ -135,18 +129,19 @@ impl BlockSource for MemoryBlockCache {
                 expect = next;
             }
 
-            // 起点缺失时一块都不交，并且**报错而不是静默返回空**：静默空会让
-            // 上游把空批当成功、队列不推进，调用方原地重下同一段直到批数耗尽。
+            // A missing start is an error, not an empty batch: upstream treats an
+            // empty batch as success without advancing the queue, so the caller
+            // would re-download the same range until it runs out of batches.
             if out.is_empty() && cap > 0 && !blocks.is_empty() {
                 return Err(error::Error::BlockSource(CacheError(format!(
-                    "缓存缺少起点区块 {start}，不能从后面的块接着扫"
+                    "cache is missing start block {start}; cannot scan from later blocks"
                 ))));
             }
             out
-        }; // 锁在这里释放
+        }; // lock released here
 
-        // 逐块打点：把「卡在第几块的扫描里」和「所有块都扫完了、卡在之后的
-        // 写库/承诺树里」分开。只在排查构建里编进来。
+        // Per-block tracing separates a stall in scanning from one in the later
+        // database/tree writes. debug-tracing builds only.
         #[cfg(feature = "debug-tracing")]
         let total = selected.len();
         // The index is consumed only by the debug-tracing build.
@@ -154,7 +149,7 @@ impl BlockSource for MemoryBlockCache {
         for (_i, block) in selected.into_iter().enumerate() {
             #[cfg(feature = "debug-tracing")]
             crate::sync::trace(&format!(
-                "cache: 交出第 {}/{} 块 h={}",
+                "cache: handing out block {}/{} h={}",
                 _i + 1,
                 total,
                 block.height
@@ -162,7 +157,7 @@ impl BlockSource for MemoryBlockCache {
             with_block(block)?;
         }
         #[cfg(feature = "debug-tracing")]
-        crate::sync::trace("cache: 本批区块已全部交出，之后的时间都在上游写库/承诺树里");
+        crate::sync::trace("cache: batch handed out; remaining time is upstream db/tree writes");
         Ok(())
     }
 }
@@ -186,7 +181,7 @@ mod tests {
         )
     }
 
-    /// 收集 `with_blocks` 实际交出来的高度 —— 这是扫描唯一走的那条路。
+    /// Heights actually handed out by `with_blocks`, the path scanning uses.
     fn handed_out(
         c: &MemoryBlockCache,
         from: u32,
@@ -222,7 +217,7 @@ mod tests {
         assert_eq!(handed_out(&c, 10, 2).unwrap(), vec![10, 11]);
     }
 
-    /// 缺口之后的区块不能被交出去，否则上游会把跳号判成链重组并触发破坏性回退。
+    /// Blocks past a gap must not be handed out, or upstream sees a reorg and rewinds.
     #[test]
     fn hand_out_stops_at_gap() {
         let c = MemoryBlockCache::new();
@@ -230,12 +225,11 @@ mod tests {
         assert_eq!(
             handed_out(&c, 10, 4).unwrap(),
             vec![10, 11],
-            "高度 12 缺，就该停"
+            "must stop at missing height 12"
         );
     }
 
-    /// 起点缺失要**报错**，不能静默返回空 —— 静默空会被当成扫描成功，
-    /// 队列不推进，调用方原地重下同一段。
+    /// A missing start must error; an empty batch would read as a successful scan.
     #[test]
     fn missing_start_is_an_error_not_an_empty_batch() {
         let c = MemoryBlockCache::new();
@@ -243,7 +237,7 @@ mod tests {
         let e = handed_out(&c, 10, 2).unwrap_err();
         assert!(
             matches!(e, error::Error::BlockSource(CacheError(ref m)) if m.contains("10")),
-            "起点缺失应报 BlockSource 错误，实际 {e:?}"
+            "missing start should be a BlockSource error, got {e:?}"
         );
     }
 

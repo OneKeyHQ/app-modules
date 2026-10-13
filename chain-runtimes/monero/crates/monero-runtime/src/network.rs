@@ -1,17 +1,17 @@
-//! 连 monerod 的传输层。
+//! Transport to monerod.
 //!
-//! 上游 `monero-daemon-rpc` 把网络抽象成一个 trait，只有一个方法：
-//! `post(route, body, size_limit) -> Vec<u8>`。二进制 RPC 与 epee 解析全在
-//! 上游 —— 我们只要把字节搬进搬出。
+//! Upstream `monero-daemon-rpc` abstracts the network as a trait with one method,
+//! `post(route, body, size_limit) -> Vec<u8>`. Binary RPC and epee parsing stay
+//! upstream; this module only moves bytes.
 //!
-//! ## `Send` 的问题
+//! ## `Send`
 //!
-//! 上游签名要求 `post` 返回 `impl Send + Future`，而浏览器 `fetch` 产出的
-//! future **不是** `Send`（它持有 JS 值，JS 值绑在它所在的线程上）。
+//! Upstream requires `post` to return `impl Send + Future`, but a browser `fetch`
+//! future is not `Send` (it holds JS values bound to their thread).
 //!
-//! wasm32-unknown-unknown 在我们的构建下没有 atomics、没有线程，整个模块跑在
-//! 一个 Worker 里，`Send` 这个约束在那里**没有可被违反的语义**。所以用一层
-//! 断言包装是成立的 —— 但仅限这个目标，见 [`SingleThreaded`] 上的安全性说明。
+//! Our wasm32-unknown-unknown build has no atomics or threads and runs in a single
+//! Worker, so `Send` has nothing to violate there. An asserting wrapper is sound on
+//! that target only; see the safety note on [`SingleThreaded`].
 
 use monero_daemon_rpc::{HttpTransport, MoneroDaemon};
 use monero_interface::InterfaceError;
@@ -19,20 +19,19 @@ use serde_json::json;
 
 use crate::error::{net_err, ErrorCode, Result, RuntimeError};
 
-/// 单次请求的默认超时。
+/// Default per-request timeout.
 ///
-/// 这是**停滞**超时，不是整批的截止时间：块流只要还在推进就不判死。
+/// A stall timeout, not a whole-batch deadline: a block stream that keeps progressing survives.
 pub const DEFAULT_TIMEOUT_MS: u32 = 30_000;
 
-/// 响应体上限，防一个恶意节点用超大响应把 wasm 堆撑爆。
-/// 取 32 MB —— spam 墙区段一批块可达几十 MB，留够余量但不无界。
+/// Response body cap, so a malicious node cannot exhaust the wasm heap with an
+/// oversized response. 32 MB: a batch in the spam-wall range can reach tens of MB.
 pub const MAX_RESPONSE_BYTES: usize = 32 * 1024 * 1024;
 
-/// monerod 按路由区分 Content-Type。
+/// monerod expects a Content-Type per route.
 ///
-/// 我一开始给所有路由都发 `application/octet-stream` 并在注释里断言「JSON
-/// 路由也接受」—— **那是错的**，`/json_rpc` 会直接拒掉，表现为连接阶段就
-/// 失败而看不出原因。二进制路由以 `.bin` 结尾，其余走 JSON。
+/// `/json_rpc` rejects `application/octet-stream`, which surfaces as an unexplained
+/// connect failure. Binary routes end in `.bin`; the rest are JSON.
 fn content_type_for(route: &str) -> &'static str {
     if route.ends_with(".bin") {
         "application/octet-stream"
@@ -41,21 +40,21 @@ fn content_type_for(route: &str) -> &'static str {
     }
 }
 
-/// 把一个 `!Send` 的 future 断言成 `Send`。
+/// Asserts that a `!Send` future is `Send`.
 ///
-/// # 安全性
+/// # Safety
 ///
-/// **只在 wasm32 上编译。** 该目标在本工程的构建配置下没有 atomics、没有
-/// 线程：产物跑在单个 Worker 里，不存在第二个线程能观察到这个 future。
-/// `Send` 在那里不约束任何真实行为。
+/// Compiled only for wasm32. This project builds that target without atomics or
+/// threads: the module runs in a single Worker, so no second thread can observe
+/// the future and `Send` constrains nothing.
 ///
-/// 哪天这个 crate 要支持 wasm 线程（atomics + SharedArrayBuffer），**这一层
-/// 必须先去掉**，否则就是真正的数据竞争。
+/// If this crate ever supports wasm threads (atomics + SharedArrayBuffer), this
+/// wrapper must be removed first; otherwise it is a real data race.
 #[cfg(target_arch = "wasm32")]
 struct SingleThreaded<F>(F);
 
 #[cfg(target_arch = "wasm32")]
-// SAFETY: 见上方说明 —— 目标平台单线程，无第二个线程可观察。
+// SAFETY: see above; the target is single-threaded, so no other thread can observe it.
 unsafe impl<F> Send for SingleThreaded<F> {}
 
 #[cfg(target_arch = "wasm32")]
@@ -65,15 +64,16 @@ impl<F: core::future::Future> core::future::Future for SingleThreaded<F> {
         self: core::pin::Pin<&mut Self>,
         cx: &mut core::task::Context<'_>,
     ) -> core::task::Poll<Self::Output> {
-        // SAFETY: 只是把 pin 投影到唯一字段上，不移动它。
+        // SAFETY: pin projection onto the only field; it is never moved.
         unsafe { self.map_unchecked_mut(|s| &mut s.0).poll(cx) }
     }
 }
 
-/// 响应体上限检查，宿主通道与 wasm 内 fetch 共用。
+/// Response size check shared by the host channel and in-wasm fetch.
 ///
-/// 防一个恶意节点用超大响应把 wasm 堆撑爆。两条路都拿不到流式截断，只能收完
-/// 再判 —— 但至少不会把它交给解析器再翻一倍。
+/// Guards the wasm heap against oversized responses from a malicious node. Neither
+/// path can truncate while streaming, so this runs after receipt, but before the
+/// parser would double the footprint.
 #[cfg(target_arch = "wasm32")]
 fn cap_response(
     bytes: Vec<u8>,
@@ -81,40 +81,36 @@ fn cap_response(
 ) -> std::result::Result<Vec<u8>, InterfaceError> {
     let cap = limit.unwrap_or(MAX_RESPONSE_BYTES).min(MAX_RESPONSE_BYTES);
     if bytes.len() > cap {
-        return Err(InterfaceError::InvalidInterface("响应超出大小上限".into()));
+        return Err(InterfaceError::InvalidInterface("response too big".into()));
     }
     Ok(bytes)
 }
 
-// 宿主提供的请求处理器。
+// Request handler supplied by the host.
 //
-// ## 为什么要把网络交给宿主
+// ## Why the host sends requests
 //
-// 在 wasm 里 `fetch`，请求就是从浏览器上下文发出去的，于是受两条浏览器规则
-// 管：混合内容（明文 HTTP 节点直接被拦）和 CORS（monerod 默认不发
-// `Access-Control-Allow-Origin`，要运维自己加反代）。
+// In-wasm `fetch` runs in the browser context, so it is subject to mixed-content
+// blocking (plain-HTTP nodes) and CORS (monerod sends no
+// `Access-Control-Allow-Origin` by default). Few public nodes pass both, and
+// routing every user through one third-party node hands that operator everyone's
+// IP, scan ranges and broadcast timing.
 //
-// 结果是全网几百个活着的公共节点里我们只能用个位数 —— 2026-09-22 实测 12 家，
-// 只有 1 家同时满足。让一条隐私链的所有用户共用一个第三方节点，等于把用户
-// 来这里要的东西还回去：那个运营方看得见每个人的 IP、同步区间和广播时机。
+// This is about reachability, not speed (scanning is 0.4% of total time). The
+// extension background (with `host_permissions`), the Electron main process and
+// React Native native code are not bound by those rules.
 //
-// **这和性能无关。** 纯扫描 153 块/秒、只占总耗时 0.4%。受限的是可达性不是
-// 速度，所以解法不是换原生，是把请求交出去。
-//
-// 这两条规则只管浏览器上下文。插件的 background（配 `host_permissions`）、
-// 桌面的 Electron 主进程、移动端的 RN 原生都不受管。
-//
-// 宿主不装时退回 wasm 内 fetch，行为与以前完全一致 —— 增量改动。
+// Without a host handler, requests fall back to in-wasm fetch.
 #[cfg(target_arch = "wasm32")]
 thread_local! {
     static HOST_HANDLER: std::cell::RefCell<Option<js_sys::Function>> =
         const { std::cell::RefCell::new(None) };
 }
 
-/// 装上宿主的请求处理器。传 `None` 卸载，退回 wasm 内 fetch。
+/// Install the host request handler; `None` uninstalls it and falls back to in-wasm fetch.
 ///
-/// 处理器签名：`(url, contentType, body: Uint8Array) => Promise<Uint8Array>`。
-/// 抛出或 reject 都当作网络错误上报，原因原样带出。
+/// Signature: `(url, contentType, body: Uint8Array) => Promise<Uint8Array>`.
+/// A throw or rejection is reported as a network error carrying its reason.
 #[cfg(target_arch = "wasm32")]
 pub fn set_host_handler(handler: Option<js_sys::Function>) {
     HOST_HANDLER.with(|slot| *slot.borrow_mut() = handler);
@@ -125,7 +121,7 @@ fn host_handler() -> Option<js_sys::Function> {
     HOST_HANDLER.with(|slot| slot.borrow().clone())
 }
 
-/// 走宿主通道发一次请求。
+/// Send one request through the host channel.
 #[cfg(target_arch = "wasm32")]
 async fn post_via_host(
     handler: js_sys::Function,
@@ -137,7 +133,7 @@ async fn post_via_host(
     use wasm_bindgen_futures::JsFuture;
 
     let fail = |stage: &str, detail: String| {
-        InterfaceError::InterfaceError(format!("{url}: 宿主通道 {stage}: {detail}"))
+        InterfaceError::InterfaceError(format!("{url}: host channel {stage}: {detail}"))
     };
 
     let array = js_sys::Uint8Array::from(body);
@@ -148,26 +144,26 @@ async fn post_via_host(
             &JsValue::from_str(content_type),
             &array,
         )
-        .map_err(|e| fail("调用", describe_js(&e)))?;
+        .map_err(|e| fail("call", describe_js(&e)))?;
 
-    // 同步返回字节或返回 Promise 都接受 —— 宿主那边怎么写都行。
+    // Accept bytes returned directly or via a Promise.
     let resolved = match returned.dyn_into::<js_sys::Promise>() {
         Ok(promise) => JsFuture::from(promise)
             .await
-            .map_err(|e| fail("等待响应", describe_js(&e)))?,
+            .map_err(|e| fail("await response", describe_js(&e)))?,
         Err(value) => value,
     };
 
     let bytes = resolved
         .dyn_into::<js_sys::Uint8Array>()
-        .map_err(|_| fail("返回值", "宿主必须回 Uint8Array".to_owned()))?;
+        .map_err(|_| fail("return value", "host must return a Uint8Array".to_owned()))?;
     Ok(bytes.to_vec())
 }
 
-/// 把一个 JS 侧的异常压成一句人能读的话。
+/// Reduce a JS exception to a readable message.
 ///
-/// `JsValue` 的 Debug 输出对排障几乎没用，而 `Error.message` 恰恰是浏览器把
-/// 真实原因（DNS 失败、CORS 被拒、连接被重置）写进去的地方。
+/// `JsValue`'s Debug output is useless for diagnosis; `Error.message` is where the
+/// browser puts the real cause (DNS failure, CORS rejection, connection reset).
 #[cfg(target_arch = "wasm32")]
 fn describe_js(value: &wasm_bindgen::JsValue) -> String {
     use wasm_bindgen::JsValue;
@@ -178,7 +174,7 @@ fn describe_js(value: &wasm_bindgen::JsValue) -> String {
         .unwrap_or_else(|| format!("{value:?}"))
 }
 
-/// 单次请求的上限。一整批块在慢节点上要十几秒，留足余量。
+/// Per-request cap. A full batch can take over ten seconds on a slow node.
 #[cfg(target_arch = "wasm32")]
 const REQUEST_TIMEOUT_MS: u32 = 45_000;
 
@@ -187,7 +183,7 @@ const REQUEST_TIMEOUT_MS: u32 = 45_000;
 #[cfg(target_arch = "wasm32")]
 const HOST_REQUEST_TIMEOUT_MS: u32 = 10 * 60 * 1000;
 
-/// 浏览器载体里的传输实现，基于 `fetch`。
+/// Browser transport based on `fetch`.
 #[cfg(target_arch = "wasm32")]
 #[derive(Clone, Debug)]
 pub struct FetchTransport {
@@ -202,8 +198,8 @@ impl FetchTransport {
         }
     }
 
-    /// 有上限地等一次请求。卡住的请求会让这一步一直占着钱包库，之后的每次调用
-    /// 都只能拿到 WALLET_BUSY；超时后放手，请求本身在后台自生自灭。
+    /// Await one request with a cap. A stuck request holds the wallet DB, so every later
+    /// call gets WALLET_BUSY; on timeout it is abandoned to finish in the background.
     async fn post_inner(
         base_url: String,
         route: String,
@@ -223,7 +219,7 @@ impl FetchTransport {
         match select(request, timeout).await {
             Either::Left((result, _)) => result,
             Either::Right(_) => Err(InterfaceError::InterfaceError(format!(
-                "{url}: {} 秒没有响应",
+                "{url}: no response in {} s",
                 timeout_ms / 1000
             ))),
         }
@@ -241,16 +237,15 @@ impl FetchTransport {
         let url = format!("{base_url}/{}", route.trim_start_matches('/'));
         let content_type = content_type_for(&route);
 
-        // 宿主装了处理器就交给它 —— 那条路不受浏览器的混合内容与 CORS 限制，
-        // 因此能用全网任意节点。没装则退回下面的 wasm 内 fetch。
+        // Prefer the host handler: it is not bound by mixed-content or CORS rules, so any
+        // node is usable. Otherwise fall back to in-wasm fetch below.
         if let Some(handler) = host_handler() {
             let bytes = post_via_host(handler, &url, content_type, &body).await?;
             return cap_response(bytes, limit);
         }
 
-        // 每一步都带上自己的原因。九个失败点共用一句「请求失败」，就是把
-        // 「节点挂了」「节点没开 CORS」「地址写错了」「响应体读不动」压成
-        // 同一条信息 —— 而这几种情况用户要做的事完全不同。
+        // Tag each failure with its stage: a down node, missing CORS, a bad URL and an
+        // unreadable body need different fixes from the user.
         let fail = |stage: &str, detail: String| {
             InterfaceError::InterfaceError(format!("{url}: {stage}: {detail}"))
         };
@@ -261,7 +256,7 @@ impl FetchTransport {
         opts.set_body(&array);
 
         let request = web_sys::Request::new_with_str_and_init(&url, &opts)
-            .map_err(|e| fail("构造请求", describe_js(&e)))?;
+            .map_err(|e| fail("build request", describe_js(&e)))?;
         let _ = request.headers().set("Content-Type", content_type);
 
         let global = js_sys::global();
@@ -270,32 +265,32 @@ impl FetchTransport {
             .and_then(|f| f.dyn_into::<js_sys::Function>().ok())
             .ok_or_else(|| {
                 fail(
-                    "取 fetch",
-                    "当前环境没有全局 fetch（载体没装好，不是节点的问题）".to_owned(),
+                    "get fetch",
+                    "no global fetch here (host environment issue, not the node)".to_owned(),
                 )
             })?;
         let promise = fetch
             .call1(&global, &request)
-            .map_err(|e| fail("发起请求", describe_js(&e)))?
+            .map_err(|e| fail("send request", describe_js(&e)))?
             .dyn_into::<js_sys::Promise>()
-            .map_err(|e| fail("发起请求", describe_js(&e)))?;
+            .map_err(|e| fail("send request", describe_js(&e)))?;
 
         let response = JsFuture::from(promise)
             .await
-            // 走到这里基本只有两种：网络不通，或者节点没回 CORS 头。浏览器
-            // 出于安全不会告诉我们是哪种，所以把两种可能都写出来。
+            // Usually the network is down or the node sent no CORS headers; the browser
+            // does not say which, so name both.
             .map_err(|e| {
                 fail(
-                    "等待响应",
-                    format!("{}（节点不可达，或者没有返回 CORS 头）", describe_js(&e)),
+                    "await response",
+                    format!("{} (node unreachable or no CORS headers)", describe_js(&e)),
                 )
             })?
             .dyn_into::<web_sys::Response>()
-            .map_err(|e| fail("解析响应", describe_js(&e)))?;
+            .map_err(|e| fail("parse response", describe_js(&e)))?;
 
         if !response.ok() {
             return Err(fail(
-                "节点拒绝",
+                "node rejected",
                 format!("HTTP {} {}", response.status(), response.status_text()),
             ));
         }
@@ -303,10 +298,10 @@ impl FetchTransport {
         let buffer = JsFuture::from(
             response
                 .array_buffer()
-                .map_err(|e| fail("读取响应体", describe_js(&e)))?,
+                .map_err(|e| fail("read response body", describe_js(&e)))?,
         )
         .await
-        .map_err(|e| fail("读取响应体", describe_js(&e)))?;
+        .map_err(|e| fail("read response body", describe_js(&e)))?;
 
         cap_response(js_sys::Uint8Array::new(&buffer).to_vec(), limit)
     }
@@ -330,7 +325,7 @@ impl HttpTransport for FetchTransport {
     }
 }
 
-/// 原生传输，用于本机测试与诊断 —— 浏览器里出的问题可以在这边上真调试器复现。
+/// Native transport for local tests and diagnostics; reproduces browser issues under a debugger.
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone, Debug)]
 pub struct NativeTransport {
@@ -347,8 +342,8 @@ impl NativeTransport {
                 let builder = reqwest::Client::builder().timeout(std::time::Duration::from_millis(
                     u64::from(DEFAULT_TIMEOUT_MS),
                 ));
-                // reqwest 默认读 macOS 系统代理，curl 与 Node 不读。本机真链测试里
-                // 同一节点 curl 秒回、这里却次次卡满超时时，用它排除代理的影响。
+                // reqwest uses the macOS system proxy by default; curl and Node do not. Set this
+                // to rule out the proxy when a node answers curl instantly but times out here.
                 let builder = if std::env::var_os("XMR_NATIVE_NO_PROXY").is_some() {
                     builder.no_proxy()
                 } else {
@@ -373,8 +368,7 @@ impl HttpTransport for NativeTransport {
         let content_type = content_type_for(route);
         let client = self.client.clone();
         async move {
-            // 把真实原因带出来。一律吞成「请求失败」会让排查完全没有抓手 ——
-            // 连不上、404、超时、TLS 失败在现象上一模一样。
+            // Keep the real cause: refused, 404, timeout and TLS failure otherwise look identical.
             let response = client
                 .post(&url)
                 .header("Content-Type", content_type)
@@ -382,8 +376,8 @@ impl HttpTransport for NativeTransport {
                 .send()
                 .await
                 .map_err(|e| {
-                    // reqwest 的顶层文案只有 "error sending request"，真正原因
-                    // （超时、TLS、连接被重置、DNS）在 source 链里。
+                    // reqwest's top-level message is just "error sending request"; the cause
+                    // (timeout, TLS, reset, DNS) is in the source chain.
                     let mut chain = e.to_string();
                     let mut source = std::error::Error::source(&e);
                     while let Some(inner) = source {
@@ -404,13 +398,13 @@ impl HttpTransport for NativeTransport {
             let bytes = response
                 .bytes()
                 .await
-                .map_err(|e| InterfaceError::InterfaceError(format!("读取 {url} 的响应体: {e}")))?
+                .map_err(|e| InterfaceError::InterfaceError(format!("read body of {url}: {e}")))?
                 .to_vec();
             let cap = response_size_limit
                 .unwrap_or(MAX_RESPONSE_BYTES)
                 .min(MAX_RESPONSE_BYTES);
             if bytes.len() > cap {
-                return Err(InterfaceError::InvalidInterface("响应超出大小上限".into()));
+                return Err(InterfaceError::InvalidInterface("response too big".into()));
             }
             Ok(bytes)
         }
@@ -424,10 +418,10 @@ pub type Transport = NativeTransport;
 
 pub type Daemon = MoneroDaemon<Transport>;
 
-/// 连上一个 monerod 节点。
+/// Connect to a monerod node and return it with the network its genesis block identifies.
 ///
-/// 节点地址**由宿主给**，这里没有内置默认值 —— 内置一个默认节点等于替用户
-/// 决定把自己的 IP 和查询交给谁，那是隐私决策，不该藏在 runtime 里。
+/// The host supplies the URL; there is no built-in default. A default would decide for
+/// the user who sees their IP and queries, a privacy choice the runtime must not make.
 pub async fn connect(base_url: &str) -> Result<(Daemon, monero_wallet::address::Network)> {
     if base_url.trim().is_empty() {
         return Err(RuntimeError::new(ErrorCode::NodeNotConfigured));
@@ -446,11 +440,11 @@ pub async fn connect(base_url: &str) -> Result<(Daemon, monero_wallet::address::
     Ok((daemon, network))
 }
 
-/// 各网络的创世块哈希。
+/// Genesis block hash per network.
 ///
-/// 同一套密钥在三个网络上推出同样的输出密钥：测试网钱包连上主网节点，
-/// 扫到的就是真 XMR，按测试网地址发出去的也是真 XMR。只看地址前缀挡不住，
-/// 必须确认节点所在的链。
+/// The same keys derive the same output keys on all three networks: a testnet wallet
+/// on a mainnet node would scan and send real XMR. Address prefixes cannot catch
+/// this; the node's chain must be checked.
 const GENESIS_HASHES: [(monero_wallet::address::Network, &str); 3] = [
     (
         monero_wallet::address::Network::Mainnet,
@@ -474,8 +468,8 @@ pub(crate) fn network_for_genesis(hash: &[u8; 32]) -> Option<monero_wallet::addr
         .map(|(network, _)| *network)
 }
 
-/// 按创世块认出节点在哪条链上。认不出就不连：宁可没有节点，也不要一个
-/// 不知道在哪条链上的节点。
+/// Identify the node's chain by its genesis block. Unknown chains are refused: no
+/// node is better than one on an unknown chain.
 async fn node_network(daemon: &Daemon) -> Result<monero_wallet::address::Network> {
     use monero_daemon_rpc::prelude::*;
 
@@ -492,8 +486,8 @@ async fn node_network(daemon: &Daemon) -> Result<monero_wallet::address::Network
 }
 
 thread_local! {
-    /// 当前连着的节点地址。批量取块（blocks_bin）要自己发请求，而
-    /// `MoneroDaemon` 不把传输层交出来。
+    /// URL of the connected node. The batch block fetch (blocks_bin) sends its own
+    /// requests, and `MoneroDaemon` does not expose its transport.
     static CURRENT_NODE_URL: std::cell::RefCell<Option<String>> =
         const { std::cell::RefCell::new(None) };
 }
@@ -521,7 +515,7 @@ mod tests {
         assert_ne!(Network::Mainnet, Network::Stagenet);
     }
 
-    /// 不内置默认节点：内置一个等于替用户决定把 IP 和查询交给谁。
+    /// No built-in default node: it would decide for the user who sees their IP and queries.
     #[test]
     fn an_empty_node_url_is_refused_not_defaulted() {
         let e = futures_lite::future::block_on(connect("")).unwrap_err();
@@ -530,8 +524,8 @@ mod tests {
         assert_eq!(e.code, ErrorCode::NodeNotConfigured);
     }
 
-    /// 协议头必须显式。给个 `1.2.3.4:18081` 会被当成相对路径拼出乱七八糟的
-    /// URL，错误现场离真正的原因很远。
+    /// The scheme must be explicit: `1.2.3.4:18081` would be treated as a relative path
+    /// and yield a malformed URL that fails far from the cause.
     #[test]
     fn the_node_url_must_carry_a_scheme() {
         for bad in ["1.2.3.4:18081", "node.example.com", "ftp://x"] {
@@ -540,8 +534,8 @@ mod tests {
         }
     }
 
-    /// 路由决定 Content-Type。发错会让 `/json_rpc` 在连接阶段就被拒，
-    /// 而错误现场离真正的原因很远 —— 这条踩过。
+    /// The route decides Content-Type. The wrong one makes `/json_rpc` reject at
+    /// connect time, far from the cause.
     #[test]
     fn json_and_binary_routes_get_different_content_types() {
         assert_eq!(content_type_for("json_rpc"), "application/json");
@@ -555,7 +549,7 @@ mod tests {
 
     #[test]
     fn response_cap_never_exceeds_the_hard_limit() {
-        // 宿主传一个比硬上限还大的值时，以硬上限为准
+        // A host value above the hard cap is clamped to it
         let requested = MAX_RESPONSE_BYTES * 4;
         assert_eq!(requested.min(MAX_RESPONSE_BYTES), MAX_RESPONSE_BYTES);
     }
