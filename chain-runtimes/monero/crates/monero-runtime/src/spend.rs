@@ -257,10 +257,7 @@ pub fn select_inputs(
     })
 }
 
-/// 预留多久没广播就作废。Monero 交易没有过期高度，只能按时间。
-///
-/// 作废之后再广播也不会丢记账（广播按交易里的 key image 标记已花），最坏是
-/// 期间另一笔选中同样的输出、其中一笔被节点拒收。
+/// Unsigned review reservations expire; signed inputs remain held until resolved.
 pub const RESERVATION_TTL_SECS: i64 = 60 * 60;
 
 /// 仍然有效的预留的下限时间：`locked_at` 大于它才算数。
@@ -280,7 +277,7 @@ pub fn reserve(db: &mut Db, reservation_id: &str, output_ids: &[i64]) -> Result<
         .map_err(|e| db_err("beginReserve", e))?;
     // 用户在确认页退出不会通知这里，作废的预留只能在这时清掉。
     tx.execute(
-        "DELETE FROM locked_outputs WHERE locked_at <= ?1",
+        "DELETE FROM locked_outputs WHERE locked_at <= ?1 AND signed_at IS NULL",
         [now - RESERVATION_TTL_SECS],
     )
     .map_err(|e| db_err("expireReservations", e))?;
@@ -301,14 +298,49 @@ pub fn reserve(db: &mut Db, reservation_id: &str, output_ids: &[i64]) -> Result<
     tx.commit().map_err(|e| db_err("commitReserve", e))
 }
 
-/// 宿主签好名了：这笔预留不再算作被放弃的。
-pub fn mark_signed(db: &Db, reservation_id: &str) -> Result<usize> {
-    db.conn()
-        .execute(
-            "UPDATE locked_outputs SET signed_at = ?2 WHERE reservation_id = ?1",
-            params![reservation_id, crate::wallet::now_secs()],
+/// Atomically claim every live input before the host obtains a spend signature.
+pub fn mark_signed(db: &mut Db, reservation_id: &str, expected_inputs: u32) -> Result<usize> {
+    let stale = || {
+        RuntimeError::with(
+            ErrorCode::InvalidRequest,
+            json!({"reason": "staleReservation"}),
         )
-        .map_err(|e| db_err("markReservationSigned", e))
+    };
+    if expected_inputs == 0 || expected_inputs > 1024 {
+        return Err(stale());
+    }
+    let tx = db
+        .conn_mut()
+        .transaction()
+        .map_err(|e| db_err("beginSignReservation", e))?;
+    let count: u32 = tx
+        .query_row(
+            "SELECT count(*) FROM locked_outputs WHERE reservation_id = ?1",
+            [reservation_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| db_err("readSignReservation", e))?;
+    if count != expected_inputs {
+        return Err(stale());
+    }
+    let marked = tx
+        .execute(
+            "UPDATE locked_outputs SET signed_at = ?2
+         WHERE reservation_id = ?1 AND signed_at IS NULL AND locked_at > ?3
+           AND output_id IN (SELECT id FROM outputs WHERE spent_at_height IS NULL)",
+            params![
+                reservation_id,
+                crate::wallet::now_secs(),
+                reservation_cutoff()
+            ],
+        )
+        .map_err(|e| db_err("markReservationSigned", e))?;
+    if u32::try_from(marked).map_err(|_| stale())? != expected_inputs {
+        return Err(stale());
+    }
+    tx.commit()
+        .map_err(|e| db_err("commitSignReservation", e))?;
+    Ok(marked)
 }
 
 /// 放掉本身份所有没签名的预留。
@@ -882,17 +914,17 @@ mod tests {
         assert_eq!(left, 0, "有了 key image 的输出不再需要可能花费记录");
     }
 
-    /// 签名入口不碰网络也不碰库，所以它唯一能出的错就是入参形状。
-    /// 这里盯的是「坏输入必须报错」——静默接受会让一笔垃圾交易一路走到广播。
+    // Invalid transaction bytes must fail before signing, even with a review attached.
     #[test]
     fn signing_rejects_a_blob_that_is_not_a_signable_transaction() {
-        let e = sign_for_host("zz", &[0u8; 32]).unwrap_err();
+        let review = r#"{"network":"mainnet","fromAddress":"unused","toAddress":"unused","amountAtomic":"1","feeAtomic":"1","changeAtomic":"0","isMaxSend":false}"#;
+        let e = sign_for_host("zz", &[0u8; 32], review).unwrap_err();
         assert_eq!(e.code, ErrorCode::InvalidRequest);
-        assert_eq!(e.params["reason"], "notHex");
+        assert_eq!(e.params["reason"], "transactionDoesNotMatchReview");
 
-        let e = sign_for_host("00010203", &[0u8; 32]).unwrap_err();
+        let e = sign_for_host("00010203", &[0u8; 32], review).unwrap_err();
         assert_eq!(e.code, ErrorCode::InvalidRequest);
-        assert_eq!(e.params["reason"], "notASignableTransaction");
+        assert_eq!(e.params["reason"], "transactionDoesNotMatchReview");
     }
 
     /// 金额相加溢出必须报错而不是回绕。回绕会让一笔「收款方总额 0」的交易
@@ -993,7 +1025,7 @@ mod tests {
         let signed = add_output(&db, id, 400, 11, true);
         reserve(&mut db, "abandoned", &[abandoned]).unwrap();
         reserve(&mut db, "signed", &[signed]).unwrap();
-        mark_signed(&db, "signed").unwrap();
+        mark_signed(&mut db, "signed", 1).unwrap();
 
         assert_eq!(release_unsigned(&db, id).unwrap(), 1);
 
@@ -1006,6 +1038,59 @@ mod tests {
             .collect::<rusqlite::Result<_>>()
             .unwrap();
         assert_eq!(left, vec!["signed".to_string()]);
+    }
+
+    #[test]
+    fn signing_rejects_expired_partial_or_replayed_reservations_atomically() {
+        let (mut db, id) = db_with_identity();
+        let first = add_output(&db, id, 500, 10, true);
+        let second = add_output(&db, id, 400, 11, true);
+        reserve(&mut db, "review", &[first, second]).unwrap();
+        assert!(mark_signed(&mut db, "review", 1).is_err());
+        db.conn()
+            .execute(
+                "UPDATE locked_outputs SET locked_at = ?1 WHERE output_id = ?2",
+                params![reservation_cutoff(), second],
+            )
+            .unwrap();
+        assert!(mark_signed(&mut db, "review", 2).is_err());
+        let marked: i64 = db
+            .conn()
+            .query_row(
+                "SELECT count(*) FROM locked_outputs WHERE signed_at IS NOT NULL",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(marked, 0, "partial claims must roll back");
+        db.conn()
+            .execute("DELETE FROM locked_outputs WHERE output_id = ?1", [second])
+            .unwrap();
+        assert!(mark_signed(&mut db, "review", 2).is_err());
+        mark_signed(&mut db, "review", 1).unwrap();
+        assert!(mark_signed(&mut db, "review", 1).is_err());
+    }
+
+    #[test]
+    fn signed_reservations_stay_unspendable_after_the_unsigned_ttl() {
+        let (mut db, id) = db_with_identity();
+        let input = add_output(&db, id, 500, 10, true);
+        reserve(&mut db, "signed", &[input]).unwrap();
+        mark_signed(&mut db, "signed", 1).unwrap();
+        db.conn()
+            .execute(
+                "UPDATE locked_outputs SET locked_at = ?1",
+                [reservation_cutoff() - 1],
+            )
+            .unwrap();
+        assert!(query::spendable_rows(&db, id, 100).unwrap().is_empty());
+        assert_eq!(
+            query::balance(&db, id, Some(100))
+                .unwrap()
+                .locked_by_reservation_atomic,
+            500
+        );
+        assert!(reserve(&mut db, "replacement", &[input]).is_err());
     }
 
     /// wallet2 同款：待确认发送的找零计入总余额（锁定），不计入可用；判失败后不再计。
@@ -1280,20 +1365,9 @@ pub async fn prepare_for_host(
 }
 
 /// 签名一笔已构造的交易。**不碰网络、不碰数据库。**
-pub fn sign_for_host(signable_hex: &str, spend_private: &[u8]) -> Result<Value> {
-    let bytes = hex::decode(signable_hex).map_err(|_| {
-        RuntimeError::with(
-            ErrorCode::InvalidRequest,
-            json!({ "field": "signableHex", "reason": "notHex" }),
-        )
-    })?;
-    let signable = SignableTransaction::read(&mut bytes.as_slice()).map_err(|e| {
-        RuntimeError::with(
-            ErrorCode::InvalidRequest,
-            json!({ "field": "signableHex", "reason": "notASignableTransaction" }),
-        )
-        .detail(format!("{e:?}"))
-    })?;
+pub fn sign_for_host(signable_hex: &str, spend_private: &[u8], review_json: &str) -> Result<Value> {
+    let request = crate::review::parse_request(review_json)?;
+    let signable = crate::review::verify(signable_hex, &request, Some(spend_private))?;
     let mut rng = rand_core::OsRng;
     let (raw, txid) = sign_prepared(signable, &mut rng, spend_private)?;
     Ok(json!({

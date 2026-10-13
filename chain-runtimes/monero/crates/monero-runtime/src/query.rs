@@ -62,7 +62,7 @@ pub fn balance(db: &Db, identity_id: i64, chain_tip: Option<u64>) -> Result<Bala
                             WHERE p.identity_id = o.identity_id
                               AND p.out_txid = o.txid AND p.out_index = o.index_in_tx) AS maybe_spent
              FROM outputs o
-             LEFT JOIN locked_outputs l ON l.output_id = o.id AND l.locked_at > ?2
+             LEFT JOIN locked_outputs l ON l.output_id = o.id AND (l.locked_at > ?2 OR l.signed_at IS NOT NULL)
              WHERE o.identity_id = ?1 AND o.spent_at_height IS NULL",
         )
         .map_err(|e| db_err("balanceQuery", e))?;
@@ -173,7 +173,7 @@ pub fn spendable_rows(db: &Db, identity_id: i64, chain_tip: u64) -> Result<Vec<S
         .prepare(
             "SELECT o.id, o.amount_atomic, o.global_index, o.height, o.additional_timelock
              FROM outputs o
-             LEFT JOIN locked_outputs l ON l.output_id = o.id AND l.locked_at > ?2
+             LEFT JOIN locked_outputs l ON l.output_id = o.id AND (l.locked_at > ?2 OR l.signed_at IS NOT NULL)
              WHERE o.identity_id = ?1
                AND o.spent_at_height IS NULL
                AND o.key_image IS NOT NULL

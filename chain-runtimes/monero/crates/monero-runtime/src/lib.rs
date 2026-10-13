@@ -22,6 +22,7 @@ pub mod network;
 pub mod perf;
 pub mod pool;
 pub mod query;
+pub mod review;
 pub mod runtime;
 pub mod scan;
 pub mod schema;

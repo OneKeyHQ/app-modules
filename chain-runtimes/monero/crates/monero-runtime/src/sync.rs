@@ -28,13 +28,9 @@ use crate::wallet::Db;
 /// 且中途无法中断。真正的批量由宿主按实测吞吐决定。
 pub const MAX_BLOCKS_PER_CALL: u64 = 1_000;
 
-/// 同时在途的取块请求数。
-///
-/// 取块是**延迟**型而不是带宽型：一块要 3～4 次往返（区块、交易、输出索引），
-/// 每次 130～230 ms，实测串行时 ~1.36 s/块。块与块之间没有依赖，并发 N 个
-/// 就把墙钟时间压到约 1/N。取 6 是因为浏览器、插件后台、RN 的 HTTP 栈对
-/// 同一 host 的连接上限都在这个量级，再高只会排队，还更容易被公共节点限流。
-pub const FETCH_CONCURRENCY: usize = 6;
+/// Limit per-block fallback requests to three, leaving the host's fourth
+/// stream slot available for a chain-tip probe or another privacy chain.
+pub const FETCH_CONCURRENCY: usize = 3;
 
 /// 问链尖。**不碰钱包库** —— 建账户时需要它来定 birthday，而那一刻库还没建。
 pub async fn chain_tip(daemon: &Daemon) -> Result<u64> {
