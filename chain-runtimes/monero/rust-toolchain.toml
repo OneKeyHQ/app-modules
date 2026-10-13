@@ -1,6 +1,6 @@
-# Tracks current stable. This is not the MSRV, which is `rust-version` in
-# Cargo.toml (1.85). Pin a version if byte-reproducible wasm builds are needed.
+# Same toolchain as the Zcash runtime, so one install builds both. Pinned for
+# reproducible wasm; this is not the MSRV (`rust-version` in Cargo.toml).
 [toolchain]
-channel = "stable"
+channel = "1.93.0"
 profile = "minimal"
 targets = ["wasm32-unknown-unknown"]

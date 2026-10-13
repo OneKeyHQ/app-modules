@@ -27,10 +27,22 @@ jobs:
         working-directory: chain-runtimes/zcash
     steps:
       - uses: actions/checkout@v6
+      - name: Install Binaryen 133 (same wasm-opt as local builds)
+        run: |
+          BINARYEN=version_133
+          case "$(uname -m)" in
+            x86_64) ARCH=x86_64 SHA=2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489 ;;
+            aarch64) ARCH=aarch64 SHA=89c07ea56faf38d0fbecf36ca8ec0721756716185f265b568e133d427f299bf8 ;;
+            *) echo "unsupported architecture $(uname -m)" >&2; exit 1 ;;
+          esac
+          curl -sSfL -o /tmp/binaryen.tgz "https://github.com/WebAssembly/binaryen/releases/download/${BINARYEN}/binaryen-${BINARYEN}-${ARCH}-linux.tar.gz"
+          echo "${SHA}  /tmp/binaryen.tgz" | sha256sum -c -
+          sudo tar xzf /tmp/binaryen.tgz -C /opt
+          echo "/opt/binaryen-${BINARYEN}/bin" >> "$GITHUB_PATH"
       - name: Install build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang llvm binaryen libsqlite3-dev pkg-config
+          sudo apt-get install -y clang llvm libsqlite3-dev pkg-config
           rustup toolchain install 1.93.0 --profile minimal --target wasm32-unknown-unknown
           cargo install wasm-pack --version 0.15.0 --locked
           WASM_BINDGEN_VERSION=$(python3 -c 'import tomllib; print(next(p["version"] for p in tomllib.load(open("Cargo.lock", "rb"))["package"] if p["name"] == "wasm-bindgen"))')
