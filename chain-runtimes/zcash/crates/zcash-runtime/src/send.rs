@@ -316,7 +316,7 @@ fn build_proposal(
     let spend_policy = {
         use zcash_client_backend::data_api::wallet::input_selection::SpendPolicy;
         // Not SpendPolicy::default(): it allows Sapling. See SendPolicy::spend_source.
-        // Shielded pools are never combined (docs/08), and the current pool is defined
+        // Shielded pools are never combined, and the current pool is defined
         // only by the host (ZCASH_CURRENT_SHIELDED_POOL): no default here, missing is rejected.
         let pool = policy.spend_source.ok_or_else(|| {
             RuntimeError::with(
