@@ -1,17 +1,19 @@
 name: Publish Zcash runtime
 
+# Manual runs publish alpha builds only, from any branch. rc and latest are
+# published only when a version change in chain-runtimes/zcash/Cargo.toml is
+# merged to main.
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: Exact workspace version (for example 0.1.0-alpha.1)
+        description: Exact workspace alpha version (for example 0.1.0-alpha.1)
         required: true
         type: string
-      tag:
-        description: npm dist-tag
-        required: true
-        type: choice
-        options: [alpha, rc, latest]
+  push:
+    branches: [main]
+    paths:
+      - 'chain-runtimes/zcash/Cargo.toml'
 
 permissions:
   contents: read
@@ -23,30 +25,58 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+      publish: ${{ steps.plan.outputs.publish }}
     steps:
       - uses: actions/checkout@v6
-      - name: Require the exact release version (rc and latest only from main)
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.x'
+      - name: Decide what to publish
+        id: plan
         env:
-          RELEASE_VERSION: ${{ inputs.version }}
-          RELEASE_TAG: ${{ inputs.tag }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          if [ "$RELEASE_TAG" != alpha ]; then
-            test "$GITHUB_REF" = refs/heads/main
+          VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("chain-runtimes/zcash/Cargo.toml", "rb"))["workspace"]["package"]["version"])')
+          case "$VERSION" in
+            *-alpha.*) TAG=alpha ;;
+            *-rc.*) TAG=rc ;;
+            *) TAG=latest ;;
+          esac
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            test "$INPUT_VERSION" = "$VERSION" || { echo "Input $INPUT_VERSION does not match workspace $VERSION" >&2; exit 1; }
+            test "$TAG" = alpha || { echo "Manual runs publish alpha only; merge $VERSION to main instead" >&2; exit 1; }
+          elif [ "$TAG" = alpha ]; then
+            echo "Alpha versions are published manually; nothing to do on main" >> "$GITHUB_STEP_SUMMARY"
+            echo "publish=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          python3 - <<'PY'
-          import importlib.util, os
-          from pathlib import Path
-          path = Path('chain-runtimes/zcash/scripts/package-release.py')
-          spec = importlib.util.spec_from_file_location('release', path)
+          python3 - "$VERSION" "$TAG" <<'PY'
+          import importlib.util, sys
+          spec = importlib.util.spec_from_file_location('release', 'chain-runtimes/zcash/scripts/package-release.py')
           release = importlib.util.module_from_spec(spec)
           spec.loader.exec_module(release)
-          release.check_version(release.version(release.ROOT), os.environ['RELEASE_VERSION'], os.environ['RELEASE_TAG'])
+          release.check_version(sys.argv[1], sys.argv[1], sys.argv[2])
           PY
+          if npm view "onekey-zcash-runtime@$VERSION" version >/dev/null 2>&1; then
+            echo "onekey-zcash-runtime@$VERSION is already on npm" >> "$GITHUB_STEP_SUMMARY"
+            test "$EVENT_NAME" = push || exit 1
+            echo "publish=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          {
+            echo "version=$VERSION"
+            echo "tag=$TAG"
+            echo "publish=true"
+          } >> "$GITHUB_OUTPUT"
   build:
     needs: validate
+    if: needs.validate.outputs.publish == 'true'
     uses: ./.github/workflows/zcash-runtime.yml
   publish:
-    needs: build
+    needs: [validate, build]
+    if: needs.validate.outputs.publish == 'true'
     runs-on: ubuntu-24.04
     environment: npm-zcash
     steps:
@@ -62,15 +92,15 @@ jobs:
       - name: Recheck and pack the verified build
         working-directory: chain-runtimes/zcash
         env:
-          RELEASE_VERSION: ${{ inputs.version }}
-          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
         run: python3 scripts/package-release.py pack --version "$RELEASE_VERSION" --tag "$RELEASE_TAG" --revision "$GITHUB_SHA"
       - name: Publish the runtime and keys pair
         working-directory: chain-runtimes/zcash
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          RELEASE_VERSION: ${{ inputs.version }}
-          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
         run: |
           npm publish "dist/onekey-zcash-runtime-${RELEASE_VERSION}.tgz" --ignore-scripts --access public --tag "$RELEASE_TAG"
           npm publish "dist/onekey-zcash-keys-${RELEASE_VERSION}.tgz" --ignore-scripts --access public --tag "$RELEASE_TAG"

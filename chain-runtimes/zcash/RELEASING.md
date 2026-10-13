@@ -35,12 +35,17 @@ archives or manually rewrite the manifest to make an old artifact pass.
 
 ## Publish
 
-For `rc` and `latest`, merge the release changes to `main` first; the
-**Publish Zcash runtime** workflow refuses other branches for those tags. An
-`alpha` can be published from any branch. The workflow is manual, accepts the
-exact version and `alpha`/`rc`/`latest` tag, reuses the build/test workflow, verifies the downloaded artifact
-again, and publishes only these two npm packages. The native-module publish
-workflow is unchanged.
+The **Publish Zcash runtime** workflow has two triggers:
+
+- **Manual run, alpha only.** Run it from any branch with the exact workspace
+  version (`X.Y.Z-alpha.N`). Any other version is refused.
+- **Merge to `main`, rc and latest only.** When a change to `Cargo.toml` lands
+  on `main` with an `X.Y.Z-rc.N` or `X.Y.Z` version not yet on npm, it publishes
+  with the matching `rc` or `latest` tag. Alpha versions on `main` are skipped.
+
+Both reuse the build/test workflow, verify the downloaded artifact again, and
+publish only these two npm packages. The native-module publish workflow is
+unchanged.
 
 Repository maintainers must configure `NPM_TOKEN` with permission to publish
 `onekey-zcash-runtime` and `onekey-zcash-keys`. Configure required reviewers for

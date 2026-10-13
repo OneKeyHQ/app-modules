@@ -1,17 +1,15 @@
 name: Monero runtime
 
+# Runs when runtime code changes. Edits to these workflow files alone do not
+# trigger it (main may not carry the runtime yet); run it manually instead.
 on:
   pull_request:
     paths:
       - 'chain-runtimes/monero/**'
-      - '.github/workflows/monero-runtime.yml'
-      - '.github/workflows/monero-publish.yml'
   push:
     branches: [main]
     paths:
       - 'chain-runtimes/monero/**'
-      - '.github/workflows/monero-runtime.yml'
-      - '.github/workflows/monero-publish.yml'
   workflow_dispatch:
   workflow_call:
 

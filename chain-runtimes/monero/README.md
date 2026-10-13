@@ -24,6 +24,14 @@ objects and silently writes an empty archive; linking then fails with
 `build-wasm.sh` finds Homebrew's clang and `llvm-ar` on Apple Silicon and Intel;
 `.cargo/config.toml` sets the Apple Silicon archiver for direct `cargo` builds.
 
+## Release
+
+`onekey-monero-runtime` follows the Zcash runtime's release rules: a manual
+**Publish Monero runtime** run publishes `X.Y.Z-alpha.N` from any branch, and
+`rc`/`latest` versions publish only when a `Cargo.toml` version change is merged
+to `main`. Locally, `python3 scripts/package-release.py --version <v> --tag <t>`
+packs the archive into `dist/` without publishing.
+
 ## Host contract
 
 1. **Import key images on unlock.** A view-only wallet cannot detect spends, so the
