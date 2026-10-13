@@ -1,70 +1,114 @@
 # OneKey Monero Runtime
 
-monero-oxide 之上的钱包状态层。**它提供密码学、扫描器与交易构造；存储这一层
-是我们自己写的，因为上游不提供。**
+Wallet state layer over monero-oxide. monero-oxide provides cryptography, scanning
+and transaction construction; this crate adds the storage it lacks: SQLite with
+incremental, transactional writes.
 
-## 结构
-
-```
-error.rs     错误码契约（跨 wasm 边界稳定）
-storage.rs   SQLite 连接、OPFS VFS、落盘屏障
-schema.rs    表结构与迁移
-keys.rs      观察密钥对、地址、子地址派生
-wallet.rs    库句柄、身份管理、子地址注册表
-scan.rs      扫描循环 + 三道校验 + 落库
-sync.rs      有界推进编排（拉块 → 扫描 → 记进度）
-query.rs     余额、历史、可花输出
-spend.rs     key image 导入、选币、预留、构造、签名、广播
-review.rs    签名前按用户确认的请求校验收款方、金额、手续费与找零
-pool.rs      自己广播、尚未上链的交易的存活检查
-network.rs   monerod 传输（浏览器 fetch / 原生 reqwest）
-runtime.rs   跨调用会话状态与并发防线
-bindgen.rs   wasm 边界
-```
-
-## 必须知道的事
-
-**一、观察钱包检测不到花费。** Monero 的花费检测需要 key image，而 key image
-需要花费私钥。这是协议性质不是实现取舍。所以宿主必须在解锁时调一次
-`importKeyImages`，否则余额会**偏高**（已花的看起来还在）。余额查询里的
-`unverifiableAtomic` 就是这部分的金额，宿主应当据此提示用户。
-
-**二、节点声称的 RingCT 输出索引不可验证。** 上游文档明确要求客户端自己维护
-这个索引并比对，不一致应当断开。`scan.rs` 实现了这个独立推算，不一致时报
-`RINGCT_INDEX_MISMATCH`。索引错了的后果是构环时取错输出、交易被网络拒绝，
-而且很难从现象反推。
-
-**三、调度归宿主。** `syncStep` 一次最多扫 `maxBlocks` 个块就返回，**永远不会
-自己循环到同步完成**。什么时候扫、扫多少、失败怎么退避全由宿主 TS 决定。
-
-**四、节点必须和钱包在同一个网络上。** 连接时按创世块认出节点所在的链，钱包库与
-节点网络不一致时报 `NODE_NETWORK_MISMATCH`。`chainTip` 在开库前调用，返回里带
-`network`，宿主定 birthday 前须自行比对。
-
-**五、广播结局 `unknown` 不是失败。** 交易在广播前已记为在途、输入已标已花；
-结局不确定时由在途检查或扫链判定。宿主不得据此提示失败、引导重发。
-
-## 构建
+## Build
 
 ```bash
-./scripts/build-wasm.sh          # release 到 pkg/
-cargo test --workspace           # 原生测试
+cargo test --workspace                                    # native tests
 cargo check --workspace --target wasm32-unknown-unknown
-./scripts/build-node-pkg.sh && node scripts/smoke.js   # wasm 端到端冒烟
+./scripts/build-wasm.sh                                   # release build to pkg/
+./scripts/build-node-pkg.sh && node scripts/smoke.js      # wasm end-to-end smoke test
 ```
 
-**macOS 上必须有 llvm-ar**（`brew install llvm`）。系统自带的 `/usr/bin/ar`
-读不懂 wasm 目标文件，会把编译好的 `.o` **静默**打成一个 96 字节的空归档，
-链接期报一串 `undefined symbol: sqlite3_*`，而编译阶段不报任何错。归档器由
-`.cargo/config.toml` 指定。
+`smoke.js` runs offline; set `XMR_NODE=<monerod RPC URL>` to add node checks.
+Builds need the `wasm-bindgen-cli` version pinned in `Cargo.lock`.
 
-排查提示：本机 clang 是能编 wasm32 的，别往编译器上查。
-另外 `cargo check` **不链接**，这个坑在 check 下完全看不见。
+**macOS needs `llvm-ar`** (`brew install llvm`). `/usr/bin/ar` cannot read wasm
+objects and silently writes an empty archive; linking then fails with
+`undefined symbol: sqlite3_*`. `cargo check` does not link, so it never shows this.
+The archiver is set in `.cargo/config.toml`.
 
-## 与 Zcash runtime 的关系
+## Host contract
 
-两条链各自独立的工作区，没有代码依赖。`crates/monero-runtime/build.rs`（SQLite 的
-wasm 链接胶水，与链无关）与 Zcash 那边基本相同，改一边记得同步另一边。
+1. **Import key images on unlock.** A view-only wallet cannot detect spends, so the
+   balance stays too high until `importKeyImages` is called. It covers only blocks
+   scanned afterwards; earlier spends need a rewind and rescan. `balance` reports the
+   unverified part as `unverifiableAtomic`.
+2. **The node must be on the wallet's network.** The node's chain is identified by its
+   genesis block; a mismatch fails with `NODE_NETWORK_MISMATCH`. `chainTip` works
+   without an open wallet and returns `network`; compare it before picking a birthday.
+3. **An `unknown` broadcast is not a failure.** The send is recorded and its inputs
+   marked spent before broadcasting; pool checks and scanning settle it. Never report
+   it as failed or prompt a resend.
+4. **The host schedules sync.** `syncStep` scans at most `maxBlocks` and returns; it
+   never loops to completion. Timing, batch size and backoff belong to the host.
+5. **Register subaddresses before use.** Funds to unregistered subaddresses go
+   undetected.
 
-一个刻意的差异：`runtime.rs` 在这里**不加 wasm-only 门**，所以并发防线（BUSY 守卫、
-世代号）在原生 `cargo test` 里也能测。
+The scanner derives RingCT output indexes itself and fails with
+`RINGCT_INDEX_MISMATCH` when the node's claim differs.
+
+## API
+
+Values cross the boundary as strings, numbers, booleans, bytes or JSON strings.
+Errors carry a stable `code` and structured `params`; user-facing text belongs to the host.
+
+```
+init() / dependencyVersions()
+openWallet(dbName, network) / closeWallet() / deleteWallet(dbName)
+setNodeUrl(url) / setRequestHandler(handler)    no default node
+chainTip()                                      { height, network }
+
+deriveAccount(network, bip32PrivateKeyHex) / spendScalar(bip32PrivateKeyHex)
+deriveSubaddress(network, spendPub, viewPriv, major, minor)
+validateAddress(network, address)
+addAccount(uuid, spendPub, viewPriv, birthday) / listAccounts() / removeAccount(uuid)
+registerSubaddress(accountId, major, minor, label?)
+importKeyImages(accountId, spendPrivateKeyHex)
+
+updateChainTip(accountId, tip) / syncStep(accountId, maxBlocks) / syncPeek(accountId)
+rewindTo(accountId, height, tip)                destructive
+balance(accountId, chainTip?) / history(accountId, limit, offset)
+transactionDetails(accountId, txid)
+
+prepareTransaction(accountId, recipientsJson, maxSend, reservationId, chainTip, priority)
+verifyTransaction(signableHex, reviewJson)
+markReservationSigned(reservationId, expectedInputs)
+signTransaction(signableHex, spendPrivateKeyHex, reviewJson)
+broadcastTransaction(accountId, rawHex, reservationId, chainTip, outgoingAtomic?, changeAtomic?)
+releaseReservation(reservationId)
+diagDatabase()
+```
+
+### Sending
+
+```
+prepareTransaction      select and reserve inputs, build; no spend key
+verifyTransaction       check recipient, amount, fee and change against the review
+markReservationSigned   claim the reserved inputs for this review
+signTransaction         verify again, then sign; no network, no DB
+broadcastTransaction    record, then broadcast → { txid, broadcast: accepted | unknown }
+```
+
+`BROADCAST_REJECTED` is thrown only when the node explicitly rejects a first
+broadcast for a reason other than double spend; the record is then undone and the
+inputs released. Unsigned reservations expire after 1 hour, signed ones after 24
+hours. Call `releaseReservation` when the user cancels.
+
+## Layout
+
+```
+error.rs     error codes (stable across the wasm boundary)
+storage.rs   SQLite connection, OPFS VFS, durability barrier
+schema.rs    tables and migrations
+keys.rs      view keys, addresses, subaddress derivation
+wallet.rs    DB handle, identities, subaddress registry
+scan.rs      scan loop, output checks, persistence
+sync.rs      bounded sync (fetch → scan → record progress)
+query.rs     balance, history, spendable outputs
+spend.rs     key images, selection, reservation, build, sign, broadcast
+review.rs    pre-signing check of recipient, amount, fee and change
+pool.rs      liveness check of our unconfirmed sends
+network.rs   monerod transport and node network check
+runtime.rs   session state and concurrency guards
+bindgen.rs   wasm boundary
+```
+
+## Relation to the Zcash runtime
+
+Separate workspaces with no code dependency. `crates/monero-runtime/build.rs` (wasm
+SQLite link glue) mirrors the Zcash one; keep them in sync. Unlike Zcash, `runtime.rs`
+is not wasm-only, so its concurrency guards are covered by native tests.

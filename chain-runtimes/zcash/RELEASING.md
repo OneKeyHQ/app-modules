@@ -11,10 +11,9 @@ workspace entries in `Cargo.lock` with `cargo check --workspace --offline` and
 review the lockfile diff; dependency upgrades are a separate change.
 
 Release candidates use `X.Y.Z-rc.N` on the npm `rc` tag; final releases use
-`latest`. Runtime and keys
-always share a version and source commit. The benchmark is shipped as a runtime
-subdirectory to preserve the App developer tools' existing import path; it is
-not a third published package and production App bundles still exclude it.
+`latest`. Runtime and keys always share a version and source commit. The
+benchmark ships as a runtime subdirectory to keep the App developer tools' import
+path; it is not a third package, and production App bundles exclude it.
 
 ## Prepare and verify
 
