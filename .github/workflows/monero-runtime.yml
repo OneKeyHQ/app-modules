@@ -1,7 +1,7 @@
 name: Monero runtime
 
-# Builds and tests on runtime changes. A manual run also publishes the branch's
-# alpha version; a push to main publishes a new rc or latest version.
+# Builds and tests on runtime changes. A manual run also publishes to npm:
+# prerelease versions to `next`, release versions (from main only) to `latest`.
 on:
   pull_request:
     paths:
@@ -24,38 +24,6 @@ jobs:
         working-directory: chain-runtimes/monero
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '24.x'
-          registry-url: https://registry.npmjs.org
-      # Manual runs publish the branch's alpha version to npm next; rc and
-      # latest versions publish only when merged to main.
-      - name: Select release channel
-        id: channel
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-        run: |
-          VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')
-          case "$VERSION" in
-            *-alpha.*) TAG=next ;;
-            *-rc.*) TAG=rc ;;
-            *) TAG=latest ;;
-          esac
-          PUBLISH=false
-          if [ "$EVENT_NAME" = workflow_dispatch ]; then
-            test "$TAG" = next || { echo "Manual runs publish alpha versions only; merge $VERSION to main instead" >&2; exit 1; }
-            PUBLISH=true
-          elif [ "$EVENT_NAME" = push ] && [ "$TAG" != next ]; then
-            PUBLISH=true
-          fi
-          if [ "$PUBLISH" = true ] && npm view "onekey-monero-runtime@$VERSION" version >/dev/null 2>&1; then
-            test "$EVENT_NAME" = push || { echo "onekey-monero-runtime@$VERSION is already on npm" >&2; exit 1; }
-            PUBLISH=false
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
-          echo "Version $VERSION, npm dist-tag $TAG, publish: $PUBLISH" >> "$GITHUB_STEP_SUMMARY"
       - name: Install Binaryen 133 (same wasm-opt as local builds)
         run: |
           BINARYEN=version_133
@@ -83,16 +51,24 @@ jobs:
           CC_wasm32_unknown_unknown: /usr/bin/clang
           AR_wasm32_unknown_unknown: /usr/bin/llvm-ar
         run: bash scripts/build-wasm.sh release
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.x'
+          registry-url: https://registry.npmjs.org
       - name: Pack npm archive
-        env:
-          VERSION: ${{ steps.channel.outputs.version }}
-          TAG: ${{ steps.channel.outputs.tag }}
-        run: python3 scripts/package-release.py --version "$VERSION" --tag "$TAG"
-      - name: Publish runtime
-        if: steps.channel.outputs.publish == 'true'
+        run: |
+          VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')
+          TAG=latest
+          if [[ "$VERSION" == *-* ]]; then TAG=next; fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          python3 scripts/package-release.py --version "$VERSION" --tag "$TAG"
+      - name: Publish
+        if: github.event_name == 'workflow_dispatch'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          VERSION: ${{ steps.channel.outputs.version }}
-          TAG: ${{ steps.channel.outputs.tag }}
         run: |
+          if [ "$TAG" = latest ] && [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "Release versions publish from main only" >&2; exit 1
+          fi
           npm publish "dist/onekey-monero-runtime-${VERSION}.tgz" --ignore-scripts --access public --tag "$TAG"
