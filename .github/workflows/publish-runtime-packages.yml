@@ -1,14 +1,8 @@
 name: publish-runtime-packages
 
-# Builds and tests every chain runtime that provides the CI hook
-# chain-runtimes/<runtime>/scripts/ci.sh, which tests, builds and packs its
-# npm tarballs into dist/. A manual run also publishes each package whose
-# version is not on npm yet; a runtime may only publish onekey-<runtime>-*, and
-# branches other than main publish alpha versions only.
-# Pull requests never reach the publish job or its credentials. npm prefers
-# trusted publishing (OIDC) once a package has it configured and falls back to
-# NPM_TOKEN otherwise; reviewers on the runtime-npm-publish environment, when
-# configured, gate every publish.
+# Every chain-runtimes/<runtime>/scripts/ci.sh tests, builds and packs its npm
+# tarballs into dist/. A manual run publishes versions missing from npm: only
+# onekey-<runtime>-* packages, and only alpha versions off main.
 on:
   pull_request:
     paths:
@@ -75,15 +69,13 @@ jobs:
           path: chain-runtimes/${{ matrix.runtime }}/dist/*.tgz
           if-no-files-found: error
 
-  # Separate job so the publish identity never shares a runner with build
-  # code, which can rewrite PATH and env for later steps of the same job.
+  # Separate job so the npm token never shares a runner with build code,
+  # which can rewrite PATH and env for later steps of the same job.
   publish:
-    needs: build
+    needs: [runtimes, build]
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     environment: runtime-npm-publish
-    permissions:
-      id-token: write
     steps:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
@@ -96,27 +88,31 @@ jobs:
       - name: Publish versions missing from npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          RUNTIMES: ${{ needs.runtimes.outputs.list }}
         run: |
           package_of() {
             tar -xOzf "$1" package/package.json | node -p 'const p = JSON.parse(require("fs").readFileSync(0)); `${p.name}@${p.version}`'
           }
-          # Check every tarball before publishing any of them.
-          for tgz in dist/runtime-*/*.tgz; do
-            runtime=$(basename "$(dirname "$tgz")")
-            runtime=${runtime#runtime-}
-            pkg=$(package_of "$tgz")
-            if [[ "$pkg" != "onekey-$runtime-"* ]]; then
-              echo "::error::$tgz is $pkg; a runtime may only publish onekey-$runtime-* packages" >&2
-              exit 1
-            fi
-            if [ "$GITHUB_REF" != refs/heads/main ]; then
-              if [[ "${pkg##*@}" != *-alpha.* ]]; then
-                echo "::error::$pkg: branches other than main publish alpha versions only" >&2
+          # Check every tarball before publishing any of them; artifacts from
+          # runtimes outside the discovered list are ignored.
+          tarballs=()
+          for runtime in $(jq -r '.[]' <<<"$RUNTIMES"); do
+            for tgz in "dist/runtime-$runtime"/*.tgz; do
+              pkg=$(package_of "$tgz")
+              if [[ "$pkg" != "onekey-$runtime-"* ]]; then
+                echo "::error::$tgz is $pkg; a runtime may only publish onekey-$runtime-* packages" >&2
                 exit 1
               fi
-            fi
+              if [ "$GITHUB_REF" != refs/heads/main ]; then
+                if [[ "${pkg##*@}" != *-alpha.* ]]; then
+                  echo "::error::$pkg: branches other than main publish alpha versions only" >&2
+                  exit 1
+                fi
+              fi
+              tarballs+=("$tgz")
+            done
           done
-          for tgz in dist/runtime-*/*.tgz; do
+          for tgz in "${tarballs[@]}"; do
             pkg=$(package_of "$tgz")
             if npm view "$pkg" version >/dev/null 2>&1; then
               echo "$pkg already published"
