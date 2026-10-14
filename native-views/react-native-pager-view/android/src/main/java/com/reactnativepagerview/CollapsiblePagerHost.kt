@@ -474,6 +474,14 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     releaseRefreshForeground()
     val index = logicalChildren.indexOf(child)
     if (index < 0) return
+    if (index >= PAGE_SLOT_OFFSET) {
+      val observed = observedRecyclerView ?: observedOwnedScroller ?: observedNativeScroller
+      val removingObservedPage = observed != null && isDescendant(observed, child)
+      cancelPageTransitionForPageMutation()
+      cancelPagerTop()
+      detachPrimaryScrollObserver(recordOffset = false)
+      if (removingObservedPage) observedPageRemoved = true
+    }
     logicalChildren.removeAt(index)
     when (index) {
       0 -> {
@@ -485,12 +493,6 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
         stickyHeaderView = null
       }
       else -> {
-        val observed = observedRecyclerView ?: observedOwnedScroller ?: observedNativeScroller
-        if (observed != null && isDescendant(observed, child)) {
-          // The page detaches only later; its scroller must not keep writing this key.
-          detachPrimaryScrollObserver(recordOffset = false)
-          observedPageRemoved = true
-        }
         when (val scrollable =
           findExplicitNativeScrollerInView(child) ?: findVerticalScrollableView(child)) {
           is RecyclerView -> restoreRecyclerInsets(scrollable)
@@ -498,14 +500,17 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
           is NativeScrollerViewport -> restoreOwnedScrollerInsets(scrollable)
         }
         adapter.removePage(child)
+        selectedPage = if (adapter.itemCount == 0) 0 else selectedPage.coerceIn(0, adapter.itemCount - 1)
         log("page-detach slot=${index - PAGE_SLOT_OFFSET} nativePages=${adapter.itemCount}")
       }
     }
   }
 
   fun removeAllReactChildren() {
+    cancelPageTransitionForPageMutation()
+    cancelPagerTop()
     releaseRefreshForeground()
-    detachPrimaryScrollObserver()
+    detachPrimaryScrollObserver(recordOffset = false)
     pageRestoreRequests.clear()
     pendingPageRestores.clear()
     commandBodyKeys.clear()
@@ -534,6 +539,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     stickyHeaderView = null
     logicalChildren.clear()
     adapter.clear()
+    selectedPage = 0
     hasAppliedInitialPage = false
     log("pages-clear")
   }
@@ -542,9 +548,28 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
 
   fun reactChildAt(index: Int) = logicalChildren[index]
 
+  private fun cancelPageTransitionForPageMutation() {
+    if (transitionHeaderOffsets != null) {
+      val keys = transitionAlignedViews.values.toTypedArray().toMutableSet()
+      keys.add(pageKey(transitionSourcePage))
+      transitionTargetPage?.let { keys.add(pageKey(it)) }
+      for (key in keys) {
+        displayBodyOverrides.remove(key)
+        displayRecyclerAnchors.remove(key)
+      }
+    }
+    transitionHeaderOffsets = null
+    transitionPageOffsets = null
+    transitionTargetPage = null
+    transitionSourceRecyclerAnchor = null
+    transitionSourceDisplayBody = 0
+    transitionAlignedViews.clear()
+    resumeTransitionSource = null
+  }
+
   internal fun beginPageTransition(target: Int? = null) {
     cancelPagerTop()
-    if (!nativeSmoothHeaderScrollEnabled || headerHeightPx <= 0) return
+    if (adapter.itemCount == 0 || !nativeSmoothHeaderScrollEnabled || headerHeightPx <= 0) return
     if (transitionHeaderOffsets == null) {
       transitionSourceDisplayBody = primaryScrollableForPage(selectedPage)?.let(::verticalScrollOffset) ?: 0
       transitionSourceRecyclerAnchor = (primaryScrollableForPage(selectedPage) as? RecyclerView)?.let(::captureRecyclerAnchor)
@@ -578,6 +603,11 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   }
 
   private fun finishPageTransition(position: Int) {
+    if (adapter.itemCount == 0) {
+      cancelPageTransitionForPageMutation()
+      selectedPage = 0
+      return
+    }
     val headers = transitionHeaderOffsets ?: return
     detachPrimaryScrollObserver(recordOffset = false)
     releaseRefreshForeground()
