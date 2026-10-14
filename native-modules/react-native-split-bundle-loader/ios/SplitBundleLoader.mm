@@ -416,7 +416,33 @@ typedef NS_ENUM(NSInteger, ESegmentEvalError) {
     ESegmentEvalErrorTimeout = 6,
 };
 
-@implementation SplitBundleLoader
+static NSString *const kSBLBuiltinBundleSentinel = @"__BUILTIN__";
+
+@implementation SplitBundleLoader {
+    os_unfair_lock _pinnedOtaLock;
+    NSString *_Nullable _pinnedOtaBundlePath;
+}
+
+- (instancetype)init
+{
+    if (self = [super init]) {
+        _pinnedOtaLock = OS_UNFAIR_LOCK_INIT;
+    }
+    return self;
+}
+
+- (nullable NSString *)pinnedOtaBundlePath
+{
+    os_unfair_lock_lock(&_pinnedOtaLock);
+    NSString *cached = _pinnedOtaBundlePath;
+    if (!cached) {
+        NSString *resolved = [SplitBundleLoader otaBundlePath];
+        cached = (resolved.length > 0) ? [resolved copy] : kSBLBuiltinBundleSentinel;
+        _pinnedOtaBundlePath = cached;
+    }
+    os_unfair_lock_unlock(&_pinnedOtaLock);
+    return [cached isEqualToString:kSBLBuiltinBundleSentinel] ? nil : cached;
+}
 
 // Reflectively asks bundle-update whether the current bundle's manifest is
 // required to ship per-segment SHA-256s (three-bundle / split-thread format).
@@ -486,6 +512,7 @@ typedef NS_ENUM(NSInteger, ESegmentEvalError) {
 - (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:
     (const facebook::react::ObjCTurboModule::InitParams &)params
 {
+    [self pinnedOtaBundlePath];
     [SBLLogger info:@"SplitBundleLoader module initialized"];
     return std::make_shared<facebook::react::NativeSplitBundleLoaderSpecJSI>(params);
 }
@@ -761,7 +788,7 @@ typedef NS_ENUM(NSInteger, ESegmentEvalError) {
         NSString *nativeVersion = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"";
         NSString *bundleVersion = @"";
 
-        NSString *otaPath = [SplitBundleLoader otaBundlePath];
+        NSString *otaPath = [self pinnedOtaBundlePath];
         if (otaPath && [[NSFileManager defaultManager] fileExistsAtPath:otaPath]) {
             sourceKind = @"ota";
             bundleRoot = [otaPath stringByDeletingLastPathComponent];
@@ -789,8 +816,14 @@ typedef NS_ENUM(NSInteger, ESegmentEvalError) {
 /// Returns nil if the segment file is not found.
 + (nullable NSString *)resolveAbsolutePath:(NSString *)relativePath
 {
+    return [SplitBundleLoader resolveAbsolutePath:relativePath
+                                    otaBundlePath:[SplitBundleLoader otaBundlePath]];
+}
+
++ (nullable NSString *)resolveAbsolutePath:(NSString *)relativePath
+                             otaBundlePath:(nullable NSString *)otaPath
+{
     // 1. Try OTA bundle root first
-    NSString *otaPath = [SplitBundleLoader otaBundlePath];
     if (otaPath) {
         // Standardize root so hasPrefix matches candidate (iOS resolves /private/var → /var).
         NSString *otaRoot = [[otaPath stringByDeletingLastPathComponent] stringByStandardizingPath];
@@ -802,6 +835,8 @@ typedef NS_ENUM(NSInteger, ESegmentEvalError) {
         if (otaPrefixOk && otaExists) {
             return candidate;
         }
+        [SBLLogger warn:[NSString stringWithFormat:@"[resolveAbs] rel=%@ missing in active OTA bundle root — refusing builtin fallback", relativePath]];
+        return nil;
     } else {
         [SBLLogger info:[NSString stringWithFormat:@"[resolveAbs] rel=%@ otaPath=(nil) — skipping OTA", relativePath]];
     }
@@ -836,7 +871,8 @@ typedef NS_ENUM(NSInteger, ESegmentEvalError) {
             return;
         }
 
-        NSString *absolutePath = [SplitBundleLoader resolveAbsolutePath:relativePath];
+        NSString *absolutePath = [SplitBundleLoader resolveAbsolutePath:relativePath
+                                                          otaBundlePath:[self pinnedOtaBundlePath]];
         if (!absolutePath) {
             reject(@"SPLIT_BUNDLE_NOT_FOUND",
                    [NSString stringWithFormat:@"Segment file not found: %@", relativePath],
@@ -1068,7 +1104,8 @@ typedef NS_ENUM(NSInteger, ESegmentEvalError) {
             return;
         }
 
-        NSString *absolutePath = [SplitBundleLoader resolveAbsolutePath:relativePath];
+        NSString *absolutePath = [SplitBundleLoader resolveAbsolutePath:relativePath
+                                                          otaBundlePath:[self pinnedOtaBundlePath]];
 
         if (!absolutePath) {
             reject(@"SPLIT_BUNDLE_NOT_FOUND",

@@ -139,7 +139,71 @@ object BundleCryptoCore {
   // MARK: - GPG cleartext (bundle form): body JSON -> sha256
   // Ported verbatim from ReactNativeBundleUpdate.verifyGPGAndExtractSha256.
 
-  fun verifyGpgCleartext(signedMessage: String): VerifyResult {
+  private fun parseMetadataJsonFields(jsonText: String): Map<String, String> {
+    return try {
+      val json = JSONObject(jsonText)
+      val result = mutableMapOf<String, String>()
+      val keys = json.keys()
+      while (keys.hasNext()) {
+        val key = keys.next()
+        val value = json.optString(key, "")
+        if (value.isNotEmpty()) {
+          result[key] = value
+        }
+      }
+      result
+    } catch (e: RuntimeException) {
+      if (e.message?.contains("Stub!") == true) {
+        val trimmed = jsonText.trim()
+        if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+          throw IllegalArgumentException("Invalid JSON object")
+        }
+        val result = mutableMapOf<String, String>()
+        val fieldPattern = "\"([^\"]+)\"\\s*:\\s*\"([^\"]*)\"".toRegex()
+        for (match in fieldPattern.findAll(trimmed)) {
+          result[match.groupValues[1]] = match.groupValues[2]
+        }
+        result
+      } else {
+        throw e
+      }
+    }
+  }
+
+  private fun extractDetachedAscSha256(cleartextBody: String, expectedFileName: String?): String? {
+    val trimmed = cleartextBody.trim()
+    if (expectedFileName.isNullOrEmpty()) {
+      return trimmed.split("\\s+".toRegex()).firstOrNull()?.lowercase() ?: ""
+    }
+    val nonEmptyLines = trimmed.lines().map { it.trim() }.filter { it.isNotEmpty() }
+    if (nonEmptyLines.isEmpty()) {
+      return ""
+    }
+    var sawFileNameColumn = false
+    for (line in nonEmptyLines) {
+      val tokens = line.split("\\s+".toRegex())
+      if (tokens.size >= 2) {
+        sawFileNameColumn = true
+        val rawName = tokens[1].removePrefix("*")
+        val fileName = File(rawName).name
+        if (fileName == expectedFileName) {
+          return tokens[0].lowercase()
+        }
+      }
+    }
+    if (sawFileNameColumn) {
+      return null
+    }
+    return nonEmptyLines[0].split("\\s+".toRegex())[0].lowercase()
+  }
+
+  @JvmOverloads
+  fun verifyGpgCleartext(
+    signedMessage: String,
+    expectedAppVersion: String? = null,
+    expectedBundleVersion: String? = null,
+    expectedAppType: String? = null,
+  ): VerifyResult {
     if (!signedMessage.contains("-----BEGIN PGP SIGNED MESSAGE-----")) {
       return VerifyResult(false, null, "NOT_PGP_SIGNED_MESSAGE")
     }
@@ -194,11 +258,35 @@ object BundleCryptoCore {
       }
 
       // Signature verified, parse the cleartext JSON.
-      val json = JSONObject(cleartextBody.trim())
-      val sha256 = json.optString("sha256", "")
+      val fields = parseMetadataJsonFields(cleartextBody.trim())
+      val sha256 = fields["sha256"].orEmpty()
       if (sha256.isEmpty()) {
         OneKeyLog.error("BundleCrypto", "No sha256 field in signed cleartext JSON")
         return VerifyResult(false, null, "NO_SHA256_FIELD")
+      }
+
+      val signedFileName = fields["fileName"].orEmpty()
+      if (signedFileName.isNotEmpty() && signedFileName != "metadata.json") {
+        OneKeyLog.error("BundleCrypto", "Invalid signed metadata fileName: $signedFileName")
+        return VerifyResult(false, null, "INVALID_METADATA_FILENAME")
+      }
+
+      val signedAppType = fields["appType"].orEmpty()
+      if (!expectedAppType.isNullOrEmpty() && signedAppType.isNotEmpty() && signedAppType != expectedAppType) {
+        OneKeyLog.error("BundleCrypto", "Signed metadata appType mismatch: expected=$expectedAppType, actual=$signedAppType")
+        return VerifyResult(false, null, "METADATA_APPTYPE_MISMATCH")
+      }
+
+      val signedAppVersion = fields["appVersion"].orEmpty()
+      if (!expectedAppVersion.isNullOrEmpty() && signedAppVersion.isNotEmpty() && signedAppVersion != expectedAppVersion) {
+        OneKeyLog.error("BundleCrypto", "Signed metadata appVersion mismatch: expected=$expectedAppVersion, actual=$signedAppVersion")
+        return VerifyResult(false, null, "METADATA_APPVERSION_MISMATCH")
+      }
+
+      val signedBundleVersion = fields["bundleVersion"].orEmpty()
+      if (!expectedBundleVersion.isNullOrEmpty() && signedBundleVersion.isNotEmpty() && signedBundleVersion != expectedBundleVersion) {
+        OneKeyLog.error("BundleCrypto", "Signed metadata bundleVersion mismatch: expected=$expectedBundleVersion, actual=$signedBundleVersion")
+        return VerifyResult(false, null, "METADATA_BUNDLEVERSION_MISMATCH")
       }
 
       OneKeyLog.info("BundleCrypto", "GPG cleartext verification succeeded")
@@ -215,7 +303,11 @@ object BundleCryptoCore {
   // only difference from verifyGpgCleartext is the body parsing (no JSON — first
   // whitespace token must be a 64-char lowercase hex sha256).
 
-  fun verifyDetachedAsc(ascContent: String): VerifyResult {
+  @JvmOverloads
+  fun verifyDetachedAsc(
+    ascContent: String,
+    expectedFileName: String? = null,
+  ): VerifyResult {
     if (!ascContent.contains("-----BEGIN PGP SIGNED MESSAGE-----")) {
       return VerifyResult(false, null, "NOT_PGP_SIGNED_MESSAGE")
     }
@@ -251,7 +343,8 @@ object BundleCryptoCore {
       }
 
       // Extract SHA256 from verified cleartext.
-      val sha256 = cleartextBody.trim().split("\\s+".toRegex())[0].lowercase()
+      val sha256 = extractDetachedAscSha256(cleartextBody, expectedFileName)
+        ?: return VerifyResult(false, null, "FILENAME_MISMATCH")
       if (sha256.length != 64 || !sha256.all { it in '0'..'9' || it in 'a'..'f' }) {
         return VerifyResult(false, null, "SHA256_TOKEN_INVALID")
       }

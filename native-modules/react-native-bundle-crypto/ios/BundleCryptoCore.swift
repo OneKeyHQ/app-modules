@@ -128,7 +128,49 @@ public enum BundleCryptoCore {
   // MARK: - GPG cleartext (bundle form): body JSON -> sha256
   // Ported verbatim from ReactNativeBundleUpdate.verifyGPGAndExtractSha256.
 
-  public static func verifyGpgCleartext(_ signedMessage: String) -> (valid: Bool, sha256: String?, reason: String?) {
+  private static func extractDetachedAscSha256(_ cleartextBody: String, expectedFileName: String?) -> String? {
+    let trimmed = cleartextBody.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let expectedFileName = expectedFileName, !expectedFileName.isEmpty else {
+      return trimmed
+        .split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\n" || $0 == "\r" })
+        .first
+        .map { String($0).lowercased() } ?? ""
+    }
+    let lines = trimmed
+      .components(separatedBy: .newlines)
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+    if lines.isEmpty {
+      return ""
+    }
+    var sawFileNameColumn = false
+    for line in lines {
+      let tokens = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
+      if tokens.count >= 2 {
+        sawFileNameColumn = true
+        let rawToken = String(tokens[1])
+        let stripped = rawToken.hasPrefix("*") ? String(rawToken.dropFirst()) : rawToken
+        let fileName = (stripped as NSString).lastPathComponent
+        if fileName == expectedFileName {
+          return String(tokens[0]).lowercased()
+        }
+      }
+    }
+    if sawFileNameColumn {
+      return nil
+    }
+    return lines[0]
+      .split(whereSeparator: { $0 == " " || $0 == "\t" })
+      .first
+      .map { String($0).lowercased() } ?? ""
+  }
+
+  public static func verifyGpgCleartext(
+    _ signedMessage: String,
+    expectedAppVersion: String? = nil,
+    expectedBundleVersion: String? = nil,
+    expectedAppType: String? = nil
+  ) -> (valid: Bool, sha256: String?, reason: String?) {
     // Check if this looks like a PGP signed message
     guard signedMessage.contains("-----BEGIN PGP SIGNED MESSAGE-----") else {
       return (false, nil, "NOT_PGP_SIGNED_MESSAGE")
@@ -198,9 +240,38 @@ public enum BundleCryptoCore {
     // 7. Parse JSON and extract sha256
     guard let jsonData = text.data(using: .utf8),
           let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-          let sha256 = json["sha256"] as? String else {
+          let sha256 = json["sha256"] as? String,
+          !sha256.isEmpty else {
       OneKeyLog.error("BundleCrypto", "Failed to parse cleartext JSON")
       return (false, nil, "JSON_PARSE_FAILED")
+    }
+
+    if let signedFileName = json["fileName"] as? String,
+       !signedFileName.isEmpty,
+       signedFileName != "metadata.json" {
+      OneKeyLog.error("BundleCrypto", "Invalid signed metadata fileName: \(signedFileName)")
+      return (false, nil, "INVALID_METADATA_FILENAME")
+    }
+
+    if let expectedAppType = expectedAppType, !expectedAppType.isEmpty,
+       let signedAppType = json["appType"] as? String, !signedAppType.isEmpty,
+       signedAppType != expectedAppType {
+      OneKeyLog.error("BundleCrypto", "Signed metadata appType mismatch: expected=\(expectedAppType), actual=\(signedAppType)")
+      return (false, nil, "METADATA_APPTYPE_MISMATCH")
+    }
+
+    if let expectedAppVersion = expectedAppVersion, !expectedAppVersion.isEmpty,
+       let signedAppVersion = json["appVersion"] as? String, !signedAppVersion.isEmpty,
+       signedAppVersion != expectedAppVersion {
+      OneKeyLog.error("BundleCrypto", "Signed metadata appVersion mismatch: expected=\(expectedAppVersion), actual=\(signedAppVersion)")
+      return (false, nil, "METADATA_APPVERSION_MISMATCH")
+    }
+
+    if let expectedBundleVersion = expectedBundleVersion, !expectedBundleVersion.isEmpty,
+       let signedBundleVersion = json["bundleVersion"] as? String, !signedBundleVersion.isEmpty,
+       signedBundleVersion != expectedBundleVersion {
+      OneKeyLog.error("BundleCrypto", "Signed metadata bundleVersion mismatch: expected=\(expectedBundleVersion), actual=\(signedBundleVersion)")
+      return (false, nil, "METADATA_BUNDLEVERSION_MISMATCH")
     }
 
     OneKeyLog.info("BundleCrypto", "GPG cleartext verification succeeded")
@@ -213,7 +284,10 @@ public enum BundleCryptoCore {
   // (no JSON — the verified body's first whitespace token must be a 64-char
   // lowercase hex sha256).
 
-  public static func verifyDetachedAsc(_ ascContent: String) -> (valid: Bool, sha256: String?, reason: String?) {
+  public static func verifyDetachedAsc(
+    _ ascContent: String,
+    expectedFileName: String? = nil
+  ) -> (valid: Bool, sha256: String?, reason: String?) {
     guard ascContent.contains("-----BEGIN PGP SIGNED MESSAGE-----") else {
       return (false, nil, "NOT_PGP_SIGNED_MESSAGE")
     }
@@ -262,13 +336,10 @@ public enum BundleCryptoCore {
       return (false, nil, "CLEARTEXT_EXTRACT_FAILED")
     }
 
-    // Mirror Android: first whitespace token of the verified SHA256SUMS body,
-    // lowercased, must be exactly 64 hex chars.
-    let sha256 = text
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-      .split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\n" || $0 == "\r" })
-      .first
-      .map { String($0).lowercased() } ?? ""
+    guard let sha256 = extractDetachedAscSha256(text, expectedFileName: expectedFileName) else {
+      OneKeyLog.error("BundleCrypto", "ASC signed filename mismatch for expected: \(expectedFileName ?? "")")
+      return (false, nil, "FILENAME_MISMATCH")
+    }
     let isHex = sha256.count == 64 && sha256.unicodeScalars.allSatisfy {
       ($0 >= "0" && $0 <= "9") || ($0 >= "a" && $0 <= "f")
     }

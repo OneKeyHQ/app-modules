@@ -114,11 +114,25 @@ class SplitBundleLoaderModule(reactContext: ReactApplicationContext) :
         // assets get extracted fresh on first load.
         private const val PREFS_NAME = "split_bundle_loader"
         private const val KEY_LAST_INSTALL_STAMP = "last_install_stamp"
+        private const val BUILTIN_BUNDLE_SENTINEL = "__BUILTIN__"
         // Double-checked locking: loser threads must BLOCK until the wipe
         // finishes, not just skip. AtomicBoolean.compareAndSet would let
         // losers race ahead and read half-nuked state.
         @Volatile private var wipeCheckDone: Boolean = false
         private val wipeLock = Any()
+    }
+
+    // Pin the OTA bundle path that this React runtime instance booted with so
+    // mid-session SharedPreferences mutations (installBundle / switchBundle /
+    // resetToBuiltInBundle during the 2500ms pre-restart window) cannot cause
+    // subsequent lazy segment loads to jump to a different bundle root.
+    @Volatile
+    private var pinnedOtaBundlePath: String? = null
+    private val pinnedOtaBundleLock = Any()
+
+    override fun initialize() {
+        super.initialize()
+        getOtaBundlePath()
     }
 
     override fun getName(): String = NAME
@@ -458,6 +472,8 @@ class SplitBundleLoaderModule(reactContext: ReactApplicationContext) :
             } else {
                 SBLLogger.info("[resolveSeg] rel=$relativePath otaBundlePath=$otaBundlePath parentFile=null")
             }
+            SBLLogger.warn("[resolveSeg] rel=$relativePath missing in active OTA bundle root — refusing builtin fallback")
+            return null
         } else {
             SBLLogger.info("[resolveSeg] rel=$relativePath otaBundlePath=(empty) — skipping OTA")
         }
@@ -636,6 +652,22 @@ class SplitBundleLoaderModule(reactContext: ReactApplicationContext) :
     }
 
     private fun getOtaBundlePath(): String? {
+        val existing = pinnedOtaBundlePath
+        if (existing != null) {
+            return if (existing == BUILTIN_BUNDLE_SENTINEL) null else existing
+        }
+        synchronized(pinnedOtaBundleLock) {
+            val rechecked = pinnedOtaBundlePath
+            if (rechecked != null) {
+                return if (rechecked == BUILTIN_BUNDLE_SENTINEL) null else rechecked
+            }
+            val resolved = queryCurrentOtaBundlePath()
+            pinnedOtaBundlePath = if (resolved.isNullOrEmpty()) BUILTIN_BUNDLE_SENTINEL else resolved
+            return resolved
+        }
+    }
+
+    private fun queryCurrentOtaBundlePath(): String? {
         return try {
             val bundleUpdateStore = Class.forName(
                 "com.margelo.nitro.reactnativebundleupdate.BundleUpdateStoreAndroid"

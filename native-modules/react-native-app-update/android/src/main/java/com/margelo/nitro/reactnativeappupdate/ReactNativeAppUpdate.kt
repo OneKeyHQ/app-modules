@@ -119,35 +119,43 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
 
     private fun buildFile(path: String): File {
         val stripped = path.removePrefix("file:///")
-        val context = NitroModules.applicationContext
+        NitroModules.applicationContext
             ?: throw SecurityException("Application context unavailable, cannot validate file path")
 
-        // Resolve relative paths against cacheDir/apk/
+        val apkDirFile = getApkDownloadDir()
         val file = if (stripped.startsWith("/")) {
             File(stripped)
         } else {
-            File(getApkDownloadDir(), stripped)
+            File(apkDirFile, stripped)
         }
 
-        // Validate the resolved path is within the app's cache or files directory
+        // Validate the resolved path is strictly within the APK download directory (filesDir/apks)
         val canonicalPath = file.canonicalPath
-        val cacheDir = context.cacheDir.canonicalPath
-        val filesDir = context.filesDir.canonicalPath
-        val externalCacheDir = context.externalCacheDir?.canonicalPath
-        val externalFilesDir = context.getExternalFilesDir(null)?.canonicalPath
-        val allowed = canonicalPath.startsWith(cacheDir + File.separator) || canonicalPath == cacheDir ||
-                canonicalPath.startsWith(filesDir + File.separator) || canonicalPath == filesDir ||
-                (externalCacheDir != null && (canonicalPath.startsWith(externalCacheDir + File.separator) || canonicalPath == externalCacheDir)) ||
-                (externalFilesDir != null && (canonicalPath.startsWith(externalFilesDir + File.separator) || canonicalPath == externalFilesDir))
+        val apkDir = apkDirFile.canonicalPath
+        val allowed = canonicalPath.startsWith(apkDir + File.separator) || canonicalPath == apkDir
         if (!allowed) {
-            OneKeyLog.error("AppUpdate", "buildFile: path outside allowed directories, " +
-                "input=$path, resolved=$canonicalPath, " +
-                "cacheDir=$cacheDir, filesDir=$filesDir, " +
-                "externalCacheDir=$externalCacheDir, externalFilesDir=$externalFilesDir")
+            OneKeyLog.error("AppUpdate", "buildFile: path outside allowed apk directory, " +
+                "input=$path, resolved=$canonicalPath, apkDir=$apkDir")
             throw SecurityException("Path outside allowed directories: $canonicalPath")
         }
         OneKeyLog.debug("AppUpdate", "buildFile: input=$path, resolved=$canonicalPath")
         return file
+    }
+
+    private fun buildHttpsOnlyHttpClient(readTimeoutSeconds: Long): OkHttpClient {
+        return OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(readTimeoutSeconds, TimeUnit.SECONDS)
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .addNetworkInterceptor { chain ->
+                val req = chain.request()
+                if (!req.url.isHttps) {
+                    throw java.io.IOException("Redirect to non-HTTPS URL is not allowed: ${req.url}")
+                }
+                chain.proceed(req)
+            }
+            .build()
     }
 
     /**
@@ -169,12 +177,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
      * Returns the saved file, or null on failure.
      */
     private fun downloadAscFile(ascUrl: String, ascFile: File): File? {
-        val client = OkHttpClient.Builder()
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .followRedirects(false)
-            .followSslRedirects(false)
-            .build()
+        val client = buildHttpsOnlyHttpClient(30)
         val request = Request.Builder().url(ascUrl).build()
         val content = StringBuilder()
         val maxAscSize = 10 * 1024
@@ -209,10 +212,13 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
      * public key now live there as the single source of truth. Behavior is
      * preserved: any non-valid result (NOT_PGP_SIGNED_MESSAGE / INVALID_FORMAT /
      * NO_SIGNATURE / PUBKEY_NOT_FOUND / SIGNATURE_INVALID / SHA256_TOKEN_INVALID
-     * / ERROR_*) maps to null.
+     * / FILENAME_MISMATCH / ERROR_*) maps to null.
      */
-    private fun verifyAscContentAndExtractSha256(ascContent: String): String? {
-        val result = BundleCryptoCore.verifyDetachedAsc(ascContent)
+    private fun verifyAscContentAndExtractSha256(
+        ascContent: String,
+        expectedFileName: String? = null,
+    ): String? {
+        val result = BundleCryptoCore.verifyDetachedAsc(ascContent, expectedFileName)
         if (!result.valid) {
             OneKeyLog.error("AppUpdate", "ASC verification failed: ${result.reason}")
             return null
@@ -220,8 +226,11 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
         return result.sha256
     }
 
-    private fun verifyAscAndExtractSha256(ascFile: File): String? {
-        return verifyAscContentAndExtractSha256(ascFile.readText())
+    private fun verifyAscAndExtractSha256(
+        ascFile: File,
+        expectedFileName: String? = null,
+    ): String? {
+        return verifyAscContentAndExtractSha256(ascFile.readText(), expectedFileName)
     }
 
     /**
@@ -276,7 +285,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 OneKeyLog.info("AppUpdate", "verifyExistingApk: ASC downloaded to ${ascFile.absolutePath}")
             }
 
-            val expectedSha256 = verifyAscAndExtractSha256(ascFile)
+            val expectedSha256 = verifyAscAndExtractSha256(ascFile, apkFile.name)
             if (expectedSha256 == null) {
                 // Local ASC failed parsing/GPG. Could be a corrupted cache from
                 // an earlier interrupted write — drop it so the next round
@@ -290,6 +299,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             val actualSha256 = computeSha256(apkFile)
 
             if (secureCompare(actualSha256, expectedSha256)) {
+                ascVerifiedFiles[apkFile.canonicalPath] = actualSha256.lowercase()
                 OneKeyLog.info("AppUpdate", "verifyExistingApk: SHA256 matches, APK is valid")
                 ApkVerifyOutcome.Valid
             } else {
@@ -650,12 +660,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 // outer catch (the downloader keeps its partial + manifest).
                 sendEvent("update/start")
                 run {
-                    val concurrentClient = OkHttpClient.Builder()
-                        .connectTimeout(10, TimeUnit.SECONDS)
-                        .readTimeout(60, TimeUnit.SECONDS)
-                        .followRedirects(false)
-                        .followSslRedirects(false)
-                        .build()
+                    val concurrentClient = buildHttpsOnlyHttpClient(60)
                     // onProgress is invoked concurrently from all 8 worker
                     // threads. concurrentProgress must be an AtomicInteger so the
                     // "did the percent advance?" check is race-free, and the
@@ -725,12 +730,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 }
 
                 // Phase 3 — fetch (with Range header iff resuming).
-                val client = OkHttpClient.Builder()
-                    .connectTimeout(10, TimeUnit.SECONDS)
-                    .readTimeout(60, TimeUnit.SECONDS)
-                    .followRedirects(false)
-                    .followSslRedirects(false)
-                    .build()
+                val client = buildHttpsOnlyHttpClient(60)
                 val requestBuilder = Request.Builder().url(url)
                 if (partialBytes > 0) {
                     requestBuilder.addHeader("Range", "bytes=$partialBytes-")
@@ -977,12 +977,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             val ascFilePath = "$filePath.SHA256SUMS.asc"
             OneKeyLog.info("AppUpdate", "downloadASC: ascFileUrl=$ascFileUrl")
 
-            val client = OkHttpClient.Builder()
-                .connectTimeout(10, TimeUnit.SECONDS)
-                .readTimeout(30, TimeUnit.SECONDS)
-                .followRedirects(false)
-                .followSslRedirects(false)
-                .build()
+            val client = buildHttpsOnlyHttpClient(30)
             val request = Request.Builder().url(ascFileUrl).build()
             // Wrap in .use so the Response (and its connection) is released on every
             // exit path — including the !isSuccessful / empty-body / oversize throws,
@@ -1036,12 +1031,17 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             val filePath = filePathFromUrl(params.downloadUrl)
             OneKeyLog.info("AppUpdate", "verifyASC: filePath=$filePath")
 
+            val apkFile = buildFile(filePath)
+
             // Skip GPG verification only when BuildConfig allows it AND both DevSettings and skip-GPG toggle are enabled
             val devSettings = if (BuildConfig.ALLOW_SKIP_GPG_VERIFICATION) isDevSettingsEnabled() else false
             val skipGPGToggle = if (BuildConfig.ALLOW_SKIP_GPG_VERIFICATION) isSkipGPGEnabled() else false
             OneKeyLog.info("AppUpdate", "verifyASC: GPG check: devSettings=$devSettings, skipGPGToggle=$skipGPGToggle")
             if (BuildConfig.ALLOW_SKIP_GPG_VERIFICATION && devSettings && skipGPGToggle) {
                 OneKeyLog.warn("AppUpdate", "verifyASC: GPG verification skipped (DevSettings + skip-GPG enabled)")
+                if (apkFile.exists()) {
+                    ascVerifiedFiles[apkFile.canonicalPath] = computeSha256(apkFile).lowercase()
+                }
                 return@async
             }
 
@@ -1065,9 +1065,9 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             // throw-on-failure contract; the reason taxonomy
             // (NOT_PGP_SIGNED_MESSAGE / INVALID_FORMAT / NO_SIGNATURE /
             // PUBKEY_NOT_FOUND / SIGNATURE_INVALID / SHA256_TOKEN_INVALID /
-            // ERROR_*) is logged for diagnostics.
+            // FILENAME_MISMATCH / ERROR_*) is logged for diagnostics.
             OneKeyLog.info("AppUpdate", "verifyASC: verifying detached ASC signature via BundleCryptoCore...")
-            val ascResult = BundleCryptoCore.verifyDetachedAsc(ascContent)
+            val ascResult = BundleCryptoCore.verifyDetachedAsc(ascContent, apkFile.name)
             // Capture in a local val so Kotlin can smart-cast to non-null below
             // (sha256 is a cross-module data-class property, which is not
             // smart-castable directly).
@@ -1079,7 +1079,6 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             OneKeyLog.info("AppUpdate", "verifyASC: ASC verified OK, extracted SHA256=${sha256.take(16)}...")
 
             // Verify APK file SHA256
-            val apkFile = buildFile(filePath)
             if (!apkFile.exists()) {
                 OneKeyLog.error("AppUpdate", "verifyASC: APK file not found at $filePath")
                 throw Exception("APK file not found: $filePath")
@@ -1094,6 +1093,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 throw Exception("SHA256 mismatch for APK file")
             }
 
+            ascVerifiedFiles[apkFile.canonicalPath] = fileSha256.lowercase()
             OneKeyLog.info("AppUpdate", "verifyASC: GPG signature + SHA256 verification passed")
 
             } catch (e: Exception) {
@@ -1105,6 +1105,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
 
     // Track verified files with their SHA-256 hash to prevent TOCTOU attacks
     private data class VerifiedFile(val canonicalPath: String, val sha256: String)
+    private val ascVerifiedFiles = java.util.concurrent.ConcurrentHashMap<String, String>()
     private val verifiedFiles = java.util.Collections.synchronizedMap(mutableMapOf<String, String>())
 
     override fun verifyAPK(params: AppUpdateFileParams): Promise<Unit> {
@@ -1133,6 +1134,16 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             OneKeyLog.info("AppUpdate", "verifyAPK: APK packageName=${info.packageName}, versionName=${info.versionName}, versionCode=${if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode else @Suppress("DEPRECATION") info.versionCode}")
 
             val debugBuild = isDebuggable()
+            val skipGPG = BuildConfig.ALLOW_SKIP_GPG_VERIFICATION && isDevSettingsEnabled() && isSkipGPGEnabled()
+
+            // Compute SHA-256 hash of the file for TOCTOU and ASC-binding verification
+            OneKeyLog.info("AppUpdate", "verifyAPK: computing SHA-256 hash for TOCTOU protection...")
+            val fileHash = computeSha256(file).lowercase()
+            val ascVerified = ascVerifiedFiles[file.canonicalPath] == fileHash
+            if (!debugBuild && !skipGPG && !ascVerified) {
+                OneKeyLog.error("AppUpdate", "verifyAPK: APK has not passed ASC verification for current hash")
+                throw Exception("ASC_NOT_VERIFIED")
+            }
 
             // Check package name
             if (info.packageName != context.packageName) {
@@ -1162,7 +1173,10 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 val apkSigners = apkInfo?.signingInfo?.apkContentsSigners
                 val installedSigners = installedInfo?.signingInfo?.apkContentsSigners
                 if (apkSigners == null || installedSigners == null) {
-                    OneKeyLog.info("AppUpdate", "verifyAPK: signing info unavailable (apkSigners=${apkSigners != null}, installedSigners=${installedSigners != null}), skipping signing certificate check")
+                    if (!debugBuild && !skipGPG && !ascVerified) {
+                        throw Exception("ASC_NOT_VERIFIED")
+                    }
+                    OneKeyLog.info("AppUpdate", "verifyAPK: signing info unavailable (apkSigners=${apkSigners != null}, installedSigners=${installedSigners != null}), relying on verified ASC signature")
                 } else {
                     OneKeyLog.info("AppUpdate", "verifyAPK: APK signers count=${apkSigners.size}, installed signers count=${installedSigners.size}")
                     if (apkSigners.toSet() != installedSigners.toSet()) {
@@ -1181,7 +1195,10 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 val apkSignatures = apkInfo?.signatures
                 val installedSignatures = installedInfo?.signatures
                 if (apkSignatures == null || installedSignatures == null) {
-                    OneKeyLog.info("AppUpdate", "verifyAPK: legacy signatures unavailable (apkSignatures=${apkSignatures != null}, installedSignatures=${installedSignatures != null}), skipping signing certificate check")
+                    if (!debugBuild && !skipGPG && !ascVerified) {
+                        throw Exception("ASC_NOT_VERIFIED")
+                    }
+                    OneKeyLog.info("AppUpdate", "verifyAPK: legacy signatures unavailable (apkSignatures=${apkSignatures != null}, installedSignatures=${installedSignatures != null}), relying on verified ASC signature")
                 } else {
                     OneKeyLog.info("AppUpdate", "verifyAPK: APK signatures count=${apkSignatures.size}, installed signatures count=${installedSignatures.size}")
                     if (apkSignatures.toSet() != installedSignatures.toSet()) {
@@ -1194,9 +1211,6 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 }
             }
 
-            // Compute SHA-256 hash of the verified file for TOCTOU protection
-            OneKeyLog.info("AppUpdate", "verifyAPK: computing SHA-256 hash for TOCTOU protection...")
-            val fileHash = computeSha256(file)
             verifiedFiles[file.canonicalPath] = fileHash
             OneKeyLog.info("AppUpdate", "verifyAPK: APK verified successfully, hash=${fileHash.take(16)}..., stored for install verification")
         }
@@ -1216,9 +1230,11 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             }
             OneKeyLog.info("AppUpdate", "installAPK: APK file found, size=${file.length()} bytes")
 
-            // Ensure verifyAPK was called before installation
+            // Ensure verifyAPK was called before installation. Keep the entry in
+            // verifiedFiles so user-cancelled system installer prompts or
+            // "Install unknown apps" permission round-trips can retry installAPK.
             val debugBuild = isDebuggable()
-            val expectedHash = verifiedFiles.remove(file.canonicalPath)
+            val expectedHash = verifiedFiles[file.canonicalPath]
             if (expectedHash == null) {
                 OneKeyLog.error("AppUpdate", "installAPK: APK was not verified before installation (no hash in verifiedFiles)")
                 if (!debugBuild) throw Exception("APK must be verified before installation")
@@ -1228,8 +1244,10 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             // Re-verify file hash to prevent TOCTOU attacks (file swapped after verification)
             if (expectedHash != null) {
                 OneKeyLog.info("AppUpdate", "installAPK: expected hash=${expectedHash.take(16)}..., re-verifying TOCTOU...")
-                val currentHash = computeSha256(file)
+                val currentHash = computeSha256(file).lowercase()
                 if (currentHash != expectedHash) {
+                    verifiedFiles.remove(file.canonicalPath)
+                    ascVerifiedFiles.remove(file.canonicalPath)
                     OneKeyLog.error("AppUpdate", "installAPK: TOCTOU check FAILED — file was modified after verification (current=${currentHash.take(16)}..., expected=${expectedHash.take(16)}...)")
                     if (!debugBuild) throw Exception("APK file was modified after verification")
                     OneKeyLog.warn("AppUpdate", "installAPK: DEBUG build — ignoring TOCTOU mismatch")
@@ -1383,6 +1401,7 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
             isDownloading.set(false)
             val verifiedCount = verifiedFiles.size
             verifiedFiles.clear()
+            ascVerifiedFiles.clear()
             OneKeyLog.info("AppUpdate", "clearCache: reset download state, cleared $verifiedCount verified file entries")
 
             // Clean up downloaded APK and ASC files from cacheDir/apks/ directory

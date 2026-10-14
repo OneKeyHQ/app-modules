@@ -36,10 +36,23 @@ final class BundleCryptoCoreTests: XCTestCase {
     """
 
   func testSignedMetadataAcceptsReleaseKeyAndRejectsTampering() {
-    let verified = BundleCryptoCore.verifyGpgCleartext(signedMetadata)
+    let verified = BundleCryptoCore.verifyGpgCleartext(
+      signedMetadata,
+      expectedAppVersion: "5.12.0",
+      expectedBundleVersion: "20250919",
+      expectedAppType: "mobile"
+    )
     XCTAssertTrue(verified.valid)
     XCTAssertEqual(verified.sha256, expectedSignedHash)
     XCTAssertNil(verified.reason)
+
+    let wrongAsc = BundleCryptoCore.verifyDetachedAsc(
+      signedMetadata,
+      expectedFileName: "OneKey.apk"
+    )
+    XCTAssertFalse(wrongAsc.valid)
+    XCTAssertNil(wrongAsc.sha256)
+    XCTAssertEqual(wrongAsc.reason, "SHA256_TOKEN_INVALID")
 
     let tampered = signedMetadata.replacingOccurrences(of: "158590", with: "158591")
     let rejected = BundleCryptoCore.verifyGpgCleartext(tampered)

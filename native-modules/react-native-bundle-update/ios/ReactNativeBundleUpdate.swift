@@ -525,14 +525,36 @@ public class BundleUpdateStore: NSObject {
         #endif
     }
 
-    public static func readMetadataFileSha256(_ signature: String) -> String? {
+    private static func parseBundleVersionFolder(_ currentBundleVersion: String) -> (appVersion: String, bundleVersion: String)? {
+        guard let dashRange = currentBundleVersion.range(of: "-", options: .backwards),
+              dashRange.lowerBound > currentBundleVersion.startIndex,
+              dashRange.upperBound < currentBundleVersion.endIndex else {
+            return nil
+        }
+        return (
+            String(currentBundleVersion[currentBundleVersion.startIndex..<dashRange.lowerBound]),
+            String(currentBundleVersion[dashRange.upperBound...])
+        )
+    }
+
+    public static func readMetadataFileSha256(
+        _ signature: String,
+        expectedAppVersion: String? = nil,
+        expectedBundleVersion: String? = nil,
+        expectedAppType: String? = nil
+    ) -> String? {
         guard !signature.isEmpty else { return nil }
 
         // GPG cleartext signature verification is required. The actual PGP
         // verification + JSON-body sha256 extraction lives in the shared
         // BundleCryptoCore (react-native-bundle-crypto); preserve the previous
         // "failure => nil" semantics here.
-        let r = BundleCryptoCore.verifyGpgCleartext(signature)
+        let r = BundleCryptoCore.verifyGpgCleartext(
+            signature,
+            expectedAppVersion: expectedAppVersion,
+            expectedBundleVersion: expectedBundleVersion,
+            expectedAppType: expectedAppType
+        )
         guard r.valid, let sha256 = r.sha256 else {
             OneKeyLog.error("BundleUpdate", "readMetadataFileSha256: GPG verification failed (\(r.reason ?? "unknown")), rejecting unsigned content")
             return nil
@@ -545,7 +567,12 @@ public class BundleUpdateStore: NSObject {
             OneKeyLog.debug("BundleUpdate", "metadataFilePath is null")
             return false
         }
-        guard let extractedSha256 = readMetadataFileSha256(signature), !extractedSha256.isEmpty else {
+        let parsed = parseBundleVersionFolder(currentBundleVersion)
+        guard let extractedSha256 = readMetadataFileSha256(
+            signature,
+            expectedAppVersion: parsed?.appVersion,
+            expectedBundleVersion: parsed?.bundleVersion
+        ), !extractedSha256.isEmpty else {
             return false
         }
         guard let calculatedSha256 = calculateSHA256(metadataFilePath) else { return false }
@@ -851,6 +878,7 @@ public class BundleUpdateStore: NSObject {
     }
 
     public static func clearUpdateBundleData() {
+        didProcessPreLaunchTask = true
         invalidateValidatedBundleInfoCache()
         let bDir = bundleDir()
         let fm = FileManager.default
@@ -1582,6 +1610,16 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             OneKeyLog.info("BundleUpdate", "verifyBundleASC: GPG check: skipGPG=\(skipGPG)")
 
             if !skipGPG {
+                OneKeyLog.info("BundleUpdate", "verifyBundleASC: pre-verifying GPG signature before extraction...")
+                guard let preVerifiedSha256 = BundleUpdateStore.readMetadataFileSha256(
+                    signature,
+                    expectedAppVersion: appVersion,
+                    expectedBundleVersion: bundleVersion
+                ), !preVerifiedSha256.isEmpty else {
+                    OneKeyLog.error("BundleUpdate", "verifyBundleASC: pre-extraction GPG signature verification failed")
+                    throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle signature verification failed"])
+                }
+
                 OneKeyLog.info("BundleUpdate", "verifyBundleASC: verifying SHA256 of downloaded file...")
                 let calculated = BundleUpdateStore.calculateSHA256(filePath)
                 let isValid = calculated != nil && BundleCryptoCore.secureEqualHex(calculated!, sha256)
@@ -1640,6 +1678,32 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 OneKeyLog.error("BundleUpdate", "verifyBundleASC: path traversal or symlink attack detected")
                 try? FileManager.default.removeItem(atPath: destination)
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Path traversal or symlink attack detected"])
+            }
+
+            // Enforce extracted entry count and total uncompressed size limits
+            let maxZipEntries = 4096
+            let maxUncompressedSize: UInt64 = 512 * 1024 * 1024
+            if let enumerator = FileManager.default.enumerator(atPath: destination) {
+                var entryCount = 0
+                var totalUncompressedBytes: UInt64 = 0
+                while let relPath = enumerator.nextObject() as? String {
+                    entryCount += 1
+                    if entryCount > maxZipEntries {
+                        OneKeyLog.error("BundleUpdate", "verifyBundleASC: extracted entry count exceeds maximum allowed (\(maxZipEntries))")
+                        try? FileManager.default.removeItem(atPath: destination)
+                        throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Zip entry count exceeds maximum allowed (\(maxZipEntries))"])
+                    }
+                    let fullPath = (destination as NSString).appendingPathComponent(relPath)
+                    if let attrs = try? FileManager.default.attributesOfItem(atPath: fullPath),
+                       let fileSize = attrs[.size] as? UInt64 {
+                        totalUncompressedBytes += fileSize
+                        if totalUncompressedBytes > maxUncompressedSize {
+                            OneKeyLog.error("BundleUpdate", "verifyBundleASC: extracted size exceeds maximum allowed (\(maxUncompressedSize))")
+                            try? FileManager.default.removeItem(atPath: destination)
+                            throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Decompression bomb detected: extracted size exceeds 512 MB"])
+                        }
+                    }
+                }
             }
 
             let metadataJsonPath = (destination as NSString).appendingPathComponent("metadata.json")
@@ -1737,6 +1801,22 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             guard FileManager.default.fileExists(atPath: bundleDirPath) else {
                 OneKeyLog.error("BundleUpdate", "installBundle: bundle directory not found: \(bundleDirPath)")
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle directory not found: \(folderName)"])
+            }
+
+            let mainBundlePath = (bundleDirPath as NSString).appendingPathComponent("main.jsbundle.hbc")
+            let metadataJsonPath = (bundleDirPath as NSString).appendingPathComponent("metadata.json")
+            guard FileManager.default.fileExists(atPath: mainBundlePath),
+                  FileManager.default.fileExists(atPath: metadataJsonPath) else {
+                OneKeyLog.error("BundleUpdate", "installBundle: required bundle files missing in \(bundleDirPath)")
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Required bundle files missing in: \(folderName)"])
+            }
+
+            if !skipGPG {
+                guard !signature.isEmpty,
+                      BundleUpdateStore.validateMetadataFileSha256(folderName, signature: signature) else {
+                    OneKeyLog.error("BundleUpdate", "installBundle: GPG signature verification failed for \(folderName)")
+                    throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle signature verification failed"])
+                }
             }
 
             let ud = UserDefaults.standard

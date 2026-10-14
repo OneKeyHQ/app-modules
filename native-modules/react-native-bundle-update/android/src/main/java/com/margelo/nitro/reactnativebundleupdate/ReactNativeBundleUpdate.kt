@@ -162,6 +162,7 @@ object BundleUpdateStoreAndroid {
     }
 
     fun clearUpdateBundleData(context: Context) {
+        didProcessPreLaunchTask = true
         invalidateValidatedBundleInfoCache()
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().clear().commit()
@@ -470,11 +471,28 @@ object BundleUpdateStoreAndroid {
         return compatible
     }
 
-    fun readMetadataFileSha256(signature: String?): String? {
+    private fun parseBundleVersionFolder(currentBundleVersion: String): Pair<String, String>? {
+        val idx = currentBundleVersion.lastIndexOf('-')
+        if (idx <= 0 || idx >= currentBundleVersion.length - 1) return null
+        return currentBundleVersion.substring(0, idx) to currentBundleVersion.substring(idx + 1)
+    }
+
+    @JvmOverloads
+    fun readMetadataFileSha256(
+        signature: String?,
+        expectedAppVersion: String? = null,
+        expectedBundleVersion: String? = null,
+        expectedAppType: String? = null,
+    ): String? {
         if (signature.isNullOrEmpty()) return null
 
         // GPG cleartext signature verification is required
-        val gpgResult = verifyGPGAndExtractSha256(signature)
+        val gpgResult = verifyGPGAndExtractSha256(
+            signature,
+            expectedAppVersion = expectedAppVersion,
+            expectedBundleVersion = expectedBundleVersion,
+            expectedAppType = expectedAppType,
+        )
         if (gpgResult != null) return gpgResult
 
         OneKeyLog.error("BundleUpdate", "readMetadataFileSha256: GPG verification failed, rejecting unsigned content")
@@ -505,8 +523,19 @@ object BundleUpdateStoreAndroid {
      * (NOT_PGP_SIGNED_MESSAGE / INVALID_FORMAT / NO_SIGNATURE / PUBKEY_NOT_FOUND
      * / SIGNATURE_INVALID / NO_SHA256_FIELD / ERROR_*) maps to null.
      */
-    fun verifyGPGAndExtractSha256(signature: String): String? {
-        val result = BundleCryptoCore.verifyGpgCleartext(signature)
+    @JvmOverloads
+    fun verifyGPGAndExtractSha256(
+        signature: String,
+        expectedAppVersion: String? = null,
+        expectedBundleVersion: String? = null,
+        expectedAppType: String? = null,
+    ): String? {
+        val result = BundleCryptoCore.verifyGpgCleartext(
+            signature,
+            expectedAppVersion = expectedAppVersion,
+            expectedBundleVersion = expectedBundleVersion,
+            expectedAppType = expectedAppType,
+        )
         if (!result.valid) {
             OneKeyLog.error("BundleUpdate", "GPG verification failed: ${result.reason}")
             return null
@@ -519,7 +548,12 @@ object BundleUpdateStoreAndroid {
             OneKeyLog.debug("BundleUpdate", "metadataFilePath is null")
             return false
         }
-        val extractedSha256 = readMetadataFileSha256(signature)
+        val parsed = parseBundleVersionFolder(currentBundleVersion)
+        val extractedSha256 = readMetadataFileSha256(
+            signature,
+            expectedAppVersion = parsed?.first,
+            expectedBundleVersion = parsed?.second,
+        )
         if (extractedSha256.isNullOrEmpty()) return false
         val calculated = calculateSHA256(metadataFilePath) ?: return false
         return secureCompare(calculated, extractedSha256)
@@ -1066,6 +1100,7 @@ object BundleUpdateStoreAndroid {
     fun deleteDir(dir: File): Boolean = deleteDirectory(dir)
 
     private const val MAX_UNZIPPED_SIZE = 512L * 1024 * 1024  // 512 MB limit
+    private const val MAX_ZIP_ENTRIES = 4096
 
     fun unzipFile(zipFilePath: String, destDirectory: String) {
         val destDir = File(destDirectory)
@@ -1073,9 +1108,14 @@ object BundleUpdateStoreAndroid {
 
         val destDirPath: Path = Paths.get(destDir.canonicalPath)
         var totalBytesWritten = 0L
+        var entryCount = 0
         ZipInputStream(FileInputStream(zipFilePath)).use { zipIn ->
             var entry: ZipEntry? = zipIn.nextEntry
             while (entry != null) {
+                entryCount++
+                if (entryCount > MAX_ZIP_ENTRIES) {
+                    throw SecurityException("Zip entry count exceeds maximum allowed ($MAX_ZIP_ENTRIES)")
+                }
                 val outFile = File(destDir, entry.name)
                 val outPath: Path = Paths.get(outFile.canonicalPath)
                 if (!outPath.startsWith(destDirPath)) {
@@ -1706,6 +1746,17 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             OneKeyLog.info("BundleUpdate", "verifyBundleASC: GPG check: skipGPG=$skipGPG")
 
             if (!skipGPG) {
+                OneKeyLog.info("BundleUpdate", "verifyBundleASC: pre-verifying GPG signature before extraction...")
+                if (BundleUpdateStoreAndroid.readMetadataFileSha256(
+                        signature,
+                        expectedAppVersion = appVersion,
+                        expectedBundleVersion = bundleVersion,
+                    ).isNullOrEmpty()
+                ) {
+                    OneKeyLog.error("BundleUpdate", "verifyBundleASC: pre-extraction GPG signature verification failed")
+                    throw Exception("Bundle signature verification failed")
+                }
+
                 OneKeyLog.info("BundleUpdate", "verifyBundleASC: verifying SHA256 of downloaded file...")
                 if (!verifyBundleSHA256(filePath, sha256)) {
                     // Promote the SHA256 subtype (FILE_TRUNCATED / OOM /
@@ -1823,6 +1874,20 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             if (!bundleDirPath.exists()) {
                 OneKeyLog.error("BundleUpdate", "installBundle: bundle directory not found: ${bundleDirPath.absolutePath}")
                 throw Exception("Bundle directory not found: $folderName")
+            }
+
+            val mainBundleFile = File(bundleDirPath, "main.jsbundle.hbc")
+            val metadataFile = File(bundleDirPath, "metadata.json")
+            if (!mainBundleFile.exists() || !metadataFile.exists()) {
+                OneKeyLog.error("BundleUpdate", "installBundle: required bundle files missing in: ${bundleDirPath.absolutePath}")
+                throw Exception("Required bundle files missing in: $folderName")
+            }
+
+            if (!skipGPG) {
+                if (signature.isEmpty() || !BundleUpdateStoreAndroid.validateMetadataFileSha256(context, folderName, signature)) {
+                    OneKeyLog.error("BundleUpdate", "installBundle: GPG signature verification failed for $folderName")
+                    throw Exception("Bundle signature verification failed")
+                }
             }
 
             val currentSignature = if (currentFolderName != null) BundleUpdateStoreAndroid.readSignatureFile(context, currentFolderName) else ""
