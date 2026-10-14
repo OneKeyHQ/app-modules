@@ -3144,15 +3144,17 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   }
   if (_needsPropsReapply || oldViewProps.topScrollEdgeHard != newViewProps.topScrollEdgeHard) {
     _topScrollEdgeHard = newViewProps.topScrollEdgeHard;
-    _deferTopEdgeSlotRebuild = YES;
-    [self rebuildSlots];
-    NSUInteger generation = _generation;
-    dispatch_async(dispatch_get_main_queue(), ^{
-      if (self->_generation != generation || self->_isBeingRecycled ||
-          !self->_deferTopEdgeSlotRebuild) return;
-      self->_deferTopEdgeSlotRebuild = NO;
+    if (oldViewProps.topScrollEdgeHard || newViewProps.topScrollEdgeHard) {
+      _deferTopEdgeSlotRebuild = YES;
       [self rebuildSlots];
-    });
+      NSUInteger generation = _generation;
+      dispatch_async(dispatch_get_main_queue(), ^{
+        if (self->_generation != generation || self->_isBeingRecycled ||
+            !self->_deferTopEdgeSlotRebuild) return;
+        self->_deferTopEdgeSlotRebuild = NO;
+        [self rebuildSlots];
+      });
+    }
     insetsChanged = YES;
   }
   if (_needsPropsReapply ||
