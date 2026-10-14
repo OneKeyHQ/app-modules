@@ -324,6 +324,16 @@ public class BundleUpdateStore: NSObject {
 
     private static var didProcessPreLaunchTask = false
 
+    private static func failPendingTask(mmkv: MMKV, taskDict: [String: Any], reason: String) {
+        var updatedTask = taskDict
+        updatedTask["status"] = "failed"
+        updatedTask["lastError"] = reason
+        if let jsonData = try? JSONSerialization.data(withJSONObject: updatedTask),
+           let jsonStr = String(data: jsonData, encoding: .utf8) {
+            mmkv.set(jsonStr, forKey: "onekey_pending_install_task")
+        }
+    }
+
     /// Checks MMKV for a pending bundle-switch task and applies it before JS runtime starts.
     /// Only handles the happy path (status=pending, bundle exists, env matches).
     /// All complex logic (retry, download, error handling) remains in JS layer.
@@ -379,26 +389,76 @@ public class BundleUpdateStore: NSObject {
                   let appVersion = payload["appVersion"] as? String,
                   let bundleVersion = payload["bundleVersion"] as? String,
                   let signature = payload["signature"] as? String,
-                  !appVersion.isEmpty, !bundleVersion.isEmpty, !signature.isEmpty,
-                  appVersion.isSafeVersionString, bundleVersion.isSafeVersionString
+                  !appVersion.isEmpty, !bundleVersion.isEmpty, !signature.isEmpty
             else { return }
-
-            // 5. Verify bundle directory and entry file exist
-            let folderName = "\(appVersion)-\(bundleVersion)"
-            let bundleDirPath = (bundleDir() as NSString).appendingPathComponent(folderName)
-            guard FileManager.default.fileExists(atPath: bundleDirPath) else { return }
-            let entryFilePath = (bundleDirPath as NSString).appendingPathComponent("main.jsbundle.hbc")
-            guard FileManager.default.fileExists(atPath: entryFilePath) else {
-                OneKeyLog.warn("BundleUpdate", "processPreLaunchPendingTask: bundle dir exists but entry file missing: \(entryFilePath)")
+            guard appVersion.isSafeVersionString, bundleVersion.isSafeVersionString else {
+                failPendingTask(mmkv: mmkv, taskDict: taskDict, reason: "ERR_VERIFY_FAILED:Invalid version string")
+                return
+            }
+            guard appVersion == currentAppVersion else {
+                OneKeyLog.warn("BundleUpdate", "processPreLaunchPendingTask: target appVersion (\(appVersion)) != currentAppVersion (\(currentAppVersion))")
+                failPendingTask(mmkv: mmkv, taskDict: taskDict, reason: "ERR_ENV_CHANGED:Target appVersion mismatch")
                 return
             }
 
-            // 6. Apply: set currentBundleVersion (same as installBundle)
+            // 5. Verify bundle directory, canonical path confinement, and required files
+            let folderName = "\(appVersion)-\(bundleVersion)"
+            let bundleDirPath = (bundleDir() as NSString).appendingPathComponent(folderName)
+            let resolvedBundleDir = (bundleDirPath as NSString).resolvingSymlinksInPath
+            let baseBundleDir = (bundleDir() as NSString).resolvingSymlinksInPath
+            guard resolvedBundleDir.hasPrefix(baseBundleDir + "/") else {
+                OneKeyLog.error("BundleUpdate", "processPreLaunchPendingTask: bundle path outside bundle directory: \(resolvedBundleDir)")
+                failPendingTask(mmkv: mmkv, taskDict: taskDict, reason: "ERR_VERIFY_FAILED:Bundle path outside bundle directory")
+                return
+            }
+            let sigPath = (signatureFilePath(folderName) as NSString).resolvingSymlinksInPath
+            let baseAscDir = (ascDir() as NSString).resolvingSymlinksInPath
+            guard sigPath.hasPrefix(baseAscDir + "/") else {
+                OneKeyLog.error("BundleUpdate", "processPreLaunchPendingTask: signature path outside asc directory: \(sigPath)")
+                failPendingTask(mmkv: mmkv, taskDict: taskDict, reason: "ERR_VERIFY_FAILED:Signature path outside asc directory")
+                return
+            }
+            guard FileManager.default.fileExists(atPath: bundleDirPath) else { return }
+            let entryFilePath = (bundleDirPath as NSString).appendingPathComponent("main.jsbundle.hbc")
+            let metadataFilePath = (bundleDirPath as NSString).appendingPathComponent("metadata.json")
+            guard FileManager.default.fileExists(atPath: entryFilePath),
+                  FileManager.default.fileExists(atPath: metadataFilePath) else {
+                OneKeyLog.warn("BundleUpdate", "processPreLaunchPendingTask: bundle dir exists but required files missing: \(bundleDirPath)")
+                failPendingTask(mmkv: mmkv, taskDict: taskDict, reason: "ERR_VERIFY_FAILED:Required bundle files missing")
+                return
+            }
+
+            #if ALLOW_SKIP_GPG_VERIFICATION
+            let skipGPG = isDevSettingsEnabled() && isSkipGPGEnabled()
+            #else
+            let skipGPG = false
+            #endif
+            if !skipGPG && !validateMetadataFileSha256(folderName, signature: signature) {
+                OneKeyLog.error("BundleUpdate", "processPreLaunchPendingTask: GPG signature verification failed for \(folderName)")
+                failPendingTask(mmkv: mmkv, taskDict: taskDict, reason: "ERR_VERIFY_FAILED:Bundle signature verification failed")
+                return
+            }
+
+            guard let metadata = getMetadataFileContent(folderName) else {
+                OneKeyLog.error("BundleUpdate", "processPreLaunchPendingTask: failed to read metadata.json for \(folderName)")
+                failPendingTask(mmkv: mmkv, taskDict: taskDict, reason: "ERR_VERIFY_FAILED:Failed to read metadata.json")
+                return
+            }
+            if !validateEntryBundlesSha256(bundleDirPath: bundleDirPath, metadata: metadata) {
+                OneKeyLog.error("BundleUpdate", "processPreLaunchPendingTask: entry bundle SHA256 verification failed for \(folderName)")
+                failPendingTask(mmkv: mmkv, taskDict: taskDict, reason: "ERR_VERIFY_FAILED:Entry bundle SHA256 verification failed")
+                return
+            }
+            if !validateBundlePairCompatibility(bundleDirPath: bundleDirPath, metadata: metadata) {
+                OneKeyLog.error("BundleUpdate", "processPreLaunchPendingTask: bundle pair compatibility check failed for \(folderName)")
+                failPendingTask(mmkv: mmkv, taskDict: taskDict, reason: "ERR_VERIFY_FAILED:Bundle pair compatibility check failed")
+                return
+            }
+
+            // 6. Apply: write signature file BEFORE flipping currentBundleVersion
+            writeSignatureFile(folderName, signature: signature)
             let ud = UserDefaults.standard
             ud.set(folderName, forKey: bundlePrefsKey)
-            if !signature.isEmpty {
-                writeSignatureFile(folderName, signature: signature)
-            }
             setNativeVersion(currentAppVersion)
             setNativeBuildNumber(getCurrentNativeBuildNumber())
             ud.synchronize()
@@ -744,14 +804,14 @@ public class BundleUpdateStore: NSObject {
         OneKeyLog.debug("BundleUpdate", "getJsBundlePath: signatureLength=\(signature.count)")
 
         #if ALLOW_SKIP_GPG_VERIFICATION
-        let devSettingsEnabled = isDevSettingsEnabled()
-        if devSettingsEnabled {
-            OneKeyLog.warn("BundleUpdate", "Startup SHA256 validation skipped (DevSettings enabled)")
+        let skipGPG = isDevSettingsEnabled() && isSkipGPGEnabled()
+        if skipGPG {
+            OneKeyLog.warn("BundleUpdate", "Startup SHA256 validation skipped (DevSettings + skip-GPG enabled)")
         }
         #else
-        let devSettingsEnabled = false
+        let skipGPG = false
         #endif
-        if !devSettingsEnabled && !validateMetadataFileSha256(currentBundleVer, signature: signature) {
+        if !skipGPG && !validateMetadataFileSha256(currentBundleVer, signature: signature) {
             OneKeyLog.warn("BundleUpdate", "getJsBundlePath: validateMetadataFileSha256 failed, signatureLength=\(signature.count)")
             return nil
         }
@@ -907,12 +967,15 @@ private extension String {
 
 /// URLSession delegate that handles download progress and HTTPS redirect validation
 private class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
+    private static let maxDownloadBytes: Int64 = 512 * 1024 * 1024
+
     /// Called with progress percentage (0-100) during download
     var onProgress: ((Int) -> Void)?
 
     /// Continuation to bridge delegate callbacks → async/await
     private var continuation: CheckedContinuation<(URL, URLResponse), Error>?
     private var tempFileURL: URL?
+    private var exceededMaxBytes = false
     /// Resume data captured from the most recent failure so the caller can
     /// persist it for the next attempt. Populated in didCompleteWithError
     /// when the system supplies NSURLSessionDownloadTaskResumeData.
@@ -930,6 +993,11 @@ private class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
     private var prevProgress: Int = -1
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
+        if totalBytesWritten > Self.maxDownloadBytes || totalBytesExpectedToWrite > Self.maxDownloadBytes {
+            exceededMaxBytes = true
+            downloadTask.cancel()
+            return
+        }
         guard totalBytesExpectedToWrite > 0 else { return }
         let progress = Int((totalBytesWritten * 100) / totalBytesExpectedToWrite)
         if progress != prevProgress {
@@ -940,6 +1008,13 @@ private class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
     }
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+        if exceededMaxBytes { return }
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: location.path),
+           let fileSize = attrs[.size] as? Int64,
+           fileSize > Self.maxDownloadBytes {
+            exceededMaxBytes = true
+            return
+        }
         // Copy to a temp location because the file at `location` is deleted after this method returns
         let tempPath = NSTemporaryDirectory() + UUID().uuidString
         let dest = URL(fileURLWithPath: tempPath)
@@ -958,6 +1033,13 @@ private class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
         let cont = continuation
         continuation = nil
         lock.unlock()
+
+        if exceededMaxBytes {
+            self.lastResumeData = nil
+            cont?.resume(throwing: NSError(domain: "BundleUpdate", code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "Bundle download exceeds maximum allowed size"]))
+            return
+        }
 
         if let error = error {
             // iOS attaches partial download bytes via userInfo so the next
@@ -997,6 +1079,7 @@ private class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
         continuation = nil
         lock.unlock()
         tempFileURL = nil
+        exceededMaxBytes = false
         onProgress = nil
         prevProgress = -1
         lastResumeData = nil
@@ -1589,6 +1672,10 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 OneKeyLog.error("BundleUpdate", "downloadBundleASC: invalid version string format: appVersion=\(appVersion), bundleVersion=\(bundleVersion)")
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid version string format"])
             }
+            guard signature.utf8.count <= 64 * 1024 else {
+                OneKeyLog.error("BundleUpdate", "downloadBundleASC: signature exceeds maximum allowed size (\(signature.utf8.count))")
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Signature exceeds maximum allowed size"])
+            }
 
             let storageKey = "\(appVersion)-\(bundleVersion)"
             let sigPath = (BundleUpdateStore.signatureFilePath(storageKey) as NSString).resolvingSymlinksInPath
@@ -1894,11 +1981,24 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 }
             }
 
-            let ud = UserDefaults.standard
-            ud.set(folderName, forKey: "currentBundleVersion")
+            guard let metadata = BundleUpdateStore.getMetadataFileContent(folderName) else {
+                OneKeyLog.error("BundleUpdate", "installBundle: failed to read metadata.json content for \(folderName)")
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to read metadata.json"])
+            }
+            if !BundleUpdateStore.validateEntryBundlesSha256(bundleDirPath: bundleDirPath, metadata: metadata) {
+                OneKeyLog.error("BundleUpdate", "installBundle: entry bundle SHA256 verification failed for \(folderName)")
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Entry bundle SHA256 verification failed"])
+            }
+            if !BundleUpdateStore.validateBundlePairCompatibility(bundleDirPath: bundleDirPath, metadata: metadata) {
+                OneKeyLog.error("BundleUpdate", "installBundle: bundle pair compatibility check failed for \(folderName)")
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle pair compatibility check failed"])
+            }
+
             if !signature.isEmpty {
                 BundleUpdateStore.writeSignatureFile(folderName, signature: signature)
             }
+            let ud = UserDefaults.standard
+            ud.set(folderName, forKey: "currentBundleVersion")
             let currentNativeVersion = BundleUpdateStore.getCurrentNativeVersion()
             BundleUpdateStore.setNativeVersion(currentNativeVersion)
             let currentBuildNumber = BundleUpdateStore.getCurrentNativeBuildNumber()
@@ -2237,11 +2337,11 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle pair compatibility check failed"])
             }
 
-            let ud = UserDefaults.standard
-            ud.set(bundleVersion, forKey: "currentBundleVersion")
             if !params.signature.isEmpty {
                 BundleUpdateStore.writeSignatureFile(bundleVersion, signature: params.signature)
             }
+            let ud = UserDefaults.standard
+            ud.set(bundleVersion, forKey: "currentBundleVersion")
             let currentNativeVersion = BundleUpdateStore.getCurrentNativeVersion()
             BundleUpdateStore.setNativeVersion(currentNativeVersion)
             let currentBuildNumber = BundleUpdateStore.getCurrentNativeBuildNumber()

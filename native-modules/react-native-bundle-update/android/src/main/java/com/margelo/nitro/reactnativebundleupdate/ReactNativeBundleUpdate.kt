@@ -250,6 +250,16 @@ object BundleUpdateStoreAndroid {
      * Only handles the happy path (status=pending, bundle exists, env matches).
      * All complex logic (retry, download, error handling) remains in JS layer.
      */
+    private fun failPendingTask(mmkv: MMKV, taskObj: JSONObject, reason: String) {
+        try {
+            taskObj.put("status", "failed")
+            taskObj.put("lastError", reason)
+            mmkv.encode("onekey_pending_install_task", taskObj.toString())
+        } catch (e: Exception) {
+            OneKeyLog.warn("BundleUpdate", "processPreLaunchPendingTask: failed to update MMKV task failure: ${e.message}")
+        }
+    }
+
     fun processPreLaunchPendingTask(context: Context) {
         if (didProcessPreLaunchTask) return
         didProcessPreLaunchTask = true
@@ -296,20 +306,67 @@ object BundleUpdateStoreAndroid {
             val bundleVersion = payload.optString("bundleVersion")
             val signature = payload.optString("signature")
             if (appVersion.isEmpty() || bundleVersion.isEmpty() || signature.isEmpty()) return
-            if (!isSafeVersionString(appVersion) || !isSafeVersionString(bundleVersion)) return
-
-            // 5. Verify bundle directory and entry file exist
-            val folderName = "$appVersion-$bundleVersion"
-            val bundleDirPath = File(getBundleDir(context), folderName)
-            if (!bundleDirPath.exists()) return
-            val entryFile = File(bundleDirPath, "main.jsbundle.hbc")
-            if (!entryFile.exists()) {
-                OneKeyLog.warn("BundleUpdate", "processPreLaunchPendingTask: bundle dir exists but entry file missing: ${entryFile.absolutePath}")
+            if (!isSafeVersionString(appVersion) || !isSafeVersionString(bundleVersion)) {
+                failPendingTask(mmkv, taskObj, "ERR_VERIFY_FAILED:Invalid version string")
+                return
+            }
+            if (appVersion != currentAppVersion) {
+                OneKeyLog.warn("BundleUpdate", "processPreLaunchPendingTask: target appVersion ($appVersion) != currentAppVersion ($currentAppVersion)")
+                failPendingTask(mmkv, taskObj, "ERR_ENV_CHANGED:Target appVersion mismatch")
                 return
             }
 
-            // 6. Apply (same as installBundle) — use commit() for synchronous writes
-            //    to ensure all prefs are persisted atomically before proceeding.
+            // 5. Verify bundle directory, canonical path confinement, and required files
+            val folderName = "$appVersion-$bundleVersion"
+            val baseBundleDir = File(getBundleDir(context)).canonicalPath
+            val bundleDirPath = File(getBundleDir(context), folderName)
+            if (Files.isSymbolicLink(bundleDirPath.toPath()) ||
+                !bundleDirPath.canonicalPath.startsWith(baseBundleDir + File.separator)
+            ) {
+                OneKeyLog.error("BundleUpdate", "processPreLaunchPendingTask: bundle path outside bundle directory: ${bundleDirPath.canonicalPath}")
+                failPendingTask(mmkv, taskObj, "ERR_VERIFY_FAILED:Bundle path outside bundle directory")
+                return
+            }
+            val sigFile = File(getSignatureFilePath(context, folderName))
+            val baseAscDir = File(getAscDir(context)).canonicalPath
+            if (Files.isSymbolicLink(sigFile.toPath()) ||
+                !sigFile.canonicalPath.startsWith(baseAscDir + File.separator)
+            ) {
+                OneKeyLog.error("BundleUpdate", "processPreLaunchPendingTask: signature path outside asc directory: ${sigFile.canonicalPath}")
+                failPendingTask(mmkv, taskObj, "ERR_VERIFY_FAILED:Signature path outside asc directory")
+                return
+            }
+            if (!bundleDirPath.exists()) return
+            val entryFile = File(bundleDirPath, "main.jsbundle.hbc")
+            val metadataFile = File(bundleDirPath, "metadata.json")
+            if (!entryFile.exists() || !metadataFile.exists()) {
+                OneKeyLog.warn("BundleUpdate", "processPreLaunchPendingTask: bundle dir exists but required files missing: ${bundleDirPath.absolutePath}")
+                failPendingTask(mmkv, taskObj, "ERR_VERIFY_FAILED:Required bundle files missing")
+                return
+            }
+
+            val skipGPG = BuildConfig.ALLOW_SKIP_GPG_VERIFICATION && isDevSettingsEnabled(context) && isSkipGPGEnabled(context)
+            if (!skipGPG && !validateMetadataFileSha256(context, folderName, signature)) {
+                OneKeyLog.error("BundleUpdate", "processPreLaunchPendingTask: GPG signature verification failed for $folderName")
+                failPendingTask(mmkv, taskObj, "ERR_VERIFY_FAILED:Bundle signature verification failed")
+                return
+            }
+
+            val metadata = parseMetadataJson(readFileContent(metadataFile))
+            if (!validateEntryBundlesSha256(bundleDirPath.absolutePath, metadata)) {
+                OneKeyLog.error("BundleUpdate", "processPreLaunchPendingTask: entry bundle SHA256 verification failed for $folderName")
+                failPendingTask(mmkv, taskObj, "ERR_VERIFY_FAILED:Entry bundle SHA256 verification failed")
+                return
+            }
+            if (!validateBundlePairCompatibility(context, bundleDirPath.absolutePath, metadata)) {
+                OneKeyLog.error("BundleUpdate", "processPreLaunchPendingTask: bundle pair compatibility check failed for $folderName")
+                failPendingTask(mmkv, taskObj, "ERR_VERIFY_FAILED:Bundle pair compatibility check failed")
+                return
+            }
+
+            // 6. Apply (same as installBundle) — write signature BEFORE flipping
+            //    currentBundleVersion, and use commit() for synchronous writes.
+            writeSignatureFile(context, folderName, signature)
             val bundlePrefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val versionPrefs = context.getSharedPreferences(NATIVE_VERSION_PREFS_NAME, Context.MODE_PRIVATE)
             val currentVersion = bundlePrefs.getString(CURRENT_BUNDLE_VERSION_KEY, "")
@@ -321,9 +378,6 @@ object BundleUpdateStoreAndroid {
                     }
                 }
                 .commit()
-            if (!signature.isNullOrEmpty()) {
-                writeSignatureFile(context, folderName, signature)
-            }
             versionPrefs.edit()
                 .putString("nativeVersion", currentAppVersion)
                 .putString("nativeBuildNumber", getBuildNumber(context))
@@ -810,11 +864,11 @@ object BundleUpdateStoreAndroid {
             val signature = readSignatureFile(context, currentBundleVersion)
             OneKeyLog.debug("BundleUpdate", "getJsBundlePath: signatureLength=${signature.length}")
 
-            val devSettingsEnabled = if (BuildConfig.ALLOW_SKIP_GPG_VERIFICATION) isDevSettingsEnabled(context) else false
-            if (devSettingsEnabled) {
-                OneKeyLog.warn("BundleUpdate", "Startup SHA256 validation skipped (DevSettings enabled)")
+            val skipGPG = BuildConfig.ALLOW_SKIP_GPG_VERIFICATION && isDevSettingsEnabled(context) && isSkipGPGEnabled(context)
+            if (skipGPG) {
+                OneKeyLog.warn("BundleUpdate", "Startup SHA256 validation skipped (DevSettings + skip-GPG enabled)")
             }
-            if (!devSettingsEnabled && !validateMetadataFileSha256(context, currentBundleVersion, signature)) {
+            if (!skipGPG && !validateMetadataFileSha256(context, currentBundleVersion, signature)) {
                 OneKeyLog.warn("BundleUpdate", "getJsBundlePath: validateMetadataFileSha256 failed, signatureLength=${signature.length}")
                 return null
             }
@@ -1588,6 +1642,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             }
 
             // Append iff server granted us a 206 partial; otherwise overwrite.
+            val maxDownloadBytes = 512L * 1024 * 1024
             val appendMode = isPartialResponse
             var totalBytesRead = if (isPartialResponse) partialBytes else 0L
             body.byteStream().use { inputStream ->
@@ -1597,8 +1652,11 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
 
                     var prevProgress = -1
                     while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                        outputStream.write(buffer, 0, bytesRead)
                         totalBytesRead += bytesRead
+                        if (totalBytesRead > maxDownloadBytes) {
+                            throw IOException("Bundle download exceeds maximum allowed size")
+                        }
+                        outputStream.write(buffer, 0, bytesRead)
                         if (totalSize > 0) {
                             val progress = ((totalBytesRead * 100) / totalSize).toInt().coerceIn(0, 100)
                             if (progress != prevProgress) {
@@ -1727,6 +1785,9 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             if (!isSafeVersionString(appVersion) || !isSafeVersionString(bundleVersion)) {
                 throw SecurityException("Invalid version string")
             }
+            if (signature.toByteArray(Charsets.UTF_8).size > 64 * 1024) {
+                throw SecurityException("Signature exceeds maximum allowed size")
+            }
 
             val context = getContext()
             OneKeyLog.info("BundleUpdate", "downloadBundleASC: appVersion=$appVersion, bundleVersion=$bundleVersion, signatureLength=${signature.length}")
@@ -1734,7 +1795,9 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             val storageKey = "$appVersion-$bundleVersion"
             val ascBaseCanonical = File(BundleUpdateStoreAndroid.getAscDir(context)).canonicalPath
             val signatureFile = File(BundleUpdateStoreAndroid.getSignatureFilePath(context, storageKey))
-            if (!signatureFile.canonicalPath.startsWith(ascBaseCanonical + File.separator)) {
+            if (Files.isSymbolicLink(signatureFile.toPath()) ||
+                !signatureFile.canonicalPath.startsWith(ascBaseCanonical + File.separator)
+            ) {
                 throw SecurityException("Signature file path outside allowed asc directory")
             }
             BundleUpdateStoreAndroid.writeSignatureFile(context, storageKey, signature)
@@ -1923,8 +1986,17 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             // Verify bundle directory exists and is canonically confined inside getBundleDir(context)
             val bundleBaseCanonical = File(BundleUpdateStoreAndroid.getBundleDir(context)).canonicalPath
             val bundleDirPath = File(BundleUpdateStoreAndroid.getBundleDir(context), folderName)
-            if (!bundleDirPath.canonicalPath.startsWith(bundleBaseCanonical + File.separator)) {
+            if (Files.isSymbolicLink(bundleDirPath.toPath()) ||
+                !bundleDirPath.canonicalPath.startsWith(bundleBaseCanonical + File.separator)
+            ) {
                 throw SecurityException("Bundle path outside allowed bundle directory")
+            }
+            val ascBaseCanonical = File(BundleUpdateStoreAndroid.getAscDir(context)).canonicalPath
+            val sigFile = File(BundleUpdateStoreAndroid.getSignatureFilePath(context, folderName))
+            if (Files.isSymbolicLink(sigFile.toPath()) ||
+                !sigFile.canonicalPath.startsWith(ascBaseCanonical + File.separator)
+            ) {
+                throw SecurityException("Signature path outside allowed asc directory")
             }
             if (!bundleDirPath.exists()) {
                 OneKeyLog.error("BundleUpdate", "installBundle: bundle directory not found: ${bundleDirPath.absolutePath}")
@@ -1943,6 +2015,16 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                     OneKeyLog.error("BundleUpdate", "installBundle: GPG signature verification failed for $folderName")
                     throw Exception("Bundle signature verification failed")
                 }
+            }
+
+            val metadata = BundleUpdateStoreAndroid.parseMetadataJson(BundleUpdateStoreAndroid.readFileContent(metadataFile))
+            if (!BundleUpdateStoreAndroid.validateEntryBundlesSha256(bundleDirPath.absolutePath, metadata)) {
+                OneKeyLog.error("BundleUpdate", "installBundle: entry bundle SHA256 verification failed for $folderName")
+                throw Exception("Entry bundle SHA256 verification failed")
+            }
+            if (!BundleUpdateStoreAndroid.validateBundlePairCompatibility(context, bundleDirPath.absolutePath, metadata)) {
+                OneKeyLog.error("BundleUpdate", "installBundle: bundle pair compatibility check failed for $folderName")
+                throw Exception("Bundle pair compatibility check failed")
             }
 
             val currentSignature = if (currentFolderName != null) BundleUpdateStoreAndroid.readSignatureFile(context, currentFolderName) else ""
@@ -2274,13 +2356,17 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
 
             val baseBundleDir = File(BundleUpdateStoreAndroid.getBundleDir(context)).canonicalPath
             val bundleDirPath = File(BundleUpdateStoreAndroid.getBundleDir(context), bundleVersion)
-            if (!bundleDirPath.canonicalPath.startsWith(baseBundleDir + File.separator)) {
+            if (Files.isSymbolicLink(bundleDirPath.toPath()) ||
+                !bundleDirPath.canonicalPath.startsWith(baseBundleDir + File.separator)
+            ) {
                 OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: bundle path outside bundle directory: ${bundleDirPath.canonicalPath}")
                 throw SecurityException("Bundle path outside bundle directory")
             }
-            val sigFile = BundleUpdateStoreAndroid.getSignatureFile(context, bundleVersion)
+            val sigFile = File(BundleUpdateStoreAndroid.getSignatureFilePath(context, bundleVersion))
             val baseAscDir = File(BundleUpdateStoreAndroid.getAscDir(context)).canonicalPath
-            if (!sigFile.canonicalPath.startsWith(baseAscDir + File.separator)) {
+            if (Files.isSymbolicLink(sigFile.toPath()) ||
+                !sigFile.canonicalPath.startsWith(baseAscDir + File.separator)
+            ) {
                 OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: signature path outside asc directory: ${sigFile.canonicalPath}")
                 throw SecurityException("Signature path outside asc directory")
             }
@@ -2311,7 +2397,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 throw Exception("metadata.json not found")
             }
             val metadata = BundleUpdateStoreAndroid.parseMetadataJson(BundleUpdateStoreAndroid.readFileContent(metadataFile))
-            if (!BundleUpdateStoreAndroid.validateEntryBundlesSha256(context, bundleDirPath.absolutePath, metadata)) {
+            if (!BundleUpdateStoreAndroid.validateEntryBundlesSha256(bundleDirPath.absolutePath, metadata)) {
                 OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: entry bundle SHA256 verification failed")
                 throw Exception("Entry bundle SHA256 verification failed")
             }

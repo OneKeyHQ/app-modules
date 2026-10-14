@@ -128,6 +128,12 @@ public enum BundleCryptoCore {
   // MARK: - GPG cleartext (bundle form): body JSON -> sha256
   // Ported verbatim from ReactNativeBundleUpdate.verifyGPGAndExtractSha256.
 
+  private static func isHex64(_ token: String) -> Bool {
+    return token.count == 64 && token.unicodeScalars.allSatisfy {
+      ($0 >= "0" && $0 <= "9") || ($0 >= "a" && $0 <= "f")
+    }
+  }
+
   public static func extractDetachedAscSha256(_ cleartextBody: String, expectedFileName: String?) -> String? {
     let trimmed = cleartextBody.trimmingCharacters(in: .whitespacesAndNewlines)
     guard let expectedFileName = expectedFileName, !expectedFileName.isEmpty else {
@@ -143,23 +149,54 @@ public enum BundleCryptoCore {
     if lines.isEmpty {
       return ""
     }
-    var sawFileNameColumn = false
+    var matchedHashes = Set<String>()
     for line in lines {
       let tokens = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
       if tokens.count >= 2 {
-        sawFileNameColumn = true
         let rawToken = String(tokens[1])
         let stripped = rawToken.hasPrefix("*") ? String(rawToken.dropFirst()) : rawToken
         let fileName = (stripped as NSString).lastPathComponent
         if fileName == expectedFileName {
-          return String(tokens[0]).lowercased()
+          let candidate = String(tokens[0]).lowercased()
+          if !isHex64(candidate) {
+            return ""
+          }
+          matchedHashes.insert(candidate)
         }
       }
     }
-    if !sawFileNameColumn {
-      return ""
+    if matchedHashes.count == 1, let single = matchedHashes.first {
+      return single
     }
     return ""
+  }
+
+  private static func hasValidSha256LineWithoutMatchingFile(_ cleartextBody: String, expectedFileName: String?) -> Bool {
+    guard let expectedFileName = expectedFileName, !expectedFileName.isEmpty else { return false }
+    let lines = cleartextBody
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .components(separatedBy: .newlines)
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+    var sawValidHashLine = false
+    for line in lines {
+      let tokens = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
+      if !tokens.isEmpty {
+        let candidate = String(tokens[0]).lowercased()
+        if isHex64(candidate) {
+          sawValidHashLine = true
+        }
+        if tokens.count >= 2 {
+          let rawToken = String(tokens[1])
+          let stripped = rawToken.hasPrefix("*") ? String(rawToken.dropFirst()) : rawToken
+          let fileName = (stripped as NSString).lastPathComponent
+          if fileName == expectedFileName {
+            return false
+          }
+        }
+      }
+    }
+    return sawValidHashLine
   }
 
   public static func verifyGpgCleartext(
@@ -337,10 +374,11 @@ public enum BundleCryptoCore {
       OneKeyLog.error("BundleCrypto", "ASC signed filename mismatch for expected: \(expectedFileName ?? "")")
       return (false, nil, "FILENAME_MISMATCH")
     }
-    let isHex = sha256.count == 64 && sha256.unicodeScalars.allSatisfy {
-      ($0 >= "0" && $0 <= "9") || ($0 >= "a" && $0 <= "f")
-    }
-    guard isHex else {
+    guard isHex64(sha256) else {
+      if hasValidSha256LineWithoutMatchingFile(text, expectedFileName: expectedFileName) {
+        OneKeyLog.error("BundleCrypto", "ASC signed filename mismatch for expected: \(expectedFileName ?? "")")
+        return (false, nil, "FILENAME_MISMATCH")
+      }
       OneKeyLog.error("BundleCrypto", "ASC body sha256 token invalid")
       return (false, nil, "SHA256_TOKEN_INVALID")
     }

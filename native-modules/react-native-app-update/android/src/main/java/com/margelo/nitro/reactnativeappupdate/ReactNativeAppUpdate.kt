@@ -185,18 +185,19 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return null
             val body = response.body ?: return null
-            BufferedReader(InputStreamReader(body.byteStream())).use { reader ->
-                var line: String?
-                while (reader.readLine().also { line = it } != null) {
-                    content.append(line).append("\n")
-                    if (content.length > maxAscSize) return null
+            InputStreamReader(body.byteStream(), Charsets.UTF_8).use { reader ->
+                val buf = CharArray(1024)
+                var n: Int
+                while (reader.read(buf).also { n = it } != -1) {
+                    if (content.length + n > maxAscSize) return null
+                    content.append(buf, 0, n)
                 }
             }
         }
         val ascContent = content.toString()
         if (ascContent.isEmpty()) return null
         ascFile.parentFile?.mkdirs()
-        FileOutputStream(ascFile).use { fos -> fos.write(ascContent.toByteArray()) }
+        FileOutputStream(ascFile).use { fos -> fos.write(ascContent.toByteArray(Charsets.UTF_8)) }
         return ascFile
     }
 
@@ -873,13 +874,17 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 // a resumed download's first event is already >0%).
                 var prevProgress = -1
 
+                val maxApkSize = 512L * 1024 * 1024
                 body.byteStream().use { inputStream ->
                     FileOutputStream(partialFile.absolutePath, appendMode).use { outputStream ->
                         val buffer = ByteArray(8192)
                         var bytesRead: Int
                         while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                            outputStream.write(buffer, 0, bytesRead)
                             totalBytesRead += bytesRead
+                            if (totalBytesRead > maxApkSize) {
+                                throw Exception("APK exceeds maximum allowed size")
+                            }
+                            outputStream.write(buffer, 0, bytesRead)
                             if (totalSize > 0) {
                                 val progress = ((totalBytesRead * 100) / totalSize).toInt().coerceIn(0, 100)
                                 if (progress != prevProgress) {
@@ -994,14 +999,15 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 val content = StringBuilder()
                 val maxAscSize = 10 * 1024 // 10 KB max for ASC files
                 val body = response.body ?: throw Exception("Empty ASC response body")
-                BufferedReader(InputStreamReader(body.byteStream())).use { reader ->
-                    var line: String?
-                    while (reader.readLine().also { line = it } != null) {
-                        content.append(line).append("\n")
-                        if (content.length > maxAscSize) {
+                InputStreamReader(body.byteStream(), Charsets.UTF_8).use { reader ->
+                    val buf = CharArray(1024)
+                    var n: Int
+                    while (reader.read(buf).also { n = it } != -1) {
+                        if (content.length + n > maxAscSize) {
                             OneKeyLog.error("AppUpdate", "downloadASC: ASC file exceeds max size ($maxAscSize bytes)")
                             throw Exception("ASC file exceeds maximum allowed size")
                         }
+                        content.append(buf, 0, n)
                     }
                 }
 
@@ -1021,7 +1027,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 ascFile.delete()
             }
             FileOutputStream(ascFile).use { fos ->
-                fos.write(ascContent.toByteArray())
+                fos.write(ascContent.toByteArray(Charsets.UTF_8))
             }
             OneKeyLog.info("AppUpdate", "downloadASC: saved ASC file to $ascFilePath")
         }

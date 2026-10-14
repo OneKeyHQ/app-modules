@@ -173,6 +173,10 @@ object BundleCryptoCore {
     }
   }
 
+  private fun isHex64(token: String): Boolean {
+    return token.length == 64 && token.all { it in '0'..'9' || it in 'a'..'f' }
+  }
+
   internal fun extractDetachedAscSha256(cleartextBody: String, expectedFileName: String?): String? {
     val trimmed = cleartextBody.trim()
     if (expectedFileName.isNullOrEmpty()) {
@@ -182,22 +186,47 @@ object BundleCryptoCore {
     if (nonEmptyLines.isEmpty()) {
       return ""
     }
-    var sawFileNameColumn = false
+    val matchedHashes = mutableSetOf<String>()
     for (line in nonEmptyLines) {
       val tokens = line.split("\\s+".toRegex())
       if (tokens.size >= 2) {
-        sawFileNameColumn = true
         val rawName = tokens[1].removePrefix("*")
         val fileName = File(rawName).name
         if (fileName == expectedFileName) {
-          return tokens[0].lowercase()
+          val candidate = tokens[0].lowercase()
+          if (!isHex64(candidate)) {
+            return ""
+          }
+          matchedHashes.add(candidate)
         }
       }
     }
-    if (!sawFileNameColumn) {
-      return ""
+    if (matchedHashes.size == 1) {
+      return matchedHashes.single()
     }
     return ""
+  }
+
+  private fun hasValidSha256LineWithoutMatchingFile(cleartextBody: String, expectedFileName: String?): Boolean {
+    if (expectedFileName.isNullOrEmpty()) return false
+    val nonEmptyLines = cleartextBody.trim().lines().map { it.trim() }.filter { it.isNotEmpty() }
+    var sawValidHashLine = false
+    for (line in nonEmptyLines) {
+      val tokens = line.split("\\s+".toRegex())
+      if (tokens.isNotEmpty()) {
+        val candidate = tokens[0].lowercase()
+        if (isHex64(candidate)) {
+          sawValidHashLine = true
+        }
+        if (tokens.size >= 2) {
+          val fileName = File(tokens[1].removePrefix("*")).name
+          if (fileName == expectedFileName) {
+            return false
+          }
+        }
+      }
+    }
+    return sawValidHashLine
   }
 
   private fun verifyCleartextSignature(
@@ -355,7 +384,10 @@ object BundleCryptoCore {
       // Extract SHA256 from verified cleartext.
       val sha256 = extractDetachedAscSha256(cleartextBody, expectedFileName)
         ?: return VerifyResult(false, null, "FILENAME_MISMATCH")
-      if (sha256.length != 64 || !sha256.all { it in '0'..'9' || it in 'a'..'f' }) {
+      if (!isHex64(sha256)) {
+        if (hasValidSha256LineWithoutMatchingFile(cleartextBody, expectedFileName)) {
+          return VerifyResult(false, null, "FILENAME_MISMATCH")
+        }
         return VerifyResult(false, null, "SHA256_TOKEN_INVALID")
       }
 
