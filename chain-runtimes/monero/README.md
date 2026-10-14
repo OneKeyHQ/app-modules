@@ -94,6 +94,10 @@ signTransaction         verify again, then sign; no network, no DB
 broadcastTransaction    record, then broadcast → { txid, broadcast: accepted | unknown }
 ```
 
+`prepareTransaction` takes exactly one recipient. A first `broadcastTransaction`
+whose inputs are not this account's, or are already spent by another transaction,
+is refused with `INVALID_REQUEST` before anything is recorded or sent.
+
 `BROADCAST_REJECTED` is thrown only when the node explicitly rejects a first
 broadcast for a reason other than double spend; the record is then undone and the
 inputs released. Unsigned reservations expire after 1 hour, signed ones after 24

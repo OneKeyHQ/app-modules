@@ -125,6 +125,25 @@ async function online() {
     check('empty wallet build reports insufficient funds', err.params.reason, 'insufficientUnlockedFunds');
   }
 
+  // The review covers one recipient, so preparation refuses more.
+  try {
+    await rt.prepareTransaction(
+      id,
+      JSON.stringify([
+        { address: a.primaryAddress, amountAtomic: '1000' },
+        { address: sub.address, amountAtomic: '1000' },
+      ]),
+      false,
+      'smoke-r2',
+      BigInt(tip.height),
+      'normal',
+    );
+    check('two-recipient build fails', 'succeeded', 'failed');
+  } catch (e) {
+    const err = JSON.parse(e.message ?? e);
+    check('two-recipient build is refused', err.params.reason, 'exactlyOneRecipient');
+  }
+
   const released = JSON.parse(rt.releaseReservation('smoke-r1'));
   check('failed build leaves no reservation', released.released, 0);
 }

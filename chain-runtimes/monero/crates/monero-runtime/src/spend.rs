@@ -1267,6 +1267,60 @@ mod tests {
         assert_eq!(rows, 0, "rejected transaction is not kept in history");
     }
 
+    /// A send passed with the wrong account records nothing and leaves the
+    /// source account's reservation and inputs as they were.
+    #[test]
+    fn a_broadcast_under_another_account_is_refused_before_sending() {
+        let (mut db, source) = db_with_identity();
+        let (spend, mut view) = crate::wallet::testing::key_bytes();
+        view[0] = 10;
+        let other = db.add_identity("acct-2", &spend, &view, 100).unwrap().id;
+        let a = add_output(&db, source, 500, 10, true);
+        reserve(&mut db, "r", &[a]).unwrap();
+        let key_image: Vec<u8> = db
+            .conn()
+            .query_row("SELECT key_image FROM outputs WHERE id = ?1", [a], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        let key_image = <[u8; 32]>::try_from(key_image.as_slice()).unwrap();
+        let record = |db: &Db, identity, txid: &[u8; 32]| {
+            record_broadcast(
+                db,
+                identity,
+                txid,
+                &[key_image],
+                "r",
+                900,
+                SentAmounts::default(),
+            )
+        };
+
+        let err = record(&db, other, &[0x66; 32]).unwrap_err();
+        assert_eq!(err.params["reason"], "inputNotOwnedByAccount");
+        let rows: i64 = db
+            .conn()
+            .query_row("SELECT count(*) FROM transactions", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(rows, 0);
+        let locked: i64 = db
+            .conn()
+            .query_row("SELECT count(*) FROM locked_outputs", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(locked, 1, "the source reservation is kept");
+
+        assert!(record(&db, source, &[0x66; 32]).unwrap());
+        let err = record(&db, source, &[0x77; 32]).unwrap_err();
+        assert_eq!(
+            err.params["reason"], "inputAlreadySpent",
+            "a second transaction over the same inputs is not recorded"
+        );
+        assert!(
+            !record(&db, source, &[0x66; 32]).unwrap(),
+            "a retry is still accepted"
+        );
+    }
+
     /// An output cannot be held by two reservations at once.
     #[test]
     fn an_output_cannot_be_reserved_twice() {
@@ -1396,8 +1450,9 @@ pub fn parse_priority(name: &str) -> Result<monero_wallet::interface::FeePriorit
 /// The output is therefore equivalent to a view key: whoever holds it can see
 /// every payment this account received. Any export-to-sign design must treat it so.
 ///
-/// `recipients` are `(address, piconero amount)`. With `max_send`, exactly one
-/// recipient is allowed and the amount is spendable total minus fee; the given amount is ignored.
+/// `recipients` are `(address, piconero amount)`. Exactly one is accepted: the
+/// review contract covers a single recipient. With `max_send`, the amount is
+/// spendable total minus fee; the given amount is ignored.
 ///
 /// The returned `feeAtomic` is the fee actually paid and does not change at
 /// signing; `amountAtomic` is what the recipient actually receives under max-send.
@@ -1414,6 +1469,12 @@ pub async fn prepare_for_host(
 ) -> Result<Value> {
     use monero_daemon_rpc::prelude::*;
 
+    if recipients.len() != 1 {
+        return Err(RuntimeError::with(
+            ErrorCode::InvalidRequest,
+            json!({ "field": "recipientsJson", "reason": "exactlyOneRecipient" }),
+        ));
+    }
     let network = db.network();
     let rate = daemon
         .fee_rate(priority, max_fee_per_weight(priority))
@@ -1434,12 +1495,6 @@ pub async fn prepare_for_host(
     let decoys = CachedDecoys::new(daemon);
 
     let prepared = if max_send {
-        if recipients.len() != 1 {
-            return Err(RuntimeError::with(
-                ErrorCode::InvalidRequest,
-                json!({ "field": "recipientsJson", "reason": "maxSendNeedsExactlyOneRecipient" }),
-            ));
-        }
         let address = keys::parse_address(network, recipients[0].0, "recipient.address")?;
         prepare_max(
             db,
@@ -1516,6 +1571,9 @@ pub struct SentAmounts {
 ///
 /// Returns whether the record is fresh. An existing record means the same
 /// transaction was sent before (a retry), which the node may have accepted.
+///
+/// A fresh record must spend only this account's outputs that no other
+/// transaction spent; otherwise nothing is recorded and nothing is sent.
 fn record_broadcast(
     db: &Db,
     identity_id: i64,
@@ -1536,6 +1594,9 @@ fn record_broadcast(
             |r| r.get(0),
         )
         .map_err(|e| db_err("findRecordedSend", e))?;
+    if !existed {
+        check_inputs_owned(&tx_db, identity_id, txid, key_images)?;
+    }
     for key_image in key_images {
         tx_db
             .execute(
@@ -1570,12 +1631,48 @@ fn record_broadcast(
         .map_err(|e| db_err("recordOutgoing", e))?;
     tx_db
         .execute(
-            "DELETE FROM locked_outputs WHERE reservation_id = ?1",
-            [reservation_id],
+            "DELETE FROM locked_outputs WHERE reservation_id = ?1
+               AND output_id IN (SELECT id FROM outputs WHERE identity_id = ?2)",
+            params![reservation_id, identity_id],
         )
         .map_err(|e| db_err("releaseAfterBroadcast", e))?;
     tx_db.commit().map_err(|e| db_err("commitRecordSend", e))?;
     Ok(!existed)
+}
+
+/// Every input must be an output of `identity_id` not spent by another transaction.
+fn check_inputs_owned(
+    db: &rusqlite::Connection,
+    identity_id: i64,
+    txid: &[u8; 32],
+    key_images: &[[u8; 32]],
+) -> Result<()> {
+    if key_images.is_empty() {
+        return Err(RuntimeError::with(
+            ErrorCode::InvalidRequest,
+            json!({ "field": "rawHex", "reason": "noInputs" }),
+        ));
+    }
+    for key_image in key_images {
+        let spent_in: Option<Option<Vec<u8>>> = db
+            .query_row(
+                "SELECT spent_in_txid FROM outputs WHERE identity_id = ?1 AND key_image = ?2",
+                params![identity_id, key_image.as_slice()],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| db_err("checkInputOwner", e))?;
+        let reason = match spent_in {
+            None => "inputNotOwnedByAccount",
+            Some(Some(other)) if other.as_slice() != txid.as_slice() => "inputAlreadySpent",
+            Some(_) => continue,
+        };
+        return Err(RuntimeError::with(
+            ErrorCode::InvalidRequest,
+            json!({ "field": "rawHex", "reason": reason }),
+        ));
+    }
+    Ok(())
 }
 
 /// Undoes a fresh pending record after an explicit rejection; the inputs become spendable again.
