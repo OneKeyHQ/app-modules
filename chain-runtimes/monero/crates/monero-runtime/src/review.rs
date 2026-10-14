@@ -183,8 +183,24 @@ mod tests {
         Scalar::read(&mut bytes.as_slice()).unwrap()
     }
 
-    // Public, deterministic test keys and invented outputs; no node or funds.
     fn fixture(extra: Vec<Vec<u8>>) -> (Vec<u8>, ReviewRequest, [u8; 32]) {
+        fixture_with(extra, |pair| Change::new(pair, None))
+    }
+
+    /// A view pair for another account: spend key `value`, view key derived as OneKey does.
+    fn other_account(value: u8) -> ViewPair {
+        let bytes = <[u8; 32]>::from(scalar(value));
+        let spend: curve25519_dalek::Scalar = scalar(value).into();
+        let public = Point::from(spend * curve25519_dalek::constants::ED25519_BASEPOINT_POINT);
+        ViewPair::new(public, Zeroizing::new(Scalar::hash(bytes))).unwrap()
+    }
+
+    // Public, deterministic test keys and invented outputs; no node or funds.
+    // `change` picks the change destination from the sender's view pair.
+    fn fixture_with(
+        extra: Vec<Vec<u8>>,
+        change: impl FnOnce(ViewPair) -> Change,
+    ) -> (Vec<u8>, ReviewRequest, [u8; 32]) {
         let mut public_bytes = [0x66u8; 32];
         public_bytes[0] = 0x58;
         let public = CompressedPoint::from(public_bytes).decompress().unwrap();
@@ -221,7 +237,7 @@ mod tests {
                 MoneroAddress::from_str(Network::Mainnet, RECIPIENT).unwrap(),
                 PAYMENT_AMOUNT,
             )],
-            Change::new(pair, None),
+            change(pair),
             extra,
             FeeRate::new(20_000, 1).unwrap(),
         )
@@ -307,6 +323,29 @@ mod tests {
             Some(&<[u8; 32]>::from(scalar(2)))
         )
         .is_err());
+    }
+
+    /// Change must return to the signer's primary address: not one of its
+    /// subaddresses, not another account of the same wallet.
+    #[test]
+    fn change_to_any_other_own_address_is_rejected() {
+        let to_subaddress = |pair| {
+            Change::new(
+                pair,
+                Some(monero_wallet::address::SubaddressIndex::new(0, 1).unwrap()),
+            )
+        };
+        let to_other_account = |_| Change::new(other_account(3), None);
+        let cases: [(&str, Box<dyn FnOnce(ViewPair) -> Change>); 2] = [
+            ("subaddress", Box::new(to_subaddress)),
+            ("other account", Box::new(to_other_account)),
+        ];
+        for (label, change) in cases {
+            let (bytes, review, spend) = fixture_with(vec![], change);
+            let encoded = hex::encode(bytes);
+            assert!(verify(&encoded, &review, None).is_err(), "{label}");
+            assert!(verify(&encoded, &review, Some(&spend)).is_err(), "{label}");
+        }
     }
 
     #[test]
