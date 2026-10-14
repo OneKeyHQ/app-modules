@@ -729,7 +729,9 @@ class SplitBundleLoaderModule(reactContext: ReactApplicationContext) :
      */
     private fun verifySha256(path: String, expected: String): Boolean {
         if (expected.isEmpty()) {
-            return !currentBundleRequiresPerSegmentHash()
+            val otaPath = getOtaBundlePath()
+            val otaActive = !otaPath.isNullOrEmpty() && pinnedOtaBundlePath != BUILTIN_BUNDLE_SENTINEL
+            return otaActive && !currentBundleRequiresPerSegmentHash()
         }
         return try {
             val md = MessageDigest.getInstance("SHA-256")

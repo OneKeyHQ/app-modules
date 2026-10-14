@@ -541,7 +541,7 @@ public class BundleUpdateStore: NSObject {
         _ signature: String,
         expectedAppVersion: String? = nil,
         expectedBundleVersion: String? = nil,
-        expectedAppType: String? = nil
+        expectedAppType: String? = "ios"
     ) -> String? {
         guard !signature.isEmpty else { return nil }
 
@@ -571,7 +571,8 @@ public class BundleUpdateStore: NSObject {
         guard let extractedSha256 = readMetadataFileSha256(
             signature,
             expectedAppVersion: parsed?.appVersion,
-            expectedBundleVersion: parsed?.bundleVersion
+            expectedBundleVersion: parsed?.bundleVersion,
+            expectedAppType: "ios"
         ), !extractedSha256.isEmpty else {
             return false
         }
@@ -1584,7 +1585,19 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
             OneKeyLog.info("BundleUpdate", "downloadBundleASC: appVersion=\(appVersion), bundleVersion=\(bundleVersion), signatureLength=\(signature.count)")
 
+            guard appVersion.isSafeVersionString, bundleVersion.isSafeVersionString else {
+                OneKeyLog.error("BundleUpdate", "downloadBundleASC: invalid version string format: appVersion=\(appVersion), bundleVersion=\(bundleVersion)")
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid version string format"])
+            }
+
             let storageKey = "\(appVersion)-\(bundleVersion)"
+            let sigPath = (BundleUpdateStore.signatureFilePath(storageKey) as NSString).resolvingSymlinksInPath
+            let baseAscDir = (BundleUpdateStore.ascDir() as NSString).resolvingSymlinksInPath
+            guard sigPath.hasPrefix(baseAscDir + "/") else {
+                OneKeyLog.error("BundleUpdate", "downloadBundleASC: signature path outside asc directory: \(sigPath)")
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Signature path outside asc directory"])
+            }
+
             BundleUpdateStore.writeSignatureFile(storageKey, signature: signature)
 
             OneKeyLog.info("BundleUpdate", "downloadBundleASC: stored signature for key=\(storageKey)")
@@ -1601,6 +1614,27 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
             OneKeyLog.info("BundleUpdate", "verifyBundleASC: appVersion=\(appVersion), bundleVersion=\(bundleVersion), file=\(filePath), signatureLength=\(signature.count)")
 
+            guard appVersion.isSafeVersionString, bundleVersion.isSafeVersionString else {
+                OneKeyLog.error("BundleUpdate", "verifyBundleASC: invalid version string format: appVersion=\(appVersion), bundleVersion=\(bundleVersion)")
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid version string format"])
+            }
+
+            let resolvedFilePath = (filePath as NSString).resolvingSymlinksInPath
+            let baseDownloadDir = (BundleUpdateStore.downloadBundleDir() as NSString).resolvingSymlinksInPath
+            guard resolvedFilePath.hasPrefix(baseDownloadDir + "/") else {
+                OneKeyLog.error("BundleUpdate", "verifyBundleASC: downloadedFile outside download directory: \(resolvedFilePath)")
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Downloaded file path outside allowed download directory"])
+            }
+
+            let folderName = "\(appVersion)-\(bundleVersion)"
+            let destination = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(folderName)
+            let resolvedDestination = (destination as NSString).resolvingSymlinksInPath
+            let baseBundleDir = (BundleUpdateStore.bundleDir() as NSString).resolvingSymlinksInPath
+            guard resolvedDestination.hasPrefix(baseBundleDir + "/") else {
+                OneKeyLog.error("BundleUpdate", "verifyBundleASC: destination outside bundle directory: \(resolvedDestination)")
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Destination path outside bundle directory"])
+            }
+
             // GPG verification skipped only when both DevSettings and skip-GPG toggle are enabled
             #if ALLOW_SKIP_GPG_VERIFICATION
             let skipGPG = BundleUpdateStore.isDevSettingsEnabled() && BundleUpdateStore.isSkipGPGEnabled()
@@ -1614,7 +1648,8 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 guard let preVerifiedSha256 = BundleUpdateStore.readMetadataFileSha256(
                     signature,
                     expectedAppVersion: appVersion,
-                    expectedBundleVersion: bundleVersion
+                    expectedBundleVersion: bundleVersion,
+                    expectedAppType: "ios"
                 ), !preVerifiedSha256.isEmpty else {
                     OneKeyLog.error("BundleUpdate", "verifyBundleASC: pre-extraction GPG signature verification failed")
                     throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle signature verification failed"])
@@ -1637,11 +1672,9 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 OneKeyLog.warn("BundleUpdate", "verifyBundleASC: SHA256 + GPG verification skipped (DevSettings enabled)")
             }
 
-            let folderName = "\(appVersion)-\(bundleVersion)"
-            let destination = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(folderName)
-
-            // Check zip file size before extraction (decompression bomb protection)
+            // Check zip file size and uncompressed payload size before extraction (decompression bomb protection)
             let maxZipFileSize: UInt64 = 512 * 1024 * 1024 // 512 MB
+            let maxUncompressedSize: UInt64 = 512 * 1024 * 1024
             if let attrs = try? FileManager.default.attributesOfItem(atPath: filePath),
                let fileSize = attrs[.size] as? UInt64 {
                 OneKeyLog.info("BundleUpdate", "verifyBundleASC: zip file size=\(fileSize) bytes")
@@ -1649,6 +1682,18 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                     OneKeyLog.error("BundleUpdate", "verifyBundleASC: zip file too large (\(fileSize) > \(maxZipFileSize))")
                     throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Zip file exceeds maximum allowed size"])
                 }
+            }
+
+            var payloadError: NSError?
+            let payloadSize = SSZipArchive.payloadSizeForArchive(atPath: filePath, error: &payloadError)
+            if payloadError != nil || payloadSize == 0 || payloadSize > maxUncompressedSize {
+                OneKeyLog.error("BundleUpdate", "verifyBundleASC: zip payload size invalid or exceeds limit (payloadSize=\(payloadSize), error=\(String(describing: payloadError)))")
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Decompression bomb detected: uncompressed payload size invalid or exceeds 512 MB"])
+            }
+
+            // Clean up any existing destination directory before unzipping so leftover files cannot persist
+            if FileManager.default.fileExists(atPath: destination) {
+                try? FileManager.default.removeItem(atPath: destination)
             }
 
             // Unzip using SSZipArchive
@@ -1682,7 +1727,6 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
             // Enforce extracted entry count and total uncompressed size limits
             let maxZipEntries = 4096
-            let maxUncompressedSize: UInt64 = 512 * 1024 * 1024
             if let enumerator = FileManager.default.enumerator(atPath: destination) {
                 var entryCount = 0
                 var totalUncompressedBytes: UInt64 = 0
@@ -1757,6 +1801,18 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
             OneKeyLog.info("BundleUpdate", "verifyBundle: appVersion=\(appVersion), bundleVersion=\(bundleVersion), file=\(filePath)")
 
+            guard appVersion.isSafeVersionString, bundleVersion.isSafeVersionString else {
+                OneKeyLog.error("BundleUpdate", "verifyBundle: invalid version string format: appVersion=\(appVersion), bundleVersion=\(bundleVersion)")
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid version string format"])
+            }
+
+            let resolvedFilePath = (filePath as NSString).resolvingSymlinksInPath
+            let baseDownloadDir = (BundleUpdateStore.downloadBundleDir() as NSString).resolvingSymlinksInPath
+            guard resolvedFilePath.hasPrefix(baseDownloadDir + "/") else {
+                OneKeyLog.error("BundleUpdate", "verifyBundle: downloadedFile outside download directory: \(resolvedFilePath)")
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Downloaded file path outside allowed download directory"])
+            }
+
             // Verify SHA256 of the downloaded file
             guard let calculated = BundleUpdateStore.calculateSHA256(filePath) else {
                 OneKeyLog.error("BundleUpdate", "verifyBundle: failed to calculate SHA256 for file=\(filePath)")
@@ -1784,6 +1840,11 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
             OneKeyLog.info("BundleUpdate", "installBundle: appVersion=\(appVersion), bundleVersion=\(bundleVersion), signatureLength=\(signature.count)")
 
+            guard appVersion.isSafeVersionString, bundleVersion.isSafeVersionString else {
+                OneKeyLog.error("BundleUpdate", "installBundle: invalid version string format: appVersion=\(appVersion), bundleVersion=\(bundleVersion)")
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid version string format"])
+            }
+
             // GPG verification skipped only when both DevSettings and skip-GPG toggle are enabled
             #if ALLOW_SKIP_GPG_VERIFICATION
             let skipGPG = BundleUpdateStore.isDevSettingsEnabled() && BundleUpdateStore.isSkipGPGEnabled()
@@ -1794,10 +1855,24 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
             let folderName = "\(appVersion)-\(bundleVersion)"
             let currentFolderName = BundleUpdateStore.currentBundleVersion()
+            let previousActiveBundleVersion = currentFolderName
             OneKeyLog.info("BundleUpdate", "installBundle: target=\(folderName), current=\(currentFolderName ?? "nil")")
 
-            // Verify bundle directory exists
+            // Verify bundle directory confinement and existence
             let bundleDirPath = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(folderName)
+            let resolvedBundleDir = (bundleDirPath as NSString).resolvingSymlinksInPath
+            let baseBundleDir = (BundleUpdateStore.bundleDir() as NSString).resolvingSymlinksInPath
+            guard resolvedBundleDir.hasPrefix(baseBundleDir + "/") else {
+                OneKeyLog.error("BundleUpdate", "installBundle: bundle path outside bundle directory: \(resolvedBundleDir)")
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle path outside bundle directory"])
+            }
+            let sigPath = (BundleUpdateStore.signatureFilePath(folderName) as NSString).resolvingSymlinksInPath
+            let baseAscDir = (BundleUpdateStore.ascDir() as NSString).resolvingSymlinksInPath
+            guard sigPath.hasPrefix(baseAscDir + "/") else {
+                OneKeyLog.error("BundleUpdate", "installBundle: signature path outside asc directory: \(sigPath)")
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Signature path outside asc directory"])
+            }
+
             guard FileManager.default.fileExists(atPath: bundleDirPath) else {
                 OneKeyLog.error("BundleUpdate", "installBundle: bundle directory not found: \(bundleDirPath)")
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle directory not found: \(folderName)"])
@@ -1852,10 +1927,16 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 let shifted = fallbackData.removeFirst()
                 if let shiftApp = shifted["appVersion"], let shiftBundle = shifted["bundleVersion"] {
                     let dirName = "\(shiftApp)-\(shiftBundle)"
-                    BundleUpdateStore.deleteSignatureFile(dirName)
-                    let oldPath = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(dirName)
-                    if FileManager.default.fileExists(atPath: oldPath) {
-                        try? FileManager.default.removeItem(atPath: oldPath)
+                    if dirName != previousActiveBundleVersion &&
+                        shiftBundle != previousActiveBundleVersion &&
+                        dirName != folderName {
+                        BundleUpdateStore.deleteSignatureFile(dirName)
+                        let oldPath = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(dirName)
+                        if FileManager.default.fileExists(atPath: oldPath) {
+                            try? FileManager.default.removeItem(atPath: oldPath)
+                        }
+                    } else {
+                        OneKeyLog.info("BundleUpdate", "installBundle: skipping disk deletion of evicted fallback \(dirName) because it is still in use")
                     }
                 }
             }
@@ -2096,11 +2177,30 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
     func setCurrentUpdateBundleData(params: BundleSwitchParams) throws -> Promise<Void> {
         BundleUpdateStore.invalidateValidatedBundleInfoCache()
         return Promise.async {
+            guard params.appVersion.isSafeVersionString, params.bundleVersion.isSafeVersionString else {
+                OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: invalid version string format: appVersion=\(params.appVersion), bundleVersion=\(params.bundleVersion)")
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid version string format"])
+            }
+
             let bundleVersion = "\(params.appVersion)-\(params.bundleVersion)"
             OneKeyLog.info("BundleUpdate", "setCurrentUpdateBundleData: switching to \(bundleVersion)")
 
-            // Verify the bundle directory actually exists
+            // Verify bundle directory and signature confinement
             let bundleDirPath = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(bundleVersion)
+            let resolvedBundleDir = (bundleDirPath as NSString).resolvingSymlinksInPath
+            let baseBundleDir = (BundleUpdateStore.bundleDir() as NSString).resolvingSymlinksInPath
+            guard resolvedBundleDir.hasPrefix(baseBundleDir + "/") else {
+                OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: bundle path outside bundle directory: \(resolvedBundleDir)")
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle path outside bundle directory"])
+            }
+            let sigPath = (BundleUpdateStore.signatureFilePath(bundleVersion) as NSString).resolvingSymlinksInPath
+            let baseAscDir = (BundleUpdateStore.ascDir() as NSString).resolvingSymlinksInPath
+            guard sigPath.hasPrefix(baseAscDir + "/") else {
+                OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: signature path outside asc directory: \(sigPath)")
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Signature path outside asc directory"])
+            }
+
+            // Verify the bundle directory actually exists
             guard FileManager.default.fileExists(atPath: bundleDirPath) else {
                 OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: bundle directory not found: \(bundleDirPath)")
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle directory not found"])
@@ -2124,12 +2224,30 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 OneKeyLog.warn("BundleUpdate", "setCurrentUpdateBundleData: GPG signature verification skipped (DevSettings + skip-GPG enabled)")
             }
 
+            guard let metadata = BundleUpdateStore.getMetadataFileContent(bundleVersion) else {
+                OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: failed to read metadata.json content")
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "metadata.json not found"])
+            }
+            if !BundleUpdateStore.validateEntryBundlesSha256(bundleDirPath: bundleDirPath, metadata: metadata) {
+                OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: entry bundle SHA256 verification failed")
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Entry bundle SHA256 verification failed"])
+            }
+            if !BundleUpdateStore.validateBundlePairCompatibility(bundleDirPath: bundleDirPath, metadata: metadata) {
+                OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: bundle pair compatibility check failed")
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle pair compatibility check failed"])
+            }
+
             let ud = UserDefaults.standard
             ud.set(bundleVersion, forKey: "currentBundleVersion")
             if !params.signature.isEmpty {
                 BundleUpdateStore.writeSignatureFile(bundleVersion, signature: params.signature)
             }
+            let currentNativeVersion = BundleUpdateStore.getCurrentNativeVersion()
+            BundleUpdateStore.setNativeVersion(currentNativeVersion)
+            let currentBuildNumber = BundleUpdateStore.getCurrentNativeBuildNumber()
+            BundleUpdateStore.setNativeBuildNumber(currentBuildNumber)
             ud.synchronize()
+            BundleUpdateStore.invalidateValidatedBundleInfoCache()
             OneKeyLog.info("BundleUpdate", "setCurrentUpdateBundleData: switched to \(bundleVersion)")
         }
     }
@@ -2262,8 +2380,17 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
     func isBundleExists(appVersion: String, bundleVersion: String) throws -> Promise<Bool> {
         return Promise.async {
+            guard appVersion.isSafeVersionString, bundleVersion.isSafeVersionString else {
+                OneKeyLog.error("BundleUpdate", "isBundleExists: invalid version string format: appVersion=\(appVersion), bundleVersion=\(bundleVersion)")
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid version string format"])
+            }
             let folderName = "\(appVersion)-\(bundleVersion)"
             let path = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(folderName)
+            let resolvedPath = (path as NSString).resolvingSymlinksInPath
+            let baseBundleDir = (BundleUpdateStore.bundleDir() as NSString).resolvingSymlinksInPath
+            guard resolvedPath.hasPrefix(baseBundleDir + "/") else {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle path outside bundle directory"])
+            }
             let exists = FileManager.default.fileExists(atPath: path)
             OneKeyLog.info("BundleUpdate", "isBundleExists: appVersion=\(appVersion), bundleVersion=\(bundleVersion), exists=\(exists)")
             return exists
@@ -2273,8 +2400,17 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
     func verifyExtractedBundle(appVersion: String, bundleVersion: String) throws -> Promise<Void> {
         return Promise.async {
             OneKeyLog.info("BundleUpdate", "verifyExtractedBundle: appVersion=\(appVersion), bundleVersion=\(bundleVersion)")
+            guard appVersion.isSafeVersionString, bundleVersion.isSafeVersionString else {
+                OneKeyLog.error("BundleUpdate", "verifyExtractedBundle: invalid version string format: appVersion=\(appVersion), bundleVersion=\(bundleVersion)")
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid version string format"])
+            }
             let folderName = "\(appVersion)-\(bundleVersion)"
             let bundlePath = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(folderName)
+            let resolvedPath = (bundlePath as NSString).resolvingSymlinksInPath
+            let baseBundleDir = (BundleUpdateStore.bundleDir() as NSString).resolvingSymlinksInPath
+            guard resolvedPath.hasPrefix(baseBundleDir + "/") else {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle path outside bundle directory"])
+            }
             guard FileManager.default.fileExists(atPath: bundlePath) else {
                 OneKeyLog.error("BundleUpdate", "verifyExtractedBundle: bundle directory not found: \(bundlePath)")
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle directory not found"])
@@ -2380,11 +2516,24 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
     func testDeleteJsBundle(appVersion: String, bundleVersion: String) throws -> Promise<TestResult> {
         return Promise.async {
+            #if DEBUG
+            guard appVersion.isSafeVersionString, bundleVersion.isSafeVersionString else {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid version string"])
+            }
             OneKeyLog.info("BundleUpdate", "testDeleteJsBundle: appVersion=\(appVersion), bundleVersion=\(bundleVersion)")
             let folderName = "\(appVersion)-\(bundleVersion)"
             let jsBundlePath = (BundleUpdateStore.bundleDir() as NSString)
                 .appendingPathComponent(folderName)
+            let resolvedDir = (jsBundlePath as NSString).resolvingSymlinksInPath
+            let baseBundleDir = (BundleUpdateStore.bundleDir() as NSString).resolvingSymlinksInPath
+            guard resolvedDir.hasPrefix(baseBundleDir + "/") else {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle path outside bundle directory"])
+            }
             let path = (jsBundlePath as NSString).appendingPathComponent("main.jsbundle.hbc")
+            let resolvedPath = (path as NSString).resolvingSymlinksInPath
+            guard resolvedPath.hasPrefix(baseBundleDir + "/") else {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle path outside bundle directory"])
+            }
 
             if FileManager.default.fileExists(atPath: path) {
                 try FileManager.default.removeItem(atPath: path)
@@ -2393,14 +2542,26 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             }
             OneKeyLog.warn("BundleUpdate", "testDeleteJsBundle: file not found: \(path)")
             return TestResult(success: false, message: "jsBundle not found: \(path)")
+            #else
+            throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Test fault-injection methods are disabled in release builds"])
+            #endif
         }
     }
 
     func testDeleteJsRuntimeDir(appVersion: String, bundleVersion: String) throws -> Promise<TestResult> {
         return Promise.async {
+            #if DEBUG
+            guard appVersion.isSafeVersionString, bundleVersion.isSafeVersionString else {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid version string"])
+            }
             OneKeyLog.info("BundleUpdate", "testDeleteJsRuntimeDir: appVersion=\(appVersion), bundleVersion=\(bundleVersion)")
             let folderName = "\(appVersion)-\(bundleVersion)"
             let dirPath = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(folderName)
+            let resolvedDir = (dirPath as NSString).resolvingSymlinksInPath
+            let baseBundleDir = (BundleUpdateStore.bundleDir() as NSString).resolvingSymlinksInPath
+            guard resolvedDir.hasPrefix(baseBundleDir + "/") else {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle path outside bundle directory"])
+            }
 
             if FileManager.default.fileExists(atPath: dirPath) {
                 try FileManager.default.removeItem(atPath: dirPath)
@@ -2409,16 +2570,32 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             }
             OneKeyLog.warn("BundleUpdate", "testDeleteJsRuntimeDir: directory not found: \(dirPath)")
             return TestResult(success: false, message: "js runtime directory not found: \(dirPath)")
+            #else
+            throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Test fault-injection methods are disabled in release builds"])
+            #endif
         }
     }
 
     func testDeleteMetadataJson(appVersion: String, bundleVersion: String) throws -> Promise<TestResult> {
         return Promise.async {
+            #if DEBUG
+            guard appVersion.isSafeVersionString, bundleVersion.isSafeVersionString else {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid version string"])
+            }
             OneKeyLog.info("BundleUpdate", "testDeleteMetadataJson: appVersion=\(appVersion), bundleVersion=\(bundleVersion)")
             let folderName = "\(appVersion)-\(bundleVersion)"
             let metadataPath = (BundleUpdateStore.bundleDir() as NSString)
                 .appendingPathComponent(folderName)
+            let resolvedDir = (metadataPath as NSString).resolvingSymlinksInPath
+            let baseBundleDir = (BundleUpdateStore.bundleDir() as NSString).resolvingSymlinksInPath
+            guard resolvedDir.hasPrefix(baseBundleDir + "/") else {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle path outside bundle directory"])
+            }
             let path = (metadataPath as NSString).appendingPathComponent("metadata.json")
+            let resolvedPath = (path as NSString).resolvingSymlinksInPath
+            guard resolvedPath.hasPrefix(baseBundleDir + "/") else {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle path outside bundle directory"])
+            }
 
             if FileManager.default.fileExists(atPath: path) {
                 try FileManager.default.removeItem(atPath: path)
@@ -2427,15 +2604,31 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             }
             OneKeyLog.warn("BundleUpdate", "testDeleteMetadataJson: file not found: \(path)")
             return TestResult(success: false, message: "metadata.json not found: \(path)")
+            #else
+            throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Test fault-injection methods are disabled in release builds"])
+            #endif
         }
     }
 
     func testWriteEmptyMetadataJson(appVersion: String, bundleVersion: String) throws -> Promise<TestResult> {
         return Promise.async {
+            #if DEBUG
+            guard appVersion.isSafeVersionString, bundleVersion.isSafeVersionString else {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid version string"])
+            }
             OneKeyLog.info("BundleUpdate", "testWriteEmptyMetadataJson: appVersion=\(appVersion), bundleVersion=\(bundleVersion)")
             let folderName = "\(appVersion)-\(bundleVersion)"
             let jsRuntimeDir = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(folderName)
+            let resolvedDir = (jsRuntimeDir as NSString).resolvingSymlinksInPath
+            let baseBundleDir = (BundleUpdateStore.bundleDir() as NSString).resolvingSymlinksInPath
+            guard resolvedDir.hasPrefix(baseBundleDir + "/") else {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle path outside bundle directory"])
+            }
             let metadataPath = (jsRuntimeDir as NSString).appendingPathComponent("metadata.json")
+            let resolvedPath = (metadataPath as NSString).resolvingSymlinksInPath
+            guard resolvedPath.hasPrefix(baseBundleDir + "/") else {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle path outside bundle directory"])
+            }
 
             if !FileManager.default.fileExists(atPath: jsRuntimeDir) {
                 try FileManager.default.createDirectory(atPath: jsRuntimeDir, withIntermediateDirectories: true)
@@ -2447,6 +2640,10 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
             OneKeyLog.info("BundleUpdate", "testWriteEmptyMetadataJson: created \(metadataPath)")
             return TestResult(success: true, message: "Created empty metadata.json: \(metadataPath)")
+            #else
+            throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Test fault-injection methods are disabled in release builds"])
+            #endif
         }
     }
 }
+

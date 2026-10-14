@@ -482,7 +482,7 @@ object BundleUpdateStoreAndroid {
         signature: String?,
         expectedAppVersion: String? = null,
         expectedBundleVersion: String? = null,
-        expectedAppType: String? = null,
+        expectedAppType: String? = "android",
     ): String? {
         if (signature.isNullOrEmpty()) return null
 
@@ -528,7 +528,7 @@ object BundleUpdateStoreAndroid {
         signature: String,
         expectedAppVersion: String? = null,
         expectedBundleVersion: String? = null,
-        expectedAppType: String? = null,
+        expectedAppType: String? = "android",
     ): String? {
         val result = BundleCryptoCore.verifyGpgCleartext(
             signature,
@@ -553,6 +553,7 @@ object BundleUpdateStoreAndroid {
             signature,
             expectedAppVersion = parsed?.first,
             expectedBundleVersion = parsed?.second,
+            expectedAppType = "android",
         )
         if (extractedSha256.isNullOrEmpty()) return false
         val calculated = calculateSHA256(metadataFilePath) ?: return false
@@ -1714,16 +1715,28 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
         return isValid
     }
 
+    private fun isSafeVersionString(version: String): Boolean {
+        return BundleUpdateStoreAndroid.isSafeVersionString(version)
+    }
+
     override fun downloadBundleASC(params: BundleDownloadASCParams): Promise<Unit> {
         return Promise.async {
-            val context = getContext()
             val appVersion = params.latestVersion
             val bundleVersion = params.bundleVersion
             val signature = params.signature
+            if (!isSafeVersionString(appVersion) || !isSafeVersionString(bundleVersion)) {
+                throw SecurityException("Invalid version string")
+            }
 
+            val context = getContext()
             OneKeyLog.info("BundleUpdate", "downloadBundleASC: appVersion=$appVersion, bundleVersion=$bundleVersion, signatureLength=${signature.length}")
 
             val storageKey = "$appVersion-$bundleVersion"
+            val ascBaseCanonical = File(BundleUpdateStoreAndroid.getAscDir(context)).canonicalPath
+            val signatureFile = File(BundleUpdateStoreAndroid.getSignatureFilePath(context, storageKey))
+            if (!signatureFile.canonicalPath.startsWith(ascBaseCanonical + File.separator)) {
+                throw SecurityException("Signature file path outside allowed asc directory")
+            }
             BundleUpdateStoreAndroid.writeSignatureFile(context, storageKey, signature)
 
             OneKeyLog.info("BundleUpdate", "downloadBundleASC: stored signature for key=$storageKey")
@@ -1732,12 +1745,32 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
 
     override fun verifyBundleASC(params: BundleVerifyASCParams): Promise<Unit> {
         return Promise.async {
-            val context = getContext()
             val filePath = params.downloadedFile
             val sha256 = params.sha256
             val appVersion = params.latestVersion
             val bundleVersion = params.bundleVersion
             val signature = params.signature
+
+            if (!isSafeVersionString(appVersion) || !isSafeVersionString(bundleVersion)) {
+                throw SecurityException("Invalid version string")
+            }
+
+            val context = getContext()
+            val downloadBaseCanonical = File(BundleUpdateStoreAndroid.getDownloadBundleDir(context)).canonicalPath
+            val resolvedFilePath = File(filePath).canonicalPath
+            if (filePath.isEmpty() || !resolvedFilePath.startsWith(downloadBaseCanonical + File.separator)) {
+                OneKeyLog.error("BundleUpdate", "verifyBundleASC: downloadedFile outside download directory: $resolvedFilePath")
+                throw SecurityException("Downloaded file path outside allowed download directory")
+            }
+
+            val folderName = "$appVersion-$bundleVersion"
+            val bundleBaseCanonical = File(BundleUpdateStoreAndroid.getBundleDir(context)).canonicalPath
+            val destinationDir = File(BundleUpdateStoreAndroid.getBundleDir(context), folderName)
+            val destination = destinationDir.canonicalPath
+            if (!destination.startsWith(bundleBaseCanonical + File.separator)) {
+                OneKeyLog.error("BundleUpdate", "verifyBundleASC: destination outside bundle directory: $destination")
+                throw SecurityException("Destination path outside allowed bundle directory")
+            }
 
             OneKeyLog.info("BundleUpdate", "verifyBundleASC: appVersion=$appVersion, bundleVersion=$bundleVersion, file=$filePath, signatureLength=${signature.length}")
 
@@ -1751,6 +1784,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                         signature,
                         expectedAppVersion = appVersion,
                         expectedBundleVersion = bundleVersion,
+                        expectedAppType = "android",
                     ).isNullOrEmpty()
                 ) {
                     OneKeyLog.error("BundleUpdate", "verifyBundleASC: pre-extraction GPG signature verification failed")
@@ -1758,7 +1792,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 }
 
                 OneKeyLog.info("BundleUpdate", "verifyBundleASC: verifying SHA256 of downloaded file...")
-                if (!verifyBundleSHA256(filePath, sha256)) {
+                if (!verifyBundleSHA256(resolvedFilePath, sha256)) {
                     // Promote the SHA256 subtype (FILE_TRUNCATED / OOM /
                     // IO_<class> / MISMATCH) into the thrown message so
                     // extractUpdateErrorCode in the JS layer can split
@@ -1772,13 +1806,12 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 OneKeyLog.warn("BundleUpdate", "verifyBundleASC: SHA256 + GPG verification skipped (DevSettings enabled)")
             }
 
-            val folderName = "$appVersion-$bundleVersion"
-            val destination = File(BundleUpdateStoreAndroid.getBundleDir(context), folderName).absolutePath
-            val destinationDir = File(destination)
-
             try {
+                if (destinationDir.exists()) {
+                    BundleUpdateStoreAndroid.deleteDir(destinationDir)
+                }
                 OneKeyLog.info("BundleUpdate", "verifyBundleASC: extracting zip to $destination...")
-                BundleUpdateStoreAndroid.unzipFile(filePath, destination)
+                BundleUpdateStoreAndroid.unzipFile(resolvedFilePath, destination)
                 OneKeyLog.info("BundleUpdate", "verifyBundleASC: extraction completed")
 
                 val metadataFile = File(destination, "metadata.json")
@@ -1830,10 +1863,21 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             val appVersion = params.latestVersion
             val bundleVersion = params.bundleVersion
 
+            if (!isSafeVersionString(appVersion) || !isSafeVersionString(bundleVersion)) {
+                throw SecurityException("Invalid version string")
+            }
+
+            val context = getContext()
+            val downloadBaseCanonical = File(BundleUpdateStoreAndroid.getDownloadBundleDir(context)).canonicalPath
+            val resolvedFilePath = File(filePath).canonicalPath
+            if (filePath.isEmpty() || !resolvedFilePath.startsWith(downloadBaseCanonical + File.separator)) {
+                throw SecurityException("Downloaded file path outside allowed download directory")
+            }
+
             OneKeyLog.info("BundleUpdate", "verifyBundle: appVersion=$appVersion, bundleVersion=$bundleVersion, file=$filePath")
 
             // Verify SHA256 of the downloaded file
-            val calculated = BundleUpdateStoreAndroid.calculateSHA256(filePath)
+            val calculated = BundleUpdateStoreAndroid.calculateSHA256(resolvedFilePath)
             if (calculated == null) {
                 OneKeyLog.error("BundleUpdate", "verifyBundle: failed to calculate SHA256 for file=$filePath")
                 throw Exception("Failed to calculate SHA256")
@@ -1854,11 +1898,15 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
         // pre-commit data inside the race window) can't leave stale entries.
         BundleUpdateStoreAndroid.invalidateValidatedBundleInfoCache()
         return Promise.async {
-            val context = getContext()
             val appVersion = params.latestVersion
             val bundleVersion = params.bundleVersion
             val signature = params.signature
 
+            if (!isSafeVersionString(appVersion) || !isSafeVersionString(bundleVersion)) {
+                throw SecurityException("Invalid version string")
+            }
+
+            val context = getContext()
             OneKeyLog.info("BundleUpdate", "installBundle: appVersion=$appVersion, bundleVersion=$bundleVersion, signatureLength=${signature.length}")
 
             // GPG verification skipped only when both DevSettings and skip-GPG toggle are enabled
@@ -1867,10 +1915,17 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
 
             val folderName = "$appVersion-$bundleVersion"
             val currentFolderName = BundleUpdateStoreAndroid.getCurrentBundleVersion(context)
+            val previousActiveBundleVersion = currentFolderName
+                ?.takeIf { it.contains("-") }
+                ?.substringAfterLast("-")
             OneKeyLog.info("BundleUpdate", "installBundle: target=$folderName, current=$currentFolderName")
 
-            // Verify bundle directory exists
+            // Verify bundle directory exists and is canonically confined inside getBundleDir(context)
+            val bundleBaseCanonical = File(BundleUpdateStoreAndroid.getBundleDir(context)).canonicalPath
             val bundleDirPath = File(BundleUpdateStoreAndroid.getBundleDir(context), folderName)
+            if (!bundleDirPath.canonicalPath.startsWith(bundleBaseCanonical + File.separator)) {
+                throw SecurityException("Bundle path outside allowed bundle directory")
+            }
             if (!bundleDirPath.exists()) {
                 OneKeyLog.error("BundleUpdate", "installBundle: bundle directory not found: ${bundleDirPath.absolutePath}")
                 throw Exception("Bundle directory not found: $folderName")
@@ -1918,16 +1973,20 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 }
 
                 if (fallbackData.size > 3) {
-                    val shifted = fallbackData.removeAt(0)
-                    val shiftApp = shifted["appVersion"]
-                    val shiftBundle = shifted["bundleVersion"]
+                    val removedBundle = fallbackData.removeAt(0)
+                    val shiftApp = removedBundle["appVersion"]
+                    val shiftBundle = removedBundle["bundleVersion"]
                     if (shiftApp != null && shiftBundle != null) {
                         val shiftFolderName = "$shiftApp-$shiftBundle"
-                        val oldDir = File(BundleUpdateStoreAndroid.getBundleDir(context), shiftFolderName)
-                        if (oldDir.exists()) {
-                            BundleUpdateStoreAndroid.deleteDir(oldDir)
+                        if (shiftBundle != previousActiveBundleVersion && shiftFolderName != currentFolderName) {
+                            val oldDir = File(BundleUpdateStoreAndroid.getBundleDir(context), shiftFolderName)
+                            if (oldDir.exists()) {
+                                BundleUpdateStoreAndroid.deleteDir(oldDir)
+                            }
+                            BundleUpdateStoreAndroid.deleteSignatureFile(context, shiftFolderName)
+                        } else {
+                            OneKeyLog.info("BundleUpdate", "installBundle: skipping disk deletion of active bundle $shiftFolderName during eviction")
                         }
-                        BundleUpdateStoreAndroid.deleteSignatureFile(context, shiftFolderName)
                     }
                 }
 
@@ -2204,12 +2263,29 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
     override fun setCurrentUpdateBundleData(params: BundleSwitchParams): Promise<Unit> {
         BundleUpdateStoreAndroid.invalidateValidatedBundleInfoCache()
         return Promise.async {
+            if (!isSafeVersionString(params.appVersion) || !isSafeVersionString(params.bundleVersion)) {
+                OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: invalid version string format: appVersion=${params.appVersion}, bundleVersion=${params.bundleVersion}")
+                throw SecurityException("Invalid version string")
+            }
+
             val context = getContext()
             val bundleVersion = "${params.appVersion}-${params.bundleVersion}"
             OneKeyLog.info("BundleUpdate", "setCurrentUpdateBundleData: switching to $bundleVersion")
 
-            // Verify the bundle directory actually exists
+            val baseBundleDir = File(BundleUpdateStoreAndroid.getBundleDir(context)).canonicalPath
             val bundleDirPath = File(BundleUpdateStoreAndroid.getBundleDir(context), bundleVersion)
+            if (!bundleDirPath.canonicalPath.startsWith(baseBundleDir + File.separator)) {
+                OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: bundle path outside bundle directory: ${bundleDirPath.canonicalPath}")
+                throw SecurityException("Bundle path outside bundle directory")
+            }
+            val sigFile = BundleUpdateStoreAndroid.getSignatureFile(context, bundleVersion)
+            val baseAscDir = File(BundleUpdateStoreAndroid.getAscDir(context)).canonicalPath
+            if (!sigFile.canonicalPath.startsWith(baseAscDir + File.separator)) {
+                OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: signature path outside asc directory: ${sigFile.canonicalPath}")
+                throw SecurityException("Signature path outside asc directory")
+            }
+
+            // Verify the bundle directory actually exists
             if (!bundleDirPath.exists()) {
                 OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: bundle directory not found: ${bundleDirPath.absolutePath}")
                 throw Exception("Bundle directory not found")
@@ -2229,13 +2305,27 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 OneKeyLog.warn("BundleUpdate", "setCurrentUpdateBundleData: GPG signature verification skipped (DevSettings + skip-GPG enabled)")
             }
 
-            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            prefs.edit()
-                .putString("currentBundleVersion", bundleVersion)
-                .apply()
-            if (params.signature.isNotEmpty()) {
-                BundleUpdateStoreAndroid.writeSignatureFile(context, bundleVersion, params.signature)
+            val metadataFile = File(bundleDirPath, "metadata.json")
+            if (!metadataFile.exists()) {
+                OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: metadata.json not found in ${bundleDirPath.absolutePath}")
+                throw Exception("metadata.json not found")
             }
+            val metadata = BundleUpdateStoreAndroid.parseMetadataJson(BundleUpdateStoreAndroid.readFileContent(metadataFile))
+            if (!BundleUpdateStoreAndroid.validateEntryBundlesSha256(context, bundleDirPath.absolutePath, metadata)) {
+                OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: entry bundle SHA256 verification failed")
+                throw Exception("Entry bundle SHA256 verification failed")
+            }
+            if (!BundleUpdateStoreAndroid.validateBundlePairCompatibility(context, bundleDirPath.absolutePath, metadata)) {
+                OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: bundle pair compatibility check failed")
+                throw Exception("Bundle pair compatibility check failed")
+            }
+
+            BundleUpdateStoreAndroid.setCurrentBundleVersionAndSignature(context, bundleVersion, params.signature)
+            val currentNativeVersion = BundleUpdateStoreAndroid.getAppVersion(context) ?: ""
+            BundleUpdateStoreAndroid.setNativeVersion(context, currentNativeVersion)
+            val currentBuildNumber = BundleUpdateStoreAndroid.getBuildNumber(context)
+            BundleUpdateStoreAndroid.setNativeBuildNumber(context, currentBuildNumber)
+            BundleUpdateStoreAndroid.invalidateValidatedBundleInfoCache()
             OneKeyLog.info("BundleUpdate", "setCurrentUpdateBundleData: switched to $bundleVersion")
         }
     }
@@ -2370,9 +2460,17 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
 
     override fun isBundleExists(appVersion: String, bundleVersion: String): Promise<Boolean> {
         return Promise.async {
+            if (!isSafeVersionString(appVersion) || !isSafeVersionString(bundleVersion)) {
+                OneKeyLog.error("BundleUpdate", "isBundleExists: invalid version string format: appVersion=$appVersion, bundleVersion=$bundleVersion")
+                throw SecurityException("Invalid version string")
+            }
             val context = getContext()
             val folderName = "$appVersion-$bundleVersion"
+            val baseBundleDir = File(BundleUpdateStoreAndroid.getBundleDir(context)).canonicalPath
             val bundlePath = File(BundleUpdateStoreAndroid.getBundleDir(context), folderName)
+            if (!bundlePath.canonicalPath.startsWith(baseBundleDir + File.separator)) {
+                throw SecurityException("Bundle path outside bundle directory")
+            }
             val exists = bundlePath.exists()
             OneKeyLog.info("BundleUpdate", "isBundleExists: appVersion=$appVersion, bundleVersion=$bundleVersion, exists=$exists")
             exists
@@ -2382,9 +2480,17 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
     override fun verifyExtractedBundle(appVersion: String, bundleVersion: String): Promise<Unit> {
         return Promise.async {
             OneKeyLog.info("BundleUpdate", "verifyExtractedBundle: appVersion=$appVersion, bundleVersion=$bundleVersion")
+            if (!isSafeVersionString(appVersion) || !isSafeVersionString(bundleVersion)) {
+                OneKeyLog.error("BundleUpdate", "verifyExtractedBundle: invalid version string format: appVersion=$appVersion, bundleVersion=$bundleVersion")
+                throw SecurityException("Invalid version string")
+            }
             val context = getContext()
             val folderName = "$appVersion-$bundleVersion"
+            val baseBundleDir = File(BundleUpdateStoreAndroid.getBundleDir(context)).canonicalPath
             val bundlePath = File(BundleUpdateStoreAndroid.getBundleDir(context), folderName)
+            if (!bundlePath.canonicalPath.startsWith(baseBundleDir + File.separator)) {
+                throw SecurityException("Bundle path outside bundle directory")
+            }
             if (!bundlePath.exists()) {
                 OneKeyLog.error("BundleUpdate", "verifyExtractedBundle: bundle directory not found: ${bundlePath.absolutePath}")
                 throw Exception("Bundle directory not found")
@@ -2480,10 +2586,24 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
 
     override fun testDeleteJsBundle(appVersion: String, bundleVersion: String): Promise<TestResult> {
         return Promise.async {
+            if (!BuildConfig.DEBUG) {
+                throw SecurityException("Test fault-injection methods are disabled in release builds")
+            }
+            if (!isSafeVersionString(appVersion) || !isSafeVersionString(bundleVersion)) {
+                throw SecurityException("Invalid version string")
+            }
             OneKeyLog.info("BundleUpdate", "testDeleteJsBundle: appVersion=$appVersion, bundleVersion=$bundleVersion")
             val context = getContext()
             val folderName = "$appVersion-$bundleVersion"
-            val jsBundlePath = File(File(BundleUpdateStoreAndroid.getBundleDir(context), folderName), "main.jsbundle.hbc")
+            val baseBundleDir = File(BundleUpdateStoreAndroid.getBundleDir(context)).canonicalPath
+            val bundleDirPath = File(BundleUpdateStoreAndroid.getBundleDir(context), folderName)
+            if (!bundleDirPath.canonicalPath.startsWith(baseBundleDir + File.separator)) {
+                throw SecurityException("Bundle path outside bundle directory")
+            }
+            val jsBundlePath = File(bundleDirPath, "main.jsbundle.hbc")
+            if (!jsBundlePath.canonicalPath.startsWith(baseBundleDir + File.separator)) {
+                throw SecurityException("Bundle path outside bundle directory")
+            }
 
             if (jsBundlePath.exists()) {
                 val success = jsBundlePath.delete()
@@ -2503,10 +2623,20 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
 
     override fun testDeleteJsRuntimeDir(appVersion: String, bundleVersion: String): Promise<TestResult> {
         return Promise.async {
+            if (!BuildConfig.DEBUG) {
+                throw SecurityException("Test fault-injection methods are disabled in release builds")
+            }
+            if (!isSafeVersionString(appVersion) || !isSafeVersionString(bundleVersion)) {
+                throw SecurityException("Invalid version string")
+            }
             OneKeyLog.info("BundleUpdate", "testDeleteJsRuntimeDir: appVersion=$appVersion, bundleVersion=$bundleVersion")
             val context = getContext()
             val folderName = "$appVersion-$bundleVersion"
+            val baseBundleDir = File(BundleUpdateStoreAndroid.getBundleDir(context)).canonicalPath
             val dir = File(BundleUpdateStoreAndroid.getBundleDir(context), folderName)
+            if (!dir.canonicalPath.startsWith(baseBundleDir + File.separator)) {
+                throw SecurityException("Bundle path outside bundle directory")
+            }
 
             if (dir.exists()) {
                 BundleUpdateStoreAndroid.deleteDir(dir)
@@ -2526,10 +2656,24 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
 
     override fun testDeleteMetadataJson(appVersion: String, bundleVersion: String): Promise<TestResult> {
         return Promise.async {
+            if (!BuildConfig.DEBUG) {
+                throw SecurityException("Test fault-injection methods are disabled in release builds")
+            }
+            if (!isSafeVersionString(appVersion) || !isSafeVersionString(bundleVersion)) {
+                throw SecurityException("Invalid version string")
+            }
             OneKeyLog.info("BundleUpdate", "testDeleteMetadataJson: appVersion=$appVersion, bundleVersion=$bundleVersion")
             val context = getContext()
             val folderName = "$appVersion-$bundleVersion"
-            val metadataFile = File(File(BundleUpdateStoreAndroid.getBundleDir(context), folderName), "metadata.json")
+            val baseBundleDir = File(BundleUpdateStoreAndroid.getBundleDir(context)).canonicalPath
+            val bundleDirPath = File(BundleUpdateStoreAndroid.getBundleDir(context), folderName)
+            if (!bundleDirPath.canonicalPath.startsWith(baseBundleDir + File.separator)) {
+                throw SecurityException("Bundle path outside bundle directory")
+            }
+            val metadataFile = File(bundleDirPath, "metadata.json")
+            if (!metadataFile.canonicalPath.startsWith(baseBundleDir + File.separator)) {
+                throw SecurityException("Bundle path outside bundle directory")
+            }
 
             if (metadataFile.exists()) {
                 val success = metadataFile.delete()
@@ -2549,11 +2693,24 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
 
     override fun testWriteEmptyMetadataJson(appVersion: String, bundleVersion: String): Promise<TestResult> {
         return Promise.async {
+            if (!BuildConfig.DEBUG) {
+                throw SecurityException("Test fault-injection methods are disabled in release builds")
+            }
+            if (!isSafeVersionString(appVersion) || !isSafeVersionString(bundleVersion)) {
+                throw SecurityException("Invalid version string")
+            }
             OneKeyLog.info("BundleUpdate", "testWriteEmptyMetadataJson: appVersion=$appVersion, bundleVersion=$bundleVersion")
             val context = getContext()
             val folderName = "$appVersion-$bundleVersion"
+            val baseBundleDir = File(BundleUpdateStoreAndroid.getBundleDir(context)).canonicalPath
             val jsRuntimeDir = File(BundleUpdateStoreAndroid.getBundleDir(context), folderName)
+            if (!jsRuntimeDir.canonicalPath.startsWith(baseBundleDir + File.separator)) {
+                throw SecurityException("Bundle path outside bundle directory")
+            }
             val metadataPath = File(jsRuntimeDir, "metadata.json")
+            if (!metadataPath.canonicalPath.startsWith(baseBundleDir + File.separator)) {
+                throw SecurityException("Bundle path outside bundle directory")
+            }
 
             if (!jsRuntimeDir.exists()) {
                 if (!jsRuntimeDir.mkdirs()) {
@@ -2573,3 +2730,4 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
         }
     }
 }
+

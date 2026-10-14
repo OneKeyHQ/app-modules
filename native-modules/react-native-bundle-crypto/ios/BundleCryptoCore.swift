@@ -128,7 +128,7 @@ public enum BundleCryptoCore {
   // MARK: - GPG cleartext (bundle form): body JSON -> sha256
   // Ported verbatim from ReactNativeBundleUpdate.verifyGPGAndExtractSha256.
 
-  private static func extractDetachedAscSha256(_ cleartextBody: String, expectedFileName: String?) -> String? {
+  public static func extractDetachedAscSha256(_ cleartextBody: String, expectedFileName: String?) -> String? {
     let trimmed = cleartextBody.trimmingCharacters(in: .whitespacesAndNewlines)
     guard let expectedFileName = expectedFileName, !expectedFileName.isEmpty else {
       return trimmed
@@ -156,13 +156,10 @@ public enum BundleCryptoCore {
         }
       }
     }
-    if sawFileNameColumn {
-      return nil
+    if !sawFileNameColumn {
+      return ""
     }
-    return lines[0]
-      .split(whereSeparator: { $0 == " " || $0 == "\t" })
-      .first
-      .map { String($0).lowercased() } ?? ""
+    return ""
   }
 
   public static func verifyGpgCleartext(

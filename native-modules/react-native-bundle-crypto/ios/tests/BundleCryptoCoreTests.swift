@@ -54,6 +54,23 @@ final class BundleCryptoCoreTests: XCTestCase {
     XCTAssertNil(wrongAsc.sha256)
     XCTAssertEqual(wrongAsc.reason, "SHA256_TOKEN_INVALID")
 
+    XCTAssertEqual(
+      BundleCryptoCore.extractDetachedAscSha256(expectedSignedHash, expectedFileName: nil),
+      expectedSignedHash
+    )
+    XCTAssertEqual(
+      BundleCryptoCore.extractDetachedAscSha256(expectedSignedHash, expectedFileName: "OneKey.apk"),
+      ""
+    )
+    XCTAssertEqual(
+      BundleCryptoCore.extractDetachedAscSha256("\(expectedSignedHash)  *OneKey.apk", expectedFileName: "OneKey.apk"),
+      expectedSignedHash
+    )
+    XCTAssertEqual(
+      BundleCryptoCore.extractDetachedAscSha256("\(expectedSignedHash)  *Other.apk", expectedFileName: "OneKey.apk"),
+      ""
+    )
+
     let tampered = signedMetadata.replacingOccurrences(of: "158590", with: "158591")
     let rejected = BundleCryptoCore.verifyGpgCleartext(tampered)
     XCTAssertFalse(rejected.valid)

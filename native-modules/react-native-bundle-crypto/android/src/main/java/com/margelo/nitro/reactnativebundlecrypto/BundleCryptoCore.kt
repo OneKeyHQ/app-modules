@@ -6,8 +6,11 @@ import java.io.File
 import java.io.FileInputStream
 import java.nio.file.Files
 import java.security.MessageDigest
+import org.bouncycastle.bcpg.HashAlgorithmTags
 import org.bouncycastle.jce.provider.BouncyCastleProvider
+import org.bouncycastle.openpgp.PGPPublicKey
 import org.bouncycastle.openpgp.PGPPublicKeyRingCollection
+import org.bouncycastle.openpgp.PGPSignature
 import org.bouncycastle.openpgp.PGPSignatureList
 import org.bouncycastle.openpgp.PGPUtil
 import org.bouncycastle.openpgp.jcajce.JcaPGPObjectFactory
@@ -170,7 +173,7 @@ object BundleCryptoCore {
     }
   }
 
-  private fun extractDetachedAscSha256(cleartextBody: String, expectedFileName: String?): String? {
+  internal fun extractDetachedAscSha256(cleartextBody: String, expectedFileName: String?): String? {
     val trimmed = cleartextBody.trim()
     if (expectedFileName.isNullOrEmpty()) {
       return trimmed.split("\\s+".toRegex()).firstOrNull()?.lowercase() ?: ""
@@ -191,10 +194,29 @@ object BundleCryptoCore {
         }
       }
     }
-    if (sawFileNameColumn) {
-      return null
+    if (!sawFileNameColumn) {
+      return ""
     }
-    return nonEmptyLines[0].split("\\s+".toRegex())[0].lowercase()
+    return ""
+  }
+
+  private fun verifyCleartextSignature(
+    sig: PGPSignature,
+    publicKey: PGPPublicKey,
+    cleartextBody: String,
+  ): Boolean {
+    if (sig.signatureType != PGPSignature.CANONICAL_TEXT_DOCUMENT) return false
+    if (sig.hashAlgorithm != HashAlgorithmTags.SHA256 &&
+        sig.hashAlgorithm != HashAlgorithmTags.SHA384 &&
+        sig.hashAlgorithm != HashAlgorithmTags.SHA512) return false
+
+    sig.init(JcaPGPContentVerifierBuilderProvider().setProvider(bcProvider), publicKey)
+
+    // Canonicalize the cleartext per RFC 4880 Section 7.1 (dash-unescape +
+    // per-line trailing-whitespace strip), matching iOS Gopenpgp.
+    val dataToVerify = canonicalizeCleartext(cleartextBody).toByteArray(Charsets.UTF_8)
+    sig.update(dataToVerify)
+    return sig.verify()
   }
 
   @JvmOverloads
@@ -244,15 +266,8 @@ object BundleCryptoCore {
         return VerifyResult(false, null, "PUBKEY_NOT_FOUND")
       }
 
-      // Verify the signature.
-      pgpSignature.init(JcaPGPContentVerifierBuilderProvider().setProvider(bcProvider), publicKey)
-
-      // Canonicalize the cleartext per RFC 4880 Section 7.1 (dash-unescape +
-      // per-line trailing-whitespace strip), matching iOS Gopenpgp.
-      val dataToVerify = canonicalizeCleartext(cleartextBody).toByteArray(Charsets.UTF_8)
-      pgpSignature.update(dataToVerify)
-
-      if (!pgpSignature.verify()) {
+      // Verify the signature (enforcing CANONICAL_TEXT_DOCUMENT and SHA256/384/512).
+      if (!verifyCleartextSignature(pgpSignature, publicKey, cleartextBody)) {
         OneKeyLog.error("BundleCrypto", "GPG signature verification failed")
         return VerifyResult(false, null, "SIGNATURE_INVALID")
       }
@@ -333,12 +348,7 @@ object BundleCryptoCore {
       val publicKey = pgpPubKeyRingCollection.getPublicKey(pgpSignature.keyID)
         ?: return VerifyResult(false, null, "PUBKEY_NOT_FOUND")
 
-      pgpSignature.init(JcaPGPContentVerifierBuilderProvider().setProvider(bcProvider), publicKey)
-      // Canonicalize per RFC 4880 Section 7.1 (dash-unescape + per-line
-      // trailing-whitespace strip), matching iOS Gopenpgp.
-      val dataToVerify = canonicalizeCleartext(cleartextBody).toByteArray(Charsets.UTF_8)
-      pgpSignature.update(dataToVerify)
-      if (!pgpSignature.verify()) {
+      if (!verifyCleartextSignature(pgpSignature, publicKey, cleartextBody)) {
         return VerifyResult(false, null, "SIGNATURE_INVALID")
       }
 
@@ -386,8 +396,7 @@ object BundleCryptoCore {
 
     val bodyStartIdx = blankIdx + 1
     val bodyLines = lines.subList(bodyStartIdx, sigStartIdx)
-    // Remove the trailing empty line that PGP adds before the signature block.
-    val body = bodyLines.joinToString("\r\n").trimEnd()
+    val body = bodyLines.joinToString("\r\n")
     val signatureBlock = lines.subList(sigStartIdx, sigEndIdx + 1).joinToString("\n")
     return FramedCleartext(body, signatureBlock)
   }

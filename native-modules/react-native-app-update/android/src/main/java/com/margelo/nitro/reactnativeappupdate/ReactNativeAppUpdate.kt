@@ -10,6 +10,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.FileProvider
+import androidx.core.content.pm.PackageInfoCompat
 import com.facebook.proguard.annotations.DoNotStrip
 import com.margelo.nitro.core.Promise
 import com.margelo.nitro.NitroModules
@@ -1152,6 +1153,15 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 OneKeyLog.warn("AppUpdate", "verifyAPK: DEBUG build — ignoring package name mismatch")
             } else {
                 OneKeyLog.info("AppUpdate", "verifyAPK: package name matches installed app")
+            }
+
+            // Anti-downgrade check: reject APKs with a lower versionCode than the installed app
+            val currentPackageInfo = pm.getPackageInfo(context.packageName, 0)
+            val apkVersionCode = PackageInfoCompat.getLongVersionCode(info)
+            val installedVersionCode = PackageInfoCompat.getLongVersionCode(currentPackageInfo)
+            if (!debugBuild && apkVersionCode < installedVersionCode) {
+                OneKeyLog.error("AppUpdate", "verifyAPK: downgrade rejected — apkVersionCode=$apkVersionCode < installedVersionCode=$installedVersionCode")
+                throw SecurityException("APK versionCode ($apkVersionCode) is lower than installed versionCode ($installedVersionCode)")
             }
 
             // Verify APK signing certificate matches the installed app.

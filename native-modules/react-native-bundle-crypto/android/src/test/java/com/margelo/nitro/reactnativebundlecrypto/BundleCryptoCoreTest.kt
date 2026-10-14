@@ -73,6 +73,17 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
     assertFalse(result.valid)
     assertNull(result.sha256)
     assertEquals("SHA256_TOKEN_INVALID", result.reason)
+
+    assertEquals(expectedSignedHash, BundleCryptoCore.extractDetachedAscSha256(expectedSignedHash, null))
+    assertEquals("", BundleCryptoCore.extractDetachedAscSha256(expectedSignedHash, "OneKey.apk"))
+    assertEquals(
+      expectedSignedHash,
+      BundleCryptoCore.extractDetachedAscSha256("$expectedSignedHash  *OneKey.apk", "OneKey.apk")
+    )
+    assertEquals(
+      "",
+      BundleCryptoCore.extractDetachedAscSha256("$expectedSignedHash  *Other.apk", "OneKey.apk")
+    )
   }
 
   @Test
