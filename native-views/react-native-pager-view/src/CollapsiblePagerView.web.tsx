@@ -66,6 +66,8 @@ export interface CollapsiblePagerViewProps
   stickyHeader: React.ReactNode;
   headerHeight: number;
   stickyHeaderHeight: number;
+  topOverlay?: React.ReactNode;
+  topScrollEdgeEffect?: "hard";
   pageRetentionDistance?: number;
   layoutDirection?: "ltr" | "rtl" | "locale";
   children?: React.ReactNode;
@@ -759,6 +761,8 @@ export class CollapsiblePagerView extends React.PureComponent<
       children: _children,
       header,
       stickyHeader,
+      topOverlay: _topOverlay,
+      topScrollEdgeEffect: _topScrollEdgeEffect,
       headerHeight: _headerHeight,
       stickyHeaderHeight: _stickyHeaderHeight,
       pageRetentionDistance: _pageRetentionDistance,

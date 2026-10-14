@@ -3,6 +3,46 @@
 Existing PagerView and CollapsiblePagerView APIs are documented in README.md.
 The sections below define native coordination boundaries without new React props.
 
+## iOS 26 top scroll edge overlay
+
+`CollapsiblePagerView` and standalone `NativeScroller` accept
+`topScrollEdgeEffect="hard"` with a fixed `topOverlay` React child. Both are
+optional and disabled by default. On iOS 26 or newer, the overlay remains fixed
+at the top of the viewport while the owned vertical `UIScrollView` can draw
+behind it. The component measures the overlay's Fabric layout height and owns
+the corresponding top content inset. It binds UIKit's
+`UIScrollEdgeElementContainerInteraction` to that exact scroll view and selects
+the hard top edge style. A pager owns the effect and inset for its current page;
+its nested NativeList or NativeScroller must not opt into another top overlay.
+Invisible, noninteractive native labels let UIKit recognize the React-drawn
+overlay and sticky header as scroll-edge elements. The pager owns a full-bounds
+system material behind the fixed React overlay; its native host keeps that
+material across active scroll-owner changes, and removes it when the effect or
+overlay is removed. During a lifted shared-header transition, the shared host
+owns material behind the sticky views so scrolling assets cannot show through
+their transparent background. React overlay and sticky hit targets remain above
+these noninteractive materials.
+When a smooth shared header reaches the overlay boundary, the existing sticky
+React and native tab views move together into a view pinned to the active
+scroll view. Their identities, scroll-view gesture ancestry and hit targets
+remain intact; the collapsible header stays in the scrolling header host. In
+legacy fixed-header mode, the existing shared host remains fixed while its
+sticky material protects the tab strip.
+Changing pages, replacing the active list or recycling returns those views to
+the shared host before their old scroll-edge interaction is released.
+The measured overlay height is excluded from the collapsible header distance:
+`header` remains collapsible and `stickyHeader` pins immediately below the
+overlay. Selection, cancellation, reuse and disposal rebind or release the
+interaction and restore any prior scroll-edge style. Native scroll/refresh
+coordination continues on the main thread without per-frame JavaScript work.
+
+On iOS before 26, Android and Web the new props have no scroll-edge effect.
+The caller retains its existing layout on those platforms. Missing overlay or
+`topScrollEdgeEffect` means the current scroll/inset behavior is unchanged.
+Acceptance requires real iOS 26 scrolling, partial collapse, short/empty page,
+refresh, page transition/cancellation, dynamic tabs and light/dark checks;
+source and build checks alone do not establish visual correctness.
+
 ## Smooth shared-header and per-page body memory
 
 With nativeSmoothHeaderScrollEnabled, the header collapse C is shared across all

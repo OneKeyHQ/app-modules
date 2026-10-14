@@ -1418,6 +1418,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 - (void)liftSharedHeadersForPagerTransition:(NSString *)reason;
 - (void)restoreSharedHeadersToContainer;
 - (void)layoutSharedHeaders;
+- (void)restorePinnedStickyHeader;
+- (void)updatePinnedStickyHeader;
 - (UIScrollView *)currentVerticalScrollViewForParentPager;
 - (UIScrollView *)verticalScrollViewForPageAtIndex:(NSInteger)pageIndex;
 - (UIScrollView *)findExplicitNativeScrollerInView:(UIView *)view;
@@ -1429,6 +1431,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 - (void)detachSharedHeaderPressCancellationGesture;
 - (void)updateRefreshControlForScrollView:(UIScrollView *)scrollView;
 - (void)releaseRefreshControlForScrollView:(UIScrollView *)scrollView;
+- (void)cancelTopInsetReboundCheck;
+- (void)scheduleTopInsetReboundCheck;
 - (void)sharedHeaderPressCancellationGestureChanged:(UIPanGestureRecognizer *)recognizer;
 - (void)outerPagerGestureChanged:(UIPanGestureRecognizer *)recognizer;
 - (void)verticalPagerGuardGestureChanged:(UIPanGestureRecognizer *)recognizer;
@@ -1437,11 +1441,11 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 @end
 
 @implementation RNCCollapsiblePagerViewComponentView {
-#if DEBUG
-  NSUInteger _offsetDiagSequence;
-#endif
   UIView *_containerView;
   RNCCollapsiblePagerSharedHeaderView *_sharedHeaderHostView;
+  UIView *_pinnedStickyHostView;
+  BOOL _stickyHeaderIsPinned;
+  UIVisualEffectView *_sharedStickyGlassView;
   UIPageViewController *_pageViewController;
   UIScrollView *_pageViewControllerScrollView;
   UIScrollView *_pagerScrollView;
@@ -1449,6 +1453,17 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   NSMutableArray<UIViewController *> *_pageControllers;
   UIView *_headerView;
   UIView *_stickyHeaderView;
+  UIView *_topOverlayView;
+  UIView *_topOverlayHostView;
+  UIVisualEffectView *_topEdgeGlassView;
+  UIScrollEdgeElementContainerInteraction *_topEdgeInteraction;
+  UIScrollEdgeElementContainerInteraction *_stickyEdgeInteraction;
+  UILabel *_topEdgeMarker;
+  UILabel *_stickyEdgeMarker;
+  __weak UIView *_topEdgeInteractionHost;
+  __weak UIView *_stickyEdgeInteractionHost;
+  __weak UIScrollView *_topEdgeScrollView;
+  UIScrollEdgeEffectStyle *_originalTopEdgeStyle;
   RNCCollapsiblePagerNativeTabBarView *_nativeTabBarView;
   RNCCollapsiblePagerNativeSubHeaderView *_nativeSubHeaderView;
   NSInteger _currentIndex;
@@ -1456,6 +1471,14 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   NSInteger _pendingInitialPage;
   NSInteger _headerHeight;
   NSInteger _stickyHeaderHeight;
+  CGFloat _topOverlayHeight;
+  BOOL _topScrollEdgeHard;
+  BOOL _applyingTopOverlayInsetChange;
+  BOOL _correctingTopInsetRebound;
+  __weak UIScrollView *_pendingTopInsetReboundScrollView;
+  NSString *_pendingTopInsetReboundPageKey;
+  NSUInteger _pendingTopInsetReboundGeneration;
+  NSTimer *_topInsetReboundTimer;
   CGFloat _nativeTabBarHeight;
   CGFloat _nativeSubHeaderHeight;
   CGFloat _headerOffset;
@@ -1475,6 +1498,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   NSInteger _pendingGoToIndex;
   BOOL _pendingGoToAnimated;
   BOOL _needsSlotRebuild;
+  BOOL _deferTopEdgeSlotRebuild;
   BOOL _hasAppliedInitialPage;
   BOOL _needsPropsReapply;
   NSString *_layoutDirection;
@@ -1512,9 +1536,6 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   NSUInteger _observedPageGeneration;
   NSDictionary<NSString *, NSNumber *> *_transitionPageOffsets;
   NSMutableIndexSet *_transitionCompensatedPages;
-#if DEBUG
-  NSInteger _transitionDiagBucket;
-#endif
   NSInteger _transitionSourceIndex;
   BOOL _syntheticPageRestore;
   BOOL _headerSettledAtTop;
@@ -1607,6 +1628,12 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     _sharedHeaderHostView = [RNCCollapsiblePagerSharedHeaderView new];
     _sharedHeaderHostView.clipsToBounds = NO;
     [_containerView addSubview:_sharedHeaderHostView];
+    _pinnedStickyHostView = [UIView new];
+    _pinnedStickyHostView.hidden = YES;
+    [_containerView addSubview:_pinnedStickyHostView];
+    _topOverlayHostView = [UIView new];
+    _topOverlayHostView.hidden = YES;
+    [_containerView addSubview:_topOverlayHostView];
 
     _verticalPagerGesture =
       [[RNCCollapsiblePagerVerticalPagerGuardGestureRecognizer alloc]
@@ -1664,6 +1691,16 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
       viewProps.pointerEvents == PointerEventsMode::BoxOnly) {
     return [super hitTest:point withEvent:event];
   }
+  if (_topOverlayView != nil) {
+    CGPoint overlayPoint = [_topOverlayView convertPoint:point fromView:self];
+    UIView *overlayHitView = [_topOverlayView hitTest:overlayPoint withEvent:event];
+    if (overlayHitView != nil) return overlayHitView;
+  }
+  if (_stickyHeaderIsPinned) {
+    CGPoint stickyPoint = [_pinnedStickyHostView convertPoint:point fromView:self];
+    UIView *stickyHitView = [_pinnedStickyHostView hitTest:stickyPoint withEvent:event];
+    if (stickyHitView != nil) return stickyHitView;
+  }
   if (_nativeSmoothHeaderScrollEnabled && !_isBeingRecycled &&
       _sharedHeaderHostView.superview != _containerView) {
     CGPoint headerPoint = [_sharedHeaderHostView convertPoint:point fromView:self];
@@ -1686,10 +1723,12 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 - (void)didMoveToWindow
 {
   [super didMoveToWindow];
+  [self emitTopScrollEdgeCapability];
+  [self updateTopScrollEdgeForScrollView:_observedScrollView];
   [self updateSharedHeaderPressCancellationGesture];
   [self updateHeaderSettledStateForceBusy:NO];
   for (UIScrollView *scrollView in _originalInsets.keyEnumerator) {
-    [self updateNativeScrollerViewport:scrollView stickyHeight:self.window == nil ? 0 : _stickyHeaderHeight];
+    [self updateNativeScrollerViewport:scrollView stickyHeight:self.window == nil ? 0 : _stickyHeaderHeight + _topOverlayHeight];
   }
   // OneKey patch: removing a decelerating page from its window can suppress
   // UIKit's final scroll callback. Restore the last acknowledged page on reattach.
@@ -1712,8 +1751,117 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   }
 }
 
+- (void)updateEventEmitter:(const EventEmitter::Shared &)eventEmitter
+{
+  [super updateEventEmitter:eventEmitter];
+  [self emitTopScrollEdgeCapability];
+}
+
+- (void)emitTopScrollEdgeCapability
+{
+  if (self.window == nil || _isBeingRecycled) return;
+  const auto emitter = [self eventEmitter];
+  if (!emitter) return;
+  BOOL available = NO;
+  if (@available(iOS 26.0, *)) available = YES;
+  emitter->onScrollEdgeCapability({.available = (bool)available});
+}
+
+- (void)updateTopScrollEdgeForScrollView:(UIScrollView *)scrollView
+{
+  if (@available(iOS 26.0, *)) {
+    BOOL hasOverlay = _topScrollEdgeHard && _topOverlayView != nil && self.window != nil;
+    BOOL enabled = hasOverlay && scrollView != nil;
+    if (hasOverlay && _topEdgeGlassView == nil) {
+      _topEdgeGlassView = [[UIVisualEffectView alloc]
+        initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemChromeMaterial]];
+      _topEdgeGlassView.frame = _topOverlayHostView.bounds;
+      _topEdgeGlassView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+      _topEdgeGlassView.userInteractionEnabled = NO;
+      _topEdgeGlassView.isAccessibilityElement = NO;
+      [_topOverlayHostView insertSubview:_topEdgeGlassView atIndex:0];
+    } else if (!hasOverlay) {
+      [_topEdgeGlassView removeFromSuperview];
+      _topEdgeGlassView = nil;
+      [_sharedStickyGlassView removeFromSuperview];
+      _sharedStickyGlassView = nil;
+    }
+    if (_topEdgeScrollView != nil && (!enabled || _topEdgeScrollView != scrollView ||
+        _topEdgeInteractionHost != _topOverlayHostView)) {
+      [_topEdgeInteractionHost removeInteraction:_topEdgeInteraction];
+      _topEdgeInteraction.scrollView = nil;
+      [_stickyEdgeInteractionHost removeInteraction:_stickyEdgeInteraction];
+      _stickyEdgeInteraction.scrollView = nil;
+      [_topEdgeMarker removeFromSuperview];
+      [_stickyEdgeMarker removeFromSuperview];
+      _topEdgeScrollView.topEdgeEffect.style = _originalTopEdgeStyle;
+      _topEdgeInteraction = nil;
+      _stickyEdgeInteraction = nil;
+      _topEdgeMarker = nil;
+      _stickyEdgeMarker = nil;
+      _topEdgeInteractionHost = nil;
+      _stickyEdgeInteractionHost = nil;
+      _topEdgeScrollView = nil;
+      _originalTopEdgeStyle = nil;
+    }
+    if (enabled && _topEdgeInteraction == nil) {
+      _originalTopEdgeStyle = scrollView.topEdgeEffect.style;
+      // UIKit needs a native element to shape the edge effect around React-drawn content.
+      _topEdgeMarker = [UILabel new];
+      _topEdgeMarker.frame = _topOverlayHostView.bounds;
+      _topEdgeMarker.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+      _topEdgeMarker.text = @" ";
+      _topEdgeMarker.textColor = UIColor.clearColor;
+      _topEdgeMarker.backgroundColor = UIColor.clearColor;
+      _topEdgeMarker.userInteractionEnabled = NO;
+      _topEdgeMarker.isAccessibilityElement = NO;
+      _topEdgeMarker.accessibilityElementsHidden = YES;
+      [_topOverlayHostView addSubview:_topEdgeMarker];
+      _topEdgeInteraction = [UIScrollEdgeElementContainerInteraction new];
+      _topEdgeInteraction.edge = UIRectEdgeTop;
+      _topEdgeInteraction.scrollView = scrollView;
+      [_topOverlayHostView addInteraction:_topEdgeInteraction];
+      _topEdgeInteractionHost = _topOverlayHostView;
+      _topEdgeScrollView = scrollView;
+      scrollView.topEdgeEffect.style = UIScrollEdgeEffectStyle.hardStyle;
+    }
+    BOOL legacyStickyPinned = !_nativeSmoothHeaderScrollEnabled &&
+      _stickyHeaderView != nil && _headerOffset >= _headerHeight - 0.5;
+    BOOL stickyEnabled = enabled && (_stickyHeaderIsPinned || legacyStickyPinned);
+    UIView *stickyInteractionHost = _stickyHeaderIsPinned
+      ? _pinnedStickyHostView : _stickyHeaderView;
+    if (_stickyEdgeInteractionHost != nil &&
+        (!stickyEnabled || _stickyEdgeInteractionHost != stickyInteractionHost)) {
+      [_stickyEdgeInteractionHost removeInteraction:_stickyEdgeInteraction];
+      _stickyEdgeInteraction.scrollView = nil;
+      [_stickyEdgeMarker removeFromSuperview];
+      _stickyEdgeMarker = nil;
+      _stickyEdgeInteraction = nil;
+      _stickyEdgeInteractionHost = nil;
+    }
+    if (stickyEnabled && _stickyEdgeInteraction == nil) {
+      _stickyEdgeMarker = [UILabel new];
+      _stickyEdgeMarker.frame = stickyInteractionHost.bounds;
+      _stickyEdgeMarker.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+      _stickyEdgeMarker.text = @" ";
+      _stickyEdgeMarker.textColor = UIColor.clearColor;
+      _stickyEdgeMarker.backgroundColor = UIColor.clearColor;
+      _stickyEdgeMarker.userInteractionEnabled = NO;
+      _stickyEdgeMarker.isAccessibilityElement = NO;
+      _stickyEdgeMarker.accessibilityElementsHidden = YES;
+      [stickyInteractionHost addSubview:_stickyEdgeMarker];
+      _stickyEdgeInteraction = [UIScrollEdgeElementContainerInteraction new];
+      _stickyEdgeInteraction.edge = UIRectEdgeTop;
+      _stickyEdgeInteraction.scrollView = scrollView;
+      [stickyInteractionHost addInteraction:_stickyEdgeInteraction];
+      _stickyEdgeInteractionHost = stickyInteractionHost;
+    }
+  }
+}
+
 - (void)dealloc
 {
+  [self updateTopScrollEdgeForScrollView:nil];
   [self cancelHeaderSettledCheck];
   [[NSNotificationCenter defaultCenter] removeObserver:self name:@"OneKeyNativeListScrollCommandAccepted" object:nil];
   for (UIScrollView *scrollView in _originalInsets.keyEnumerator) {
@@ -1841,8 +1989,33 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 #pragma mark - Smooth shared header ownership
 
+- (void)restorePinnedStickyHeader
+{
+  if (!_stickyHeaderIsPinned) return;
+  _stickyHeaderIsPinned = NO;
+  _stickyHeaderView.transform = CGAffineTransformIdentity;
+  _nativeTabBarView.transform = CGAffineTransformIdentity;
+  _nativeSubHeaderView.transform = CGAffineTransformIdentity;
+  [_stickyHeaderView removeFromSuperview];
+  [_nativeTabBarView removeFromSuperview];
+  [_nativeSubHeaderView removeFromSuperview];
+  if (_stickyHeaderView != nil) [_sharedHeaderHostView addSubview:_stickyHeaderView];
+  [_sharedHeaderHostView addSubview:_nativeTabBarView];
+  [_sharedHeaderHostView addSubview:_nativeSubHeaderView];
+  _pinnedStickyHostView.hidden = YES;
+  _pinnedStickyHostView.layer.zPosition = 0;
+  [_containerView addSubview:_pinnedStickyHostView];
+  if ([_pagerScrollView isKindOfClass:RNCCollapsiblePagerDirectScrollView.class]) {
+    ((RNCCollapsiblePagerDirectScrollView *)_pagerScrollView).excludedHeaderView = _sharedHeaderHostView;
+  }
+  [_nativeTabBarView updateAncestorGesturePrecedence];
+  [_nativeSubHeaderView updateAncestorGesturePrecedence];
+}
+
 - (void)restoreSharedHeadersToContainer
 {
+  [self restorePinnedStickyHeader];
+  [self updateTopScrollEdgeForScrollView:_observedScrollView];
   _sharedHeaderScrollView = nil;
   _sharedHeadersLiftedForPagerTransition = NO;
   _sharedHeaderHostView.layer.zPosition = 0;
@@ -1850,6 +2023,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     [_containerView addSubview:_sharedHeaderHostView];
   }
   [self layoutSharedHeaders];
+  if (_topOverlayView != nil) {
+    [_containerView bringSubviewToFront:_topOverlayHostView];
+  }
 }
 
 - (void)attachSharedHeadersToScrollView:(UIScrollView *)scrollView
@@ -1866,13 +2042,14 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   }
   if (_sharedHeaderScrollView == scrollView &&
       _sharedHeaderHostView.superview == scrollView) {
+    _sharedHeaderHostView.layer.zPosition = _topScrollEdgeHard && _topOverlayView != nil ? 0 : 1000;
     [self layoutSharedHeaders];
     return;
   }
 
   _sharedHeaderScrollView = scrollView;
   _sharedHeadersLiftedForPagerTransition = NO;
-  _sharedHeaderHostView.layer.zPosition = 1000;
+  _sharedHeaderHostView.layer.zPosition = _topScrollEdgeHard && _topOverlayView != nil ? 0 : 1000;
   if (_sharedHeaderHostView.superview != scrollView) {
     [scrollView addSubview:_sharedHeaderHostView];
   }
@@ -1919,56 +2096,125 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
   _sharedHeaderHostView.frame = CGRectMake(
     0,
-    attachedToList ? -totalHeight : 0,
+    attachedToList ? -totalHeight : _topOverlayHeight,
     width,
     totalHeight
   );
   CGFloat stickyY = _headerHeight;
   _headerView.frame = CGRectMake(0, 0, width, _headerHeight);
-  _stickyHeaderView.frame = CGRectMake(0, stickyY, width, _stickyHeaderHeight);
+  CGPoint pinnedOrigin = _stickyHeaderIsPinned
+    ? [_sharedHeaderScrollView convertPoint:CGPointMake(0, _topOverlayHeight) fromView:_containerView]
+    : CGPointMake(0, _topOverlayHeight);
+  _pinnedStickyHostView.frame = CGRectMake(
+    pinnedOrigin.x, pinnedOrigin.y, width, _stickyHeaderHeight);
+  CGFloat stickyChildY = _stickyHeaderIsPinned ? 0 : stickyY;
+  _stickyHeaderView.frame = CGRectMake(0, stickyChildY, width, _stickyHeaderHeight);
   CGFloat nativeTabBarVisibleHeight = _nativeTabBarView.hidden
     ? 0
     : MIN(_stickyHeaderHeight, _nativeTabBarHeight);
   _nativeTabBarView.frame = CGRectMake(
     0,
-    stickyY,
+    stickyChildY,
     width,
     nativeTabBarVisibleHeight
   );
   _nativeSubHeaderView.frame = CGRectMake(
     0,
-    stickyY + nativeTabBarVisibleHeight,
+    stickyChildY + nativeTabBarVisibleHeight,
     width,
     MIN(
       MAX(0, _stickyHeaderHeight - nativeTabBarVisibleHeight),
       _nativeSubHeaderHeight
     )
   );
+  BOOL sharedStickyNeedsMaterial = _topScrollEdgeHard && _topOverlayView != nil &&
+    self.window != nil && _stickyHeaderView != nil &&
+    _sharedHeaderHostView.superview == _containerView;
+  if (sharedStickyNeedsMaterial && _sharedStickyGlassView == nil) {
+    _sharedStickyGlassView = [[UIVisualEffectView alloc]
+      initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemChromeMaterial]];
+    _sharedStickyGlassView.userInteractionEnabled = NO;
+    _sharedStickyGlassView.isAccessibilityElement = NO;
+    [_sharedHeaderHostView insertSubview:_sharedStickyGlassView atIndex:0];
+  }
+  _sharedStickyGlassView.hidden = !sharedStickyNeedsMaterial;
+  _sharedStickyGlassView.frame = CGRectMake(0, stickyY, width, _stickyHeaderHeight);
+  _topOverlayHostView.frame = CGRectMake(0, 0, width, _topOverlayHeight);
+  _topOverlayView.frame = _topOverlayHostView.bounds;
   [self applyHeaderOffset];
 }
 
-- (void)offsetDiag:(NSString *)reason page:(NSInteger)index scroll:(UIScrollView *)scroll
+- (void)updatePinnedStickyHeader
 {
-#if DEBUG
-  NSString *key = index >= 0 && index < _pageControllers.count ? [self pageKeyForIndex:index] : @"none";
-  if (![@[@"portfolio", @"perps", @"defi", @"nft", @"history"] containsObject:key]) key = @"other";
-  NSNumber *saved = index >= 0 && index < _pageControllers.count ? _pageOffsets[[self pageKeyForIndex:index]] : nil;
-  UIView *component = scroll == nil ? nil : RNCScrollComponentView(scroll);
-  RNCCollapsiblePagerLog([NSString stringWithFormat:
-    @"[HOME-OFFSET-DIAG] pager phase=%@ seq=%lu wallMs=%.0f mono=%.6f host=%p generation=%lu transitionId=%lu page=%ld key=%@ current=%ld destination=%ld transition=%d dragging=%d scroll=%p tag=%ld component=%p componentTag=%ld observed=%p ownerIndex=%ld ownerGeneration=%lu synthetic=%d cacheExists=%d cache=%.4f header=%.4f headerHeight=%ld physicalY=%.4f insetTop=%.4f insetBottom=%.4f logicalY=%.4f contentHeight=%.4f boundsHeight=%.4f",
-    reason, (unsigned long)++_offsetDiagSequence, NSDate.date.timeIntervalSince1970 * 1000, CACurrentMediaTime(),
-    (__bridge void *)self, (unsigned long)_generation, (unsigned long)_transitionId, (long)index, key,
-    (long)_currentIndex, (long)_destinationIndex, _transitioning, _isPagerDragging,
-    (__bridge void *)scroll, (long)scroll.tag, (__bridge void *)component, (long)component.tag,
-    (__bridge void *)_observedScrollView, (long)_observedPageIndex, (unsigned long)_observedPageGeneration, _syntheticPageRestore, saved != nil, saved.doubleValue, _headerOffset, (long)_headerHeight,
-    scroll.contentOffset.y, scroll.contentInset.top, scroll.contentInset.bottom,
-    scroll.contentOffset.y + scroll.contentInset.top, scroll.contentSize.height, scroll.bounds.size.height]);
-#endif
+  BOOL attachedToList = _nativeSmoothHeaderScrollEnabled &&
+    _sharedHeaderScrollView != nil && !_sharedHeadersLiftedForPagerTransition;
+  if (!attachedToList && !_stickyHeaderIsPinned) return;
+  UIScrollView *scrollView = _sharedHeaderScrollView;
+  NSNumber *appliedTop = [_appliedTopInsets objectForKey:scrollView];
+  CGFloat refreshInset = scrollView.refreshControl != nil && appliedTop != nil
+    ? MAX(0, scrollView.contentInset.top - appliedTop.doubleValue) : 0;
+  CGFloat pinnedTranslation = MAX(0, _currentLogicalOffset - _headerHeight - refreshInset);
+  CGFloat stickyTop = [_sharedHeaderHostView convertPoint:
+    CGPointMake(0, _headerHeight + pinnedTranslation) toView:self].y;
+  BOOL shouldPin = _topScrollEdgeHard && _topOverlayView != nil &&
+    _stickyHeaderView != nil && attachedToList && !_transitioning &&
+    !_isPagerDragging && _headerOffset >= _headerHeight - 0.5 &&
+    stickyTop <= _topOverlayHeight + 0.5;
+  if (_stickyHeaderIsPinned && shouldPin && _pinnedStickyHostView.superview != scrollView) {
+    [self updateTopScrollEdgeForScrollView:nil];
+    [scrollView addSubview:_pinnedStickyHostView];
+    [self updateTopScrollEdgeForScrollView:_observedScrollView];
+  }
+  if (_stickyHeaderIsPinned == shouldPin) {
+    if (shouldPin) {
+      CGPoint origin = [scrollView convertPoint:CGPointMake(0, _topOverlayHeight)
+        fromView:_containerView];
+      _pinnedStickyHostView.frame = CGRectMake(origin.x, origin.y,
+        CGRectGetWidth(self.bounds), _stickyHeaderHeight);
+    }
+    return;
+  }
+
+  _stickyHeaderIsPinned = shouldPin;
+  UIView *host = shouldPin ? _pinnedStickyHostView : _sharedHeaderHostView;
+  _stickyHeaderView.transform = CGAffineTransformIdentity;
+  _nativeTabBarView.transform = CGAffineTransformIdentity;
+  _nativeSubHeaderView.transform = CGAffineTransformIdentity;
+  [_stickyHeaderView removeFromSuperview];
+  [_nativeTabBarView removeFromSuperview];
+  [_nativeSubHeaderView removeFromSuperview];
+  if (_stickyHeaderView != nil) [host addSubview:_stickyHeaderView];
+  [host addSubview:_nativeTabBarView];
+  [host addSubview:_nativeSubHeaderView];
+  CGFloat childY = shouldPin ? 0 : _headerHeight;
+  CGFloat width = CGRectGetWidth(self.bounds);
+  CGFloat tabHeight = _nativeTabBarView.hidden ? 0 : MIN(_stickyHeaderHeight, _nativeTabBarHeight);
+  _stickyHeaderView.frame = CGRectMake(0, childY, width, _stickyHeaderHeight);
+  _nativeTabBarView.frame = CGRectMake(0, childY, width, tabHeight);
+  _nativeSubHeaderView.frame = CGRectMake(0, childY + tabHeight, width,
+    MIN(MAX(0, _stickyHeaderHeight - tabHeight), _nativeSubHeaderHeight));
+  _pinnedStickyHostView.hidden = !shouldPin;
+  if ([_pagerScrollView isKindOfClass:RNCCollapsiblePagerDirectScrollView.class]) {
+    ((RNCCollapsiblePagerDirectScrollView *)_pagerScrollView).excludedHeaderView =
+      shouldPin ? _pinnedStickyHostView : _sharedHeaderHostView;
+  }
+  if (shouldPin) {
+    [scrollView addSubview:_pinnedStickyHostView];
+    _pinnedStickyHostView.layer.zPosition = 1000;
+    CGPoint origin = [scrollView convertPoint:CGPointMake(0, _topOverlayHeight)
+      fromView:_containerView];
+    _pinnedStickyHostView.frame = CGRectMake(origin.x, origin.y, width, _stickyHeaderHeight);
+  } else {
+    _pinnedStickyHostView.layer.zPosition = 0;
+    [_containerView addSubview:_pinnedStickyHostView];
+  }
+  [_nativeTabBarView updateAncestorGesturePrecedence];
+  [_nativeSubHeaderView updateAncestorGesturePrecedence];
+  [self updateTopScrollEdgeForScrollView:_observedScrollView];
 }
 
 - (void)preparePageForHorizontalTransitionAtIndex:(NSInteger)pageIndex
 {
-  [self offsetDiag:@"prepare-check" page:pageIndex scroll:nil];
   if (!_nativeSmoothHeaderScrollEnabled ||
       pageIndex < 0 || pageIndex >= _pageControllers.count) return;
   UIScrollView *scrollView = [self verticalScrollViewForPageAtIndex:pageIndex];
@@ -1987,11 +2233,6 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   _transitionHeaderOffset = _headerOffset;
   _transitionPageOffsets = [_pageOffsets copy];
   _transitionCompensatedPages = [NSMutableIndexSet new];
-#if DEBUG
-  _transitionDiagBucket = -1;
-  [self offsetDiag:[NSString stringWithFormat:@"screen-begin-source=%ld-savedQ=%.4f", (long)_transitionSourceIndex,
-    [_transitionPageOffsets[self.currentPageKey] doubleValue]] page:_currentIndex scroll:nil];
-#endif
 }
 
 - (void)updatePageStateTransitionProgress:(CGFloat)progress
@@ -2008,16 +2249,6 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   CGFloat firstQ = [_transitionPageOffsets[[self pageKeyForIndex:first]] doubleValue];
   CGFloat secondQ = [_transitionPageOffsets[[self pageKeyForIndex:second]] doubleValue];
   _headerOffset = _transitionHeaderOffset;
-#if DEBUG
-  NSInteger bucket = (NSInteger)floor(fraction * 4);
-  if (_transitionDiagBucket != bucket) {
-    _transitionDiagBucket = bucket;
-    [self offsetDiag:[NSString stringWithFormat:
-      @"screen-progress-kind=%@-source=%ld-target=%ld-sourceQ=%.4f-targetQ=%.4f-position=%.4f-fraction=%.4f",
-      _isPagerDragging ? @"interactive" : @"programmatic-endpoint", (long)first, (long)second,
-      firstQ, secondQ, progress, fraction] page:_currentIndex scroll:nil];
-  }
-#endif
   _syntheticPageRestore = YES;
   NSInteger visibleFirst = MAX(0, MIN((NSInteger)floor(progress), (NSInteger)_pageControllers.count - 1));
   NSInteger visibleLast = MIN(visibleFirst + 1, (NSInteger)_pageControllers.count - 1);
@@ -2059,10 +2290,6 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   _transitionPageOffsets = nil;
   _transitionCompensatedPages = nil;
   [self layoutSharedHeaders];
-#if DEBUG
-  [self offsetDiag:[NSString stringWithFormat:@"screen-finish-source=%ld-cancelled=%d", (long)_transitionSourceIndex,
-    _currentIndex == _transitionSourceIndex] page:_currentIndex scroll:nil];
-#endif
 }
 
 #pragma mark - React mounting
@@ -2119,9 +2346,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
         if (!_nativeSmoothHeaderScrollEnabled && _transitionPageOffsets == nil && !_syntheticPageRestore &&
             ![_pendingPageRestoreKeys containsObject:pageKey] &&
             (ownsObservedPage || _pageOffsets[pageKey] == nil)) {
-          [self offsetDiag:@"mount-release-save-before" page:index scroll:scrollView];
           _pageOffsets[pageKey] = @(scrollView.contentOffset.y + scrollView.contentInset.top);
-          [self offsetDiag:@"mount-release-save-after" page:index scroll:scrollView];
         }
         break;
       }
@@ -2230,11 +2455,16 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 - (void)rebuildSlots
 {
+  if (_deferTopEdgeSlotRebuild) {
+    _needsSlotRebuild = YES;
+    return;
+  }
   if (_transitioning || _isPagerDragging) {
     _needsSlotRebuild = YES;
     return;
   }
   _needsSlotRebuild = NO;
+  _deferTopEdgeSlotRebuild = NO;
   [self detachScrollObserver];
   [self restoreSharedHeadersToContainer];
   // OneKey patch: Fabric reuses these views without resetting transforms
@@ -2246,11 +2476,15 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   _nativeSubHeaderView.transform = CGAffineTransformIdentity;
   [_headerView removeFromSuperview];
   [_stickyHeaderView removeFromSuperview];
+  [self updateTopScrollEdgeForScrollView:nil];
+  [_topOverlayView removeFromSuperview];
   for (UIViewController *controller in _pageControllers) {
     [controller.view removeFromSuperview];
   }
   _headerView = nil;
   _stickyHeaderView = nil;
+  _topOverlayView = nil;
+  [self updateTopScrollEdgeForScrollView:nil];
   [_pageControllers removeAllObjects];
 
   if (_logicalChildren.count > 0) {
@@ -2261,7 +2495,13 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     _stickyHeaderView = _logicalChildren[1];
     [_sharedHeaderHostView addSubview:_stickyHeaderView];
   }
-  for (NSInteger index = 2; index < _logicalChildren.count; index++) {
+  NSInteger pageSlotStart = _topScrollEdgeHard ? 3 : 2;
+  if (_topScrollEdgeHard && _logicalChildren.count > 2) {
+    _topOverlayView = _logicalChildren[2];
+    [_topOverlayHostView addSubview:_topOverlayView];
+  }
+  _topOverlayHostView.hidden = _topOverlayView == nil;
+  for (NSInteger index = pageSlotStart; index < _logicalChildren.count; index++) {
     UIView *page = _logicalChildren[index];
     UIViewController *controller = [UIViewController new];
     [controller.view addSubview:page];
@@ -2300,6 +2540,10 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   if (!_nativeTabBarView.hidden) [_sharedHeaderHostView bringSubviewToFront:_nativeTabBarView];
   if (!_nativeSubHeaderView.hidden) [_sharedHeaderHostView bringSubviewToFront:_nativeSubHeaderView];
   [_containerView bringSubviewToFront:_sharedHeaderHostView];
+  if (_stickyHeaderIsPinned) {
+    [_pinnedStickyHostView.superview bringSubviewToFront:_pinnedStickyHostView];
+  }
+  if (_topOverlayView != nil) [_containerView bringSubviewToFront:_topOverlayHostView];
   [self setNeedsLayout];
   dispatch_async(dispatch_get_main_queue(), ^{
     if (!self->_isBeingRecycled) {
@@ -2386,6 +2630,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 - (void)prepareForRecycle
 {
+  [self cancelTopInsetReboundCheck];
+  [self updateTopScrollEdgeForScrollView:nil];
   [self cancelHeaderSettledCheck];
   [self publishHeaderSettledAtTop:NO identityChanged:NO];
   _isBeingRecycled = YES;
@@ -2408,9 +2654,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
       if (appliedTop != nil && scrollView.refreshControl != nil) {
         original.top += MAX(0, scrollView.contentInset.top - appliedTop.doubleValue);
       }
-      [self offsetDiag:@"release-original-inset-before" page:_currentIndex scroll:scrollView];
   scrollView.contentInset = original;
-  [self offsetDiag:@"release-original-inset-after" page:_currentIndex scroll:scrollView];
     }
     NSValue *indicatorValue = [_originalIndicatorInsets objectForKey:scrollView];
     if (indicatorValue != nil) {
@@ -2439,6 +2683,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   _nativeSubHeaderView.transform = CGAffineTransformIdentity;
   [_headerView removeFromSuperview];
   [_stickyHeaderView removeFromSuperview];
+  [_topOverlayView removeFromSuperview];
   for (UIViewController *controller in _pageControllers) {
     [controller.view removeFromSuperview];
   }
@@ -2446,6 +2691,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   [_pageControllers removeAllObjects];
   _headerView = nil;
   _stickyHeaderView = nil;
+  _topOverlayView = nil;
+  _topOverlayHostView.hidden = YES;
+  [self updateTopScrollEdgeForScrollView:nil];
   _pageViewController.dataSource = nil;
   _pageViewController.delegate = nil;
   _pagerScrollView.delegate = nil;
@@ -2478,6 +2726,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   _pendingInitialPage = 0;
   _headerHeight = 0;
   _stickyHeaderHeight = 0;
+  _topOverlayHeight = 0;
+  _topScrollEdgeHard = NO;
   _nativeTabBarHeight = 44;
   _nativeSubHeaderHeight = 74;
   _headerOffset = 0;
@@ -2501,6 +2751,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   _pendingGoToIndex = -1;
   _pendingGoToAnimated = YES;
   _needsSlotRebuild = NO;
+  _deferTopEdgeSlotRebuild = NO;
   _hasAppliedInitialPage = NO;
   // OneKey patch: Fabric retains old props when recycling this view.
   _needsPropsReapply = YES;
@@ -2517,6 +2768,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 {
   const auto &oldViewProps = *std::static_pointer_cast<const RNCCollapsiblePagerViewProps>(_props);
   const auto &newViewProps = *std::static_pointer_cast<const RNCCollapsiblePagerViewProps>(props);
+  _applyingTopOverlayInsetChange =
+    oldViewProps.topScrollEdgeHard != newViewProps.topScrollEdgeHard ||
+    oldViewProps.topOverlayHeight != newViewProps.topOverlayHeight;
 
   if (_needsPropsReapply || oldViewProps.initialPage != newViewProps.initialPage) {
     _pendingInitialPage = MAX(0, newViewProps.initialPage);
@@ -2564,6 +2818,23 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   }
   if (_needsPropsReapply || oldViewProps.stickyHeaderHeight != newViewProps.stickyHeaderHeight) {
     _stickyHeaderHeight = MAX(0, newViewProps.stickyHeaderHeight);
+    insetsChanged = YES;
+  }
+  if (_needsPropsReapply || oldViewProps.topScrollEdgeHard != newViewProps.topScrollEdgeHard) {
+    _topScrollEdgeHard = newViewProps.topScrollEdgeHard;
+    _deferTopEdgeSlotRebuild = YES;
+    [self rebuildSlots];
+    NSUInteger generation = _generation;
+    dispatch_async(dispatch_get_main_queue(), ^{
+      if (self->_generation != generation || self->_isBeingRecycled ||
+          !self->_deferTopEdgeSlotRebuild) return;
+      self->_deferTopEdgeSlotRebuild = NO;
+      [self rebuildSlots];
+    });
+    insetsChanged = YES;
+  }
+  if (_needsPropsReapply || oldViewProps.topOverlayHeight != newViewProps.topOverlayHeight) {
+    _topOverlayHeight = MAX(0, newViewProps.topOverlayHeight);
     insetsChanged = YES;
   }
   if (_needsPropsReapply || oldViewProps.pageKeys != newViewProps.pageKeys) {
@@ -2633,17 +2904,23 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
   _needsPropsReapply = NO;
   [super updateProps:props oldProps:oldProps];
+  [self updateTopScrollEdgeForScrollView:_observedScrollView];
   if (insetsChanged) {
     [self reapplyInsetsToObservedScrollView];
     [self setNeedsLayout];
   }
+  _applyingTopOverlayInsetChange = NO;
   if (!_nativeTabBarView.hidden) {
-    [_sharedHeaderHostView bringSubviewToFront:_nativeTabBarView];
+    [_nativeTabBarView.superview bringSubviewToFront:_nativeTabBarView];
   }
   if (!_nativeSubHeaderView.hidden) {
-    [_sharedHeaderHostView bringSubviewToFront:_nativeSubHeaderView];
+    [_nativeSubHeaderView.superview bringSubviewToFront:_nativeSubHeaderView];
   }
   [_sharedHeaderHostView.superview bringSubviewToFront:_sharedHeaderHostView];
+  if (_stickyHeaderIsPinned) {
+    [_pinnedStickyHostView.superview bringSubviewToFront:_pinnedStickyHostView];
+  }
+  if (_topOverlayView != nil) [_containerView bringSubviewToFront:_topOverlayHostView];
 }
 
 #pragma mark - Collapsible scroll coordination
@@ -2877,21 +3154,17 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     return;
   }
 
-  [self offsetDiag:@"observer-candidate" page:_currentIndex scroll:candidate];
   BOOL replacingCurrentScrollView = _observingContentOffset &&
     (!_nativeSmoothHeaderScrollEnabled || [_observedPageKey isEqualToString:self.currentPageKey]);
   [self detachScrollObserver];
   if (replacingCurrentScrollView) {
     // Legacy replacement discards body state; smooth replacement waits for layout.
-    [self offsetDiag:@"observer-replacement-cache-before" page:_currentIndex scroll:candidate];
     if (!_nativeSmoothHeaderScrollEnabled) _pageOffsets[self.currentPageKey] = @(_headerOffset);
-    [self offsetDiag:@"observer-replacement-cache-after" page:_currentIndex scroll:candidate];
   }
   _observedScrollView = candidate;
   _observedPageKey = [self.currentPageKey copy];
   _observedPageIndex = _currentIndex;
   _observedPageGeneration = _generation;
-  [self offsetDiag:@"observer-attached-before-restore" page:_currentIndex scroll:candidate];
   [self applyInsetsToScrollView:candidate pageIndex:_currentIndex restore:YES];
   [candidate addObserver:self
               forKeyPath:@"contentOffset"
@@ -2909,6 +3182,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   _observingContentOffset = YES;
   _needsScrollObserverReattachAfterMount = NO;
   _currentLogicalOffset = candidate.contentOffset.y + candidate.contentInset.top;
+  [self updateTopScrollEdgeForScrollView:candidate];
   [self attachSharedHeadersToScrollView:candidate];
   [self updateSharedHeaderPressCancellationGesture];
   [self updateHeaderSettledStateForceBusy:NO];
@@ -2916,6 +3190,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 - (void)detachScrollObserver
 {
+  [self cancelTopInsetReboundCheck];
+  [self restorePinnedStickyHeader];
+  [self updateTopScrollEdgeForScrollView:nil];
   [self cancelHeaderSettledCheck];
   _headerCommandOwner = nil;
   _headerSettledGeometry = nil;
@@ -2925,7 +3202,6 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   UIScrollView *scrollView = _observedScrollView;
   if (scrollView != nil) {
     [scrollView.panGestureRecognizer removeTarget:self action:@selector(observedListPanChanged:)];
-    [self offsetDiag:@"detach-save-before" page:_currentIndex scroll:scrollView];
     NSString *ownerKey = _nativeSmoothHeaderScrollEnabled ? _observedPageKey : self.currentPageKey;
     BOOL ownerKeyExists = ownerKey != nil && ([_pageKeys containsObject:ownerKey] ||
       (_observedPageIndex >= 0 && _observedPageIndex < _pageControllers.count &&
@@ -2933,7 +3209,6 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     if (ownerKey != nil && !_nativeSmoothHeaderScrollEnabled) {
       _pageOffsets[ownerKey] = @(scrollView.contentOffset.y + scrollView.contentInset.top);
     }
-    [self offsetDiag:@"detach-save-after" page:_currentIndex scroll:scrollView];
     if (_observingContentOffset) {
       [scrollView removeObserver:self
                       forKeyPath:@"contentOffset"
@@ -3024,7 +3299,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     }
   }
   if (_sharedHeaderPressCancellationGesture.view == gestureHost &&
-      _sharedHeaderOuterPagerGesture.view == _sharedHeaderHostView &&
+      _sharedHeaderOuterPagerGesture.view == _containerView &&
       _reactTouchHandler == reactTouchHandler) {
     _sharedHeaderOuterPagerGesture.blockedPagerGestures = outerPagerGestures;
     return;
@@ -3066,7 +3341,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   _reactTouchHandler = reactTouchHandler;
   _sharedHeaderPressCancellationGestureHost = gestureHost;
   [gestureHost addGestureRecognizer:_sharedHeaderPressCancellationGesture];
-  [_sharedHeaderHostView addGestureRecognizer:_sharedHeaderOuterPagerGesture];
+  [_containerView addGestureRecognizer:_sharedHeaderOuterPagerGesture];
   RNCCollapsiblePagerLog([NSString stringWithFormat:
     @"press-cancel-bridge attached=1 outer-pagers=%lu",
     (unsigned long)outerPagerGestures.count]);
@@ -3138,6 +3413,11 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 - (void)observedListPanChanged:(UIPanGestureRecognizer *)recognizer
 {
+  if (recognizer == _pendingTopInsetReboundScrollView.panGestureRecognizer &&
+      (recognizer.state == UIGestureRecognizerStateBegan ||
+       recognizer.state == UIGestureRecognizerStateChanged)) {
+    [self cancelTopInsetReboundCheck];
+  }
   if (recognizer == _observedScrollView.panGestureRecognizer) {
     [self updateHeaderSettledStateForceBusy:
       recognizer.state == UIGestureRecognizerStateBegan || recognizer.state == UIGestureRecognizerStateChanged];
@@ -3205,7 +3485,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     [_managedRefreshControls removeObjectForKey:scrollView];
     if (current != nil) [_managedRefreshControls setObject:current forKey:scrollView];
   }
-  [RNCRefreshControlOffsetState setOffset:_headerHeight + _stickyHeaderHeight
+  [RNCRefreshControlOffsetState setOffset:_topOverlayHeight + _headerHeight + _stickyHeaderHeight
                              forControl:current owner:self];
 }
 
@@ -3219,6 +3499,53 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   [_managedRefreshControls removeObjectForKey:scrollView];
 }
 
+- (void)cancelTopInsetReboundCheck
+{
+  [_topInsetReboundTimer invalidate];
+  _topInsetReboundTimer = nil;
+  _pendingTopInsetReboundScrollView = nil;
+  _pendingTopInsetReboundPageKey = nil;
+}
+
+- (void)scheduleTopInsetReboundCheck
+{
+  if (_pendingTopInsetReboundScrollView == nil ||
+      _pendingTopInsetReboundScrollView != _observedScrollView) return;
+  [_topInsetReboundTimer invalidate];
+  __weak __typeof__(self) weakSelf = self;
+  _topInsetReboundTimer = [NSTimer scheduledTimerWithTimeInterval:0.15 repeats:NO block:^(NSTimer *timer) {
+    __strong __typeof__(weakSelf) self = weakSelf;
+    if (self == nil || self->_topInsetReboundTimer != timer) return;
+    self->_topInsetReboundTimer = nil;
+    UIScrollView *scrollView = self->_pendingTopInsetReboundScrollView;
+    if (scrollView == nil || scrollView != self->_observedScrollView ||
+        self->_pendingTopInsetReboundGeneration != self->_generation ||
+        ![self->_pendingTopInsetReboundPageKey isEqualToString:self.currentPageKey] ||
+        self->_isBeingRecycled || self.window == nil ||
+        self->_transitioning || self->_isPagerDragging ||
+        self->_headerCommandOwner == scrollView || self->_pagerTopPageKey != nil) {
+      [self cancelTopInsetReboundCheck];
+      return;
+    }
+    UIGestureRecognizerState pan = scrollView.panGestureRecognizer.state;
+    if (scrollView.refreshControl.isRefreshing || scrollView.isDragging ||
+        scrollView.isDecelerating || scrollView.isTracking ||
+        pan == UIGestureRecognizerStateBegan || pan == UIGestureRecognizerStateChanged ||
+        self->_syntheticPageRestore || self->_transitionPageOffsets != nil) {
+      [self scheduleTopInsetReboundCheck];
+      return;
+    }
+    CGFloat minimumOffset = -scrollView.adjustedContentInset.top;
+    [self cancelTopInsetReboundCheck];
+    if (scrollView.contentOffset.y < minimumOffset - 0.5) {
+      // UIKit can finish a refresh rebound at the inset that preceded an overlay resize.
+      self->_correctingTopInsetRebound = YES;
+      [scrollView setContentOffset:CGPointMake(scrollView.contentOffset.x, minimumOffset) animated:NO];
+      self->_correctingTopInsetRebound = NO;
+    }
+  }];
+}
+
 // OneKey patch: release observers, headers and saved state while the scroll view
 // still represents the old list, before Fabric applies its next owner's props.
 - (void)restoreScrollViewState:(UIScrollView *)scrollView resetSavedOffset:(BOOL)resetSavedOffset
@@ -3227,9 +3554,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   [self releaseRefreshControlForScrollView:scrollView];
   if (scrollView == _observedScrollView) {
     [self detachScrollObserver];
-    [self offsetDiag:resetSavedOffset ? @"release-reset-before" : @"release-retain-before" page:_currentIndex scroll:scrollView];
     if (resetSavedOffset && !_nativeSmoothHeaderScrollEnabled) _pageOffsets[self.currentPageKey] = @(_headerOffset);
-    [self offsetDiag:@"release-reset-after" page:_currentIndex scroll:scrollView];
   }
   if (scrollView == _sharedHeaderScrollView) {
     [self restoreSharedHeadersToContainer];
@@ -3249,10 +3574,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     [_originalDirectionalLockEnabled objectForKey:scrollView].boolValue;
   scrollView.contentInsetAdjustmentBehavior = (UIScrollViewContentInsetAdjustmentBehavior)
     [_originalInsetAdjustmentBehavior objectForKey:scrollView].integerValue;
-  [self offsetDiag:@"release-original-offset-before" page:_currentIndex scroll:scrollView];
   [scrollView setContentOffset:CGPointMake(scrollView.contentOffset.x, logicalOffset - original.top)
                      animated:NO];
-  [self offsetDiag:@"release-original-offset-after" page:_currentIndex scroll:scrollView];
   [_originalInsets removeObjectForKey:scrollView];
   [_appliedTopInsets removeObjectForKey:scrollView];
   [_originalIndicatorInsets removeObjectForKey:scrollView];
@@ -3283,7 +3606,6 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 {
   // Smooth pages retain their complete offset while replacement identity and
   // layout settle. Legacy pages retain the historical header-only policy.
-  [self offsetDiag:restore ? @"restore-enter" : @"insets-enter" page:pageIndex scroll:scrollView];
   NSString *pageKey = [self pageKeyForIndex:pageIndex];
   RNCCollapsiblePagerReleasedScrollState *released = _releasedPageScrollStates[pageKey];
   BOOL deferredReleasedIdentity = NO;
@@ -3329,13 +3651,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
       deferredReleasedIdentity = now - released.pendingFallbackDetectedAt <
         RNCCollapsiblePagerFallbackDebounceInterval;
     }
-#if DEBUG
-    [self offsetDiag:[NSString stringWithFormat:@"released-identity-match=%d-deferred=%d-oldTag=%ld-oldScroll=%p", sameList, deferredReleasedIdentity, (long)released.componentTag, (__bridge void *)released.scrollView] page:pageIndex scroll:scrollView];
-#endif
     if (!deferredReleasedIdentity) {
-      [self offsetDiag:@"released-identity-cache-before" page:pageIndex scroll:scrollView];
       if (!sameList && !_nativeSmoothHeaderScrollEnabled) _pageOffsets[pageKey] = @(_headerOffset);
-      [self offsetDiag:@"released-identity-cache-after" page:pageIndex scroll:scrollView];
       [_releasedPageScrollStates removeObjectForKey:pageKey];
     }
   }
@@ -3360,22 +3677,24 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   // suppress its later vertical movement while the pager is still pending.
   scrollView.directionalLockEnabled = _nativeSmoothHeaderScrollEnabled
     ? NO : [_originalDirectionalLockEnabled objectForKey:scrollView].boolValue;
-  [self updateNativeScrollerViewport:scrollView stickyHeight:_stickyHeaderHeight];
+  [self updateNativeScrollerViewport:scrollView stickyHeight:_stickyHeaderHeight + _topOverlayHeight];
   [self updateRefreshControlForScrollView:scrollView];
   CGFloat previousTopInset = scrollView.contentInset.top;
   CGFloat previousLogicalOffset = scrollView.contentOffset.y + previousTopInset;
+  // Preserve UIKit's rebound after refresh while the content is beyond its top inset.
+  BOOL wasReturningFromPull = scrollView.contentOffset.y < -scrollView.adjustedContentInset.top - 0.5;
   NSNumber *appliedTop = [_appliedTopInsets objectForKey:scrollView];
   // UIRefreshControl owns its temporary top inset, including while ending.
   CGFloat refreshInset = appliedTop != nil && scrollView.refreshControl != nil
     ? MAX(0, previousTopInset - appliedTop.doubleValue) : 0;
   UIEdgeInsets next = original;
-  next.top += _headerHeight + _stickyHeaderHeight;
+  next.top += _topOverlayHeight + _headerHeight + _stickyHeaderHeight;
   CGFloat pagerTopInset = next.top;
   next.top += refreshInset;
   [_appliedTopInsets setObject:@(pagerTopInset) forKey:scrollView];
   // Short pages still need enough range to collapse the header; long pages
   // must end at the last row rather than leave a header-sized blank footer.
-  next.bottom += MAX(0, scrollView.bounds.size.height - _stickyHeaderHeight
+  next.bottom += MAX(0, scrollView.bounds.size.height - _stickyHeaderHeight - _topOverlayHeight
     - original.top - original.bottom - scrollView.contentSize.height);
   if (UIEdgeInsetsEqualToEdgeInsets(scrollView.contentInset, next) && !restore) {
     // UICollectionView may report contentSize during a bounce without changing
@@ -3385,9 +3704,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   }
   BOOL previousSyntheticRestore = _syntheticPageRestore;
   if (_nativeSmoothHeaderScrollEnabled || [_alignedBodyKeys containsObject:pageKey]) _syntheticPageRestore = YES;
-  [self offsetDiag:@"inset-assignment-before" page:pageIndex scroll:scrollView];
   scrollView.contentInset = next;
-  [self offsetDiag:@"inset-assignment-after" page:pageIndex scroll:scrollView];
   UIEdgeInsets indicatorInsets = scrollView.verticalScrollIndicatorInsets;
   indicatorInsets.top = pagerTopInset;
   scrollView.verticalScrollIndicatorInsets = indicatorInsets;
@@ -3419,9 +3736,6 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     } else {
       restoredLogicalOffset = deferredReleasedIdentity || saved == nil ? _headerOffset : saved.doubleValue;
     }
-#if DEBUG
-    [self offsetDiag:[NSString stringWithFormat:@"restore-candidate-saved=%.4f-headerAlignedLogical=%.4f", saved.doubleValue, restoredLogicalOffset] page:pageIndex scroll:scrollView];
-#endif
     intendedLogicalOffset = restoredLogicalOffset;
     // Cancellation restores the visible source, while retaining its unreachable reading intent.
     if (_nativeSmoothHeaderScrollEnabled && _headerOffset >= _headerHeight &&
@@ -3434,9 +3748,6 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     }
     // An inactive list may shrink after its offset observer was detached.
     // Do not overwrite its corrected offset with a now-unreachable cached one.
-#if DEBUG
-    [self offsetDiag:[NSString stringWithFormat:@"restore-clamp-before-candidate=%.4f-max=%.4f", targetOffset, MAX(-next.top, scrollView.contentSize.height - scrollView.bounds.size.height + next.bottom)] page:pageIndex scroll:scrollView];
-#endif
     targetOffset = RNCLimitRestoredScrollOffset(
       targetOffset,
       scrollView.contentSize.height,
@@ -3445,12 +3756,16 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
       next.bottom
     );
   }
-#if DEBUG
-  [self offsetDiag:[NSString stringWithFormat:@"restore-final-target=%.4f-restore=%d", targetOffset, restore] page:pageIndex scroll:scrollView];
-#endif
   // A bottom-inset change must not cancel UIKit's refresh or bounce settlement.
-  if (restore || previousTopInset != next.top) {
+  if (restore || (previousTopInset != next.top && !wasReturningFromPull)) {
     [scrollView setContentOffset:CGPointMake(scrollView.contentOffset.x, targetOffset) animated:NO];
+  }
+  if (_applyingTopOverlayInsetChange && !restore && wasReturningFromPull &&
+      previousTopInset != next.top && scrollView == _observedScrollView) {
+    _pendingTopInsetReboundScrollView = scrollView;
+    _pendingTopInsetReboundPageKey = [pageKey copy];
+    _pendingTopInsetReboundGeneration = _generation;
+    [self scheduleTopInsetReboundCheck];
   }
   if (_nativeSmoothHeaderScrollEnabled && restore && targetOffset + next.top + 0.5 < intendedLogicalOffset) {
     [_pendingPageRestoreKeys addObject:pageKey];
@@ -3461,7 +3776,6 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     if (!_nativeSmoothHeaderScrollEnabled) [self updateHeaderForScrollView:scrollView];
     else [self applyHeaderOffset];
   }
-  [self offsetDiag:@"restore-post" page:pageIndex scroll:scrollView];
 }
 
 - (void)updateNativeScrollerViewport:(UIScrollView *)scrollView stickyHeight:(CGFloat)height
@@ -3478,6 +3792,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
       _observedPageKey == nil || ![_observedPageKey isEqualToString:self.currentPageKey] ||
       _observedPageIndex != _currentIndex || _observedPageGeneration != _generation ||
       _transitioning || _isPagerDragging || _transitionPageOffsets != nil || _syntheticPageRestore) return;
+  [self cancelTopInsetReboundCheck];
   NSInteger phase = [notification.userInfo[@"phase"] integerValue];
   [self updateHeaderSettledStateForceBusy:NO];
   if (phase == 1) _headerCommandOwner = scrollView;
@@ -3510,7 +3825,6 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     _headerOffset = 0;
     [self applyHeaderOffset];
   }
-  [self offsetDiag:@"list-command-body-takeover" page:_currentIndex scroll:scrollView];
 }
 
 - (void)nativeScrollerWillReceiveScrollCommand:(RNCNativeScrollerComponentView *)scroller
@@ -3522,12 +3836,12 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
       _observedPageIndex != _currentIndex || _currentIndex < 0 || _currentIndex >= _pageControllers.count ||
       _observedPageGeneration != _generation || _transitioning || _isPagerDragging ||
       _transitionPageOffsets != nil || _syntheticPageRestore) return;
+  [self cancelTopInsetReboundCheck];
   if (!_dispatchingPagerTop) {
     [self cancelPagerTop];
     [_alignedBodyKeys removeObject:ownerKey];
   }
   if (!_nativeSmoothHeaderScrollEnabled) return;
-  [self offsetDiag:@"command-pending-cancel-before" page:_observedPageIndex scroll:scrollView];
   [_pendingPageRestoreKeys removeObject:ownerKey];
   _currentLogicalOffset = scrollView.contentOffset.y + scrollView.contentInset.top;
   [_commandBodyKeys removeObject:ownerKey];
@@ -3536,7 +3850,6 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   [_displayBodyOverrides removeObjectForKey:ownerKey];
   _pageOffsets[ownerKey] = @(MAX(_currentLogicalOffset - _headerHeight, 0));
   [self updateHeaderForScrollView:scrollView];
-  [self offsetDiag:@"command-pending-cancel-after" page:_observedPageIndex scroll:scrollView];
 }
 
 
@@ -3598,6 +3911,14 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     return;
   }
   if (context == RNCCollapsiblePagerContentOffsetContext && object == _observedScrollView) {
+    if (_pendingTopInsetReboundScrollView == object &&
+        ([keyPath isEqualToString:@"contentOffset"] || [keyPath isEqualToString:@"contentInset"])) {
+      if (((UIScrollView *)object).panGestureRecognizer.state == UIGestureRecognizerStateChanged) {
+        [self cancelTopInsetReboundCheck];
+      } else {
+        [self scheduleTopInsetReboundCheck];
+      }
+    }
     if (![change[NSKeyValueChangeOldKey] isEqual:change[NSKeyValueChangeNewKey]]) {
       [self updateHeaderSettledStateForceBusy:YES];
     }
@@ -3662,18 +3983,12 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     }
     UIScrollView *scrollView = (UIScrollView *)object;
     _currentLogicalOffset = scrollView.contentOffset.y + scrollView.contentInset.top;
-#if DEBUG
-    BOOL offsetDiagChanged = _pageOffsets[self.currentPageKey] == nil || _pageOffsets[self.currentPageKey].doubleValue != (_nativeSmoothHeaderScrollEnabled ? MAX(_currentLogicalOffset - _headerHeight, 0) : _currentLogicalOffset);
-    if (offsetDiagChanged) [self offsetDiag:@"kvo-cache-before" page:_currentIndex scroll:scrollView];
-#endif
+    if (_correctingTopInsetRebound) return;
     if ([_alignedBodyKeys containsObject:_observedPageKey] ||
         (_nativeSmoothHeaderScrollEnabled && scrollView.panGestureRecognizer.state != UIGestureRecognizerStateChanged &&
          !scrollView.isDecelerating && ![_commandBodyKeys containsObject:_observedPageKey])) return;
     _pageOffsets[_nativeSmoothHeaderScrollEnabled ? _observedPageKey : self.currentPageKey] =
       @(_nativeSmoothHeaderScrollEnabled ? MAX(_currentLogicalOffset - _headerHeight, 0) : _currentLogicalOffset);
-#if DEBUG
-    if (offsetDiagChanged) [self offsetDiag:@"kvo-cache-after" page:_currentIndex scroll:scrollView];
-#endif
     [self updateHeaderForScrollView:scrollView];
     return;
   }
@@ -3714,17 +4029,20 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
       ? MAX(0, scrollView.contentInset.top - appliedTop.doubleValue) : 0;
     CGFloat pinnedTranslation = MAX(0, _currentLogicalOffset - _headerHeight - refreshInset);
     CGAffineTransform stickyTransform = CGAffineTransformMakeTranslation(0, pinnedTranslation);
-    _stickyHeaderView.transform = stickyTransform;
-    _nativeTabBarView.transform = stickyTransform;
-    _nativeSubHeaderView.transform = stickyTransform;
+    [self updatePinnedStickyHeader];
+    _stickyHeaderView.transform = _stickyHeaderIsPinned ? CGAffineTransformIdentity : stickyTransform;
+    _nativeTabBarView.transform = _stickyHeaderIsPinned ? CGAffineTransformIdentity : stickyTransform;
+    _nativeSubHeaderView.transform = _stickyHeaderIsPinned ? CGAffineTransformIdentity : stickyTransform;
     return;
   }
+  [self updatePinnedStickyHeader];
   CGAffineTransform collapseTransform = CGAffineTransformMakeTranslation(0, -_headerOffset);
   _sharedHeaderHostView.transform = collapseTransform;
   _headerView.transform = CGAffineTransformIdentity;
   _stickyHeaderView.transform = CGAffineTransformIdentity;
   _nativeTabBarView.transform = CGAffineTransformIdentity;
   _nativeSubHeaderView.transform = CGAffineTransformIdentity;
+  [self updateTopScrollEdgeForScrollView:_observedScrollView];
 }
 
 #pragma mark - Pager navigation
@@ -3736,7 +4054,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 - (void)goTo:(NSInteger)index animated:(BOOL)animated
 {
-  [self offsetDiag:@"go-to" page:index scroll:_observedScrollView];
+  [self cancelTopInsetReboundCheck];
   if (_isBeingRecycled || index < 0 || index >= _pageControllers.count) return;
   _hasReceivedPageCommand = YES;
   _hasAppliedInitialPage = YES;
@@ -3918,7 +4236,6 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 - (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView
 {
   [self updateHeaderSettledStateForceBusy:YES];
-  [self offsetDiag:@"pager-drag-begin" page:_currentIndex scroll:_observedScrollView];
   if (_nativeSmoothHeaderScrollEnabled && scrollView == _pagerScrollView) {
     [_contentPressCancellationGesture cancelPressForPan:scrollView.panGestureRecognizer];
   }
@@ -4110,7 +4427,6 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 - (void)emitPageSelected:(NSInteger)position
 {
-  [self offsetDiag:@"selection-complete" page:position scroll:_observedScrollView];
   const auto emitter = [self eventEmitter];
   if (emitter) emitter->onPageSelected({.position = (double)position});
 }
@@ -4255,12 +4571,12 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   _currentLogicalOffset = logical;
   _headerOffset = _pagerTopLogicalTarget;
   [self applyHeaderOffset];
-  [self offsetDiag:[NSString stringWithFormat:@"pager-top-complete-token=%lu-target=%.4f", (unsigned long)_pagerTopToken, _pagerTopLogicalTarget] page:_currentIndex scroll:scrollView];
   [self cancelPagerTop];
 }
 
 - (void)scrollToTop:(NSInteger)target animated:(BOOL)animated
 {
+  [self cancelTopInsetReboundCheck];
   UIScrollView *scrollView = _observedScrollView;
   NSString *key = _observedPageKey;
   if ((target != 0 && target != 1) || _isBeingRecycled || _transitioning || _isPagerDragging ||
@@ -4292,7 +4608,6 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   [self applyHeaderOffset];
   CGFloat physicalTarget = RNCLimitRestoredScrollOffset(logicalTarget - scrollView.contentInset.top,
     scrollView.contentSize.height, scrollView.bounds.size.height, scrollView.contentInset.top, scrollView.contentInset.bottom);
-  [self offsetDiag:[NSString stringWithFormat:@"pager-top-begin-token=%lu-target=%ld-animated=%d", (unsigned long)_pagerTopToken, (long)target, animated] page:_currentIndex scroll:scrollView];
   _dispatchingPagerTop = YES;
   [scrollView setContentOffset:CGPointMake(scrollView.contentOffset.x, physicalTarget) animated:animated];
   _dispatchingPagerTop = NO;
@@ -4423,7 +4738,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
         _sharedHeaderPressCancellationGestureHost == nil) return NO;
     UIView *touchView = touch.view;
     BOOL beginsInSharedHeader = touchView == _sharedHeaderHostView ||
-      [touchView isDescendantOfView:_sharedHeaderHostView];
+      [touchView isDescendantOfView:_sharedHeaderHostView] ||
+      touchView == _pinnedStickyHostView ||
+      [touchView isDescendantOfView:_pinnedStickyHostView];
     if (!beginsInSharedHeader) return NO;
 
     RNCCollapsiblePagerLog([NSString stringWithFormat:
@@ -4438,14 +4755,17 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     return _nativeSmoothHeaderScrollEnabled && !_isBeingRecycled &&
       _contentPressCancellationGesture.view != nil &&
       [touchView isDescendantOfView:_pagerScrollView] &&
-      ![touchView isDescendantOfView:_sharedHeaderHostView];
+      ![touchView isDescendantOfView:_sharedHeaderHostView] &&
+      ![touchView isDescendantOfView:_pinnedStickyHostView];
   }
   if (gestureRecognizer == _sharedHeaderPressCancellationGesture) {
     if (!_nativeSmoothHeaderScrollEnabled || _isBeingRecycled ||
         _sharedHeaderPressCancellationGestureHost == nil) return NO;
     UIView *touchView = touch.view;
     BOOL beginsInSharedHeader = touchView == _sharedHeaderHostView ||
-      [touchView isDescendantOfView:_sharedHeaderHostView];
+      [touchView isDescendantOfView:_sharedHeaderHostView] ||
+      touchView == _pinnedStickyHostView ||
+      [touchView isDescendantOfView:_pinnedStickyHostView];
     if (!beginsInSharedHeader) return NO;
 
     RNCCollapsiblePagerLog([NSString stringWithFormat:
@@ -4456,7 +4776,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   if (gestureRecognizer == _verticalPagerGesture) {
     UIView *touchView = touch.view;
     return touchView != _sharedHeaderHostView &&
-      ![touchView isDescendantOfView:_sharedHeaderHostView];
+      ![touchView isDescendantOfView:_sharedHeaderHostView] &&
+      touchView != _pinnedStickyHostView &&
+      ![touchView isDescendantOfView:_pinnedStickyHostView];
   }
   // A new touch can cancel UIKit's animation before its first frame. Queue a
   // non-animated settle for the next safe transition boundary instead of

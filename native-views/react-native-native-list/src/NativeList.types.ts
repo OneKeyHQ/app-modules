@@ -123,6 +123,10 @@ export type NativeListProps = Omit<ViewProps, 'children'> &
     listHeader?: ReactNode;
     listFooter?: ReactNode;
     listEmpty?: ReactNode;
+    /** Fixed overlay above scrolling rows on iOS 26 and newer. */
+    topOverlay?: ReactNode;
+    /** Enables UIKit's hard top scroll-edge effect on iOS 26 and newer. */
+    topScrollEdgeEffect?: 'hard';
     /** Web only. Defaults to true and is ignored by the native host. */
     webVirtualizationEnabled?: boolean;
     /** Web only. Hosts the section index inside this container. */

@@ -85,6 +85,8 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       listHeader: _listHeader,
       listEmpty: _listEmpty,
       listFooter: _listFooter,
+      topOverlay: _topOverlay,
+      topScrollEdgeEffect: _topScrollEdgeEffect,
       scrollPositionThresholds: _scrollPositionThresholds,
       onScrollPositionThresholdChange: _onScrollPositionThresholdChange,
       webVirtualizationEnabled = true,
