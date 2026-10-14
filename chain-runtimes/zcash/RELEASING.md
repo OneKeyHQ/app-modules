@@ -34,15 +34,14 @@ archives or manually rewrite the manifest to make an old artifact pass.
 
 ## Publish
 
-Run the **Zcash runtime** workflow manually. It builds, tests, packs and
-publishes both npm packages with the repository's `NPM_TOKEN`, like the native
-modules' `package-publish`. Prereleases can be published from any branch;
-release versions only from `main`.
+Run the **publish-runtime-packages** workflow manually. It builds, tests and packs
+every runtime, then publishes each package whose version is not on npm yet, with
+the repository's `NPM_TOKEN`. Prereleases go to `next`, release versions to `latest`.
 
-npm cannot publish two packages atomically. If publishing one succeeds and the
-other fails, do not consume the version until both exist. Download the
-`zcash-npm-<sha>` artifact from that run and publish only the missing package;
-never overwrite an existing version or rebuild different bytes under that version.
+npm cannot publish two packages atomically. If one of the pair fails, do not
+consume the version until both exist: re-run that same run, which skips the
+package already published. Do not dispatch a new run from another commit for the
+same version, or runtime and keys would come from different sources.
 
 ## App cutover
 
