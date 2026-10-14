@@ -37,8 +37,8 @@ archives or manually rewrite the manifest to make an old artifact pass.
 Run the **publish-runtime-packages** workflow manually. It builds, tests and packs
 every runtime, then publishes each package whose version is not on npm yet.
 Prereleases go to `next`, release versions to `latest`. Branches other than
-`main` can publish alpha versions only. npm uses trusted publishing once it is
-configured for a package and the repository's `NPM_TOKEN` until then.
+`main` can publish alpha versions only. Publishing uses the repository's
+`NPM_TOKEN`.
 
 npm cannot publish two packages atomically. If one of the pair fails, do not
 consume the version until both exist: re-run that same run, which skips the
