@@ -52,6 +52,8 @@ export interface ImageCropPickerOptions {
   height?: number;
   cropping?: boolean;
   includeBase64?: boolean;
+  // Copy the selected representation without re-encoding when not cropping.
+  preserveOriginal?: boolean;
   compressImageQuality?: number;
   compressImageMaxWidth?: number;
   compressImageMaxHeight?: number;

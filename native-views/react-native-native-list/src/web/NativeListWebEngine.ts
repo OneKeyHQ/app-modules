@@ -2025,6 +2025,25 @@ export class NativeListWebEngine {
     { signature: string; height: number }
   >();
 
+  private notifyScrollCommandAccepted() {
+    if (this.destroyed) return;
+    const EventConstructor = this.viewport.ownerDocument.defaultView?.Event;
+    if (EventConstructor)
+      this.viewport.dispatchEvent(
+        new EventConstructor('ok-native-list-scroll-command-accepted')
+      );
+  }
+
+  private readonly handlePagerScrollCommandCancel = (event: Event) => {
+    if (this.destroyed || event.target !== this.viewport) return;
+    this.pendingScroll = undefined;
+    this.viewport.scrollTo({
+      left: this.viewport.scrollLeft,
+      top: this.viewport.scrollTop,
+      behavior: 'instant',
+    });
+  };
+
   constructor(
     host: HTMLElement,
     snapshot: NativeListSnapshot,
@@ -2100,6 +2119,10 @@ export class NativeListWebEngine {
     this.root.append(style, this.viewportFrame, this.footer);
     host.appendChild(this.root);
 
+    this.viewport.addEventListener(
+      'ok-collapsible-pager-cancel-scroll-command',
+      this.handlePagerScrollCommandCancel
+    );
     this.viewport.addEventListener('scroll', this.handleScroll, {
       passive: true,
     });
@@ -2242,6 +2265,7 @@ export class NativeListWebEngine {
       this.emitScrollFailure(index, 'index-out-of-range');
       return;
     }
+    this.notifyScrollCommandAccepted();
     if (!this.canScroll()) {
       this.pendingScroll = { kind: 'index', index, scroll };
       return;
@@ -2274,6 +2298,7 @@ export class NativeListWebEngine {
 
   scrollToOffset(offset: number, animated: boolean) {
     validateOffset(offset);
+    this.notifyScrollCommandAccepted();
     if (!this.canScroll()) {
       this.pendingScroll = { kind: 'offset', offset, animated };
       return;
@@ -2282,6 +2307,7 @@ export class NativeListWebEngine {
   }
 
   scrollToEnd(animated: boolean) {
+    this.notifyScrollCommandAccepted();
     if (!this.canScroll()) {
       this.pendingScroll = { kind: 'end', animated };
       return;
@@ -2359,6 +2385,11 @@ export class NativeListWebEngine {
     this.document.defaultView?.removeEventListener(
       'resize',
       this.handleWindowResize
+    );
+    this.pendingScroll = undefined;
+    this.viewport.removeEventListener(
+      'ok-collapsible-pager-cancel-scroll-command',
+      this.handlePagerScrollCommandCancel
     );
     this.viewport.removeEventListener('scroll', this.handleScroll);
     this.viewport.removeEventListener(

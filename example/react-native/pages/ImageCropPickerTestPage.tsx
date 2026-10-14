@@ -4,6 +4,9 @@ import ImageCropPicker, {
   ImageCropPickerError,
   type Image as PickedImage,
 } from '@onekeyfe/react-native-image-crop-picker';
+import PhotoLibrary, {
+  type PhotoSavePermission,
+} from '@onekeyfe/react-native-photo-library';
 import { TestButton, TestPageBase, TestResult } from './TestPageBase';
 
 // Production consumers import from `react-native-image-crop-picker`, an npm
@@ -13,29 +16,34 @@ export function ImageCropPickerTestPage() {
   const [result, setResult] = useState<unknown>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const run = useCallback(async (task: () => Promise<PickedImage | void>) => {
-    setResult(null);
-    setError(null);
-    try {
-      const picked = await task();
-      if (picked) {
-        setImage(picked);
-        // Keep the output readable: base64 payloads are only summarized.
-        setResult({
-          ...picked,
-          data: picked.data ? `<${picked.data.length} base64 chars>` : undefined,
-        });
-      } else {
-        setResult('done');
+  const run = useCallback(
+    async (task: () => Promise<PickedImage | PhotoSavePermission | void>) => {
+      setResult(null);
+      setError(null);
+      try {
+        const picked = await task();
+        if (picked && 'path' in picked) {
+          setImage(picked);
+          // Keep the output readable: base64 payloads are only summarized.
+          setResult({
+            ...picked,
+            data: picked.data
+              ? `<${picked.data.length} base64 chars>`
+              : undefined,
+          });
+        } else {
+          setResult(picked ?? 'done');
+        }
+      } catch (err) {
+        setError(
+          err instanceof ImageCropPickerError
+            ? `${err.code}: ${err.message}`
+            : String(err),
+        );
       }
-    } catch (err) {
-      setError(
-        err instanceof ImageCropPickerError
-          ? `${err.code}: ${err.message}`
-          : String(err)
-      );
-    }
-  }, []);
+    },
+    [],
+  );
 
   return (
     <TestPageBase title="Image Crop Picker">
@@ -96,6 +104,27 @@ export function ImageCropPickerTestPage() {
               compressImageMaxHeight: 1024,
             })
           )
+        }
+      />
+      <TestButton
+        title="openPicker: original PNG/JPEG/HEIC"
+        onPress={() =>
+          run(() => ImageCropPicker.openPicker({ preserveOriginal: true }))
+        }
+      />
+      <TestButton
+        title="getSavePermission: add-only"
+        onPress={() => run(PhotoLibrary.getSavePermission)}
+      />
+      <TestButton
+        title="requestSavePermission: add-only"
+        onPress={() => run(PhotoLibrary.requestSavePermission)}
+      />
+      <TestButton
+        title="saveToLibrary: last result"
+        disabled={!image}
+        onPress={() =>
+          run(() => PhotoLibrary.saveToLibrary(image?.path ?? ''))
         }
       />
       <TestButton

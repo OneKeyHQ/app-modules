@@ -54,4 +54,5 @@ struct ImageCropPickerError: Error, CustomStringConvertible {
     code: .cleanupError,
     message: "Error while cleaning up tmp files"
   )
+
 }

@@ -208,7 +208,7 @@ jobs:
           else
             git push origin "HEAD:refs/heads/${branch}"
           fi
-          body="Update app-modules mobile dependencies to ${version} after all 41 packages passed npm registry verification. Source: ${GITHUB_REPOSITORY}@${GITHUB_SHA}. Module-ID registry structure is checked; new native runtime modules require a fresh Union Build map before registry update."
+          body="Update app-modules mobile dependencies to ${version} after all publishable packages passed npm registry verification. Source: ${GITHUB_REPOSITORY}@${GITHUB_SHA}. Module-ID registry structure is checked; new native runtime modules require a fresh Union Build map before registry update."
           pr_number=$(gh pr list --repo OneKeyHQ/app-monorepo --state open --base x --head "$branch" --json number,headRepositoryOwner --jq "[.[] | select(.headRepositoryOwner.login == \"$GITHUB_REPOSITORY_OWNER\")][0].number")
           if test -n "$pr_number"; then
             gh pr edit "$pr_number" --repo OneKeyHQ/app-monorepo --title "chore: update app-modules to ${version}" --body "$body"

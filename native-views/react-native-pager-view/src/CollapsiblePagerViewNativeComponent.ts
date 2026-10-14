@@ -35,6 +35,8 @@ export type OnCollapsibleStateChangedEventData = Readonly<{
   observedScrollableCount: Int32;
   retainedPages: string;
   reason: string;
+  pageKey: string;
+  headerSettledAtTop: boolean;
 }>;
 
 export type OnNativeTabPressEventData = Readonly<{
@@ -83,6 +85,11 @@ export interface NativeProps extends ViewProps {
 type CollapsiblePagerViewNativeType = HostComponent<NativeProps>;
 
 export interface NativeCommands {
+  scrollToTop: (
+    viewRef: React.ElementRef<CollapsiblePagerViewNativeType>,
+    target: Int32,
+    animated: boolean
+  ) => void;
   setPage: (
     viewRef: React.ElementRef<CollapsiblePagerViewNativeType>,
     selectedPage: Int32
@@ -99,6 +106,7 @@ export interface NativeCommands {
 
 export const Commands: NativeCommands = codegenNativeCommands<NativeCommands>({
   supportedCommands: [
+    "scrollToTop",
     "setPage",
     "setPageWithoutAnimation",
     "setScrollEnabledImperatively",

@@ -26,10 +26,10 @@ internal class ImageCropPickerException(
     fun noActivity() = ImageCropPickerException(E_ACTIVITY_DOES_NOT_EXIST, "Activity doesn't exist")
 
     fun failedToShowPicker(cause: Throwable) =
-      ImageCropPickerException(E_FAILED_TO_SHOW_PICKER, cause.message ?: "Cannot show picker", cause)
+      ImageCropPickerException(E_FAILED_TO_SHOW_PICKER, "Cannot show picker", cause)
 
-    fun noImageData(message: String = "Cannot find image data") =
-      ImageCropPickerException(E_NO_IMAGE_DATA_FOUND, message)
+    fun noImageData() =
+      ImageCropPickerException(E_NO_IMAGE_DATA_FOUND, "Cannot find image data")
 
     fun cropperImageNotFound() =
       ImageCropPickerException(E_CROPPER_IMAGE_NOT_FOUND, "Can't find the image at the specified path")
@@ -38,8 +38,9 @@ internal class ImageCropPickerException(
       ImageCropPickerException(E_CANNOT_SAVE_IMAGE, "Cannot save image. Unable to write to tmp location.", cause)
 
     fun lowMemory(cause: Throwable) =
-      ImageCropPickerException(E_LOW_MEMORY_ERROR, cause.message ?: "Out of memory", cause)
+      ImageCropPickerException(E_LOW_MEMORY_ERROR, "Out of memory", cause)
 
     fun cleanupFailed() = ImageCropPickerException(E_ERROR_WHILE_CLEANING_FILES, "Error while cleaning up tmp files")
+
   }
 }

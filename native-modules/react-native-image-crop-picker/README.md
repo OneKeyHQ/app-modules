@@ -2,12 +2,28 @@
 
 Single photo picker and cropper for OneKey, built on [Nitro Modules](https://nitro.margelo.com/). It replaces `react-native-image-crop-picker` and keeps the part of its API that OneKey uses: `openPicker`, `openCropper`, `clean`, `cleanSingle`, and the `E_*` error codes.
 
-Neither platform asks for photo library permission:
+Picking never asks for photo library permission:
 
 - **iOS** picks with `PHPickerViewController`, which runs out of process. `react-native-image-crop-picker` requested full photo library access first. Once a user denied it, iOS never showed the prompt again and every later `openPicker` call failed silently (OK-48227). The crop gestures come from a vendored TOCropViewController 3.2.0 `TOCropView`, with the OK-51551 rotation fix that upstream still lacks.
 - **Android** picks with the system Photo Picker (`ActivityResultContracts.PickVisualMedia`, which falls back to `ACTION_OPEN_DOCUMENT` on devices without it). The crop gestures come from uCrop `2.2.11-native`'s `UCropView`. Activity results go through the activity's `ActivityResultRegistry`, so no `ActivityEventListener` is needed.
 
 Both platforms show the same cropper screen, drawn by this package rather than by TOCropViewController or uCrop. See [Cropper screen](#cropper-screen).
+
+The behavioral contract and pending acceptance cases are in [docs/SPEC.md](docs/SPEC.md).
+
+## Original selection
+
+```ts
+const image = await ImageCropPicker.openPicker({ preserveOriginal: true });
+// Read the selected file before cleaning it.
+await ImageCropPicker.cleanSingle(image.path);
+```
+
+Original selection preserves the selected representation without JPEG conversion.
+Compression options are ignored unless cropping is enabled. Originals are limited
+to 64 MiB. Saving and its authorization are provided by the separate
+`@onekeyfe/react-native-photo-library`; this picker exposes neither saving nor
+photo-library permission APIs.
 
 ## Installation
 
@@ -94,7 +110,7 @@ Colors are CSS hex strings: `#RGB`, `#RRGGBB` or `#RRGGBBAA`. Anything left out 
 
 ## Behavior
 
-- Results are always JPEG. `width` and `height` set the crop aspect ratio, and the cropped image is scaled to exactly that size, so a crop box a pixel off the ratio still yields the requested dimensions. With `freeStyleCropEnabled`, the crop keeps its own aspect ratio and is scaled to fit inside `width` × `height`.
+- Processed results are always JPEG. `width` and `height` set the crop aspect ratio, and the cropped image is scaled to exactly that size, so a crop box a pixel off the ratio still yields the requested dimensions. With `freeStyleCropEnabled`, the crop keeps its own aspect ratio and is scaled to fit inside `width` × `height`.
 - `compressImageMaxWidth`, `compressImageMaxHeight` and `compressImageQuality` apply after cropping. The default quality is 0.8 on iOS and 1 on Android, as in `react-native-image-crop-picker`.
 - Photos are decoded at most 4096 px on the long side, which keeps very large photos from exhausting memory. `cropRect` is reported in the original image's coordinates on iOS.
 - Results are written to `<tmp>/react-native-image-crop-picker/` on iOS and `<cache>/react-native-image-crop-picker/` on Android. `clean()` empties that directory.
