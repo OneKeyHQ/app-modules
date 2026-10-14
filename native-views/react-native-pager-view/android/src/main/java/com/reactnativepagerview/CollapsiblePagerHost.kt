@@ -123,6 +123,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   private val restoredRecyclerKeys = WeakHashMap<RecyclerView, String>()
   private val originalScrollerPadding = WeakHashMap<ScrollView, ScrollerPadding>()
   private val restoredScrollerKeys = WeakHashMap<ScrollView, String>()
+  private val deferredScrollerGeometry = WeakHashMap<ScrollView, Triple<Int, Int, Int>>()
   private val ownedScrollerKeys = WeakHashMap<NativeScrollerViewport, String>()
   private val ownedScrollerRestoreRequests = HashMap<String, Pair<WeakReference<NativeScrollerViewport>, Int?>>()
   private var foregroundRefreshIndicator: WeakReference<ImageView>? = null
@@ -513,6 +514,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     alignedBodyKeys.clear()
     transitionAlignedViews.clear()
     deferredRecyclerGeometry.clear()
+    deferredScrollerGeometry.clear()
     displayBodyOverrides.clear()
     displayRecyclerAnchors.clear()
     ownedScrollerRestoreRequests.clear()
@@ -907,6 +909,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     pendingPageRestores.remove(key)
     ownedScrollerRestoreRequests.remove(key)
     if (view is RecyclerView) deferredRecyclerGeometry.remove(view)
+    if (view is ScrollView) deferredScrollerGeometry.remove(view)
     (view as? NativeScrollerViewport)?.host?.cancelPendingScrollRestore()
     suspendedBodyKeys.remove(key)
     alignedBodyKeys.remove(key)
@@ -985,6 +988,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     displayRecyclerAnchors.remove(key)
     recyclerReadingAnchors.remove(key)
     if (view is RecyclerView) deferredRecyclerGeometry.remove(view)
+    if (view is ScrollView) deferredScrollerGeometry.remove(view)
     pageOffsets[key] = 0
     val request = PagerTopRequest(view, key, selectedPage, attachmentGeneration, target, ++pagerTopToken)
     pagerTopRequest = request
@@ -1717,6 +1721,17 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     original.appliedTopInset = topInset
 
     val key = pageKey(pageIndex)
+    val geometry = Triple(scroller.getChildAt(0)?.height ?: 0, scroller.height,
+      scroller.paddingTop + scroller.paddingBottom)
+    deferredScrollerGeometry[scroller]?.let { deferred ->
+      if (geometry != deferred) {
+        deferredScrollerGeometry.remove(scroller)
+        restoredScrollerKeys.remove(scroller)
+        if (nativeSmoothHeaderScrollEnabled && headerOffsetPx == headerHeightPx) {
+          displayBodyOverrides.remove(key)
+        }
+      }
+    }
     if (restoredScrollerKeys[scroller] != key) {
       restoredScrollerKeys[scroller] = key
       val restoreRequest = registerPageRestore(key, scroller, pageIndex)
@@ -1744,6 +1759,16 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
           return@post
         }
         if (scroller.scrollY != saved) scroller.scrollTo(scroller.scrollX, saved)
+        val unreachableReadingIntent = nativeSmoothHeaderScrollEnabled &&
+          headerOffsetPx == headerHeightPx && displayBodyOverrides.containsKey(key) &&
+          (pageOffsets[key] ?: 0) > scroller.scrollY && !scroller.canScrollVertically(1)
+        if (nativeSmoothHeaderScrollEnabled && (scroller.scrollY != saved || unreachableReadingIntent)) {
+          deferredScrollerGeometry[scroller] = Triple(scroller.getChildAt(0)?.height ?: 0,
+            scroller.height, scroller.paddingTop + scroller.paddingBottom)
+          offsetDiag("scrollview-restore-pending-saved=$saved-current=${scroller.scrollY}", scroller, key, pageIndex, restoreRequest)
+          return@post
+        }
+        deferredScrollerGeometry.remove(scroller)
         if (nativeSmoothHeaderScrollEnabled) clearPageRestoreForView(key, scroller, restoreRequest)
         else pendingPageRestores.remove(key)
         offsetDiag("scrollview-restore-after-saved=$saved", scroller, key, pageIndex, restoreRequest)
@@ -1813,6 +1838,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
 
   private fun restoreNativeScrollerInsets(scroller: ScrollView) {
     val original = originalScrollerPadding.remove(scroller) ?: return
+    deferredScrollerGeometry.remove(scroller)
     updateScrollerPaddingOwnership(scroller, original)
     restoredScrollerKeys.remove(scroller)?.let { clearPageRestoreForView(it, scroller) }
     if (scroller is ReactScrollView) {
@@ -2193,6 +2219,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
       val request = pageRestoreRequests[currentPageKey()]
       offsetDiag("touch-cancel-before", target, request = request)
       observedRecyclerView?.let { deferredRecyclerGeometry.remove(it) }
+      observedNativeScroller?.let { deferredScrollerGeometry.remove(it) }
       pageRestoreRequests.remove(currentPageKey())
       pendingPageRestores.remove(currentPageKey())
       ownedScrollerRestoreRequests.remove(currentPageKey())
@@ -2334,6 +2361,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     alignedBodyKeys.clear()
     transitionAlignedViews.clear()
     deferredRecyclerGeometry.clear()
+    deferredScrollerGeometry.clear()
     displayBodyOverrides.clear()
     displayRecyclerAnchors.clear()
     ownedScrollerRestoreRequests.clear()

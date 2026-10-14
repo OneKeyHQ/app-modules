@@ -38,6 +38,12 @@ Late callbacks cannot revive cancelled restoration or erase a newer request.
 Observers and commands must match page key, view identity and generation.
 Removed or recycled owners cannot apply callbacks to another page; recycling
 resets owned memory.
+The Web backend shares C and stores per-page B separately from absolute DOM
+scrollTop. Selection aligns to C while expanded and C + B while fully collapsed;
+programmatic alignment and geometry-only scrollend events MUST NOT erase the
+suspended reading position. Real vertical input or a valid List command takes
+over the current display. PageTop/StickyTop clear only the current B.
+
 Legacy mode and pagers without a collapsible header retain their existing
 behavior. Vertical scrolling, refresh, snapping and repeated-current-tab behavior
 are unchanged. This state belongs to native UI instances, with no new React prop
