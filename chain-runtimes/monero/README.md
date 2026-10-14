@@ -28,7 +28,7 @@ objects and silently writes an empty archive; linking then fails with
 
 Run the **publish-runtime-packages** workflow manually to build, test and publish
 `onekey-monero-runtime` (skipped if its version is already on npm): prereleases to npm `next`, release
-versions to `latest`. Locally,
+versions to `latest`. Branches other than `main` can publish alpha versions only. Locally,
 `python3 scripts/package-release.py --version <v> --tag <next|latest>` packs the
 archive into `dist/` without publishing.
 
