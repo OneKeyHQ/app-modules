@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-skeleton",
-  "version": "3.0.178",
+  "version": "3.0.179-alpha.20261015",
   "description": "Native shimmer loading placeholder for OneKey on iOS and Android",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",

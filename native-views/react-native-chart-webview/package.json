@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-chart-webview",
-  "version": "3.0.178",
+  "version": "3.0.179-alpha.20261015",
   "description": "Native chart WebView with local assets, pooling and message bridging for OneKey",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",

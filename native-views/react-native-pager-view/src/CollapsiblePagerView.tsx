@@ -88,6 +88,7 @@ export interface CollapsiblePagerViewProps
     | "stickyHeaderHeight"
     | "topScrollEdgeHard"
     | "topOverlayHeight"
+    | "externalTopOverlayTag"
     | "pageKeys"
     | "retainedPages"
     | "nativeTabBarItems"
@@ -118,8 +119,12 @@ export interface CollapsiblePagerViewProps
   stickyHeaderHeight: number;
   /** Fixed content above the collapsible header on iOS 26 and newer. */
   topOverlay?: React.ReactNode;
+  /** Existing fixed header shared with a parent pager on iOS 26 and newer. */
+  externalTopOverlayTag?: number;
   /** Enables UIKit's hard top scroll-edge effect on iOS 26 and newer. */
   topScrollEdgeEffect?: "hard";
+  /** Effective appearance of the fixed overlay or pinned sticky bar. */
+  topOverlayColorScheme?: "light" | "dark";
   /**
    * Lets the active native list own vertical gestures that begin on pager headers.
    * Defaults to false and has no effect on Web.
@@ -467,7 +472,9 @@ export class CollapsiblePagerView extends React.PureComponent<
       headerHeight,
       stickyHeaderHeight,
       topOverlay,
+      externalTopOverlayTag,
       topScrollEdgeEffect,
+      topOverlayColorScheme,
       nativeSmoothHeaderScrollEnabled,
       pageRetentionDistance: _pageRetentionDistance,
       onMountedPagesChanged: _onMountedPagesChanged,
@@ -484,9 +491,10 @@ export class CollapsiblePagerView extends React.PureComponent<
       ...nativeProps
     } = this.props;
     const pages = this.pages();
-    const hasTopOverlay =
-      Platform.OS === "ios" && Number(Platform.Version) >= 26 &&
-      topScrollEdgeEffect === "hard" && topOverlay != null;
+    const supportsTopScrollEdge =
+      Platform.OS === "ios" && Number(Platform.Version) >= 26;
+    const hardScrollEdge = supportsTopScrollEdge && topScrollEdgeEffect === "hard";
+    const hasTopOverlay = hardScrollEdge && topOverlay != null;
     const pageKeys = pages.map(pageKey);
     const retained = new Set(this.mountedPages(pages.length));
     const deducedLayoutDirection =
@@ -527,8 +535,14 @@ export class CollapsiblePagerView extends React.PureComponent<
         offscreenPageLimit={Math.max(1, offscreenPageLimit ?? 1)}
         headerHeight={Math.max(0, Math.round(headerHeight))}
         stickyHeaderHeight={Math.max(0, Math.round(stickyHeaderHeight))}
-        topScrollEdgeHard={hasTopOverlay}
+        topScrollEdgeHard={hardScrollEdge}
+        topOverlayColorScheme={hardScrollEdge ? topOverlayColorScheme : undefined}
         topOverlayHeight={hasTopOverlay ? this.state.topOverlayHeight : 0}
+        externalTopOverlayTag={
+          supportsTopScrollEdge && !hasTopOverlay
+            ? externalTopOverlayTag ?? 0
+            : 0
+        }
         nativeSmoothHeaderScrollEnabled={nativeSmoothHeaderScrollEnabled}
         pageKeys={JSON.stringify(pageKeys)}
         retainedPages={JSON.stringify([...retained])}

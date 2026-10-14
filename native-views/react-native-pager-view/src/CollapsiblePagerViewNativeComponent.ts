@@ -60,7 +60,9 @@ export interface NativeProps extends ViewProps {
   headerHeight?: Int32;
   stickyHeaderHeight?: Int32;
   topScrollEdgeHard?: WithDefault<boolean, false>;
+  topOverlayColorScheme?: string;
   topOverlayHeight?: WithDefault<Double, 0>;
+  externalTopOverlayTag?: WithDefault<Int32, 0>;
   pageKeys?: string;
   retainedPages?: string;
   nativeTabBarItems?: string;
