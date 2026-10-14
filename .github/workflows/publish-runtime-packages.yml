@@ -1,7 +1,9 @@
 name: publish-runtime-packages
 
-# Builds and tests the chain runtimes on change. A manual run also publishes
-# each package whose version is not on npm yet.
+# Builds and tests every chain runtime that provides the CI hook
+# chain-runtimes/<runtime>/scripts/ci.sh, which tests, builds and packs its
+# npm tarballs into dist/. A manual run also publishes each package whose
+# version is not on npm yet.
 on:
   pull_request:
     paths:
@@ -12,22 +14,25 @@ permissions:
   contents: read
 
 jobs:
+  runtimes:
+    runs-on: ubuntu-24.04
+    outputs:
+      list: ${{ steps.find.outputs.list }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - id: find
+        run: |
+          list=$(find chain-runtimes -mindepth 3 -maxdepth 3 -path '*/scripts/ci.sh' 2>/dev/null | cut -d/ -f2 | sort | jq -Rnc '[inputs]')
+          echo "list=$list" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: runtimes
+    if: needs.runtimes.outputs.list != '[]'
     strategy:
       matrix:
-        include:
-          - runtime: zcash
-            build: |
-              bash scripts/vendor-deps.sh
-              python3 -m unittest discover -s scripts -p 'test_*.py'
-              cargo test --workspace --locked
-              bash scripts/build-wasm.sh --offline
-              python3 scripts/package-release.py pack --version "$VERSION" --tag "$TAG" --revision "$GITHUB_SHA"
-          - runtime: monero
-            build: |
-              cargo test --workspace --locked
-              bash scripts/build-wasm.sh release
-              python3 scripts/package-release.py --version "$VERSION" --tag "$TAG"
+        runtime: ${{ fromJSON(needs.runtimes.outputs.list) }}
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -55,11 +60,7 @@ jobs:
         env:
           CC_wasm32_unknown_unknown: /usr/bin/clang
           AR_wasm32_unknown_unknown: /usr/bin/llvm-ar
-        run: |
-          VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')
-          TAG=latest
-          if [[ "$VERSION" == *-* ]]; then TAG=next; fi
-          ${{ matrix.build }}
+        run: bash scripts/ci.sh
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: runtime-${{ matrix.runtime }}
