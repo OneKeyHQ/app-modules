@@ -12,6 +12,26 @@ final class NativeListAccessoryButton: UIButton {
     }
   }
 
+  // A `.system` button cross-fades its title on every change. Rebinding a row
+  // or section header sets the title again, so a selector header value such as
+  // "$15.60" faded out and back in on each checkbox toggle (OK-64148). Data
+  // binding is not an animation: commit title changes immediately. UIKit
+  // applies a changed title in a later layout pass of the button, so
+  // layoutSubviews below runs without animation as well.
+  override func setTitle(_ title: String?, for state: UIControl.State) {
+    UIView.performWithoutAnimation {
+      super.setTitle(title, for: state)
+      layoutIfNeeded()
+    }
+  }
+
+  override func setAttributedTitle(_ title: NSAttributedString?, for state: UIControl.State) {
+    UIView.performWithoutAnimation {
+      super.setAttributedTitle(title, for: state)
+      layoutIfNeeded()
+    }
+  }
+
   var selectorSummaryLineHeight: CGFloat? {
     didSet {
       invalidateIntrinsicContentSize()
@@ -45,7 +65,9 @@ final class NativeListAccessoryButton: UIButton {
   }
 
   override func layoutSubviews() {
-    super.layoutSubviews()
+    UIView.performWithoutAnimation {
+      super.layoutSubviews()
+    }
     defer {
       if let titleLabel {
         var frame = titleLabel.frame

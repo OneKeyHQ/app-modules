@@ -33,6 +33,9 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
 @end
 
 @implementation RNCNativeScrollerComponentView {
+#if DEBUG
+  NSUInteger _offsetDiagSequence;
+#endif
   RNCNativeScrollerShadowNode::ConcreteState::Shared _state;
   RNCNativeVerticalScrollView *_scrollView;
   UIView<RCTComponentViewProtocol> *_reactContent;
@@ -49,6 +52,24 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
   NSTimeInterval _scrollEventThrottle;
   NSMapTable<id, NSNumber *> *_pagerStickyHeights;
   NSNumber *_lastContentViewportHeight;
+}
+
+- (void)offsetDiag:(NSString *)reason
+{
+#if DEBUG
+  Class logClass = NSClassFromString(@"ReactNativeNativeLogger.OneKeyLog") ?: NSClassFromString(@"OneKeyLog");
+  SEL selector = NSSelectorFromString(@"debug::");
+  if (logClass == nil || ![logClass respondsToSelector:selector]) return;
+  NSString *message = [NSString stringWithFormat:
+    @"[HOME-OFFSET-DIAG] scroller phase=%@ seq=%lu wallMs=%.0f mono=%.6f host=%p tag=%ld scroll=%p generation=%lu physicalY=%.4f insetTop=%.4f logicalY=%.4f contentHeight=%.4f boundsHeight=%.4f adjustedBottom=%.4f needsClamp=%d drag=%d decel=%d refresh=%d",
+    reason, (unsigned long)++_offsetDiagSequence, NSDate.date.timeIntervalSince1970 * 1000, CACurrentMediaTime(),
+    (__bridge void *)self, (long)self.tag, (__bridge void *)_scrollView, (unsigned long)_generation,
+    _scrollView.contentOffset.y, _scrollView.contentInset.top, _scrollView.contentOffset.y + _scrollView.contentInset.top,
+    _scrollView.contentSize.height, _scrollView.bounds.size.height, _scrollView.adjustedContentInset.bottom,
+    _needsContentClamp, _scrollView.dragging, _scrollView.decelerating, _refreshControl.refreshing];
+  typedef void (*LogFunction)(id, SEL, NSString *, NSString *);
+  ((LogFunction)[logClass methodForSelector:selector])(logClass, selector, @"NativeScroller", message);
+#endif
 }
 
 + (ComponentDescriptorProvider)componentDescriptorProvider
@@ -179,7 +200,9 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
     _needsContentClamp |= size.height < _scrollView.contentSize.height;
     CGPoint offset = _scrollView.contentOffset;
     BOOL wasPulling = offset.y < -_scrollView.adjustedContentInset.top;
+    [self offsetDiag:@"content-size-before"];
     _scrollView.contentSize = size;
+    [self offsetDiag:@"content-size-after"];
     // UIKit can synchronously discard a pull when content becomes empty.
     // Upper-range shrink correction remains owned by the deferred clamp.
     if (wasPulling && _scrollView.contentOffset.y != offset.y) {
@@ -197,10 +220,12 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
 - (void)updateLayoutMetrics:(const LayoutMetrics &)layoutMetrics
            oldLayoutMetrics:(const LayoutMetrics &)oldLayoutMetrics
 {
+  [self offsetDiag:@"layout-before"];
   CGSize previous = _scrollView.bounds.size;
   [super updateLayoutMetrics:layoutMetrics oldLayoutMetrics:oldLayoutMetrics];
   [self updateFabricContentOrigin];
   [self emitContentViewportChangeIfNeeded];
+  [self offsetDiag:@"layout-after"];
   if (!CGSizeEqualToSize(previous, _scrollView.bounds.size)) {
     _needsContentClamp = YES;
     [self scheduleContentClamp];
@@ -263,6 +288,7 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
 - (void)scheduleContentClamp
 {
   if (!_needsContentClamp) return;
+  [self offsetDiag:@"clamp-scheduled"];
   NSUInteger generation = _generation;
   __weak __typeof__(self) weakSelf = self;
   dispatch_async(dispatch_get_main_queue(), ^{
@@ -274,13 +300,19 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
 
 - (void)clampContentOffsetIfNeeded
 {
+  [self offsetDiag:@"clamp-enter-or-deferred"];
   if (!_needsContentClamp || _scrollView.dragging || _scrollView.decelerating ||
       _refreshControl.refreshing || _scrollView.bounds.size.height <= 0) return;
   _needsContentClamp = NO;
   CGFloat maximum = MAX(-_scrollView.adjustedContentInset.top,
     _scrollView.contentSize.height - _scrollView.bounds.size.height + _scrollView.adjustedContentInset.bottom);
+#if DEBUG
+  [self offsetDiag:[NSString stringWithFormat:@"clamp-candidate-max=%.4f", maximum]];
+#endif
   if (_scrollView.contentOffset.y > maximum) {
+    [self offsetDiag:@"clamp-applied-before"];
     [_scrollView setContentOffset:CGPointMake(_scrollView.contentOffset.x, maximum) animated:NO];
+    [self offsetDiag:@"clamp-applied-after"];
   }
 }
 
@@ -313,12 +345,15 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
 {
   if (!_momentumActive) return;
   _momentumActive = NO;
+  [[NSNotificationCenter defaultCenter] postNotificationName:@"OneKeyNativeListScrollCommandAccepted"
+    object:_scrollView userInfo:@{@"phase": @2}];
   [self emitScrollEvent:4 velocity:CGPointZero target:_scrollView.contentOffset];
 }
 
 - (void)stopScrolling
 {
   if (_stopping) return;
+  [self offsetDiag:@"stop-before"];
   _stopping = YES;
   [_scrollView setContentOffset:_scrollView.contentOffset animated:NO];
   if (_dragActive) {
@@ -330,6 +365,7 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
   }
   [self finishMomentum];
   _stopping = NO;
+  [self offsetDiag:@"stop-after"];
 }
 
 - (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView
@@ -394,6 +430,14 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
 - (void)scrollTo:(double)x y:(double)y animated:(BOOL)animated
 {
   if (_recycled || !isfinite(x) || !isfinite(y)) return;
+  for (UIView *owner = self.superview; owner != nil; owner = owner.superview) {
+    if ([owner conformsToProtocol:@protocol(RNCNativeScrollerInsetCoordinator)]) {
+      [(id<RNCNativeScrollerInsetCoordinator>)owner nativeScrollerWillReceiveScrollCommand:self];
+    }
+  }
+#if DEBUG
+  [self offsetDiag:[NSString stringWithFormat:@"command-scrollTo-enter-x=%.4f-y=%.4f-animated=%d", x, y, animated]];
+#endif
   [self stopScrolling];
   UIEdgeInsets inset = _scrollView.adjustedContentInset;
   CGPoint target = CGPointMake(MAX(-inset.left, MIN(x,
@@ -401,11 +445,15 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
     MAX(-inset.top, MIN(y,
     MAX(-inset.top, _scrollView.contentSize.height - _scrollView.bounds.size.height + inset.bottom))));
   if (CGPointEqualToPoint(target, _scrollView.contentOffset)) return;
+  [[NSNotificationCenter defaultCenter] postNotificationName:@"OneKeyNativeListScrollCommandAccepted"
+    object:_scrollView userInfo:@{@"phase": @1}];
   if (animated) {
     _momentumActive = YES;
     [self emitScrollEvent:3 velocity:CGPointZero target:target];
   }
   [_scrollView setContentOffset:target animated:animated];
+  if (!animated) [[NSNotificationCenter defaultCenter] postNotificationName:@"OneKeyNativeListScrollCommandAccepted"
+    object:_scrollView userInfo:@{@"phase": @2}];
 }
 
 - (void)scrollToEnd:(BOOL)animated

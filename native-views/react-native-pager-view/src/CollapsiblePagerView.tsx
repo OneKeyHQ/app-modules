@@ -250,6 +250,24 @@ export class CollapsiblePagerView extends React.PureComponent<
     }
   };
 
+  public scrollToPageTop = (options?: Readonly<{ animated?: boolean }>) => {
+    if (this.nativeRef)
+      CollapsiblePagerViewNativeCommands.scrollToTop(
+        this.nativeRef,
+        0,
+        options?.animated ?? true
+      );
+  };
+
+  public scrollToStickyTop = (options?: Readonly<{ animated?: boolean }>) => {
+    if (this.nativeRef)
+      CollapsiblePagerViewNativeCommands.scrollToTop(
+        this.nativeRef,
+        1,
+        options?.animated ?? true
+      );
+  };
+
   public setScrollEnabled = (scrollEnabled: boolean) => {
     if (this.nativeRef) {
       CollapsiblePagerViewNativeCommands.setScrollEnabledImperatively(

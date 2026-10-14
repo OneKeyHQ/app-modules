@@ -1,11 +1,16 @@
 #import <XCTest/XCTest.h>
 #import <React/RCTViewComponentView.h>
 #import "RNCCollapsiblePagerViewComponentView.h"
+#import "RNCNativeScrollerComponentView.h"
 
 @interface RNCCollapsiblePagerViewComponentView (RefreshControlTesting)
 - (void)updateRefreshControlForScrollView:(UIScrollView *)scrollView;
 - (void)releaseRefreshControlForScrollView:(UIScrollView *)scrollView;
 - (void)attachScrollObserverForCurrentPage;
+@end
+
+@interface RNCNativeScrollerComponentView (RefreshControlScrollCommandTesting)
+- (void)scrollTo:(double)x y:(double)y animated:(BOOL)animated;
 @end
 
 @interface RNCCollapsiblePagerRefreshControlTests : XCTestCase
@@ -184,14 +189,18 @@
   RNCCollapsiblePagerViewComponentView *pager = [self pagerWithHeader:64];
   [pager mountChildComponentView:[RCTViewComponentView new] index:0];
   [pager mountChildComponentView:[RCTViewComponentView new] index:1];
-  UIScrollView *scroll = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 0, 320, 600)];
+  RNCNativeScrollerComponentView *scroller = [RNCNativeScrollerComponentView new];
+  scroller.frame = CGRectMake(0, 0, 320, 600);
+  scroller.scrollView.frame = scroller.bounds;
+  UIScrollView *scroll = scroller.scrollView;
   scroll.refreshControl = [UIRefreshControl new];
   scroll.contentSize = CGSizeMake(320, 2000);
   scroll.contentInset = UIEdgeInsetsMake(232, 0, 0, 0);
   UIView *content = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 320, 2000)];
   [scroll addSubview:content];
   UIViewController *page = [UIViewController new];
-  [page.view addSubview:scroll];
+  [page.view addSubview:scroller];
+  [pager addSubview:page.view];
   NSMutableArray<UIViewController *> *pages = [pager valueForKey:@"pageControllers"];
   [pages addObject:page];
   [pager attachScrollObserverForCurrentPage];
@@ -204,7 +213,7 @@
   XCTAssertEqualWithAccuracy(scroll.contentInset.top, 340, 0.001);
   XCTAssertEqualWithAccuracy(headerHost.transform.ty, 0, 0.001);
 
-  scroll.contentOffset = CGPointMake(0, 500);
+  [scroller scrollTo:0 y:500 animated:NO];
   CGFloat baselineStickyTranslation = stickyHeader.transform.ty;
   CGFloat baselineTabBarTranslation = tabBar.transform.ty;
   XCTAssertEqualWithAccuracy(baselineStickyTranslation, 776, 0.001);
@@ -217,11 +226,11 @@
   XCTAssertEqualWithAccuracy(tabBar.transform.ty, baselineTabBarTranslation, 0.001);
   XCTAssertEqualWithAccuracy(CGRectGetMaxY(headerHost.frame), CGRectGetMinY(content.frame), 0.001);
 
-  // Exercise actual scroll notifications while the temporary refresh inset is
+  // Exercise accepted native commands while the temporary refresh inset is
   // present, including direction reversals and the sticky/unpinned boundary.
   // The pre-fix formula adds the extra 60 points on these scroll updates.
   for (NSNumber *nextOffset in @[@620, @450, @-300, @-340, @500]) {
-    scroll.contentOffset = CGPointMake(0, nextOffset.doubleValue);
+    [scroller scrollTo:0 y:nextOffset.doubleValue animated:NO];
     CGFloat expectedTranslation = MAX(0, nextOffset.doubleValue + 340 - 64);
     XCTAssertEqualWithAccuracy(headerHost.transform.ty, 0, 0.001);
     XCTAssertEqualWithAccuracy(stickyHeader.transform.ty, expectedTranslation, 0.001);

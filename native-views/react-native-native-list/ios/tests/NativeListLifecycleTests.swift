@@ -4,6 +4,63 @@ import XCTest
 
 @MainActor
 final class NativeListLifecycleTests: XCTestCase {
+  func testInvalidCommandsPreserveAcceptedAnimationCompletion() throws {
+    for invalid in 0..<3 {
+      let view = try makeScrollingList()
+      let window = UIWindow(frame: view.frame)
+      let controller = UIViewController()
+      window.rootViewController = controller
+      controller.view.addSubview(view)
+      window.isHidden = false
+      defer { window.isHidden = true }
+      window.layoutIfNeeded()
+      view.layoutIfNeeded()
+      drainMainQueue()
+      let list = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+      XCTAssertNotNil(view.window)
+      XCTAssertGreaterThan(list.contentSize.height - list.bounds.height +
+        list.adjustedContentInset.top + list.adjustedContentInset.bottom, 800)
+      let phases = NSMutableArray()
+      let observer = NotificationCenter.default.addObserver(
+        forName: Notification.Name("OneKeyNativeListScrollCommandAccepted"),
+        object: list, queue: nil
+      ) { notification in
+        if let phase = notification.userInfo?["phase"] as? Int { phases.add(phase) }
+      }
+      defer { NotificationCenter.default.removeObserver(observer) }
+      view.scrollToOffset(800, animated: true)
+      XCTAssertEqual(phases as? [Int], [0, 1])
+      switch invalid {
+      case 0: view.scrollToKey("missing-fixture-key", animated: true, alignment: "start")
+      case 1: view.scrollToIndex(-1, animated: true, alignment: "start")
+      default: view.scrollToOffset(.nan, animated: true)
+      }
+      XCTAssertEqual(phases as? [Int], [0, 1], "Invalid input must not accept or end another command")
+      // Exercise the actual delegate terminal callback, not a copied state helper.
+      view.scrollViewDidEndScrollingAnimation(list)
+      XCTAssertEqual(phases as? [Int], [0, 1, 2])
+      view.scrollViewDidEndScrollingAnimation(list)
+      XCTAssertEqual(phases as? [Int], [0, 1, 2], "Completion is emitted once")
+    }
+  }
+
+  func testInvalidKeyPreservesValidPendingScrollUntilGeometryArrives() throws {
+    let view = try makeScrollingList()
+    let list = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+    view.frame.size.height = 0
+    view.setNeedsLayout()
+    view.layoutIfNeeded()
+    XCTAssertEqual(list.bounds.height, 0)
+    view.scrollToOffset(500, animated: false)
+    view.scrollToKey("missing-fixture-key", animated: true, alignment: "start")
+    view.frame.size.height = 708
+    view.setNeedsLayout()
+    view.layoutIfNeeded()
+    list.layoutIfNeeded()
+    drainMainQueue()
+    XCTAssertEqual(list.contentOffset.y, 500 - list.adjustedContentInset.top, accuracy: 0.5)
+  }
+
   func testSectionLoadingStopsOnRebindReuseAndDetach() throws {
     let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
     let controller = UIViewController()

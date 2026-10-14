@@ -79,6 +79,8 @@ type State = {
 
 type ConfiguredScrollElement = Readonly<{
   element: HTMLElement;
+  rangeSpacer: HTMLElement;
+  position: string;
   paddingTop: string;
   basePaddingTop: string;
   boxSizing: string;
@@ -100,10 +102,7 @@ const pageIndex = (value: number) => {
 };
 
 const clampedPageIndex = (value: number, pageCount: number) =>
-  Math.min(
-    Math.max(0, pageIndex(value) ?? 0),
-    Math.max(0, pageCount - 1)
-  );
+  Math.min(Math.max(0, pageIndex(value) ?? 0), Math.max(0, pageCount - 1));
 
 const webElement = (node: unknown) => {
   const element = node as HTMLElement | null;
@@ -155,9 +154,19 @@ export class CollapsiblePagerView extends React.PureComponent<
   private pageOffsets = new Map<string, number>();
   private pageHosts = new Map<number, HTMLElement>();
   private sharedHeaderOffset = 0;
+  private selectionRestoreToken = 0;
+  private bodyAlignment: Readonly<{
+    element: HTMLElement;
+    key: string;
+  }> | null = null;
   private scrollEnabled = this.props.scrollEnabled ?? true;
   private lastMountSignature: string | null = null;
   private configureFrame: number | null = null;
+  private pendingTopFrame: Readonly<{
+    frame: number;
+    element: HTMLElement;
+    key: string;
+  }> | null = null;
   private transitionTimer: ReturnType<typeof setTimeout> | null = null;
   private pageScrollState: OnPageScrollStateChangedEventData["pageScrollState"] =
     "idle";
@@ -184,6 +193,8 @@ export class CollapsiblePagerView extends React.PureComponent<
     const pageCount = this.pages().length;
     const selectedPage = clampedPageIndex(this.state.selectedPage, pageCount);
     if (selectedPage !== this.state.selectedPage) {
+      this.selectionRestoreToken += 1;
+      this.cancelPendingTopFrame();
       this.finishPageTransition();
       this.setState({
         selectedPage,
@@ -196,6 +207,8 @@ export class CollapsiblePagerView extends React.PureComponent<
   }
 
   componentWillUnmount() {
+    this.selectionRestoreToken += 1;
+    this.cancelPendingTopFrame();
     this.savePageOffset(this.state.selectedPage);
     if (this.configureFrame !== null) {
       cancelAnimationFrame(this.configureFrame);
@@ -216,6 +229,113 @@ export class CollapsiblePagerView extends React.PureComponent<
   public setPageWithoutAnimation = (selectedPage: number) => {
     this.selectPage(selectedPage, false);
   };
+
+  public scrollToPageTop = (options?: Readonly<{ animated?: boolean }>) => {
+    this.scrollCurrentPageToTop(0, options?.animated ?? true);
+  };
+
+  public scrollToStickyTop = (options?: Readonly<{ animated?: boolean }>) => {
+    this.scrollCurrentPageToTop(
+      Math.max(0, this.props.headerHeight),
+      options?.animated ?? true
+    );
+  };
+
+  private cancelPendingTopFrame = () => {
+    if (!this.pendingTopFrame) return;
+    const pending = this.pendingTopFrame;
+    cancelAnimationFrame(pending.frame);
+    this.pendingTopFrame = null;
+    if (
+      this.pageScrollElement(this.state.selectedPage) === pending.element &&
+      this.pages().map(pageKey)[this.state.selectedPage] === pending.key
+    )
+      this.savePageOffset(this.state.selectedPage);
+  };
+
+  private onQueuedTopWheel = (event: WheelEvent) => {
+    if (event.deltaY !== 0) this.takeOverVerticalScroll();
+  };
+
+  private onScrollbarPointerDown = (event: PointerEvent) => {
+    const element = this.pageScrollElement(this.state.selectedPage);
+    if (!element || event.target !== element || event.button !== 0) return;
+    const rect = element.getBoundingClientRect();
+    const computed =
+      element.ownerDocument.defaultView?.getComputedStyle(element);
+    const borderLeft = Number.parseFloat(computed?.borderLeftWidth ?? "0") || 0;
+    const borderRight =
+      Number.parseFloat(computed?.borderRightWidth ?? "0") || 0;
+    const clientStart = rect.left + element.clientLeft;
+    const clientEnd = clientStart + element.clientWidth;
+    const leftGutter = clientStart - (rect.left + borderLeft);
+    const rightGutter = rect.right - borderRight - clientEnd;
+    const inVerticalTrack =
+      event.clientY >= rect.top + element.clientTop &&
+      event.clientY < rect.top + element.clientTop + element.clientHeight;
+    const inGutter =
+      (leftGutter > 0 &&
+        event.clientX >= rect.left + borderLeft &&
+        event.clientX < clientStart) ||
+      (rightGutter > 0 &&
+        event.clientX >= clientEnd &&
+        event.clientX < rect.right - borderRight);
+    if (inVerticalTrack && inGutter) this.takeOverVerticalScroll();
+  };
+
+  private onQueuedTopKey = (event: KeyboardEvent) => {
+    if (
+      [
+        "ArrowUp",
+        "ArrowDown",
+        "PageUp",
+        "PageDown",
+        "Home",
+        "End",
+        " ",
+      ].includes(event.key)
+    )
+      this.takeOverVerticalScroll();
+  };
+
+  private scrollCurrentPageToTop(offset: number, animated: boolean) {
+    if (this.horizontalTouch || this.transitionTimer !== null) return;
+    const element = this.pageScrollElement(this.state.selectedPage);
+    const key = this.pages().map(pageKey)[this.state.selectedPage];
+    if (!element?.isConnected || !key) return;
+    this.selectionRestoreToken += 1;
+    this.cancelPendingTopFrame();
+    const EventConstructor = element.ownerDocument.defaultView?.Event;
+    if (EventConstructor)
+      element.dispatchEvent(
+        new EventConstructor("ok-collapsible-pager-cancel-scroll-command")
+      );
+    element.scrollTo({
+      left: element.scrollLeft,
+      top: element.scrollTop,
+      behavior: "instant",
+    });
+    const frame = requestAnimationFrame(() => {
+      if (this.pendingTopFrame?.frame !== frame) return;
+      this.pendingTopFrame = null;
+      if (
+        !element.isConnected ||
+        this.horizontalTouch ||
+        this.transitionTimer !== null ||
+        this.pageScrollElement(this.state.selectedPage) !== element ||
+        this.pages().map(pageKey)[this.state.selectedPage] !== key
+      )
+        return;
+      this.pageOffsets.set(key, 0);
+      this.sharedHeaderOffset = offset;
+      this.bodyAlignment = { element, key };
+      element.scrollTo({
+        top: offset,
+        behavior: animated ? "smooth" : "instant",
+      });
+    });
+    this.pendingTopFrame = { frame, element, key };
+  }
 
   public setScrollEnabled = (scrollEnabled: boolean) => {
     this.scrollEnabled = scrollEnabled;
@@ -278,10 +398,7 @@ export class CollapsiblePagerView extends React.PureComponent<
   private setTrack = (node: unknown) => {
     const track = webElement(node);
     if (track === this.track) return;
-    this.track?.removeEventListener(
-      "transitionend",
-      this.onTrackTransitionEnd
-    );
+    this.track?.removeEventListener("transitionend", this.onTrackTransitionEnd);
     this.track = track;
     this.track?.addEventListener("transitionend", this.onTrackTransitionEnd);
   };
@@ -307,11 +424,24 @@ export class CollapsiblePagerView extends React.PureComponent<
   private restoreConfiguredScrollElement() {
     const configured = this.configuredScrollElement;
     if (!configured) return;
+    this.cancelPendingTopFrame();
+    configured.element.removeEventListener(
+      "ok-native-list-scroll-command-accepted",
+      this.onListScrollCommandAccepted
+    );
+    configured.element.removeEventListener("wheel", this.onQueuedTopWheel);
+    configured.element.removeEventListener(
+      "pointerdown",
+      this.onScrollbarPointerDown
+    );
+    configured.element.removeEventListener("keydown", this.onQueuedTopKey);
     configured.element.removeEventListener(
       "scrollend",
       this.onVerticalScrollSettled
     );
     const style = timelineStyle(configured.element);
+    configured.rangeSpacer.remove();
+    style.position = configured.position;
     style.paddingTop = configured.paddingTop;
     style.boxSizing = configured.boxSizing;
     style.scrollTimelineName = configured.scrollTimelineName;
@@ -321,6 +451,8 @@ export class CollapsiblePagerView extends React.PureComponent<
     configured.element.removeAttribute("data-collapsible-pager-active");
     this.notifyInsetsChanged(configured.element);
     this.configuredScrollElement = null;
+    if (this.bodyAlignment?.element === configured.element)
+      this.bodyAlignment = null;
   }
 
   private configureActiveScrollElement = () => {
@@ -332,9 +464,30 @@ export class CollapsiblePagerView extends React.PureComponent<
       const style = timelineStyle(element);
       const computedPaddingTop =
         element.ownerDocument.defaultView?.getComputedStyle(element)
-          .paddingTop || style.paddingTop || "0px";
+          .paddingTop ||
+        style.paddingTop ||
+        "0px";
+      const rangeSpacer = element.ownerDocument.createElement("div");
+      Object.assign(rangeSpacer.style, {
+        position: "absolute",
+        top: "0",
+        left: "0",
+        width: "1px",
+        pointerEvents: "none",
+        opacity: "0",
+      });
+      rangeSpacer.setAttribute("aria-hidden", "true");
+      const position = style.position;
+      if (
+        element.ownerDocument.defaultView?.getComputedStyle(element)
+          .position === "static"
+      )
+        style.position = "relative";
+      element.appendChild(rangeSpacer);
       this.configuredScrollElement = {
         element,
+        rangeSpacer,
+        position,
         paddingTop: style.paddingTop,
         basePaddingTop: computedPaddingTop,
         boxSizing: style.boxSizing,
@@ -344,13 +497,25 @@ export class CollapsiblePagerView extends React.PureComponent<
         pagerStickyInset: style.getPropertyValue(PAGER_STICKY_INSET),
       };
       element.addEventListener("scrollend", this.onVerticalScrollSettled);
+      element.addEventListener(
+        "ok-native-list-scroll-command-accepted",
+        this.onListScrollCommandAccepted
+      );
+      element.addEventListener("wheel", this.onQueuedTopWheel);
+      element.addEventListener("pointerdown", this.onScrollbarPointerDown);
+      element.addEventListener("keydown", this.onQueuedTopKey);
     }
 
     const style = timelineStyle(element);
     const headerInset = Math.max(0, this.props.headerHeight);
     const stickyInset = Math.max(0, this.props.stickyHeaderHeight);
-    const basePaddingTop = this.configuredScrollElement?.basePaddingTop ?? "0px";
-    const paddingTop = `calc(${basePaddingTop} + ${headerInset + stickyInset}px)`;
+    if (this.configuredScrollElement)
+      this.configuredScrollElement.rangeSpacer.style.height = `calc(100% + ${headerInset}px)`;
+    const basePaddingTop =
+      this.configuredScrollElement?.basePaddingTop ?? "0px";
+    const paddingTop = `calc(${basePaddingTop} + ${
+      headerInset + stickyInset
+    }px)`;
     const headerInsetValue = `${headerInset}px`;
     const stickyInsetValue = `${stickyInset}px`;
     const insetsChanged =
@@ -378,7 +543,26 @@ export class CollapsiblePagerView extends React.PureComponent<
     }
   }
 
-  private onVerticalScrollSettled = () => {
+  private takeOverVerticalScroll = () => {
+    this.selectionRestoreToken += 1;
+    this.bodyAlignment = null;
+    this.cancelPendingTopFrame();
+    this.savePageOffset(this.state.selectedPage);
+  };
+
+  private onListScrollCommandAccepted = (event: Event) => {
+    if (event.target !== this.pageScrollElement(this.state.selectedPage))
+      return;
+    this.takeOverVerticalScroll();
+  };
+
+  private onVerticalScrollSettled = (event?: Event) => {
+    if (
+      this.pendingTopFrame ||
+      (event &&
+        event.target !== this.pageScrollElement(this.state.selectedPage))
+    )
+      return;
     this.savePageOffset(this.state.selectedPage);
     this.emitDiagnostics("scroll-settled");
   };
@@ -387,10 +571,16 @@ export class CollapsiblePagerView extends React.PureComponent<
     const key = this.pages().map(pageKey)[index];
     const scrollElement = this.pageScrollElement(index);
     if (key && scrollElement) {
-      this.pageOffsets.set(key, scrollElement.scrollTop);
+      if (
+        this.bodyAlignment?.key === key &&
+        this.bodyAlignment.element === scrollElement
+      )
+        return;
+      const D = Math.max(0, this.props.headerHeight);
+      this.pageOffsets.set(key, Math.max(0, scrollElement.scrollTop - D));
       this.sharedHeaderOffset = Math.min(
         Math.max(scrollElement.scrollTop, 0),
-        Math.max(0, this.props.headerHeight)
+        D
       );
     }
   }
@@ -399,10 +589,11 @@ export class CollapsiblePagerView extends React.PureComponent<
     const key = this.pages().map(pageKey)[index];
     const scrollElement = this.pageScrollElement(index);
     if (!key || !scrollElement) return;
-    scrollElement.scrollTop = Math.max(
-      this.pageOffsets.get(key) ?? this.sharedHeaderOffset,
-      this.sharedHeaderOffset
-    );
+    const D = Math.max(0, this.props.headerHeight);
+    const C = Math.min(Math.max(0, this.sharedHeaderOffset), D);
+    const expectedQ = C + (C === D ? this.pageOffsets.get(key) ?? 0 : 0);
+    this.bodyAlignment = { element: scrollElement, key };
+    scrollElement.scrollTop = expectedQ;
   }
 
   private selectPage(selectedPage: number, animated: boolean) {
@@ -416,33 +607,46 @@ export class CollapsiblePagerView extends React.PureComponent<
     ) {
       return;
     }
+    const selectionToken = ++this.selectionRestoreToken;
+    const expectedKey = this.pages().map(pageKey)[position];
+    this.cancelPendingTopFrame();
     this.savePageOffset(this.state.selectedPage);
 
     if (animated) this.beginPageTransition();
     else this.finishPageTransition();
-    this.setState({ selectedPage: position, animateTransition: animated }, () => {
-      this.scheduleScrollConfiguration();
-      const restore = () => {
-        this.configureActiveScrollElement();
-        this.restorePageOffset(position);
-      };
-      if (typeof requestAnimationFrame === "function") {
-        requestAnimationFrame(restore);
-      } else {
-        setTimeout(restore, 0);
+    this.setState(
+      { selectedPage: position, animateTransition: animated },
+      () => {
+        this.scheduleScrollConfiguration();
+        const restore = () => {
+          if (
+            this.selectionRestoreToken !== selectionToken ||
+            this.state.selectedPage !== position ||
+            this.pages().map(pageKey)[position] !== expectedKey ||
+            !this.pageScrollElement(position)?.isConnected
+          )
+            return;
+          this.configureActiveScrollElement();
+          this.restorePageOffset(position);
+        };
+        if (typeof requestAnimationFrame === "function") {
+          requestAnimationFrame(restore);
+        } else {
+          setTimeout(restore, 0);
+        }
+        this.props.onPageSelected?.(
+          this.nativeEvent<OnPageSelectedEventData>({ position })
+        );
+        this.props.onPageScroll?.(
+          this.nativeEvent<OnPageScrollEventData>({
+            position,
+            offset: 0,
+          })
+        );
+        this.notifyMountedPagesChanged();
+        this.emitDiagnostics("page-selected");
       }
-      this.props.onPageSelected?.(
-        this.nativeEvent<OnPageSelectedEventData>({ position })
-      );
-      this.props.onPageScroll?.(
-        this.nativeEvent<OnPageScrollEventData>({
-          position,
-          offset: 0,
-        })
-      );
-      this.notifyMountedPagesChanged();
-      this.emitDiagnostics("page-selected");
-    });
+    );
   }
 
   private notifyMountedPagesChanged = () => {
@@ -500,7 +704,10 @@ export class CollapsiblePagerView extends React.PureComponent<
     if (!touch) return;
     const deltaX = touch.pageX - this.touchStartX;
     const deltaY = touch.pageY - (this.touchStartY ?? touch.pageY);
+    if (Math.abs(deltaY) >= 8 && Math.abs(deltaY) > Math.abs(deltaX))
+      this.takeOverVerticalScroll();
     if (Math.abs(deltaX) >= 8 && Math.abs(deltaX) > Math.abs(deltaY)) {
+      this.cancelPendingTopFrame();
       this.horizontalTouch = true;
       this.emitPageScrollState("dragging");
     }
@@ -522,9 +729,12 @@ export class CollapsiblePagerView extends React.PureComponent<
       ((!this.props.layoutDirection ||
         this.props.layoutDirection === "locale") &&
         I18nManager.isRTL);
-    const direction = Math.abs(delta) >= 40 && Math.abs(delta) > Math.abs(verticalDelta)
-      ? (delta < 0 ? 1 : -1)
-      : 0;
+    const direction =
+      Math.abs(delta) >= 40 && Math.abs(delta) > Math.abs(verticalDelta)
+        ? delta < 0
+          ? 1
+          : -1
+        : 0;
     const next = this.state.selectedPage + (rtl ? -direction : direction);
     if (direction === 0 || next < 0 || next >= this.pages().length) {
       const wasHorizontal = this.horizontalTouch;

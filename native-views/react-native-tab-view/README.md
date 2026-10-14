@@ -48,6 +48,9 @@ consumer's supported OS versions rather than assuming identical native layouts.
 See [src/TabView.tsx](src/TabView.tsx) for component props and
 [src/types.ts](src/types.ts) for route definitions.
 
+See [docs/SPEC.md](docs/SPEC.md) for native touch-selection contracts and
+acceptance boundaries.
+
 ## Upstream attribution
 
 First, a sincere thank-you to Oskar Kwaśniewski and the
