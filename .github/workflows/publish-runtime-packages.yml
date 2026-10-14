@@ -1,0 +1,80 @@
+name: publish-runtime-packages
+
+# Builds and tests the chain runtimes on change. A manual run also publishes
+# each package whose version is not on npm yet.
+on:
+  pull_request:
+    paths:
+      - 'chain-runtimes/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish-runtime-packages:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runtime: zcash
+            packages: onekey-zcash-runtime onekey-zcash-keys
+            build: |
+              bash scripts/vendor-deps.sh
+              python3 -m unittest discover -s scripts -p 'test_*.py'
+              cargo test --workspace --locked
+              bash scripts/build-wasm.sh --offline
+              python3 scripts/package-release.py pack --version "$VERSION" --tag "$TAG" --revision "$GITHUB_SHA"
+          - runtime: monero
+            packages: onekey-monero-runtime
+            build: |
+              cargo test --workspace --locked
+              bash scripts/build-wasm.sh release
+              python3 scripts/package-release.py --version "$VERSION" --tag "$TAG"
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: chain-runtimes/${{ matrix.runtime }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.x'
+          registry-url: https://registry.npmjs.org
+      - name: Install build tools
+        run: |
+          curl -sSfL -o /tmp/binaryen.tgz https://github.com/WebAssembly/binaryen/releases/download/version_133/binaryen-version_133-x86_64-linux.tar.gz
+          echo "2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489  /tmp/binaryen.tgz" | sha256sum -c -
+          sudo tar xzf /tmp/binaryen.tgz -C /opt
+          echo /opt/binaryen-version_133/bin >> "$GITHUB_PATH"
+          sudo apt-get update
+          sudo apt-get install -y clang llvm libsqlite3-dev libssl-dev pkg-config
+          rustup toolchain install
+          cargo install wasm-pack --version 0.15.0 --locked
+          WASM_BINDGEN_VERSION=$(python3 -c 'import tomllib; print(next(p["version"] for p in tomllib.load(open("Cargo.lock", "rb"))["package"] if p["name"] == "wasm-bindgen"))')
+          cargo install wasm-bindgen-cli --version "$WASM_BINDGEN_VERSION" --locked
+      - name: Test, build and pack
+        env:
+          CC_wasm32_unknown_unknown: /usr/bin/clang
+          AR_wasm32_unknown_unknown: /usr/bin/llvm-ar
+        run: |
+          VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')
+          TAG=latest
+          if [[ "$VERSION" == *-* ]]; then TAG=next; fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          ${{ matrix.build }}
+      - name: Publish versions missing from npm
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          for pkg in ${{ matrix.packages }}; do
+            if npm view "$pkg@$VERSION" version >/dev/null 2>&1; then
+              echo "$pkg@$VERSION already published"
+              continue
+            fi
+            npm publish "dist/$pkg-$VERSION.tgz" --tag "$TAG"
+          done
