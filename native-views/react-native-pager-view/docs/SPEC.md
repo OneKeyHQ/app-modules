@@ -3,6 +3,66 @@
 Existing PagerView and CollapsiblePagerView APIs are documented in README.md.
 The sections below define native coordination boundaries without new React props.
 
+## Smooth shared-header and per-page body memory
+
+With nativeSmoothHeaderScrollEnabled, the header collapse C is shared across all
+pages and the available collapse distance is D. Each page separately remembers
+its sticky-body reading distance B (unvisited pages default to zero). Outside
+pull overscroll, the rendered whole-page distance is Q = C + effectiveB.
+B denotes the saved reading position. For an owned vertical LinearLayoutManager
+RecyclerView, restoration uses the first visible adapter position and its
+decorated top relative to padding; scrollbar offset estimates MUST NOT decide
+completion of that anchor restoration.
+When C = D, selection restores the destination's saved B. When C < D, effectiveB
+is zero while the previous saved B remains suspended. Horizontal selection by
+tap, swipe or an existing programmatic command MUST preserve C throughout.
+
+Alignment, prefetch, replacement, inset changes and pending restoration MUST NOT
+commit new B. Actual consumed vertical scrolling takes over the visible body
+position; reaching full collapse during that gesture MUST NOT resurrect the old
+suspended B. Selecting a page anew at full collapse may restore its saved B.
+Valid explicit native scroll commands, including same-offset commands, cancel
+only their current owned restoration and take over body memory. Invalid commands
+and stale owners do not affect another page. Existing command coordinate systems
+are unchanged; in particular NativeScroller iOS uses physical offsets whereas
+NativeList offset commands exclude the content-start inset.
+
+Transitions use immutable destination memory and the source's actual displayed
+position. Cancellation restores that source presentation, even when a cached B
+was temporarily unreachable. Loading or zero geometry preserves pending intent;
+a genuinely short page clamps its display without silently replacing saved B.
+Cancelling a horizontal gesture invalidates queued callbacks, but preserves
+unreachable reading intent until real vertical consumption or a valid command
+takes over; later usable geometry may resume it.
+Late callbacks cannot revive cancelled restoration or erase a newer request.
+Observers and commands must match page key, view identity and generation.
+Removed or recycled owners cannot apply callbacks to another page; recycling
+resets owned memory.
+The Web backend shares C and stores per-page B separately from absolute DOM
+scrollTop. Selection aligns to C while expanded and C + B while fully collapsed;
+programmatic alignment and geometry-only scrollend events MUST NOT erase the
+suspended reading position. Real vertical input or a valid List command takes
+over the current display. PageTop/StickyTop clear only the current B.
+
+Legacy mode and pagers without a collapsible header retain their existing
+behavior. Vertical scrolling, refresh, snapping and repeated-current-tab behavior
+are unchanged. This state belongs to native UI instances, with no new React prop
+or per-frame JavaScript synchronization.
+
+## Current-page top commands
+
+`scrollToPageTop(options?: Readonly<{ animated?: boolean }>)` restores the current
+page to C = 0 and B = 0. `scrollToStickyTop(options?: Readonly<{ animated?: boolean }>)`
+restores it to C = D and B = 0, including from a partially expanded header.
+Animation defaults to true. Neither command clears another page's memory.
+Both commands require a stable, attached current owner; horizontal transitions
+or missing owners reject them rather than queueing a command for another page.
+Acceptance cancels older owned list commands and pending restoration before the
+new target is established. Same-target commands also take over old reading
+intent. Real vertical consumption, a newer valid command, or owner detachment
+releases the target. Existing NativeList and NativeScroller public coordinates
+are unchanged. The same page-top/sticky-top destinations are available without smooth-header mode.
+
 ## Independent NativeScroller migration
 
 Status: implemented in source. Both native builds pass. Android focused emulator
@@ -454,7 +514,8 @@ When restoring a retained page's cached vertical offset, the pager limits only
 the upper bound to the current content height, viewport and applied insets. A
 cache captured before rows were removed MUST NOT restore an offset below the new
 content bottom, including when removal occurs during a page transition. Valid
-deep offsets and the existing lower-bound/header alignment rules are unchanged.
+deep offsets and pull-overscroll behavior are preserved; smooth-header selection
+follows the shared-header and per-page body-memory contract above.
 This check runs only on explicit restoration, not on scroll frames; UIKit pull
 overscroll and refresh settlement retain their existing ownership. An unmeasured
 zero-height viewport defers this upper-bound limit to a later restoration.
@@ -662,3 +723,18 @@ cases additionally verified recorded refresh, header, restoration and gesture
 paths; they do not establish every possible sequence or runtime acceptance of a
 newly installed module release. Physical-device feel and semantic accessibility
 activation remain unverified.
+
+
+### Native Header stability snapshot
+
+`onCollapsibleStateChanged` retains its existing diagnostic fields and reasons and adds native-only `pageKey: string` and `headerSettledAtTop: boolean`. The key is the actual mounted React child key, not an application tab identifier. Unattached, unknown, replaced or transitioning owners MUST report false. A mounted current owner emits an initial identity snapshot without requiring a first user scroll.
+
+The Header is settled only when C is at its expanded top, the current attached view/key/index/generation still matches, and there is no actual drag, deceleration, scrolling command or horizontal transition. Offset/inset/content/header geometry MUST remain stable for 150ms before true is emitted. Motion or geometry changes revoke true promptly. Deferred reading memory alone MUST NOT be treated as active motion. Pull-to-refresh may settle at a normalized negative offset after drag, bounce and inset geometry stop; network refreshing alone is not a motion gate. Checks stop for collapsed, detached and recycled owners; delayed callbacks revalidate their captured identity. State changes are deduplicated; identity changes still publish an unknown/false snapshot.
+
+The native Home Spotlight adapter consumes this snapshot in the main UI runtime and keeps unknown states paused. It MUST use the mounted page-key mapping and reject old page/source callbacks. Native snapshots already include the 150ms stabilization delay: consumers MUST NOT add another such delay. Legacy Tabs keep their existing normalized-offset and debounce behavior. Anchor measurement, guide qualification and the existing display delay remain independent gates.
+
+### Android page mutation during horizontal transitions
+
+Removing a page or clearing the page collection MUST cancel the active horizontal transition and its temporary display snapshots before notifying the adapter. Cancellation MUST NOT rewrite the shared Header collapse or surviving pages' saved body reading memory. The previous observed owner MUST be detached without committing an offset under a shifted page key.
+
+An empty adapter MUST reject transition starts and transition completion without coercing an index into an empty range. The selected index uses zero as an empty-state sentinel; nonempty mutations clamp it to the remaining valid range. Readding pages MUST allow a fresh selection and MUST NOT resume a removed transition source. Conformance requires actual Android active-transition → zero-pages → readd/selection regression and remaining-page mutation checks; structural checks and compilation alone do not establish runtime behavior.

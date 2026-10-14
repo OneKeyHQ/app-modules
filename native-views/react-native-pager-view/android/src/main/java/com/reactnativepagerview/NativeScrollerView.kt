@@ -255,6 +255,8 @@ class NativeScrollerView(context: Context) : FrameLayout(context) {
 
   internal fun cancelPendingScrollRestore() = pendingRestore.cancel()
 
+  internal fun hasPendingScrollRestore(): Boolean = pendingRestore.target != null
+
   internal fun setRefreshOffset(value: Int) {
     refreshOffset = value
     applyRefreshOffset()
@@ -293,11 +295,22 @@ class NativeScrollerView(context: Context) : FrameLayout(context) {
   }
 
   internal fun scrollToPosition(x: Int, y: Int, animated: Boolean) {
+    notifyScrollCommand(0, y <= 0)
     viewport.stopMotion()
     pendingRestore.cancel()
+    notifyScrollCommand(1, y <= 0)
     if (animated) viewport.scrollToAnimated(y)
     else viewport.scrollTo(0, y.coerceAtLeast(0))
     emitScroll(force = true)
+    if (!viewport.isReadingMotionActive()) notifyScrollCommand(2, y <= 0)
+  }
+
+  internal fun notifyScrollCommand(phase: Int, explicitTop: Boolean = false) {
+    var owner = parent
+    while (owner is View) {
+      if (owner is CollapsiblePagerHost) owner.acceptObservedScrollCommand(viewport, explicitTop, phase)
+      owner = owner.parent
+    }
   }
 
   internal fun scrollToEnd(animated: Boolean) = scrollToPosition(
@@ -587,6 +600,8 @@ internal class NativeScrollerViewport(context: Context, internal val host: Nativ
     super.fling(velocityY)
   }
 
+  internal fun isReadingMotionActive() = dragging || momentum
+
   internal fun scrollToAnimated(y: Int) {
     val child = getChildAt(0) ?: return
     val margins = child.layoutParams as FrameLayout.LayoutParams
@@ -637,6 +652,7 @@ internal class NativeScrollerViewport(context: Context, internal val host: Nativ
   private fun finishMomentum() {
     if (!momentum) return
     momentum = false
+    host.notifyScrollCommand(2)
     host.emitScroll(force = true)
     host.emitLifecycle("topMomentumScrollEnd")
   }
