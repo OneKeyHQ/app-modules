@@ -13,6 +13,38 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  device-utils-store:
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.x'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install verified Kotlin 2.3.21 compiler
+        run: |
+          curl -fsSLo "$RUNNER_TEMP/kotlin-compiler.zip" https://github.com/JetBrains/kotlin/releases/download/v2.3.21/kotlin-compiler-2.3.21.zip
+          curl -fsSLo "$RUNNER_TEMP/kotlin-compiler.sha256" https://github.com/JetBrains/kotlin/releases/download/v2.3.21/kotlin-compiler-2.3.21.zip.sha256
+          echo "$(cat "$RUNNER_TEMP/kotlin-compiler.sha256")  $RUNNER_TEMP/kotlin-compiler.zip" | shasum -a 256 --check
+          unzip -q "$RUNNER_TEMP/kotlin-compiler.zip" -d "$RUNNER_TEMP"
+          "$RUNNER_TEMP/kotlinc/bin/kotlinc" -version 2>&1 | grep -F '2.3.21'
+          echo "$RUNNER_TEMP/kotlinc/bin" >> "$GITHUB_PATH"
+          swift --version
+      - name: Install dependencies and generate DeviceUtils bindings
+        run: |
+          corepack enable
+          yarn install --immutable
+          yarn workspace @onekeyfe/react-native-device-utils nitrogen
+      - name: Run production Swift and Kotlin store regressions
+        working-directory: native-modules/react-native-device-utils
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: node tests/in-memory-store.cjs
+
   android-unit:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
