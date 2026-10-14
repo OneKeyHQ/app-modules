@@ -1,4 +1,4 @@
-name: Monero runtime
+name: publish-xmr-package
 
 # Builds and tests on runtime changes. A manual run also publishes to npm:
 # prerelease versions to `next`, release versions (from main only) to `latest`.
@@ -15,8 +15,12 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: publish-xmr-package-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  build:
+  publish-xmr-package:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     defaults:
@@ -24,6 +28,17 @@ jobs:
         working-directory: chain-runtimes/monero
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      # Manual runs can be dispatched from any ref; the sources live only
+      # where the runtime has been merged.
+      - name: Require runtime sources on this ref
+        working-directory: .
+        run: |
+          if [ ! -f chain-runtimes/monero/Cargo.toml ]; then
+            echo "::error::chain-runtimes/monero is not on ${GITHUB_REF}; dispatch from a branch that has it" >&2
+            exit 1
+          fi
       - name: Install Binaryen 133 (same wasm-opt as local builds)
         run: |
           BINARYEN=version_133
@@ -71,4 +86,8 @@ jobs:
           if [ "$TAG" = latest ] && [ "$GITHUB_REF" != refs/heads/main ]; then
             echo "Release versions publish from main only" >&2; exit 1
           fi
-          npm publish "dist/onekey-monero-runtime-${VERSION}.tgz" --ignore-scripts --access public --tag "$TAG"
+          if npm view "onekey-monero-runtime@${VERSION}" version >/dev/null 2>&1; then
+            echo "onekey-monero-runtime@${VERSION} already published"
+          else
+            npm publish "dist/onekey-monero-runtime-${VERSION}.tgz" --ignore-scripts --access public --tag "$TAG"
+          fi
