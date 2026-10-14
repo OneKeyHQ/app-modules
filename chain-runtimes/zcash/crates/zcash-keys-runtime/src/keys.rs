@@ -64,6 +64,12 @@ pub(crate) fn ufvk_from_mnemonic(
 
 /// Derive a UFVK from raw seed bytes.
 ///
+/// Transparent + Orchard only, the same items the OneKey firmware returns, so a
+/// software account and a device holding the same seed share one UFVK. Sapling
+/// is left out: this runtime can neither scan for nor spend it, and the
+/// firmware rejects PCZTs that carry it. Ironwood keys derive from the Orchard
+/// item.
+///
 /// The seed slice is borrowed, not retained. Upstream `UnifiedSpendingKey` is not
 /// `ZeroizeOnDrop`, so the intermediate USK stays in linear memory after drop;
 /// wiping is the host's responsibility.
@@ -88,7 +94,21 @@ pub fn ufvk_from_seed_bytes(params: Network, seed: &[u8], account_index: u32) ->
         usk.to_unified_full_viewing_key()
     };
 
-    Ok(ufvk.encode(&params))
+    without_sapling(params, &ufvk)
+}
+
+fn without_sapling(params: Network, ufvk: &UnifiedFullViewingKey) -> Result<String> {
+    use zcash_address::unified::{Container, Encoding, Fvk, Ufvk};
+    let (network, container) = Ufvk::decode(&ufvk.encode(&params))
+        .map_err(|e| KeysError::new(ErrorCode::DeriveFailed).detail(format!("{e:?}")))?;
+    let items = container
+        .items()
+        .into_iter()
+        .filter(|item| matches!(item, Fvk::P2pkh(_) | Fvk::Orchard(_)))
+        .collect::<Vec<_>>();
+    let container = Ufvk::try_from_items(items)
+        .map_err(|e| KeysError::new(ErrorCode::DeriveFailed).detail(format!("{e:?}")))?;
+    Ok(container.encode(&network))
 }
 
 /// Receivers to include in a UA. This is a privacy policy chosen by the host:
@@ -185,6 +205,28 @@ pub fn seed_fingerprint(seed: &[u8]) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Same items as the firmware's UFVK, so a device and a software account on
+    /// one seed agree; a Sapling item would also make the firmware reject PCZTs.
+    #[test]
+    fn ufvk_holds_only_transparent_and_orchard() {
+        use zcash_address::unified::{Container, Encoding, Fvk, Ufvk};
+        let encoded = ufvk_from_seed_bytes(Network::MainNetwork, &[0x42u8; 64], 0).unwrap();
+        let (_, container) = Ufvk::decode(&encoded).unwrap();
+        let mut kinds = container
+            .items()
+            .into_iter()
+            .map(|item| match item {
+                Fvk::P2pkh(_) => "p2pkh",
+                Fvk::Orchard(_) => "orchard",
+                Fvk::Sapling(_) => "sapling",
+                _ => "other",
+            })
+            .collect::<Vec<_>>();
+        kinds.sort_unstable();
+        assert_eq!(kinds, vec!["orchard", "p2pkh"]);
+        assert!(UnifiedFullViewingKey::decode(&Network::MainNetwork, &encoded).is_ok());
+    }
 
     /// The fingerprint is a standard value persisted as account identity; any
     /// drift would orphan existing accounts.
