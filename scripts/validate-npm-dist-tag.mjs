@@ -2,11 +2,15 @@ import { readdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const allowedDistTags = new Set(["latest", "next"]);
+const allowedDistTags = new Set(["latest", "next", "pr-145"]);
 
 export function validateNpmDistTag(distTag, releaseWorkspaces) {
   if (!allowedDistTags.has(distTag)) {
     throw new Error(`Unsupported npm dist-tag: ${distTag}`);
+  }
+
+  if (distTag === "pr-145" && releaseWorkspaces.some(({ version }) => !version.includes("-"))) {
+    throw new Error("The pr-145 dist-tag requires prerelease versions");
   }
 
   if (distTag !== "latest") {

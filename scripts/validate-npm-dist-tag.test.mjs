@@ -33,3 +33,13 @@ test("rejects unsupported dist-tags", () => {
     /Unsupported npm dist-tag/
   );
 });
+
+test("allows an isolated PR preview without moving standard tags", () => {
+  assert.doesNotThrow(() => validateNpmDistTag("pr-145", prereleaseWorkspaces));
+});
+
+test("rejects stable versions on the isolated PR preview tag", () => {
+  assert.throws(() => validateNpmDistTag("pr-145", [
+    { name: "@onekeyfe/module-a", version: "3.0.178" },
+  ]), /requires prerelease versions/);
+});

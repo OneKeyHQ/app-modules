@@ -54,6 +54,11 @@ check persists an available comparison baseline before resolving. A process-wide
 synchronous transaction lock serializes checks on the native background queue;
 callers still own authentication and UI policy.
 
+A changed result is consumed by that baseline update. Persist a checkpoint before
+checking, and retain it if the application cannot finish disabling biometrics.
+After an interrupted check, require password/passcode recovery rather than
+trusting a fresh `false`; see the transaction requirements in the contract.
+
 Handle native-operation rejection separately from a resolved `false`. Neither
 an Android stub result nor an iOS rejection establishes that enrollment
 has remained unchanged. Applications must handle rejection as unavailable, rather
@@ -76,5 +81,5 @@ xcrun swiftc ios/BiometricAuthStateStore.swift tests/BiometricAuthStateStoreTest
 /tmp/biometric-state-tests
 ```
 
-The runner checks ten scenarios, including concurrent transactions. It does not
+The runner checks eleven scenarios, including concurrent transactions. It does not
 replace device enrollment, locked-Keychain or native bridge acceptance tests.

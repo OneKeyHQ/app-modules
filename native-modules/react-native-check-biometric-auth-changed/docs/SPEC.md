@@ -1,6 +1,6 @@
 # Biometric authentication state contract
 
-Status: Implemented. Ten deterministic Swift core scenarios and the iOS Simulator
+Status: Implemented. Eleven deterministic Swift core scenarios and the iOS Simulator
 module build pass; real device Keychain/LocalAuthentication acceptance is pending.
 
 ## Purpose and ownership
@@ -31,6 +31,17 @@ A synchronous process-wide lock serializes the complete iOS operation: obtain
 current state, read the saved state, compare and persist. Work runs through Nitro `Promise.parallel` on its default global dispatch queue,
 not on the UI thread or an inherited Swift task executor. Lock release is required on every exit.
 The opaque domain state is neither returned to JavaScript nor logged.
+
+The comparison is consumptive: after a changed result advances the baseline,
+the same state returns `false` on a subsequent check. Application-side handling
+is a separate transaction. Before invoking this API, a security-sensitive caller
+must durably checkpoint that a check is in progress, serialize its check and
+settings update, and clear the checkpoint only after an unchanged result or
+successful handling of a changed result. A failed or interrupted operation must
+remain blocked across UI remounts and process restarts until password/passcode
+verification resolves the uncertainty. JavaScript component state alone is
+insufficient; independent runtimes share the native baseline, not their heaps.
+This caller requirement does not change the SDK boolean API or baseline behavior.
 
 Only `errSecItemNotFound` means the Keychain baseline is absent. In that case,
 legacy `UserDefaults["biometricAuthState"]` participates in the comparison.

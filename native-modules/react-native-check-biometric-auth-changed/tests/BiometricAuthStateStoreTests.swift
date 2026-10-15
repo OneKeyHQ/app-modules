@@ -135,6 +135,22 @@ final class BiometricAuthStateStoreTests {
     assertEqual(active, 0)
   }
 
+  func testRepeatedChecksAdvanceTheSameBaseline() throws {
+    var stored = Data([1])
+    func check() throws -> Bool {
+      try BiometricAuthStateStore.check(
+        currentState: { Data([2]) },
+        read: { (errSecSuccess, stored as NSData) },
+        update: { stored = $0; return errSecSuccess },
+        add: { _ in fail("Unexpected add") },
+        legacyState: { nil },
+        removeLegacyState: {}
+      )
+    }
+    try assertTrue(check())
+    try assertFalse(check())
+  }
+
   private func assertFailure(_ fixture: StateFixture, status: OSStatus, operation: String,
     file: StaticString = #filePath, line: UInt = #line) {
     assertThrowsError(try fixture.check(), file: file, line: line) { error in
@@ -186,6 +202,7 @@ private func assertThrowsError<T>(_ expression: @autoclosure () throws -> T, fil
     try tests.testMigrationDeletesLegacyOnlyAfterSuccessfulPersistence()
     try tests.testFailureReleasesLockForTheNextTransaction()
     tests.testConcurrentTransactionsAreSerialized()
-    print("10 biometric state core tests passed (including 20 concurrent transactions)")
+    try tests.testRepeatedChecksAdvanceTheSameBaseline()
+    print("11 biometric state core tests passed (including 20 concurrent transactions)")
   }
 }
