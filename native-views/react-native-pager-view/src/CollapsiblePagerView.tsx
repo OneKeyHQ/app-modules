@@ -492,7 +492,7 @@ export class CollapsiblePagerView extends React.PureComponent<
     } = this.props;
     const pages = this.pages();
     const supportsTopScrollEdge =
-      Platform.OS === "ios" && Number(Platform.Version) >= 26;
+      Platform.OS === "ios" && parseInt(String(Platform.Version), 10) >= 26;
     const hardScrollEdge = supportsTopScrollEdge && topScrollEdgeEffect === "hard";
     const hasTopOverlay = hardScrollEdge && topOverlay != null;
     const pageKeys = pages.map(pageKey);

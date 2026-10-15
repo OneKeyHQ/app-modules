@@ -117,7 +117,7 @@ export const NativeScroller = React.forwardRef<
   const [contentSize, setContentSize] = React.useState({ width: 0, height: 0 });
   const [topOverlayHeight, setTopOverlayHeight] = React.useState(0);
   const hasTopOverlay =
-    Platform.OS === "ios" && Number(Platform.Version) >= 26 &&
+    Platform.OS === "ios" && parseInt(String(Platform.Version), 10) >= 26 &&
     topScrollEdgeEffect === "hard" && topOverlay != null;
   const [refreshEpoch, requestRefreshSync] = React.useReducer(
     (value: number) => value + 1,

@@ -129,7 +129,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     const [topOverlayHeight, setTopOverlayHeight] = useState(0);
     const hasTopOverlay =
       Platform?.OS === 'ios' &&
-      Number(Platform.Version) >= 26 &&
+      parseInt(String(Platform.Version), 10) >= 26 &&
       topScrollEdgeEffect === 'hard' &&
       topOverlay != null;
     const containerSlotHeightsJson = JSON.stringify(slotHeights);
