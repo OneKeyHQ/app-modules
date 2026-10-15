@@ -2,35 +2,13 @@ import { readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { loadReleaseWorkspaces } from "./validate-npm-dist-tag.mjs";
+import {
+  loadReleaseWorkspaces,
+  compareReleaseVersions,
+  parseReleaseVersion,
+} from "./validate-npm-dist-tag.mjs";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-
-function compareVersions(left, right) {
-  const parse = (version) => {
-    const match = /^(\d+)\.(\d+)\.(\d+)(?:-alpha\.(\d+))?$/.exec(version);
-    if (!match) {
-      throw new Error(
-        `Expected an exact stable or alpha version, got ${version}`
-      );
-    }
-    return {
-      core: match.slice(1, 4).map(Number),
-      preview: match[4] === undefined ? undefined : Number(match[4]),
-    };
-  };
-  const a = parse(left);
-  const b = parse(right);
-  for (let index = 0; index < 3; index += 1) {
-    if (a.core[index] !== b.core[index]) {
-      return a.core[index] - b.core[index];
-    }
-  }
-  if (a.preview === undefined || b.preview === undefined) {
-    return a.preview === b.preview ? 0 : a.preview === undefined ? 1 : -1;
-  }
-  return a.preview - b.preview;
-}
 
 export function updateMobileManifest(
   manifestText,
@@ -42,6 +20,7 @@ export function updateMobileManifest(
   if (workspaces.length === 0 || versions.size !== 1) {
     throw new Error("Publishable workspace versions must match");
   }
+  parseReleaseVersion(workspaces[0].version);
   const byName = new Map(
     workspaces.map(({ name, version }) => [name, version])
   );
@@ -55,7 +34,7 @@ export function updateMobileManifest(
       if (!target || currentVersion === target) {
         continue;
       }
-      if (compareVersions(currentVersion, target) > 0) {
+      if (compareReleaseVersions(currentVersion, target) > 0) {
         throw new Error(
           `Refusing to downgrade ${name} from ${currentVersion} to ${target}`
         );

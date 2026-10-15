@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   loadReleaseWorkspaces,
+  compareReleaseVersions,
   validateNpmDistTag,
 } from "./validate-npm-dist-tag.mjs";
 import { packumentUrl } from "./verify-published.mjs";
@@ -11,26 +12,12 @@ import { packumentUrl } from "./verify-published.mjs";
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const nativeListName = "@onekeyfe/react-native-native-list";
 
-function compareStableVersions(left, right) {
-  if (!/^\d+\.\d+\.\d+$/.test(left) || !/^\d+\.\d+\.\d+$/.test(right)) {
-    return null;
-  }
-  const a = left.split(".").map(Number);
-  const b = right.split(".").map(Number);
-  for (let index = 0; index < 3; index += 1) {
-    if (a[index] !== b[index]) {
-      return a[index] - b[index];
-    }
-  }
-  return 0;
-}
-
 export function selectUnpublished(workspaces, packuments, distTag) {
   const missing = [];
   for (const workspace of workspaces) {
     const document = packuments.get(workspace.name);
     const tagged = document?.["dist-tags"]?.[distTag];
-    if (tagged && compareStableVersions(tagged, workspace.version) > 0) {
+    if (tagged && compareReleaseVersions(tagged, workspace.version) > 0) {
       throw new Error(
         `Refusing to move ${workspace.name} ${distTag} backwards from ${tagged} to ${workspace.version}`
       );

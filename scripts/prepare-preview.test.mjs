@@ -6,40 +6,44 @@ import {
   updatePreviewManifest,
 } from "./prepare-preview.mjs";
 
-test("increments the patch and appends the numeric alpha identifier", () => {
-  assert.equal(makePreviewVersion("3.0.152", "27"), "3.0.153-alpha.27");
+test("preserves the App baseline and appends the alpha counter", () => {
+  assert.equal(makePreviewVersion("6.7.0-2", "27"), "6.7.0-alpha.27");
+  assert.equal(makePreviewVersion("6.7.0-alpha.26", "27"), "6.7.0-alpha.27");
+  for (const counter of ["0", "01", "-1", "1.2", undefined]) {
+    assert.throws(
+      () => makePreviewVersion("6.7.0-2", counter),
+      /Expected <app-version>/
+    );
+  }
 });
 
-test("requires a stable preview base", () => {
+test("rejects a legacy plain preview base", () => {
   assert.throws(
-    () => makePreviewVersion("3.0.153-alpha.1", "2"),
-    /must be a stable version/
+    () => makePreviewVersion("6.7.0", "2"),
+    /Expected <app-version>/
   );
 });
 
 test("updates package and exact internal dependency versions", () => {
   const manifest = {
     name: "@onekeyfe/module-a",
-    version: "3.0.152",
+    version: "6.7.0-2",
     dependencies: {
-      "@onekeyfe/module-b": "3.0.152",
+      "@onekeyfe/module-b": "6.7.0-2",
       external: "^1.0.0",
     },
   };
   assert.deepEqual(
     updatePreviewManifest(manifest, {
-      currentVersion: "3.0.152",
-      previewVersion: "3.0.153-alpha.27",
-      workspaceNames: new Set([
-        "@onekeyfe/module-a",
-        "@onekeyfe/module-b",
-      ]),
+      currentVersion: "6.7.0-2",
+      previewVersion: "6.7.0-alpha.27",
+      workspaceNames: new Set(["@onekeyfe/module-a", "@onekeyfe/module-b"]),
     }),
     {
       ...manifest,
-      version: "3.0.153-alpha.27",
+      version: "6.7.0-alpha.27",
       dependencies: {
-        "@onekeyfe/module-b": "3.0.153-alpha.27",
+        "@onekeyfe/module-b": "6.7.0-alpha.27",
         external: "^1.0.0",
       },
     }

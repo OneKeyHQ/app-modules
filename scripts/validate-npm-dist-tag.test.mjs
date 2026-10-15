@@ -1,45 +1,94 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { validateNpmDistTag } from "./validate-npm-dist-tag.mjs";
+import {
+  compareReleaseVersions,
+  parseReleaseVersion,
+  validateNpmDistTag,
+} from "./validate-npm-dist-tag.mjs";
 
-const prereleaseWorkspaces = [
-  { name: "@onekeyfe/module-a", version: "3.0.81-alpha.1" },
-  { name: "@onekeyfe/module-b", version: "3.0.81-alpha.2" },
+const workspaces = (version) => [
+  { name: "@onekeyfe/module-a", version },
+  { name: "@onekeyfe/module-b", version },
 ];
 
-test("allows prerelease workspaces on the next dist-tag", () => {
-  assert.doesNotThrow(() => validateNpmDistTag("next", prereleaseWorkspaces));
-});
-
-test("rejects prerelease workspaces on the latest dist-tag", () => {
-  assert.throws(
-    () => validateNpmDistTag("latest", prereleaseWorkspaces),
-    /Refusing to publish prerelease workspaces with the latest dist-tag/
-  );
-});
-
-test("allows stable workspaces on the latest dist-tag", () => {
+test("numeric releases require latest and alpha previews require next", () => {
   assert.doesNotThrow(() =>
-    validateNpmDistTag("latest", [
-      { name: "@onekeyfe/module-a", version: "3.0.81" },
-    ])
+    validateNpmDistTag("latest", workspaces("6.7.0-1"))
   );
-});
-
-test("rejects unsupported dist-tags", () => {
+  assert.doesNotThrow(() =>
+    validateNpmDistTag("next", workspaces("6.7.0-alpha.1"))
+  );
   assert.throws(
-    () => validateNpmDistTag("beta", prereleaseWorkspaces),
+    () => validateNpmDistTag("latest", workspaces("6.7.0-alpha.1")),
+    /cannot use/
+  );
+  assert.throws(
+    () => validateNpmDistTag("next", workspaces("6.7.0-1")),
+    /cannot use/
+  );
+  assert.throws(
+    () => validateNpmDistTag("beta", workspaces("6.7.0-1")),
     /Unsupported npm dist-tag/
   );
 });
 
-test("allows an isolated PR preview without moving standard tags", () => {
-  assert.doesNotThrow(() => validateNpmDistTag("pr-145", prereleaseWorkspaces));
+test("rejects invalid versions instead of treating every hyphen as a preview", () => {
+  for (const version of [
+    "6.7.0",
+    "6.7.0.1",
+    "6.7.0-0",
+    "6.7.0-01",
+    "06.7.0-1",
+    "6.7.0-alpha.0",
+    "6.7.0-alpha.01",
+    "6.7.0-beta.1",
+    "6.7.0-1+build",
+    "6.7.0-alpha.-1",
+    "6.7.0-9007199254740992",
+    undefined,
+  ]) {
+    assert.throws(() => parseReleaseVersion(version), /Expected <app-version>/);
+  }
 });
 
-test("rejects stable versions on the isolated PR preview tag", () => {
-  assert.throws(() => validateNpmDistTag("pr-145", [
-    { name: "@onekeyfe/module-a", version: "3.0.178" },
-  ]), /requires prerelease versions/);
+test("rejects empty or mismatched releases on either channel", () => {
+  for (const tag of ["next", "latest"]) {
+    assert.throws(() => validateNpmDistTag(tag, []), /versions must match/);
+    assert.throws(
+      () =>
+        validateNpmDistTag(tag, [
+          workspaces("6.7.0-1")[0],
+          workspaces("6.7.0-2")[1],
+        ]),
+      /versions must match/
+    );
+  }
+});
+
+test("compares App baselines and same-channel counters numerically", () => {
+  assert.ok(compareReleaseVersions("6.7.0-10", "6.7.0-2") > 0);
+  assert.ok(compareReleaseVersions("6.7.0-alpha.10", "6.7.0-alpha.2") > 0);
+  assert.ok(compareReleaseVersions("6.7.1-1", "6.7.0-99") > 0);
+  assert.ok(compareReleaseVersions("6.7.1-alpha.1", "6.7.0-99") > 0);
+  assert.ok(compareReleaseVersions("3.0.178", "6.7.0-1") < 0);
+});
+
+test("allows explicit channel changes without comparing independent counters", () => {
+  assert.equal(compareReleaseVersions("6.7.0-alpha.99", "6.7.0-1"), 0);
+  assert.equal(compareReleaseVersions("6.7.0-9", "6.7.0-alpha.1"), 0);
+});
+
+test("preserves the existing isolated PR tag for synchronized alpha previews", () => {
+  assert.doesNotThrow(() =>
+    validateNpmDistTag("pr-145", workspaces("6.7.0-alpha.1"))
+  );
+  assert.throws(
+    () => validateNpmDistTag("pr-145", workspaces("6.7.0-1")),
+    /cannot use/
+  );
+  assert.throws(
+    () => validateNpmDistTag("pr-145", workspaces("6.7.0")),
+    /Expected <app-version>/
+  );
 });

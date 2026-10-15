@@ -88,7 +88,7 @@ jobs:
           node --test scripts/*.test.mjs
       - name: Prepare automatic preview version
         if: >-
-          (github.event_name == 'pull_request' && steps.channel.outputs.dist_tag == 'next') ||
+          (steps.channel.outputs.dist_tag == 'next' && inputs.only_workspace == '') ||
           steps.channel.outputs.dist_tag == 'pr-145'
         env:
           PREVIEW_NUMBER: ${{ github.run_number }}
