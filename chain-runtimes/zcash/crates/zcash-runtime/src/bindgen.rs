@@ -239,6 +239,7 @@ pub async fn remove_account(account_uuid: String) -> Result<(), JsValue> {
     })?;
     runtime::with_db(|db| account::remove_account(db, &account_uuid))?;
     storage::durability_barrier().await?;
+    runtime::reclaim_storage(storage::RECLAIM_PAGES_AFTER_DELETE);
     Ok(())
 }
 
@@ -251,6 +252,7 @@ pub async fn remove_deleted_account(account_uuid: String) -> Result<(), JsValue>
     runtime::with_db(|db| account::remove_account(db, &account_uuid))?;
     send::forget_account_reservations(&account_uuid);
     storage::durability_barrier().await?;
+    runtime::reclaim_storage(storage::RECLAIM_PAGES_AFTER_DELETE);
     Ok(())
 }
 
@@ -451,21 +453,21 @@ pub async fn sync_step(
     let active_ufvks: Vec<String> = serde_json::from_str(&active_ufvks_json).map_err(|e| {
         RuntimeError::new(ErrorCode::InvalidUfvk).detail(format!("activeUfvksJson: {e}"))
     })?;
-    Ok(
-        runtime::with_db_and_client(move |mut db, mut client| async move {
-            let r = sync::step(
-                &mut db,
-                &mut client,
-                batch_size,
-                max_batches,
-                preferred,
-                &active_ufvks,
-            )
-            .await;
-            (db, client, r)
-        })
-        .await?,
-    )
+    let progress = runtime::with_db_and_client(move |mut db, mut client| async move {
+        let r = sync::step(
+            &mut db,
+            &mut client,
+            batch_size,
+            max_batches,
+            preferred,
+            &active_ufvks,
+        )
+        .await;
+        (db, client, r)
+    })
+    .await?;
+    runtime::reclaim_storage(storage::RECLAIM_PAGES_PER_STEP);
+    Ok(progress)
 }
 
 // ── Transaction history ─────────────────────────────────────────────────
@@ -501,7 +503,9 @@ pub fn rewind_to(height: u32) -> Result<u32, JsValue> {
     // account to an abandoned chain.
     //
     // User-triggered rescans use `queueRescanFrom`, which only requeues ranges.
-    Ok(runtime::with_db(|db| sync::rewind_to(db, height))?)
+    let rewound = runtime::with_db(|db| sync::rewind_to(db, height))?;
+    runtime::reclaim_storage(storage::RECLAIM_PAGES_AFTER_DELETE);
+    Ok(rewound)
 }
 
 /// Re-queue `[fromHeight, chainTip]` as historic work without deleting cached notes or history.

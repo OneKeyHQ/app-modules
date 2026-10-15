@@ -34,6 +34,12 @@ pub struct Identity {
 }
 
 impl Db {
+    /// Best effort: a failed reclaim only means the file stays larger until
+    /// the next one, so it never fails the caller.
+    pub fn reclaim_storage(&self, max_pages: u32) {
+        let _ = crate::storage::reclaim_free_pages(&self.conn, max_pages);
+    }
+
     /// Opens (or creates) a wallet database and runs migrations.
     pub fn open(db_name: &str, network: Network) -> Result<Self> {
         let conn = crate::storage::open_connection(db_name)?;

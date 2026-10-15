@@ -36,6 +36,10 @@ pub enum ErrorCode {
     // ── Lifecycle ──
     /// `init()` not called; storage layer not installed.
     NotInitialized,
+    /// The browser lacks the OPFS API the storage needs (an outdated WebView,
+    /// or a context with no usable origin). Retrying cannot help.
+    /// Params: `{ missing }`
+    StorageUnsupported,
     /// `openWallet()` not called.
     WalletNotOpen,
     /// `setLightwalletdUrl()` not called.
@@ -135,6 +139,7 @@ impl ErrorCode {
         use ErrorCode::*;
         match self {
             NotInitialized => "NOT_INITIALIZED",
+            StorageUnsupported => "STORAGE_UNSUPPORTED",
             WalletNotOpen => "WALLET_NOT_OPEN",
             LightwalletdNotConfigured => "LIGHTWALLETD_NOT_CONFIGURED",
             InvalidNetwork => "INVALID_NETWORK",
