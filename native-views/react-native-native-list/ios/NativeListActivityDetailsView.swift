@@ -2,6 +2,7 @@ import UIKit
 
 /// The activity template's bounded rich presentation; all values are caller-formatted.
 final class NativeListActivityDetailsView: UIStackView {
+  var fonts = NativeListFontFamilies()
   var onAction: ((String, UIView, String, Int) -> Void)?
   private let main = UIStackView()
   private let visual = NativeListLeadingVisual()
@@ -58,7 +59,10 @@ final class NativeListActivityDetailsView: UIStackView {
 
   /// Mirrors bind(): the same resolved texts, stack spacings and column widths, so the
   /// automatic height matches the rendered stacks.
-  static func measure(_ data: [String: Any], width: CGFloat) -> CGFloat {
+  static func measure(_ data: [String: Any], width: CGFloat, fonts: NativeListFontFamilies)
+    -> CGFloat
+  {
+    sizingButton.titleLabel?.font = nativeListFont(ofSize: 14, weight: .medium, fonts: fonts)
     let style = data.dictionary("style") ?? [:]
     let table = data.string("presentation") == "table"
     let image = style.dictionary("image") ?? [:]
@@ -72,9 +76,10 @@ final class NativeListActivityDetailsView: UIStackView {
 
     let amounts = data.dictionaries("amounts").map { amount -> (width: CGFloat, height: CGFloat) in
       let primary = NativeListResolvedText(amount.string("text"), style: style.dictionary("primaryAmount"),
-        size: 16, weight: .medium, color: .label, lineHeight: 24, lines: 1, tabular: true)
+        size: 16, weight: .medium, color: .label, lineHeight: 24, lines: 1, tabular: true,
+        fonts: fonts)
       let secondary = NativeListResolvedText(amount.string("secondaryText"), style: style.dictionary("secondaryAmount"),
-        size: 14, color: .label, lineHeight: 20, lines: 1)
+        size: 14, color: .label, lineHeight: 20, lines: 1, fonts: fonts)
       let visual: CGFloat = amount.dictionary("leading") == nil ? 0 : 20
       return (
         (visual > 0 ? visual + 6 : 0) + max(primary.measureWidth(), secondary.measureWidth()),
@@ -89,9 +94,15 @@ final class NativeListActivityDetailsView: UIStackView {
     var feeHeight: CGFloat = 0
     if let feeData = data.dictionary("fee") {
       let secondaryStyle = style.dictionary("secondaryAmount")
-      let label = NativeListResolvedText(feeData.string("label"), style: secondaryStyle, size: 12, color: .label, lineHeight: 16, lines: 1)
-      let primary = NativeListResolvedText(feeData.string("primary"), style: secondaryStyle, size: 14, color: .label, lineHeight: 20, lines: 1)
-      let secondary = NativeListResolvedText(feeData.string("secondary"), style: secondaryStyle, size: 12, color: .label, lineHeight: 16, lines: 1)
+      let label = NativeListResolvedText(
+        feeData.string("label"), style: secondaryStyle, size: 12, color: .label, lineHeight: 16,
+        lines: 1, fonts: fonts)
+      let primary = NativeListResolvedText(
+        feeData.string("primary"), style: secondaryStyle, size: 14, color: .label, lineHeight: 20,
+        lines: 1, fonts: fonts)
+      let secondary = NativeListResolvedText(
+        feeData.string("secondary"), style: secondaryStyle, size: 12, color: .label, lineHeight: 16,
+        lines: 1, fonts: fonts)
       let lineWidth = primary.measureWidth() + secondary.measureWidth() +
         (primary.text.isEmpty || secondary.text.isEmpty ? 0 : 4)
       feeWidth = max(label.measureWidth(), lineWidth)
@@ -108,14 +119,14 @@ final class NativeListActivityDetailsView: UIStackView {
     }
 
     let title = NativeListResolvedText(data.string("title"), style: style.dictionary("title"), size: 16,
-      weight: .medium, color: .label, lineHeight: 24, lines: 1)
+      weight: .medium, color: .label, lineHeight: 24, lines: 1, fonts: fonts)
     let titleHeight = max(
       title.measure(width: .greatestFiniteMagnitude),
       data.dictionaries("badges").isEmpty ? 0 : 16)
     let description = NativeListResolvedText(data.string("description"), style: style.dictionary("description"),
-      size: 14, color: .label, lineHeight: 20, lines: 2)
+      size: 14, color: .label, lineHeight: 20, lines: 2, fonts: fonts)
     let status = NativeListResolvedText(data.string("status"), style: style.dictionary("status"),
-      size: 12, color: .label, lineHeight: 16, lines: 1)
+      size: 12, color: .label, lineHeight: 16, lines: 1, fonts: fonts)
     var identityHeight = titleHeight
     for text in [description, status] where !text.text.isEmpty {
       identityHeight += lineGap + text.measure(width: max(1, identityWidth))
@@ -132,7 +143,8 @@ final class NativeListActivityDetailsView: UIStackView {
     return max(imageHeight, identityHeight, amountsHeight, feeHeight) + actionsHeight + verticalPadding * 2
   }
 
-  func bind(_ item: NativeListItem, theme: [String: Any]?) {
+  func bind(_ item: NativeListItem, theme: [String: Any]?, fonts: NativeListFontFamilies) {
+    self.fonts = fonts
     let data = item.data
     let style = data.dictionary("style") ?? [:]
     let image = style.dictionary("image") ?? [:]
@@ -151,13 +163,19 @@ final class NativeListActivityDetailsView: UIStackView {
     if table { dimensions.append(amounts.widthAnchor.constraint(equalTo: identity.widthAnchor)) }
     NSLayoutConstraint.activate(dimensions)
     visual.bind(data.dictionary("leading") ?? [:], style: image, key: item.key, theme: theme,
-      isUnread: false, secondaryVisual: data.dictionary("secondaryLeading"))
+      isUnread: false, secondaryVisual: data.dictionary("secondaryLeading"), fonts: fonts)
     NativeListResolvedText(data.string("title"), style: style.dictionary("title"), size: 16,
-      weight: .medium, color: nativeListColor(theme, "primaryText", "#202020"), lineHeight: 24, lines: 1).bind(title)
+      weight: .medium, color: nativeListColor(theme, "primaryText", "#202020"), lineHeight: 24,
+      lines: 1, fonts: fonts
+    ).bind(title)
     NativeListResolvedText(data.string("description"), style: style.dictionary("description"), size: 14,
-      color: nativeListColor(theme, "secondaryText", "#646464"), lineHeight: 20, lines: 2).bind(descriptionLabel)
+      color: nativeListColor(theme, "secondaryText", "#646464"), lineHeight: 20, lines: 2,
+      fonts: fonts
+    ).bind(descriptionLabel)
     NativeListResolvedText(data.string("status"), style: style.dictionary("status"), size: 12,
-      color: nativeListColor(theme, "secondaryText", "#646464"), lineHeight: 16, lines: 1).bind(status)
+      color: nativeListColor(theme, "secondaryText", "#646464"), lineHeight: 16, lines: 1,
+      fonts: fonts
+    ).bind(status)
     descriptionKey = data.string("descriptionActionKey")
     descriptionLabel.isUserInteractionEnabled = !descriptionKey.isEmpty
     descriptionLabel.accessibilityTraits = descriptionKey.isEmpty ? .staticText : .button
@@ -167,7 +185,8 @@ final class NativeListActivityDetailsView: UIStackView {
       let tone = descriptor.string("tone")
       let tint = nativeListActivityTone(tone, theme: theme)
       NativeListResolvedText("  \(descriptor.string("text"))  ", style: nil, size: 12,
-        weight: .medium, color: tint, lineHeight: 16, lines: 1).bind(label)
+        weight: .medium, color: tint, lineHeight: 16, lines: 1, fonts: fonts
+      ).bind(label)
       label.backgroundColor = tint.withAlphaComponent(0.1)
       label.layer.cornerRadius = 4; label.clipsToBounds = true
       label.setContentCompressionResistancePriority(.required, for: .horizontal)
@@ -182,17 +201,23 @@ final class NativeListActivityDetailsView: UIStackView {
       let view = NativeListActivityAmountView(); amountViews.append(view); amounts.addArrangedSubview(view)
     }
     for (index, descriptor) in descriptors.enumerated() {
-      amountViews[index].bind(descriptor, key: "\(item.key):\(descriptor.string("key"))", style: style, theme: theme, table: table)
+      amountViews[index].bind(descriptor, key: "\(item.key):\(descriptor.string("key"))", style: style, theme: theme, table: table, fonts: fonts)
     }
     let feeData = data.dictionary("fee")
     fee.isHidden = feeData == nil
     fee.alpha = feeData?.bool("hidden") == true ? 0 : 1
     NativeListResolvedText(feeData?.string("label") ?? "", style: style.dictionary("secondaryAmount"),
-      size: 12, color: nativeListColor(theme, "secondaryText", "#646464"), lineHeight: 16, lines: 1).bind(feeLabel)
+      size: 12, color: nativeListColor(theme, "secondaryText", "#646464"), lineHeight: 16, lines: 1,
+      fonts: fonts
+    ).bind(feeLabel)
     NativeListResolvedText(feeData?.string("primary") ?? "", style: style.dictionary("secondaryAmount"),
-      size: 14, color: nativeListColor(theme, "primaryText", "#202020"), lineHeight: 20, lines: 1).bind(feePrimary)
+      size: 14, color: nativeListColor(theme, "primaryText", "#202020"), lineHeight: 20, lines: 1,
+      fonts: fonts
+    ).bind(feePrimary)
     NativeListResolvedText(feeData?.string("secondary") ?? "", style: style.dictionary("secondaryAmount"),
-      size: 12, color: nativeListColor(theme, "secondaryText", "#646464"), lineHeight: 16, lines: 1).bind(feeSecondary)
+      size: 12, color: nativeListColor(theme, "secondaryText", "#646464"), lineHeight: 16, lines: 1,
+      fonts: fonts
+    ).bind(feeSecondary)
     for button in buttons { actions.removeArrangedSubview(button); button.removeFromSuperview() }
     buttons = []
     nativeListActivitySegments(feePrimary, feeData?.dictionaries("primaryTextSegments") ?? [])
@@ -204,7 +229,7 @@ final class NativeListActivityDetailsView: UIStackView {
     for (index, descriptor) in actionData.enumerated() {
       let button = UIButton(type: .system); button.tag = index
       button.setTitle(descriptor.string("label"), for: .normal)
-      button.titleLabel?.font = nativeListFont(ofSize: 14, weight: .medium)
+      button.titleLabel?.font = nativeListFont(ofSize: 14, weight: .medium, fonts: fonts)
       button.setTitleColor(nativeListActivityTone(descriptor.string("tone"), theme: theme), for: .normal)
       button.backgroundColor = nativeListColor(theme, "strongBackground", "#F0F0F0")
       button.layer.cornerRadius = 8
@@ -240,6 +265,7 @@ private func nativeListActivityTone(_ tone: String, theme: [String: Any]?) -> UI
 }
 
 private final class NativeListActivityAmountView: UIStackView {
+  var fonts = NativeListFontFamilies()
   private let visual = NativeListLeadingVisual()
   private let labels = UIStackView()
   private let primary = NativeListTextLabel()
@@ -253,20 +279,33 @@ private final class NativeListActivityAmountView: UIStackView {
     NSLayoutConstraint.activate([visual.widthAnchor.constraint(equalToConstant: 20), visual.heightAnchor.constraint(equalToConstant: 20)])
   }
   required init(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-  func bind(_ data: [String: Any], key: String, style: [String: Any], theme: [String: Any]?, table: Bool) {
+  func bind(
+    _ data: [String: Any], key: String, style: [String: Any], theme: [String: Any]?, table: Bool,
+    fonts: NativeListFontFamilies
+  ) {
+    self.fonts = fonts
     let leading = data.dictionary("leading")
     visual.isHidden = leading == nil
-    if let leading { visual.bind(leading, style: ["width": 20, "height": 20], key: key, theme: theme, isUnread: false) } else { visual.recycle() }
+    if let leading {
+      visual.bind(
+        leading, style: ["width": 20, "height": 20], key: key, theme: theme, isUnread: false,
+        fonts: fonts)
+    } else {
+      visual.recycle()
+    }
     var primaryStyle = style.dictionary("primaryAmount") ?? [:]
     if primaryStyle["alignment"] == nil { primaryStyle["alignment"] = table ? "start" : "end" }
     let resolved = NativeListResolvedText(data.string("text"), style: primaryStyle, size: 16,
-      weight: .medium, color: nativeListActivityTone(data.string("tone"), theme: theme), lineHeight: 24, lines: 1, tabular: true)
+      weight: .medium, color: nativeListActivityTone(data.string("tone"), theme: theme),
+      lineHeight: 24, lines: 1, tabular: true, fonts: fonts)
     resolved.bind(primary)
     nativeListActivitySegments(primary, data.dictionaries("textSegments"))
     var secondaryStyle = style.dictionary("secondaryAmount") ?? [:]
     if secondaryStyle["alignment"] == nil { secondaryStyle["alignment"] = table ? "start" : "end" }
     NativeListResolvedText(data.string("secondaryText"), style: secondaryStyle, size: 14,
-      color: nativeListColor(theme, "secondaryText", "#646464"), lineHeight: 20, lines: 1).bind(secondary)
+      color: nativeListColor(theme, "secondaryText", "#646464"), lineHeight: 20, lines: 1,
+      fonts: fonts
+    ).bind(secondary)
     nativeListActivitySegments(secondary, data.dictionaries("secondaryTextSegments"))
   }
   func recycle() { visual.recycle() }

@@ -9,6 +9,7 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.graphics.PathParser
+import com.facebook.react.common.assets.ReactFontManager
 import kotlin.math.roundToInt
 
 /** React Native color strings use CSS #RRGGBBAA ordering; Android expects #AARRGGBB. */
@@ -45,25 +46,37 @@ internal object NativeListScale {
     if (factor(resources) == 1f) value else (value * factor(resources)).roundToInt().toFloat()
 }
 
-internal object NativeListFonts {
-  private val cache = mutableMapOf<String, Typeface>()
+internal class NativeListFonts {
+  var generation = 0
+    private set
+  private var families: Map<String, String> = emptyMap()
 
-  private fun load(context: android.content.Context, weight: String, fallback: String): Typeface =
-    cache.getOrPut(weight) {
-      try {
-        Typeface.createFromAsset(context.assets, "fonts/Roobert-$weight.ttf")
-      } catch (_: RuntimeException) {
-        Typeface.create(fallback, Typeface.NORMAL)
-      }
+  fun configure(json: String): Boolean {
+    val objectValue = runCatching { org.json.JSONObject(json) }.getOrNull() ?: return false
+    val next = linkedMapOf<String, String>()
+    val weights = setOf("regular", "medium", "semibold", "bold")
+    for (key in objectValue.keys()) {
+      val name = objectValue.opt(key) as? String ?: return false
+      if (key !in weights || name.isEmpty() || name.length > 128 || name.any { it.code < 32 || it.code == 127 }) return false
+      next[key] = name
     }
+    if (families == next) return false
+    families = next.toMap()
+    generation++
+    return true
+  }
 
-  fun regular(context: android.content.Context) = load(context, "Regular", "sans-serif")
+  private fun load(context: android.content.Context, weight: String, systemWeight: Int): Typeface {
+    val family = families[weight]
+    return if (family != null) ReactFontManager.getInstance().getTypeface(family, Typeface.NORMAL, context.assets)
+    else if (android.os.Build.VERSION.SDK_INT >= 28) Typeface.create(Typeface.DEFAULT, systemWeight, false)
+    else Typeface.create(if (systemWeight in 500..600) "sans-serif-medium" else "sans-serif", if (systemWeight >= 700) Typeface.BOLD else Typeface.NORMAL)
+  }
 
-  fun medium(context: android.content.Context) = load(context, "Medium", "sans-serif-medium")
-
-  fun semibold(context: android.content.Context) = load(context, "SemiBold", "sans-serif-medium")
-
-  fun bold(context: android.content.Context) = load(context, "Bold", "sans-serif")
+  fun regular(context: android.content.Context) = load(context, "regular", 400)
+  fun medium(context: android.content.Context) = load(context, "medium", 500)
+  fun semibold(context: android.content.Context) = load(context, "semibold", 600)
+  fun bold(context: android.content.Context) = load(context, "bold", 700)
 }
 
 internal class DottedUnderlineTextView(context: android.content.Context) :

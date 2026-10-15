@@ -19,6 +19,7 @@
     "ios",
     "cpp",
     "nitrogen",
+    "docs",
     "nitro.json",
     "*.podspec",
     "react-native.config.js",

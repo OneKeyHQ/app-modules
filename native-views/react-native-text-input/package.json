@@ -92,5 +92,9 @@
     "android": {
       "javaPackageName": "com.textinput"
     }
+  },
+  "dependencies": {
+    "invariant": "^2.2.4",
+    "nullthrows": "^1.1.1"
   }
 }

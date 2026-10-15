@@ -3,21 +3,23 @@ import UIKit
 
 // Apply semantic overrides after a renderer has restored its resolved defaults.
 enum NativeListTextStyles {
-  static func applyStyledText(_ label: UILabel, _ style: [String: Any]) {
+  static func applyStyledText(
+    _ label: UILabel, _ style: [String: Any], fonts: NativeListFontFamilies
+  ) {
     let text = label.attributedText?.string ?? label.text ?? ""
     guard !text.isEmpty, !style.isEmpty else { return }
     let originalText = label.attributedText
     let textLabel = label as? NativeListTextLabel
     let baseFont =
       (originalText?.attribute(.font, at: 0, effectiveRange: nil) as? UIFont) ?? label.font
-      ?? nativeListFont(ofSize: 14)
+      ?? nativeListFont(ofSize: 14, fonts: fonts)
     let size = CGFloat(style.double("fontSize", default: Double(baseFont.pointSize)))
     let font: UIFont
     if let weightName = style["fontWeight"] as? String {
       font = nativeListFont(
         ofSize: size,
-        weight: marketFontWeight(weightName, fallback: .regular)
-      )
+        weight: marketFontWeight(weightName, fallback: .regular),
+        fonts: fonts)
     } else {
       font = baseFont.withSize(size)
     }
@@ -53,7 +55,7 @@ enum NativeListTextStyles {
       paragraph.lineBreakMode = label.lineBreakMode
     }
     var attributes: [NSAttributedString.Key: Any] = [:]
-    applyStyledFont(attributed, style, fallback: baseFont)
+    applyStyledFont(attributed, style, fallback: baseFont, fonts: fonts)
     if style["color"] != nil { attributes[.foregroundColor] = color }
     if style["alignment"] != nil || style["lines"] != nil || style["truncate"] != nil
       || style["lineHeight"] != nil
@@ -74,7 +76,9 @@ enum NativeListTextStyles {
     label.attributedText = attributed
   }
 
-  static func applyStyledButton(_ button: UIButton, _ style: [String: Any]) {
+  static func applyStyledButton(
+    _ button: UIButton, _ style: [String: Any], fonts: NativeListFontFamilies
+  ) {
     let text =
       button.attributedTitle(for: .normal)?.string
       ?? button.title(for: .normal)
@@ -84,14 +88,14 @@ enum NativeListTextStyles {
     let accessory = button as? NativeListAccessoryButton
     let baseFont =
       (originalText?.attribute(.font, at: 0, effectiveRange: nil) as? UIFont) ?? button.titleLabel?
-      .font ?? nativeListFont(ofSize: 14)
+      .font ?? nativeListFont(ofSize: 14, fonts: fonts)
     let size = CGFloat(style.double("fontSize", default: Double(baseFont.pointSize)))
     let font: UIFont
     if let weightName = style["fontWeight"] as? String {
       font = nativeListFont(
         ofSize: size,
-        weight: marketFontWeight(weightName, fallback: .regular)
-      )
+        weight: marketFontWeight(weightName, fallback: .regular),
+        fonts: fonts)
     } else {
       font = baseFont.withSize(size)
     }
@@ -116,7 +120,7 @@ enum NativeListTextStyles {
         : alignmentName == "end" ? .trailing : .center
     }
     var attributes: [NSAttributedString.Key: Any] = [:]
-    applyStyledFont(attributed, style, fallback: baseFont)
+    applyStyledFont(attributed, style, fallback: baseFont, fonts: fonts)
     if style["color"] != nil { attributes[.foregroundColor] = color }
     if style["alignment"] != nil || style["lineHeight"] != nil || style["lines"] != nil
       || style["truncate"] != nil
@@ -153,7 +157,8 @@ enum NativeListTextStyles {
   }
 
   static func applyStyledFont(
-    _ text: NSMutableAttributedString, _ style: [String: Any], fallback: UIFont
+    _ text: NSMutableAttributedString, _ style: [String: Any], fallback: UIFont,
+    fonts: NativeListFontFamilies
   ) {
     guard style["fontSize"] != nil || style["fontWeight"] != nil else { return }
     text.enumerateAttribute(.font, in: NSRange(location: 0, length: text.length)) {
@@ -164,7 +169,8 @@ enum NativeListTextStyles {
         style["fontWeight"] == nil
         ? original.withSize(size)
         : nativeListFont(
-          ofSize: size, weight: marketFontWeight(style.string("fontWeight"), fallback: .regular))
+          ofSize: size, weight: marketFontWeight(style.string("fontWeight"), fallback: .regular),
+          fonts: fonts)
       text.addAttribute(.font, value: font, range: range)
     }
   }

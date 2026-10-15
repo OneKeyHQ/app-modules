@@ -51,6 +51,18 @@ scrolling, page changes and ordinary taps in the actual consumer. Setting a
 direction does not establish that an arbitrary third-party pager integration is
 supported, and this package has no Web gesture implementation.
 
+## Direction values and scope
+
+`ScrollGuardDirection.HORIZONTAL`, `.VERTICAL` and `.BOTH` have string values
+`horizontal`, `vertical` and `both`. The exported `ScrollGuardProps` describes
+the optional direction; `ScrollGuardMethods` adds no public imperative calls.
+Changing direction configures gesture coordination rather than scroll position.
+
+Keep content scrolling and pager navigation in their respective components.
+This guard does not add pagination, scroll offsets or a gesture-event callback.
+Verify diagonal drags, direction changes and child interactions in the actual
+hierarchy, since ancestor interception depends on native container placement.
+
 ## License
 
 MIT.

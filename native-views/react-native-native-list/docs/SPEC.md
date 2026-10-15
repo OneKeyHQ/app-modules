@@ -72,6 +72,30 @@ image that already loaded. Common container styling clears what it wrote on the
 next bind, including properties it set on template children. UI mutation remains on the platform
 UI thread; [DESIGN.md](DESIGN.md) describes update and event ownership.
 
+### Android reorder cancellation
+
+Status: implemented; three real Android View/callback regressions verified on
+the task's API 34 emulator. Full MotionEvent long-press/edge-scroll gestures and
+physical-device acceptance remain pending.
+Replacing the reorder helper for a structural snapshot or changed font mapping
+MUST invalidate pending drag indices and transaction state before detaching the old
+helper, and restore the adapter's latest committed/submitted snapshot order
+during cancellation. An active helper's selection and auto-scroll ownership must
+end before detach, including disposal; ordinary non-reorder touch input is not
+force-cancelled.
+Cancellation emits no reorder event. It restores the active row's normal
+appearance, including wallet-group expansion and its declared opacity, removes
+the placeholder, and clears drag/displacement translation and temporary elevation.
+Callbacks and deferred displacement/drop animations owned by the detached helper
+MUST NOT change rows or commit a later gesture. A subsequent unmoved gesture
+emits no reorder event; a subsequent valid move retains the normal single commit
+with its own source/destination indices. This does not change the font API or
+ordinary successful-drop animation contract.
+In a repository source checkout, the opt-in platform-runner test and exact
+build/run commands are in `native-tests/android/README.md`; these tests
+drive the shipping NativeListView and ItemTouchHelper callbacks, not a copy of
+the cancellation implementation.
+
 ### Native section title loading indicator
 
 Status: implemented source; simulator rendering acceptance pending.
@@ -151,6 +175,51 @@ Existing geometry/typography differences are recorded in
 [STYLE_SPEC.md](STYLE_SPEC.md); structural extraction must not silently change
 them. iOS uses UICollectionView, Android RecyclerView, and Web a windowed DOM
 engine. See [DESIGN.md](DESIGN.md) for their current ownership boundaries.
+
+### Font resource ownership and runtime configuration
+
+Status: implemented; JavaScript regression tests, Android compilation/JVM tests
+and iOS test-target compilation verified. Device rendering acceptance pending.
+NativeList distributes no font files and registers no fonts. Hosts own font
+licensing, provisioning and registration. `configureNativeListFonts(families)`
+sets four optional face names (`regular`, `medium`, `semibold`, `bold`) for the
+current JavaScript runtime. The initial mapping is empty; `{}` resets every face
+to system fallback. Each call replaces the entire mapping. Names are trimmed,
+nonempty strings of at most 128 UTF-16 code units without control characters; unknown
+keys or invalid values throw before changing any state. Omitted/undefined faces
+use system fallback. Identical normalized mappings are idempotent.
+
+Hosts configure once during UI-runtime startup, after provisioning fonts and
+before rendering lists. Independent UI/background JavaScript runtimes have
+independent stores; configuring one MUST NOT change another. There is no public
+instance override and no mutable native-global font mapping. An internal Nitro
+`fontFamiliesJson` prop delivers each list's current mapping to its own resolver.
+Mounted lists subscribe to their runtime store. A changed mapping rebinds text,
+invalidates measured geometry and requests layout without replacing row keys,
+selection or snapshots. An active reorder is cancelled through the existing
+structural-update cleanup before changed font geometry is applied. The same mapping MUST NOT invalidate layout. Changing
+which font bytes an already configured name resolves to is outside this API;
+hosts load/register fonts before configuration, and no late-font-loading event or
+automatic font-file registration is added.
+
+iOS resolves each configured PostScript face with `UIFont(name:size:)`, then
+falls back to the requested system weight. Tabular-number features remain enabled
+where requested. Android delegates configured family names to ReactFontManager
+with `Typeface.NORMAL` and host assets, including Expo's `setTypeface` path;
+missing configured families use React Native's system fallback, whose weight
+need not match the requested semantic weight. An omitted face
+uses the requested system weight on Android API 28+, with the nearest
+regular/medium/bold system face on API 24–27. Web treats each configured name as a literal
+CSS font-family name with the existing semantic weight and platform font stack;
+the same resolver covers row text, sticky headers, fixed footers, section indexes
+and reorder previews. Native measurement and binding MUST use the same instance
+mapping. `fontFamily` remains absent from the public row-style surface.
+
+System/custom fallback changes text metrics. Consumers must check fixed-height
+rows, truncation and numeric alignment on each platform; source/unit checks do
+not establish visual acceptance. Acceptance includes two independent runtimes,
+two list instances, changed/reset mappings, invalid configuration without partial
+state, all templates and container text, and retained selection/scroll behavior.
 
 ## Failures, fallback and limits
 

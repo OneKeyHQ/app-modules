@@ -2,7 +2,8 @@ import UIKit
 
 final class NativeListMediaTileCell: NativeListRendererCell {
   override class func measure(
-    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String
+    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String,
+    fonts: NativeListFontFamilies
   ) -> CGFloat? {
     return 244
   }
@@ -97,20 +98,23 @@ final class NativeListMediaTileCell: NativeListRendererCell {
     NativeListResolvedText(
       item.data.string("title"), style: style.dictionary("title"), size: 16,
       weight: .medium, color: nativeListColor(theme, "primaryText", "#202020"),
-      lineHeight: nativeListFont(ofSize: 16, weight: .medium).lineHeight,
-      lines: 1, preservesBreakMode: true
+      lineHeight: nativeListFont(ofSize: 16, weight: .medium, fonts: fonts).lineHeight,
+      lines: 1, preservesBreakMode: true,
+      fonts: fonts
     ).bind(title)
     NativeListResolvedText(
       item.data.string("subtitle"), style: style.dictionary("subtitle"), size: 12,
       color: nativeListColor(theme, "secondaryText", "#646464"),
-      lineHeight: nativeListFont(ofSize: 12).lineHeight, lines: 1, preservesBreakMode: true
+      lineHeight: nativeListFont(ofSize: 12, fonts: fonts).lineHeight, lines: 1,
+      preservesBreakMode: true, fonts: fonts
     ).bind(subtitle)
     let badgeText = item.data.dictionary("badge")?.string("text") ?? ""
     NativeListResolvedText(
       badgeText.isEmpty ? "" : "  \(badgeText)  ", style: style.dictionary("badge"), size: 14,
       weight: .medium, color: nativeListColor(theme, "inverseText", "#FCFCFC"),
-      lineHeight: nativeListFont(ofSize: 14, weight: .medium).lineHeight,
-      lines: 1, preservesBreakMode: true
+      lineHeight: nativeListFont(ofSize: 14, weight: .medium, fonts: fonts).lineHeight,
+      lines: 1, preservesBreakMode: true,
+      fonts: fonts
     ).bind(badge)
     if style.dictionary("badge")?["alignment"] == nil { badge.textAlignment = .center }
     badge.backgroundColor = nativeListColor(theme, "inverseBackground", "#202020")
@@ -158,7 +162,7 @@ final class NativeListMediaTileCell: NativeListRendererCell {
     closeKey = item.data.string("closeActionKey")
     closeStack.isHidden = closeKey.isEmpty
     close.setTitle("×", for: .normal)
-    close.titleLabel?.font = nativeListFont(ofSize: 16, weight: .medium)
+    close.titleLabel?.font = nativeListFont(ofSize: 16, weight: .medium, fonts: fonts)
     close.setTitleColor(nativeListColor(theme, "primaryText", "#202020"), for: .normal)
   }
   override func layoutSubviews() {

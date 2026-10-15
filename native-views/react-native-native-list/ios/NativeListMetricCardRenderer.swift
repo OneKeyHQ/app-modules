@@ -2,7 +2,8 @@ import UIKit
 
 final class NativeListMetricCardCell: NativeListRendererCell {
   override class func measure(
-    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String
+    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String,
+    fonts: NativeListFontFamilies
   ) -> CGFloat? {
     return item.data.string("variant") == "activity"
       ? 160 + 1 / UIScreen.main.scale : item.data.string("variant") == "performance" ? 178 : 132
@@ -91,11 +92,11 @@ final class NativeListMetricCardCell: NativeListRendererCell {
       label.transform = .identity
     }
     titleLabel.font = nativeListFont(
-      ofSize: data.string("size") == "large" ? 24 : 18, weight: .semibold)
-    subtitleLabel.font = nativeListFont(ofSize: 11)
-    statusLabel.font = nativeListFont(ofSize: 12)
-    detailLabel.font = nativeListFont(ofSize: 12)
-    badgeLabel.font = nativeListFont(ofSize: 12, weight: .medium)
+      ofSize: data.string("size") == "large" ? 24 : 18, weight: .semibold, fonts: fonts)
+    subtitleLabel.font = nativeListFont(ofSize: 11, fonts: fonts)
+    statusLabel.font = nativeListFont(ofSize: 12, fonts: fonts)
+    detailLabel.font = nativeListFont(ofSize: 12, fonts: fonts)
+    badgeLabel.font = nativeListFont(ofSize: 12, weight: .medium, fonts: fonts)
     titleLabel.textColor = nativeListColor(theme, "primaryText", "#202020")
     subtitleLabel.textColor = nativeListColor(theme, "disabledText", "#8D8D8D")
     [statusLabel, detailLabel].forEach {
@@ -118,11 +119,12 @@ final class NativeListMetricCardCell: NativeListRendererCell {
         }
       }
       if let text = style.dictionary("title") {
-        NativeListTextStyles.applyStyledText(titleLabel, text)
+        NativeListTextStyles.applyStyledText(titleLabel, text, fonts: fonts)
       }
     } else {
       if let descriptor = data.dictionary("visual") {
-        visual.bind(descriptor, style: image, key: item.key, theme: theme, isUnread: false)
+        visual.bind(
+          descriptor, style: image, key: item.key, theme: theme, isUnread: false, fonts: fonts)
         root.addArrangedSubview(visual)
         dimensions = [
           visual.widthAnchor.constraint(
@@ -150,7 +152,9 @@ final class NativeListMetricCardCell: NativeListRendererCell {
         ("title", subtitleLabel), ("value", titleLabel), ("subtitle", detailLabel),
         ("trend", statusLabel),
       ] {
-        if let text = style.dictionary(slot) { NativeListTextStyles.applyStyledText(label, text) }
+        if let text = style.dictionary(slot) {
+          NativeListTextStyles.applyStyledText(label, text, fonts: fonts)
+        }
       }
       root.addArrangedSubview(mainStack)
     }
@@ -202,7 +206,7 @@ final class NativeListMetricCardCell: NativeListRendererCell {
   ) {
     root.alignment = .fill
     show(titleLabel, item.data.string("title"), lines: 1)
-    titleLabel.font = nativeListFont(ofSize: 11)
+    titleLabel.font = nativeListFont(ofSize: 11, fonts: fonts)
     titleLabel.textColor = nativeListColor(theme, "disabledText", "#8D8D8D")
     setLineHeight(
       titleLabel,
@@ -310,7 +314,7 @@ final class NativeListMetricCardCell: NativeListRendererCell {
         column.layer.cornerRadius = 8
       }
       let label = UILabel()
-      label.font = nativeListFont(ofSize: 11)
+      label.font = nativeListFont(ofSize: 11, fonts: fonts)
       label.textColor = nativeListColor(theme, "disabledText", "#8D8D8D")
       setLineHeight(label, text: metric.string("label"), lineHeight: 14)
       let value = UILabel()
@@ -335,7 +339,7 @@ final class NativeListMetricCardCell: NativeListRendererCell {
         valueLineHeight = 20
         valueWeight = .medium
       }
-      value.font = nativeListTabularFont(ofSize: valueSize, weight: valueWeight)
+      value.font = nativeListTabularFont(ofSize: valueSize, weight: valueWeight, fonts: fonts)
       value.textColor = dataTextColor(metric.string("tone"), theme: theme)
       setLineHeight(value, text: metric.string("value"), lineHeight: valueLineHeight)
       column.addArrangedSubview(label)

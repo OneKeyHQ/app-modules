@@ -91,6 +91,19 @@ compile the production Swift/Kotlin stores with the generated primitive union,
 exercise type preservation, concurrent claims and independent keys, and run each
 executable in two fresh processes. Requires Swift, Kotlin, and Java.
 
+## Consumed launch data and listener cleanup
+
+`getAndClearColdStartLocalNotification()` returns serialized local-notification
+user info on iOS and consumes that value. An empty string means there is no
+pending payload. Parse it only after checking for an empty result and avoid
+logging notification contents or stored device tokens.
+
+`addSpanningChangedListener` returns a numeric ID; retain it for
+`removeSpanningChangedListener`. `getLaunchOptions()` returns a `LaunchOptions`
+object with `launchType` and optional `deepLink`, rather than a raw URL string.
+Use the exported result types for WebView, Google Play Services and hinge/window
+geometry when building a platform adapter.
+
 ## License
 
 MIT.

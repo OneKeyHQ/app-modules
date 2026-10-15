@@ -36,6 +36,13 @@ final class HybridNativeList: HybridNativeListSpec {
     }
   }
 
+  private var fontsChanged = false
+  private var snapshotChanged = false
+
+  var fontFamiliesJson: String = "{}" {
+    didSet { if fontFamiliesJson != oldValue { fontsChanged = true } }
+  }
+
   var topScrollEdgeHard = false {
     didSet {
       runOnMain { [weak self] in
@@ -55,12 +62,17 @@ final class HybridNativeList: HybridNativeListSpec {
   }
 
   var snapshotJson: String = "" {
-    didSet {
-      guard snapshotJson != oldValue else { return }
-      runOnMain { [weak self] in
-        guard let self else { return }
-        self.hostView?.applySnapshotJson(self.snapshotJson)
-      }
+    didSet { if snapshotJson != oldValue { snapshotChanged = true } }
+  }
+
+  func afterUpdate() {
+    let fonts = fontsChanged ? fontFamiliesJson : nil
+    let snapshot = snapshotChanged ? snapshotJson : nil
+    fontsChanged = false
+    snapshotChanged = false
+    runOnMain { [weak self] in
+      if let fonts { self?.hostView?.setFontFamiliesJson(fonts) }
+      if let snapshot { self?.hostView?.applySnapshotJson(snapshot) }
     }
   }
 

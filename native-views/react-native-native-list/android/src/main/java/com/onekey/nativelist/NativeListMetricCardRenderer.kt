@@ -15,9 +15,9 @@ import com.facebook.react.uimanager.ThemedReactContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-internal class NativeListMetricCardRowView(context: ThemedReactContext) :
-  NativeListRendererRowView(context) {
-  private val visual = NativeListLeadingVisual(context)
+internal class NativeListMetricCardRowView(context: ThemedReactContext, fonts: NativeListFonts) :
+  NativeListRendererRowView(context, fonts) {
+  private val visual = NativeListLeadingVisual(context, fonts)
   private val column = LinearLayout(context).apply { orientation = VERTICAL }
   private val titleLine =
     LinearLayout(context).apply {
@@ -136,7 +136,7 @@ internal class NativeListMetricCardRowView(context: ThemedReactContext) :
       ink: Int = color(theme, "secondaryText", "#0000009B"),
     ) {
       NativeListResolvedText.resolve(
-          context,
+          context, fonts,
           value,
           style.optJSONObject(slot),
           size,
@@ -157,7 +157,7 @@ internal class NativeListMetricCardRowView(context: ThemedReactContext) :
       if (heading != null) {
         val spacing = heading.letterSpacing
         NativeListResolvedText.resolve(
-            context,
+            context, fonts,
             data.optString("title").uppercase(),
             style.optJSONObject("title"),
             11f,
@@ -229,7 +229,7 @@ internal class NativeListMetricCardRowView(context: ThemedReactContext) :
       )
       text(detail, data.optString("subtitle"), "subtitle", 14f)
       NativeListResolvedText.resolve(
-          context,
+          context, fonts,
           data.optJSONObject("badge")?.optString("text") ?: "",
           null,
           12f,
@@ -282,7 +282,7 @@ internal class NativeListMetricCardRowView(context: ThemedReactContext) :
           value = item.json.optString("title").uppercase(),
           size = 11f,
           lineHeight = 14,
-          typeface = NativeListFonts.regular(context),
+          typeface = fonts.regular(context),
           textColor = color(theme, "disabledText", "#00000072"),
           letterSpacingDp = 1.2f,
         )
@@ -313,7 +313,7 @@ internal class NativeListMetricCardRowView(context: ThemedReactContext) :
                 alignment = Gravity.START,
                 valueSize = 18f,
                 valueLineHeight = 24,
-                valueTypeface = NativeListFonts.semibold(context),
+                valueTypeface = fonts.semibold(context),
               ),
               LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f),
             )
@@ -327,7 +327,7 @@ internal class NativeListMetricCardRowView(context: ThemedReactContext) :
                 alignment = Gravity.END,
                 valueSize = 14f,
                 valueLineHeight = 20,
-                valueTypeface = NativeListFonts.semibold(context),
+                valueTypeface = fonts.semibold(context),
               ),
               LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f),
             )
@@ -379,7 +379,7 @@ internal class NativeListMetricCardRowView(context: ThemedReactContext) :
             alignment = Gravity.START,
             valueSize = 16f,
             valueLineHeight = 24,
-            valueTypeface = NativeListFonts.semibold(context),
+            valueTypeface = fonts.semibold(context),
           ),
           LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f),
         )
@@ -393,7 +393,7 @@ internal class NativeListMetricCardRowView(context: ThemedReactContext) :
             alignment = Gravity.END,
             valueSize = 14f,
             valueLineHeight = 20,
-            valueTypeface = NativeListFonts.semibold(context),
+            valueTypeface = fonts.semibold(context),
           ),
           LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f),
         )
@@ -419,7 +419,7 @@ internal class NativeListMetricCardRowView(context: ThemedReactContext) :
             alignment = alignment,
             valueSize = 14f,
             valueLineHeight = 20,
-            valueTypeface = NativeListFonts.medium(context),
+            valueTypeface = fonts.medium(context),
           ),
           LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f),
         )
@@ -441,7 +441,7 @@ internal class NativeListMetricCardRowView(context: ThemedReactContext) :
               alignment = Gravity.START,
               valueSize = 14f,
               valueLineHeight = 20,
-              valueTypeface = NativeListFonts.medium(context),
+              valueTypeface = fonts.medium(context),
             )
             .apply {
               setPadding(dp(10), dp(10), dp(10), dp(10))
@@ -473,7 +473,7 @@ internal class NativeListMetricCardRowView(context: ThemedReactContext) :
           value = metric.optString("label"),
           size = 11f,
           lineHeight = 14,
-          typeface = NativeListFonts.regular(context),
+          typeface = fonts.regular(context),
           textColor = color(theme, "disabledText", "#00000072"),
           gravity = alignment,
         )

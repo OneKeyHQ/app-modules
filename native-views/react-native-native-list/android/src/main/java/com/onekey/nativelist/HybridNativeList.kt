@@ -31,6 +31,27 @@ class HybridNativeList(context: ThemedReactContext) : HybridNativeListSpec() {
       dispatchToUi { hostView.setContainerSlotHeightsJson(value) }
     }
 
+  private var fontsChanged = false
+  private var snapshotChanged = false
+
+  override var fontFamiliesJson: String = "{}"
+    set(value) {
+      if (field == value) return
+      field = value
+      fontsChanged = true
+    }
+
+  override fun afterUpdate() {
+    super.afterUpdate()
+    val fonts = if (fontsChanged) fontFamiliesJson else null
+    val snapshot = if (snapshotChanged) snapshotJson else null
+    fontsChanged = false
+    snapshotChanged = false
+    dispatchToUi {
+      fonts?.let { hostView.setFontFamiliesJson(it) }
+      snapshot?.let { hostView.applySnapshot(it) }
+    }
+  }
   override var topScrollEdgeHard: Boolean = false
   override var topOverlayHeight: Double = 0.0
 
@@ -39,7 +60,7 @@ class HybridNativeList(context: ThemedReactContext) : HybridNativeListSpec() {
     set(value) {
       if (field == value) return
       field = value
-      dispatchToUi { hostView.applySnapshot(value) }
+      snapshotChanged = true
     }
 
   override var keyboardDismissMode: NativeListKeyboardDismissMode = NativeListKeyboardDismissMode.NONE

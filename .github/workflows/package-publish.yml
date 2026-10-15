@@ -14,6 +14,7 @@ on:
         options:
           - next
           - latest
+          - pr-145
       only_workspace:
         description: "Publish only this workspace, e.g. @onekeyfe/react-native-bundle-crypto. Leave empty to publish every package."
         required: false
@@ -42,6 +43,9 @@ jobs:
           echo 'A merged fork PR does not trigger an automatic package release. Run package-publish manually when ready.' >> "$GITHUB_STEP_SUMMARY"
 
   package-publish:
+    permissions:
+      contents: read
+      id-token: write
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.pull_request.merged == true &&
@@ -83,15 +87,17 @@ jobs:
           yarn install --immutable
           node --test scripts/*.test.mjs
       - name: Prepare automatic preview version
-        if: github.event_name == 'pull_request' && steps.channel.outputs.dist_tag == 'next'
+        if: >-
+          (github.event_name == 'pull_request' && steps.channel.outputs.dist_tag == 'next') ||
+          steps.channel.outputs.dist_tag == 'pr-145'
         env:
           PREVIEW_NUMBER: ${{ github.run_number }}
         run: |
           preview_version=$(node scripts/prepare-preview.mjs "$PREVIEW_NUMBER")
           YARN_ENABLE_IMMUTABLE_INSTALLS=false yarn install
-          node scripts/validate-npm-dist-tag.mjs next
+          node scripts/validate-npm-dist-tag.mjs "${{ steps.channel.outputs.dist_tag }}"
           git diff --check
-          echo "Publishing preview $preview_version with the next tag" >> "$GITHUB_STEP_SUMMARY"
+          echo "Publishing preview $preview_version with the ${{ steps.channel.outputs.dist_tag }} tag" >> "$GITHUB_STEP_SUMMARY"
       - name: Resolve published version
         id: release
         run: |
@@ -105,18 +111,21 @@ jobs:
       - name: Publish missing packages after merge
         if: github.event_name == 'pull_request'
         env:
+          NPM_CONFIG_PROVENANCE: "true"
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_DIST_TAG: ${{ steps.channel.outputs.dist_tag }}
         run: node scripts/publish-missing.mjs "$NPM_DIST_TAG"
       - name: Publish missing packages manually
         if: github.event_name == 'workflow_dispatch' && inputs.only_workspace == ''
         env:
+          NPM_CONFIG_PROVENANCE: "true"
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_DIST_TAG: ${{ steps.channel.outputs.dist_tag }}
         run: node scripts/publish-missing.mjs "$NPM_DIST_TAG"
       - name: Publish a single workspace manually
         if: github.event_name == 'workflow_dispatch' && inputs.only_workspace != ''
         env:
+          NPM_CONFIG_PROVENANCE: "true"
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_DIST_TAG: ${{ steps.channel.outputs.dist_tag }}
         run: yarn workspace "$ONLY_WORKSPACE" release --tag "$NPM_DIST_TAG"
@@ -158,12 +167,12 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "24.x"
-      - name: Update only app-modules mobile dependencies
+      - name: Update app-modules dependencies
         id: dependencies
         working-directory: app-monorepo
         run: |
           node ../app-modules/scripts/sync-app-monorepo.mjs . "$RELEASE_VERSION"
-          if git diff --quiet -- apps/mobile/package.json packages/components/package.json package.json; then
+          if git diff --quiet -- apps/mobile/package.json packages/components/package.json packages/core/package.json packages/kit/package.json package.json; then
             echo 'changed=false' >> "$GITHUB_OUTPUT"
           else
             echo 'changed=true' >> "$GITHUB_OUTPUT"
@@ -198,7 +207,7 @@ jobs:
           branch="codex/app-modules-v${version}"
           git config user.name 'onekey-release[bot]'
           git config user.email 'onekey-release[bot]@users.noreply.github.com'
-          git add -u apps/mobile/package.json packages/components/package.json package.json yarn.lock
+          git add -u apps/mobile/package.json packages/components/package.json packages/core/package.json packages/kit/package.json package.json yarn.lock
           git diff --cached --check
           git commit -m "chore: update app-modules to ${version}"
           gh auth setup-git

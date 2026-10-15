@@ -21,6 +21,11 @@ MIME type. With no `onPaste` callback, iOS has no JavaScript paste
 subscription and Android has no paste watcher. The cache does not add a
 public prop or change the callback payload.
 
+The published JavaScript input imports `invariant` and `nullthrows` at runtime.
+They MUST be direct runtime dependencies of this package; consumers MUST NOT
+need a repository-hoisted copy to resolve those imports. React and React Native
+remain peer dependencies. This declaration does not change paste behavior.
+
 ## Lifecycle, concurrency, and cache
 
 - iOS starts with the image cache uninitialized, registers for pasteboard
