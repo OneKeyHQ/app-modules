@@ -42,12 +42,14 @@ def extract_crate(archive, temporary, identity):
                 raise RuntimeError(f"Unsupported crate archive entry: {member.name}")
 
 
-def prepare(offline):
-    vendor = ROOT / "vendor"
+def prepare(offline, root=None):
+    # Another runtime (Monero) reuses this script and the patches with its own root.
+    root = root or ROOT
+    vendor = root / "vendor"
     archives = vendor / ".archives"
     archives.mkdir(parents=True, exist_ok=True)
     cargo_home = Path(os.environ.get("CARGO_HOME", Path.home() / ".cargo"))
-    manifest = json.loads((ROOT / "patches/manifest.json").read_text())
+    manifest = json.loads((root / "patches/manifest.json").read_text())
     for entry in manifest:
         identity = f"{entry['name']}-{entry['version']}"
         archive = archives / f"{identity}.crate"
@@ -74,7 +76,7 @@ def prepare(offline):
             extract_crate(archive, temporary, identity)
             source = Path(temporary) / identity
             subprocess.run(
-                ["patch", "--batch", "--forward", "-F", "0", "-p1", "-i", str(ROOT / "patches" / entry["patch"])],
+                ["patch", "--batch", "--forward", "-F", "0", "-p1", "-i", str(root / "patches" / entry["patch"])],
                 cwd=source,
                 check=True,
             )
@@ -90,4 +92,6 @@ def prepare(offline):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--offline", action="store_true", help="Use cached crate archives only")
-    prepare(parser.parse_args().offline)
+    parser.add_argument("--root", type=Path, help="Runtime directory holding patches/ and vendor/")
+    args = parser.parse_args()
+    prepare(args.offline, args.root.resolve() if args.root else None)

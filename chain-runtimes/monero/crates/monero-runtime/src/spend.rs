@@ -1746,6 +1746,9 @@ pub async fn broadcast_signed(
         chain_tip,
         amounts,
     )?;
+    // Same for a record that may not be durable: a restart could make its
+    // inputs selectable again while the transaction is in flight.
+    crate::storage::durability_barrier().await?;
 
     // An explicit rejection means it will not confirm: undo the fresh record
     // and release the inputs. Other errors are uncertain: keep the record so the

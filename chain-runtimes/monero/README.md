@@ -7,9 +7,10 @@ incremental, transactional writes.
 ## Build
 
 ```bash
+bash scripts/vendor-deps.sh                               # once, before any cargo command
 cargo test --workspace                                    # native tests
 cargo check --workspace --target wasm32-unknown-unknown
-./scripts/build-wasm.sh                                   # release build to pkg/
+./scripts/build-wasm.sh                                   # release build to pkg/ (prepares vendor first)
 ./scripts/build-node-pkg.sh && node scripts/smoke.js      # wasm end-to-end smoke test
 ```
 
@@ -124,6 +125,8 @@ bindgen.rs   wasm boundary
 
 ## Relation to the Zcash runtime
 
-Separate workspaces with no code dependency. `crates/monero-runtime/build.rs` (wasm
-SQLite link glue) mirrors the Zcash one; keep them in sync. Unlike Zcash, `runtime.rs`
+Separate workspaces with no code dependency, but one storage layer: `vendor-deps.sh`
+rebuilds `sqlite-wasm-vfs` with the Zcash runtime's patch, using its
+`prepare-vendor.py`, so a VFS fix lands in both. `crates/monero-runtime/build.rs`
+(wasm SQLite link glue) mirrors the Zcash one; keep them in sync. Unlike Zcash, `runtime.rs`
 is not wasm-only, so its concurrency guards are covered by native tests.

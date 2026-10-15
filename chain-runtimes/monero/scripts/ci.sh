@@ -7,6 +7,7 @@ VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"
 TAG=latest
 if [[ "$VERSION" =~ - ]]; then TAG=next; fi
 
+bash scripts/vendor-deps.sh
 cargo test --workspace --locked
 bash scripts/build-wasm.sh release
 python3 scripts/package-release.py --version "$VERSION" --tag "$TAG"

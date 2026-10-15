@@ -298,22 +298,38 @@ pub async fn delete_database(db_name: &str) -> Result<bool> {
     }
 }
 
-/// Durability barrier: ensures committed transactions reached durable storage.
+/// Durability barrier: fails if committed transactions may not have reached
+/// durable storage.
 ///
-/// Call after an **irreversible** action (e.g. a broadcast). Failure means
-/// durability is unknown, **not** that the action failed; callers must keep
-/// the real outcome.
+/// SQLite commits synchronously through the VFS, so commit errors already
+/// surface from the statement. This catches the rest: a metadata I/O failure
+/// (e.g. deleting the rollback journal) poisons the patched pool, and nothing
+/// written since can be trusted until the Worker restarts.
 pub async fn durability_barrier() -> Result<()> {
-    #[cfg(target_arch = "wasm32")]
-    {
-        // SAH pool writes reach the OPFS handle before sqlite3 returns; this is
-        // an explicit sync point and the place for a real flush on another VFS.
-        Ok(())
+    if requires_worker_restart() {
+        return Err(RuntimeError::with(
+            ErrorCode::DatabaseError,
+            json!({ "reason": "storageRequiresWorkerRestart" }),
+        ));
     }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        Ok(())
+    if !is_ready() {
+        return Err(RuntimeError::new(ErrorCode::NotInitialized));
     }
+    Ok(())
+}
+
+#[cfg(target_arch = "wasm32")]
+fn requires_worker_restart() -> bool {
+    VFS_UTIL.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .is_some_and(|util| util.is_poisoned())
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn requires_worker_restart() -> bool {
+    false
 }
 
 #[cfg(test)]

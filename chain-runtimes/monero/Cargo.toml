@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["crates/monero-runtime"]
+exclude = ["vendor/sqlite-wasm-vfs-0.2.0"]
 
 [workspace.package]
 version = "0.1.0-alpha.1"
@@ -28,9 +29,9 @@ monero-epee = { version = "0.2", default-features = false }
 # the sqlite3 symbols.
 rusqlite = { version = "0.37", default-features = false }
 sqlite-wasm-rs = "0.5"
-# OPFS sync-access VFS. The Zcash runtime vendors a copy patched with a
-# durability barrier; this uses the released crate.
-sqlite-wasm-vfs = "0.2"
+# OPFS sync-access VFS, patched with the Zcash runtime's patch (see
+# scripts/vendor-deps.sh): metadata I/O failures surface instead of passing.
+sqlite-wasm-vfs = { version = "0.2", path = "vendor/sqlite-wasm-vfs-0.2.0" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
