@@ -6,7 +6,9 @@ import {
   compareReleaseVersions,
   loadReleaseWorkspaces,
   parseReleaseVersion,
+  validateNpmDistTag,
 } from "./validate-npm-dist-tag.mjs";
+import { packumentUrl } from "./verify-published.mjs";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const dependencySections = [
@@ -16,9 +18,22 @@ const dependencySections = [
   "peerDependencies",
 ];
 
-export function makePreviewVersion(stableVersion, previewNumber) {
-  const { appVersion } = parseReleaseVersion(stableVersion);
-  const previewVersion = `${appVersion}-alpha.${previewNumber}`;
+export function makePreviewVersion(
+  stableVersion,
+  previewNumber,
+  publishedVersions = []
+) {
+  const current = parseReleaseVersion(stableVersion);
+  const { appVersion } = current;
+  parseReleaseVersion(`${appVersion}-alpha.${previewNumber}`);
+  let counter = Number(previewNumber);
+  for (const version of [stableVersion, ...publishedVersions]) {
+    const parsed = parseReleaseVersion(version, { allowLegacy: true });
+    if (parsed.appVersion === appVersion && parsed.channel === "next") {
+      counter = Math.max(counter, parsed.number + 1);
+    }
+  }
+  const previewVersion = `${appVersion}-alpha.${counter}`;
   parseReleaseVersion(previewVersion);
   return previewVersion;
 }
@@ -72,15 +87,52 @@ export async function setWorkspaceVersions(repoRoot, previewVersion) {
   return workspaces.length;
 }
 
-async function main() {
-  const [previewNumber] = process.argv.slice(2);
+export async function preparePreview(
+  repoRoot,
+  previewNumber,
+  distTag = "next"
+) {
+  if (distTag !== "next" && distTag !== "pr-145") {
+    throw new Error(`Unsupported preview dist-tag: ${distTag}`);
+  }
   const workspaces = await loadReleaseWorkspaces(repoRoot);
+  validateNpmDistTag(
+    parseReleaseVersion(workspaces[0]?.version).channel,
+    workspaces
+  );
+  makePreviewVersion(workspaces[0].version, previewNumber);
+  const publishedVersions = [];
+  for (const { name } of workspaces) {
+    const response = await fetch(packumentUrl(name), {
+      headers: { accept: "application/json" },
+    });
+    if (response.status === 404) {
+      continue;
+    }
+    if (!response.ok) {
+      throw new Error(`Registry returned HTTP ${response.status} for ${name}`);
+    }
+    const document = await response.json();
+    for (const tag of new Set(["next", distTag])) {
+      const version = document?.["dist-tags"]?.[tag];
+      if (version) {
+        publishedVersions.push(version);
+      }
+    }
+  }
   const previewVersion = makePreviewVersion(
-    workspaces[0]?.version,
-    previewNumber
+    workspaces[0].version,
+    previewNumber,
+    publishedVersions
   );
   const count = await setWorkspaceVersions(repoRoot, previewVersion);
   console.error(`Prepared ${count} preview workspaces at ${previewVersion}`);
+  return previewVersion;
+}
+
+async function main() {
+  const [previewNumber, distTag = "next"] = process.argv.slice(2);
+  const previewVersion = await preparePreview(repoRoot, previewNumber, distTag);
   console.log(previewVersion);
 }
 

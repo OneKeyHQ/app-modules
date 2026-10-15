@@ -92,8 +92,9 @@ jobs:
           steps.channel.outputs.dist_tag == 'pr-145'
         env:
           PREVIEW_NUMBER: ${{ github.run_number }}
+          NPM_DIST_TAG: ${{ steps.channel.outputs.dist_tag }}
         run: |
-          preview_version=$(node scripts/prepare-preview.mjs "$PREVIEW_NUMBER")
+          preview_version=$(node scripts/prepare-preview.mjs "$PREVIEW_NUMBER" "$NPM_DIST_TAG")
           YARN_ENABLE_IMMUTABLE_INSTALLS=false yarn install
           node scripts/validate-npm-dist-tag.mjs "${{ steps.channel.outputs.dist_tag }}"
           git diff --check
