@@ -43,6 +43,7 @@ export type OnNativeTabPressEventData = Readonly<{
   position: Int32;
   key: string;
 }>;
+export type OnScrollEdgeCapabilityEventData = Readonly<{ available: boolean }>;
 
 /**
  * Internal native props. Consumers should use CollapsiblePagerViewProps from
@@ -58,6 +59,10 @@ export interface NativeProps extends ViewProps {
   nativeSmoothHeaderScrollEnabled?: WithDefault<boolean, false>;
   headerHeight?: Int32;
   stickyHeaderHeight?: Int32;
+  topScrollEdgeHard?: WithDefault<boolean, false>;
+  topOverlayColorScheme?: string;
+  topOverlayHeight?: WithDefault<Double, 0>;
+  externalTopOverlayTag?: WithDefault<Int32, 0>;
   pageKeys?: string;
   retainedPages?: string;
   nativeTabBarItems?: string;
@@ -80,6 +85,7 @@ export interface NativeProps extends ViewProps {
   onCollapsibleStateChanged?: DirectEventHandler<OnCollapsibleStateChangedEventData>;
   onNativeTabPress?: DirectEventHandler<OnNativeTabPressEventData>;
   onNativeSubHeaderPress?: DirectEventHandler<OnNativeTabPressEventData>;
+  onScrollEdgeCapability?: DirectEventHandler<OnScrollEdgeCapabilityEventData>;
 }
 
 type CollapsiblePagerViewNativeType = HostComponent<NativeProps>;

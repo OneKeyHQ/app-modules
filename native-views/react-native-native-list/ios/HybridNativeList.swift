@@ -43,6 +43,24 @@ final class HybridNativeList: HybridNativeListSpec {
     didSet { if fontFamiliesJson != oldValue { fontsChanged = true } }
   }
 
+  var topScrollEdgeHard = false {
+    didSet {
+      runOnMain { [weak self] in
+        self?.hostView?.setTopScrollEdge(hard: self?.topScrollEdgeHard ?? false,
+                                     overlayHeight: CGFloat(self?.topOverlayHeight ?? 0))
+      }
+    }
+  }
+
+  var topOverlayHeight: Double = 0 {
+    didSet {
+      runOnMain { [weak self] in
+        self?.hostView?.setTopScrollEdge(hard: self?.topScrollEdgeHard ?? false,
+                                     overlayHeight: CGFloat(self?.topOverlayHeight ?? 0))
+      }
+    }
+  }
+
   var snapshotJson: String = "" {
     didSet { if snapshotJson != oldValue { snapshotChanged = true } }
   }
