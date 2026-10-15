@@ -1525,6 +1525,24 @@ mod combine_tests {
             reason(&error)
         );
     }
+
+    // Hardware signers get a copy without the Sapling `bsk` (see the keys
+    // runtime's `redact_for_hardware_signer`); the original keeps it.
+    #[test]
+    fn combine_restores_sapling_bsk_from_the_original() {
+        let original = transparent_pczt(90_000, 0xaa, false);
+        let device_copy =
+            pczt::roles::redactor::Redactor::new(pczt::Pczt::parse(&original).unwrap())
+                .redact_sapling_with(|mut sapling| sapling.clear_bsk())
+                .finish()
+                .serialize()
+                .unwrap();
+        assert!(device_copy.len() < original.len());
+        assert_eq!(
+            combine_pczt(&original, &signed_copy(&device_copy)).unwrap(),
+            combine_pczt(&original, &signed_copy(&original)).unwrap(),
+        );
+    }
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
