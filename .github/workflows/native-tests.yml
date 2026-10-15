@@ -271,23 +271,65 @@ jobs:
           mkdir -p artifacts/ios
           workspace=example/react-native/ios/example.xcworkspace
           schemes=(NativeSheet-Unit-Tests react-native-pager-view-Unit-Tests OneKeyTextInput-Unit-Tests OneKeyImage-Unit-Tests react-native-native-list-Unit-Tests ReactNativeBundleCrypto-Unit-Tests ReactNativeImageCropPicker-Unit-Tests ReactNativeCaptureProtection-Unit-Tests ReactNativePhotoLibrary-Unit-Tests)
+          # Plan and build the shared pod dependencies once for all nine bundles.
+          BUNDLE_GEMFILE="$PWD/example/react-native/Gemfile" bundle exec ruby - "${schemes[@]}" <<'RUBY'
+          require 'xcodeproj'
+
+          project_path = 'example/react-native/ios/Pods/Pods.xcodeproj'
+          project = Xcodeproj::Project.open(project_path)
+          scheme = Xcodeproj::XCScheme.new
+          ARGV.each do |name|
+            target = project.targets.find { |candidate| candidate.name == name }
+            abort "Missing unit test target: #{name}" unless target && target.product_type == 'com.apple.product-type.bundle.unit-test'
+            scheme.add_build_target(target, false)
+            scheme.add_test_target(target)
+          end
+          scheme.save_as(project_path, 'AppModulesNativeTests', true)
+          RUBY
           xcodebuild -list -workspace "$workspace" > artifacts/ios/schemes.log
-          for scheme in "${schemes[@]}"; do
-            grep -Fxq "        $scheme" artifacts/ios/schemes.log
-            # shellcheck disable=SC2016
-            xcodebuild test -workspace "$workspace" -scheme "$scheme" \
-              -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5' \
-              -derivedDataPath "$RUNNER_TEMP/native-tests-derived-data" \
-              -resultBundlePath "$PWD/artifacts/ios/$scheme.xcresult" \
-              -parallel-testing-enabled NO -jobs 2 CODE_SIGNING_ALLOWED=NO \
-              IPHONEOS_DEPLOYMENT_TARGET=16.4 \
-              'OTHER_LDFLAGS=$(inherited) -lc++' \
-              2>&1 | tee "artifacts/ios/$scheme.log"
-            xcrun xcresulttool get test-results summary \
-              --path "artifacts/ios/$scheme.xcresult" \
-              > "artifacts/ios/$scheme-summary.json"
-            jq -e '.totalTestCount > 0' "artifacts/ios/$scheme-summary.json"
-          done
+          grep -Fxq '        AppModulesNativeTests' artifacts/ios/schemes.log
+          # shellcheck disable=SC2016
+          xcodebuild test -workspace "$workspace" -scheme AppModulesNativeTests \
+            -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5' \
+            -derivedDataPath "$RUNNER_TEMP/native-tests-derived-data" \
+            -resultBundlePath "$PWD/artifacts/ios/AppModulesNativeTests.xcresult" \
+            -parallel-testing-enabled NO -jobs 2 CODE_SIGNING_ALLOWED=NO \
+            IPHONEOS_DEPLOYMENT_TARGET=16.4 \
+            'OTHER_LDFLAGS=$(inherited) -lc++' \
+            2>&1 | tee artifacts/ios/AppModulesNativeTests.log
+          xcrun xcresulttool get test-results summary \
+            --path artifacts/ios/AppModulesNativeTests.xcresult \
+            > artifacts/ios/summary.json
+          jq -e '.totalTestCount > 0' artifacts/ios/summary.json
+          xcrun xcresulttool get test-results tests \
+            --path artifacts/ios/AppModulesNativeTests.xcresult \
+            > artifacts/ios/tests.json
+          python3 - "${schemes[@]}" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          def walk(nodes):
+              for node in nodes:
+                  yield node
+                  yield from walk(node.get('children', []))
+
+          report = json.loads(Path('artifacts/ios/tests.json').read_text())
+          counts = {name: 0 for name in sys.argv[1:]}
+          for node in walk(report['testNodes']):
+              if node['nodeType'] != 'Unit test bundle':
+                  continue
+              name = node['name'].removesuffix('.xctest')
+              if name in counts:
+                  counts[name] += sum(
+                      test['nodeType'] == 'Test Case' and test.get('result') in {'Passed', 'Failed', 'Expected Failure'}
+                      for test in walk(node.get('children', []))
+                  )
+          for name, count in counts.items():
+              print(f'{name}: {count} executed tests')
+              if count == 0:
+                  raise SystemExit(f'No executed tests for {name}')
+          PY
           df -h .
       - name: Upload iOS result bundles and logs on failure
         if: failure()
