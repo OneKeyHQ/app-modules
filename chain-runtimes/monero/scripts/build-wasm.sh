@@ -49,6 +49,8 @@ if [[ ! -x "${AR_wasm32_unknown_unknown}" ]]; then
 fi
 echo "==> Using clang: ${CLANG}"
 
+bash "${ROOT}/scripts/vendor-deps.sh"
+
 # With --mode no-install, a missing wasm-opt is only logged and skipped, leaving
 # an unoptimized output. Release builds require it.
 if [ "${PROFILE}" = "release" ] && ! command -v wasm-opt >/dev/null 2>&1; then
