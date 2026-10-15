@@ -1,7 +1,8 @@
 "use strict";
 
-const { createHash } = require("node:crypto");
+const assert = require("node:assert/strict");
 const { execFileSync } = require("node:child_process");
+const { createHash } = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -29,7 +30,7 @@ function validateBaseline(baseline) {
     !Array.isArray(baseline.modules?.linux) ||
     baseline.modules.linux.length !== 0
   ) {
-    throw new Error("Invalid desktop baseline or unsupported module build contract");
+    assert.fail("Invalid desktop baseline or unsupported module build contract");
   }
   return baseline;
 }
@@ -41,7 +42,7 @@ function validatePin(pin) {
     !commitPattern.test(pin.sourceCommit) ||
     !digestPattern.test(pin.manifestSha256)
   ) {
-    throw new Error("Invalid approved desktop release pin");
+    assert.fail("Invalid approved desktop release pin");
   }
   return pin;
 }
@@ -57,7 +58,7 @@ function validateRelease(release) {
     JSON.stringify(Object.keys(release.modules ?? {})) !==
       JSON.stringify(release.baseline.modules.win)
   ) {
-    throw new Error("Invalid desktop release identity");
+    assert.fail("Invalid desktop release identity");
   }
   for (const [name, entry] of Object.entries(release.modules)) {
     const expectedFiles = [
@@ -68,21 +69,21 @@ function validateRelease(release) {
       "package.json",
       `${name}.win32-x64-msvc.node`,
       `${name}.win32-arm64-msvc.node`,
-    ].sort();
+    ].toSorted();
     if (
       entry.asset !== `${name}-${release.baseline.version}.tgz` ||
       !digestPattern.test(entry.sha256) ||
-      JSON.stringify(Object.keys(entry.files ?? {}).sort()) !== JSON.stringify(expectedFiles) ||
+      JSON.stringify(Object.keys(entry.files ?? {}).toSorted()) !== JSON.stringify(expectedFiles) ||
       Object.values(entry.files).some((digest) => !digestPattern.test(digest))
     ) {
-      throw new Error(`Invalid runtime file inventory for ${name}`);
+      assert.fail(`Invalid runtime file inventory for ${name}`);
     }
   }
   return release;
 }
 
 function attestationArgs(file, sourceCommit, bundle) {
-  if (!commitPattern.test(sourceCommit)) throw new Error("Invalid source commit");
+  if (!commitPattern.test(sourceCommit)) assert.fail("Invalid source commit");
   return [
     "attestation",
     "verify",
@@ -109,38 +110,38 @@ function verifyAttestation(file, sourceCommit, bundle) {
 function readApprovedRelease(file, pin) {
   validatePin(pin);
   const bytes = fs.readFileSync(file);
-  if (sha256(bytes) !== pin.manifestSha256) throw new Error("Desktop manifest digest mismatch");
+  if (sha256(bytes) !== pin.manifestSha256) assert.fail("Desktop manifest digest mismatch");
   const release = validateRelease(JSON.parse(bytes));
   if (release.sourceCommit !== pin.sourceCommit || release.baseline.version !== pin.version) {
-    throw new Error("Desktop manifest does not match the approved source/version");
+    assert.fail("Desktop manifest does not match the approved source/version");
   }
   return release;
 }
 
 function verifyRuntimeFiles(directory, files) {
-  const actual = fs.readdirSync(directory).sort();
-  if (JSON.stringify(actual) !== JSON.stringify(Object.keys(files).sort())) {
-    throw new Error(`Unexpected or missing runtime files in ${directory}`);
+  const actual = fs.readdirSync(directory).toSorted();
+  if (JSON.stringify(actual) !== JSON.stringify(Object.keys(files).toSorted())) {
+    assert.fail(`Unexpected or missing runtime files in ${directory}`);
   }
   for (const [name, digest] of Object.entries(files)) {
     if (path.basename(name) !== name || !digestPattern.test(digest)) {
-      throw new Error("Invalid runtime inventory");
+      assert.fail("Invalid runtime inventory");
     }
     const file = path.join(directory, name);
     if (!fs.lstatSync(file).isFile() || sha256(fs.readFileSync(file)) !== digest) {
-      throw new Error(`Runtime file digest mismatch: ${name}`);
+      assert.fail(`Runtime file digest mismatch: ${name}`);
     }
   }
 }
 
 async function download(url, destination) {
-  const response = await fetch(url, { signal: AbortSignal.timeout(90000) });
-  if (!response.ok) throw new Error(`Desktop release download failed: ${response.status}`);
+  const response = await fetch(url, { signal: AbortSignal.timeout(90_000) });
+  if (!response.ok) assert.fail(`Desktop release download failed: ${response.status}`);
   const chunks = [];
   let length = 0;
   for await (const chunk of response.body) {
     length += chunk.length;
-    if (length > 8 * 1024 * 1024) throw new Error("Desktop release metadata exceeds size limit");
+    if (length > 8 * 1024 * 1024) assert.fail("Desktop release metadata exceeds size limit");
     chunks.push(Buffer.from(chunk));
   }
   fs.writeFileSync(destination, Buffer.concat(chunks));
@@ -163,7 +164,7 @@ async function main() {
     verifyAttestation(file, pin.sourceCommit, path.join(temporary, "desktop-win.sigstore.json"));
     const app = JSON.parse(fs.readFileSync(path.join(desktopRoot, "package.json")));
     if (app.devDependencies.electron !== release.baseline.electronVersion) {
-      throw new Error("Electron differs from the approved desktop validation baseline");
+      assert.fail("Electron differs from the approved desktop validation baseline");
     }
     for (const [name, entry] of Object.entries(release.modules)) {
       const expectedUrl = `https://github.com/${repository}/releases/download/${release.tag}/${entry.asset}`;
@@ -173,7 +174,7 @@ async function main() {
         app.dependencies[name] !== expectedUrl ||
         runtimeManifest.dependencies[name] !== expectedUrl
       ) {
-        throw new Error(`Unpinned runtime dependency: ${name}`);
+        assert.fail(`Unpinned runtime dependency: ${name}`);
       }
       verifyRuntimeFiles(path.join(appDir, "node_modules", name), entry.files);
     }

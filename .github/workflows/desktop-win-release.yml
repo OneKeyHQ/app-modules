@@ -281,6 +281,7 @@ jobs:
           yarn install --mode=skip-build
           node ../app-modules/desktop/scripts/sync-app-monorepo.mjs . ../app-modules/desktop/dist/desktop-win.json runtime-lock
           yarn exec oxfmt apps/desktop/scripts/verify-desktop-modules.cjs apps/desktop/desktop-modules.json apps/desktop/package.json apps/desktop/app/package.json
+          yarn exec oxlint apps/desktop/scripts/verify-desktop-modules.cjs
           yarn install --immutable --mode=skip-build
           git diff --check
       - name: Create app-monorepo write token
