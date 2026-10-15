@@ -26,6 +26,25 @@ prevention; there is no automatic fitting or shrinking pass.
 
 ## Public API and defaults
 
+### iOS 26 fixed top scroll-edge overlay
+
+Standalone `NativeList` accepts optional `topScrollEdgeEffect="hard"` and
+`topOverlay` React content. Both are disabled by default. On iOS 26 or newer,
+the fixed overlay is a fourth native container slot, outside the row stream and
+outside the existing scrolling `listHeader`/`listEmpty`/`listFooter` slots.
+Fabric measures its height; the list owns an equal top inset on its collection
+view and binds UIKit's `UIScrollEdgeElementContainerInteraction` to that view,
+using the hard top edge style. The list restores its original inset and effect
+on removal, disposal and reuse. The UI thread owns all view and UIKit state;
+there is no persistence, background-runtime state or per-frame JS callback.
+An invisible, noninteractive native label fills the overlay host so UIKit
+recognizes React-drawn content as a scroll-edge element.
+Inside a CollapsiblePagerView, the pager owns this effect and inset, and child
+lists do not opt in separately. iOS before 26, Android and Web retain their
+existing layout and scrolling. Missing overlay or style changes nothing.
+Acceptance requires actual iOS 26 initial layout, long/short/empty scrolling,
+refresh and overlay replacement/removal, including dark mode.
+
 [README.md](../README.md) documents the snapshot, patch, selection, events and
 imperative API; [STYLE_SPEC.md](STYLE_SPEC.md) defines normalization, omitted
 style defaults and platform differences. Height precedence is

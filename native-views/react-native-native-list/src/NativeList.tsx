@@ -14,7 +14,7 @@ import {
   NativeAvatarPrefetchModel,
   NativeAvatarPrefetchQueue,
 } from './avatarPrefetch';
-import { View } from 'react-native';
+import { Platform, View } from 'react-native';
 import { callback, getHostComponent } from 'react-native-nitro-modules';
 import type {
   NativeListMethods,
@@ -101,6 +101,8 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       listHeader,
       listFooter,
       listEmpty,
+      topOverlay,
+      topScrollEdgeEffect,
       scrollPositionThresholds,
       webVirtualizationEnabled: _webVirtualizationEnabled,
       webSectionIndexContainerRef: _webSectionIndexContainerRef,
@@ -124,6 +126,12 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     forwardedRef
   ) {
     const [slotHeights, setSlotHeights] = useState([0, 0, 0]);
+    const [topOverlayHeight, setTopOverlayHeight] = useState(0);
+    const hasTopOverlay =
+      Platform?.OS === 'ios' &&
+      parseInt(String(Platform.Version), 10) >= 26 &&
+      topScrollEdgeEffect === 'hard' &&
+      topOverlay != null;
     const containerSlotHeightsJson = JSON.stringify(slotHeights);
     const slotInset =
       snapshot.layout.contentPaddingHorizontal ??
@@ -506,6 +514,8 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
         {...nativeCallbacks}
         snapshotJson={snapshotJson}
         containerSlotHeightsJson={containerSlotHeightsJson}
+        topScrollEdgeHard={hasTopOverlay}
+        topOverlayHeight={hasTopOverlay ? topOverlayHeight : 0}
         scrollPositionThresholdsJson={scrollPositionThresholdsJson}
         keyboardDismissMode={keyboardDismissMode}
         keyboardShouldPersistTaps={normalizedKeyboardShouldPersistTaps}
@@ -534,6 +544,20 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
             {content}
           </View>
         ))}
+        {hasTopOverlay ? (
+          <View
+            collapsable={false}
+            style={{ position: 'absolute', top: 0, left: 0, right: 0 }}
+            onLayout={(event) => {
+              const height = Math.ceil(event.nativeEvent.layout.height);
+              setTopOverlayHeight((previous) =>
+                previous === height ? previous : height
+              );
+            }}
+          >
+            {topOverlay}
+          </View>
+        ) : null}
       </NativeListHost>
     );
   }

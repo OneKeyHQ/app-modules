@@ -37,6 +37,7 @@ import {
   type NativeListExampleKey,
 } from './pages/NativeListExamplePage';
 import { PagerViewTestPage } from './pages/PagerViewTestPage';
+import { ScrollEdgeTestPage } from './pages/ScrollEdgeTestPage';
 import { ScrollGuardTestPage } from './pages/ScrollGuardTestPage';
 import { SegmentSliderTestPage } from './pages/SegmentSliderTestPage';
 import { PerfMemoryTestPage } from './pages/PerfMemoryTestPage';
@@ -97,6 +98,7 @@ export type RootStackParamList = {
   ChartWebView: undefined;
   ChartSingleton: undefined;
   PagerView: undefined;
+  ScrollEdge: undefined;
   PerfMemory: undefined;
   PerpDepthBar: undefined;
   RangeDownloader: undefined;
@@ -313,6 +315,12 @@ const modules: {
     description:
       'Native page container with swipe navigation and imperative controls',
     icon: '📄',
+  },
+  {
+    screen: 'ScrollEdge',
+    name: 'iOS Scroll Edge',
+    description: 'Fixed toolbar over NativeList, NativeScroller, and CollapsiblePagerView',
+    icon: '⬆️',
   },
   {
     screen: 'PerfMemory',
@@ -718,6 +726,11 @@ export function AppNavigator() {
         name="PagerView"
         component={PagerViewTestPage}
         options={{ title: 'Pager View' }}
+      />
+      <Stack.Screen
+        name="ScrollEdge"
+        component={ScrollEdgeTestPage}
+        options={{ title: 'iOS Scroll Edge' }}
       />
       <Stack.Screen
         name="PerfMemory"

@@ -14,6 +14,8 @@ export const NativeScroller = React.forwardRef<
   const {
     dataSet,
     pagerScrollKey: _pagerScrollKey,
+    topOverlay: _topOverlay,
+    topScrollEdgeEffect: _topScrollEdgeEffect,
     ...props
   } = inputProps as NativeScrollerWebProps;
   const webDataProps = {
