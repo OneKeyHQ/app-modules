@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "version": "44.0.1",
+  "electronVersion": "44.5.1",
+  "rustToolchain": "1.99.0",
+  "modules": {
+    "win": ["electron-windows-hello"],
+    "mac": [],
+    "linux": []
+  }
+}

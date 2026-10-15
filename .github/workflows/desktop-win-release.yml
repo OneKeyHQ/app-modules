@@ -1,0 +1,315 @@
+name: desktop-win-release
+
+on:
+  pull_request:
+    paths:
+      - desktop/**
+      - .github/workflows/desktop-win-release.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-win-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  baseline:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.baseline.outputs.version }}
+      tag: ${{ steps.baseline.outputs.tag }}
+      electron: ${{ steps.baseline.outputs.electron }}
+      rust: ${{ steps.baseline.outputs.rust }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.21.0
+      - name: Validate baseline and test release tooling
+        id: baseline
+        run: |
+          node desktop/scripts/release.mjs validate
+          node --test desktop/scripts/*.test.mjs
+      - name: Reject unsafe publication or reused version
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.baseline.outputs.tag }}
+        run: |
+          test "$GITHUB_REPOSITORY" = OneKeyHQ/app-modules
+          test "$GITHUB_REF" = refs/heads/main
+          gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$RELEASE_TAG" > "$RUNNER_TEMP/tags.json"
+          node --input-type=module -e '
+            import fs from "node:fs";
+            const refs = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/tags.json"));
+            if (refs.some(entry => entry.ref === "refs/tags/" + process.env.RELEASE_TAG)) {
+              throw new Error("Version already exists. Bump desktop/release.json or rerun only failed sync jobs.");
+            }
+          '
+
+  native:
+    needs: baseline
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            arch: x64
+            target: x86_64-pc-windows-msvc
+          - runner: windows-11-arm
+            arch: arm64
+            target: aarch64-pc-windows-msvc
+    defaults:
+      run:
+        working-directory: desktop/win/electron-windows-hello
+        shell: pwsh
+    env:
+      RUST_TOOLCHAIN: ${{ needs.baseline.outputs.rust }}
+      BUILD_TARGET: ${{ matrix.target }}
+      BUILD_ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.21.0
+          architecture: ${{ matrix.arch }}
+      - name: Install pinned toolchain and locked dependencies
+        run: |
+          rustup toolchain install $env:RUST_TOOLCHAIN --profile minimal --component rustfmt --component clippy --target $env:BUILD_TARGET
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustup override set $env:RUST_TOOLCHAIN
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm ci --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node node_modules/electron/install.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build and test native module and Electron utility process
+        run: |
+          cargo fmt --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo clippy --locked --target $env:BUILD_TARGET -- -D warnings
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build -- $env:BUILD_TARGET
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:types
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:electron
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Record build environment
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $visualStudio = & $vswhere -latest -property installationVersion
+          $sdkRoot = "${env:ProgramFiles(x86)}\Windows Kits\10\Include"
+          $sdks = @(Get-ChildItem -LiteralPath $sdkRoot -Directory | Select-Object -ExpandProperty Name)
+          @{
+            arch = $env:BUILD_ARCH
+            target = $env:BUILD_TARGET
+            rustc = (rustc -vV) -join "`n"
+            runnerImage = $env:ImageOS
+            runnerImageVersion = $env:ImageVersion
+            visualStudio = $visualStudio
+            installedWindowsSdks = $sdks
+          } | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8NoBOM build-info.json
+      - name: Attest native build outputs
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-path: |
+            desktop/win/electron-windows-hello/*.node
+            desktop/win/electron-windows-hello/build-info.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-${{ matrix.arch }}
+          if-no-files-found: error
+          path: |
+            desktop/win/electron-windows-hello/*.node
+            desktop/win/electron-windows-hello/build-info.json
+
+  package:
+    needs: [baseline, native]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.21.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: native-*
+          path: desktop/dist
+      - name: Verify native build attestations
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node desktop/scripts/release.mjs verify-native
+      - name: Pack Windows runtime modules
+        run: node desktop/scripts/release.mjs pack
+      - name: Attest release assets
+        id: provenance
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-path: |
+            desktop/dist/*.tgz
+            desktop/dist/desktop-win.json
+      - name: Save the portable verification bundle
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          BUNDLE_PATH: ${{ steps.provenance.outputs.bundle-path }}
+        run: cp "$BUNDLE_PATH" desktop/dist/desktop-win.sigstore.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: desktop-win-release
+          if-no-files-found: error
+          path: |
+            desktop/dist/*.tgz
+            desktop/dist/desktop-win.json
+            desktop/dist/desktop-win.sigstore.json
+
+  release:
+    if: github.event_name == 'workflow_dispatch'
+    needs: [baseline, package]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      attestations: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ needs.baseline.outputs.tag }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.21.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: desktop-win-release
+          path: desktop/dist
+      - name: Verify and publish release without replacing assets
+        run: |
+          node desktop/scripts/release.mjs verify-release
+          gh release create "$RELEASE_TAG" desktop/dist/*.tgz desktop/dist/desktop-win.json desktop/dist/desktop-win.sigstore.json \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft \
+            --title "$RELEASE_TAG" --notes "Windows desktop modules built from $GITHUB_SHA. See desktop-win.json for the Electron baseline, toolchains, and SHA-256 inventory. No npm publication."
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest=false
+
+  sync-app-monorepo:
+    if: github.event_name == 'workflow_dispatch'
+    needs: [baseline, release]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      attestations: read
+    env:
+      RELEASE_TAG: ${{ needs.baseline.outputs.tag }}
+      RELEASE_VERSION: ${{ needs.baseline.outputs.version }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          path: app-modules
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.21.0
+      - name: Download and verify the published release
+        working-directory: app-modules
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.tgz' --pattern desktop-win.json --pattern desktop-win.sigstore.json --dir desktop/dist
+          node desktop/scripts/release.mjs verify-release
+      - name: Create app-monorepo read token
+        id: read-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
+        with:
+          app-id: ${{ vars.APP_RELEASE_APP_ID }}
+          private-key: ${{ secrets.APP_RELEASE_PRIVATE_KEY }}
+          owner: OneKeyHQ
+          repositories: app-monorepo
+          permission-contents: read
+          permission-pull-requests: read
+      - name: Check for an existing version synchronization PR
+        id: existing
+        env:
+          GH_TOKEN: ${{ steps.read-token.outputs.token }}
+        run: |
+          branch="codex/desktop-win-v$RELEASE_VERSION"
+          pr=$(gh pr list --repo OneKeyHQ/app-monorepo --head "$branch" --base x --state all --json url --jq '.[0].url // empty')
+          if test -n "$pr"; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "Existing desktop version PR (not overwritten): $pr" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        if: steps.existing.outputs.found != 'true'
+        with:
+          repository: OneKeyHQ/app-monorepo
+          ref: x
+          path: app-monorepo
+          token: ${{ steps.read-token.outputs.token }}
+          persist-credentials: false
+      - name: Update only desktop manifests, verification policy and lockfiles
+        if: steps.existing.outputs.found != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NODE_OPTIONS: --max-old-space-size=8192
+          YARN_ENABLE_IMMUTABLE_INSTALLS: "false"
+        run: |
+          node app-modules/desktop/scripts/sync-app-monorepo.mjs app-monorepo app-modules/desktop/dist/desktop-win.json
+          cd app-monorepo
+          corepack enable
+          yarn install --mode=skip-build
+          node ../app-modules/desktop/scripts/sync-app-monorepo.mjs . ../app-modules/desktop/dist/desktop-win.json runtime-lock
+          yarn exec oxfmt apps/desktop/scripts/verify-desktop-modules.cjs apps/desktop/desktop-modules.json apps/desktop/package.json apps/desktop/app/package.json
+          yarn install --immutable --mode=skip-build
+          git diff --check
+      - name: Create app-monorepo write token
+        if: steps.existing.outputs.found != 'true'
+        id: write-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
+        with:
+          app-id: ${{ vars.APP_RELEASE_APP_ID }}
+          private-key: ${{ secrets.APP_RELEASE_PRIVATE_KEY }}
+          owner: OneKeyHQ
+          repositories: app-monorepo
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Open the desktop version synchronization PR
+        if: steps.existing.outputs.found != 'true'
+        working-directory: app-monorepo
+        env:
+          GH_TOKEN: ${{ steps.write-token.outputs.token }}
+        run: |
+          branch="codex/desktop-win-v$RELEASE_VERSION"
+          git switch -c "$branch"
+          git config user.name 'onekey-release[bot]'
+          git config user.email 'onekey-release[bot]@users.noreply.github.com'
+          git add apps/desktop/package.json apps/desktop/app/package.json apps/desktop/app/yarn.lock yarn.lock apps/desktop/desktop-modules.json apps/desktop/scripts/verify-desktop-modules.cjs
+          git diff --cached --check
+          git commit -m "chore: sync desktop Windows modules $RELEASE_VERSION"
+          gh auth setup-git
+          git push origin "$branch"
+          pr=$(gh pr create --repo OneKeyHQ/app-monorepo --base x --head "$branch" \
+            --title "chore: sync desktop Windows modules $RELEASE_VERSION" \
+            --body "Pin OneKey-built Windows modules from https://github.com/OneKeyHQ/app-modules/releases/tag/$RELEASE_TAG. Source commit: $GITHUB_SHA. Both dependency manifests and lockfiles use explicit release URLs. Runtime verification requires the approved manifest digest, source/workflow attestations and file inventory. No Electron upgrade, npm publication, or mobile dependency change. Review before merging.")
+          echo "Desktop version synchronization PR: $pr" >> "$GITHUB_STEP_SUMMARY"
