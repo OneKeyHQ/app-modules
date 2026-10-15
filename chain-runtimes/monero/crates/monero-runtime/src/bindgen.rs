@@ -129,7 +129,11 @@ pub fn list_accounts() -> std::result::Result<String, JsValue> {
 /// Delete an identity and all its data. Irreversible.
 #[wasm_bindgen(js_name = removeAccount)]
 pub fn remove_account(uuid: &str) -> std::result::Result<String, JsValue> {
-    let removed = runtime::with_db(|db| db.remove_identity(uuid))?;
+    let removed = runtime::with_db(|db| {
+        let removed = db.remove_identity(uuid)?;
+        db.reclaim_storage(storage::RECLAIM_PAGES_AFTER_DELETE);
+        Ok(removed)
+    })?;
     json(serde_json::json!({ "removed": removed }))
 }
 
@@ -174,6 +178,9 @@ pub fn update_chain_tip(account_id: i64, tip: u64) -> std::result::Result<String
 pub async fn sync_step(account_id: i64, max_blocks: u64) -> std::result::Result<String, JsValue> {
     let progress = runtime::with_db_and_daemon(|mut db, daemon| async move {
         let r = sync::step(&mut db, &daemon, account_id, max_blocks).await;
+        if r.is_ok() {
+            db.reclaim_storage(storage::RECLAIM_PAGES_PER_STEP);
+        }
         (db, daemon, r)
     })
     .await?;
@@ -190,7 +197,11 @@ pub fn sync_peek(account_id: i64) -> std::result::Result<String, JsValue> {
 /// Reorg recovery: rewind to `height` and requeue everything above it. Destructive.
 #[wasm_bindgen(js_name = rewindTo)]
 pub fn rewind_to(account_id: i64, height: u64, tip: u64) -> std::result::Result<String, JsValue> {
-    let v = runtime::with_db(|db| sync::rewind_and_requeue(db, account_id, height, tip))?;
+    let v = runtime::with_db(|db| {
+        let v = sync::rewind_and_requeue(db, account_id, height, tip)?;
+        db.reclaim_storage(storage::RECLAIM_PAGES_AFTER_DELETE);
+        Ok(v)
+    })?;
     json(v)
 }
 

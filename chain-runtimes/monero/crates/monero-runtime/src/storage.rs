@@ -63,6 +63,12 @@ pub async fn install_persistent_vfs() -> Result<()> {
     if is_ready() {
         return Ok(());
     }
+    if let Some(missing) = missing_opfs_api() {
+        return Err(RuntimeError::with(
+            ErrorCode::StorageUnsupported,
+            json!({ "missing": missing }),
+        ));
+    }
 
     let cfg = OpfsSAHPoolCfg {
         vfs_name: "onekey-xmr-opfs".to_owned(),
@@ -96,6 +102,13 @@ pub async fn install_persistent_vfs() -> Result<()> {
                         .as_deref()
                             == Some("NoModificationAllowedError")
                 );
+                if matches!(&error, OpfsSAHError::GetDirHandle(value) if is_security_error(value)) {
+                    return Err(RuntimeError::with(
+                        ErrorCode::StorageUnsupported,
+                        json!({ "missing": "origin" }),
+                    )
+                    .detail(format!("{error:?}")));
+                }
                 if !owner_is_releasing || retries == 0 {
                     return Err(RuntimeError::with(
                         ErrorCode::NotInitialized,
@@ -108,6 +121,45 @@ pub async fn install_persistent_vfs() -> Result<()> {
             }
         }
     }
+}
+
+/// The OPFS API the pool needs, checked before installing it: on an outdated
+/// WebView the install would otherwise throw a bare TypeError from inside the
+/// bindings, which the host cannot tell apart from any other failure.
+#[cfg(target_arch = "wasm32")]
+fn missing_opfs_api() -> Option<&'static str> {
+    use wasm_bindgen::JsValue;
+    let get = |target: &JsValue, key: &str| {
+        js_sys::Reflect::get(target, &JsValue::from_str(key))
+            .ok()
+            .filter(|value| !value.is_undefined() && !value.is_null())
+    };
+    let global: JsValue = js_sys::global().into();
+    let has_get_directory = get(&global, "navigator")
+        .and_then(|navigator| get(&navigator, "storage"))
+        .and_then(|storage| get(&storage, "getDirectory"))
+        .is_some();
+    if !has_get_directory {
+        return Some("getDirectory");
+    }
+    let has_sync_access_handle = get(&global, "FileSystemFileHandle")
+        .and_then(|handle| get(&handle, "prototype"))
+        .and_then(|prototype| get(&prototype, "createSyncAccessHandle"))
+        .is_some();
+    if !has_sync_access_handle {
+        return Some("createSyncAccessHandle");
+    }
+    None
+}
+
+/// An opaque origin (a file:// page) has the API but refuses to use it.
+#[cfg(target_arch = "wasm32")]
+fn is_security_error(value: &wasm_bindgen::JsValue) -> bool {
+    js_sys::Reflect::get(value, &wasm_bindgen::JsValue::from_str("name"))
+        .ok()
+        .and_then(|name| name.as_string())
+        .as_deref()
+        == Some("SecurityError")
 }
 
 /// No VFS on native; same-named stub keeps callers cfg-free.
@@ -154,6 +206,11 @@ pub fn open_connection(db_name: &str) -> Result<Connection> {
 
     let conn = Connection::open(db_name).map_err(|e| db_err("open", e))?;
 
+    // Only takes effect before the first table exists, so every database
+    // created from here on can hand freed pages back; see reclaim_free_pages.
+    conn.execute_batch("PRAGMA auto_vacuum = INCREMENTAL;")
+        .map_err(|e| db_err("pragmaAutoVacuum", e))?;
+
     // Foreign keys are off by default; without them identity cascades fail and
     // deleting a wallet leaves readable orphan rows.
     conn.execute_batch("PRAGMA foreign_keys = ON;")
@@ -171,6 +228,43 @@ pub fn open_connection(db_name: &str) -> Result<Connection> {
     }
 
     Ok(conn)
+}
+
+/// Free pages below which a reclaim is not worth its write transaction.
+const RECLAIM_MIN_FREE_PAGES: i64 = 256;
+/// Per sync step: small enough never to hold the step up noticeably.
+pub const RECLAIM_PAGES_PER_STEP: u32 = 512;
+/// After removing or rewinding an identity; later steps take the rest.
+pub const RECLAIM_PAGES_AFTER_DELETE: u32 = 4096;
+
+/// Hands up to `max_pages` free pages back to the file system and returns how
+/// many it reclaimed. Rewinds and removals otherwise leave a file that only
+/// grows. Databases created before auto_vacuum was set report 0.
+pub fn reclaim_free_pages(conn: &Connection, max_pages: u32) -> Result<u32> {
+    let read = |sql: &str| -> Result<i64> {
+        conn.query_row(sql, [], |r| r.get(0))
+            .map_err(|e| db_err("reclaimFreePages", e))
+    };
+    // 2 = INCREMENTAL.
+    if read("PRAGMA auto_vacuum")? != 2 {
+        return Ok(0);
+    }
+    let before = read("PRAGMA freelist_count")?;
+    if before < RECLAIM_MIN_FREE_PAGES {
+        return Ok(0);
+    }
+    // Each step frees one page; a single execute would stop after the first.
+    let mut stmt = conn
+        .prepare(&format!("PRAGMA incremental_vacuum({max_pages})"))
+        .map_err(|e| db_err("reclaimFreePages", e))?;
+    let mut rows = stmt.query([]).map_err(|e| db_err("reclaimFreePages", e))?;
+    while rows
+        .next()
+        .map_err(|e| db_err("reclaimFreePages", e))?
+        .is_some()
+    {}
+    let after = read("PRAGMA freelist_count")?;
+    Ok(u32::try_from(before - after).unwrap_or(0))
 }
 
 /// Deletes a closed database **without opening it**, so unopenable ones can be deleted.
@@ -225,6 +319,36 @@ pub async fn durability_barrier() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn free_pages(conn: &Connection) -> i64 {
+        conn.query_row("PRAGMA freelist_count", [], |r| r.get(0))
+            .unwrap()
+    }
+
+    // A rewind or removal frees pages that only a reclaim gives back.
+    #[test]
+    fn reclaims_freed_pages_in_bounded_batches() {
+        let name = format!("xmr-reclaim-test-{}.db", std::process::id());
+        let _ = std::fs::remove_file(&name);
+        let conn = open_connection(&name).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE blob (id INTEGER PRIMARY KEY, data BLOB NOT NULL);
+             WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 2000)
+             INSERT INTO blob (data) SELECT zeroblob(4000) FROM n;
+             DELETE FROM blob;",
+        )
+        .unwrap();
+        let before = free_pages(&conn);
+        assert!(before > 1000, "expected many free pages, got {before}");
+
+        assert_eq!(reclaim_free_pages(&conn, 300).unwrap(), 300);
+        assert_eq!(free_pages(&conn), before - 300);
+        reclaim_free_pages(&conn, u32::MAX).unwrap();
+        assert_eq!(free_pages(&conn), 0);
+
+        drop(conn);
+        let _ = std::fs::remove_file(&name);
+    }
 
     // Deletion does not open the file, so even a non-SQLite file is deleted.
     #[test]

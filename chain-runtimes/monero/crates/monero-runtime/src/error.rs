@@ -32,6 +32,10 @@ pub enum ErrorCode {
     WalletBusy,
     /// Storage not initialized (on wasm: VFS not installed).
     NotInitialized,
+    /// The browser lacks the OPFS API the storage needs (an outdated WebView,
+    /// or a context with no usable origin). Retrying cannot help.
+    /// Params: `{ missing }`
+    StorageUnsupported,
     /// Account not in the database. Params: `{ accountId }`
     AccountNotFound,
 
@@ -87,6 +91,7 @@ impl ErrorCode {
             WalletNotOpen => "WALLET_NOT_OPEN",
             WalletBusy => "WALLET_BUSY",
             NotInitialized => "NOT_INITIALIZED",
+            StorageUnsupported => "STORAGE_UNSUPPORTED",
             AccountNotFound => "ACCOUNT_NOT_FOUND",
             ReorgDetected => "REORG_DETECTED",
             RingCtIndexMismatch => "RINGCT_INDEX_MISMATCH",
@@ -197,6 +202,7 @@ mod tests {
             WalletNotOpen,
             WalletBusy,
             NotInitialized,
+            StorageUnsupported,
             AccountNotFound,
             ReorgDetected,
             RingCtIndexMismatch,

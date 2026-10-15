@@ -149,6 +149,15 @@ pub fn with_read_conn<T>(f: impl FnOnce(&rusqlite::Connection) -> Result<T>) -> 
     f(&conn)
 }
 
+/// Best effort on its own connection: a failed reclaim only means the file
+/// stays larger until the next one, so it never fails the caller.
+pub fn reclaim_storage(max_pages: u32) {
+    if let Some(name) = DB_NAME.with(|c| c.borrow().clone()) {
+        let _ = crate::storage::open_connection(&name)
+            .and_then(|conn| crate::storage::reclaim_free_pages(&conn, max_pages));
+    }
+}
+
 pub fn set_client(client: LightClient) {
     CLIENT.with(|c| *c.borrow_mut() = Some(client));
     bump_client_generation();
