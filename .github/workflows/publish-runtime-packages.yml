@@ -1,12 +1,9 @@
 name: publish-runtime-packages
 
-# Every chain-runtimes/<runtime>/scripts/ci.sh tests, builds and packs its npm
-# tarballs into dist/. A manual run publishes versions missing from npm: only
-# onekey-<runtime>-* packages, and only alpha versions off main.
+# Manual only. Every chain-runtimes/<runtime>/scripts/ci.sh tests, builds and
+# packs its npm tarballs into dist/; the run then publishes versions missing
+# from npm: only onekey-<runtime>-* packages, and only alpha versions off main.
 on:
-  pull_request:
-    paths:
-      - 'chain-runtimes/**'
   workflow_dispatch:
 
 permissions: {}
@@ -73,7 +70,6 @@ jobs:
   # which can rewrite PATH and env for later steps of the same job.
   publish:
     needs: [runtimes, build]
-    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     environment: runtime-npm-publish
     steps:
@@ -112,13 +108,29 @@ jobs:
               tarballs+=("$tgz")
             done
           done
+          # ?write=true skips npm's CDN, whose package documents can be hours stale.
+          has_version() {
+            curl -sf "https://registry.npmjs.org/$1?write=true" | jq -e --arg v "$2" '.versions[$v]' >/dev/null
+          }
           for tgz in "${tarballs[@]}"; do
             pkg=$(package_of "$tgz")
-            if npm view "$pkg" version >/dev/null 2>&1; then
+            name=${pkg%@*}
+            version=${pkg##*@}
+            if has_version "$name" "$version"; then
               echo "$pkg already published"
               continue
             fi
             TAG=latest
-            if [[ "${pkg##*@}" == *-* ]]; then TAG=next; fi
+            if [[ "$version" == *-* ]]; then TAG=next; fi
             npm publish "$tgz" --tag "$TAG"
+            # npm can accept a tarball that never becomes downloadable.
+            attempt=1
+            until has_version "$name" "$version"; do
+              if [ "$attempt" -ge 10 ]; then
+                echo "::error::npm accepted $pkg but it never became available" >&2
+                exit 1
+              fi
+              attempt=$((attempt + 1))
+              sleep 30
+            done
           done
