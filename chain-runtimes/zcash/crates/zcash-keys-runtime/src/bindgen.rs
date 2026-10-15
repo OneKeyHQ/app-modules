@@ -60,6 +60,12 @@ pub fn pczt_sign_with_seed(
     )?)
 }
 
+/// The copy of a PCZT to send to a hardware signer; keep the original for combining.
+#[wasm_bindgen(js_name = pcztRedactForHardwareSigner)]
+pub fn pczt_redact_for_hardware_signer(pczt_bytes: Vec<u8>) -> Result<Vec<u8>, JsValue> {
+    Ok(sign::redact_for_hardware_signer(&pczt_bytes)?)
+}
+
 /// Verify a private payment before showing its confirmation or contacting a signer.
 #[wasm_bindgen(js_name = pcztVerifyReview)]
 pub fn pczt_verify_review(pczt_bytes: Vec<u8>, review_json: &str) -> Result<(), JsValue> {

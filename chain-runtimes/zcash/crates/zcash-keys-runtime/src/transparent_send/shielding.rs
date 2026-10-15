@@ -852,6 +852,48 @@ mod tests {
         }
     }
 
+    // The firmware (firmware-pro2 `signer_parse.rs`) rejects any Sapling data,
+    // including the `bsk` the IO Finalizer sets on the empty bundle, and any
+    // proving fields. The device signs a copy without them; combining its
+    // result into the original gives the same transaction.
+    #[test]
+    fn hardware_signs_a_copy_without_sapling_or_proving_fields() {
+        for transparent_destination in [false, true] {
+            let mut request = request(false);
+            if transparent_destination {
+                request["recipients"][0]["address"] = transparent_address(0, 9)
+                    .to_zcash_address(NetworkType::Main)
+                    .to_string()
+                    .into();
+            }
+            let request_json = request.to_string();
+            let original =
+                create_with_account_xpub(&request_json, &account_xpub(), &"01".repeat(32)).unwrap();
+            let redacted = crate::sign::redact_for_hardware_signer(&original).unwrap();
+            assert!(redacted.len() < original.len());
+            assert_eq!(
+                crate::sign::redact_for_hardware_signer(&redacted).unwrap(),
+                redacted
+            );
+
+            let from_original = combine_hardware_signed(
+                &request_json,
+                &account_xpub(),
+                &original,
+                &simulated_device_signature(&original),
+            )
+            .unwrap();
+            let from_redacted = combine_hardware_signed(
+                &request_json,
+                &account_xpub(),
+                &original,
+                &simulated_device_signature(&redacted),
+            )
+            .unwrap();
+            assert_eq!(from_redacted, from_original);
+        }
+    }
+
     fn mutate(bytes: &[u8], change: impl FnOnce(&mut Value)) -> Vec<u8> {
         let wire = pczt::v2::Pczt::try_from(pczt::Pczt::parse(bytes).unwrap()).unwrap();
         let mut value = serde_json::to_value(wire).unwrap();
