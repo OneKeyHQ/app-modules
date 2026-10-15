@@ -36,7 +36,9 @@ outer PagerView transition
 releases the current edge interaction before moving its shared headers and
 applying visible-page masks; completion or cancellation reattaches the actual
 settled owner. An inactive inner pager retains the external header inset while
-its edge interaction is released.
+its edge interaction is released. Without an outer PagerView, a standalone
+external-overlay pager owns its edge interaction directly; page-activity and
+transition gates apply only while an outer PagerView is registered.
 
 `topOverlayColorScheme` is optional (`"light" | "dark"`) and coordinates the
 fixed overlay's effective appearance with React theme commits. It does not

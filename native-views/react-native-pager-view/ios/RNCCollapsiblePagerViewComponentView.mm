@@ -2050,6 +2050,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   if (@available(iOS 26.0, *)) {
     if (_pendingTopOverlayAppearanceCommit) scrollView = nil;
     BOOL externalOwnerReady = _externalTopOverlayTag <= 0 ||
+      _externalOuterPager == nil ||
       (_externalOuterPageActive && !_externalOuterTransitioning);
     BOOL hasOverlay = _topScrollEdgeHard && self.hasFixedTopOverlay &&
       externalOwnerReady && self.window != nil;

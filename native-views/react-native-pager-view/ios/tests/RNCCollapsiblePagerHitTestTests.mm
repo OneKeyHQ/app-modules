@@ -1,9 +1,14 @@
 #import <XCTest/XCTest.h>
 
 #import "RNCCollapsiblePagerViewComponentView.h"
+#import "RNCPagerViewComponentView.h"
 #import <react/renderer/components/pagerview/Props.h>
 
 using namespace facebook::react;
+
+@interface RNCCollapsiblePagerViewComponentView (ScrollEdgeTesting)
+- (void)updateTopScrollEdgeForScrollView:(UIScrollView *)scrollView;
+@end
 
 @interface RNCCollapsiblePagerHitTestTests : XCTestCase
 @property (nonatomic, strong) UIView *root;
@@ -75,6 +80,50 @@ using namespace facebook::react;
   self.pager.userInteractionEnabled = YES;
   self.pager.alpha = 0.005;
   XCTAssertNil([self.pager hitTest:CGPointMake(20, 90) withEvent:nil]);
+}
+
+- (void)testExternalOverlayWithoutOuterPagerOwnsItsEdgeAndRegisteredOuterStillGates
+{
+  if (@available(iOS 26.0, *)) {
+    UIWindow *window = [[UIWindow alloc] initWithFrame:self.root.bounds];
+    [window addSubview:self.root];
+    UIScrollView *scrollView = [[UIScrollView alloc] initWithFrame:self.pager.bounds];
+    [self.pager addSubview:scrollView];
+    UIScrollEdgeEffectStyle *originalStyle = scrollView.topEdgeEffect.style;
+    [self.pager setValue:@YES forKey:@"topScrollEdgeHard"];
+    [self.pager setValue:@123 forKey:@"externalTopOverlayTag"];
+    [self.pager setValue:@64 forKey:@"externalTopOverlayHeight"];
+    [self.pager updateTopScrollEdgeForScrollView:scrollView];
+    XCTAssertEqual([self.pager valueForKey:@"topEdgeScrollView"], scrollView);
+    UIScrollEdgeElementContainerInteraction *interaction =
+      [self.pager valueForKey:@"topEdgeInteraction"];
+    XCTAssertEqual(interaction.scrollView, scrollView);
+    UIView *host = [self.pager valueForKey:@"topEdgeInteractionHost"];
+    XCTAssertTrue([host.interactions containsObject:interaction]);
+
+    RNCPagerViewComponentView *outer = [RNCPagerViewComponentView new];
+    [self.pager setValue:outer forKey:@"externalOuterPager"];
+    [self.pager setValue:@NO forKey:@"externalOuterPageActive"];
+    [self.pager updateTopScrollEdgeForScrollView:scrollView];
+    XCTAssertNil([self.pager valueForKey:@"topEdgeInteraction"]);
+    [self.pager setValue:@YES forKey:@"externalOuterPageActive"];
+    [self.pager updateTopScrollEdgeForScrollView:scrollView];
+    XCTAssertNotNil([self.pager valueForKey:@"topEdgeInteraction"]);
+    [self.pager setValue:@YES forKey:@"externalOuterTransitioning"];
+    [self.pager updateTopScrollEdgeForScrollView:scrollView];
+    XCTAssertNil([self.pager valueForKey:@"topEdgeInteraction"]);
+
+    [self.pager setValue:nil forKey:@"externalOuterPager"];
+    [self.pager updateTopScrollEdgeForScrollView:scrollView];
+    XCTAssertNotNil([self.pager valueForKey:@"topEdgeInteraction"]);
+    [self.pager removeFromSuperview];
+    XCTAssertNil([self.pager valueForKey:@"topEdgeInteraction"]);
+    XCTAssertNil([self.pager valueForKey:@"topEdgeScrollView"]);
+    XCTAssertEqual(scrollView.topEdgeEffect.style, originalStyle);
+    [self.root removeFromSuperview];
+  } else {
+    XCTSkip(@"Scroll-edge interactions require iOS 26 or newer");
+  }
 }
 
 @end
