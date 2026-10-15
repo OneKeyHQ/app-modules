@@ -27,9 +27,14 @@ branch during a release.
 
 ## Windows release contract
 
-`desktop-win-release.yml` tests desktop changes on pull requests and releases
-only on manual dispatch from main in OneKeyHQ/app-modules. It builds all
-modules listed in `modules.win`, each on native x64 and ARM64 runners.
+`desktop-win-check.yml` runs baseline validation, native x64/ARM64 tests and
+packaging checks on desktop pull requests, with read-only repository permissions.
+It has no publication, synchronization or attestation-writing jobs, so PRs do
+not show skipped release/synchronization checks. Its artifacts are unsigned
+validation outputs, not approved releases.
+`desktop-win-release.yml` runs only on manual dispatch from main in
+OneKeyHQ/app-modules. It builds and tests all modules listed in `modules.win`,
+each on native x64 and ARM64 runners, then attests, releases and synchronizes.
 Additional Windows modules must define their SPEC, locked build, test and
 pack contracts before being added. Unknown modules fail validation.
 

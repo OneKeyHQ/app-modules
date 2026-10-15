@@ -1,17 +1,13 @@
 name: desktop-win-release
 
 on:
-  pull_request:
-    paths:
-      - desktop/**
-      - .github/workflows/desktop-win-release.yml
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: desktop-win-${{ github.event_name }}-${{ github.ref }}
+  group: desktop-win-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -35,7 +31,6 @@ jobs:
           node desktop/scripts/release.mjs validate
           node --test desktop/scripts/*.test.mjs
       - name: Reject unsafe publication or reused version
-        if: github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.baseline.outputs.tag }}
@@ -124,7 +119,6 @@ jobs:
             installedWindowsSdks = $sdks
           } | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8NoBOM build-info.json
       - name: Attest native build outputs
-        if: github.event_name == 'workflow_dispatch'
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
           subject-path: |
@@ -157,7 +151,6 @@ jobs:
           pattern: native-*
           path: desktop/dist
       - name: Verify native build attestations
-        if: github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
         run: node desktop/scripts/release.mjs verify-native
@@ -165,14 +158,12 @@ jobs:
         run: node desktop/scripts/release.mjs pack
       - name: Attest release assets
         id: provenance
-        if: github.event_name == 'workflow_dispatch'
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
           subject-path: |
             desktop/dist/*.tgz
             desktop/dist/desktop-win.json
       - name: Save the portable verification bundle
-        if: github.event_name == 'workflow_dispatch'
         env:
           BUNDLE_PATH: ${{ steps.provenance.outputs.bundle-path }}
         run: cp "$BUNDLE_PATH" desktop/dist/desktop-win.sigstore.json
@@ -186,7 +177,6 @@ jobs:
             desktop/dist/desktop-win.sigstore.json
 
   release:
-    if: github.event_name == 'workflow_dispatch'
     needs: [baseline, package]
     runs-on: ubuntu-24.04
     permissions:
@@ -215,7 +205,6 @@ jobs:
           gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest=false
 
   sync-app-monorepo:
-    if: github.event_name == 'workflow_dispatch'
     needs: [baseline, release]
     runs-on: ubuntu-24.04
     permissions:
