@@ -45,15 +45,25 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
 
   @Test
   fun signedMetadataAcceptsReleaseKeyAndRejectsChangedBodyAndUnsignedInput() {
-    val verified = BundleCryptoCore.verifyGpgCleartext(
-      signedMetadata,
-      expectedAppVersion = "5.12.0",
-      expectedBundleVersion = "20250919",
-      expectedAppType = "mobile"
-    )
+    val verified = BundleCryptoCore.verifyGpgCleartext(signedMetadata)
     assertTrue(verified.valid)
     assertEquals(expectedSignedHash, verified.sha256)
     assertNull(verified.reason)
+
+    val missingBinding = BundleCryptoCore.verifyGpgCleartext(
+      signedMetadata, expectedAppVersion = "5.12.0"
+    )
+    assertFalse(missingBinding.valid)
+    assertNull(missingBinding.sha256)
+    assertEquals("METADATA_APPVERSION_MISMATCH", missingBinding.reason)
+    assertEquals(
+      "METADATA_APPTYPE_MISMATCH",
+      BundleCryptoCore.verifyGpgCleartext(signedMetadata, expectedAppType = "mobile").reason
+    )
+    assertEquals(
+      "METADATA_BUNDLEVERSION_MISMATCH",
+      BundleCryptoCore.verifyGpgCleartext(signedMetadata, expectedBundleVersion = "20250919").reason
+    )
 
     val tampered = signedMetadata.replace("158590", "158591")
     val rejected = BundleCryptoCore.verifyGpgCleartext(tampered)

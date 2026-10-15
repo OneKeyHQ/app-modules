@@ -29,7 +29,7 @@ class ReactNativeRangeDownloader: HybridReactNativeRangeDownloaderSpec {
 
   func download(params: RangeDownloadParams) throws -> Promise<RangeDownloadResult> {
     return Promise.async {
-      let (klass, filePath, fallbackReason, fallbackClass) = await RangeDownloader.shared.download(
+      let (klass, filePath, fallbackReason, fallbackClass, _) = await RangeDownloader.shared.download(
         channel: params.channel,
         taskId: params.taskId,
         urlString: params.url,
@@ -350,6 +350,10 @@ extension RangeFallbackClass {
 
 public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
 
+  public struct HTTPStatusError: Error {
+    public let statusCode: Int
+  }
+
   public static let shared = RangeDownloader()
 
   /// Posted by the AppDelegate from
@@ -369,6 +373,15 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
 
   private static let defaultSegmentCount = 8
   private static let defaultMinConcurrentBytes: Int64 = 2 * 1024 * 1024
+
+  private static func isRetryableNetworkError(_ error: Error) -> Bool {
+    let nsError = error as NSError
+    guard nsError.domain == NSURLErrorDomain else { return false }
+    return [NSURLErrorTimedOut, NSURLErrorCannotFindHost,
+            NSURLErrorCannotConnectToHost, NSURLErrorNetworkConnectionLost,
+            NSURLErrorNotConnectedToInternet, NSURLErrorDNSLookupFailed]
+      .contains(nsError.code)
+  }
 
   private let lock = NSLock()
 
@@ -411,6 +424,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     /// Set when a segment could not be stashed (move/size-check failure). Carries
     /// the terminal error so didCompleteWithError finalizes instead of hanging.
     var stashError: Error?
+    var httpStatus: Int?
     /// §4/§5.4: per-segment indexes whose finished body was a TRANSIENT HTTP
     /// status (429/5xx/408/416) — the body is discarded and the segment is
     /// re-enqueued (G2) instead of failing the whole run. Optional Retry-After
@@ -604,8 +618,10 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
       Array(self.listeners.values)
     }
     guard !snapshot.isEmpty else { return }
+    let wireMessage = channel.stringValue == DownloadChannel.bundle.stringValue && type == "fallback"
+      ? "" : message
     let event = RangeDownloadEvent(
-      channel: channel, taskId: taskId, type: type, progress: progress, message: message
+      channel: channel, taskId: taskId, type: type, progress: progress, message: wireMessage
     )
     for cb in snapshot { cb(event) }
   }
@@ -665,7 +681,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     requestTimeoutSeconds: Double? = nil,
     stallTimeoutSeconds: Double? = nil,
     overallDeadlineSeconds: Double? = nil
-  ) async -> (RangeDownloadClass, String, String?, RangeFallbackClass?) {
+  ) async -> (RangeDownloadClass, String, String?, RangeFallbackClass?, Error?) {
     let segCount = max(1, segmentCount ?? Self.defaultSegmentCount)
     let minBytes = minConcurrentBytes ?? Self.defaultMinConcurrentBytes
     let maxAttempts = max(1, maxSegmentAttempts ?? Self.defaultMaxSegmentAttempts)
@@ -683,11 +699,11 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     let key = Self.runKey(channel: channel, taskId: taskId)
 
     guard let url = URL(string: urlString) else {
-      return (.fallbackPermanent, filePath, "invalid url", .rangeUnsupported)
+      return (.fallbackPermanent, filePath, "invalid url", .rangeUnsupported, URLError(.badURL))
     }
     // HTTPS-only: background URLSession + transport hardening.
     guard urlString.hasPrefix("https://") else {
-      return (.fallbackPermanent, filePath, "url must use https", .redirectRejected)
+      return (.fallbackPermanent, filePath, "url must use https", .redirectRejected, nil)
     }
 
     // §5.8 (G7): at most one live run per destination. A second download() for
@@ -702,20 +718,21 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     // avoid join bookkeeping hangs.
     if let existing = run(forKey: key), existing.filePath == filePath {
       return (.fallbackTransient, filePath,
-              "another run is already active for this destination", .budgetExhausted)
+              "another run is already active for this destination", .budgetExhausted, nil)
     }
 
     let probe: ProbeResult
     do {
       probe = try await self.probe(url: url)
     } catch {
-      // A probe that cannot reach the server is a transient network condition.
-      return (.fallbackTransient, filePath,
-              "probe failed: \(error.localizedDescription)", .transientNetwork)
+      let retryable = Self.isRetryableNetworkError(error)
+      let klass: RangeDownloadClass = retryable ? .fallbackTransient : .fallbackPermanent
+      return (klass, filePath,
+              "probe failed: \(error.localizedDescription)", retryable ? .transientNetwork : nil, error)
     }
     guard probe.supportsRange, probe.total >= minBytes else {
       return (.fallbackPermanent, filePath,
-              "range unsupported or file too small", .rangeUnsupported)
+              "range unsupported or file too small", .rangeUnsupported, nil)
     }
 
     let state = RunState(
@@ -742,7 +759,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     if let existing = runs[key], existing.filePath == filePath, existing !== state {
       lock.unlock()
       return (.fallbackTransient, filePath,
-              "another run is already active for this destination", .budgetExhausted)
+              "another run is already active for this destination", .budgetExhausted, nil)
     }
     runs[key] = state
     lock.unlock()
@@ -773,26 +790,30 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
       } else {
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
           self.lock.lock()
+          guard self.runs[key] === state else {
+            self.lock.unlock()
+            cont.resume(throwing: CancellationError())
+            return
+          }
           state.continuation = cont
           self.lock.unlock()
           reconcileAndStartTasks(state: state, url: url, ranges: ranges)
         }
       }
     } catch let fb as FallbackError {
-      clearRun(key: key)
+      clearRun(key: key, state: state)
       emit(channel: channel, taskId: taskId, type: "fallback", progress: 0, message: fb.reason)
-      return (fb.kind.failureClass, filePath, fb.reason, fb.kind)
+      return (fb.kind.failureClass, filePath, fb.reason, fb.kind, fb.underlyingError)
     } catch {
-      // A non-FallbackError thrown out of the run is a local/transient condition
-      // (disk I/O, an interrupted segment) → ask the caller to retry the
-      // concurrent path; segments are retained for resume.
-      clearRun(key: key)
+      clearRun(key: key, state: state)
       let reason = error.localizedDescription
       emit(channel: channel, taskId: taskId, type: "fallback", progress: 0, message: reason)
-      return (.fallbackTransient, filePath, reason, .transientNetwork)
+      let retryable = Self.isRetryableNetworkError(error)
+      let klass: RangeDownloadClass = retryable ? .fallbackTransient : .fallbackPermanent
+      return (klass, filePath, reason, retryable ? .transientNetwork : nil, error)
     }
 
-    clearRun(key: key)
+    clearRun(key: key, state: state)
 
     // Optional immediate SHA256 self-check backstop. When omitted, the caller
     // verifies after the fact. A whole-file checksum mismatch is Permanent (§4):
@@ -805,16 +826,20 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
         let reason = "sha256 mismatch (expected \(expected), got \(actual ?? "nil"))"
         OneKeyLog.error("RangeDownloader", "\(channel.stringValue)/\(taskId): \(reason)")
         emit(channel: channel, taskId: taskId, type: "fallback", progress: 0, message: reason)
-        return (.fallbackPermanent, filePath, reason, .checksumMismatch)
+        return (.fallbackPermanent, filePath, reason, .checksumMismatch, nil)
       }
     }
 
     emit(channel: channel, taskId: taskId, type: "complete", progress: 100, message: "")
-    return (.completed, filePath, nil, nil)
+    return (.completed, filePath, nil, nil, nil)
   }
 
-  private func clearRun(key: String) {
-    lock.lock(); runs.removeValue(forKey: key); lock.unlock()
+  private func clearRun(key: String, state: RunState) {
+    lock.lock()
+    if runs[key] === state {
+      runs.removeValue(forKey: key)
+    }
+    lock.unlock()
   }
 
   // MARK: - Range planning / probing
@@ -823,13 +848,16 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
 
   struct FallbackError: Error {
     let reason: String
+    let underlyingError: Error?
     /// §4 typed sub-class. Defaults to a Permanent `serverIgnoredRange` only so an
     /// un-annotated legacy throw keeps the previous "discard + single-stream"
     /// behavior; all new throw sites pass an explicit kind.
     let kind: RangeFallbackClass
-    init(reason: String, kind: RangeFallbackClass = .serverIgnoredRange) {
+    init(reason: String, kind: RangeFallbackClass = .serverIgnoredRange,
+         underlyingError: Error? = nil) {
       self.reason = reason
       self.kind = kind
+      self.underlyingError = underlyingError
     }
   }
 
@@ -859,9 +887,11 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
            let cr = http.value(forHTTPHeaderField: "Content-Range"),
            let total = RangeDownloadLogic.parseContentRangeTotal(cr) {
           cont.resume(returning: ProbeResult(total: total, etag: etag, supportsRange: true))
-        } else {
-          // 200 (Range ignored) or anything else → single-stream.
+        } else if http.statusCode == 200 || http.statusCode == 206 {
+          // Range ignored, or an unusable 206 → single-stream.
           cont.resume(returning: ProbeResult(total: 0, etag: etag, supportsRange: false))
+        } else {
+          cont.resume(throwing: HTTPStatusError(statusCode: http.statusCode))
         }
       }
       task.resume()
@@ -879,6 +909,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     let session = session(forChannel: state.channel, segmentCount: state.segmentCount)
     session.getAllTasks { [weak self] tasks in
       guard let self = self else { return }
+      guard self.run(forKey: Self.runKey(channel: state.channel, taskId: state.taskId)) === state else { return }
       var liveIndexes = Set<Int>()
       for t in tasks {
         guard let desc = t.taskDescription,
@@ -938,11 +969,17 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     // §5.4 (G2): the real task now exists and is visible to `getAllTasks`, so
     // clear the pending-retry marker — the in-flight check is authoritative again.
     lock.lock()
+    guard runs[Self.runKey(channel: state.channel, taskId: state.taskId)] === state,
+          state.continuation != nil else {
+      lock.unlock()
+      task.cancel()
+      return
+    }
     if idx < state.segmentWritten.count { state.segmentWritten[idx] = 0 }
     state.pendingRetryIndexes.remove(idx)
     state.lastProgressAt = Date()
-    lock.unlock()
     task.resume()
+    lock.unlock()
   }
 
   /// Marks a segment's finished body as a TRANSIENT HTTP outcome (§4) so
@@ -1230,6 +1267,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     }
     if http.statusCode != 206 {
       let kind = RangeDownloadLogic.classifyStatus(http.statusCode)
+      lock.withLockValue { state.httpStatus = http.statusCode }
       if kind.failureClass == .fallbackTransient {
         // §4 (416): a 416 is transient but the requested range may no longer be
         // satisfiable (the object shrank/changed). Flag this segment for a size
@@ -1329,14 +1367,23 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
         if wasStall {
           if retrySegmentIfUnderBudget(state: state, idx: idx, retryAfter: nil) { return }
           finalizeTransientFallback(state: state, idx: idx, reason: "segment \(idx) stalled; retry budget exhausted", ranges: ranges)
+        } else {
+          // Explicit cancel removes the run before delegate delivery. A live
+          // run receiving -999 is an interrupted background transfer.
+          finishContinuation(state: state, with: error, ranges: ranges)
         }
         return
       }
-      // §4: connection lost / timeout / DNS / TLS → Transient. Retry THIS segment
-      // in place under its budget; keep the others and their `.segN`.
+      // Only known transport failures are retryable. TLS/security and local I/O
+      // failures must retain their original type for the update caller.
+      if !Self.isRetryableNetworkError(error) {
+        finishContinuation(state: state, with: error, ranges: ranges)
+        return
+      }
       if retrySegmentIfUnderBudget(state: state, idx: idx, retryAfter: nil) { return }
       finalizeTransientFallback(state: state, idx: idx,
-                                reason: error.localizedDescription, ranges: ranges)
+                                reason: error.localizedDescription, ranges: ranges,
+                                underlyingError: error)
       return
     }
 
@@ -1368,11 +1415,9 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     // A segment failed to stash (move/size-check failure in didFinishDownloadingTo).
     // A short/truncated body is transient (the bytes will be re-fetched), so retry
     // this segment under budget rather than failing the whole run.
-    if lock.withLockValue({ state.stashError }) != nil {
-      lock.lock(); state.stashError = nil; lock.unlock()
-      if retrySegmentIfUnderBudget(state: state, idx: idx, retryAfter: nil) { return }
-      finalizeTransientFallback(state: state, idx: idx,
-                                reason: "segment \(idx) could not be stashed; retry budget exhausted", ranges: ranges)
+    if let stashError = lock.withLockValue({ state.stashError }) {
+      lock.withLockValue { state.stashError = nil }
+      finishContinuation(state: state, with: stashError, ranges: ranges)
       return
     }
 
@@ -1461,16 +1506,24 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     case .checksumMismatch: reason = "whole-file checksum mismatch"
     case .transientNetwork, .throttled, .budgetExhausted: reason = "permanent fallback"
     }
-    finishContinuation(state: state, with: FallbackError(reason: reason, kind: kind), ranges: ranges)
+    let status = lock.withLockValue { state.httpStatus }
+    let statusError = status.flatMap { $0 >= 400 ? HTTPStatusError(statusCode: $0) : nil }
+    finishContinuation(state: state,
+                       with: FallbackError(reason: reason, kind: kind,
+                                           underlyingError: statusError), ranges: ranges)
   }
 
   /// §4 Transient: finalize the run as a RESUMABLE fallback. `.segN` files are
   /// intentionally KEPT so the next concurrent attempt resumes only the missing
   /// segment(s); never restart from byte 0 while resumable bytes exist.
   private func finalizeTransientFallback(state: RunState, idx: Int, reason: String,
-                                         ranges: [(start: Int64, end: Int64)]) {
+                                         ranges: [(start: Int64, end: Int64)],
+                                         underlyingError: Error? = nil) {
+    let status = lock.withLockValue { state.httpStatus }
+    let statusError = status.flatMap { $0 >= 400 ? HTTPStatusError(statusCode: $0) : nil }
     finishContinuation(state: state,
-                       with: FallbackError(reason: reason, kind: .budgetExhausted),
+                       with: FallbackError(reason: reason, kind: .budgetExhausted,
+                                           underlyingError: statusError ?? underlyingError),
                        ranges: ranges)
   }
 
@@ -1580,6 +1633,14 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
   public func cancel(channel: DownloadChannel, taskId: String,
                      filePath: String) async {
     let session = session(forChannel: channel, segmentCount: Self.defaultSegmentCount)
+    let key = Self.runKey(channel: channel, taskId: taskId)
+    let continuation: CheckedContinuation<Void, Error>? = lock.withLockValue {
+      let state = runs.removeValue(forKey: key)
+      let pending = state?.continuation
+      state?.continuation = nil
+      return pending
+    }
+    continuation?.resume(throwing: CancellationError())
     // Cancel matching tasks first and wait for getAllTasks to return so the
     // cancels have been issued before we touch the files.
     await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
@@ -1595,8 +1656,6 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
         cont.resume()
       }
     }
-    // Drop the run state so a late delegate callback can't re-stash a segment.
-    clearRun(key: Self.runKey(channel: channel, taskId: taskId))
     discardArtifacts(filePath: filePath)
   }
 

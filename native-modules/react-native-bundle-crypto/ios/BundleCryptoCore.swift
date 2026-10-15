@@ -280,31 +280,26 @@ public enum BundleCryptoCore {
       return (false, nil, "JSON_PARSE_FAILED")
     }
 
-    if let signedFileName = json["fileName"] as? String,
-       !signedFileName.isEmpty,
-       signedFileName != "metadata.json" {
-      OneKeyLog.error("BundleCrypto", "Invalid signed metadata fileName: \(signedFileName)")
+    if json["fileName"] as? String != "metadata.json" {
+      OneKeyLog.error("BundleCrypto", "Invalid signed metadata fileName")
       return (false, nil, "INVALID_METADATA_FILENAME")
     }
 
     if let expectedAppType = expectedAppType, !expectedAppType.isEmpty,
-       let signedAppType = json["appType"] as? String, !signedAppType.isEmpty,
-       signedAppType != expectedAppType {
-      OneKeyLog.error("BundleCrypto", "Signed metadata appType mismatch: expected=\(expectedAppType), actual=\(signedAppType)")
+       json["appType"] as? String != expectedAppType {
+      OneKeyLog.error("BundleCrypto", "Signed metadata appType mismatch")
       return (false, nil, "METADATA_APPTYPE_MISMATCH")
     }
 
     if let expectedAppVersion = expectedAppVersion, !expectedAppVersion.isEmpty,
-       let signedAppVersion = json["appVersion"] as? String, !signedAppVersion.isEmpty,
-       signedAppVersion != expectedAppVersion {
-      OneKeyLog.error("BundleCrypto", "Signed metadata appVersion mismatch: expected=\(expectedAppVersion), actual=\(signedAppVersion)")
+       json["appVersion"] as? String != expectedAppVersion {
+      OneKeyLog.error("BundleCrypto", "Signed metadata appVersion mismatch")
       return (false, nil, "METADATA_APPVERSION_MISMATCH")
     }
 
     if let expectedBundleVersion = expectedBundleVersion, !expectedBundleVersion.isEmpty,
-       let signedBundleVersion = json["bundleVersion"] as? String, !signedBundleVersion.isEmpty,
-       signedBundleVersion != expectedBundleVersion {
-      OneKeyLog.error("BundleCrypto", "Signed metadata bundleVersion mismatch: expected=\(expectedBundleVersion), actual=\(signedBundleVersion)")
+       json["bundleVersion"] as? String != expectedBundleVersion {
+      OneKeyLog.error("BundleCrypto", "Signed metadata bundleVersion mismatch")
       return (false, nil, "METADATA_BUNDLEVERSION_MISMATCH")
     }
 

@@ -5,6 +5,10 @@ import okhttp3.Request
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.net.ConnectException
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -74,19 +78,18 @@ class ConcurrentRangeDownloader(
      * any other non-retryable 4xx per OCDS §4's catch-all). Unlike a generic
      * transient [java.io.IOException], this MUST bypass the per-segment retry
      * loop ([downloadSegment]) — retrying a dead URL only wastes the attempt
-     * budget. The `HTTP <code>` message shape is preserved so the JS error
-     * taxonomy ([updateErrorTaxonomy.ts]) maps it to `HTTP_<code>`.
+     * budget. Native updater callers can read [code] without parsing prose.
      */
-    private class PermanentHttpException(val code: Int) :
+    class PermanentHttpException(val code: Int) :
         Exception("HTTP $code")
 
     /**
      * Typed transient carrying an optional `Retry-After` delay (milliseconds)
      * the server asked us to wait before retrying (`429`/`503`). The retry loop
-     * in [downloadSegment] prefers this over its computed backoff. Keeps the
-     * `HTTP <code>` message shape for the JS taxonomy.
+     * in [downloadSegment] prefers this over its computed backoff. Native
+     * updater callers can read [code] without parsing prose.
      */
-    private class TransientHttpException(val code: Int, val retryAfterMillis: Long?) :
+    class TransientHttpException(val code: Int, val retryAfterMillis: Long?) :
         java.io.IOException("HTTP $code")
 
     /**
@@ -308,12 +311,12 @@ class ConcurrentRangeDownloader(
                         val len = response.body?.contentLength() ?: -1L
                         Probe(if (len > 0) len else 0, false)
                     }
-                    else -> null
+                    else -> throw classifyHttpFailure(response)
                 }
             }
         } catch (e: Exception) {
             log("concurrent: probe failed: ${e.javaClass.simpleName}")
-            null
+            throw e
         }
     }
 
@@ -408,6 +411,10 @@ class ConcurrentRangeDownloader(
                 // `HTTP <code>` message to a permanent JS taxonomy bucket.
                 throw e
             } catch (e: Exception) {
+                val retryable = e is TransientHttpException ||
+                    e is SocketTimeoutException || e is UnknownHostException ||
+                    e is ConnectException || e is SocketException
+                if (!retryable) throw e
                 if (aborted.get() || retry >= maxPartRetry) throw e
                 retry += 1
                 // Prefer the server's Retry-After; otherwise exponential backoff
@@ -469,8 +476,8 @@ class ConcurrentRangeDownloader(
             if (response.code != 206) {
                 // OCDS §4 classification. Anything that is not a usable 206 is
                 // either a permanently-dead URL (bypass retries) or a transient
-                // condition (retry with backoff). The `HTTP <code>` message shape
-                // is preserved on both so the JS taxonomy maps it to HTTP_<code>.
+                // condition (retry with backoff). Both exceptions retain a
+                // typed status for native updater callers.
                 throw classifyHttpFailure(response)
             }
             // Reject a multipart/byteranges body: it carries range delimiters and

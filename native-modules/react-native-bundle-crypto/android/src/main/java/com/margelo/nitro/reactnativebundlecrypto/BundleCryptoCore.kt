@@ -310,25 +310,25 @@ object BundleCryptoCore {
       }
 
       val signedFileName = fields["fileName"].orEmpty()
-      if (signedFileName.isNotEmpty() && signedFileName != "metadata.json") {
+      if (signedFileName != "metadata.json") {
         OneKeyLog.error("BundleCrypto", "Invalid signed metadata fileName: $signedFileName")
         return VerifyResult(false, null, "INVALID_METADATA_FILENAME")
       }
 
       val signedAppType = fields["appType"].orEmpty()
-      if (!expectedAppType.isNullOrEmpty() && signedAppType.isNotEmpty() && signedAppType != expectedAppType) {
+      if (!expectedAppType.isNullOrEmpty() && signedAppType != expectedAppType) {
         OneKeyLog.error("BundleCrypto", "Signed metadata appType mismatch: expected=$expectedAppType, actual=$signedAppType")
         return VerifyResult(false, null, "METADATA_APPTYPE_MISMATCH")
       }
 
       val signedAppVersion = fields["appVersion"].orEmpty()
-      if (!expectedAppVersion.isNullOrEmpty() && signedAppVersion.isNotEmpty() && signedAppVersion != expectedAppVersion) {
+      if (!expectedAppVersion.isNullOrEmpty() && signedAppVersion != expectedAppVersion) {
         OneKeyLog.error("BundleCrypto", "Signed metadata appVersion mismatch: expected=$expectedAppVersion, actual=$signedAppVersion")
         return VerifyResult(false, null, "METADATA_APPVERSION_MISMATCH")
       }
 
       val signedBundleVersion = fields["bundleVersion"].orEmpty()
-      if (!expectedBundleVersion.isNullOrEmpty() && signedBundleVersion.isNotEmpty() && signedBundleVersion != expectedBundleVersion) {
+      if (!expectedBundleVersion.isNullOrEmpty() && signedBundleVersion != expectedBundleVersion) {
         OneKeyLog.error("BundleCrypto", "Signed metadata bundleVersion mismatch: expected=$expectedBundleVersion, actual=$signedBundleVersion")
         return VerifyResult(false, null, "METADATA_BUNDLEVERSION_MISMATCH")
       }

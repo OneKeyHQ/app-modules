@@ -36,15 +36,25 @@ final class BundleCryptoCoreTests: XCTestCase {
     """
 
   func testSignedMetadataAcceptsReleaseKeyAndRejectsTampering() {
-    let verified = BundleCryptoCore.verifyGpgCleartext(
-      signedMetadata,
-      expectedAppVersion: "5.12.0",
-      expectedBundleVersion: "20250919",
-      expectedAppType: "mobile"
-    )
+    let verified = BundleCryptoCore.verifyGpgCleartext(signedMetadata)
     XCTAssertTrue(verified.valid)
     XCTAssertEqual(verified.sha256, expectedSignedHash)
     XCTAssertNil(verified.reason)
+
+    let missingBinding = BundleCryptoCore.verifyGpgCleartext(
+      signedMetadata, expectedAppVersion: "5.12.0"
+    )
+    XCTAssertFalse(missingBinding.valid)
+    XCTAssertNil(missingBinding.sha256)
+    XCTAssertEqual(missingBinding.reason, "METADATA_APPVERSION_MISMATCH")
+    XCTAssertEqual(
+      BundleCryptoCore.verifyGpgCleartext(signedMetadata, expectedAppType: "mobile").reason,
+      "METADATA_APPTYPE_MISMATCH"
+    )
+    XCTAssertEqual(
+      BundleCryptoCore.verifyGpgCleartext(signedMetadata, expectedBundleVersion: "20250919").reason,
+      "METADATA_BUNDLEVERSION_MISMATCH"
+    )
 
     let wrongAsc = BundleCryptoCore.verifyDetachedAsc(
       signedMetadata,
