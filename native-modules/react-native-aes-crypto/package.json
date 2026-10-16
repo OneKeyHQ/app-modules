@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-aes-crypto",
-  "version": "6.7.0-1",
+  "version": "6.7.0-alpha.310",
   "description": "react-native-aes-crypto",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
