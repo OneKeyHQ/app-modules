@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-native-list",
-  "version": "6.7.0-alpha.313",
+  "version": "6.7.0-alpha.314",
   "description": "Template-driven native RecyclerView and UICollectionView for React Native",
   "source": "./src/index.ts",
   "main": "./lib/module/index.js",
@@ -86,8 +86,8 @@
     "typescript": "^5.9.2"
   },
   "peerDependencies": {
-    "@onekeyfe/react-native-image": "6.7.0-alpha.313",
-    "@onekeyfe/react-native-native-logger": "6.7.0-alpha.313",
+    "@onekeyfe/react-native-image": "6.7.0-alpha.314",
+    "@onekeyfe/react-native-native-logger": "6.7.0-alpha.314",
     "react": "*",
     "react-native": "*",
     "react-native-nitro-modules": "0.37.0"
