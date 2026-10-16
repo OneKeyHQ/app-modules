@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-cloud-kit-module",
-  "version": "3.0.177",
+  "version": "6.7.0-1",
   "description": "CloudKit account and private record access for OneKey on iOS",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",

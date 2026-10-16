@@ -1,7 +1,73 @@
 # PagerView native scrolling contract
 
 Existing PagerView and CollapsiblePagerView APIs are documented in README.md.
-The sections below define native coordination boundaries without new React props.
+The sections below define native coordination boundaries and the optional
+scroll-edge props.
+
+## iOS 26 top scroll edge overlay
+
+`CollapsiblePagerView` and standalone `NativeScroller` accept the optional
+`topScrollEdgeEffect="hard"` with a fixed `topOverlay` React child. Both are
+disabled by default. On iOS 26 or newer, a local overlay remains fixed at the
+top of the viewport while the owned vertical `UIScrollView` can draw behind it.
+The component measures the overlay's Fabric layout height and owns the
+corresponding top content inset. It binds UIKit's
+`UIScrollEdgeElementContainerInteraction` to that exact scroll view and selects
+the hard top edge style. A pager owns the effect and inset for its current page;
+its nested NativeList or NativeScroller must not opt into another top overlay.
+Invisible, noninteractive native labels let UIKit recognize the React-drawn
+overlay and sticky header as scroll-edge elements. The pager does not add an
+auxiliary full-area glass or opaque material. It clips scrolling assets above
+the fixed overlay boundary; during horizontal transitions it clips its owned
+visible page hosts below the current sticky boundary so text cannot pass in
+front of the fixed controls. Masked assets must not intercept their hit targets.
+
+For an iOS 26 pager whose fixed header is rendered by a sibling in the same
+React surface, `externalTopOverlayTag` may identify that header's native view.
+The pager weakly observes its geometry in the same window, retaining its own
+noninteractive native proxy for UIKit recognition without reparenting or
+modifying the React header. The measured external header bottom supplies the
+top inset and sticky anchor. A local `topOverlay` takes precedence. The tag
+alone never enables the effect: `topScrollEdgeEffect="hard"` controls the
+interaction, while valid external geometry can reserve the top inset before
+the effect is enabled. Before the tag and height are ready, the caller keeps
+its existing layout; an unresolved native tag has zero external height. An
+outer PagerView transition
+releases the current edge interaction before moving its shared headers and
+applying visible-page masks; completion or cancellation reattaches the actual
+settled owner. An inactive inner pager retains the external header inset while
+its edge interaction is released. Without an outer PagerView, a standalone
+external-overlay pager owns its edge interaction directly; page-activity and
+transition gates apply only while an outer PagerView is registered.
+
+`topOverlayColorScheme` is optional (`"light" | "dark"`) and coordinates the
+fixed overlay's effective appearance with React theme commits. It does not
+change the requested style, scroll owner, content inset or page identity.
+When a smooth shared header reaches the overlay boundary, the existing sticky
+React and native tab views move together into a view pinned to the active
+scroll view. Their identities, scroll-view gesture ancestry and hit targets
+remain intact; the collapsible header stays in the scrolling header host.
+Without a local or external overlay, `topScrollEdgeEffect="hard"` may protect
+only the genuinely pinned sticky header; it must not consume a page as a
+synthetic overlay slot or change the collapsible banner distance.
+Changing pages, replacing the active list or recycling returns those views to
+the shared host before their old scroll-edge interaction is released.
+The measured overlay height is excluded from the collapsible header distance:
+`header` remains collapsible and `stickyHeader` pins immediately below the
+overlay. Selection, cancellation, reuse and disposal rebind or release the
+interaction and restore any prior scroll-edge style. Native scroll/refresh
+coordination continues on the main thread without per-frame JavaScript work.
+
+On iOS before 26, the external tag is not forwarded to native. On iOS before
+26, Android and Web the new props have no scroll-edge effect.
+The caller retains its existing layout on those platforms. Android generated
+view managers accept the optional props as no-op setters without changing
+their scroll or gesture behavior. Without a fixed overlay or pinned sticky
+header, the current scroll/inset behavior is unchanged. A valid external tag
+can reserve its measured geometry even while `topScrollEdgeEffect` is off.
+Acceptance requires real iOS 26 scrolling, partial collapse, short/empty page,
+refresh, page transition/cancellation, dynamic tabs and light/dark checks;
+source and build checks alone do not establish visual correctness.
 
 ## Smooth shared-header and per-page body memory
 
@@ -282,6 +348,16 @@ does not require transferring an already established page swipe to a vertical
 scroller. Header forwarding can recover to the vertical list when vertical
 movement becomes dominant. An inner horizontal viewport that can consume a
 confirmed horizontal drag MUST have priority over the Home page pager.
+
+On iOS, when a nested CollapsiblePagerView has an actual outer PagerView
+ancestor, its existing outer-pager protector also covers touches that begin in
+the inner page body. It may protect only a horizontal direction with another
+inner page available. At the first or last inner page, an outward drag remains
+available to the outer pager; vertical drags and ordinary taps are unchanged.
+This body protection must not activate merely because nested scrolling is
+enabled, since Home also enables nested scrolling without an outer PagerView.
+The direction guard and its 32-point threshold remain unchanged. Android keeps
+its existing nested gesture implementation.
 
 This intent confirmation MUST NOT add a second lazy-mount progress threshold.
 Once native horizontal dragging begins, the first nonzero page progress MUST

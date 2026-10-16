@@ -27,7 +27,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 // Bounded controls only. Event ownership and epochs stay with the row host.
-internal class NativeListAccessoryStack(context: android.content.Context) : LinearLayout(context) {
+internal class NativeListAccessoryStack(context: android.content.Context, val fonts: NativeListFonts) : LinearLayout(context) {
   private val trailingViews = List(2) { NativeListTextView(context) }
   private val trailingIcons = List(2) { OneKeyIconView(context) }
   private val checkbox = OneKeyCheckboxView(context)
@@ -404,7 +404,7 @@ internal class NativeListAccessoryStack(context: android.content.Context) : Line
     view.text = value
     view.textSize = sp(if (primary) 16f else 14f)
     view.typeface =
-      if (primary) NativeListFonts.medium(context) else NativeListFonts.regular(context)
+      if (primary) fonts.medium(context) else fonts.regular(context)
     view.includeFontPadding = false
     view.fontFeatureSettings = "tnum"
     TextViewCompat.setLineHeight(view, dp(if (primary) 24 else 20))
@@ -467,7 +467,7 @@ internal class NativeListAccessoryStack(context: android.content.Context) : Line
     view.maxLines = 2
     view.gravity = Gravity.END
     view.includeFontPadding = false
-    view.typeface = NativeListFonts.regular(context)
+    view.typeface = fonts.regular(context)
     view.fontFeatureSettings = "tnum"
     TextViewCompat.setLineHeight(view, dp(20))
     view.visibility = VISIBLE
@@ -599,7 +599,7 @@ internal class NativeListAccessoryStack(context: android.content.Context) : Line
     }
     view.textSize = sp(fontSize.toFloat())
     view.typeface =
-      if (medium) NativeListFonts.medium(context) else NativeListFonts.regular(context)
+      if (medium) fonts.medium(context) else fonts.regular(context)
     TextViewCompat.setLineHeight(view, dp(lineHeight))
     view.text = value
   }
@@ -680,10 +680,10 @@ internal class NativeListAccessoryStack(context: android.content.Context) : Line
 
   private fun marketTypeface(weight: String, fallback: String): Typeface =
     when (weight.ifEmpty { fallback }) {
-      "regular" -> NativeListFonts.regular(context)
-      "semibold" -> NativeListFonts.semibold(context)
-      "bold" -> NativeListFonts.bold(context)
-      else -> NativeListFonts.medium(context)
+      "regular" -> fonts.regular(context)
+      "semibold" -> fonts.semibold(context)
+      "bold" -> fonts.bold(context)
+      else -> fonts.medium(context)
     }
 
   private fun safeColor(value: String?, fallback: Int): Int =

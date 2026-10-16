@@ -48,6 +48,18 @@ See [src/NativeSplitBundleLoader.ts](src/NativeSplitBundleLoader.ts) for the
 complete TypeScript interface and the native source directories for platform
 loading and failure handling.
 
+## Runtime-context fields
+
+`getRuntimeBundleContext()` returns `runtimeKind`, `sourceKind`, `bundleRoot`
+and `nativeVersion`, with optional `builtinExtractRoot` and `bundleVersion`.
+Treat absent fields as absent rather than substituting a version from another
+runtime. The exported `SplitBundleLoaderSpec` contains the bridge signature.
+
+`loadSegment` takes four arguments in order: numeric `segmentId`, `segmentKey`,
+`relativePath` and expected `sha256`. Await it before consuming that segment.
+`resolveSegmentPath` returns a path string and does not itself evaluate the
+segment. The API does not fetch a missing segment from the network.
+
 ## License
 
 MIT.

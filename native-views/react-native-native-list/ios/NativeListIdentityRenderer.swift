@@ -5,7 +5,8 @@ final class NativeListIdentityCell: NativeListRendererCell {
     !["walletSidebar", "networkSelector"].contains(item.data.string("presentation"))
   }
   override class func measure(
-    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String
+    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String,
+    fonts: NativeListFontFamilies
   ) -> CGFloat? {
     if item.data.string("presentation") == "walletSidebar" {
       return item.data.dictionaries("badges").isEmpty ? 68 : 92
@@ -149,14 +150,14 @@ final class NativeListIdentityCell: NativeListRendererCell {
         text.rowVerticalAlignment = nil
       }
     }
-    titleLabel.font = nativeListFont(ofSize: 16, weight: .medium)
+    titleLabel.font = nativeListFont(ofSize: 16, weight: .medium, fonts: fonts)
     titleLabel.textColor = nativeListColor(theme, "primaryText", "#202020")
     titleLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
-    subtitleLabel.font = nativeListFont(ofSize: 14)
+    subtitleLabel.font = nativeListFont(ofSize: 14, fonts: fonts)
     subtitleLabel.textColor = nativeListColor(theme, "secondaryText", "#646464")
-    tertiaryLabel.font = nativeListFont(ofSize: 14)
+    tertiaryLabel.font = nativeListFont(ofSize: 14, fonts: fonts)
     tertiaryLabel.textColor = subtitleLabel.textColor
-    badgeLabel.font = nativeListFont(ofSize: 12, weight: .medium)
+    badgeLabel.font = nativeListFont(ofSize: 12, weight: .medium, fonts: fonts)
     badgeLabel.horizontalInset = 0
     badgeLabel.topInset = 0
     badgeLabel.bottomInset = 0
@@ -165,7 +166,7 @@ final class NativeListIdentityCell: NativeListRendererCell {
     leadingHeight.constant = 40
     visual.glyphSize = 18
     fallbackLabel.attributedText = nil
-    fallbackLabel.font = nativeListFont(ofSize: 13, weight: .bold)
+    fallbackLabel.font = nativeListFont(ofSize: 13, weight: .bold, fonts: fonts)
     trailingStack.reset()
     trailingStack.axis = .vertical
     trailingStack.alignment = .trailing
@@ -206,7 +207,7 @@ final class NativeListIdentityCell: NativeListRendererCell {
       ("badge", semanticBadgeLabels.isEmpty ? [badgeLabel] : semanticBadgeLabels),
     ] {
       if let text = style.dictionary(slot) {
-        labels.forEach { NativeListTextStyles.applyStyledText($0, text) }
+        labels.forEach { NativeListTextStyles.applyStyledText($0, text, fonts: fonts) }
       }
     }
     contentInsets = UIEdgeInsets(
@@ -238,7 +239,7 @@ final class NativeListIdentityCell: NativeListRendererCell {
         titleLabel.attributedText = text
       }
       if let style = item.data.dictionary("style")?.dictionary("title") {
-        NativeListTextStyles.applyStyledText(titleLabel, style)
+        NativeListTextStyles.applyStyledText(titleLabel, style, fonts: fonts)
       }
     }
   }
@@ -299,7 +300,8 @@ final class NativeListIdentityCell: NativeListRendererCell {
           ? min(leadingWidth.constant, leadingHeight.constant)
             * (fallback.string("name") == "GlobusOutline" ? 1.2 : 1) : 18
     }
-    visual.bind(descriptor, style: image, key: key, theme: currentTheme, isUnread: false)
+    visual.bind(
+      descriptor, style: image, key: key, theme: currentTheme, isUnread: false, fonts: fonts)
   }
   private func bindIdentity(
     _ item: NativeListItem,
@@ -320,9 +322,9 @@ final class NativeListIdentityCell: NativeListRendererCell {
       titleRowStack.setContentHuggingPriority(.required, for: .horizontal)
       titleLabel.setContentHuggingPriority(.required, for: .horizontal)
       titleLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
-      titleLabel.font = nativeListFont(ofSize: 12)
+      titleLabel.font = nativeListFont(ofSize: 12, fonts: fonts)
       titleLabel.textAlignment = .center
-      fallbackLabel.font = nativeListFont(ofSize: 28)
+      fallbackLabel.font = nativeListFont(ofSize: 28, fonts: fonts)
       addLeading(item.data.dictionary("leading"), key: item.key)
       root.addArrangedSubview(mainStack)
       // OneKey patch: activate width constraints only after both stacks share an ancestor.
@@ -355,7 +357,7 @@ final class NativeListIdentityCell: NativeListRendererCell {
           let label = NativeListInsetLabel()
           let isSelector = item.hasExplicitHeight
           let isWarning = badge.string("tone") == "warning"
-          label.font = nativeListFont(ofSize: isSelector ? 11 : 12)
+          label.font = nativeListFont(ofSize: isSelector ? 11 : 12, fonts: fonts)
           label.textColor = nativeListColor(
             theme, isSelector && isWarning ? "caution" : "secondaryText",
             isSelector && isWarning ? "#AB6400" : "#646464")
@@ -387,14 +389,14 @@ final class NativeListIdentityCell: NativeListRendererCell {
         trailingStack.bind(
           item, descriptors: accessories, theme: theme,
           style: item.data.dictionary("style") ?? [:], defaultSpacing: 8,
-          checkboxState: checkboxState)
+          checkboxState: checkboxState, fonts: fonts)
       }
       return
     }
     if item.data.string("presentation") == "accountSelector" {
       leadingWidth.constant = 32
       leadingHeight.constant = 32
-      titleLabel.font = nativeListFont(ofSize: 16)
+      titleLabel.font = nativeListFont(ofSize: 16, fonts: fonts)
     }
     if item.data.dictionary("leading")?.string("kind") == "network" {
       leadingWidth.constant = 32
@@ -432,7 +434,7 @@ final class NativeListIdentityCell: NativeListRendererCell {
       let leading = item.data.dictionary("leading"), leading.dictionary("image") == nil,
       leading.dictionary("fallbackIcon") == nil, !leading.string("fallbackText").isEmpty
     {
-      fallbackLabel.font = nativeListFont(ofSize: 19, weight: .semibold)
+      fallbackLabel.font = nativeListFont(ofSize: 19, weight: .semibold, fonts: fonts)
       fallbackLabel.textColor = nativeListColor(theme, "inverseText", "#FCFCFC")
       setLineHeight(fallbackLabel, text: leading.string("fallbackText"), lineHeight: 27)
     }
@@ -477,7 +479,7 @@ final class NativeListIdentityCell: NativeListRendererCell {
           line.addArrangedSubview(gap)
         }
         let label = NativeListTextLabel()
-        label.font = nativeListFont(ofSize: 14)
+        label.font = nativeListFont(ofSize: 14, fonts: fonts)
         label.lineBreakMode = .byTruncatingTail
         // Match V1: the balance may shrink, but keep the shortened address intact.
         label.setContentCompressionResistancePriority(
@@ -499,10 +501,12 @@ final class NativeListIdentityCell: NativeListRendererCell {
               NSAttributedString(
                 string: run.string("text"),
                 attributes: [
-                  .font: nativeListFont(ofSize: run.string("style") == "subscript" ? 9 : 14),
+                  .font: nativeListFont(
+                    ofSize: run.string("style") == "subscript" ? 9 : 14, fonts: fonts),
                   .foregroundColor: label.textColor as Any,
                   .paragraphStyle: paragraph,
-                  .baselineOffset: max(0, (20 - nativeListFont(ofSize: 14).lineHeight) / 2),
+                  .baselineOffset: max(
+                    0, (20 - nativeListFont(ofSize: 14, fonts: fonts).lineHeight) / 2)
                 ]))
           }
           label.attributedText = value
@@ -580,7 +584,7 @@ final class NativeListIdentityCell: NativeListRendererCell {
     }
     trailingStack.bind(
       item, descriptors: accessories, theme: theme, style: item.data.dictionary("style") ?? [:],
-      defaultSpacing: trailingStack.spacing, checkboxState: checkboxState)
+      defaultSpacing: trailingStack.spacing, checkboxState: checkboxState, fonts: fonts)
     // Legacy kept the (possibly empty) trailing stack arranged, so the text column always
     // ends 12 points before the trailing edge inset.
     trailingStack.isHidden = false

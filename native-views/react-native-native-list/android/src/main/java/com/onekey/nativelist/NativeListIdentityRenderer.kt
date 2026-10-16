@@ -18,9 +18,9 @@ import kotlin.math.roundToInt
 import org.json.JSONArray
 import org.json.JSONObject
 
-internal class NativeListIdentityRowView(context: ThemedReactContext) :
-  NativeListRendererRowView(context) {
-  private val leadingFrame = NativeListLeadingVisual(context)
+internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: NativeListFonts) :
+  NativeListRendererRowView(context, fonts) {
+  private val leadingFrame = NativeListLeadingVisual(context, fonts)
   private val leadingFallback
     get() = leadingFrame.fallbackTextView
 
@@ -31,7 +31,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
   private val subtitle = NativeListTextView(context)
   private val tertiary = NativeListTextView(context)
   private val badgeLine = NativeListTextView(context)
-  private val trailingColumn = NativeListAccessoryStack(context)
+  private val trailingColumn = NativeListAccessoryStack(context, fonts)
   private val semanticBadgeLabels = mutableListOf<TextView>()
   private val semanticSubtitleLabels = mutableListOf<TextView>()
   private var walletBadgeLine: View? = null
@@ -176,18 +176,18 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
     }
     title.typeface =
       if (item.json.optString("presentation") in setOf("accountSelector", "walletSidebar"))
-        NativeListFonts.regular(context)
-      else NativeListFonts.medium(context)
+        fonts.regular(context)
+      else fonts.medium(context)
     title.textSize = sp(if (item.json.optString("presentation") == "walletSidebar") 12f else 16f)
     title.setTextColor(color(theme, "primaryText", "#000000DF"))
-    subtitle.typeface = NativeListFonts.regular(context)
+    subtitle.typeface = fonts.regular(context)
     subtitle.textSize = sp(14f)
     subtitle.setTextColor(color(theme, "secondaryText", "#0000009B"))
     subtitle.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
-    tertiary.typeface = NativeListFonts.regular(context)
+    tertiary.typeface = fonts.regular(context)
     tertiary.textSize = sp(14f)
     tertiary.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
-    badgeLine.typeface = NativeListFonts.medium(context)
+    badgeLine.typeface = fonts.medium(context)
     badgeLine.textSize = sp(12f)
     // Legacy: tertiary always ellipsizes at the end.
     tertiary.ellipsize = TextUtils.TruncateAt.END
@@ -310,7 +310,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
       if (item.json.optString("presentation") == "accountSelector" && item.hasExplicitHeight) 8
       else 10
     leadingFrame.bind(descriptor, style, item.key, currentTheme, false, sourceScale)
-    leadingFallback.typeface = NativeListFonts.bold(context)
+    leadingFallback.typeface = fonts.bold(context)
     leadingFallback.textSize = sp(13f)
     leadingFallback.setLineSpacing(0f, 1f)
     addView(
@@ -436,7 +436,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
       setPadding(dp(4), dp(4), dp(4), dp(4))
       addLeading(item.json.optJSONObject("leading"), 40, spacingDp = 0)
       leadingFallback.textSize = sp(28f)
-      leadingFallback.typeface = NativeListFonts.regular(context)
+      leadingFallback.typeface = fonts.regular(context)
       mainColumn.gravity = Gravity.CENTER
       titleLine.gravity = Gravity.CENTER
       titleLine.packsChildrenAtStart = false
@@ -479,7 +479,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
               NativeListTextView(context).apply {
                 text = badges.getJSONObject(index).optString("text")
                 textSize = sp(if (isSelector) 11f else 12f)
-                typeface = NativeListFonts.regular(context)
+                typeface = fonts.regular(context)
                 includeFontPadding = false
                 maxLines = 1
                 ellipsize = TextUtils.TruncateAt.END
@@ -574,7 +574,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
         !leading?.optString("fallbackText").isNullOrEmpty()
     ) {
       leadingFallback.textSize = sp(19f)
-      leadingFallback.typeface = NativeListFonts.semibold(context)
+      leadingFallback.typeface = fonts.semibold(context)
       leadingFallback.setTextColor(color(theme, "inverseText", "#FCFCFC"))
       TextViewCompat.setLineHeight(leadingFallback, dp(27))
     }
@@ -583,7 +583,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
     title.ellipsize = TextUtils.TruncateAt.END
     showText(title, item.json.optString("title"), item.json.optInt("titleLines", 1))
     if (item.json.optString("presentation") == "accountSelector") {
-      title.typeface = NativeListFonts.regular(context)
+      title.typeface = fonts.regular(context)
     }
     showText(subtitle, item.json.optString("subtitle"), item.json.optInt("subtitleLines", 2))
     // OneKey patch: use separate labels for independently truncated balance/address.
@@ -615,7 +615,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
           val label =
             NativeListTextView(context).apply {
               text = segment.optString("text")
-              typeface = NativeListFonts.regular(context)
+              typeface = fonts.regular(context)
               textSize = sp(14f)
               includeFontPadding = false
               maxLines = 1
@@ -736,7 +736,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
     }
     view.textSize = sp(fontSize.toFloat())
     view.typeface =
-      if (medium) NativeListFonts.medium(context) else NativeListFonts.regular(context)
+      if (medium) fonts.medium(context) else fonts.regular(context)
     TextViewCompat.setLineHeight(view, dp(lineHeight))
     view.text = value
   }
@@ -754,10 +754,10 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
     style.optString("fontWeight").takeIf(String::isNotEmpty)?.let {
       view.typeface =
         when (it) {
-          "medium" -> NativeListFonts.medium(context)
-          "semibold" -> NativeListFonts.semibold(context)
-          "bold" -> NativeListFonts.bold(context)
-          else -> NativeListFonts.regular(context)
+          "medium" -> fonts.medium(context)
+          "semibold" -> fonts.semibold(context)
+          "bold" -> fonts.bold(context)
+          else -> fonts.regular(context)
         }
     }
     style.optString("color").takeIf(String::isNotEmpty)?.let {

@@ -173,6 +173,24 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
         // Android-only system UI.
     }
 
+    // MARK: - In-memory store
+
+    func getInMemoryValue(key: String) throws -> InMemoryValue? {
+        return try InMemoryStore.shared.get(key)
+    }
+
+    func setInMemoryValue(key: String, value: InMemoryValue) throws {
+        try InMemoryStore.shared.set(key, value)
+    }
+
+    func removeInMemoryValue(key: String) throws -> Bool {
+        return try InMemoryStore.shared.remove(key)
+    }
+
+    func setInMemoryValueIfAbsent(key: String, value: InMemoryValue) throws -> Bool {
+        return try InMemoryStore.shared.setIfAbsent(key, value)
+    }
+
     // MARK: - LaunchOptionsManager
 
     func getLaunchOptions() throws -> Promise<LaunchOptions> {

@@ -21,8 +21,8 @@ import kotlin.math.roundToInt
 import org.json.JSONArray
 import org.json.JSONObject
 
-internal class NativeListSectionHeaderRowView(context: ThemedReactContext) :
-  NativeListRendererRowView(context) {
+internal class NativeListSectionHeaderRowView(context: ThemedReactContext, fonts: NativeListFonts) :
+  NativeListRendererRowView(context, fonts) {
   private val mainColumn = LinearLayout(context)
   private val titleLine = PackedTitleLineLayout(context)
   private val title = DottedUnderlineTextView(context)
@@ -33,7 +33,7 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext) :
   private val subtitle = NativeListTextView(context)
   private val trailingColumn = LinearLayout(context)
   private val trailingViews = listOf(NativeListTextView(context))
-  private val checkboxControl = NativeListAccessoryStack(context)
+  private val checkboxControl = NativeListAccessoryStack(context, fonts)
   private val headerTitleIcon = OneKeyIconView(context)
   private val headerValueIcon = OneKeyIconView(context)
   private var currentItem: NativeListItem? = null
@@ -200,11 +200,11 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext) :
     title.useSourceScale = sourceScale
     title.showsDottedUnderline = false
     subtitle.textSize = sp(14f)
-    subtitle.typeface = NativeListFonts.regular(context)
+    subtitle.typeface = fonts.regular(context)
     subtitle.setTextColor(color(theme, "secondaryText", "#0000009B"))
     subtitle.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
     trailingViews[0].apply {
-      typeface = NativeListFonts.medium(context)
+      typeface = fonts.medium(context)
       textSize = sp(16f)
       gravity = Gravity.END or Gravity.CENTER_VERTICAL
       setTextColor(color(theme, "primaryText", "#000000DF"))
@@ -238,11 +238,11 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext) :
           item.hasExplicitHeight &&
           variant != "summary" &&
           (item.json.optJSONObject("checkbox") != null ||
-            item.json.optString("titleActionKey").isEmpty()) -> NativeListFonts.semibold(context)
-        network -> NativeListFonts.medium(context)
-        layout == "table" -> NativeListFonts.regular(context)
-        variant == "summary" -> NativeListFonts.medium(context)
-        else -> NativeListFonts.semibold(context)
+            item.json.optString("titleActionKey").isEmpty()) -> fonts.semibold(context)
+        network -> fonts.medium(context)
+        layout == "table" -> fonts.regular(context)
+        variant == "summary" -> fonts.medium(context)
+        else -> fonts.semibold(context)
       }
     TextViewCompat.setLineHeight(
       title,
@@ -476,13 +476,13 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext) :
         dp(verticalInset),
       )
       title.textSize = sp(14f)
-      title.typeface = NativeListFonts.medium(context)
+      title.typeface = fonts.medium(context)
       TextViewCompat.setLineHeight(title, dp(20))
     } else if (isHistory) {
       setPadding(0, 0, 0, 0)
       title.text = item.json.optString("title").uppercase()
       title.textSize = sp(12f)
-      title.typeface = NativeListFonts.semibold(context)
+      title.typeface = fonts.semibold(context)
       title.letterSpacing = 0.8f / sp(12f)
       TextViewCompat.setLineHeight(title, dp(16))
     } else if (!isTable && !isGallery && !isSummary) {
@@ -528,7 +528,7 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext) :
       )
       trailingViews[0].accessibilityDelegate = selectorAccessibilityDelegate
       trailingViews[0].textSize = sp(16f)
-      trailingViews[0].typeface = NativeListFonts.medium(context)
+      trailingViews[0].typeface = fonts.medium(context)
       TextViewCompat.setLineHeight(trailingViews[0], dp(24))
       // OneKey patch: the migrated media button shares the original 24-point text box.
       if (isExplicitNetworkHeader) trailingViews[0].setPadding(0, 0, 0, 0)
@@ -555,7 +555,7 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext) :
         trailingColumn.gravity = Gravity.END or Gravity.CENTER_VERTICAL
         trailingViews[0].includeFontPadding = false
         trailingViews[0].textSize = sp(11f)
-        trailingViews[0].typeface = NativeListFonts.regular(context)
+        trailingViews[0].typeface = fonts.regular(context)
         trailingViews[0].setTextColor(color(theme, "secondaryText", "#0000009B"))
         item.json.optJSONObject("valueIcon")?.let { icon ->
           headerValueIcon.visibility = VISIBLE
@@ -591,7 +591,7 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext) :
     view.text = value
     view.textSize = sp(if (primary) 16f else 14f)
     view.typeface =
-      if (primary) NativeListFonts.medium(context) else NativeListFonts.regular(context)
+      if (primary) fonts.medium(context) else fonts.regular(context)
     view.includeFontPadding = false
     view.fontFeatureSettings = "tnum"
     TextViewCompat.setLineHeight(view, dp(if (primary) 24 else 20))
@@ -633,7 +633,7 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext) :
     }
     view.textSize = sp(fontSize.toFloat())
     view.typeface =
-      if (medium) NativeListFonts.medium(context) else NativeListFonts.regular(context)
+      if (medium) fonts.medium(context) else fonts.regular(context)
     TextViewCompat.setLineHeight(view, dp(lineHeight))
     view.text = value
   }
@@ -651,10 +651,10 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext) :
     style.optString("fontWeight").takeIf(String::isNotEmpty)?.let {
       view.typeface =
         when (it) {
-          "medium" -> NativeListFonts.medium(context)
-          "semibold" -> NativeListFonts.semibold(context)
-          "bold" -> NativeListFonts.bold(context)
-          else -> NativeListFonts.regular(context)
+          "medium" -> fonts.medium(context)
+          "semibold" -> fonts.semibold(context)
+          "bold" -> fonts.bold(context)
+          else -> fonts.regular(context)
         }
     }
     style.optString("color").takeIf(String::isNotEmpty)?.let {

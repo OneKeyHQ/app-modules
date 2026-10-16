@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-native-list",
-  "version": "3.0.177",
+  "version": "6.7.0-1",
   "description": "Template-driven native RecyclerView and UICollectionView for React Native",
   "source": "./src/index.ts",
   "main": "./lib/module/index.js",
@@ -19,7 +19,6 @@
     "lib",
     "android",
     "ios",
-    "common",
     "cpp",
     "nitrogen",
     "nitro.json",
@@ -59,7 +58,7 @@
     "url": "https://github.com/OneKeyHQ/app-modules/issues"
   },
   "homepage": "https://github.com/OneKeyHQ/app-modules/tree/main/native-views/react-native-native-list#readme",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
     "access": "public"
@@ -87,8 +86,8 @@
     "typescript": "^5.9.2"
   },
   "peerDependencies": {
-    "@onekeyfe/react-native-image": "3.0.177",
-    "@onekeyfe/react-native-native-logger": "3.0.177",
+    "@onekeyfe/react-native-image": "6.7.0-1",
+    "@onekeyfe/react-native-native-logger": "6.7.0-1",
     "react": "*",
     "react-native": "*",
     "react-native-nitro-modules": "0.37.0"

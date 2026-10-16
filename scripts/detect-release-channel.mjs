@@ -2,28 +2,31 @@ import { execFileSync } from "node:child_process";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { loadReleaseWorkspaces } from "./validate-npm-dist-tag.mjs";
+import {
+  loadReleaseWorkspaces,
+  parseReleaseVersion,
+  validateNpmDistTag,
+} from "./validate-npm-dist-tag.mjs";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
 export function detectReleaseChannel(before, after) {
+  const sourceChannel = parseReleaseVersion(after[0]?.version).channel;
+  validateNpmDistTag(sourceChannel, after);
   const beforeVersions = new Map(
     before.map(({ name, version }) => [name, version])
   );
-  return after.some(
-    ({ name, version }) => beforeVersions.get(name) !== version
-  )
-    ? "latest"
+  return after.some(({ name, version }) => beforeVersions.get(name) !== version)
+    ? sourceChannel
     : "next";
 }
 
 function readVersion(ref, manifestPath) {
   try {
-    const manifest = execFileSync(
-      "git",
-      ["show", `${ref}:${manifestPath}`],
-      { cwd: repoRoot, encoding: "utf8" }
-    );
+    const manifest = execFileSync("git", ["show", `${ref}:${manifestPath}`], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
     return JSON.parse(manifest).version;
   } catch {
     return undefined;
@@ -59,7 +62,7 @@ async function main() {
     .map(({ name }) => name);
   console.error(
     changed.length > 0
-      ? `Version changes found in ${changed.length} publishable workspace(s); using latest`
+      ? `Version changes found in ${changed.length} publishable workspace(s); using ${channel}`
       : "No publishable workspace version changes found; using next preview"
   );
   console.log(channel);

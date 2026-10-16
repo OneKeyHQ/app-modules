@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-splash-screen",
-  "version": "3.0.177",
+  "version": "6.7.0-1",
   "description": "react-native-splash-screen",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",

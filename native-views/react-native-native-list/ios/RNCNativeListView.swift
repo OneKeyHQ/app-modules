@@ -4,6 +4,26 @@ import UIKit
 import UniformTypeIdentifiers
 
 final class NativeListView: UIView {
+  private var fonts = NativeListFontFamilies()
+
+  func setFontFamiliesJson(_ json: String) {
+    guard let next = NativeListFontFamilies(json: json), next != fonts else { return }
+    fonts = next
+    if interactiveReorderSource != nil { cancelInteractiveReorderForStructuralUpdate() }
+    sectionIndexView.refreshFonts(fonts)
+    sectionIndexPreview.refreshFonts(fonts)
+    invalidateActionAnchor(reason: "layout")
+    configureFooterIfPresent()
+    var snapshot = dataSource.snapshot()
+    snapshot.reconfigureItems(snapshot.itemIdentifiers)
+    dataSource.apply(snapshot, animatingDifferences: false)
+    flowLayout.invalidateLayout()
+    setNeedsLayout()
+  }
+
+  private func configureFooterIfPresent() {
+    if let config { configureFooter(config) }
+  }
   private var refreshEmittedForDrag = false
   private var minimumDragOffset: CGFloat = 0
   private var containerSlotHeights: [CGFloat] = [0, 0, 0]
@@ -11,11 +31,27 @@ final class NativeListView: UIView {
   // Each root therefore lives in a list-owned host whose origin the list alone controls, so a
   // React layout update can never move a slot out of its native position, even for a frame.
   private var reactContainerSlots: [(content: UIView, host: UIView)] = []
+  private let topOverlayHost = UIView()
+  private weak var topOverlayContent: UIView?
+  private var topEdgeInteraction: UIInteraction?
+  private var topEdgeMarker: UILabel?
+  private var originalTopEdgeStyle: AnyObject?
+  private var topScrollEdgeHard = false
+  private var requestedTopOverlayHeight: CGFloat = 0
+  private var appliedTopOverlayInset: CGFloat = 0
+
   private var lastLaidOutContentHeight: CGFloat?
   private var needsContentShrinkCorrection = false
   private var contentShrinkCorrectionScheduled = false
 
   @objc func mountContainerSlot(_ view: UIView, atIndex index: Int) {
+    if index == 3 {
+      topOverlayContent?.removeFromSuperview()
+      topOverlayContent = view
+      topOverlayHost.addSubview(view)
+      updateTopScrollEdge()
+      return
+    }
     let host = UIView()
     // Clipping to the reported height keeps new content from overlapping rows until the list
     // has reserved space for it.
@@ -28,11 +64,77 @@ final class NativeListView: UIView {
   }
 
   @objc func unmountContainerSlot(_ view: UIView) {
+    if topOverlayContent === view {
+      view.removeFromSuperview()
+      topOverlayContent = nil
+      updateTopScrollEdge()
+      return
+    }
     reactContainerSlots.removeAll { slot in
       guard slot.content === view else { return false }
       view.removeFromSuperview()
       slot.host.removeFromSuperview()
       return true
+    }
+  }
+
+  func setTopScrollEdge(hard: Bool, overlayHeight: CGFloat) {
+    topScrollEdgeHard = hard
+    requestedTopOverlayHeight = overlayHeight.isFinite ? max(0, overlayHeight) : 0
+    updateTopScrollEdge()
+    setNeedsLayout()
+  }
+
+  private func updateTopScrollEdge() {
+    if #available(iOS 26.0, *) {
+      let hasOverlay = topScrollEdgeHard && topOverlayContent != nil
+      let enabled = hasOverlay && window != nil
+      let nextInset = hasOverlay ? requestedTopOverlayHeight : 0
+      if nextInset != appliedTopOverlayInset {
+        // Do not interrupt UIKit's rebound after a refresh has ended.
+        let wasReturningFromPull =
+          collectionView.contentOffset.y < -collectionView.adjustedContentInset.top - 0.5
+        let logicalOffset = collectionView.contentOffset.y + collectionView.contentInset.top
+        var inset = collectionView.contentInset
+        inset.top += nextInset - appliedTopOverlayInset
+        collectionView.contentInset = inset
+        appliedTopOverlayInset = nextInset
+        if !wasReturningFromPull {
+          collectionView.setContentOffset(
+            CGPoint(x: collectionView.contentOffset.x, y: logicalOffset - inset.top),
+            animated: false)
+        }
+      }
+      if enabled && topEdgeInteraction == nil {
+        originalTopEdgeStyle = collectionView.topEdgeEffect.style
+        // UIKit needs a native element to shape the edge effect around React-drawn content.
+        let marker = UILabel(frame: topOverlayHost.bounds)
+        marker.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        marker.text = " "
+        marker.textColor = .clear
+        marker.backgroundColor = .clear
+        marker.isUserInteractionEnabled = false
+        marker.isAccessibilityElement = false
+        marker.accessibilityElementsHidden = true
+        topOverlayHost.addSubview(marker)
+        topEdgeMarker = marker
+        let interaction = UIScrollEdgeElementContainerInteraction()
+        interaction.edge = .top
+        interaction.scrollView = collectionView
+        topOverlayHost.addInteraction(interaction)
+        topEdgeInteraction = interaction
+      } else if !enabled, let interaction = topEdgeInteraction {
+        topOverlayHost.removeInteraction(interaction)
+        (interaction as? UIScrollEdgeElementContainerInteraction)?.scrollView = nil
+        topEdgeInteraction = nil
+        topEdgeMarker?.removeFromSuperview()
+        topEdgeMarker = nil
+        if let originalTopEdgeStyle = originalTopEdgeStyle as? UIScrollEdgeEffect.Style {
+          collectionView.topEdgeEffect.style = originalTopEdgeStyle
+        }
+        originalTopEdgeStyle = nil
+      }
+      if enabled { collectionView.topEdgeEffect.style = .hard }
     }
   }
 
@@ -271,6 +373,7 @@ final class NativeListView: UIView {
     addSubview(footerContainer)
     addSubview(sectionIndexView)
     addSubview(sectionIndexPreview)
+    addSubview(topOverlayHost)
     footerContainer.addSubview(footerCell)
     collectionView.translatesAutoresizingMaskIntoConstraints = false
     footerContainer.translatesAutoresizingMaskIntoConstraints = false
@@ -422,11 +525,14 @@ final class NativeListView: UIView {
 
   override func didMoveToWindow() {
     super.didMoveToWindow()
+    updateTopScrollEdge()
     updateSectionIndexAttachment()
   }
 
   override func layoutSubviews() {
     super.layoutSubviews()
+    topOverlayHost.frame = CGRect(x: 0, y: 0, width: collectionView.bounds.width,
+                                  height: requestedTopOverlayHeight)
     updateSectionIndexAttachment()
     let direction = effectiveUserInterfaceLayoutDirection
     if let lastLayoutSize,
@@ -1580,7 +1686,8 @@ final class NativeListView: UIView {
       selected: item.data.bool("selected") || config.selectedKeys.contains(item.key),
       checkboxState: { [weak self] item, target, fallback in
         self?.resolveCheckboxState(item: item, target: target, fallback: fallback) ?? fallback
-      }
+      },
+      fonts: fonts
     )
     if item.key == interactiveReorderCompactKey {
       cell.setWalletGroupReorderCompact(true)
@@ -1943,7 +2050,9 @@ final class NativeListView: UIView {
       ? floor((availableWidth - CGFloat((config?.gridColumns ?? 2) - 1) * (config?.itemSpacing ?? 0)) / CGFloat(config?.gridColumns ?? 2))
       : availableWidth
     let rowWidth = allocatedWidth ?? (config?.orientation == "horizontal" ? 280 : columnWidth)
-    if let height = NativeListRendererRegistry.measure(item, width: rowWidth, theme: config?.theme, layout: config?.layout ?? "linear") {
+    if let height = NativeListRendererRegistry.measure(
+      item, width: rowWidth, theme: config?.theme, layout: config?.layout ?? "linear", fonts: fonts)
+    {
       return max(0, height + (NativeListRendererRegistry.appliesSizePreset(item) ? (item.data.string("size") == "small" ? -8 : item.data.string("size") == "large" ? 12 : 0) : 0))
     }
     return 56
@@ -1998,6 +2107,7 @@ final class NativeListView: UIView {
 
   func dispose() {
     guard !disposed else { return }
+    setTopScrollEdge(hard: false, overlayHeight: 0)
     disposed = true
 
     disposeActionAnchor()
@@ -2324,7 +2434,7 @@ extension NativeListView: UICollectionViewDelegateFlowLayout {
   }
 
   private func railWidth(_ item: NativeListItem) -> CGFloat {
-    NativeListRailRenderer.Resolved(item, theme: config?.theme).horizontalWidth
+    NativeListRailRenderer.Resolved(item, theme: config?.theme, fonts: fonts).horizontalWidth
   }
 
   func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
@@ -2577,6 +2687,11 @@ private struct NativeListSectionIndexEntry {
 }
 
 private final class NativeListSectionIndexPreviewView: UIView {
+  private var fonts = NativeListFontFamilies()
+  func refreshFonts(_ fonts: NativeListFontFamilies) {
+    self.fonts = fonts
+    label.font = nativeListFont(ofSize: 30, fonts: fonts)
+  }
   private let shapeLayer = CAShapeLayer()
   private let label = UILabel()
 
@@ -2592,7 +2707,7 @@ private final class NativeListSectionIndexPreviewView: UIView {
     layer.addSublayer(shapeLayer)
     label.textAlignment = .center
     label.adjustsFontForContentSizeCategory = true
-    label.font = nativeListFont(ofSize: 30)
+    label.font = nativeListFont(ofSize: 30, fonts: fonts)
     label.isAccessibilityElement = false
     addSubview(label)
   }
@@ -2647,6 +2762,11 @@ private final class NativeListSectionIndexPreviewView: UIView {
 // OneKey patch: arbitrate index scrubbing against ancestor dismissal gestures.
 // private final class NativeListSectionIndexView: UIControl {
 private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDelegate {
+  private var fonts = NativeListFontFamilies()
+  func refreshFonts(_ fonts: NativeListFontFamilies) {
+    self.fonts = fonts
+    updateLabelStyles()
+  }
   private static let edgePadding: CGFloat = 8
   private static let labelSize: CGFloat = 14
   private static let labelSpacing: CGFloat = 16
@@ -2864,7 +2984,7 @@ private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDe
       label.backgroundColor = active ? activeColor : .clear
       label.layer.cornerRadius = Self.labelSize / 2
       label.layer.masksToBounds = active
-      label.font = nativeListFont(ofSize: 10, weight: active ? .medium : .regular)
+      label.font = nativeListFont(ofSize: 10, weight: active ? .medium : .regular, fonts: fonts)
     }
   }
 }

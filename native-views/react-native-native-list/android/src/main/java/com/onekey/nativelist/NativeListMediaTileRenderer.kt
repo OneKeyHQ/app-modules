@@ -11,8 +11,8 @@ import android.widget.LinearLayout
 import com.facebook.react.uimanager.ThemedReactContext
 import org.json.JSONObject
 
-internal class NativeListMediaTileRowView(context: ThemedReactContext) :
-    NativeListRendererRowView(context) {
+internal class NativeListMediaTileRowView(context: ThemedReactContext, fonts: NativeListFonts) :
+    NativeListRendererRowView(context, fonts) {
     private val picture = FrameLayout(context)
     private val image = NativeListMediaPreviewSlot(context)
     private val network = NativeListImageSlot(context)
@@ -82,7 +82,7 @@ internal class NativeListMediaTileRowView(context: ThemedReactContext) :
                     else -> Gravity.TOP
                 }
         NativeListResolvedText.resolve(
-                reactContext,
+                reactContext, fonts,
                 item.json.optString("title"),
                 style.optJSONObject("title"),
                 16f,
@@ -94,7 +94,7 @@ internal class NativeListMediaTileRowView(context: ThemedReactContext) :
             )
             .bind(title)
         NativeListResolvedText.resolve(
-                reactContext,
+                reactContext, fonts,
                 item.json.optString("subtitle"),
                 style.optJSONObject("subtitle"),
                 12f,
@@ -106,7 +106,7 @@ internal class NativeListMediaTileRowView(context: ThemedReactContext) :
             )
             .bind(subtitle)
         NativeListResolvedText.resolve(
-                reactContext,
+                reactContext, fonts,
                 item.json.optJSONObject("badge")?.optString("text") ?: "",
                 style.optJSONObject("badge"),
                 14f,

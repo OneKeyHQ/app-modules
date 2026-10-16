@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-text-input",
-  "version": "3.0.177",
+  "version": "6.7.0-1",
   "description": "React Native TextInput with native paste events",
   "source": "./src/index.tsx",
   "main": "./lib/module/index.js",
@@ -92,5 +92,9 @@
     "android": {
       "javaPackageName": "com.textinput"
     }
+  },
+  "dependencies": {
+    "invariant": "^2.2.4",
+    "nullthrows": "^1.1.1"
   }
 }
