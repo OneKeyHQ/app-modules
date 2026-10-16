@@ -47,7 +47,7 @@ export interface NativeProps extends ViewProps {
   contentInsetRight?: WithDefault<Double, 0>;
   contentInsetBottom?: WithDefault<Double, 0>;
   contentInsetLeft?: WithDefault<Double, 0>;
-  topScrollEdgeHard?: WithDefault<boolean, false>;
+  topScrollEdgeEffect?: WithDefault<"none" | "hard" | "soft", "none">;
   topOverlayHeight?: WithDefault<Double, 0>;
   refreshEnabled?: WithDefault<boolean, false>;
   refreshing?: WithDefault<boolean, false>;

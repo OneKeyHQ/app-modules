@@ -28,13 +28,14 @@ prevention; there is no automatic fitting or shrinking pass.
 
 ### iOS 26 fixed top scroll-edge overlay
 
-Standalone `NativeList` accepts optional `topScrollEdgeEffect="hard"` and
+Standalone `NativeList` accepts optional
+`topScrollEdgeEffect={ScrollEdgeEffect.Hard}` or `ScrollEdgeEffect.Soft` and
 `topOverlay` React content. Both are disabled by default. On iOS 26 or newer,
 the fixed overlay is a fourth native container slot, outside the row stream and
 outside the existing scrolling `listHeader`/`listEmpty`/`listFooter` slots.
 Fabric measures its height; the list owns an equal top inset on its collection
 view and binds UIKit's `UIScrollEdgeElementContainerInteraction` to that view,
-using the hard top edge style. The list restores its original inset and effect
+using the requested top edge style. The list restores its original inset and effect
 on removal, disposal and reuse. The UI thread owns all view and UIKit state;
 there is no persistence, background-runtime state or per-frame JS callback.
 An invisible, noninteractive native label fills the overlay host so UIKit
@@ -44,6 +45,18 @@ lists do not opt in separately. iOS before 26, Android and Web retain their
 existing layout and scrolling. Missing overlay or style changes nothing.
 Acceptance requires actual iOS 26 initial layout, long/short/empty scrolling,
 refresh and overlay replacement/removal, including dark mode.
+
+`ScrollEdgeEffect` is an exported string enum (`Hard = 'hard'`, `Soft = 'soft'`);
+the corresponding string literals remain valid prop values. Hard includes
+UIKit's dividing line; Soft uses the gradual blurred transition. Nitro receives
+an enum (`none | hard | soft`, default `none`) rather than a hard-effect boolean.
+Changing Hard ↔ Soft preserves the overlay, inset, logical scroll offset and
+saved original effect. Clearing the prop, removing the overlay, detaching or
+disposing restores the original effect. This bridge change requires rebuilding
+the matching native host. Soft selection is implemented in the wrapper and
+native host. Focused JS tests cover enum forwarding and disabling; UIKit tests
+cover style switching, overlay geometry and restoring the previous style.
+Visual runtime acceptance remains separate from source, type and build checks.
 
 [README.md](../README.md) documents the snapshot, patch, selection, events and
 imperative API; [STYLE_SPEC.md](STYLE_SPEC.md) defines normalization, omitted

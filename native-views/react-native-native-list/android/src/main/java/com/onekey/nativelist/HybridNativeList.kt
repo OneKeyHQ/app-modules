@@ -52,7 +52,7 @@ class HybridNativeList(context: ThemedReactContext) : HybridNativeListSpec() {
       snapshot?.let { hostView.applySnapshot(it) }
     }
   }
-  override var topScrollEdgeHard: Boolean = false
+  override var topScrollEdgeEffect: NativeListScrollEdgeEffect = NativeListScrollEdgeEffect.NONE
   override var topOverlayHeight: Double = 0.0
 
   override var snapshotJson: String = ""

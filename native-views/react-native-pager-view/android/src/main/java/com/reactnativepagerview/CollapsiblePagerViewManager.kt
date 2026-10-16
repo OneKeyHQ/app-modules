@@ -207,8 +207,8 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
   }
 
   // The scroll-edge effect and external overlay are UIKit-only.
-  @ReactProp(name = "topScrollEdgeHard", defaultBoolean = false)
-  override fun setTopScrollEdgeHard(view: CollapsiblePagerHost?, value: Boolean) = Unit
+  @ReactProp(name = "topScrollEdgeEffect")
+  override fun setTopScrollEdgeEffect(view: CollapsiblePagerHost?, value: String?) = Unit
   @ReactProp(name = "topOverlayColorScheme")
   override fun setTopOverlayColorScheme(view: CollapsiblePagerHost?, value: String?) = Unit
   @ReactProp(name = "topOverlayHeight", defaultDouble = 0.0)

@@ -3,6 +3,7 @@ import TestRenderer, { act } from 'react-test-renderer';
 import type { NativeListRef } from '../NativeList.types';
 import type { NativeListSnapshot } from '../models';
 import { configureNativeListFonts } from '../fonts';
+import { ScrollEdgeEffect } from '../ScrollEdgeEffect';
 
 const mockNativeMethods = {
   applySnapshot: jest.fn(),
@@ -35,6 +36,7 @@ const mockWebEngine = {
 jest.mock('react-native', () => {
   const ReactForMock = require('react') as typeof React;
   return {
+    Platform: { OS: 'ios', Version: 26 },
     View: ReactForMock.forwardRef((props, ref) =>
       ReactForMock.createElement('div', { ...props, ref })
     ),
@@ -126,6 +128,35 @@ const snapshot: NativeListSnapshot = {
 
 describe('NativeList imperative ref', () => {
   beforeEach(() => jest.clearAllMocks());
+
+  it('forwards either edge style and disables it when cleared', async () => {
+    const { NativeList } = jest.requireActual(
+      '../NativeList'
+    ) as typeof import('../NativeList');
+    let renderer: TestRenderer.ReactTestRenderer;
+    const renderList = (effect?: ScrollEdgeEffect) => (
+      <NativeList
+        snapshot={snapshot}
+        topOverlay={<React.Fragment />}
+        topScrollEdgeEffect={effect}
+      />
+    );
+    await act(async () => {
+      renderer = TestRenderer.create(renderList(ScrollEdgeEffect.Hard));
+    });
+    expect(mockFontRenders.mock.calls.at(-1)?.[0].topScrollEdgeEffect).toBe(
+      'hard'
+    );
+    await act(async () => renderer.update(renderList(ScrollEdgeEffect.Soft)));
+    expect(mockFontRenders.mock.calls.at(-1)?.[0].topScrollEdgeEffect).toBe(
+      'soft'
+    );
+    await act(async () => renderer.update(renderList()));
+    expect(mockFontRenders.mock.calls.at(-1)?.[0].topScrollEdgeEffect).toBe(
+      'none'
+    );
+    await act(async () => renderer.unmount());
+  });
 
   it('updates both mounted lists from the runtime store without replaying snapshots', async () => {
     const { NativeList } = jest.requireActual(

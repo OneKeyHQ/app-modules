@@ -4,6 +4,34 @@ import XCTest
 
 @MainActor
 final class NativeListLifecycleTests: XCTestCase {
+  func testScrollEdgeStylesPreserveOverlayGeometryAndRestoreOriginalStyle() throws {
+    guard #available(iOS 26.0, *) else {
+      throw XCTSkip("Scroll-edge styles require iOS 26 or newer")
+    }
+    let view = try makeScrollingList()
+    let window = UIWindow(frame: view.frame)
+    window.addSubview(view)
+    let list = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+    let originalStyle = list.topEdgeEffect.style
+    let originalInset = list.contentInset.top
+    let overlay = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 64))
+    view.mountContainerSlot(overlay, atIndex: 3)
+    view.setTopScrollEdge(effect: .hard, overlayHeight: 64)
+    XCTAssertEqual(list.topEdgeEffect.style, .hard)
+    XCTAssertEqual(list.contentInset.top, originalInset + 64, accuracy: 0.01)
+    let offset = list.contentOffset
+    view.setTopScrollEdge(effect: .soft, overlayHeight: 64)
+    XCTAssertEqual(list.topEdgeEffect.style, .soft)
+    XCTAssertEqual(list.contentInset.top, originalInset + 64, accuracy: 0.01)
+    XCTAssertEqual(list.contentOffset, offset)
+    XCTAssertNotNil(overlay.superview)
+    view.setTopScrollEdge(effect: .none, overlayHeight: 0)
+    XCTAssertEqual(list.topEdgeEffect.style, originalStyle)
+    XCTAssertEqual(list.contentInset.top, originalInset, accuracy: 0.01)
+    view.unmountContainerSlot(overlay)
+    view.removeFromSuperview()
+  }
+
   func testInvalidCommandsPreserveAcceptedAnimationCompletion() throws {
     for invalid in 0..<3 {
       let view = try makeScrollingList()

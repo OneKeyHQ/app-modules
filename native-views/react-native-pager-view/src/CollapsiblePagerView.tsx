@@ -1,3 +1,4 @@
+import type { ScrollEdgeEffect } from "./ScrollEdgeEffect";
 import React from "react";
 import { I18nManager, Platform, StyleSheet, View } from "react-native";
 import type * as ReactNative from "react-native";
@@ -86,7 +87,7 @@ export interface CollapsiblePagerViewProps
     | "children"
     | "headerHeight"
     | "stickyHeaderHeight"
-    | "topScrollEdgeHard"
+    | "topScrollEdgeEffect"
     | "topOverlayHeight"
     | "externalTopOverlayTag"
     | "pageKeys"
@@ -121,8 +122,8 @@ export interface CollapsiblePagerViewProps
   topOverlay?: React.ReactNode;
   /** Existing fixed header shared with a parent pager on iOS 26 and newer. */
   externalTopOverlayTag?: number;
-  /** Enables UIKit's hard top scroll-edge effect on iOS 26 and newer. */
-  topScrollEdgeEffect?: "hard";
+  /** Selects UIKit's top scroll-edge effect on iOS 26 and newer. */
+  topScrollEdgeEffect?: `${ScrollEdgeEffect}`;
   /** Effective appearance of the fixed overlay or pinned sticky bar. */
   topOverlayColorScheme?: "light" | "dark";
   /**
@@ -493,8 +494,10 @@ export class CollapsiblePagerView extends React.PureComponent<
     const pages = this.pages();
     const supportsTopScrollEdge =
       Platform.OS === "ios" && parseInt(String(Platform.Version), 10) >= 26;
-    const hardScrollEdge = supportsTopScrollEdge && topScrollEdgeEffect === "hard";
-    const hasTopOverlay = hardScrollEdge && topOverlay != null;
+    const scrollEdgeEnabled =
+      supportsTopScrollEdge &&
+      (topScrollEdgeEffect === "hard" || topScrollEdgeEffect === "soft");
+    const hasTopOverlay = scrollEdgeEnabled && topOverlay != null;
     const pageKeys = pages.map(pageKey);
     const retained = new Set(this.mountedPages(pages.length));
     const deducedLayoutDirection =
@@ -535,8 +538,10 @@ export class CollapsiblePagerView extends React.PureComponent<
         offscreenPageLimit={Math.max(1, offscreenPageLimit ?? 1)}
         headerHeight={Math.max(0, Math.round(headerHeight))}
         stickyHeaderHeight={Math.max(0, Math.round(stickyHeaderHeight))}
-        topScrollEdgeHard={hardScrollEdge}
-        topOverlayColorScheme={hardScrollEdge ? topOverlayColorScheme : undefined}
+        topScrollEdgeEffect={scrollEdgeEnabled ? topScrollEdgeEffect : "none"}
+        topOverlayColorScheme={
+          scrollEdgeEnabled ? topOverlayColorScheme : undefined
+        }
         topOverlayHeight={hasTopOverlay ? this.state.topOverlayHeight : 0}
         externalTopOverlayTag={
           supportsTopScrollEdge && !hasTopOverlay

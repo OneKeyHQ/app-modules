@@ -1,3 +1,4 @@
+import type { ScrollEdgeEffect } from './ScrollEdgeEffect';
 import type { ReactNode, RefObject } from 'react';
 import type { View, ViewProps } from 'react-native';
 import type {
@@ -132,8 +133,8 @@ export type NativeListProps = Omit<ViewProps, 'children'> &
     listEmpty?: ReactNode;
     /** Fixed overlay above scrolling rows on iOS 26 and newer. */
     topOverlay?: ReactNode;
-    /** Enables UIKit's hard top scroll-edge effect on iOS 26 and newer. */
-    topScrollEdgeEffect?: 'hard';
+    /** Selects UIKit's top scroll-edge effect on iOS 26 and newer. */
+    topScrollEdgeEffect?: `${ScrollEdgeEffect}`;
     /** Web only. Defaults to true and is ignored by the native host. */
     webVirtualizationEnabled?: boolean;
     /** Web only: undefined owns scrolling, null waits for a host element. */

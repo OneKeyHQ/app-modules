@@ -38,3 +38,5 @@ export type {
 
 export { configureNativeListFonts } from './fonts';
 export type { NativeListFontFamilies } from './fonts';
+
+export { ScrollEdgeEffect } from './ScrollEdgeEffect';

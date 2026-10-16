@@ -134,7 +134,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     const hasTopOverlay =
       Platform?.OS === 'ios' &&
       parseInt(String(Platform.Version), 10) >= 26 &&
-      topScrollEdgeEffect === 'hard' &&
+      (topScrollEdgeEffect === 'hard' || topScrollEdgeEffect === 'soft') &&
       topOverlay != null;
     const containerSlotHeightsJson = JSON.stringify(slotHeights);
     const slotInset =
@@ -519,7 +519,9 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
         fontFamiliesJson={fontFamiliesJson}
         snapshotJson={snapshotJson}
         containerSlotHeightsJson={containerSlotHeightsJson}
-        topScrollEdgeHard={hasTopOverlay}
+        topScrollEdgeEffect={
+          hasTopOverlay ? topScrollEdgeEffect ?? 'none' : 'none'
+        }
         topOverlayHeight={hasTopOverlay ? topOverlayHeight : 0}
         scrollPositionThresholdsJson={scrollPositionThresholdsJson}
         keyboardDismissMode={keyboardDismissMode}
