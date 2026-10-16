@@ -15,7 +15,6 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.baseline.outputs.version }}
-      tag: ${{ steps.baseline.outputs.tag }}
       electron: ${{ steps.baseline.outputs.electron }}
       rust: ${{ steps.baseline.outputs.rust }}
     steps:
@@ -31,20 +30,10 @@ jobs:
           node desktop/scripts/release.mjs validate
           node --test desktop/scripts/*.test.mjs
       - name: Reject unsafe publication or reused version
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ steps.baseline.outputs.tag }}
         run: |
           test "$GITHUB_REPOSITORY" = OneKeyHQ/app-modules
           test "$GITHUB_REF" = refs/heads/main
-          gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$RELEASE_TAG" > "$RUNNER_TEMP/tags.json"
-          node --input-type=module -e '
-            import fs from "node:fs";
-            const refs = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/tags.json"));
-            if (refs.some(entry => entry.ref === "refs/tags/" + process.env.RELEASE_TAG)) {
-              throw new Error("Version already exists. Bump desktop/release.json; published versions cannot be rebuilt.");
-            }
-          '
+          node desktop/scripts/release.mjs check-version
 
   native:
     needs: baseline
@@ -154,37 +143,37 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: node desktop/scripts/release.mjs verify-native
-      - name: Pack Windows runtime modules
-        run: node desktop/scripts/release.mjs pack
-      - name: Attest release assets
+      - name: Prepare Windows runtime inventory
+        run: node desktop/scripts/release.mjs prepare
+      - name: Attest runtime inventory
         id: provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
-          subject-path: |
-            desktop/dist/*.tgz
-            desktop/dist/desktop-win.json
+          subject-path: desktop/dist/desktop-win.json
       - name: Save the portable verification bundle
         env:
           BUNDLE_PATH: ${{ steps.provenance.outputs.bundle-path }}
         run: cp "$BUNDLE_PATH" desktop/dist/desktop-win.sigstore.json
+      - name: Pack npm modules with portable verification metadata
+        run: node desktop/scripts/release.mjs pack
+      - name: Attest npm archives
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-path: desktop/dist/*.tgz
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: desktop-win-release
           if-no-files-found: error
-          path: |
-            desktop/dist/*.tgz
-            desktop/dist/desktop-win.json
-            desktop/dist/desktop-win.sigstore.json
+          path: desktop/dist/*.tgz
 
-  release:
+  publish:
     needs: [baseline, package]
     runs-on: ubuntu-24.04
     permissions:
-      contents: write
+      contents: read
       attestations: read
-    env:
-      GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: ${{ needs.baseline.outputs.tag }}
+      id-token: write
+    environment: runtime-npm-publish
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -192,14 +181,24 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: 24.21.0
+          registry-url: https://registry.npmjs.org
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: desktop-win-release
           path: desktop/dist
-      - name: Verify and publish release without replacing assets
+      - name: Verify approved source and package attestations
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node desktop/scripts/release.mjs verify-release
+      - name: Publish npm packages with provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          DESKTOP_VERSION: ${{ needs.baseline.outputs.version }}
         run: |
-          node desktop/scripts/release.mjs verify-release
-          gh release create "$RELEASE_TAG" desktop/dist/*.tgz desktop/dist/desktop-win.json desktop/dist/desktop-win.sigstore.json \
-            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft \
-            --title "$RELEASE_TAG" --notes "Windows desktop modules built from $GITHUB_SHA. See desktop-win.json for the Electron baseline, toolchains, and SHA-256 inventory. No npm publication."
-          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest=false
+          test "$GITHUB_REPOSITORY" = OneKeyHQ/app-modules
+          test "$GITHUB_REF" = refs/heads/main
+          test -n "$NODE_AUTH_TOKEN" || { echo 'NPM_TOKEN is required and must have publish access to electron-windows-hello.' >&2; exit 1; }
+          node desktop/scripts/release.mjs check-version
+          npm publish "desktop/dist/electron-windows-hello-$DESKTOP_VERSION.tgz" --access public --tag latest --provenance --ignore-scripts
+      - name: Verify npm availability, dist-tag, integrity and provenance metadata
+        run: node desktop/scripts/release.mjs verify-npm

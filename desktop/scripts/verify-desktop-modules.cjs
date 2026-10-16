@@ -4,7 +4,6 @@ const assert = require("node:assert/strict");
 const { execFileSync } = require("node:child_process");
 const { createHash } = require("node:crypto");
 const fs = require("node:fs");
-const os = require("node:os");
 const path = require("node:path");
 
 const repository = "OneKeyHQ/app-modules";
@@ -12,6 +11,7 @@ const workflow = `${repository}/.github/workflows/desktop-win-release.yml`;
 const versionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const digestPattern = /^[a-f0-9]{64}$/;
 const commitPattern = /^[a-f0-9]{40}$/;
+const proofFiles = ["desktop-win.json", "desktop-win.sigstore.json"];
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
@@ -50,11 +50,10 @@ function validatePin(pin) {
 function validateRelease(release) {
   validateBaseline(release.baseline);
   if (
-    release.schemaVersion !== 1 ||
+    release.schemaVersion !== 2 ||
     release.repository !== repository ||
     release.workflow !== workflow ||
     !commitPattern.test(release.sourceCommit) ||
-    release.tag !== `desktop-win-v${release.baseline.version}` ||
     JSON.stringify(Object.keys(release.modules ?? {})) !==
       JSON.stringify(release.baseline.modules.win)
   ) {
@@ -72,7 +71,6 @@ function validateRelease(release) {
     ].toSorted();
     if (
       entry.asset !== `${name}-${release.baseline.version}.tgz` ||
-      !digestPattern.test(entry.sha256) ||
       JSON.stringify(Object.keys(entry.files ?? {}).toSorted()) !== JSON.stringify(expectedFiles) ||
       Object.values(entry.files).some((digest) => !digestPattern.test(digest))
     ) {
@@ -118,10 +116,15 @@ function readApprovedRelease(file, pin) {
   return release;
 }
 
-function verifyRuntimeFiles(directory, files) {
+function verifyRuntimeFiles(directory, files, metadata = []) {
   const actual = fs.readdirSync(directory).toSorted();
-  if (JSON.stringify(actual) !== JSON.stringify(Object.keys(files).toSorted())) {
+  if (JSON.stringify(actual) !== JSON.stringify([...Object.keys(files), ...metadata].toSorted())) {
     assert.fail(`Unexpected or missing runtime files in ${directory}`);
+  }
+  for (const name of metadata) {
+    if (path.basename(name) !== name || !fs.lstatSync(path.join(directory, name)).isFile()) {
+      assert.fail("Invalid runtime metadata file");
+    }
   }
   for (const [name, digest] of Object.entries(files)) {
     if (path.basename(name) !== name || !digestPattern.test(digest)) {
@@ -134,59 +137,38 @@ function verifyRuntimeFiles(directory, files) {
   }
 }
 
-async function download(url, destination) {
-  const response = await fetch(url, { signal: AbortSignal.timeout(90_000) });
-  if (!response.ok) assert.fail(`Desktop release download failed: ${response.status}`);
-  const chunks = [];
-  let length = 0;
-  for await (const chunk of response.body) {
-    length += chunk.length;
-    if (length > 8 * 1024 * 1024) assert.fail("Desktop release metadata exceeds size limit");
-    chunks.push(Buffer.from(chunk));
-  }
-  fs.writeFileSync(destination, Buffer.concat(chunks));
-}
-
-async function main() {
+function main() {
   if (process.platform !== "win32") return;
   const desktopRoot = path.resolve(__dirname, "..");
   const pin = validatePin(
     JSON.parse(fs.readFileSync(path.join(desktopRoot, "desktop-modules.json"))),
   );
-  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "onekey-desktop-verify-"));
-  try {
-    const url = `https://github.com/${repository}/releases/download/desktop-win-v${pin.version}`;
-    for (const name of ["desktop-win.json", "desktop-win.sigstore.json"]) {
-      await download(`${url}/${name}`, path.join(temporary, name));
+  const app = JSON.parse(fs.readFileSync(path.join(desktopRoot, "package.json")));
+  const appDir = path.join(desktopRoot, "app");
+  const runtimeManifest = JSON.parse(fs.readFileSync(path.join(appDir, "package.json")));
+  for (const name of ["electron-windows-hello"]) {
+    if (
+      app.dependencies[name] !== pin.version ||
+      runtimeManifest.dependencies[name] !== pin.version
+    ) {
+      assert.fail(`Unpinned npm runtime dependency: ${name}`);
     }
-    const file = path.join(temporary, "desktop-win.json");
+    const directory = path.join(appDir, "node_modules", name);
+    const file = path.join(directory, "desktop-win.json");
     const release = readApprovedRelease(file, pin);
-    verifyAttestation(file, pin.sourceCommit, path.join(temporary, "desktop-win.sigstore.json"));
-    const app = JSON.parse(fs.readFileSync(path.join(desktopRoot, "package.json")));
     if (app.devDependencies.electron !== release.baseline.electronVersion) {
       assert.fail("Electron differs from the approved desktop validation baseline");
     }
-    for (const [name, entry] of Object.entries(release.modules)) {
-      const expectedUrl = `https://github.com/${repository}/releases/download/${release.tag}/${entry.asset}`;
-      const appDir = path.join(desktopRoot, "app");
-      const runtimeManifest = JSON.parse(fs.readFileSync(path.join(appDir, "package.json")));
-      if (
-        app.dependencies[name] !== expectedUrl ||
-        runtimeManifest.dependencies[name] !== expectedUrl
-      ) {
-        assert.fail(`Unpinned runtime dependency: ${name}`);
-      }
-      verifyRuntimeFiles(path.join(appDir, "node_modules", name), entry.files);
-    }
-    console.log(`Verified desktop Windows modules ${pin.version} from ${pin.sourceCommit}`);
-  } finally {
-    fs.rmSync(temporary, { recursive: true, force: true });
+    verifyRuntimeFiles(directory, release.modules[name].files, proofFiles);
+    verifyAttestation(file, pin.sourceCommit, path.join(directory, "desktop-win.sigstore.json"));
   }
+  console.log(`Verified desktop Windows npm modules ${pin.version} from ${pin.sourceCommit}`);
 }
 
 module.exports = {
   repository,
   workflow,
+  proofFiles,
   sha256,
   validateBaseline,
   validatePin,
@@ -198,8 +180,10 @@ module.exports = {
 };
 
 if (require.main === module) {
-  main().catch((error) => {
+  try {
+    main();
+  } catch (error) {
     console.error(error.message);
     process.exitCode = 1;
-  });
+  }
 }

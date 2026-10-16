@@ -1,10 +1,19 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { checkPe, packRelease, readBaseline, runtimeManifest } from "./release.mjs";
+import {
+  checkPe,
+  checkUnpublished,
+  packRelease,
+  prepareRelease,
+  readBaseline,
+  runtimeManifest,
+  verifyRegistryPackage,
+} from "./release.mjs";
 import policy from "./verify-desktop-modules.cjs";
 
 const sourceCommit = "a".repeat(40);
@@ -52,7 +61,7 @@ function packageFixture(context) {
     writeFileSync(join(directory, `${name}.win32-${arch}-msvc.node`), pe(arch));
     writeJson(join(directory, "build-info.json"), { arch });
   }
-  const release = packRelease(root, sourceCommit);
+  const release = prepareRelease(root, sourceCommit);
   return { root, release, file: join(root, "dist/desktop-win.json") };
 }
 
@@ -94,18 +103,88 @@ test("runtime packaging strips scripts and dev dependencies and rejects runtime 
   );
 });
 
-test("a combined tarball has exactly the signed runtime inventory", (context) => {
+test("npm version checks reject an existing version, registry errors and network failures", async () => {
+  await checkUnpublished(baseline, async (url) => {
+    assert.equal(url, `https://registry.npmjs.org/${name}/${baseline.version}`);
+    return { status: 404 };
+  });
+  await assert.rejects(
+    checkUnpublished(baseline, async () => ({ status: 200 })),
+    /cannot be rebuilt/,
+  );
+  await assert.rejects(
+    checkUnpublished(baseline, async () => ({ status: 503 })),
+    /HTTP 503/,
+  );
+  await assert.rejects(
+    checkUnpublished(baseline, async () => {
+      throw new Error("offline");
+    }),
+    /offline/,
+  );
+});
+
+test("a combined npm tarball carries exactly the runtime inventory and portable proof", (context) => {
   const fixture = packageFixture(context);
   const entry = fixture.release.modules[name];
+  assert.throws(() => packRelease(fixture.root, sourceCommit), /ENOENT/);
+  const proof = join(fixture.root, "dist/desktop-win.sigstore.json");
+  writeFileSync(proof, "fixture proof; not a valid attestation");
+  packRelease(fixture.root, sourceCommit);
   const archive = join(fixture.root, "dist", entry.asset);
-  assert.equal(policy.sha256(readFileSync(archive)), entry.sha256);
   const extracted = temporary(context);
   execFileSync("tar", ["-xzf", archive, "-C", extracted]);
-  policy.verifyRuntimeFiles(join(extracted, "package"), entry.files);
+  policy.verifyRuntimeFiles(join(extracted, "package"), entry.files, policy.proofFiles);
+  assert.deepEqual(
+    readFileSync(join(extracted, "package/desktop-win.json")),
+    readFileSync(fixture.file),
+  );
+  assert.deepEqual(
+    readFileSync(join(extracted, "package/desktop-win.sigstore.json")),
+    readFileSync(proof),
+  );
   const manifest = JSON.parse(readFileSync(join(extracted, "package/package.json")));
   assert.equal(manifest.name, name);
   assert.equal(manifest.version, baseline.version);
   assert.equal(manifest.scripts, undefined);
+});
+
+test("packaging rejects a changed source, baseline or staged file after inventory preparation", (context) => {
+  const fixture = packageFixture(context);
+  writeFileSync(join(fixture.root, "dist/desktop-win.sigstore.json"), "fixture proof");
+  assert.throws(() => packRelease(fixture.root, "b".repeat(40)), /expected source/);
+  writeJson(join(fixture.root, "release.json"), { ...baseline, version: "44.0.3" });
+  assert.throws(() => packRelease(fixture.root, sourceCommit), /baseline/);
+  writeJson(join(fixture.root, "release.json"), baseline);
+  writeFileSync(join(fixture.root, "dist/staging", name, "package/index.cjs"), "replaced");
+  assert.throws(() => packRelease(fixture.root, sourceCommit), /digest mismatch/);
+});
+
+test("registry verification requires the exact npm archive, package identity and provenance metadata", () => {
+  const archive = Buffer.from("approved npm archive");
+  const metadata = {
+    ...runtimeManifest({ name }, baseline.version),
+    dist: {
+      integrity: `sha512-${createHash("sha512").update(archive).digest("base64")}`,
+      attestations: { url: "https://registry.npmjs.org/-/npm/v1/attestations/fixture" },
+    },
+  };
+  verifyRegistryPackage(metadata, archive, name, baseline.version);
+  assert.throws(
+    () => verifyRegistryPackage(metadata, Buffer.from("replaced"), name, baseline.version),
+    /does not match/,
+  );
+  for (const changes of [
+    { version: "0.1.0" },
+    { name: "unexpected" },
+    { repository: { url: "git+https://github.com/attacker/repo.git" } },
+    { dist: { integrity: metadata.dist.integrity } },
+    { dist: { ...metadata.dist, attestations: { url: "https://attacker/attestations" } } },
+  ])
+    assert.throws(
+      () => verifyRegistryPackage({ ...metadata, ...changes }, archive, name, baseline.version),
+      /does not match/,
+    );
 });
 
 test("runtime verification rejects tampering and extra or missing files without executing code", (context) => {

@@ -4,7 +4,7 @@ Windows Hello verification associated with an Electron `BrowserWindow`.
 Independent Node-API implementation for Windows x64 and ARM64, with no runtime npm dependencies.
 
 ```sh
-npm install <the-reviewed-GitHub-Release-tarball-URL>
+npm install --save-exact electron-windows-hello@44.0.2
 ```
 
 ## API
@@ -77,11 +77,11 @@ npm run test:types
 ```
 
 Build a specific target with `npm run build -- x86_64-pc-windows-msvc` or `npm run build -- aarch64-pc-windows-msvc`.
-The dedicated desktop-win-release workflow builds and tests each architecture on a native Windows runner using the desktop baseline. It packs the combined runtime as a GitHub Release asset and generates build attestations. Only the runtime entrypoint, declarations, native binaries, README, license, and package metadata are included. See ../../SPEC.md and SPEC.md for the release and consumer policy.
+The manually triggered desktop-win-release workflow builds and tests each architecture on a native Windows runner using the desktop baseline. It publishes the combined runtime to npm with provenance. The package includes the runtime entrypoint, declarations, native binaries, README, license, package metadata, and a signed file inventory with its portable verification proof. No GitHub Release is created or required. See ../../SPEC.md and SPEC.md for the release and consumer policy.
 
 With Electron installed in the development environment, `npm run test:electron` checks the real HWND and utility-process path without an authentication prompt. `npm run test:electron -- --interactive` opens a visible owner window and requests Windows Hello; verify focus, cancellation, multi-monitor placement, and taskbar presentation in a logged-in desktop session. Headless CI cannot establish those interaction results.
 
-This module is independently released through GitHub Releases, not npm. The existing public npm version is not modified. Source package versions are internal metadata; the runtime tarball is stamped with the reviewed desktop release version.
+The private source package is excluded from mobile workspaces and publishing. The dedicated workflow stamps the public npm package with the reviewed desktop release version. Existing published versions are never modified. Before integrating a release, verify the embedded inventory proof against the reviewed source commit and workflow, pin the exact npm version and inventory digest, and preserve the consumer's release-age and vulnerability checks. Provenance establishes origin, not that the source or toolchain is free of malicious code.
 
 ## References
 
