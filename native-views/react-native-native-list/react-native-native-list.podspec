@@ -34,7 +34,10 @@ Pod::Spec.new do |s|
 
   s.test_spec "Tests" do |test_spec|
     test_spec.source_files = "ios/tests/**/*.swift"
-    test_spec.pod_target_xcconfig = { "PRODUCT_MODULE_NAME" => "NativeListModuleTests" }
+    test_spec.pod_target_xcconfig = {
+      "PRODUCT_MODULE_NAME" => "NativeListModuleTests",
+      "SWIFT_OBJC_INTEROP_MODE" => "objcxx"
+    }
   end
 
   load "nitrogen/generated/ios/NativeListModule+autolinking.rb"

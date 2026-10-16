@@ -15,6 +15,7 @@ import {
 } from "react-native";
 
 import NativeScrollerHost, { Commands } from "./NativeScrollerNativeComponent";
+import type { ScrollEdgeEffect } from "./ScrollEdgeEffect";
 
 export const NATIVE_SCROLLER_NATIVE_ID_PREFIX =
   "rnc-collapsible-pager-native-scroller";
@@ -46,8 +47,8 @@ export interface NativeScrollerProps
   pagerScrollKey?: string;
   /** Fixed overlay above scrolling content on iOS 26 and newer. */
   topOverlay?: React.ReactNode;
-  /** Enables UIKit's hard top scroll-edge effect on iOS 26 and newer. */
-  topScrollEdgeEffect?: "hard";
+  /** Selects UIKit's top scroll-edge effect on iOS 26 and newer. */
+  topScrollEdgeEffect?: `${ScrollEdgeEffect}`;
   /** iOS only. Android retains AndroidX's native fling physics. */
   decelerationRate?: ScrollViewProps["decelerationRate"];
   /** Standard RefreshControl props are mapped to the independently owned native controller. */
@@ -118,7 +119,8 @@ export const NativeScroller = React.forwardRef<
   const [topOverlayHeight, setTopOverlayHeight] = React.useState(0);
   const hasTopOverlay =
     Platform.OS === "ios" && parseInt(String(Platform.Version), 10) >= 26 &&
-    topScrollEdgeEffect === "hard" && topOverlay != null;
+    (topScrollEdgeEffect === "hard" || topScrollEdgeEffect === "soft") &&
+    topOverlay != null;
   const [refreshEpoch, requestRefreshSync] = React.useReducer(
     (value: number) => value + 1,
     0
@@ -212,7 +214,7 @@ export const NativeScroller = React.forwardRef<
       contentInsetRight={contentInset?.right ?? 0}
       contentInsetBottom={contentInset?.bottom ?? 0}
       contentInsetLeft={contentInset?.left ?? 0}
-      topScrollEdgeHard={hasTopOverlay}
+      topScrollEdgeEffect={hasTopOverlay ? topScrollEdgeEffect : "none"}
       topOverlayHeight={hasTopOverlay ? topOverlayHeight : 0}
       decelerationRate={rate}
       keyboardShouldPersistTaps={persistTaps}

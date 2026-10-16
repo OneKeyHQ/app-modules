@@ -1467,6 +1467,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 - (void)cancelTopInsetReboundCheck;
 - (void)scheduleTopInsetReboundCheck;
 - (void)syncScrollEdgeAppearance;
+- (void)updateHardEdgeSeparatorCovers;
 - (void)updateScrollEdgeContentMasks;
 - (void)restoreScrollEdgeContentMasks;
 - (void)sharedHeaderPressCancellationGestureChanged:(UIPanGestureRecognizer *)recognizer;
@@ -1503,6 +1504,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   UIScrollEdgeElementContainerInteraction *_stickyEdgeInteraction;
   UILabel *_topEdgeMarker;
   UILabel *_stickyEdgeMarker;
+  CALayer *_topEdgeSeparatorCover;
+  CALayer *_stickyEdgeSeparatorCover;
   __weak UIView *_topEdgeInteractionHost;
   __weak UIView *_stickyEdgeInteractionHost;
   __weak UIScrollView *_topEdgeScrollView;
@@ -1521,7 +1524,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   __weak RNCPagerViewComponentView *_externalOuterPager;
   BOOL _externalOuterPageActive;
   BOOL _externalOuterTransitioning;
-  BOOL _topScrollEdgeHard;
+  BOOL _topScrollEdgeEnabled;
+  RNCCollapsiblePagerViewTopScrollEdgeEffect _topScrollEdgeEffect;
   NSString *_topOverlayColorScheme;
   BOOL _pendingTopOverlayAppearanceCommit;
   BOOL _applyingTopOverlayInsetChange;
@@ -1914,7 +1918,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 - (void)syncScrollEdgeAppearance
 {
-  BOOL active = _topScrollEdgeHard &&
+  BOOL active = _topScrollEdgeEnabled &&
     (self.hasFixedTopOverlay || _stickyHeaderView != nil) && self.window != nil &&
     !_isBeingRecycled;
   UIUserInterfaceStyle style = UIUserInterfaceStyleUnspecified;
@@ -1952,7 +1956,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 - (void)updateScrollEdgeContentMasks
 {
-  BOOL enabled = _topScrollEdgeHard &&
+  [self updateHardEdgeSeparatorCovers];
+  BOOL enabled = _topScrollEdgeEnabled &&
     (self.hasFixedTopOverlay || _stickyHeaderView != nil) &&
     self.window != nil && !_isBeingRecycled;
   if (!enabled) {
@@ -2052,9 +2057,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     BOOL externalOwnerReady = _externalTopOverlayTag <= 0 ||
       _externalOuterPager == nil ||
       (_externalOuterPageActive && !_externalOuterTransitioning);
-    BOOL hasOverlay = _topScrollEdgeHard && self.hasFixedTopOverlay &&
+    BOOL hasOverlay = _topScrollEdgeEnabled && self.hasFixedTopOverlay &&
       externalOwnerReady && self.window != nil;
-    BOOL hasSticky = _topScrollEdgeHard && _stickyHeaderView != nil &&
+    BOOL hasSticky = _topScrollEdgeEnabled && _stickyHeaderView != nil &&
       externalOwnerReady && self.window != nil;
     BOOL enabled = (hasOverlay || hasSticky) && scrollView != nil;
     BOOL topHostChanged = (_topEdgeInteraction != nil) != hasOverlay ||
@@ -2080,7 +2085,12 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     if (enabled && _topEdgeScrollView == nil) {
       _originalTopEdgeStyle = scrollView.topEdgeEffect.style;
       _topEdgeScrollView = scrollView;
-      scrollView.topEdgeEffect.style = UIScrollEdgeEffectStyle.hardStyle;
+    }
+    if (enabled) {
+      UIScrollEdgeEffectStyle *style =
+        _topScrollEdgeEffect == RNCCollapsiblePagerViewTopScrollEdgeEffect::Soft
+          ? UIScrollEdgeEffectStyle.softStyle : UIScrollEdgeEffectStyle.hardStyle;
+      if (scrollView.topEdgeEffect.style != style) scrollView.topEdgeEffect.style = style;
     }
     if (hasOverlay && enabled && _topEdgeInteraction == nil) {
       // UIKit needs a native element to shape the edge effect around React-drawn content.
@@ -2132,6 +2142,54 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
       _stickyEdgeInteractionHost = stickyInteractionHost;
     }
     [self updateScrollEdgeContentMasks];
+  }
+}
+
+- (void)updateHardEdgeSeparatorCovers
+{
+  BOOL enabled = _topScrollEdgeEnabled &&
+    _topScrollEdgeEffect == RNCCollapsiblePagerViewTopScrollEdgeEffect::Hard &&
+    _topEdgeScrollView != nil && self.window != nil && !_isBeingRecycled;
+  if (!enabled && _topEdgeSeparatorCover == nil && _stickyEdgeSeparatorCover == nil) return;
+  UIColor *color = nil;
+  for (UIView *view = self; view != nil; view = view.superview) {
+    UIColor *candidate = [view.backgroundColor resolvedColorWithTraitCollection:
+      _topOverlayHostView.traitCollection];
+    if (candidate != nil && CGColorGetAlpha(candidate.CGColor) >= 1) {
+      color = candidate;
+      break;
+    }
+  }
+  color = color ?: [UIColor.systemBackgroundColor resolvedColorWithTraitCollection:
+    _topOverlayHostView.traitCollection];
+  CGFloat scale = self.window.screen.scale ?: self.traitCollection.displayScale;
+  CGFloat pixel = 1.0 / MAX(1, scale);
+  UIView *hosts[] = {_topEdgeInteractionHost, _stickyEdgeInteractionHost};
+  CALayer *covers[] = {_topEdgeSeparatorCover, _stickyEdgeSeparatorCover};
+  for (NSInteger index = 0; index < 2; index++) {
+    UIView *host = hosts[index];
+    CALayer *cover = covers[index];
+    if (!enabled || host == nil || host.hidden || CGRectIsEmpty(host.bounds)) {
+      [cover removeFromSuperlayer];
+      cover = nil;
+    } else {
+      if (cover == nil) {
+        cover = [CALayer layer];
+        cover.name = @"onekey-hard-edge-separator-cover";
+        cover.zPosition = 1;
+        cover.actions = @{@"position": NSNull.null, @"bounds": NSNull.null,
+          @"backgroundColor": NSNull.null};
+        [_containerView.layer addSublayer:cover];
+      }
+      // Cover only the hairline; keep the native Hard material and glass shadows.
+      CGFloat boundary = CGRectGetMaxY([host convertRect:host.bounds toView:_containerView]);
+      cover.frame = CGRectMake(0, round(boundary * scale) / scale - pixel,
+        CGRectGetWidth(_containerView.bounds), pixel);
+      cover.contentsScale = scale;
+      cover.backgroundColor = color.CGColor;
+    }
+    if (index == 0) _topEdgeSeparatorCover = cover;
+    else _stickyEdgeSeparatorCover = cover;
   }
 }
 
@@ -2321,7 +2379,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   if (_sharedHeaderScrollView == scrollView &&
       _sharedHeaderHostView.superview == scrollView) {
     _sharedHeaderHostView.layer.zPosition =
-      _topScrollEdgeHard && (self.hasFixedTopOverlay || _stickyHeaderView != nil) ? 0 : 1000;
+      _topScrollEdgeEnabled && (self.hasFixedTopOverlay || _stickyHeaderView != nil) ? 0 : 1000;
     [self layoutSharedHeaders];
     return;
   }
@@ -2329,7 +2387,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   _sharedHeaderScrollView = scrollView;
   _sharedHeadersLiftedForPagerTransition = NO;
   _sharedHeaderHostView.layer.zPosition =
-    _topScrollEdgeHard && (self.hasFixedTopOverlay || _stickyHeaderView != nil) ? 0 : 1000;
+    _topScrollEdgeEnabled && (self.hasFixedTopOverlay || _stickyHeaderView != nil) ? 0 : 1000;
   if (_sharedHeaderHostView.superview != scrollView) {
     [scrollView addSubview:_sharedHeaderHostView];
   }
@@ -2424,7 +2482,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   CGFloat pinnedTranslation = MAX(0, _currentLogicalOffset - _headerHeight - refreshInset);
   CGFloat stickyTop = [_sharedHeaderHostView convertPoint:
     CGPointMake(0, _headerHeight + pinnedTranslation) toView:self].y;
-  BOOL shouldPin = _topScrollEdgeHard &&
+  BOOL shouldPin = _topScrollEdgeEnabled &&
     _stickyHeaderView != nil && attachedToList && !_transitioning &&
     !_externalOuterTransitioning &&
     !_isPagerDragging && _headerOffset >= _headerHeight - 0.5 &&
@@ -2646,7 +2704,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
       _topOverlayView.window == self.window;
     BOOL externalOverlayReady = _externalTopOverlayTag > 0 &&
       _externalTopOverlayView.window == self.window;
-    if (!_isBeingRecycled && _topScrollEdgeHard && self.window != nil &&
+    if (!_isBeingRecycled && _topScrollEdgeEnabled && self.window != nil &&
         (localOverlayReady || externalOverlayReady)) {
       [self updateTopScrollEdgeForScrollView:_observedScrollView];
     }
@@ -2729,7 +2787,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   if (_isBeingRecycled) return;
   NSInteger safeIndex = MIN(MAX(index, 0), _logicalChildren.count);
   [_logicalChildren insertObject:childComponentView atIndex:safeIndex];
-  if (_topScrollEdgeHard || _topOverlayView != nil) {
+  if (_topScrollEdgeEnabled || _topOverlayView != nil) {
     _needsSlotRebuild = YES;
   } else {
     [self rebuildSlots];
@@ -2744,7 +2802,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   if (existingIndex == NSNotFound) return;
   [childComponentView removeFromSuperview];
   [_logicalChildren removeObjectAtIndex:existingIndex];
-  if (_topScrollEdgeHard || _topOverlayView != nil) {
+  if (_topScrollEdgeEnabled || _topOverlayView != nil) {
     _needsSlotRebuild = YES;
   } else {
     [self rebuildSlots];
@@ -2761,7 +2819,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     _needsSlotRebuild = YES;
     return;
   }
-  if (_topScrollEdgeHard &&
+  if (_topScrollEdgeEnabled &&
       _logicalChildren.count != _pageKeys.count + 2 &&
       _logicalChildren.count != _pageKeys.count + 3) {
     _needsSlotRebuild = YES;
@@ -2800,7 +2858,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     _stickyHeaderView = _logicalChildren[1];
     [_sharedHeaderHostView addSubview:_stickyHeaderView];
   }
-  BOOL hasOverlaySlot = _topScrollEdgeHard &&
+  BOOL hasOverlaySlot = _topScrollEdgeEnabled &&
     _logicalChildren.count == _pageKeys.count + 3;
   NSInteger pageSlotStart = hasOverlaySlot ? 3 : 2;
   if (hasOverlaySlot) {
@@ -3050,7 +3108,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   _externalTopOverlayHeight = 0;
   _externalOuterPageActive = NO;
   _externalOuterTransitioning = NO;
-  _topScrollEdgeHard = NO;
+  _topScrollEdgeEnabled = NO;
+  _topScrollEdgeEffect = RNCCollapsiblePagerViewTopScrollEdgeEffect::None;
   _nativeTabBarHeight = 44;
   _nativeSubHeaderHeight = 74;
   _headerOffset = 0;
@@ -3092,7 +3151,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   const auto &oldViewProps = *std::static_pointer_cast<const RNCCollapsiblePagerViewProps>(_props);
   const auto &newViewProps = *std::static_pointer_cast<const RNCCollapsiblePagerViewProps>(props);
   _applyingTopOverlayInsetChange =
-    oldViewProps.topScrollEdgeHard != newViewProps.topScrollEdgeHard ||
+    (oldViewProps.topScrollEdgeEffect == RNCCollapsiblePagerViewTopScrollEdgeEffect::None) !=
+      (newViewProps.topScrollEdgeEffect == RNCCollapsiblePagerViewTopScrollEdgeEffect::None) ||
     oldViewProps.topOverlayHeight != newViewProps.topOverlayHeight;
 
   if (_needsPropsReapply || oldViewProps.initialPage != newViewProps.initialPage) {
@@ -3143,9 +3203,12 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     _stickyHeaderHeight = MAX(0, newViewProps.stickyHeaderHeight);
     insetsChanged = YES;
   }
-  if (_needsPropsReapply || oldViewProps.topScrollEdgeHard != newViewProps.topScrollEdgeHard) {
-    _topScrollEdgeHard = newViewProps.topScrollEdgeHard;
-    if (oldViewProps.topScrollEdgeHard || newViewProps.topScrollEdgeHard) {
+  if (_needsPropsReapply || oldViewProps.topScrollEdgeEffect != newViewProps.topScrollEdgeEffect) {
+    BOOL enabled = newViewProps.topScrollEdgeEffect != RNCCollapsiblePagerViewTopScrollEdgeEffect::None;
+    BOOL enabledChanged = _topScrollEdgeEnabled != enabled;
+    _topScrollEdgeEnabled = enabled;
+    _topScrollEdgeEffect = newViewProps.topScrollEdgeEffect;
+    if (enabledChanged) {
       _deferTopEdgeSlotRebuild = YES;
       [self rebuildSlots];
       NSUInteger generation = _generation;
@@ -3156,12 +3219,12 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
         [self rebuildSlots];
       });
     }
-    insetsChanged = YES;
+    insetsChanged |= enabledChanged;
   }
   if (_needsPropsReapply ||
       oldViewProps.topOverlayColorScheme != newViewProps.topOverlayColorScheme) {
     NSString *nextScheme = RCTNSStringFromString(newViewProps.topOverlayColorScheme);
-    if (self.hasFixedTopOverlay && _topScrollEdgeHard &&
+    if (self.hasFixedTopOverlay && _topScrollEdgeEnabled &&
         _topOverlayColorScheme != nil &&
         ![_topOverlayColorScheme isEqualToString:nextScheme]) {
       _pendingTopOverlayAppearanceCommit = YES;

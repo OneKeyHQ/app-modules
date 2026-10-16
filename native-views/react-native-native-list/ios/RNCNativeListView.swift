@@ -3,6 +3,10 @@ import CoreFoundation
 import UIKit
 import UniformTypeIdentifiers
 
+enum NativeListTopScrollEdgeEffect {
+  case none, hard, soft
+}
+
 final class NativeListView: UIView {
   private var fonts = NativeListFontFamilies()
 
@@ -36,7 +40,7 @@ final class NativeListView: UIView {
   private var topEdgeInteraction: UIInteraction?
   private var topEdgeMarker: UILabel?
   private var originalTopEdgeStyle: AnyObject?
-  private var topScrollEdgeHard = false
+  private var topScrollEdgeEffect: NativeListTopScrollEdgeEffect = .none
   private var requestedTopOverlayHeight: CGFloat = 0
   private var appliedTopOverlayInset: CGFloat = 0
 
@@ -78,8 +82,8 @@ final class NativeListView: UIView {
     }
   }
 
-  func setTopScrollEdge(hard: Bool, overlayHeight: CGFloat) {
-    topScrollEdgeHard = hard
+  func setTopScrollEdge(effect: NativeListTopScrollEdgeEffect, overlayHeight: CGFloat) {
+    topScrollEdgeEffect = effect
     requestedTopOverlayHeight = overlayHeight.isFinite ? max(0, overlayHeight) : 0
     updateTopScrollEdge()
     setNeedsLayout()
@@ -87,7 +91,7 @@ final class NativeListView: UIView {
 
   private func updateTopScrollEdge() {
     if #available(iOS 26.0, *) {
-      let hasOverlay = topScrollEdgeHard && topOverlayContent != nil
+      let hasOverlay = topScrollEdgeEffect != .none && topOverlayContent != nil
       let enabled = hasOverlay && window != nil
       let nextInset = hasOverlay ? requestedTopOverlayHeight : 0
       if nextInset != appliedTopOverlayInset {
@@ -134,7 +138,7 @@ final class NativeListView: UIView {
         }
         originalTopEdgeStyle = nil
       }
-      if enabled { collectionView.topEdgeEffect.style = .hard }
+      if enabled { collectionView.topEdgeEffect.style = topScrollEdgeEffect == .soft ? .soft : .hard }
     }
   }
 
@@ -2107,7 +2111,7 @@ final class NativeListView: UIView {
 
   func dispose() {
     guard !disposed else { return }
-    setTopScrollEdge(hard: false, overlayHeight: 0)
+    setTopScrollEdge(effect: .none, overlayHeight: 0)
     disposed = true
 
     disposeActionAnchor()

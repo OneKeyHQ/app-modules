@@ -1,3 +1,4 @@
+import type { ScrollEdgeEffect } from "./ScrollEdgeEffect";
 import React from "react";
 import { I18nManager, StyleSheet, View } from "react-native";
 import type * as ReactNative from "react-native";
@@ -67,7 +68,7 @@ export interface CollapsiblePagerViewProps
   headerHeight: number;
   stickyHeaderHeight: number;
   topOverlay?: React.ReactNode;
-  topScrollEdgeEffect?: "hard";
+  topScrollEdgeEffect?: `${ScrollEdgeEffect}`;
   topOverlayColorScheme?: "light" | "dark";
   externalTopOverlayTag?: number;
   pageRetentionDistance?: number;

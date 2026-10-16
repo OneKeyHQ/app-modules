@@ -27,3 +27,5 @@ export type PagerViewOnPageSelectedEvent =
 
 export type PageScrollStateChangedNativeEvent =
   ReactNative.NativeSyntheticEvent<PageScrollStateChangedNativeEventData>;
+
+export { ScrollEdgeEffect } from './ScrollEdgeEffect';
