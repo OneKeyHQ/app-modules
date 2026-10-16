@@ -17,7 +17,12 @@ HTTP status as the last element of its in-process result tuple, without a new
 Nitro field. Unsupported ranges still fall back to a single stream. An Android
 caller may set a maximum total size; a larger probed total is rejected before
 segment workers start. Callers without a maximum keep the existing path. Cancelling
-an active iOS run completes its pending continuation once; late callbacks cannot
-restart its segments or complete it again. The owning updater must not parse
+an active iOS run completes its pending continuation once. Cancellation reserves
+the channel/task identity through task cancellation and artifact cleanup; repeated
+cancel calls join that cleanup. Segment callbacks belong to the run that created
+or adopted their URLSession task, so late callbacks cannot write to or complete a
+replacement run. Cancellation waits for already-entered file writes before
+deleting artifacts, while newly arriving callbacks cannot restart segments or
+write files. The owning updater must not parse
 exception prose for status. Runtime acceptance of the enclosing update flow
 remains with each updater.
