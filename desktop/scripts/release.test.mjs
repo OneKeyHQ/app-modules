@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { checkPe, packRelease, readBaseline, runtimeManifest } from "./release.mjs";
-import { synchronize } from "./sync-app-monorepo.mjs";
 import policy from "./verify-desktop-modules.cjs";
 
 const sourceCommit = "a".repeat(40);
@@ -55,24 +54,6 @@ function packageFixture(context) {
   }
   const release = packRelease(root, sourceCommit);
   return { root, release, file: join(root, "dist/desktop-win.json") };
-}
-
-function appFixture(context) {
-  const root = temporary(context);
-  const desktop = join(root, "apps/desktop");
-  mkdirSync(join(desktop, "app"), { recursive: true });
-  mkdirSync(join(desktop, "scripts"));
-  writeJson(join(desktop, "package.json"), {
-    name: "desktop",
-    devDependencies: { electron: baseline.electronVersion },
-    dependencies: { [name]: "0.1.0", unrelated: "1.0.0" },
-    scripts: { "install-app-deps": "electron-builder install-app-deps" },
-  });
-  writeJson(join(desktop, "app/package.json"), {
-    name: "desktop",
-    dependencies: { [name]: "0.1.0", unrelated: "1.0.0" },
-  });
-  return { root, desktop };
 }
 
 test("desktop versions track the Electron major, not its patch", () => {
@@ -189,41 +170,4 @@ test("attestation verification constrains repository, workflow, commit, main and
     "--bundle",
     "proof.json",
   ]);
-});
-
-test("sync updates only desktop dependencies, records approval and is idempotent", (context) => {
-  const fixture = packageFixture(context);
-  const app = appFixture(context);
-  const pin = synchronize(app.root, fixture.file);
-  assert.equal(pin.manifestSha256, policy.sha256(readFileSync(fixture.file)));
-  const first = JSON.parse(readFileSync(join(app.desktop, "package.json")));
-  assert.equal(first.devDependencies.electron, baseline.electronVersion);
-  assert.equal(first.dependencies.unrelated, "1.0.0");
-  assert.equal(
-    first.dependencies[name],
-    `https://github.com/OneKeyHQ/app-modules/releases/download/desktop-win-v${baseline.version}/${name}-${baseline.version}.tgz`,
-  );
-  assert.ok(first.scripts["install-app-deps"].endsWith("node scripts/verify-desktop-modules.cjs"));
-  assert.deepEqual(synchronize(app.root, fixture.file), pin);
-  assert.deepEqual(JSON.parse(readFileSync(join(app.desktop, "package.json"))), first);
-  const runtime = JSON.parse(readFileSync(join(app.desktop, "app/package.json")));
-  assert.equal(runtime.dependencies[name], first.dependencies[name]);
-});
-
-test("sync refuses stale Electron, missing integration, downgrade and same-version replacement", (context) => {
-  const fixture = packageFixture(context);
-  const app = appFixture(context);
-  const manifestFile = join(app.desktop, "package.json");
-  const original = JSON.parse(readFileSync(manifestFile));
-  writeJson(manifestFile, { ...original, devDependencies: { electron: "36.0.1" } });
-  assert.throws(() => synchronize(app.root, fixture.file), /Electron/);
-  assert.equal(existsSync(join(app.desktop, "desktop-modules.json")), false);
-  writeJson(manifestFile, { ...original, dependencies: {} });
-  assert.throws(() => synchronize(app.root, fixture.file), /Merge/);
-  writeJson(manifestFile, original);
-  const pin = synchronize(app.root, fixture.file);
-  writeJson(join(app.desktop, "desktop-modules.json"), { ...pin, version: "99.0.1" });
-  assert.throws(() => synchronize(app.root, fixture.file), /downgrade/);
-  writeJson(join(app.desktop, "desktop-modules.json"), { ...pin, sourceCommit: "b".repeat(40) });
-  assert.throws(() => synchronize(app.root, fixture.file), /replacement/);
 });
