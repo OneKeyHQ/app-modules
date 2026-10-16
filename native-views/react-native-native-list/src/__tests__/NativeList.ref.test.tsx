@@ -20,6 +20,9 @@ let mockOnReorder: (payloadJson: string) => void;
 let mockOnRowAction: (payloadJson: string) => void;
 const mockFontRenders = jest.fn();
 const mockWebEngine = {
+  setStickyInset: jest.fn(),
+  currentSnapshot: jest.fn(() => snapshot),
+  currentContentHeight: jest.fn(() => 0),
   setFontFamiliesJson: jest.fn(),
   applySnapshot: jest.fn(),
   setVirtualizationEnabled: jest.fn(),
@@ -385,7 +388,7 @@ describe('NativeList imperative ref', () => {
             }}
             onReorder={onReorder}
           />,
-          { createNodeMock: () => ({}) }
+          { createNodeMock: () => ({ style: {} }) }
         );
       });
       const event = { key: 'a', fromIndex: 0, toIndex: 2 };

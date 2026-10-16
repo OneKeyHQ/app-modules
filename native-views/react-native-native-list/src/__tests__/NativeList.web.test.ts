@@ -3664,3 +3664,624 @@ describe('legacy default regressions', () => {
     }
   });
 });
+
+describe('Web migration layout and table regressions', () => {
+  const { JSDOM } = require('jsdom') as {
+    JSDOM: new (html: string) => { window: { document: Document } };
+  };
+
+  it('captures only external host and intermediate ancestor scrolls, then removes capture on destroy', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    const pager = document.createElement('div');
+    const rowsHost = document.createElement('div');
+    const unrelated = document.createElement('div');
+    host.append(pager, unrelated);
+    pager.append(rowsHost);
+    document.body.append(host);
+    const originalElement = Object.getOwnPropertyDescriptor(
+      globalThis,
+      'Element'
+    );
+    Object.defineProperty(globalThis, 'Element', {
+      configurable: true,
+      value: document.defaultView!.Element,
+    });
+    const engine = new NativeListWebEngine(
+      rowsHost,
+      snapshot({ kind: 'sectioned' }, [
+        {
+          type: 'message',
+          key: 'scroll-row',
+          title: 'Row',
+          body: '',
+          time: '',
+        },
+      ]),
+      {},
+      false,
+      null,
+      '{}',
+      { scrollHost: host }
+    );
+    const scroll = jest.spyOn(
+      engine as unknown as { handleScroll: () => void },
+      'handleScroll'
+    );
+    const dispatch = (target: HTMLElement) =>
+      target.dispatchEvent(new document.defaultView!.Event('scroll'));
+    try {
+      dispatch(pager);
+      expect(scroll).toHaveBeenCalledTimes(1);
+      dispatch(host);
+      expect(scroll).toHaveBeenCalledTimes(2);
+      dispatch(unrelated);
+      expect(scroll).toHaveBeenCalledTimes(2);
+      dispatch(rowsHost);
+      const root = rowsHost.querySelector<HTMLElement>('.ok-native-list-root')!;
+      const slot = document.createElement('div');
+      root.append(slot);
+      dispatch(root);
+      dispatch(slot);
+      expect(scroll).toHaveBeenCalledTimes(3);
+      engine.destroy();
+      dispatch(pager);
+      dispatch(host);
+      expect(scroll).toHaveBeenCalledTimes(3);
+      expect(host.scrollTop).toBe(0);
+    } finally {
+      engine.destroy();
+      if (originalElement) {
+        Object.defineProperty(globalThis, 'Element', originalElement);
+      } else {
+        Reflect.deleteProperty(globalThis, 'Element');
+      }
+    }
+  });
+
+  it('gates table pointer reveal on primary hover while retaining keyboard focus reveal', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const style = document.createElement('style');
+    style.textContent = WEB_LIST_CSS;
+    document.head.append(style);
+    const rules = Array.from(style.sheet!.cssRules);
+    expect(WEB_LIST_CSS).toContain(
+      '.ok-native-list-table-secondary{display:block;min-width:0;overflow:clip}'
+    );
+    const media = rules.filter(
+      (rule): rule is CSSMediaRule => 'media' in rule && 'cssRules' in rule
+    );
+    const hover = media.find(
+      (rule) => rule.media.mediaText.replace(/\s/g, '') === '(hover:hover)'
+    )!;
+    expect(hover).toBeDefined();
+    expect(hover.cssText).toContain('.ok-native-list-market-table:hover');
+    expect(
+      rules.some(
+        (rule) =>
+          !('media' in rule) &&
+          rule.cssText.includes('.ok-native-list-market-table:hover')
+      )
+    ).toBe(false);
+    expect(
+      rules.some(
+        (rule) =>
+          !('media' in rule) &&
+          rule.cssText.includes('.ok-native-list-market-table:focus-within')
+      )
+    ).toBe(true);
+  });
+
+  it('keeps compact touch holds for pointer-only micro-moves but cancels real touch movement', () => {
+    jest.useFakeTimers();
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.append(host);
+    const originalElement = Object.getOwnPropertyDescriptor(
+      globalThis,
+      'Element'
+    );
+    Object.defineProperty(globalThis, 'Element', {
+      configurable: true,
+      value: document.defaultView!.Element,
+    });
+    const onRowAction = jest.fn();
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [
+        {
+          type: 'market',
+          key: 'touch-hold',
+          variant: 'token',
+          title: 'Token',
+          leading: { kind: 'icon', name: 'CryptoCoinOutline' },
+          price: '$1',
+          change: { text: '+1%', tone: 'positive' },
+          pressActionKey: 'press',
+          longPressActionKey: 'hold',
+        },
+      ]),
+      { onRowAction },
+      false
+    );
+    const row = host.querySelector<HTMLElement>('[data-native-list-row-key]')!;
+    const pointer = (type: string, pointerType: string, x: number) =>
+      row.dispatchEvent(
+        Object.assign(
+          new document.defaultView!.Event(type, { bubbles: true }),
+          {
+            pointerId: 1,
+            pointerType,
+            button: 0,
+            clientX: x,
+            clientY: 20,
+          }
+        )
+      );
+    const touch = (points: Array<{ clientX: number; clientY: number }>) =>
+      row.dispatchEvent(
+        Object.assign(
+          new document.defaultView!.Event('touchmove', { bubbles: true }),
+          {
+            touches: points,
+            changedTouches: points,
+          }
+        )
+      );
+    try {
+      pointer('pointerdown', 'touch', 10);
+      pointer('pointermove', 'touch', 15);
+      jest.advanceTimersByTime(800);
+      expect(onRowAction.mock.calls.map(([event]) => event.actionKey)).toEqual([
+        'hold',
+      ]);
+      onRowAction.mockClear();
+      pointer('pointerdown', 'touch', 10);
+      touch([{ clientX: 15, clientY: 20 }]);
+      jest.advanceTimersByTime(800);
+      expect(onRowAction).not.toHaveBeenCalled();
+      pointer('pointerdown', 'touch', 10);
+      touch([
+        { clientX: 10, clientY: 20 },
+        { clientX: 11, clientY: 20 },
+      ]);
+      jest.advanceTimersByTime(800);
+      expect(onRowAction).not.toHaveBeenCalled();
+      pointer('pointerdown', 'mouse', 10);
+      pointer('pointermove', 'mouse', 15);
+      jest.advanceTimersByTime(800);
+      expect(onRowAction).not.toHaveBeenCalled();
+      pointer('pointerdown', 'touch', 10);
+      engine.destroy();
+      jest.advanceTimersByTime(800);
+      expect(onRowAction).not.toHaveBeenCalled();
+    } finally {
+      engine.destroy();
+      if (originalElement)
+        Object.defineProperty(globalThis, 'Element', originalElement);
+      else Reflect.deleteProperty(globalThis, 'Element');
+      jest.useRealTimers();
+    }
+  });
+
+  it.each([2, 3, 4, 6, 7] as const)(
+    'retains fractional grid widths for %i columns',
+    (columns) => {
+      const source: RowModel[] = Array.from(
+        { length: columns },
+        (_, index) => ({
+          type: 'message',
+          key: `fraction-${index}`,
+          title: 'Grid',
+          body: '',
+          time: '',
+          height: 50,
+        })
+      );
+      for (const width of [1000, 1001]) {
+        const layout = computeWebListLayout(
+          snapshot(
+            {
+              kind: 'grid',
+              gridColumns: columns,
+              itemSpacing: 7,
+              contentPaddingHorizontal: 13,
+            },
+            source
+          ),
+          width,
+          400
+        );
+        const first = layout.items[0]!;
+        const last = layout.items[columns - 1]!;
+        expect(first.x).toBe(13);
+        expect(last.x + last.width).toBeCloseTo(width - 13, 8);
+        expect(first.width).toBeCloseTo(
+          (width - 26 - 7 * (columns - 1)) / columns,
+          8
+        );
+      }
+    }
+  );
+
+  it('keeps favorite focus and row/image identity through table quote patches', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const originalElement = Object.getOwnPropertyDescriptor(
+      globalThis,
+      'Element'
+    );
+    Object.defineProperty(globalThis, 'Element', {
+      configurable: true,
+      value: document.defaultView!.Element,
+    });
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const row: Extract<RowModel, { type: 'market' }> = {
+      type: 'market',
+      key: 'table-quote',
+      variant: 'token',
+      change: { text: '+1%', tone: 'positive' },
+      title: 'Token',
+      leading: { kind: 'token', image },
+      price: '$42',
+      webTable: {
+        columns: [
+          { key: 'favorite', width: 38 },
+          { key: 'asset', width: 280 },
+          { key: 'price', flex: 1 },
+        ],
+        cells: [
+          {
+            key: 'favorite',
+            kind: 'favorite',
+            active: false,
+            actionKey: 'favorite',
+            accessibilityLabel: 'Favorite',
+          },
+          {
+            key: 'asset',
+            kind: 'asset',
+            leading: { kind: 'token', image },
+            title: { text: 'Token' },
+          },
+          { key: 'price', kind: 'text', primary: [{ text: '$42' }] },
+        ],
+      },
+    };
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [row]),
+      {},
+      false
+    );
+    try {
+      const body = host.querySelector<HTMLElement>(
+        '[data-nl-renderer="marketTable"]'
+      )!;
+      const favorite = body.querySelector<HTMLButtonElement>(
+        '[data-native-list-action="favorite"]'
+      )!;
+      const bitmap = body.querySelector('img');
+      expect(bitmap).not.toBeNull();
+      expect(bitmap!.getAttribute('src')).toBe(image.uri);
+      favorite.focus();
+      for (let tick = 0; tick < 100; tick++) {
+        const price = `$${43 + tick}`;
+        engine.applyPatches([
+          {
+            type: 'market',
+            key: row.key,
+            changes: {
+              price,
+              webTable: {
+                ...row.webTable!,
+                cells: [
+                  {
+                    key: 'favorite',
+                    kind: 'favorite',
+                    active: true,
+                    actionKey: 'favorite',
+                    accessibilityLabel: 'Remove favorite',
+                  },
+                  row.webTable!.cells[1]!,
+                  { key: 'price', kind: 'text', primary: [{ text: price }] },
+                ],
+              },
+            },
+          },
+        ]);
+      }
+      expect(host.querySelector('[data-nl-renderer="marketTable"]')).toBe(body);
+      expect(body.querySelector('img')).toBe(bitmap);
+      expect(body.querySelector('[data-native-list-action="favorite"]')).toBe(
+        favorite
+      );
+      expect(document.activeElement).toBe(favorite);
+      expect(favorite.getAttribute('aria-pressed')).toBe('true');
+      expect(body.textContent).toContain('$142');
+    } finally {
+      engine.destroy();
+      if (originalElement)
+        Object.defineProperty(globalThis, 'Element', originalElement);
+      else Reflect.deleteProperty(globalThis, 'Element');
+    }
+  });
+
+  it('retains gallery collection padding with and without a network without changing legacy subtitles', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.append(host);
+    const gallery: Extract<RowModel, { type: 'mediaTile' }> = {
+      type: 'mediaTile',
+      key: 'gallery',
+      variant: 'gallery',
+      imageState: 'empty',
+      title: 'NFT',
+      subtitle: 'Collection',
+    };
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [
+        gallery,
+        { ...gallery, key: 'network', networkImage: image },
+        { ...gallery, key: 'legacy', variant: 'browserPreview' },
+      ]),
+      {},
+      false
+    );
+    try {
+      const subtitles = host.querySelectorAll<HTMLElement>(
+        '.ok-native-list-media-subtitle'
+      );
+      for (const subtitle of Array.from(subtitles).slice(0, 2)) {
+        expect(subtitle.style.paddingRight).toBe('8px');
+        expect(subtitle.style.boxSizing).toBe('border-box');
+        expect(subtitle.parentElement!.style.gap).toBe('0px');
+      }
+      expect(
+        subtitles[1]!.parentElement!.querySelector(
+          '.ok-native-list-media-network'
+        )
+      ).not.toBeNull();
+      expect(subtitles[2]!.style.paddingRight).toBe('');
+    } finally {
+      engine.destroy();
+    }
+  });
+
+  it('preserves table token frame colors, border and external overlays through loading and reuse', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const row = (dark: boolean): Extract<RowModel, { type: 'market' }> => ({
+      type: 'market',
+      key: 'parity',
+      variant: 'token',
+      title: 'Token',
+      price: '$1',
+      leading: { kind: 'token', image },
+      change: { text: '+1%', tone: 'positive' },
+      webTable: {
+        columns: [{ key: 'asset', width: 300 }],
+        cells: [
+          {
+            key: 'asset',
+            kind: 'asset',
+            title: { text: 'Token' },
+            leading: {
+              kind: 'token',
+              image: { ...image, loadingStrategy: 'static', retryTimes: 0 },
+              backgroundColor: dark ? '#2b2b2b' : '#ffffff',
+              borderColor: dark ? '#777777' : undefined,
+              fallbackIcon: { name: 'CryptoCoinOutline' },
+              overlays: [
+                {
+                  position: 'bottomRight',
+                  size: 20,
+                  padding: 2,
+                  offset: 4,
+                  image,
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [row(true)]),
+      {},
+      false
+    );
+    try {
+      const visual = host.querySelector<HTMLElement>(
+        '[data-column-key="asset"] .ok-native-list-visual'
+      )!;
+      const bitmap = visual.querySelector<HTMLImageElement>(
+        '.ok-native-list-visual-main'
+      );
+      expect(bitmap).not.toBeNull();
+      expect(visual.style.background).toBe('rgb(43, 43, 43)');
+      expect(visual.style.borderWidth).toBe('1px');
+      expect(visual.style.boxSizing).toBe('border-box');
+      expect(bitmap!.style.width).toBe('100%');
+      const overlay = visual.querySelector<HTMLElement>(
+        '.ok-native-list-visual-overlay'
+      )!;
+      expect(overlay.style.right).toBe('-5px');
+      expect(overlay.style.bottom).toBe('-5px');
+      const ErrorEvent = document.defaultView!.Event;
+      bitmap!.dispatchEvent(new ErrorEvent('error'));
+      expect(
+        visual.querySelector('.ok-native-list-visual-fallback')
+      ).not.toBeNull();
+      expect(visual.style.background).toBe('rgb(43, 43, 43)');
+      engine.applySnapshot(snapshot({ kind: 'sectioned' }, [row(false)]));
+      const light = host.querySelector<HTMLElement>(
+        '[data-column-key="asset"] .ok-native-list-visual'
+      )!;
+      expect(light.style.background).toBe('rgb(255, 255, 255)');
+      expect(light.style.borderWidth).toBe('0px');
+      expect(light.querySelector('.ok-native-list-visual-fallback')).toBeNull();
+      expect(
+        light.querySelector<HTMLElement>('.ok-native-list-visual-overlay')!
+          .style.right
+      ).toBe('-4px');
+    } finally {
+      engine.destroy();
+    }
+  });
+
+  it('uses the legacy two pixel address-copy gap while keeping Stock hover logos at four', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const row: Extract<RowModel, { type: 'market' }> = {
+      type: 'market',
+      key: 'gaps',
+      variant: 'token',
+      title: 'Token',
+      price: '$1',
+      leading: { kind: 'token', image },
+      change: { text: '+1%', tone: 'positive' },
+      webTable: {
+        columns: [
+          { key: 'copy', width: 300 },
+          { key: 'stock', width: 300 },
+        ],
+        cells: [
+          {
+            key: 'copy',
+            kind: 'asset',
+            title: { text: 'Token' },
+            secondary: [{ text: '1D' }],
+            hoverSecondary: [{ text: '0x123...456' }],
+            hoverActionKey: 'copy',
+            leading: { kind: 'token', image },
+          },
+          {
+            key: 'stock',
+            kind: 'asset',
+            title: { text: 'Stock' },
+            secondary: [{ text: 'Company' }],
+            hoverSecondary: [{ text: '2 tokens' }],
+            hoverImages: [image, image],
+            leading: { kind: 'token', image },
+          },
+        ],
+      },
+    };
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [row]),
+      {},
+      false
+    );
+    try {
+      const copy = host.querySelector<HTMLElement>(
+        '[data-native-list-action="copy"]'
+      )!;
+      expect(copy.parentElement!.style.gap).toBe('2px');
+      const stockTrack = host.querySelector<HTMLElement>(
+        '[data-column-key="stock"] .ok-native-list-table-secondary-track'
+      )!;
+      expect((stockTrack.lastElementChild as HTMLElement).style.gap).toBe(
+        '4px'
+      );
+      expect(
+        stockTrack.querySelectorAll('.ok-native-list-visual')
+      ).toHaveLength(2);
+    } finally {
+      engine.destroy();
+    }
+  });
+  it('recycles history loading headings and explicit compact Pending content', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const header = {
+      type: 'sectionHeader',
+      key: 'pending-title',
+      sectionKey: 'pending',
+      variant: 'history',
+      title: 'Confirming',
+      titleLoading: true,
+      height: 32,
+    } as const;
+    const pending = {
+      type: 'activity',
+      key: 'pending-row',
+      presentation: 'stacked',
+      leading: { kind: 'icon', name: 'Document2Outline' },
+      title: 'Receive',
+      amounts: [{ key: 'amount', text: '+1 USDC' }],
+      badges: [{ key: 'risk', text: 'Malicious', tone: 'warning' }],
+      height: 60,
+    } as const;
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [header, pending]),
+      {},
+      false
+    );
+    const heading = () =>
+      host.querySelector<HTMLElement>('[data-nl-renderer="sectionHeader"]')!;
+    const activity = () =>
+      host.querySelector<HTMLElement>('[data-nl-renderer="activity"]')!;
+    try {
+      expect(heading().querySelector('[role="progressbar"]')).not.toBeNull();
+      expect(heading().style.height).toBe('calc(100% + 4px)');
+      expect(
+        heading().querySelector<HTMLElement>('.ok-native-list-section-title')!
+          .style.textTransform
+      ).toBe('uppercase');
+      expect(activity().style.height).toBe('100%');
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [
+          { ...header, titleLoading: false, title: 'Today' },
+          { ...pending, height: undefined },
+        ])
+      );
+      expect(heading().querySelector('[role="progressbar"]')).toBeNull();
+      expect(heading().style.height).not.toBe('calc(100% + 4px)');
+      expect(
+        heading().querySelector<HTMLElement>('.ok-native-list-section-title')!
+          .style.textTransform
+      ).toBe('');
+      expect(activity().style.height).toBe('calc(100% - 8px)');
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [
+          header,
+          {
+            ...pending,
+            height: undefined,
+            footerActions: [
+              { key: 'speed-up', label: 'Speed up' },
+              { key: 'cancel', label: 'Cancel' },
+            ],
+          },
+        ])
+      );
+      expect(heading().querySelector('[role="progressbar"]')).not.toBeNull();
+      expect(
+        activity().querySelectorAll('.ok-native-list-action-button')
+      ).toHaveLength(2);
+      expect(activity().style.height).toBe('100%');
+      engine.applySnapshot(snapshot({ kind: 'sectioned' }, [header, pending]));
+      expect(
+        activity().querySelectorAll('.ok-native-list-action-button')
+      ).toHaveLength(0);
+      expect(activity().style.height).toBe('100%');
+      const badge = activity().querySelector<HTMLElement>(
+        '.ok-native-list-badge'
+      )!;
+      expect(badge.style.padding).toBe('2px 8px');
+      expect(badge.style.borderRadius).toBe('4px');
+      expect(badge.style.fontWeight).toBe('500');
+      expect(badge.style.background).toContain('--nl-caution-background');
+    } finally {
+      engine.destroy();
+    }
+  });
+});
