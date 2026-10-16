@@ -33,10 +33,12 @@ use zcash_protocol::{
     TxId,
 };
 use zcash_script::script::Evaluable;
-use zeroize::Zeroizing;
 use zip32::AccountId;
 
-use crate::error::{ErrorCode, KeysError, Result};
+use crate::{
+    account_keys::Wiped,
+    error::{ErrorCode, KeysError, Result},
+};
 
 const MAX_EXPIRY_DELTA: u32 = 100;
 const XPRV_VERSION: [u8; 4] = [0x04, 0x88, 0xad, 0xe4];
@@ -171,21 +173,6 @@ pub fn quote_json(request_json: &str) -> Result<String> {
     let plan = plan_transaction(request)?;
     serde_json::to_string(&plan.quote())
         .map_err(|e| KeysError::new(ErrorCode::TransactionBuildFailed).detail(e))
-}
-
-pub fn build_with_seed_json(request_json: &str, seed: &[u8]) -> Result<String> {
-    if seed.len() < 32 {
-        return Err(KeysError::with(
-            ErrorCode::InvalidSeed,
-            serde_json::json!({ "byteLen": seed.len(), "min": 32 }),
-        ));
-    }
-
-    let request = parse_request(request_json)?;
-    let plan = plan_transaction(request)?;
-    let account_key = AccountPrivKey::from_seed(&MAIN_NETWORK, seed, plan.account_index)
-        .map_err(|e| KeysError::new(ErrorCode::DeriveFailed).detail(e))?;
-    serialize_build_result(build_transaction(plan, &account_key)?)
 }
 
 /// Builds with an account-level BIP-44 xprv at `m/44'/133'/account'`.
@@ -764,7 +751,7 @@ fn derive_public_key(
         .map_err(|e| KeysError::new(ErrorCode::DeriveFailed).detail(e))
 }
 
-fn parse_account_xpub(encoded: &str, expected_account: u32) -> Result<AccountPubKey> {
+pub(crate) fn parse_account_xpub(encoded: &str, expected_account: u32) -> Result<AccountPubKey> {
     let invalid = || KeysError::new(ErrorCode::InvalidAccountXpub);
     let decoded = bs58::decode(encoded)
         .with_check(None)
@@ -781,31 +768,35 @@ fn parse_account_xpub(encoded: &str, expected_account: u32) -> Result<AccountPub
         .map_err(|_| invalid())
 }
 
-fn parse_account_xprv(encoded: &str, expected_account: u32) -> Result<AccountPrivKey> {
-    let decoded = Zeroizing::new(
-        bs58::decode(encoded)
-            .with_check(None)
-            .into_vec()
-            .map_err(|_| KeysError::new(ErrorCode::InvalidAccountXprv))?,
-    );
-    if decoded.len() != 78 || decoded[..4] != XPRV_VERSION || decoded[4] != ACCOUNT_XPRV_DEPTH {
-        return Err(KeysError::new(ErrorCode::InvalidAccountXprv));
+/// Parses straight from the base58 string: bip32 decodes into a stack buffer it wipes, and
+/// `ExtendedKey` wipes its key bytes on drop. Upstream `AccountPrivKey::from_bytes` is avoided
+/// because it re-encodes the key into a heap string and buffer that are freed unwiped.
+pub(crate) fn parse_account_xprv(
+    encoded: &str,
+    expected_account: u32,
+) -> Result<Wiped<AccountPrivKey>> {
+    let invalid = || KeysError::new(ErrorCode::InvalidAccountXprv);
+    let key: bip32::ExtendedKey = encoded.parse().map_err(|_| invalid())?;
+    if key.prefix.version() != u32::from_be_bytes(XPRV_VERSION)
+        || key.attrs.depth != ACCOUNT_XPRV_DEPTH
+    {
+        return Err(invalid());
     }
-    let child = u32::from_be_bytes(decoded[9..13].try_into().expect("fixed slice length"));
     let expected_child = expected_account.checked_add(1 << 31).ok_or_else(|| {
         KeysError::with(
             ErrorCode::InvalidAccountIndex,
             serde_json::json!({ "value": expected_account }),
         )
     })?;
-    if child != expected_child {
+    if u32::from(key.attrs.child_number) != expected_child {
         return Err(KeysError::with(
             ErrorCode::InvalidAccountXprv,
             serde_json::json!({ "reason": "accountIndexMismatch" }),
         ));
     }
-    AccountPrivKey::from_bytes(&decoded[4..])
-        .ok_or_else(|| KeysError::new(ErrorCode::InvalidAccountXprv))
+    bip32::ExtendedPrivateKey::<secp256k1::SecretKey>::try_from(key)
+        .map(|key| Wiped::new(AccountPrivKey::from_extended_privkey(key)))
+        .map_err(|_| invalid())
 }
 
 fn parse_derivation_path(path: &str, expected_account: u32) -> Result<DerivationPath> {
@@ -931,6 +922,10 @@ mod tests {
             .to_vec()
     }
 
+    fn xprv() -> String {
+        crate::account_keys::test_keys::account_xprv(&seed(), 0)
+    }
+
     fn account_key(seed: &[u8], account: u32) -> AccountPrivKey {
         AccountPrivKey::from_seed(&MAIN_NETWORK, seed, AccountId::try_from(account).unwrap())
             .unwrap()
@@ -1027,7 +1022,7 @@ mod tests {
                 quote.send_amount_zat,
                 if send_max { "85000" } else { "50000" }
             );
-            let created = shielding::create(&request, &seed()).unwrap();
+            let created = shielding::create_with_account_xprv(&request, &xprv()).unwrap();
             let pczt = pczt::Pczt::parse(&created).unwrap();
             assert_eq!(pczt.transparent().inputs().len(), 1);
             assert_eq!(pczt.transparent().outputs().len(), usize::from(!send_max));
@@ -1049,7 +1044,8 @@ mod tests {
         assert_eq!(quote.spent_outpoints.len(), 3);
 
         let built: TransparentBuildResult =
-            serde_json::from_str(&build_with_seed_json(&request, &seed()).unwrap()).unwrap();
+            serde_json::from_str(&build_with_account_xprv_json(&request, &xprv()).unwrap())
+                .unwrap();
         assert_eq!(built.fee_zat, "15000");
         assert_eq!(built.spent_outpoints, quote.spent_outpoints);
     }
@@ -1072,7 +1068,8 @@ mod tests {
         assert_eq!(quote.fee_zat, "12000", "surplus must all go to the fee");
 
         let built: TransparentBuildResult =
-            serde_json::from_str(&build_with_seed_json(&request, &seed()).unwrap()).unwrap();
+            serde_json::from_str(&build_with_account_xprv_json(&request, &xprv()).unwrap())
+                .unwrap();
         assert_eq!(built.fee_zat, "12000");
     }
 
@@ -1148,9 +1145,9 @@ mod tests {
         let error = quote_json(&request.to_string()).unwrap_err();
         assert_eq!(error.code, ErrorCode::UnsupportedInputScript);
 
-        let other_seed = vec![0x42; 64];
+        let other_xprv = crate::account_keys::test_keys::account_xprv(&[0x42; 64], 0);
         request = serde_json::from_str(&request_json(&[100_000], true)).unwrap();
-        let error = build_with_seed_json(&request.to_string(), &other_seed).unwrap_err();
+        let error = build_with_account_xprv_json(&request.to_string(), &other_xprv).unwrap_err();
         assert_eq!(error.code, ErrorCode::KeyMismatch);
     }
 
@@ -1191,14 +1188,16 @@ mod tests {
             .to_string()
             .into();
 
-        let account_key = account_key(&seed, 0);
         let mut encoded = XPRV_VERSION.to_vec();
-        encoded.extend(account_key.to_bytes());
+        encoded.extend(account_key(&seed, 0).to_bytes());
         let account_xprv = bs58::encode(encoded).with_check().into_string();
+        assert_eq!(account_xprv, xprv());
 
-        let from_seed = build_with_seed_json(&request.to_string(), &seed).unwrap();
-        let from_xprv = build_with_account_xprv_json(&request.to_string(), &account_xprv).unwrap();
-        assert_eq!(from_xprv, from_seed);
+        let built: TransparentBuildResult = serde_json::from_str(
+            &build_with_account_xprv_json(&request.to_string(), &account_xprv).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(built.fee_zat, "10000");
 
         request["accountIndex"] = 1.into();
         let error = build_with_account_xprv_json(&request.to_string(), &account_xprv).unwrap_err();
@@ -1214,7 +1213,7 @@ mod tests {
             .to_zcash_address(NetworkType::Main)
             .to_string()
             .into();
-        let via_t1 = build_with_seed_json(&request.to_string(), &seed()).unwrap();
+        let via_t1 = build_with_account_xprv_json(&request.to_string(), &xprv()).unwrap();
         request["recipients"][0]["address"] =
             <zcash_address::ZcashAddress as zcash_address::ToAddress>::from_tex(
                 NetworkType::Main,
@@ -1222,13 +1221,13 @@ mod tests {
             )
             .encode()
             .into();
-        let via_tex = build_with_seed_json(&request.to_string(), &seed()).unwrap();
+        let via_tex = build_with_account_xprv_json(&request.to_string(), &xprv()).unwrap();
         assert_eq!(via_tex, via_t1);
     }
 
     #[test]
     fn builds_deterministic_v6_transaction() {
-        let raw = build_with_seed_json(&request_json(&[100_000], true), &seed()).unwrap();
+        let raw = build_with_account_xprv_json(&request_json(&[100_000], true), &xprv()).unwrap();
         let result: TransparentBuildResult = serde_json::from_str(&raw).unwrap();
         assert_eq!(result.fee_zat, "10000");
         assert_eq!(result.expiry_height, 3_500_020);

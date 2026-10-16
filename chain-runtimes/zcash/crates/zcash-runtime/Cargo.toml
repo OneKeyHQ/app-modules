@@ -23,6 +23,8 @@ zip32 = "0.2"
 pczt.workspace = true
 # circuit: Orchard and Ironwood proving. This is the main WASM size cost.
 orchard = { workspace = true, features = ["circuit"] }
+# Trial-decrypts PCZT outputs to tell real change from randomized fabricated outputs.
+zcash_note_encryption = "0.4"
 
 rusqlite.workspace = true
 serde.workspace = true

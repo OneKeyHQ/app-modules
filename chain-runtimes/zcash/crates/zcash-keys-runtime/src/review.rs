@@ -2,11 +2,12 @@ use pczt::roles::verifier::{OrchardError, Verifier};
 use serde::Deserialize;
 use zcash_keys::{address::Address, keys::UnifiedFullViewingKey};
 use zcash_note_encryption::Domain;
-use zcash_protocol::{consensus::Network, memo::MemoBytes};
+use zcash_protocol::memo::MemoBytes;
 use zcash_script::script::Evaluable;
 use zip32::Scope;
 
 use crate::{
+    account_keys::AccountSigningKeys,
     error::{ErrorCode, KeysError, Result},
     keys,
 };
@@ -200,17 +201,10 @@ pub fn verify_json(pczt_bytes: &[u8], json: &str) -> Result<()> {
     verify(pczt_bytes, &parse_request(json)?)
 }
 
-pub fn verify_signer(
-    params: Network,
-    seed: &[u8],
-    account_index: u32,
-    pczt_bytes: &[u8],
-    json: &str,
-) -> Result<()> {
+/// The reviewed UFVK must be the one the signing keys control, rebuilt from those keys.
+pub fn verify_signer(keys: &AccountSigningKeys, pczt_bytes: &[u8], json: &str) -> Result<()> {
     let request = parse_request(json)?;
-    if keys::parse_network(&request.network)? != params
-        || keys::ufvk_from_seed_bytes(params, seed, account_index)? != request.ufvk
-    {
+    if keys::parse_network(&request.network)? != keys.params() || keys.ufvk()? != request.ufvk {
         return Err(mismatch("signerAccount"));
     }
     verify(pczt_bytes, &request)
@@ -219,11 +213,16 @@ pub fn verify_signer(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pczt::roles::creator::Creator;
+    use crate::account_keys::{self, test_keys};
+    use pczt::roles::{
+        creator::Creator,
+        signer::{extract_orchard_spend_auth_signatures, Signer},
+    };
     use zcash_primitives::transaction::{
         builder::{BuildConfig, Builder, BundlePadding},
         fees::fixed::FeeRule,
     };
+    use zcash_protocol::consensus::Network;
     use zcash_protocol::value::Zatoshis;
 
     fn fixture(source: &str, max: bool, foreign_change: bool) -> (Vec<u8>, ReviewRequest) {
@@ -236,10 +235,10 @@ mod tests {
         foreign_change: bool,
         memo_hex: Option<String>,
     ) -> (Vec<u8>, ReviewRequest) {
-        let ufvk_string = keys::ufvk_from_seed_bytes(Network::MainNetwork, &[7; 32], 0).unwrap();
+        let ufvk_string = test_keys::signing_keys(&[7; 32], 0).ufvk().unwrap();
         let ufvk = UnifiedFullViewingKey::decode(&Network::MainNetwork, &ufvk_string).unwrap();
         let fvk = ufvk.orchard().unwrap().clone();
-        let other = keys::ufvk_from_seed_bytes(Network::MainNetwork, &[8; 32], 0).unwrap();
+        let other = test_keys::signing_keys(&[8; 32], 0).ufvk().unwrap();
         let other = UnifiedFullViewingKey::decode(&Network::MainNetwork, &other).unwrap();
         let receiver = other.orchard().unwrap().address_at(0u32, Scope::External);
         let to_address =
@@ -398,10 +397,7 @@ mod tests {
                 "fee" => request.fee_zat = "19999".into(),
                 "source" => request.spend_source = "ironwood".into(),
                 "max" => request.is_max_send = true,
-                "ufvk" => {
-                    request.ufvk =
-                        keys::ufvk_from_seed_bytes(Network::MainNetwork, &[9; 32], 0).unwrap()
-                }
+                "ufvk" => request.ufvk = test_keys::signing_keys(&[9; 32], 0).ufvk().unwrap(),
                 "network" => request.network = "test".into(),
                 _ => unreachable!(),
             }
@@ -429,13 +425,150 @@ mod tests {
         }
     }
 
+    fn request_json(request: &ReviewRequest) -> String {
+        serde_json::json!({"network":request.network,"ufvk":request.ufvk,"toAddress":request.to_address,"amountZat":request.amount_zat,"feeZat":request.fee_zat,"spendSource":request.spend_source,"isMaxSend":request.is_max_send,"memoHex":request.memo_hex}).to_string()
+    }
+
+    fn sign_with(seed: &[u8], account: u32, bytes: &[u8], json: &str) -> Result<Vec<u8>> {
+        account_keys::sign_reviewed_pczt(
+            "main",
+            &test_keys::orchard_sk(seed, account),
+            &test_keys::account_xprv(seed, account),
+            account,
+            bytes,
+            json,
+        )
+    }
+
+    fn signer_account_mismatch(result: Result<Vec<u8>>) -> bool {
+        matches!(result, Err(e) if e.params["field"] == "signerAccount")
+    }
+
     #[test]
     fn signer_must_own_the_reviewed_ufvk() {
         let (bytes, request) = fixture("orchard", false, false);
-        let json = serde_json::json!({"network":request.network,"ufvk":request.ufvk,"toAddress":request.to_address,"amountZat":request.amount_zat,"feeZat":request.fee_zat,"spendSource":request.spend_source,"isMaxSend":request.is_max_send}).to_string();
-        verify_signer(Network::MainNetwork, &[7; 32], 0, &bytes, &json).unwrap();
-        assert!(verify_signer(Network::MainNetwork, &[8; 32], 0, &bytes, &json).is_err());
-        assert!(verify_signer(Network::MainNetwork, &[7; 32], 1, &bytes, &json).is_err());
+        let json = request_json(&request);
+        let seed = [7u8; 32];
+        verify_signer(&test_keys::signing_keys(&seed, 0), &bytes, &json).unwrap();
+        assert!(verify_signer(&test_keys::signing_keys(&[8; 32], 0), &bytes, &json).is_err());
+        assert!(verify_signer(&test_keys::signing_keys(&seed, 1), &bytes, &json).is_err());
+
+        assert!(signer_account_mismatch(sign_with(
+            &[8; 32], 0, &bytes, &json
+        )));
+        // Wrong-account keys, each self-consistent with their own account index.
+        for account in [1, (1 << 31) - 1] {
+            assert!(signer_account_mismatch(sign_with(
+                &seed, account, &bytes, &json
+            )));
+        }
+        // Mixed accounts: the Orchard key of account 0 with the transparent key of account 1.
+        for (orchard_account, transparent_account) in [(0, 1), (1, 0)] {
+            let mixed = account_keys::AccountSigningKeys::parse(
+                "main",
+                &test_keys::orchard_sk(&seed, orchard_account),
+                &test_keys::account_xprv(&seed, transparent_account),
+                transparent_account,
+            )
+            .unwrap();
+            assert!(verify_signer(&mixed, &bytes, &json).is_err());
+        }
+        // Another wallet's Orchard key paired with this wallet's transparent key.
+        let foreign = account_keys::AccountSigningKeys::parse(
+            "main",
+            &test_keys::orchard_sk(&[8; 32], 0),
+            &test_keys::account_xprv(&seed, 0),
+            0,
+        )
+        .unwrap();
+        assert!(verify_signer(&foreign, &bytes, &json).is_err());
+    }
+
+    #[test]
+    fn signer_rejects_testnet_keys_and_reviews() {
+        let (bytes, request) = fixture("orchard", false, false);
+        let seed = [7u8; 32];
+        let e = account_keys::sign_reviewed_pczt(
+            "test",
+            &test_keys::orchard_sk(&seed, 0),
+            &test_keys::account_xprv(&seed, 0),
+            0,
+            &bytes,
+            &request_json(&request),
+        )
+        .unwrap_err();
+        assert_eq!(e.code, ErrorCode::InvalidNetwork);
+
+        let mut testnet = request;
+        testnet.network = "test".into();
+        assert!(signer_account_mismatch(sign_with(
+            &seed,
+            0,
+            &bytes,
+            &request_json(&testnet)
+        )));
+    }
+
+    /// Re-applies each spend authorization signature to the unsigned PCZT, where
+    /// upstream verifies it against the action's randomized key `rk`. Returns the
+    /// signed (pool, action) positions.
+    fn verified_signatures(unsigned: &[u8], signed: &pczt::Pczt) -> Vec<(bool, usize)> {
+        let signatures = extract_orchard_spend_auth_signatures(signed);
+        let mut signer = Signer::new(pczt::Pczt::parse(unsigned).unwrap()).unwrap();
+        for signature in &signatures {
+            signer
+                .apply_orchard_spend_auth_signature(signature)
+                .expect("signature verifies under rk");
+        }
+        signatures
+            .iter()
+            .map(|s| {
+                (
+                    s.value_pool() == orchard::ValuePool::Ironwood,
+                    s.action_index(),
+                )
+            })
+            .collect()
+    }
+
+    /// Account keys and the upstream seed-derived USK authorize the same spends.
+    #[test]
+    fn account_keys_and_seed_oracle_sign_the_same_reviewed_pczt() {
+        let seed = [7u8; 32];
+        for source in ["orchard", "ironwood"] {
+            for max in [false, true] {
+                let (bytes, request) = fixture(source, max, false);
+                let json = request_json(&request);
+
+                let signed =
+                    pczt::Pczt::parse(&sign_with(&seed, 0, &bytes, &json).unwrap()).unwrap();
+                let by_account_keys = verified_signatures(&bytes, &signed);
+                assert!(!by_account_keys.is_empty());
+                assert!(by_account_keys
+                    .iter()
+                    .all(|(ironwood, _)| *ironwood == (source == "ironwood")));
+
+                let oracle = test_keys::usk(&seed, 0);
+                let ask = orchard::keys::SpendAuthorizingKey::from(oracle.orchard());
+                let unsigned = pczt::Pczt::parse(&bytes).unwrap();
+                let (orchard_actions, ironwood_actions) = (
+                    unsigned.orchard().actions().len(),
+                    unsigned.ironwood().actions().len(),
+                );
+                let mut signer = Signer::new(unsigned).unwrap();
+                for index in 0..orchard_actions {
+                    let _ = signer.sign_orchard(index, &ask);
+                }
+                for index in 0..ironwood_actions {
+                    let _ = signer.sign_ironwood(index, &ask);
+                }
+                assert_eq!(
+                    verified_signatures(&bytes, &signer.finish()),
+                    by_account_keys,
+                    "{source} max={max}"
+                );
+            }
+        }
     }
 
     #[test]

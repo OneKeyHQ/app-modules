@@ -30,8 +30,9 @@ pub async fn import_ufvk(
         .map_err(|e| RuntimeError::new(ErrorCode::InvalidUfvk).detail(e))?;
 
     // With a seed fingerprint and account index the account is imported as
-    // spending, so PCZT change outputs carry zip32_derivation and signers can
-    // verify change returns to the wallet.
+    // spending: upstream then puts zip32_derivation on PCZT spends, and
+    // send::mark_wallet_outputs puts it on change outputs (upstream does not),
+    // so signers can find the key and verify change returns to the wallet.
     let purpose = match derivation {
         Some((fingerprint_hex, account_index)) => AccountPurpose::Spending {
             derivation: Some(parse_zip32_derivation(fingerprint_hex, account_index)?),

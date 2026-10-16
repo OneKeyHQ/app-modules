@@ -1,16 +1,16 @@
-//! PCZT signing with keys derived from caller-provided seed bytes.
+//! PCZT signing with host-supplied account keys.
 //!
-//! This crate also handles spending keys in `keys` and `transparent_send`.
+//! This crate also handles spending keys in `account_keys` and `transparent_send`.
 //! See the crate documentation for the limits of derived-key zeroization.
 
 use pczt::roles::signer::Signer;
 use pczt::roles::verifier::{TransparentError, Verifier};
-use transparent::sighash::SighashType;
-use zcash_keys::keys::UnifiedSpendingKey;
-use zcash_protocol::consensus::Network;
-use zip32::AccountId;
+use transparent::{keys::AccountPrivKey, sighash::SighashType};
 
-use crate::error::{ErrorCode, KeysError, Result};
+use crate::{
+    account_keys::AccountSigningKeys,
+    error::{ErrorCode, KeysError, Result},
+};
 
 /// Whether a transparent input's signature commits to all outputs.
 ///
@@ -39,12 +39,11 @@ pub(crate) const TRANSPARENT_SCAN_GAP: u32 = 40;
 /// Sign all transparent inputs; returns (signed count, last failure).
 fn sign_transparent_inputs(
     signer: &mut Signer,
-    usk: &UnifiedSpendingKey,
+    account_key: &AccountPrivKey,
     input_count: usize,
 ) -> (usize, Option<String>) {
     use transparent::keys::{NonHardenedChildIndex, TransparentKeyScope};
 
-    let account_key = usk.transparent();
     let mut signed = 0usize;
     let mut last_err = None;
 
@@ -77,33 +76,15 @@ fn sign_transparent_inputs(
     (signed, last_err)
 }
 
-/// Sign a PCZT with spending keys derived from the seed. The caller wipes its seed copy.
+/// Sign a PCZT with the account's Orchard spending key and transparent account key.
 ///
 /// Signs Orchard/Ironwood spends and transparent inputs only. Sapling spends are
-/// unsupported (the ~50 MB Groth16 parameters are not shipped).
-pub fn sign_pczt_with_seed(
-    params: Network,
-    seed: &[u8],
-    account_index: u32,
+/// unsupported (the ~50 MB Groth16 parameters are not shipped). Callers verify the
+/// PCZT against the reviewed payment first (`account_keys::sign_reviewed_pczt`).
+pub fn sign_pczt_with_account_keys(
+    keys: &AccountSigningKeys,
     pczt_bytes: &[u8],
 ) -> Result<Vec<u8>> {
-    if seed.len() < 32 {
-        return Err(KeysError::with(
-            ErrorCode::InvalidSeed,
-            serde_json::json!({ "byteLen": seed.len(), "min": 32 }),
-        ));
-    }
-
-    let account = AccountId::try_from(account_index).map_err(|_| {
-        KeysError::with(
-            ErrorCode::InvalidAccountIndex,
-            serde_json::json!({ "value": account_index }),
-        )
-    })?;
-
-    let usk = UnifiedSpendingKey::from_seed(&params, seed, account)
-        .map_err(|e| KeysError::new(ErrorCode::DeriveFailed).detail(format!("{e:?}")))?;
-
     let pczt = pczt::Pczt::parse(pczt_bytes)
         .map_err(|e| KeysError::new(ErrorCode::PcztParseFailed).detail(format!("{e:?}")))?;
 
@@ -133,7 +114,7 @@ pub fn sign_pczt_with_seed(
         .map_err(|e| KeysError::new(ErrorCode::PcztSignFailed).detail(format!("{e:?}")))?;
 
     // Orchard spend authorizing key, derived from the spending key.
-    let ask = orchard::keys::SpendAuthorizingKey::from(usk.orchard());
+    let ask = orchard::keys::SpendAuthorizingKey::from(keys.orchard());
 
     // Shielded actions are signed best-effort: upstream rejects actions not owned
     // by this account, and it is an error only if nothing is signed. Both pools are
@@ -145,7 +126,7 @@ pub fn sign_pczt_with_seed(
 
     // Every transparent input must be signed; one missing signature invalidates the transaction.
     let (transparent_signed, transparent_err) =
-        sign_transparent_inputs(&mut signer, &usk, transparent_count);
+        sign_transparent_inputs(&mut signer, keys.transparent(), transparent_count);
     if transparent_signed < transparent_count {
         return Err(KeysError::with(
             ErrorCode::PcztSignFailed,
@@ -234,19 +215,12 @@ fn bundle_counts(pczt_bytes: &[u8]) -> Result<(usize, usize, usize)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    const SEED: [u8; 32] = [7u8; 32];
-
-    #[test]
-    fn rejects_short_seed() {
-        let e = sign_pczt_with_seed(Network::TestNetwork, &[0u8; 8], 0, &[]).unwrap_err();
-        assert_eq!(e.code, ErrorCode::InvalidSeed);
-        assert_eq!(e.params["byteLen"], 8);
-    }
+    use crate::account_keys::test_keys;
 
     #[test]
     fn rejects_garbage_pczt() {
-        let e = sign_pczt_with_seed(Network::TestNetwork, &SEED, 0, b"not a pczt").unwrap_err();
+        let keys = test_keys::signing_keys(&[7u8; 32], 0);
+        let e = sign_pczt_with_account_keys(&keys, b"not a pczt").unwrap_err();
         assert_eq!(e.code, ErrorCode::PcztParseFailed);
     }
 }
