@@ -24,6 +24,9 @@ verification controls retain their current gates.
 active writer to finish before deleting files. If that wait times out or is
 interrupted, cleanup rejects without deleting files; the old writer retains its
 download slot until it exits, after which a new download may start.
+Android APK downloads reject a reported size above 512 MiB with
+`SECURITY_REJECTED` before starting concurrent range workers; the single-stream
+path rejects once bytes read exceed that limit, before writing those bytes.
 
 ## Failure contract
 

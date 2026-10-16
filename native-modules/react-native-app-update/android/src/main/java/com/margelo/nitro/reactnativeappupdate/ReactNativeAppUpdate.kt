@@ -97,6 +97,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
         // files "<partial>.seg0".."<partial>.seg${N-1}", and Phase 2 below
         // scans this range to detect an in-flight concurrent download.
         private const val CONCURRENT_SEGMENT_COUNT = AppUpdateLogic.CONCURRENT_SEGMENT_COUNT
+        private const val MAX_APK_SIZE = 512L * 1024 * 1024
     }
 
     private val listeners = CopyOnWriteArrayList<Listener>()
@@ -759,7 +760,12 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                         // files to the read-only root fs → EROFS. Resolve it to
                         // the real apks dir (filesDir/apks) first, exactly like
                         // react-native-bundle-update passes an absolute path.
-                    ).download(url, partialFile.absolutePath, cancelHandle) { transferred, total ->
+                    ).download(
+                        url,
+                        partialFile.absolutePath,
+                        cancelHandle,
+                        maxTotalBytes = MAX_APK_SIZE,
+                    ) { transferred, total ->
                         if (cancelHandle.aborted.get()) return@download
                         if (total > 0) {
                             val p = ((transferred * 100) / total).toInt().coerceIn(0, 100)
@@ -951,7 +957,6 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 // a resumed download's first event is already >0%).
                 var prevProgress = -1
 
-                val maxApkSize = 512L * 1024 * 1024
                 body.byteStream().use { inputStream ->
                     FileOutputStream(partialFile.absolutePath, appendMode).use { outputStream ->
                         val buffer = ByteArray(8192)
@@ -959,7 +964,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                         while (inputStream.read(buffer).also { bytesRead = it } != -1) {
                             ensureNotCancelled()
                             totalBytesRead += bytesRead
-                            if (totalBytesRead > maxApkSize) {
+                            if (totalBytesRead > MAX_APK_SIZE) {
                                 throw AppUpdateError("SECURITY_REJECTED", "download")
                             }
                             outputStream.write(buffer, 0, bytesRead)

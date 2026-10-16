@@ -9,7 +9,9 @@ when a typed HTTP failure escapes a probe or segment. Only typed transient HTTP
 and socket or HTTP framing failures use the existing bounded retry budget; TLS, storage, and
 unknown failures leave that loop immediately. iOS passes the original error or
 HTTP status as the last element of its in-process result tuple, without a new
-Nitro field. Unsupported ranges still fall back to a single stream. Cancelling
+Nitro field. Unsupported ranges still fall back to a single stream. An Android
+caller may set a maximum total size; a larger probed total is rejected before
+segment workers start. Callers without a maximum keep the existing path. Cancelling
 an active iOS run completes its pending continuation once; late callbacks cannot
 restart its segments or complete it again. The owning updater must not parse
 exception prose for status. Runtime acceptance of the enclosing update flow
