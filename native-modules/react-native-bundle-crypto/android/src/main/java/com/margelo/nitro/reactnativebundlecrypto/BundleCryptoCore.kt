@@ -143,34 +143,17 @@ object BundleCryptoCore {
   // Ported verbatim from ReactNativeBundleUpdate.verifyGPGAndExtractSha256.
 
   private fun parseMetadataJsonFields(jsonText: String): Map<String, String> {
-    return try {
-      val json = JSONObject(jsonText)
-      val result = mutableMapOf<String, String>()
-      val keys = json.keys()
-      while (keys.hasNext()) {
-        val key = keys.next()
-        val value = json.optString(key, "")
-        if (value.isNotEmpty()) {
-          result[key] = value
-        }
-      }
-      result
-    } catch (e: RuntimeException) {
-      if (e.message?.contains("Stub!") == true) {
-        val trimmed = jsonText.trim()
-        if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
-          throw IllegalArgumentException("Invalid JSON object")
-        }
-        val result = mutableMapOf<String, String>()
-        val fieldPattern = "\"([^\"]+)\"\\s*:\\s*\"([^\"]*)\"".toRegex()
-        for (match in fieldPattern.findAll(trimmed)) {
-          result[match.groupValues[1]] = match.groupValues[2]
-        }
-        result
-      } else {
-        throw e
+    val json = JSONObject(jsonText)
+    val result = mutableMapOf<String, String>()
+    val keys = json.keys()
+    while (keys.hasNext()) {
+      val key = keys.next()
+      val value = json.optString(key, "")
+      if (value.isNotEmpty()) {
+        result[key] = value
       }
     }
+    return result
   }
 
   private fun isHex64(token: String): Boolean {

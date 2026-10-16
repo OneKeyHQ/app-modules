@@ -135,4 +135,5 @@ dependencies {
   implementation "org.bouncycastle:bcprov-jdk15to18:1.78.1"
 
   testImplementation "junit:junit:4.13.2"
+  testImplementation "org.json:json:20260814"
 }
