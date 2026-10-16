@@ -43,19 +43,27 @@ final class HybridNativeList: HybridNativeListSpec {
     didSet { if fontFamiliesJson != oldValue { fontsChanged = true } }
   }
 
-  var topScrollEdgeHard = false {
+  var topScrollEdgeEffect: NativeListScrollEdgeEffect = .none {
     didSet {
       runOnMain { [weak self] in
-        self?.hostView?.setTopScrollEdge(hard: self?.topScrollEdgeHard ?? false,
+        self?.hostView?.setTopScrollEdge(effect: self?.topEdgeStyle ?? .none,
                                      overlayHeight: CGFloat(self?.topOverlayHeight ?? 0))
       }
+    }
+  }
+
+  private var topEdgeStyle: NativeListTopScrollEdgeEffect {
+    switch topScrollEdgeEffect {
+    case .none: return .none
+    case .hard: return .hard
+    case .soft: return .soft
     }
   }
 
   var topOverlayHeight: Double = 0 {
     didSet {
       runOnMain { [weak self] in
-        self?.hostView?.setTopScrollEdge(hard: self?.topScrollEdgeHard ?? false,
+        self?.hostView?.setTopScrollEdge(effect: self?.topEdgeStyle ?? .none,
                                      overlayHeight: CGFloat(self?.topOverlayHeight ?? 0))
       }
     }

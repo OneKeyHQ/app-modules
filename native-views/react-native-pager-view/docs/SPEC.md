@@ -7,13 +7,17 @@ scroll-edge props.
 ## iOS 26 top scroll edge overlay
 
 `CollapsiblePagerView` and standalone `NativeScroller` accept the optional
-`topScrollEdgeEffect="hard"` with a fixed `topOverlay` React child. Both are
+`topScrollEdgeEffect={ScrollEdgeEffect.Hard}` or `ScrollEdgeEffect.Soft` with a
+fixed `topOverlay` React child. `ScrollEdgeEffect` is an exported string enum
+(`Hard = "hard"`, `Soft = "soft"`); the corresponding string literals remain
+valid prop values. Both the style and overlay are
 disabled by default. On iOS 26 or newer, a local overlay remains fixed at the
 top of the viewport while the owned vertical `UIScrollView` can draw behind it.
 The component measures the overlay's Fabric layout height and owns the
 corresponding top content inset. It binds UIKit's
 `UIScrollEdgeElementContainerInteraction` to that exact scroll view and selects
-the hard top edge style. A pager owns the effect and inset for its current page;
+the requested top edge style. Hard has UIKit's dividing line; Soft has its
+gradual blurred transition. A pager owns the effect and inset for its current page;
 its nested NativeList or NativeScroller must not opt into another top overlay.
 Invisible, noninteractive native labels let UIKit recognize the React-drawn
 overlay and sticky header as scroll-edge elements. The pager does not add an
@@ -28,7 +32,7 @@ The pager weakly observes its geometry in the same window, retaining its own
 noninteractive native proxy for UIKit recognition without reparenting or
 modifying the React header. The measured external header bottom supplies the
 top inset and sticky anchor. A local `topOverlay` takes precedence. The tag
-alone never enables the effect: `topScrollEdgeEffect="hard"` controls the
+alone never enables the effect: either `topScrollEdgeEffect` enum value controls the
 interaction, while valid external geometry can reserve the top inset before
 the effect is enabled. Before the tag and height are ready, the caller keeps
 its existing layout; an unresolved native tag has zero external height. An
@@ -47,7 +51,7 @@ When a smooth shared header reaches the overlay boundary, the existing sticky
 React and native tab views move together into a view pinned to the active
 scroll view. Their identities, scroll-view gesture ancestry and hit targets
 remain intact; the collapsible header stays in the scrolling header host.
-Without a local or external overlay, `topScrollEdgeEffect="hard"` may protect
+Without a local or external overlay, either scroll-edge style may protect
 only the genuinely pinned sticky header; it must not consume a page as a
 synthetic overlay slot or change the collapsible banner distance.
 Changing pages, replacing the active list or recycling returns those views to
@@ -68,6 +72,29 @@ can reserve its measured geometry even while `topScrollEdgeEffect` is off.
 Acceptance requires real iOS 26 scrolling, partial collapse, short/empty page,
 refresh, page transition/cancellation, dynamic tabs and light/dark checks;
 source and build checks alone do not establish visual correctness.
+
+Experimental trial: `CollapsiblePagerView` paints a cover at each owned
+fixed-overlay or pinned-sticky boundary with one physical pixel of the nearest
+opaque ancestor background color (system background if none is available).
+These native layers do not receive touches, change insets, or clip glass shadows.
+They are removed for Soft, disabled/detached effects, and recycling. This is a
+visual workaround using public layer APIs, not a UIKit separator setting; rendered
+light/dark, scrolling, and transition acceptance is pending. Standalone
+NativeScroller and NativeList retain UIKit's unmodified Hard appearance.
+On the iOS 26.5 simulator, a runtime probe confirmed Hard and the cover layers,
+including pinned-header ownership. The original hairline was not reliably
+reproduced with the covers hidden, so separator suppression is not yet verified.
+
+Style selection crosses Fabric as the enum `none | hard | soft`, defaulting to
+`none`, rather than a hard-effect boolean. Switching Hard ↔ Soft on an attached
+owner updates UIKit without replacing the overlay or changing its inset,
+logical scroll offset, or saved original style. Clearing the prop, detaching,
+or recycling releases the interaction and restores that original style.
+This bridge contract requires a matching native rebuild. Soft selection is
+implemented in the public wrappers and native hosts. Focused JS tests cover
+style forwarding, overlay retention and disabling; UIKit tests cover native
+style switching and restoring the previous style. Rendered iOS acceptance must
+be reported separately from type, codegen and build checks.
 
 ## Smooth shared-header and per-page body memory
 

@@ -196,7 +196,7 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
   BOOL refreshEnded = previous.refreshing && !next.refreshing;
   [super updateProps:props oldProps:oldProps];
   [self updateTopScrollEdge];
-  if (next.topScrollEdgeHard && _topOverlay == nil) {
+  if ((next.topScrollEdgeEffect != RNCNativeScrollerTopScrollEdgeEffect::None) && _topOverlay == nil) {
     __weak __typeof__(self) weakSelf = self;
     dispatch_async(dispatch_get_main_queue(), ^{ [weakSelf updateTopScrollEdge]; });
   }
@@ -210,7 +210,7 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
   if (@available(iOS 26.0, *)) {
     const auto &props = *std::static_pointer_cast<const RNCNativeScrollerProps>(_props);
     UIView *overlay = nil;
-    if (props.topScrollEdgeHard && !_recycled) {
+    if ((props.topScrollEdgeEffect != RNCNativeScrollerTopScrollEdgeEffect::None) && !_recycled) {
       NSUInteger fabricSiblings = 0;
       for (UIView *candidate in self.superview.subviews) {
         if (![candidate conformsToProtocol:@protocol(RCTComponentViewProtocol)]) continue;
@@ -220,7 +220,7 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
       if (fabricSiblings != 2) overlay = nil;
     }
     _topOverlay = overlay;
-    CGFloat requestedOverlayInset = props.topScrollEdgeHard && !_recycled && overlay != nil &&
+    CGFloat requestedOverlayInset = (props.topScrollEdgeEffect != RNCNativeScrollerTopScrollEdgeEffect::None) && !_recycled && overlay != nil &&
       isfinite(props.topOverlayHeight) ? MAX(0, props.topOverlayHeight) : 0;
     if (_appliedOverlayInset != requestedOverlayInset) {
       // Keep UIKit's refresh rebound animation in control while it is overscrolled.
@@ -236,7 +236,7 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
       }
       [self emitContentViewportChangeIfNeeded];
     }
-    BOOL enabled = props.topScrollEdgeHard && !_recycled && overlay != nil && self.window != nil;
+    BOOL enabled = (props.topScrollEdgeEffect != RNCNativeScrollerTopScrollEdgeEffect::None) && !_recycled && overlay != nil && self.window != nil;
     if (!enabled || _topEdgeInteractionHost != overlay) {
       if (_topEdgeInteraction != nil) {
         [_topEdgeInteractionHost removeInteraction:_topEdgeInteraction];
@@ -271,7 +271,8 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
       [overlay addInteraction:_topEdgeInteraction];
       _topEdgeInteractionHost = overlay;
     }
-    _scrollView.topEdgeEffect.style = UIScrollEdgeEffectStyle.hardStyle;
+    _scrollView.topEdgeEffect.style = props.topScrollEdgeEffect == RNCNativeScrollerTopScrollEdgeEffect::Soft
+      ? UIScrollEdgeEffectStyle.softStyle : UIScrollEdgeEffectStyle.hardStyle;
   }
 }
 

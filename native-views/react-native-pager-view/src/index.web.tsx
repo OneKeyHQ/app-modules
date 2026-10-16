@@ -11,3 +11,5 @@ export type {
 export * from "./usePagerView";
 export * from "./CollapsiblePagerView.web";
 export * from "./NativeScroller.web";
+
+export { ScrollEdgeEffect } from "./ScrollEdgeEffect";

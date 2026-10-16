@@ -90,9 +90,17 @@ using namespace facebook::react;
     UIScrollView *scrollView = [[UIScrollView alloc] initWithFrame:self.pager.bounds];
     [self.pager addSubview:scrollView];
     UIScrollEdgeEffectStyle *originalStyle = scrollView.topEdgeEffect.style;
-    [self.pager setValue:@YES forKey:@"topScrollEdgeHard"];
+    [self.pager setValue:@YES forKey:@"topScrollEdgeEnabled"];
+    [self.pager setValue:@(static_cast<NSInteger>(RNCCollapsiblePagerViewTopScrollEdgeEffect::Hard))
+                 forKey:@"topScrollEdgeEffect"];
     [self.pager setValue:@123 forKey:@"externalTopOverlayTag"];
     [self.pager setValue:@64 forKey:@"externalTopOverlayHeight"];
+    UIView *container = [self.pager valueForKey:@"containerView"];
+    container.frame = self.pager.bounds;
+    UIView *overlayHost = [self.pager valueForKey:@"topOverlayHostView"];
+    overlayHost.frame = CGRectMake(0, 0, 320, 64);
+    overlayHost.hidden = NO;
+    self.pager.backgroundColor = UIColor.redColor;
     [self.pager updateTopScrollEdgeForScrollView:scrollView];
     XCTAssertEqual([self.pager valueForKey:@"topEdgeScrollView"], scrollView);
     UIScrollEdgeElementContainerInteraction *interaction =
@@ -100,6 +108,23 @@ using namespace facebook::react;
     XCTAssertEqual(interaction.scrollView, scrollView);
     UIView *host = [self.pager valueForKey:@"topEdgeInteractionHost"];
     XCTAssertTrue([host.interactions containsObject:interaction]);
+    XCTAssertEqual(scrollView.topEdgeEffect.style, UIScrollEdgeEffectStyle.hardStyle);
+    CALayer *cover = [self.pager valueForKey:@"topEdgeSeparatorCover"];
+    XCTAssertEqual(cover.superlayer, container.layer);
+    XCTAssertEqualWithAccuracy(CGRectGetMaxY(cover.frame), 64, 0.001);
+    XCTAssertEqualWithAccuracy(CGRectGetHeight(cover.frame), 1.0 / window.screen.scale, 0.001);
+    XCTAssertTrue(CGColorEqualToColor(cover.backgroundColor, UIColor.redColor.CGColor));
+    UIEdgeInsets inset = scrollView.contentInset;
+    CGPoint offset = scrollView.contentOffset;
+    [self.pager setValue:@(static_cast<NSInteger>(RNCCollapsiblePagerViewTopScrollEdgeEffect::Soft))
+                 forKey:@"topScrollEdgeEffect"];
+    [self.pager updateTopScrollEdgeForScrollView:scrollView];
+    XCTAssertEqual(scrollView.topEdgeEffect.style, UIScrollEdgeEffectStyle.softStyle);
+    XCTAssertNil([self.pager valueForKey:@"topEdgeSeparatorCover"]);
+    XCTAssertNil(cover.superlayer);
+    XCTAssertEqual([self.pager valueForKey:@"topEdgeInteraction"], interaction);
+    XCTAssertTrue(UIEdgeInsetsEqualToEdgeInsets(scrollView.contentInset, inset));
+    XCTAssertTrue(CGPointEqualToPoint(scrollView.contentOffset, offset));
 
     RNCPagerViewComponentView *outer = [RNCPagerViewComponentView new];
     [self.pager setValue:outer forKey:@"externalOuterPager"];
