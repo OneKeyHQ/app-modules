@@ -5,6 +5,11 @@ import okhttp3.Request
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.net.ConnectException
+import java.net.ProtocolException
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -74,19 +79,18 @@ class ConcurrentRangeDownloader(
      * any other non-retryable 4xx per OCDS §4's catch-all). Unlike a generic
      * transient [java.io.IOException], this MUST bypass the per-segment retry
      * loop ([downloadSegment]) — retrying a dead URL only wastes the attempt
-     * budget. The `HTTP <code>` message shape is preserved so the JS error
-     * taxonomy ([updateErrorTaxonomy.ts]) maps it to `HTTP_<code>`.
+     * budget. Native updater callers can read [code] without parsing prose.
      */
-    private class PermanentHttpException(val code: Int) :
+    class PermanentHttpException(val code: Int) :
         Exception("HTTP $code")
 
     /**
      * Typed transient carrying an optional `Retry-After` delay (milliseconds)
      * the server asked us to wait before retrying (`429`/`503`). The retry loop
-     * in [downloadSegment] prefers this over its computed backoff. Keeps the
-     * `HTTP <code>` message shape for the JS taxonomy.
+     * in [downloadSegment] prefers this over its computed backoff. Native
+     * updater callers can read [code] without parsing prose.
      */
-    private class TransientHttpException(val code: Int, val retryAfterMillis: Long?) :
+    class TransientHttpException(val code: Int, val retryAfterMillis: Long?) :
         java.io.IOException("HTTP $code")
 
     /**
@@ -96,7 +100,10 @@ class ConcurrentRangeDownloader(
      * segment files, so no in-flight worker resurrects a deleted file.
      */
     class CancelHandle {
+        // Only an explicit caller cancellation sets aborted. Worker failures use
+        // workerStop to stop sibling segments without changing that intent.
         val aborted = AtomicBoolean(false)
+        internal val workerStop = AtomicBoolean(false)
 
         @Volatile
         private var pool: java.util.concurrent.ExecutorService? = null
@@ -104,7 +111,7 @@ class ConcurrentRangeDownloader(
         internal fun attach(pool: java.util.concurrent.ExecutorService) {
             this.pool = pool
             // If cancel() already raced in before the pool was attached, honor it.
-            if (aborted.get()) pool.shutdownNow()
+            if (workerStop.get()) pool.shutdownNow()
         }
 
         /**
@@ -117,6 +124,7 @@ class ConcurrentRangeDownloader(
          */
         fun cancel() {
             aborted.set(true)
+            workerStop.set(true)
             pool?.let { p ->
                 p.shutdownNow()
                 try {
@@ -144,12 +152,15 @@ class ConcurrentRangeDownloader(
      * Fills [partialFilePath] completely with the resource at [url] using
      * concurrent ranges. See [Outcome]. Throws on a transient/IO error after
      * per-segment retries, leaving the segment files in place so a later attempt
-     * resumes.
+     * resumes. [maxTotalBytes] rejects a known oversized probe before workers
+     * or artifact writes; callers with unknown single-stream sizes enforce their
+     * own streaming limit.
      */
     fun download(
         url: String,
         partialFilePath: String,
         cancelHandle: CancelHandle? = null,
+        maxTotalBytes: Long = Long.MAX_VALUE,
         onProgress: (transferred: Long, total: Long) -> Unit,
     ): Outcome {
         val partialFile = File(partialFilePath)
@@ -164,6 +175,9 @@ class ConcurrentRangeDownloader(
         }
 
         val probe = probe(url) ?: return Outcome.FALLBACK
+        if (probe.totalSize > maxTotalBytes) {
+            throw SecurityException("Range download exceeds caller size limit")
+        }
         if (!probe.supportsRange || probe.totalSize < minConcurrentBytes) {
             log("concurrent: not eligible (supportsRange=${probe.supportsRange}, size=${probe.totalSize})")
             return Outcome.FALLBACK
@@ -211,9 +225,9 @@ class ConcurrentRangeDownloader(
         )
         onProgress(transferred.get(), total)
 
-        // Share the abort flag with the cancel handle so an external cancel() is
-        // observed by the per-segment loops; default to a private flag otherwise.
-        val aborted = cancelHandle?.aborted ?: AtomicBoolean(false)
+        // External cancel also stops workers; internal fallback/failure must not
+        // mark the caller's explicit-cancellation flag.
+        val aborted = cancelHandle?.workerStop ?: AtomicBoolean(false)
         val fallback = AtomicBoolean(false)
         val firstError = AtomicReference<Exception?>(null)
 
@@ -233,11 +247,11 @@ class ConcurrentRangeDownloader(
                             }
                         } catch (e: FallbackException) {
                             fallback.set(true)
-                            aborted.set(true)
                             firstError.compareAndSet(null, e)
+                            aborted.set(true)
                         } catch (e: Exception) {
-                            aborted.set(true)
                             firstError.compareAndSet(null, e)
+                            aborted.set(true)
                         }
                     }
                 }
@@ -264,7 +278,7 @@ class ConcurrentRangeDownloader(
             .firstOrNull { segFile(it.index).length() != it.length }
         if (incomplete != null) {
             // Keep the segment files for the next attempt to resume.
-            throw java.io.IOException("Concurrent download incomplete (segment ${incomplete.index})")
+            throw ProtocolException("Concurrent download incomplete (segment ${incomplete.index})")
         }
 
         // All segments complete → assemble the `.partial`.
@@ -308,12 +322,12 @@ class ConcurrentRangeDownloader(
                         val len = response.body?.contentLength() ?: -1L
                         Probe(if (len > 0) len else 0, false)
                     }
-                    else -> null
+                    else -> throw classifyHttpFailure(response)
                 }
             }
         } catch (e: Exception) {
             log("concurrent: probe failed: ${e.javaClass.simpleName}")
-            null
+            throw e
         }
     }
 
@@ -404,10 +418,13 @@ class ConcurrentRangeDownloader(
                 throw e
             } catch (e: PermanentHttpException) {
                 // Dead URL (auth/gone/non-retryable) — retrying only burns the
-                // attempt budget. Surface immediately; the caller maps the
-                // `HTTP <code>` message to a permanent JS taxonomy bucket.
+                // attempt budget. Surface the typed HTTP status immediately.
                 throw e
             } catch (e: Exception) {
+                val retryable = e is TransientHttpException ||
+                    e is SocketTimeoutException || e is UnknownHostException ||
+                    e is ConnectException || e is SocketException || e is ProtocolException
+                if (!retryable) throw e
                 if (aborted.get() || retry >= maxPartRetry) throw e
                 retry += 1
                 // Prefer the server's Retry-After; otherwise exponential backoff
@@ -469,8 +486,8 @@ class ConcurrentRangeDownloader(
             if (response.code != 206) {
                 // OCDS §4 classification. Anything that is not a usable 206 is
                 // either a permanently-dead URL (bypass retries) or a transient
-                // condition (retry with backoff). The `HTTP <code>` message shape
-                // is preserved on both so the JS taxonomy maps it to HTTP_<code>.
+                // condition (retry with backoff). Both exceptions retain a
+                // typed status for native updater callers.
                 throw classifyHttpFailure(response)
             }
             // Reject a multipart/byteranges body: it carries range delimiters and
