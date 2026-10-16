@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-capture-protection",
-  "version": "6.7.0-alpha.311",
+  "version": "6.7.0-alpha.312",
   "description": "Permission-minimal screenshot, recording and app-switcher protection",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
