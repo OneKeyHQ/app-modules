@@ -26,6 +26,9 @@ serde.workspace = true
 serde_json.workspace = true
 hex.workspace = true
 secp256k1 = { version = "0.29", features = ["alloc"], default-features = false }
+# Same pinned version as zcash_transparent: parses the account xprv without upstream
+# `AccountPrivKey::from_bytes`, which re-encodes it into an unwiped heap string.
+bip32 = { version = "=0.6.0-pre.1", default-features = false, features = ["secp256k1-ffi"] }
 zcash_script = { version = "0.4.3", default-features = false }
 # signer + orchard: sign PCZT Orchard spends. prover/tx-extractor belong to the runtime crate.
 # transparent: shielding must sign transparent inputs. Pulls in zcash_script (pure Rust
@@ -36,9 +39,11 @@ orchard = { version = "0.15", default-features = false }
 sapling.workspace = true
 thiserror.workspace = true
 
-# bip0039 is test-only: shipped builds take seed bytes, never a mnemonic.
+# Test-only: shipped builds never take a seed or mnemonic. bip0039 and blake2b_simd
+# derive account keys from seeds for parity tests against upstream.
 [dev-dependencies]
 bip0039 = { version = "0.12", features = ["all-languages"] }
+blake2b_simd.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen.workspace = true

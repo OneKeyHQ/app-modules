@@ -1655,9 +1655,11 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "onekey-zcash-keys"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "bip0039",
+ "bip32",
+ "blake2b_simd",
  "bs58",
  "getrandom 0.2.17",
  "getrandom 0.4.3",
@@ -1685,7 +1687,7 @@ dependencies = [
 
 [[package]]
 name = "onekey-zcash-runtime"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "blake2b_simd",
  "console_error_panic_hook",
@@ -1724,6 +1726,7 @@ dependencies = [
  "zcash_client_backend",
  "zcash_client_sqlite",
  "zcash_keys",
+ "zcash_note_encryption",
  "zcash_primitives",
  "zcash_protocol",
  "zcash_transparent",
@@ -1733,7 +1736,7 @@ dependencies = [
 
 [[package]]
 name = "onekey-zcash-storage-benchmark"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "console_error_panic_hook",
  "js-sys",

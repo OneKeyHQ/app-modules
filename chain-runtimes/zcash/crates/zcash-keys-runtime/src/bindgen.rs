@@ -1,11 +1,12 @@
 //! Host-facing key API.
 //!
-//! Seeds and spending keys never cross this boundary outward.
+//! No seed or mnemonic crosses this boundary. Spending keys enter only as
+//! account-scoped inputs and never cross it outward.
 
 use wasm_bindgen::prelude::*;
 use zeroize::Zeroizing;
 
-use crate::{keys, review, sign, transparent_prevouts, transparent_send};
+use crate::{account_keys, keys, review, sign, transparent_prevouts, transparent_send};
 
 /// Check recipient encoding, network, and supported receivers locally.
 #[wasm_bindgen(js_name = validateAddress)]
@@ -27,36 +28,48 @@ pub fn unified_address(
     Ok(keys::unified_address_with(network, ufvk, receiver_policy)?)
 }
 
-/// Derive a UFVK from seed bytes. This boundary never accepts a mnemonic.
-#[wasm_bindgen(js_name = ufvkFromSeed)]
-pub fn ufvk_from_seed(network: &str, seed: Vec<u8>, account_index: u32) -> Result<String, JsValue> {
+/// Derive a mainnet UFVK from the 32-byte Orchard account spending key
+/// (`m/32'/133'/account'`) and the transparent account xpub (`m/44'/133'/account'`).
+#[wasm_bindgen(js_name = ufvkFromAccountKeys)]
+pub fn ufvk_from_account_keys(
+    network: &str,
+    orchard_sk: Vec<u8>,
+    account_xpub: &str,
+    account_index: u32,
+) -> Result<String, JsValue> {
     // Own and wipe the original bindgen allocation, including on validation errors.
     // Wiping another copy would leave the JS-to-WASM input in freed linear memory.
-    let seed = Zeroizing::new(seed);
-    let params = keys::parse_network(network)?;
-    Ok(keys::ufvk_from_seed_bytes(params, &seed, account_index)?)
+    let orchard_sk = Zeroizing::new(orchard_sk);
+    Ok(account_keys::ufvk_from_account_keys(
+        network,
+        &orchard_sk,
+        account_xpub,
+        account_index,
+    )?)
 }
 
-/// Sign a PCZT with seed bytes after verifying it against the reviewed payment.
-///
-/// Spending keys are derived in Rust and never returned. The caller wipes its
-/// own seed copy; this side cannot wipe the JS heap.
-#[wasm_bindgen(js_name = pcztSignWithSeed)]
-pub fn pczt_sign_with_seed(
+/// Sign a mainnet PCZT with the Orchard account spending key and the transparent
+/// account xprv, after checking that they control the reviewed UFVK and that the
+/// PCZT matches the reviewed payment. The caller wipes its own copies; this side
+/// cannot wipe the JS heap.
+#[wasm_bindgen(js_name = pcztSignWithAccountKeys)]
+pub fn pczt_sign_with_account_keys(
     network: &str,
-    seed: Vec<u8>,
+    orchard_sk: Vec<u8>,
+    account_xprv: String,
     account_index: u32,
     pczt_bytes: Vec<u8>,
     review_json: &str,
 ) -> Result<Vec<u8>, JsValue> {
-    let seed = Zeroizing::new(seed);
-    let params = keys::parse_network(network)?;
-    review::verify_signer(params, &seed, account_index, &pczt_bytes, review_json)?;
-    Ok(sign::sign_pczt_with_seed(
-        params,
-        &seed,
+    let orchard_sk = Zeroizing::new(orchard_sk);
+    let account_xprv = Zeroizing::new(account_xprv);
+    Ok(account_keys::sign_reviewed_pczt(
+        network,
+        &orchard_sk,
+        &account_xprv,
         account_index,
         &pczt_bytes,
+        review_json,
     )?)
 }
 
@@ -84,13 +97,6 @@ pub fn transparent_account_pubkey_from_ufvk(network: &str, ufvk: &str) -> Result
     Ok(keys::transparent_account_pubkey(network, ufvk)?)
 }
 
-/// Standard ZIP-32 seed fingerprint, persisted by the host as account identity.
-#[wasm_bindgen(js_name = seedFingerprint)]
-pub fn seed_fingerprint(seed: Vec<u8>) -> Result<String, JsValue> {
-    let seed = Zeroizing::new(seed);
-    Ok(keys::seed_fingerprint(&seed)?)
-}
-
 /// Parses and verifies previous transactions without loading wallet state.
 #[wasm_bindgen(js_name = parseTransparentTransactions)]
 pub fn parse_transparent_transactions(request_json: &str) -> Result<String, JsValue> {
@@ -101,16 +107,6 @@ pub fn parse_transparent_transactions(request_json: &str) -> Result<String, JsVa
 #[wasm_bindgen(js_name = transparentTxQuote)]
 pub fn transparent_tx_quote(request_json: &str) -> Result<String, JsValue> {
     Ok(transparent_send::quote_json(request_json)?)
-}
-
-/// Builds and signs a mainnet V6 transparent transaction from a software-wallet seed.
-#[wasm_bindgen(js_name = transparentTxBuildWithSeed)]
-pub fn transparent_tx_build_with_seed(
-    request_json: &str,
-    seed: Vec<u8>,
-) -> Result<String, JsValue> {
-    let seed = Zeroizing::new(seed);
-    Ok(transparent_send::build_with_seed_json(request_json, &seed)?)
 }
 
 /// Builds and signs using an account xprv at `m/44'/133'/account'`.
@@ -137,19 +133,21 @@ pub fn keys_capabilities() -> String {
             "transparent": sign::SIGN_TRANSPARENT,
             "ironwood": sign::SIGN_IRONWOOD,
         },
+        "accountKeys": {
+            "network": "main",
+            "ufvk": true,
+            "pcztSign": true,
+        },
         "transparentTx": {
             "network": "main",
             "version": 6,
             "quote": true,
-            "buildWithSeed": true,
             "buildWithAccountXprv": true,
             "createWithAccountXpub": true,
             "combineHardwareSigned": true,
         },
         "transparentShield": {
-            "createWithSeed": transparent_send::shielding::SHIELD_CREATE_WITH_SEED,
             "createWithAccountXprv": transparent_send::shielding::SHIELD_CREATE_WITH_ACCOUNT_XPRV,
-            "signWithSeed": transparent_send::shielding::SHIELD_SIGN_WITH_SEED,
             "signWithAccountXprv": transparent_send::shielding::SHIELD_SIGN_WITH_ACCOUNT_XPRV,
         },
     })
@@ -190,33 +188,6 @@ pub fn transparent_tx_combine_hardware_signed(
 #[wasm_bindgen(js_name = keysDependencyVersions)]
 pub fn dependency_versions() -> String {
     crate::dependency_versions().to_string()
-}
-
-/// Creates a shielding PCZT using only host-supplied transparent inputs.
-#[wasm_bindgen(js_name = transparentShieldCreateWithSeed)]
-pub fn transparent_shield_create_with_seed(
-    request_json: &str,
-    seed: Vec<u8>,
-) -> Result<Vec<u8>, JsValue> {
-    let seed = Zeroizing::new(seed);
-    Ok(transparent_send::shielding::create(request_json, &seed)?)
-}
-
-/// Signs the locally created, proved shielding PCZT.
-#[wasm_bindgen(js_name = transparentShieldSignWithSeed)]
-pub fn transparent_shield_sign_with_seed(
-    request_json: &str,
-    seed: Vec<u8>,
-    original: Vec<u8>,
-    pczt: Vec<u8>,
-) -> Result<Vec<u8>, JsValue> {
-    let seed = Zeroizing::new(seed);
-    Ok(transparent_send::shielding::sign(
-        request_json,
-        &seed,
-        &original,
-        &pczt,
-    )?)
 }
 
 /// Creates a shielding PCZT with an account-level transparent key.

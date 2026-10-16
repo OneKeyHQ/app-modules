@@ -11,9 +11,9 @@ use std::fmt;
 pub enum ErrorCode {
     /// Network is not "main" / "test". Params: `{ value }`
     InvalidNetwork,
-    /// Mnemonic cannot be parsed.
+    /// Mnemonic cannot be parsed. Retired: no shipped API takes a mnemonic.
     InvalidMnemonic,
-    /// Seed is too short. Params: `{ byteLen, min }`
+    /// Seed is too short. Retired: no shipped API takes a seed.
     InvalidSeed,
     /// Account index out of range. Params: `{ value }`
     InvalidAccountIndex,
@@ -59,6 +59,9 @@ pub enum ErrorCode {
     TransactionBuildFailed,
     /// The signed transaction could not be serialized.
     TransactionSerializeFailed,
+    /// An Orchard spending key is not 32 bytes or is rejected by ZIP-32 validity rules.
+    /// Params: `{ byteLen, expected }` for a length error.
+    InvalidSpendingKey,
 }
 
 impl ErrorCode {
@@ -90,6 +93,7 @@ impl ErrorCode {
             InvalidAccountXpub => "INVALID_ACCOUNT_XPUB",
             TransactionBuildFailed => "TRANSACTION_BUILD_FAILED",
             TransactionSerializeFailed => "TRANSACTION_SERIALIZE_FAILED",
+            InvalidSpendingKey => "INVALID_SPENDING_KEY",
         }
     }
 }
@@ -101,7 +105,7 @@ pub struct KeysError {
     pub params: Value,
     /// Raw upstream error, for logs only.
     ///
-    /// Must never contain seeds, USKs, or anything derived from them. Upstream
+    /// Must never contain seeds, spending keys, or anything derived from them. Upstream
     /// errors describe structure and do not echo input, so passing them through is safe.
     pub detail: Option<String>,
 }
@@ -208,6 +212,7 @@ mod tests {
             InvalidAccountXpub,
             TransactionBuildFailed,
             TransactionSerializeFailed,
+            InvalidSpendingKey,
         ];
         let mut seen = std::collections::HashSet::new();
         for c in all {

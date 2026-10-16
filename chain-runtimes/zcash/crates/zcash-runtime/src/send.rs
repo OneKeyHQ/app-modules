@@ -5,7 +5,7 @@
 //! ```text
 //!   runtime.pcztCreate()          build (needs wallet state: note selection, witness, anchor)
 //!   runtime.pcztProve()           prove; pure computation, no private keys
-//!   keys.pcztSign()               sign (needs the spending key; in onekey-zcash-keys)
+//!   keys.pcztSignWithAccountKeys() sign (needs the spending keys; in onekey-zcash-keys)
 //!   runtime.pcztSubmit()          extract, store, broadcast (retries resend the stored bytes)
 //! ```
 //!
@@ -13,7 +13,7 @@
 //! to verify the proofs cover the right data, so proofs must already be in the PCZT.
 //!
 //! Key separation: build and broadcast need the wallet database, signing needs
-//! the seed; the two never live in the same crate.
+//! the spending keys; the two never live in the same crate.
 //!
 //! ## Why this stays in Rust
 //!
@@ -645,6 +645,7 @@ pub fn create_pczt(
             policy.padding(),
         )
         .map_err(|e| build_err("createPczt", format!("{e:?}")))?;
+        let pczt = mark_wallet_outputs(db, account_id, pczt)?;
 
         pczt.serialize().map_err(|e| {
             RuntimeError::with(ErrorCode::PcztError, json!({ "stage": "serialize" }))
@@ -669,6 +670,109 @@ pub fn create_pczt(
         );
     });
     Ok((bytes, reservation_id, fee_zat))
+}
+
+/// Adds the account's ZIP 32 path to every Orchard/Ironwood output that pays
+/// this account (change), so a hardware signer can verify it as its own instead
+/// of rejecting it for having no `user_address`. Upstream sets only the spend
+/// paths. View-only accounts (no derivation) are left unchanged.
+fn mark_wallet_outputs(
+    db: &Db,
+    account_id: <Db as WalletRead>::AccountId,
+    pczt: pczt::Pczt,
+) -> Result<pczt::Pczt> {
+    use zcash_client_backend::data_api::Account as _;
+    use zcash_protocol::consensus::{NetworkConstants as _, Parameters as _};
+
+    let account = db
+        .get_account(account_id)
+        .map_err(|e| {
+            RuntimeError::with(
+                ErrorCode::DatabaseError,
+                json!({ "operation": "getAccount" }),
+            )
+            .detail(e)
+        })?
+        .ok_or_else(|| RuntimeError::new(ErrorCode::AccountNotFound))?;
+    let (Some(derivation), Some(fvk)) = (
+        account.source().key_derivation(),
+        account.ufvk().and_then(|ufvk| ufvk.orchard()),
+    ) else {
+        return Ok(pczt);
+    };
+    mark_owned_outputs(
+        pczt,
+        fvk,
+        derivation,
+        db.params().network_type().coin_type(),
+    )
+    .map_err(|e| build_err("markWalletOutputs", format!("{e:?}")))
+}
+
+/// Sets `zip32_derivation` on each output whose recipient `fvk` owns (either
+/// scope) and whose note decrypts under that scope's IVK. Outputs that already
+/// name a `user_address` (real recipients) are left alone, as are outputs we do
+/// not own (padding). Undecryptable owned outputs are the zero-valued outputs
+/// the post-NU6.3 Orchard builder pairs with external-scope spends, with a
+/// randomized ciphertext: the firmware rejects those if they carry a path.
+fn mark_owned_outputs(
+    pczt: pczt::Pczt,
+    fvk: &orchard::keys::FullViewingKey,
+    derivation: &zcash_client_backend::data_api::Zip32Derivation,
+    coin_type: u32,
+) -> std::result::Result<pczt::Pczt, pczt::roles::updater::OrchardError> {
+    use orchard::keys::PreparedIncomingViewingKey;
+    use orchard::note_encryption::{IronwoodDomain, OrchardDomain};
+    use orchard::pczt::{Action, Bundle, Updater, UpdaterError, Zip32Derivation};
+    use zcash_note_encryption::try_note_decryption;
+
+    type Decrypts = fn(&Action, &PreparedIncomingViewingKey) -> bool;
+
+    let seed_fingerprint = derivation.seed_fingerprint().to_bytes();
+    let path = [
+        zip32::ChildIndex::hardened(32).index(),
+        zip32::ChildIndex::hardened(coin_type).index(),
+        zip32::ChildIndex::hardened(u32::from(derivation.account_index())).index(),
+    ];
+    let owned_actions = |bundle: &Bundle, decrypts: Decrypts| -> Vec<usize> {
+        let owned = |action: &Action| {
+            let output = action.output();
+            if output.user_address().is_some() {
+                return false;
+            }
+            let Some(scope) = output
+                .recipient()
+                .as_ref()
+                .and_then(|recipient| fvk.scope_for_address(recipient))
+            else {
+                return false;
+            };
+            decrypts(action, &PreparedIncomingViewingKey::new(&fvk.to_ivk(scope)))
+        };
+        let actions = bundle.actions().iter().enumerate();
+        actions.filter(|(_, a)| owned(a)).map(|(i, _)| i).collect()
+    };
+    let mark = |mut updater: Updater<'_>, decrypts: Decrypts| {
+        for index in owned_actions(updater.bundle(), decrypts) {
+            updater.update_action_with(index, |mut action| {
+                let derivation = Zip32Derivation::parse(seed_fingerprint, path.to_vec())
+                    .expect("hardened ZIP 32 indices");
+                action.set_output_zip32_derivation(derivation);
+                Ok::<_, UpdaterError>(())
+            })?;
+        }
+        Ok(())
+    };
+    let orchard_decrypts: Decrypts = |action, ivk| {
+        try_note_decryption(&OrchardDomain::for_pczt_action(action), ivk, action).is_some()
+    };
+    let ironwood_decrypts: Decrypts = |action, ivk| {
+        try_note_decryption(&IronwoodDomain::for_pczt_action(action), ivk, action).is_some()
+    };
+    Ok(pczt::roles::updater::Updater::new(pczt)
+        .update_orchard_with(|updater| mark(updater, orchard_decrypts))?
+        .update_ironwood_with(|updater| mark(updater, ironwood_decrypts))?
+        .finish())
 }
 
 /// The proving circuit version is set by the consensus branch, not a product option.
@@ -1590,5 +1694,417 @@ mod memo_tests {
         assert!(parse_memo(None, Some(&"zz".repeat(512))).is_err());
         assert!(parse_memo(Some(&"🙂".repeat(129)), None).is_err());
         assert!(parse_memo(None, None).unwrap().is_none());
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod owned_output_tests {
+    use super::*;
+    use orchard::keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey};
+    use orchard::note::{NoteVersion, RandomSeed, Rho};
+    use orchard::note_encryption::{IronwoodDomain, OrchardDomain};
+    use orchard::pczt::{Action, Bundle};
+    use orchard::tree::{MerkleHashOrchard, MerklePath};
+    use orchard::value::NoteValue;
+    use orchard::{Address, Anchor, Note};
+    use pczt::roles::{creator::Creator, io_finalizer::IoFinalizer, signer::Signer};
+    use zcash_client_backend::data_api::Zip32Derivation;
+    use zcash_note_encryption::{try_output_recovery_with_pkd_esk, Domain};
+    use zcash_primitives::transaction::builder::{BuildConfig, Builder};
+    use zcash_protocol::consensus::{BlockHeight, Network};
+
+    const SEED: [u8; 32] = [7; 32];
+    const ACCOUNT: u32 = 5;
+    const SEND: u64 = 60_000;
+    const INPUT: u64 = 200_000;
+
+    fn spending_key(seed: &[u8], account: u32) -> SpendingKey {
+        SpendingKey::from_zip32_seed(seed, 133, zip32::AccountId::try_from(account).unwrap())
+            .unwrap()
+    }
+
+    fn ours() -> FullViewingKey {
+        FullViewingKey::from(&spending_key(&SEED, ACCOUNT))
+    }
+
+    fn fingerprint() -> [u8; 32] {
+        zip32::fingerprint::SeedFingerprint::from_seed(&SEED)
+            .unwrap()
+            .to_bytes()
+    }
+
+    fn derivation() -> Zip32Derivation {
+        Zip32Derivation::new(
+            zip32::fingerprint::SeedFingerprint::from_bytes(fingerprint()),
+            zip32::AccountId::try_from(ACCOUNT).unwrap(),
+        )
+    }
+
+    fn expected_path() -> Vec<u32> {
+        [32, 133, ACCOUNT].map(|i| i | (1 << 31)).to_vec()
+    }
+
+    fn note(recipient: Address, value: u64, version: NoteVersion) -> Note {
+        (1u8..)
+            .find_map(|b| {
+                let rho = Rho::from_bytes(&[b; 32]).into_option()?;
+                let rseed = RandomSeed::from_bytes([b.wrapping_add(1); 32], &rho).into_option()?;
+                Note::from_parts(recipient, NoteValue::from_raw(value), rho, rseed, version)
+                    .into_option()
+            })
+            .unwrap()
+    }
+
+    fn witness(note: &Note) -> (MerklePath, Anchor) {
+        let leaf = MerkleHashOrchard::from_bytes(&[0; 32]).unwrap();
+        let path = MerklePath::from_parts(0, [leaf; 32]);
+        let anchor = path.root(note.commitment().into());
+        (path, anchor)
+    }
+
+    struct Built {
+        pczt: pczt::Pczt,
+        orchard_change: Option<usize>,
+        ironwood_recipient: usize,
+        ironwood_change: Option<usize>,
+    }
+
+    /// A post-NU6.3 shielded spend of one Orchard note: the payment goes to a
+    /// foreign Ironwood address, change goes to our internal address, in
+    /// Ironwood or (when `orchard_change`) in Orchard. The external recipient
+    /// gets `user_address` as `create_pczt_from_proposal` sets it.
+    fn spend(spent_scope: Scope, orchard_change: bool) -> Built {
+        let fvk = ours();
+        let foreign = FullViewingKey::from(&spending_key(&[9; 32], 0));
+        let recipient = foreign.address_at(0u32, Scope::External);
+        let change_address = fvk.address_at(0u32, Scope::Internal);
+        let spent = note(fvk.address_at(0u32, spent_scope), INPUT, NoteVersion::V2);
+        let (path, anchor) = witness(&spent);
+
+        let builder = |change: u64| {
+            let mut b = Builder::new(
+                Network::MainNetwork,
+                BlockHeight::from_u32(3_500_000),
+                BuildConfig::Standard {
+                    sapling_anchor: None,
+                    orchard_anchor: Some(anchor),
+                    ironwood_anchor: Some(Anchor::empty_tree()),
+                    orchard_padding: BundlePadding::DEFAULT,
+                    ironwood_padding: BundlePadding::DEFAULT,
+                },
+            );
+            b.add_orchard_spend::<std::convert::Infallible>(fvk.clone(), spent, path.clone())
+                .unwrap();
+            b.add_ironwood_output::<std::convert::Infallible>(
+                None,
+                recipient,
+                Zatoshis::const_from_u64(SEND),
+                MemoBytes::empty(),
+            )
+            .unwrap();
+            let change = Zatoshis::const_from_u64(change);
+            if orchard_change {
+                b.add_orchard_change_output::<std::convert::Infallible>(
+                    fvk.clone(),
+                    Some(fvk.to_ovk(Scope::Internal)),
+                    change_address,
+                    change,
+                    MemoBytes::empty(),
+                )
+                .unwrap();
+            } else {
+                b.add_ironwood_output::<std::convert::Infallible>(
+                    Some(fvk.to_ovk(Scope::Internal)),
+                    change_address,
+                    change,
+                    MemoBytes::empty(),
+                )
+                .unwrap();
+            }
+            b
+        };
+        let fee_rule = Zip317FeeRule::standard();
+        let fee = u64::from(builder(1).get_fee(&fee_rule).unwrap());
+        let result = builder(INPUT - SEND - fee)
+            .build_for_pczt(rand::rngs::OsRng, &fee_rule)
+            .unwrap();
+        let ironwood_recipient = result.ironwood_meta.output_action_index(0).unwrap();
+        let (orchard_change, ironwood_change) = if orchard_change {
+            (result.orchard_meta.output_action_index(0), None)
+        } else {
+            (None, result.ironwood_meta.output_action_index(1))
+        };
+        let pczt = IoFinalizer::new(Creator::build_from_parts(result.pczt_parts).unwrap())
+            .finalize_io()
+            .unwrap();
+        let pczt = pczt::roles::updater::Updater::new(pczt)
+            .update_ironwood_with(|mut updater| {
+                updater.update_action_with(ironwood_recipient, |mut action| {
+                    action.set_output_user_address("recipient-ua".into());
+                    Ok(())
+                })
+            })
+            .unwrap()
+            .finish();
+        Built {
+            pczt,
+            orchard_change,
+            ironwood_recipient,
+            ironwood_change,
+        }
+    }
+
+    /// Runs `f` on the parsed Orchard (or Ironwood) bundle of `pczt`.
+    fn inspect<T>(pczt: &pczt::Pczt, ironwood: bool, f: impl FnOnce(&Bundle) -> T) -> T {
+        let mut out = None;
+        let verifier = pczt::roles::verifier::Verifier::new(pczt.clone());
+        let run = |bundle: &Bundle| {
+            out = Some(f(bundle));
+            Ok::<_, pczt::roles::verifier::OrchardError<()>>(())
+        };
+        if ironwood {
+            verifier.with_ironwood(run).unwrap();
+        } else {
+            verifier.with_orchard(run).unwrap();
+        }
+        out.unwrap()
+    }
+
+    fn mark(pczt: pczt::Pczt) -> pczt::Pczt {
+        mark_owned_outputs(pczt, &ours(), &derivation(), 133).unwrap()
+    }
+
+    /// Mirrors the firmware's per-output acceptance (firmware-pro2
+    /// app/zcash/sign_pczt.py `_validate_orchard_protocol_outputs` and
+    /// signer_parse.rs): an output is accepted if it is an unrecoverable
+    /// fabricated zero output with nothing attached, carries a path whose
+    /// fingerprint/schema match and whose recipient the account FVK owns, carries
+    /// a `user_address`, or is a zero-valued output with no ock and no memo.
+    fn firmware_rejection(bundle: &Bundle, ironwood: bool) -> Option<String> {
+        let fvk = ours();
+        for (index, action) in bundle.actions().iter().enumerate() {
+            let output = action.output();
+            let value = output.value().unwrap().inner();
+            let memo = recover_memo(action, ironwood);
+            let Some(memo) = memo else {
+                if bundle.flags().cross_address_enabled()
+                    || value != 0
+                    || output.ock().is_some()
+                    || output.zip32_derivation().is_some()
+                    || output.user_address().is_some()
+                {
+                    return Some(format!("{index}: invalid fabricated output"));
+                }
+                continue;
+            };
+            if let Some(derivation) = output.zip32_derivation() {
+                let path: Vec<u32> = derivation
+                    .derivation_path()
+                    .iter()
+                    .map(|i| i.index())
+                    .collect();
+                if derivation.seed_fingerprint() != &fingerprint() || path != expected_path() {
+                    return Some(format!("{index}: path/fingerprint mismatch"));
+                }
+                if fvk
+                    .scope_for_address(&output.recipient().unwrap())
+                    .is_none()
+                {
+                    return Some(format!("{index}: recipient not owned"));
+                }
+                continue;
+            }
+            if output.user_address().is_some() {
+                continue;
+            }
+            let empty_memo = memo.iter().all(|b| *b == 0)
+                || (memo[0] == 0xF6 && memo[1..].iter().all(|b| *b == 0));
+            if !(value == 0 && output.ock().is_none() && empty_memo) {
+                return Some(format!("{index}: Missing Orchard output address"));
+            }
+        }
+        None
+    }
+
+    /// Sender-side recovery as the firmware does it (no ock in our PCZTs, so
+    /// via pk_d and esk derived from the note).
+    fn recover_memo(action: &Action, ironwood: bool) -> Option<[u8; 512]> {
+        let output = action.output();
+        let rho = Rho::from_bytes(&action.spend().nullifier().to_bytes()).unwrap();
+        let note = Note::from_parts(
+            output.recipient().unwrap(),
+            output.value().unwrap(),
+            rho,
+            output.rseed().unwrap(),
+            *output.note_version(),
+        )
+        .unwrap();
+        if ironwood {
+            let domain = IronwoodDomain::for_pczt_action(action);
+            let esk = IronwoodDomain::derive_esk(&note)?;
+            try_output_recovery_with_pkd_esk(&domain, IronwoodDomain::get_pk_d(&note), esk, action)
+                .map(|(_, _, memo)| memo)
+        } else {
+            let domain = OrchardDomain::for_pczt_action(action);
+            let esk = OrchardDomain::derive_esk(&note)?;
+            try_output_recovery_with_pkd_esk(&domain, OrchardDomain::get_pk_d(&note), esk, action)
+                .map(|(_, _, memo)| memo)
+        }
+    }
+
+    fn has_our_path(action: &Action) -> bool {
+        action
+            .output()
+            .zip32_derivation()
+            .as_ref()
+            .is_some_and(|d| {
+                d.seed_fingerprint() == &fingerprint()
+                    && d.derivation_path()
+                        .iter()
+                        .map(|i| i.index())
+                        .collect::<Vec<_>>()
+                        == expected_path()
+            })
+    }
+
+    fn assert_only_marked(bundle: &Bundle, marked: &[usize]) {
+        for (index, action) in bundle.actions().iter().enumerate() {
+            assert_eq!(
+                action.output().zip32_derivation().is_some(),
+                marked.contains(&index),
+                "action {index}"
+            );
+            if marked.contains(&index) {
+                assert!(has_our_path(action), "action {index}");
+                assert!(action.output().user_address().is_none(), "action {index}");
+            }
+        }
+    }
+
+    fn owned_by_us(action: &Action) -> Option<Scope> {
+        ours().scope_for_address(&action.output().recipient().unwrap())
+    }
+
+    /// Has a zero-valued output to an address that is not ours.
+    fn is_padded(bundle: &Bundle) -> bool {
+        bundle.actions().iter().any(|a| {
+            owned_by_us(a).is_none()
+                && a.output().value().unwrap().inner() == 0
+                && a.output().user_address().is_none()
+        })
+    }
+
+    #[test]
+    fn unmarked_change_is_what_the_firmware_rejected() {
+        let built = spend(Scope::External, false);
+        assert_eq!(
+            inspect(&built.pczt, true, |b| firmware_rejection(b, true)),
+            Some(format!(
+                "{}: Missing Orchard output address",
+                built.ironwood_change.unwrap()
+            ))
+        );
+    }
+
+    #[test]
+    fn ironwood_change_gets_the_account_path_and_the_recipient_keeps_its_address() {
+        let built = spend(Scope::External, false);
+        let change = built.ironwood_change.unwrap();
+        let pczt = mark(built.pczt);
+
+        inspect(&pczt, true, |bundle| {
+            assert_only_marked(bundle, &[change]);
+            let recipient = bundle.actions()[built.ironwood_recipient].output();
+            assert_eq!(recipient.user_address().as_deref(), Some("recipient-ua"));
+            assert_eq!(firmware_rejection(bundle, true), None);
+        });
+        // The Orchard bundle holds the real spend's fabricated zero output (to
+        // our external address, randomized ciphertext) and padding: untouched.
+        inspect(&pczt, false, |bundle| {
+            assert_only_marked(bundle, &[]);
+            assert!(bundle
+                .actions()
+                .iter()
+                .any(|a| owned_by_us(a) == Some(Scope::External)));
+            assert!(is_padded(bundle));
+            assert_eq!(firmware_rejection(bundle, false), None);
+        });
+    }
+
+    #[test]
+    fn orchard_change_gets_the_account_path() {
+        let built = spend(Scope::Internal, true);
+        let change = built.orchard_change.unwrap();
+        let pczt = mark(built.pczt);
+
+        inspect(&pczt, false, |bundle| {
+            assert!(has_our_path(&bundle.actions()[change]));
+            // Internal-scope spends get a decryptable fabricated zero output to
+            // our own address; it is ours and carries the path too.
+            let owned: Vec<usize> = (0..bundle.actions().len())
+                .filter(|&i| owned_by_us(&bundle.actions()[i]).is_some())
+                .collect();
+            assert_eq!(owned.len(), 2);
+            assert_only_marked(bundle, &owned);
+            assert_eq!(firmware_rejection(bundle, false), None);
+        });
+        inspect(&pczt, true, |bundle| {
+            assert!(is_padded(bundle));
+            assert_only_marked(bundle, &[]);
+            assert_eq!(firmware_rejection(bundle, true), None);
+        });
+    }
+
+    #[test]
+    fn marked_pczt_round_trips_and_still_signs_in_software() {
+        for (scope, orchard_change) in [(Scope::External, false), (Scope::Internal, true)] {
+            let bytes = mark(spend(scope, orchard_change).pczt).serialize().unwrap();
+            let parsed = pczt::Pczt::parse(&bytes).unwrap();
+            assert_eq!(parsed.clone().serialize().unwrap(), bytes);
+
+            // Same loop as zcash-keys-runtime sign_pczt_with_account_keys.
+            let ask = SpendAuthorizingKey::from(&spending_key(&SEED, ACCOUNT));
+            let actions = parsed.orchard().actions().len();
+            let mut signer = Signer::new(parsed).unwrap();
+            let signed = (0..actions)
+                .filter(|&i| signer.sign_orchard(i, &ask).is_ok())
+                .count();
+            assert!(signed >= 1);
+        }
+    }
+
+    #[test]
+    fn marking_the_randomized_fabricated_output_would_be_rejected() {
+        let pczt = spend(Scope::External, false).pczt;
+        let fabricated = inspect(&pczt, false, |bundle| {
+            (0..bundle.actions().len())
+                .find(|&i| owned_by_us(&bundle.actions()[i]) == Some(Scope::External))
+                .unwrap()
+        });
+        let pczt = pczt::roles::updater::Updater::new(pczt)
+            .update_orchard_with(|mut updater| {
+                updater.update_action_with(fabricated, |mut action| {
+                    let path = expected_path();
+                    let derivation =
+                        orchard::pczt::Zip32Derivation::parse(fingerprint(), path).unwrap();
+                    action.set_output_zip32_derivation(derivation);
+                    Ok(())
+                })
+            })
+            .unwrap()
+            .finish();
+        assert_eq!(
+            inspect(&pczt, false, |b| firmware_rejection(b, false)),
+            Some(format!("{fabricated}: invalid fabricated output"))
+        );
+    }
+
+    #[test]
+    fn foreign_keys_mark_nothing() {
+        let built = spend(Scope::External, false);
+        let foreign = FullViewingKey::from(&spending_key(&[3; 32], 0));
+        let pczt = mark_owned_outputs(built.pczt, &foreign, &derivation(), 133).unwrap();
+        inspect(&pczt, false, |b| assert_only_marked(b, &[]));
+        inspect(&pczt, true, |b| assert_only_marked(b, &[]));
     }
 }

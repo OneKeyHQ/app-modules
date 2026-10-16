@@ -18,23 +18,11 @@ use zcash_protocol::memo::MemoBytes;
 ///
 /// Hosts must check these capabilities before calling: older wasm builds lack
 /// the exports entirely, so a direct call fails with `undefined is not a function`.
-pub const SHIELD_CREATE_WITH_SEED: bool = true;
 pub const SHIELD_CREATE_WITH_ACCOUNT_XPRV: bool = true;
-pub const SHIELD_SIGN_WITH_SEED: bool = true;
 pub const SHIELD_SIGN_WITH_ACCOUNT_XPRV: bool = true;
 
 fn failure(error: impl std::fmt::Debug) -> KeysError {
     KeysError::new(ErrorCode::TransactionBuildFailed).detail(format!("{error:?}"))
-}
-
-pub fn create(request_json: &str, seed: &[u8]) -> Result<Vec<u8>> {
-    if seed.len() < 32 {
-        return Err(KeysError::new(ErrorCode::InvalidSeed));
-    }
-    let plan = plan_transaction(parse_request(request_json)?)?;
-    let key =
-        AccountPrivKey::from_seed(&MAIN_NETWORK, seed, plan.account_index).map_err(failure)?;
-    create_with_public_key(&plan, &key.to_account_pubkey())
 }
 
 pub fn create_with_account_xprv(request_json: &str, account_xprv: &str) -> Result<Vec<u8>> {
@@ -495,16 +483,6 @@ fn validate_original(
     Ok(verified.finish())
 }
 
-pub fn sign(request_json: &str, seed: &[u8], original: &[u8], pczt: &[u8]) -> Result<Vec<u8>> {
-    if seed.len() < 32 {
-        return Err(KeysError::new(ErrorCode::InvalidSeed));
-    }
-    let plan = plan_transaction(parse_request(request_json)?)?;
-    let key =
-        AccountPrivKey::from_seed(&MAIN_NETWORK, seed, plan.account_index).map_err(failure)?;
-    sign_with_key(&plan, &key, original, pczt)
-}
-
 pub fn sign_with_account_xprv(
     request_json: &str,
     account_xprv: &str,
@@ -578,8 +556,20 @@ mod tests {
 
     const SEED: [u8; 64] = [7; 64];
 
+    fn xprv() -> String {
+        crate::account_keys::test_keys::account_xprv(&SEED, 0)
+    }
+
+    fn create(request_json: &str) -> Result<Vec<u8>> {
+        create_with_account_xprv(request_json, &xprv())
+    }
+
+    fn sign(request_json: &str, original: &[u8], pczt: &[u8]) -> Result<Vec<u8>> {
+        sign_with_account_xprv(request_json, &xprv(), original, pczt)
+    }
+
     fn transparent_address(scope: u32, index: u32) -> TransparentAddress {
-        let key = AccountPrivKey::from_seed(&MAIN_NETWORK, &SEED, AccountId::ZERO).unwrap();
+        let key = crate::account_keys::test_keys::account_priv_key(&SEED, 0);
         let secret = derive_secret_key(
             &key,
             DerivationPath {
@@ -625,7 +615,7 @@ mod tests {
     }
 
     fn account_xpub() -> String {
-        let key = AccountPrivKey::from_seed(&MAIN_NETWORK, &SEED, AccountId::ZERO).unwrap();
+        let key = crate::account_keys::test_keys::account_priv_key(&SEED, 0);
         let mut payload = vec![0x04, 0x88, 0xb2, 0x1e, 3, 0, 0, 0, 0];
         payload.extend_from_slice(&(1_u32 << 31).to_be_bytes());
         payload.extend_from_slice(&key.to_account_pubkey().serialize());
@@ -637,7 +627,7 @@ mod tests {
     }
 
     fn simulated_device_signatures(original: &[u8], input_count: usize) -> Vec<u8> {
-        let key = AccountPrivKey::from_seed(&MAIN_NETWORK, &SEED, AccountId::ZERO).unwrap();
+        let key = crate::account_keys::test_keys::account_priv_key(&SEED, 0);
         let mut signer = Signer::new(pczt::Pczt::parse(original).unwrap()).unwrap();
         for index in 0..input_count {
             signer
@@ -692,7 +682,7 @@ mod tests {
                 create_with_account_xpub(&request, &account_xpub(), &fingerprint)
                     .expect("hardware path builds with the quoted fee");
             } else {
-                create(&request, &SEED).expect("software path builds with the quoted fee");
+                create(&request).expect("software path builds with the quoted fee");
             }
         }
     }
@@ -831,9 +821,8 @@ mod tests {
                     .unwrap();
                 let mut changed_request = request.clone();
                 changed_request["expiryHeight"] = 3_500_021.into();
-                let changed = simulated_device_signature(
-                    &create(&changed_request.to_string(), &SEED).unwrap(),
-                );
+                let changed =
+                    simulated_device_signature(&create(&changed_request.to_string()).unwrap());
                 assert!(combine_hardware_signed(
                     &request_json,
                     &account_xpub(),
@@ -910,16 +899,16 @@ mod tests {
                 let mut approved = request(max);
                 approved["recipients"][0]["memoHex"] =
                     Value::String(format!("{prefix}{}", "00".repeat(512 - prefix.len() / 2)));
-                let original = create(&approved.to_string(), &SEED).unwrap();
-                sign(&approved.to_string(), &SEED, &original, &original).unwrap();
+                let original = create(&approved.to_string()).unwrap();
+                sign(&approved.to_string(), &original, &original).unwrap();
                 approved["recipients"][0]["memoHex"] =
                     Value::String(format!("ff99{}", "00".repeat(510)));
-                assert!(sign(&approved.to_string(), &SEED, &original, &original).is_err());
+                assert!(sign(&approved.to_string(), &original, &original).is_err());
                 approved["recipients"][0]
                     .as_object_mut()
                     .unwrap()
                     .remove("memoHex");
-                assert!(sign(&approved.to_string(), &SEED, &original, &original).is_err());
+                assert!(sign(&approved.to_string(), &original, &original).is_err());
             }
         }
     }
@@ -928,16 +917,16 @@ mod tests {
     fn signs_fixed_and_max_shielding_with_matching_request() {
         for send_max in [false, true] {
             let request = request(send_max).to_string();
-            let original = create(&request, &SEED).unwrap();
+            let original = create(&request).unwrap();
             // Proof generation is independent of the transparent signing authorization.
-            sign(&request, &SEED, &original, &original).unwrap();
+            sign(&request, &original, &original).unwrap();
         }
     }
 
     #[test]
     fn rejects_substitution_of_a_different_approved_request() {
         let request = request(false);
-        let original = create(&request.to_string(), &SEED).unwrap();
+        let original = create(&request.to_string()).unwrap();
         for field in ["recipient", "amount", "input", "value", "change", "expiry"] {
             let mut changed = request.clone();
             match field {
@@ -959,31 +948,30 @@ mod tests {
                 _ => unreachable!(),
             }
             assert!(
-                sign(&changed.to_string(), &SEED, &original, &original).is_err(),
+                sign(&changed.to_string(), &original, &original).is_err(),
                 "{field}"
             );
         }
     }
 
-    /// `pcztSignWithSeed` signs host-supplied PCZTs, and upstream `Signer` leaves
-    /// semantic checks to the caller, so it must enforce `SIGHASH_ALL` itself.
+    /// `pcztSignWithAccountKeys` signs host-supplied PCZTs, and upstream `Signer`
+    /// leaves semantic checks to the caller, so it must enforce `SIGHASH_ALL` itself.
     ///
     /// The positive case also pins that a pool with nothing signable is fine: the
     /// shielding PCZT's Ironwood actions are outputs only.
     #[test]
     fn generic_signer_requires_sighash_all_on_transparent_inputs() {
-        use zcash_protocol::consensus::Network;
-
+        let keys = crate::account_keys::test_keys::signing_keys(&SEED, 0);
         let request = request(false).to_string();
-        let original = create(&request, &SEED).unwrap();
+        let original = create(&request).unwrap();
 
-        crate::sign::sign_pczt_with_seed(Network::MainNetwork, &SEED, 0, &original)
+        crate::sign::sign_pczt_with_account_keys(&keys, &original)
             .expect("unmodified shielding PCZT must sign");
 
         let modified = mutate(&original, |value| {
             value["transparent"]["inputs"][0]["sighash_type"] = 2.into();
         });
-        let e = crate::sign::sign_pczt_with_seed(Network::MainNetwork, &SEED, 0, &modified)
+        let e = crate::sign::sign_pczt_with_account_keys(&keys, &modified)
             .expect_err("non-ALL sighash_type must be rejected");
         assert_eq!(e.code, ErrorCode::PcztSignFailed);
         assert!(
@@ -992,10 +980,82 @@ mod tests {
         );
     }
 
+    fn partial_signatures(pczt: &[u8]) -> Vec<Vec<(Vec<u8>, Vec<u8>)>> {
+        let mut all = Vec::new();
+        Verifier::new(pczt::Pczt::parse(pczt).unwrap())
+            .with_transparent::<KeysError, _>(|bundle| {
+                for input in bundle.inputs() {
+                    all.push(
+                        input
+                            .partial_signatures()
+                            .iter()
+                            .map(|(k, v)| (k.to_vec(), v.clone()))
+                            .collect(),
+                    );
+                }
+                Ok(())
+            })
+            .unwrap();
+        all
+    }
+
+    /// The xprv path and the seed-derived USK produce identical transparent
+    /// signatures (RFC 6979), each valid for its input's sighash.
+    #[test]
+    fn account_keys_and_seed_oracle_sign_the_same_transparent_inputs() {
+        use crate::account_keys::test_keys;
+
+        let mut request = request(false);
+        let mut second = request["utxos"][0].clone();
+        second["vout"] = 1.into();
+        request["utxos"].as_array_mut().unwrap().push(second);
+        request["selectedOutpoints"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({ "txid": format!("{:064x}", 1), "vout": 1 }));
+        let original = create(&request.to_string()).unwrap();
+
+        let signed =
+            crate::sign::sign_pczt_with_account_keys(&test_keys::signing_keys(&SEED, 0), &original)
+                .unwrap();
+
+        let oracle = test_keys::usk(&SEED, 0);
+        let secret = oracle
+            .transparent()
+            .derive_secret_key(
+                TransparentKeyScope::EXTERNAL,
+                NonHardenedChildIndex::from_index(0).unwrap(),
+            )
+            .unwrap();
+        let mut signer = Signer::new(pczt::Pczt::parse(&original).unwrap()).unwrap();
+        for index in 0..2 {
+            signer.sign_transparent(index, &secret).unwrap();
+        }
+        let by_oracle = signer.finish().serialize().unwrap();
+
+        let signatures = partial_signatures(&signed);
+        assert_eq!(signatures.len(), 2);
+        assert!(signatures.iter().all(|input| input.len() == 1));
+        assert_eq!(signatures, partial_signatures(&by_oracle));
+
+        let secp = secp256k1::Secp256k1::verification_only();
+        let checker = Signer::new(pczt::Pczt::parse(&original).unwrap()).unwrap();
+        for (index, input) in signatures.iter().enumerate() {
+            let (public, signature) = &input[0];
+            assert_eq!(signature.last(), Some(&1), "SIGHASH_ALL");
+            secp.verify_ecdsa(
+                &secp256k1::Message::from_digest(checker.transparent_sighash(index).unwrap()),
+                &secp256k1::ecdsa::Signature::from_der(&signature[..signature.len() - 1]).unwrap(),
+                &secp256k1::PublicKey::from_slice(public).unwrap(),
+            )
+            .unwrap();
+        }
+    }
+
     #[test]
     fn rejects_modified_transparent_effects_and_sighash_policy() {
         let request = request(false).to_string();
-        let original = create(&request, &SEED).unwrap();
+        let original = create(&request).unwrap();
         for field in ["prevout_index", "value", "sighash_type", "sequence"] {
             let modified = mutate(&original, |value| {
                 value["transparent"]["inputs"][0][field] = match field {
@@ -1005,26 +1065,23 @@ mod tests {
                     _ => 1.into(),
                 };
             });
+            assert!(sign(&request, &modified, &modified).is_err(), "{field}");
             assert!(
-                sign(&request, &SEED, &modified, &modified).is_err(),
-                "{field}"
-            );
-            assert!(
-                sign(&request, &SEED, &original, &modified).is_err(),
+                sign(&request, &original, &modified).is_err(),
                 "prover {field}"
             );
         }
         let modified = mutate(&original, |value| {
             value["transparent"]["outputs"][0]["value"] = 1.into()
         });
-        assert!(sign(&request, &SEED, &modified, &modified).is_err());
-        assert!(sign(&request, &SEED, &original, &modified).is_err());
+        assert!(sign(&request, &modified, &modified).is_err());
+        assert!(sign(&request, &original, &modified).is_err());
     }
 
     #[test]
     fn rejects_unreviewed_ironwood_actions_and_ciphertexts() {
         let request = request(false).to_string();
-        let original = create(&request, &SEED).unwrap();
+        let original = create(&request).unwrap();
         for field in [
             "anchor",
             "value_sum",
@@ -1062,13 +1119,10 @@ mod tests {
                     }
                 }
             });
-            assert!(
-                sign(&request, &SEED, &modified, &modified).is_err(),
-                "{field}"
-            );
+            assert!(sign(&request, &modified, &modified).is_err(), "{field}");
             if field != "real_spend" && field != "output_value" {
                 assert!(
-                    sign(&request, &SEED, &original, &modified).is_err(),
+                    sign(&request, &original, &modified).is_err(),
                     "prover {field}"
                 );
             }
@@ -1078,10 +1132,7 @@ mod tests {
     #[test]
     fn account_xprv_has_the_same_authorization_checks() {
         let request = request(false).to_string();
-        let key = AccountPrivKey::from_seed(&MAIN_NETWORK, &SEED, AccountId::ZERO).unwrap();
-        let mut encoded = XPRV_VERSION.to_vec();
-        encoded.extend_from_slice(&key.to_bytes());
-        let xprv = bs58::encode(encoded).with_check().into_string();
+        let xprv = xprv();
         let original = create_with_account_xprv(&request, &xprv).unwrap();
         sign_with_account_xprv(&request, &xprv, &original, &original).unwrap();
         let mut changed: Value = serde_json::from_str(&request).unwrap();
@@ -1099,8 +1150,8 @@ mod tests {
             { "address": transparent_address(0, 2).to_zcash_address(NetworkType::Main).to_string(), "amountZat": "10000" },
         ]);
         let request = request.to_string();
-        let original = create(&request, &SEED).unwrap();
-        sign(&request, &SEED, &original, &original).unwrap();
+        let original = create(&request).unwrap();
+        sign(&request, &original, &original).unwrap();
         let modified = mutate(&original, |value| {
             let output = value["transparent"]["outputs"][0].clone();
             value["transparent"]["outputs"]
@@ -1108,6 +1159,6 @@ mod tests {
                 .unwrap()
                 .push(output);
         });
-        assert!(sign(&request, &SEED, &modified, &modified).is_err());
+        assert!(sign(&request, &modified, &modified).is_err());
     }
 }
