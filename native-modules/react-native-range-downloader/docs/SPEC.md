@@ -10,7 +10,9 @@ caller cancelled, so the updater retains the fallback or original failure.
 Callers may inspect `PermanentHttpException.code` and `TransientHttpException.code`
 when a typed HTTP failure escapes a probe or segment. Only typed transient HTTP
 and socket or HTTP framing failures use the existing bounded retry budget; TLS, storage, and
-unknown failures leave that loop immediately. iOS passes the original error or
+unknown failures leave that loop immediately. A short 206 segment body is a
+recoverable protocol failure: Android keeps the segment bytes for the next
+caller retry and reports a typed network error. iOS passes the original error or
 HTTP status as the last element of its in-process result tuple, without a new
 Nitro field. Unsupported ranges still fall back to a single stream. An Android
 caller may set a maximum total size; a larger probed total is rejected before

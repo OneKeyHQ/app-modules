@@ -278,7 +278,7 @@ class ConcurrentRangeDownloader(
             .firstOrNull { segFile(it.index).length() != it.length }
         if (incomplete != null) {
             // Keep the segment files for the next attempt to resume.
-            throw java.io.IOException("Concurrent download incomplete (segment ${incomplete.index})")
+            throw ProtocolException("Concurrent download incomplete (segment ${incomplete.index})")
         }
 
         // All segments complete → assemble the `.partial`.

@@ -497,17 +497,17 @@ class ConcurrentRangeDownloaderOcdsTest {
     val partial = partialPath()
     // First invocation: the short body leaves segment 6 one byte short, so this
     // call throws "incomplete" and keeps the `.segN` for resume.
-    var firstThrew = false
-    try {
+    val handle = ConcurrentRangeDownloader.CancelHandle()
+    val firstFailure = runCatching {
       newDownloader().download(
         url = url(),
         partialFilePath = partial,
+        cancelHandle = handle,
         onProgress = { _, _ -> },
       )
-    } catch (e: Exception) {
-      firstThrew = true
-    }
-    assertTrue("short body must leave the first invocation incomplete", firstThrew)
+    }.exceptionOrNull()
+    assertTrue("short body must preserve a typed network failure", firstFailure is java.net.ProtocolException)
+    assertFalse("internal short body must not mark explicit cancellation", handle.aborted.get())
     // The short segment is kept on disk, one byte under its planned length.
     val seg = segFile(partial, target.index)
     assertTrue("short `.segN` must be kept for resume", seg.exists())
