@@ -148,12 +148,15 @@ class ConcurrentRangeDownloader(
      * Fills [partialFilePath] completely with the resource at [url] using
      * concurrent ranges. See [Outcome]. Throws on a transient/IO error after
      * per-segment retries, leaving the segment files in place so a later attempt
-     * resumes.
+     * resumes. [maxTotalBytes] rejects a known oversized probe before workers
+     * or artifact writes; callers with unknown single-stream sizes enforce their
+     * own streaming limit.
      */
     fun download(
         url: String,
         partialFilePath: String,
         cancelHandle: CancelHandle? = null,
+        maxTotalBytes: Long = Long.MAX_VALUE,
         onProgress: (transferred: Long, total: Long) -> Unit,
     ): Outcome {
         val partialFile = File(partialFilePath)
@@ -168,6 +171,9 @@ class ConcurrentRangeDownloader(
         }
 
         val probe = probe(url) ?: return Outcome.FALLBACK
+        if (probe.totalSize > maxTotalBytes) {
+            throw SecurityException("Range download exceeds caller size limit")
+        }
         if (!probe.supportsRange || probe.totalSize < minConcurrentBytes) {
             log("concurrent: not eligible (supportsRange=${probe.supportsRange}, size=${probe.totalSize})")
             return Outcome.FALLBACK

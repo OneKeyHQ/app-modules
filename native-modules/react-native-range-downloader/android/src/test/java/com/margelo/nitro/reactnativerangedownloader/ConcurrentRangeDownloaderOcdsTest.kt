@@ -2,6 +2,9 @@ package com.margelo.nitro.reactnativerangedownloader
 
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.Dispatcher
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -80,6 +83,52 @@ class ConcurrentRangeDownloaderOcdsTest {
     for (i in 0 until 8) {
       assertFalse(".seg$i must be wiped", segFile(partial, i).exists())
     }
+  }
+
+  @Test
+  fun oversizedProbedTotalRejectsBeforeRangeWorkers() {
+    val cap = content.size.toLong()
+    server = MockWebServer()
+    server.dispatcher = object : Dispatcher() {
+      override fun dispatch(request: RecordedRequest) = MockResponse()
+        .setResponseCode(206)
+        .addHeader("Content-Range", "bytes 0-0/${cap + 1}")
+        .setBody("x")
+    }
+    server.start()
+
+    val partial = partialPath()
+    val failure = runCatching {
+      newDownloader().download(
+        url = url(),
+        partialFilePath = partial,
+        maxTotalBytes = cap,
+        onProgress = { _, _ -> },
+      )
+    }.exceptionOrNull()
+
+    assertTrue("oversized total must reject", failure is SecurityException)
+    assertEquals("only the probe may reach the server", 1, server.requestCount)
+    assertEquals("bytes=0-0", server.takeRequest().getHeader("Range"))
+    assertNoArtifactsLeft(partial)
+  }
+
+  @Test
+  fun probedTotalAtLimitCanComplete() {
+    val fs = RangeFaultServer(content)
+    startServer(fs)
+
+    val partial = partialPath()
+    val outcome = newDownloader().download(
+      url = url(),
+      partialFilePath = partial,
+      maxTotalBytes = content.size.toLong(),
+      onProgress = { _, _ -> },
+    )
+
+    assertEquals(ConcurrentRangeDownloader.Outcome.COMPLETED, outcome)
+    assertEquals(content.size.toLong(), File(partial).length())
+    assertEquals(sha256(content), sha256(File(partial)))
   }
 
   // ------------------------------------------------------------------------
