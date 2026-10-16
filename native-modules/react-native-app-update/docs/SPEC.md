@@ -20,6 +20,10 @@ download. `verifyASC` binds the detached signature to APK bytes; `verifyAPK`
 checks package identity, downgrade, and signing certificate; `installAPK`
 rechecks the file hash before launching the Android installer. Existing debug
 verification controls retain their current gates.
+`clearCache` blocks a new APK download while it owns cleanup and waits for the
+active writer to finish before deleting files. If that wait times out or is
+interrupted, cleanup rejects without deleting files; the old writer retains its
+download slot until it exits, after which a new download may start.
 
 ## Failure contract
 

@@ -111,6 +111,8 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
         java.util.concurrent.atomic.AtomicReference<ConcurrentRangeDownloader.CancelHandle?>(null)
     // The handle stops range workers; this latch also covers ASC and single-stream I/O.
     private var activeDownloadFinished: CountDownLatch? = null
+    // Guarded by activeDownload; cleanup owns the slot until its file wipe ends.
+    private var clearingDownload = false
     // downloadThread removed: downloads use coroutine-based Promise.async, not raw threads
 
     private fun sendEvent(type: String, progress: Int = 0, message: String = "") {
@@ -533,7 +535,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             val cancelHandle = ConcurrentRangeDownloader.CancelHandle()
             val finished = CountDownLatch(1)
             synchronized(activeDownload) {
-                if (isDownloading.get()) {
+                if (isDownloading.get() || clearingDownload) {
                     OneKeyLog.warn("AppUpdate", "downloadAPK: rejected, already downloading")
                     throw AppUpdateError("INVALID_ARGUMENT", "download")
                 }
@@ -1050,7 +1052,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             } finally {
                 finished.countDown()
                 synchronized(activeDownload) {
-                    if (activeDownload.compareAndSet(cancelHandle, null)) {
+                    if (!clearingDownload && activeDownload.compareAndSet(cancelHandle, null)) {
                         activeDownloadFinished = null
                         isDownloading.set(false)
                     }
@@ -1467,7 +1469,7 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
         // cannot resurrect a just-deleted segment or write to a deleted FD. Only
         // the two external cleanup paths (clearCache / clearApkCache) call this;
         // it is never invoked mid-download.
-        activeDownload.getAndSet(null)?.let {
+        activeDownload.get()?.let {
             OneKeyLog.info("AppUpdate", "$tag: cancelling in-flight download before wipe")
             it.cancel()
         }
@@ -1512,32 +1514,49 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
         return updatePromise("cleanup") {
             OneKeyLog.info("AppUpdate", "clearCache: starting cleanup...")
             val (handle, finished) = synchronized(activeDownload) {
-                val current = activeDownload.getAndSet(null)
+                if (clearingDownload) throw AppUpdateError("UNKNOWN", "cleanup")
+                clearingDownload = true
+                val current = activeDownload.get()
                 current?.aborted?.set(true)
                 current to activeDownloadFinished
             }
-            handle?.cancel()
-            if (finished != null) {
-                // Keep the running slot occupied until old disk writes have ended.
-                val completed = try {
-                    finished.await(65, TimeUnit.SECONDS)
-                } catch (e: InterruptedException) {
-                    Thread.currentThread().interrupt()
-                    false
+            try {
+                handle?.cancel()
+                if (finished != null) {
+                    // Keep the running slot occupied until old disk writes have ended.
+                    val completed = try {
+                        finished.await(65, TimeUnit.SECONDS)
+                    } catch (e: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        false
+                    }
+                    if (!completed) throw AppUpdateError("UNKNOWN", "cleanup")
                 }
-                if (!completed) {
-                    throw AppUpdateError("UNKNOWN", "cleanup")
+                synchronized(activeDownload) {
+                    if (activeDownload.get() !== handle || activeDownloadFinished !== finished) {
+                        throw AppUpdateError("UNKNOWN", "cleanup")
+                    }
+                    val verifiedCount = verifiedFiles.size
+                    verifiedFiles.clear()
+                    ascVerifiedFiles.clear()
+                    OneKeyLog.info("AppUpdate", "clearCache: reset download state, cleared $verifiedCount verified file entries")
+                    wipeApkCacheFiles("clearCache")
+                    activeDownload.set(null)
+                    activeDownloadFinished = null
+                    isDownloading.set(false)
                 }
-            }
-            synchronized(activeDownload) {
-                if (activeDownloadFinished !== finished) return@updatePromise
-                val verifiedCount = verifiedFiles.size
-                verifiedFiles.clear()
-                ascVerifiedFiles.clear()
-                OneKeyLog.info("AppUpdate", "clearCache: reset download state, cleared $verifiedCount verified file entries")
-                wipeApkCacheFiles("clearCache")
-                activeDownloadFinished = null
-                isDownloading.set(false)
+            } finally {
+                synchronized(activeDownload) {
+                    clearingDownload = false
+                    // The writer may have completed while cleanup held its slot.
+                    if (finished != null && finished.count == 0L &&
+                        activeDownload.get() === handle && activeDownloadFinished === finished
+                    ) {
+                        activeDownload.set(null)
+                        activeDownloadFinished = null
+                        isDownloading.set(false)
+                    }
+                }
             }
         }
     }
@@ -1554,7 +1573,7 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
             // Deliberately do NOT touch isDownloading / verifiedFiles state here
             // (that's clearCache's job). Missing dir/files are tolerated.
             synchronized(activeDownload) {
-                if (isDownloading.get()) {
+                if (isDownloading.get() || clearingDownload) {
                     OneKeyLog.info("AppUpdate", "clearApkCache: download in progress, skipping APK cache cleanup")
                     return@updatePromise
                 }
