@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-text-input",
-  "version": "6.7.0-alpha.314",
+  "version": "6.7.0-alpha.315",
   "description": "React Native TextInput with native paste events",
   "source": "./src/index.tsx",
   "main": "./lib/module/index.js",

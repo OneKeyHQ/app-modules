@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-app-update",
-  "version": "6.7.0-alpha.314",
+  "version": "6.7.0-alpha.315",
   "description": "Android APK download, signature verification and installation for OneKey",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
