@@ -4,7 +4,7 @@ Windows Hello verification associated with an Electron `BrowserWindow`.
 Independent Node-API implementation for Windows x64 and ARM64, with no runtime npm dependencies.
 
 ```sh
-npm install --save-exact electron-windows-hello@44.0.2
+npm install --save-exact electron-windows-hello@44.0.2-alpha.1
 ```
 
 ## API
@@ -81,7 +81,7 @@ The manually triggered desktop-win-release workflow builds and tests each archit
 
 With Electron installed in the development environment, `npm run test:electron` checks the real HWND and utility-process path without an authentication prompt. `npm run test:electron -- --interactive` opens a visible owner window and requests Windows Hello; verify focus, cancellation, multi-monitor placement, and taskbar presentation in a logged-in desktop session. Headless CI cannot establish those interaction results.
 
-The private source package is excluded from mobile workspaces and publishing. The dedicated workflow stamps the public npm package with the reviewed desktop release version. Existing published versions are never modified. Before integrating a release, verify the embedded inventory proof against the reviewed source commit and workflow, pin the exact npm version and inventory digest, and preserve the consumer's release-age and vulnerability checks. Provenance establishes origin, not that the source or toolchain is free of malicious code.
+The private source package is excluded from mobile workspaces and publishing. The dedicated workflow stamps the public npm package with the reviewed desktop release version. Main publishes stable versions to latest; branch previews use an alpha version and next, without changing latest. Existing published versions are never modified. Before integrating a release, verify the embedded inventory proof against the exact reviewed source branch, commit and workflow, pin the exact npm version and inventory digest, and preserve the consumer's release-age and vulnerability checks. Provenance establishes origin, not that the source or toolchain is free of malicious code.
 
 ## References
 

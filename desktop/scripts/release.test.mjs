@@ -17,6 +17,7 @@ import {
 import policy from "./verify-desktop-modules.cjs";
 
 const sourceCommit = "a".repeat(40);
+const sourceRef = "refs/heads/codex/desktop-win-npm-release";
 const baseline = readBaseline();
 const name = "electron-windows-hello";
 
@@ -61,7 +62,7 @@ function packageFixture(context) {
     writeFileSync(join(directory, `${name}.win32-${arch}-msvc.node`), pe(arch));
     writeJson(join(directory, "build-info.json"), { arch });
   }
-  const release = prepareRelease(root, sourceCommit);
+  const release = prepareRelease(root, sourceCommit, sourceRef);
   return { root, release, file: join(root, "dist/desktop-win.json") };
 }
 
@@ -72,13 +73,40 @@ test("desktop versions track the Electron major, not its patch", () => {
   }
   for (const changes of [
     { version: "37.0.1", electronVersion: "36.0.1" },
-    { version: "44.0.1-alpha.1" },
+    { version: "44.0.2-alpha.0" },
+    { version: "44.0.2-alpha.01" },
+    { version: "44.0.2-beta.1" },
     { version: "044.0.1" },
     { rustToolchain: "stable" },
     { electronVersion: "^44.5.1" },
     { modules: { win: ["unknown"], mac: [], linux: [] } },
   ])
     assert.throws(() => policy.validateBaseline({ ...baseline, ...changes }));
+});
+
+test("only alpha previews can publish from branches and never use latest", () => {
+  assert.equal(policy.validateBaseline(baseline), baseline);
+  assert.equal(policy.releaseChannel("44.0.2-alpha.1", sourceRef), "next");
+  assert.equal(policy.releaseChannel("44.0.2-alpha.1", "refs/heads/main"), "next");
+  assert.equal(policy.releaseChannel("44.0.2", "refs/heads/main"), "latest");
+  assert.throws(() => policy.releaseChannel("44.0.2", sourceRef), /require main/);
+  for (const invalid of [
+    undefined,
+    "main",
+    "refs/tags/v44.0.2",
+    "refs/pull/156/merge",
+    "refs/heads/a..b",
+    "refs/heads/a//b",
+    "refs/heads/a.lock",
+    "refs/heads/a/.hidden",
+    "refs/heads/a/",
+  ]) {
+    assert.throws(() => policy.validateSourceRef(invalid), /source branch ref/);
+    assert.throws(
+      () => policy.attestationArgs("artifact", sourceCommit, invalid),
+      /source branch ref/,
+    );
+  }
 });
 
 test("PE validation rejects wrong, short and out-of-bounds native artifacts", () => {
@@ -127,10 +155,10 @@ test("npm version checks reject an existing version, registry errors and network
 test("a combined npm tarball carries exactly the runtime inventory and portable proof", (context) => {
   const fixture = packageFixture(context);
   const entry = fixture.release.modules[name];
-  assert.throws(() => packRelease(fixture.root, sourceCommit), /ENOENT/);
+  assert.throws(() => packRelease(fixture.root, sourceCommit, sourceRef), /ENOENT/);
   const proof = join(fixture.root, "dist/desktop-win.sigstore.json");
   writeFileSync(proof, "fixture proof; not a valid attestation");
-  packRelease(fixture.root, sourceCommit);
+  packRelease(fixture.root, sourceCommit, sourceRef);
   const archive = join(fixture.root, "dist", entry.asset);
   const extracted = temporary(context);
   execFileSync("tar", ["-xzf", archive, "-C", extracted]);
@@ -152,12 +180,16 @@ test("a combined npm tarball carries exactly the runtime inventory and portable 
 test("packaging rejects a changed source, baseline or staged file after inventory preparation", (context) => {
   const fixture = packageFixture(context);
   writeFileSync(join(fixture.root, "dist/desktop-win.sigstore.json"), "fixture proof");
-  assert.throws(() => packRelease(fixture.root, "b".repeat(40)), /expected source/);
+  assert.throws(() => packRelease(fixture.root, "b".repeat(40), sourceRef), /expected source/);
+  assert.throws(
+    () => packRelease(fixture.root, sourceCommit, "refs/heads/other"),
+    /expected source/,
+  );
   writeJson(join(fixture.root, "release.json"), { ...baseline, version: "44.0.3" });
-  assert.throws(() => packRelease(fixture.root, sourceCommit), /baseline/);
+  assert.throws(() => packRelease(fixture.root, sourceCommit, sourceRef), /baseline/);
   writeJson(join(fixture.root, "release.json"), baseline);
   writeFileSync(join(fixture.root, "dist/staging", name, "package/index.cjs"), "replaced");
-  assert.throws(() => packRelease(fixture.root, sourceCommit), /digest mismatch/);
+  assert.throws(() => packRelease(fixture.root, sourceCommit, sourceRef), /digest mismatch/);
 });
 
 test("registry verification requires the exact npm archive, package identity and provenance metadata", () => {
@@ -207,6 +239,7 @@ test("manifest approval pins bytes, source and version; inventory cannot travers
     schemaVersion: 1,
     version: baseline.version,
     sourceCommit,
+    sourceRef,
     manifestSha256: policy.sha256(readFileSync(fixture.file)),
   };
   assert.deepEqual(policy.readApprovedRelease(fixture.file, pin), fixture.release);
@@ -218,6 +251,10 @@ test("manifest approval pins bytes, source and version; inventory cannot travers
     () => policy.readApprovedRelease(fixture.file, { ...pin, sourceCommit: "b".repeat(40) }),
     /source\/version/,
   );
+  assert.throws(
+    () => policy.readApprovedRelease(fixture.file, { ...pin, sourceRef: "refs/heads/other" }),
+    /source\/version/,
+  );
   const malicious = structuredClone(fixture.release);
   malicious.modules[name].files["../evil.node"] = "a".repeat(64);
   assert.throws(() => policy.validateRelease(malicious), /inventory/);
@@ -227,8 +264,8 @@ test("manifest approval pins bytes, source and version; inventory cannot travers
   );
 });
 
-test("attestation verification constrains repository, workflow, commit, main and hosted runners", () => {
-  assert.deepEqual(policy.attestationArgs("artifact.tgz", sourceCommit), [
+test("attestation verification constrains repository, workflow, exact commit, branch and hosted runners", () => {
+  assert.deepEqual(policy.attestationArgs("artifact.tgz", sourceCommit, sourceRef), [
     "attestation",
     "verify",
     "artifact.tgz",
@@ -241,12 +278,12 @@ test("attestation verification constrains repository, workflow, commit, main and
     "--signer-digest",
     sourceCommit,
     "--source-ref",
-    "refs/heads/main",
+    sourceRef,
     "--deny-self-hosted-runners",
   ]);
-  assert.throws(() => policy.attestationArgs("artifact", "main"));
-  assert.deepEqual(policy.attestationArgs("artifact.tgz", sourceCommit, "proof.json").slice(-2), [
-    "--bundle",
-    "proof.json",
-  ]);
+  assert.throws(() => policy.attestationArgs("artifact", "main", sourceRef));
+  assert.deepEqual(
+    policy.attestationArgs("artifact.tgz", sourceCommit, sourceRef, "proof.json").slice(-2),
+    ["--bundle", "proof.json"],
+  );
 });

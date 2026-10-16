@@ -14,7 +14,7 @@ no release jobs or modules yet.
 uses the Electron major as its major: Electron 36 -> 36.0.1, Electron 37 ->
 37.0.1. Minor versions add desktop functionality; patches fix behavior or
 change build inputs. Published versions must never be replaced.
-The npm baseline is 44.0.2 because app-monorepo currently pins Electron
+The npm preview baseline is 44.0.2-alpha.1 because app-monorepo currently pins Electron
 44.5.1. The new packaging contract does not reuse the previously distributed
 44.0.1 version. No Electron downgrade is implied.
 
@@ -34,8 +34,11 @@ It has no publication, synchronization or attestation-writing jobs, so PRs do
 not show skipped release/synchronization checks. Its artifacts are unsigned
 validation outputs, not approved releases. Packaging tests exercise the archive
 boundary with fixture proofs, which are not valid attestations.
-`desktop-win-release.yml` runs only on manual dispatch from main in
-OneKeyHQ/app-modules. It builds and tests all modules listed in `modules.win`,
+`desktop-win-release.yml` runs only on manual dispatch in OneKeyHQ/app-modules.
+Main may publish stable versions to `latest` or alpha previews to `next`.
+Other source branches may publish only `<version>-alpha.N` (N >= 1) to `next`;
+stable versions from other branches and tag/PR refs are rejected. A preview
+never moves `latest`. It builds and tests all modules listed in `modules.win`,
 each on native x64 and ARM64 runners, then attests and publishes npm packages.
 Additional Windows modules must define their SPEC, locked build, test and
 pack contracts before being added. Unknown modules fail validation.
@@ -46,11 +49,11 @@ the workflow creates no GitHub Release or release tag and consumers never
 download GitHub Release assets. Historical publications are not deleted.
 
 Native binaries and build metadata are attested in their build jobs. The
-packaging job verifies those attestations against the exact main commit,
+packaging job verifies those attestations against the exact dispatched branch ref and commit,
 workflow and hosted-runner policy before preparing the runtime inventory.
 It signs the schema-2 `desktop-win.json` inventory and embeds that file and
 its portable `desktop-win.sigstore.json` proof in each npm archive alongside
-the seven runtime files. The inventory records source commit, baseline,
+the seven runtime files. The inventory records source branch ref, source commit, baseline,
 build environments, archive name and each runtime file's SHA-256. It does
 not hash itself, its proof or the enclosing archive, avoiding circular hashes.
 The completed archive is separately attested before the publish job accepts it.
@@ -58,13 +61,13 @@ The completed archive is separately attested before the publish job accepts it.
 The isolated publish job verifies the archive attestation before extraction,
 then verifies the embedded inventory proof, source, baseline and all files.
 It uses the existing `runtime-npm-publish` environment and `NPM_TOKEN` convention
-to publish with npm provenance, public access and the `latest` dist-tag.
+to publish with npm provenance, public access and the validated dist-tag.
 The token must have publish permission for `electron-windows-hello`;
 permission failures require maintainer action, not an authentication fallback.
 Registry/network errors fail closed. Existing npm versions are rejected before
 building and again before publication; npm also rejects version replacement.
 After publication, the existing registry-visibility checker confirms the version
-and `latest` dist-tag. The workflow then checks registry SHA-512 against the
+and selected dist-tag. The workflow then checks registry SHA-512 against the
 exact approved archive, repository identity and npm provenance metadata.
 
 Actions use full commit pins. Native and packaging jobs have no npm publishing
@@ -78,13 +81,16 @@ There is no desktop synchronization script, cross-repository job or automatic PR
 After npm publication, consumers verify the packaged proof, pin both desktop
 dependency manifests to the exact npm version, and generate both lockfiles
 from the registry. They copy the reviewed verifier and record the actual
-source commit and embedded inventory digest. Never invent future lockfile
+source branch ref, source commit and embedded inventory digest. Never invent future lockfile
 checksums, commits or inventory digests before publication. The Electron baseline
 must match the tested release. No mobile dependencies or Electron version change.
 
 The app's install-app-deps flow reads proof metadata from the installed npm
 package, not a separate download. It verifies the inventory's pinned digest,
-repository, workflow, source commit, main ref, and hosted-runner attestation.
+repository, workflow, exact source commit, exact approved source branch ref,
+and hosted-runner attestation. Both source and signer digests must match the
+approved commit. Branch previews require an explicit reviewed source-ref pin;
+there is no default-to-main or accept-any-branch verification policy.
 It hashes the installed runtime files without loading native code and rejects
 missing, modified or unexpected files, allowing only the two required proof files
 in addition to the signed seven-file runtime inventory. Missing proofs fail

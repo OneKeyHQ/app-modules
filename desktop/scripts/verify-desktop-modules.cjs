@@ -9,6 +9,7 @@ const path = require("node:path");
 const repository = "OneKeyHQ/app-modules";
 const workflow = `${repository}/.github/workflows/desktop-win-release.yml`;
 const versionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+const releaseVersionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-alpha\.[1-9]\d*)?$/;
 const digestPattern = /^[a-f0-9]{64}$/;
 const commitPattern = /^[a-f0-9]{40}$/;
 const proofFiles = ["desktop-win.json", "desktop-win.sigstore.json"];
@@ -17,10 +18,32 @@ function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+function validateSourceRef(sourceRef) {
+  if (
+    typeof sourceRef !== "string" ||
+    !/^refs\/heads\/[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(sourceRef) ||
+    sourceRef.includes("..") ||
+    sourceRef
+      .slice("refs/heads/".length)
+      .split("/")
+      .some((part) => !part || part.startsWith(".") || part.endsWith(".") || part.endsWith(".lock"))
+  )
+    assert.fail("Invalid source branch ref");
+  return sourceRef;
+}
+
+function releaseChannel(version, sourceRef) {
+  validateSourceRef(sourceRef);
+  if (!releaseVersionPattern.test(version)) assert.fail("Invalid desktop release version");
+  if (version.includes("-alpha.")) return "next";
+  if (sourceRef !== "refs/heads/main") assert.fail("Stable npm releases require main");
+  return "latest";
+}
+
 function validateBaseline(baseline) {
   if (
     baseline.schemaVersion !== 1 ||
-    !versionPattern.test(baseline.version) ||
+    !releaseVersionPattern.test(baseline.version) ||
     !versionPattern.test(baseline.electronVersion) ||
     baseline.version.split(".")[0] !== baseline.electronVersion.split(".")[0] ||
     !versionPattern.test(baseline.rustToolchain) ||
@@ -36,19 +59,22 @@ function validateBaseline(baseline) {
 }
 
 function validatePin(pin) {
+  validateSourceRef(pin.sourceRef);
   if (
     pin.schemaVersion !== 1 ||
-    !versionPattern.test(pin.version) ||
+    !releaseVersionPattern.test(pin.version) ||
     !commitPattern.test(pin.sourceCommit) ||
     !digestPattern.test(pin.manifestSha256)
   ) {
     assert.fail("Invalid approved desktop release pin");
   }
+  releaseChannel(pin.version, pin.sourceRef);
   return pin;
 }
 
 function validateRelease(release) {
   validateBaseline(release.baseline);
+  validateSourceRef(release.sourceRef);
   if (
     release.schemaVersion !== 2 ||
     release.repository !== repository ||
@@ -80,8 +106,9 @@ function validateRelease(release) {
   return release;
 }
 
-function attestationArgs(file, sourceCommit, bundle) {
+function attestationArgs(file, sourceCommit, sourceRef, bundle) {
   if (!commitPattern.test(sourceCommit)) assert.fail("Invalid source commit");
+  validateSourceRef(sourceRef);
   return [
     "attestation",
     "verify",
@@ -95,14 +122,14 @@ function attestationArgs(file, sourceCommit, bundle) {
     "--signer-digest",
     sourceCommit,
     "--source-ref",
-    "refs/heads/main",
+    sourceRef,
     "--deny-self-hosted-runners",
     ...(bundle ? ["--bundle", bundle] : []),
   ];
 }
 
-function verifyAttestation(file, sourceCommit, bundle) {
-  execFileSync("gh", attestationArgs(file, sourceCommit, bundle), { stdio: "inherit" });
+function verifyAttestation(file, sourceCommit, sourceRef, bundle) {
+  execFileSync("gh", attestationArgs(file, sourceCommit, sourceRef, bundle), { stdio: "inherit" });
 }
 
 function readApprovedRelease(file, pin) {
@@ -110,7 +137,11 @@ function readApprovedRelease(file, pin) {
   const bytes = fs.readFileSync(file);
   if (sha256(bytes) !== pin.manifestSha256) assert.fail("Desktop manifest digest mismatch");
   const release = validateRelease(JSON.parse(bytes));
-  if (release.sourceCommit !== pin.sourceCommit || release.baseline.version !== pin.version) {
+  if (
+    release.sourceCommit !== pin.sourceCommit ||
+    release.sourceRef !== pin.sourceRef ||
+    release.baseline.version !== pin.version
+  ) {
     assert.fail("Desktop manifest does not match the approved source/version");
   }
   return release;
@@ -160,7 +191,12 @@ function main() {
       assert.fail("Electron differs from the approved desktop validation baseline");
     }
     verifyRuntimeFiles(directory, release.modules[name].files, proofFiles);
-    verifyAttestation(file, pin.sourceCommit, path.join(directory, "desktop-win.sigstore.json"));
+    verifyAttestation(
+      file,
+      pin.sourceCommit,
+      pin.sourceRef,
+      path.join(directory, "desktop-win.sigstore.json"),
+    );
   }
   console.log(`Verified desktop Windows npm modules ${pin.version} from ${pin.sourceCommit}`);
 }
@@ -170,6 +206,8 @@ module.exports = {
   workflow,
   proofFiles,
   sha256,
+  validateSourceRef,
+  releaseChannel,
   validateBaseline,
   validatePin,
   validateRelease,

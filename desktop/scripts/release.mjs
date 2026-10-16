@@ -49,15 +49,17 @@ export function runtimeManifest(source, version) {
   };
 }
 
-export function prepareRelease(root, sourceCommit) {
+export function prepareRelease(root, sourceCommit, sourceRef) {
   const baseline = readBaseline(root);
   if (!/^[a-f0-9]{40}$/.test(sourceCommit)) throw new Error("Expected full source commit");
+  policy.validateSourceRef(sourceRef);
   const dist = join(root, "dist");
   const release = {
     schemaVersion: 2,
     repository: policy.repository,
     workflow: policy.workflow,
     sourceCommit,
+    sourceRef,
     baseline,
     builders: {},
     modules: {},
@@ -102,7 +104,7 @@ export function prepareRelease(root, sourceCommit) {
   return release;
 }
 
-export function packRelease(root, sourceCommit) {
+export function packRelease(root, sourceCommit, sourceRef) {
   const dist = join(root, "dist");
   const metadata = Object.fromEntries(
     policy.proofFiles.map((file) => [file, readFileSync(join(dist, file))]),
@@ -110,6 +112,7 @@ export function packRelease(root, sourceCommit) {
   const release = policy.validateRelease(JSON.parse(readFileSync(join(dist, "desktop-win.json"))));
   if (
     release.sourceCommit !== sourceCommit ||
+    release.sourceRef !== sourceRef ||
     JSON.stringify(release.baseline) !== JSON.stringify(readBaseline(root))
   ) {
     throw new Error("Release differs from the expected source and baseline");
@@ -157,15 +160,33 @@ export function verifyRegistryPackage(metadata, archive, name, version) {
 
 async function main() {
   const baseline = readBaseline();
+  const sourceRef =
+    process.env.GITHUB_EVENT_NAME === "pull_request"
+      ? `refs/heads/${process.env.GITHUB_HEAD_REF}`
+      : process.env.GITHUB_REF;
   if (process.argv[2] === "prepare") {
-    prepareRelease(desktopRoot, process.env.GITHUB_SHA);
+    prepareRelease(desktopRoot, process.env.GITHUB_SHA, sourceRef);
   } else if (process.argv[2] === "pack") {
-    packRelease(desktopRoot, process.env.GITHUB_SHA);
+    packRelease(desktopRoot, process.env.GITHUB_SHA, sourceRef);
+  } else if (process.argv[2] === "validate-publish") {
+    if (
+      process.env.GITHUB_REPOSITORY !== policy.repository ||
+      process.env.GITHUB_EVENT_NAME !== "workflow_dispatch"
+    ) {
+      throw new Error("Desktop publication requires a manual run in the source repository");
+    }
+    const channel = policy.releaseChannel(baseline.version, sourceRef);
+    if (process.env.GITHUB_OUTPUT)
+      appendFileSync(process.env.GITHUB_OUTPUT, `dist_tag=${channel}\n`);
+    console.log(`Validated ${baseline.version} from ${sourceRef} for npm ${channel}`);
   } else if (process.argv[2] === "check-version") {
     await checkUnpublished(baseline);
   } else if (process.argv[2] === "verify-npm") {
     const packages = baseline.modules.win.map((name) => ({ name, version: baseline.version }));
-    const missing = await verifyPublished(packages, "latest");
+    const missing = await verifyPublished(
+      packages,
+      policy.releaseChannel(baseline.version, sourceRef),
+    );
     if (missing.length > 0)
       throw new Error(`npm publication not available: ${JSON.stringify(missing)}`);
     for (const { name, version } of packages) {
@@ -188,15 +209,20 @@ async function main() {
         policy.verifyAttestation(
           join(directory, `${name}.win32-${arch}-msvc.node`),
           process.env.GITHUB_SHA,
+          sourceRef,
         );
       }
-      policy.verifyAttestation(join(directory, "build-info.json"), process.env.GITHUB_SHA);
+      policy.verifyAttestation(
+        join(directory, "build-info.json"),
+        process.env.GITHUB_SHA,
+        sourceRef,
+      );
     }
   } else if (process.argv[2] === "verify-release") {
     for (const name of baseline.modules.win) {
       const asset = `${name}-${baseline.version}.tgz`;
       const file = join(desktopRoot, "dist", asset);
-      policy.verifyAttestation(file, process.env.GITHUB_SHA);
+      policy.verifyAttestation(file, process.env.GITHUB_SHA, sourceRef);
       const destination = join(desktopRoot, "dist", "verified", name);
       mkdirSync(destination, { recursive: true });
       execFileSync("tar", ["-xzf", file, "-C", destination]);
@@ -205,6 +231,7 @@ async function main() {
       const release = policy.validateRelease(JSON.parse(readFileSync(manifest)));
       if (
         release.sourceCommit !== process.env.GITHUB_SHA ||
+        release.sourceRef !== sourceRef ||
         JSON.stringify(release.baseline) !== JSON.stringify(baseline)
       ) {
         throw new Error("Release differs from the expected source and baseline");
@@ -213,6 +240,7 @@ async function main() {
       policy.verifyAttestation(
         manifest,
         process.env.GITHUB_SHA,
+        sourceRef,
         join(directory, "desktop-win.sigstore.json"),
       );
     }
@@ -232,7 +260,7 @@ async function main() {
     console.log(JSON.stringify(baseline));
   } else {
     throw new Error(
-      "Usage: node desktop/scripts/release.mjs <validate|check-version|prepare|pack|verify-native|verify-release|verify-npm>",
+      "Usage: node desktop/scripts/release.mjs <validate|validate-publish|check-version|prepare|pack|verify-native|verify-release|verify-npm>",
     );
   }
 }

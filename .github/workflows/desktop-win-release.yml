@@ -15,6 +15,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.baseline.outputs.version }}
+      dist_tag: ${{ steps.publication.outputs.dist_tag }}
       electron: ${{ steps.baseline.outputs.electron }}
       rust: ${{ steps.baseline.outputs.rust }}
     steps:
@@ -30,9 +31,9 @@ jobs:
           node desktop/scripts/release.mjs validate
           node --test desktop/scripts/*.test.mjs
       - name: Reject unsafe publication or reused version
+        id: publication
         run: |
-          test "$GITHUB_REPOSITORY" = OneKeyHQ/app-modules
-          test "$GITHUB_REF" = refs/heads/main
+          node desktop/scripts/release.mjs validate-publish
           node desktop/scripts/release.mjs check-version
 
   native:
@@ -194,11 +195,11 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           DESKTOP_VERSION: ${{ needs.baseline.outputs.version }}
+          NPM_DIST_TAG: ${{ needs.baseline.outputs.dist_tag }}
         run: |
-          test "$GITHUB_REPOSITORY" = OneKeyHQ/app-modules
-          test "$GITHUB_REF" = refs/heads/main
+          node desktop/scripts/release.mjs validate-publish
           test -n "$NODE_AUTH_TOKEN" || { echo 'NPM_TOKEN is required and must have publish access to electron-windows-hello.' >&2; exit 1; }
           node desktop/scripts/release.mjs check-version
-          npm publish "desktop/dist/electron-windows-hello-$DESKTOP_VERSION.tgz" --access public --tag latest --provenance --ignore-scripts
+          npm publish "desktop/dist/electron-windows-hello-$DESKTOP_VERSION.tgz" --access public --tag "$NPM_DIST_TAG" --provenance --ignore-scripts
       - name: Verify npm availability, dist-tag, integrity and provenance metadata
         run: node desktop/scripts/release.mjs verify-npm
