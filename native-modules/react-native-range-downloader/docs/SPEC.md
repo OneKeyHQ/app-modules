@@ -4,7 +4,10 @@ Status: Native source updated; Android arm64 AAR/Nitro C++ and iOS wrapper host 
 
 The native downloader owns concurrent segment transfer, bounded retries,
 cancel handles, and fallback to a caller's single-stream path. Android callers
-may inspect `PermanentHttpException.code` and `TransientHttpException.code`
+observe `CancelHandle.aborted` only after explicit caller cancellation; an
+internal segment fallback or failure stops sibling workers without marking the
+caller cancelled, so the updater retains the fallback or original failure.
+Callers may inspect `PermanentHttpException.code` and `TransientHttpException.code`
 when a typed HTTP failure escapes a probe or segment. Only typed transient HTTP
 and socket or HTTP framing failures use the existing bounded retry budget; TLS, storage, and
 unknown failures leave that loop immediately. iOS passes the original error or
