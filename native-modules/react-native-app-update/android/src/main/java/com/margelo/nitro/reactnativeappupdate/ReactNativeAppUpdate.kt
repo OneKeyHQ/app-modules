@@ -68,6 +68,7 @@ private fun appUpdateError(error: Exception, step: String): AppUpdateError {
         is java.net.SocketTimeoutException -> "TIMEOUT"
         is java.net.UnknownHostException,
         is java.net.ConnectException,
+        is java.net.ProtocolException,
         is java.net.SocketException -> "NETWORK_ERROR"
         is javax.net.ssl.SSLException -> "SECURITY_REJECTED"
         is java.io.FileNotFoundException,

@@ -6,7 +6,7 @@ The native downloader owns concurrent segment transfer, bounded retries,
 cancel handles, and fallback to a caller's single-stream path. Android callers
 may inspect `PermanentHttpException.code` and `TransientHttpException.code`
 when a typed HTTP failure escapes a probe or segment. Only typed transient HTTP
-and socket failures use the existing bounded retry budget; TLS, storage, and
+and socket or HTTP framing failures use the existing bounded retry budget; TLS, storage, and
 unknown failures leave that loop immediately. iOS passes the original error or
 HTTP status as the last element of its in-process result tuple, without a new
 Nitro field. Unsupported ranges still fall back to a single stream. Cancelling

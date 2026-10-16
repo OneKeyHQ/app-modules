@@ -6,6 +6,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.ConnectException
+import java.net.ProtocolException
 import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
@@ -407,13 +408,12 @@ class ConcurrentRangeDownloader(
                 throw e
             } catch (e: PermanentHttpException) {
                 // Dead URL (auth/gone/non-retryable) — retrying only burns the
-                // attempt budget. Surface immediately; the caller maps the
-                // `HTTP <code>` message to a permanent JS taxonomy bucket.
+                // attempt budget. Surface the typed HTTP status immediately.
                 throw e
             } catch (e: Exception) {
                 val retryable = e is TransientHttpException ||
                     e is SocketTimeoutException || e is UnknownHostException ||
-                    e is ConnectException || e is SocketException
+                    e is ConnectException || e is SocketException || e is ProtocolException
                 if (!retryable) throw e
                 if (aborted.get() || retry >= maxPartRetry) throw e
                 retry += 1

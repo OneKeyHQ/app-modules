@@ -23,6 +23,14 @@ signature. `installBundle` takes the versions and signature. These methods use
 bundle at `onekey-bundle/<latestVersion>-<bundleVersion>` under iOS Documents
 or Android `context.filesDir`. Version strings must pass each platform's
 safe-version validation before path construction.
+Signed metadata binds the supplied app and bundle versions as separate fields;
+verification never recovers them by splitting the combined directory name.
+Startup derives the bundle version only by removing the exact running native
+app-version prefix and separator from the stored directory name. An absent or
+empty suffix fails closed. Local bundle listing and stale-version pruning must
+not mistake a hyphen in the current app or bundle version for that separator.
+Listing returns only bundles for the running native app version; older-version
+artifacts remain subject to the existing best-effort prune rules.
 `downloadBundleASC` validates the signature and its managed destination; the
 signature sidecar is committed only when installation succeeds.
 
@@ -34,6 +42,14 @@ ASC verification checks signed metadata and ZIP hash before extraction, then
 checks extracted files and bundle compatibility. Installation activates only the
 verified extracted bundle for the supplied versions. Existing cancellation,
 resume, cleanup, and fallback ownership remain with the native module.
+`clearDownload` and `clearBundle` first cancel each active writer, wait for its
+entire download operation (including resume-data and final ZIP writes) to stop,
+then remove managed files. A failed or timed-out wait leaves those files intact
+and rejects cleanup; the stopped writer later releases its own download slot.
+Another download may not enter while cleanup owns the deletion window. On
+Android, an aborted writer retains its destination registration until it exits,
+so a timed-out cleanup cannot admit a second writer for that same ZIP; the
+global cleanup gate is released after any cleanup outcome.
 For an identity in the current or fallback installed bundle list, ASC
 verification checks the existing signature and every extracted file, then
 reuses the directory without extraction or deletion. Failed verification of

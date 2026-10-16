@@ -61,6 +61,7 @@ private fun bundleUpdateError(error: Exception, step: String): BundleUpdateError
         is java.net.SocketTimeoutException -> "TIMEOUT"
         is java.net.UnknownHostException,
         is java.net.ConnectException,
+        is java.net.ProtocolException,
         is java.net.SocketException -> "NETWORK_ERROR"
         is javax.net.ssl.SSLException -> "SECURITY_REJECTED"
         is java.io.FileNotFoundException,
@@ -337,11 +338,8 @@ object BundleUpdateStoreAndroid {
 
             val currentBV = getCurrentBundleVersion(context)
             val currentBundleVersionStr = if (currentBV != null) {
-                val idx = currentBV.lastIndexOf("-")
-                if (idx > 0) currentBV.substring(idx + 1) else getBuiltinBundleVersion(context)
-            } else {
-                getBuiltinBundleVersion(context)
-            }
+                bundleVersionInFolder(currentBV, currentAppVersion) ?: return
+            } else getBuiltinBundleVersion(context)
             if (taskObj.optString("scheduledEnvBundleVersion") != currentBundleVersionStr) return
 
             // 4. Extract payload
@@ -390,7 +388,7 @@ object BundleUpdateStoreAndroid {
             }
 
             val skipGPG = BuildConfig.ALLOW_SKIP_GPG_VERIFICATION && isDevSettingsEnabled(context) && isSkipGPGEnabled(context)
-            if (!skipGPG && !validateMetadataFileSha256(context, folderName, signature)) {
+            if (!skipGPG && !validateMetadataFileSha256(context, folderName, signature, appVersion, bundleVersion)) {
                 OneKeyLog.error("BundleUpdate", "processPreLaunchPendingTask: GPG signature verification failed for $folderName")
                 failPendingTask(mmkv, taskObj, "ERR_VERIFY_FAILED:Bundle signature verification failed")
                 return
@@ -569,10 +567,12 @@ object BundleUpdateStoreAndroid {
         return compatible
     }
 
-    private fun parseBundleVersionFolder(currentBundleVersion: String): Pair<String, String>? {
-        val idx = currentBundleVersion.lastIndexOf('-')
-        if (idx <= 0 || idx >= currentBundleVersion.length - 1) return null
-        return currentBundleVersion.substring(0, idx) to currentBundleVersion.substring(idx + 1)
+    fun bundleVersionInFolder(folder: String, appVersion: String): String? {
+        if (!isSafeVersionString(appVersion)) return null
+        val prefix = "$appVersion-"
+        if (!folder.startsWith(prefix)) return null
+        val bundleVersion = folder.removePrefix(prefix)
+        return bundleVersion.takeIf { isSafeVersionString(it) }
     }
 
     @JvmOverloads
@@ -641,16 +641,17 @@ object BundleUpdateStoreAndroid {
         return result.sha256
     }
 
-    fun validateMetadataFileSha256(context: Context, currentBundleVersion: String, signature: String?): Boolean {
+    fun validateMetadataFileSha256(context: Context, currentBundleVersion: String, signature: String?, expectedAppVersion: String, expectedBundleVersion: String): Boolean {
         val metadataFilePath = getMetadataFilePath(context, currentBundleVersion) ?: run {
             OneKeyLog.debug("BundleUpdate", "metadataFilePath is null")
             return false
         }
-        val parsed = parseBundleVersionFolder(currentBundleVersion)
+        if (!isSafeVersionString(expectedAppVersion) || !isSafeVersionString(expectedBundleVersion) ||
+            currentBundleVersion != "$expectedAppVersion-$expectedBundleVersion") return false
         val extractedSha256 = readMetadataFileSha256(
             signature,
-            expectedAppVersion = parsed?.first,
-            expectedBundleVersion = parsed?.second,
+            expectedAppVersion = expectedAppVersion,
+            expectedBundleVersion = expectedBundleVersion,
             expectedAppType = "android",
         )
         if (extractedSha256.isNullOrEmpty()) return false
@@ -850,7 +851,7 @@ object BundleUpdateStoreAndroid {
     private fun getValidatedCurrentBundleInfo(context: Context): ValidatedBundleInfo? {
         processPreLaunchPendingTask(context)
         return try {
-            val currentAppVersion = getAppVersion(context)
+            val currentAppVersion = getAppVersion(context) ?: return null
             val currentBundleVersion = getCurrentBundleVersion(context) ?: run {
                 OneKeyLog.warn("BundleUpdate", "getJsBundlePath: no currentBundleVersion stored")
                 invalidateValidatedBundleInfoCache()
@@ -912,7 +913,8 @@ object BundleUpdateStoreAndroid {
             if (skipGPG) {
                 OneKeyLog.warn("BundleUpdate", "Startup SHA256 validation skipped (DevSettings + skip-GPG enabled)")
             }
-            if (!skipGPG && !validateMetadataFileSha256(context, currentBundleVersion, signature)) {
+            val currentBundleRelease = bundleVersionInFolder(currentBundleVersion, currentAppVersion) ?: return null
+            if (!skipGPG && !validateMetadataFileSha256(context, currentBundleVersion, signature, currentAppVersion, currentBundleRelease)) {
                 OneKeyLog.warn("BundleUpdate", "getJsBundlePath: validateMetadataFileSha256 failed, signatureLength=${signature.length}")
                 return null
             }
@@ -1906,7 +1908,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             }
 
             if (isInstalled) {
-                if (!skipGPG && !BundleUpdateStoreAndroid.validateMetadataFileSha256(context, folderName, signature)) {
+                if (!skipGPG && !BundleUpdateStoreAndroid.validateMetadataFileSha256(context, folderName, signature, appVersion, bundleVersion)) {
                     throw BundleUpdateError("INTEGRITY_FAILED", "verifyASC")
                 }
                 val metadata = BundleUpdateStoreAndroid.parseMetadataJson(
@@ -1938,7 +1940,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 val currentBundleVersion = "$appVersion-$bundleVersion"
                 if (!skipGPG) {
                     OneKeyLog.info("BundleUpdate", "verifyBundleASC: validating GPG signature for metadata...")
-                    if (!BundleUpdateStoreAndroid.validateMetadataFileSha256(context, currentBundleVersion, signature)) {
+                    if (!BundleUpdateStoreAndroid.validateMetadataFileSha256(context, currentBundleVersion, signature, appVersion, bundleVersion)) {
                         OneKeyLog.error("BundleUpdate", "verifyBundleASC: GPG signature verification failed")
                         BundleUpdateStoreAndroid.deleteDir(destinationDir)
                         throw BundleUpdateError("INTEGRITY_FAILED", "verifyASC")
@@ -2033,9 +2035,9 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
 
             val folderName = "$appVersion-$bundleVersion"
             val currentFolderName = BundleUpdateStoreAndroid.getCurrentBundleVersion(context)
-            val previousActiveBundleVersion = currentFolderName
-                ?.takeIf { it.contains("-") }
-                ?.substringAfterLast("-")
+            val previousActiveBundleVersion = currentFolderName?.let {
+                BundleUpdateStoreAndroid.bundleVersionInFolder(it, appVersion)
+            }
             OneKeyLog.info("BundleUpdate", "installBundle: target=$folderName, current=$currentFolderName")
 
             // Verify bundle directory exists and is canonically confined inside getBundleDir(context)
@@ -2066,7 +2068,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             }
 
             if (!skipGPG) {
-                if (signature.isEmpty() || !BundleUpdateStoreAndroid.validateMetadataFileSha256(context, folderName, signature)) {
+                if (signature.isEmpty() || !BundleUpdateStoreAndroid.validateMetadataFileSha256(context, folderName, signature, appVersion, bundleVersion)) {
                     OneKeyLog.error("BundleUpdate", "installBundle: GPG signature verification failed for $folderName")
                     throw BundleUpdateError("INTEGRITY_FAILED", "install")
                 }
@@ -2095,13 +2097,11 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 val fallbackData = BundleUpdateStoreAndroid.readFallbackUpdateBundleDataFile(context)
 
                 if (!currentFolderName.isNullOrEmpty()) {
-                    val lastDashIndex = currentFolderName.lastIndexOf("-")
-                    if (lastDashIndex > 0) {
-                        val curAppVersion = currentFolderName.substring(0, lastDashIndex)
-                        val curBundleVersion = currentFolderName.substring(lastDashIndex + 1)
+                    val curBundleVersion = BundleUpdateStoreAndroid.bundleVersionInFolder(currentFolderName, appVersion)
+                    if (curBundleVersion != null) {
                         if (currentSignature.isNotEmpty()) {
                             fallbackData.add(mutableMapOf(
-                                "appVersion" to curAppVersion,
+                                "appVersion" to appVersion,
                                 "bundleVersion" to curBundleVersion,
                                 "signature" to currentSignature
                             ))
@@ -2142,46 +2142,51 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
 
     private fun clearDownloadFiles(context: Context, includeInstalled: Boolean) {
         synchronized(clearDownloadsLock) {
-            val active = synchronized(activeDownloads) {
-                clearingDownloads = true
-                activeDownloads.entries.map { it.key to it.value }
-            }
-            active.forEach { (_, run) -> run.first.aborted.set(true) }
-            active.forEach { (key, run) ->
-                OneKeyLog.info("BundleUpdate", "cancelling in-flight download: $key")
-                run.first.cancel()
-            }
-            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(65)
-            for ((_, run) in active) {
-                val remaining = deadline - System.nanoTime()
-                val completed = try {
-                    remaining > 0 && run.second.await(remaining, TimeUnit.NANOSECONDS)
-                } catch (e: InterruptedException) {
-                    Thread.currentThread().interrupt()
-                    false
+            try {
+                val active = synchronized(activeDownloads) {
+                    clearingDownloads = true
+                    activeDownloads.entries.map { it.key to it.value }
                 }
-                if (!completed) throw BundleUpdateError("UNKNOWN", "cleanup")
-            }
-            synchronized(activeDownloads) {
-                if (active.any { (key, run) ->
-                        val current = activeDownloads[key]
-                        current != null && current !== run
-                    }) {
-                    throw BundleUpdateError("UNKNOWN", "cleanup")
+                active.forEach { (_, run) -> run.first.aborted.set(true) }
+                active.forEach { (key, run) ->
+                    OneKeyLog.info("BundleUpdate", "cancelling in-flight download: $key")
+                    run.first.cancel()
                 }
-                val downloadDir = File(BundleUpdateStoreAndroid.getDownloadBundleDir(context))
-                if (downloadDir.exists()) {
-                    BundleUpdateStoreAndroid.deleteDir(downloadDir)
-                    OneKeyLog.info("BundleUpdate", "download directory deleted")
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(65)
+                for ((_, run) in active) {
+                    val remaining = deadline - System.nanoTime()
+                    val completed = try {
+                        remaining > 0 && run.second.await(remaining, TimeUnit.NANOSECONDS)
+                    } catch (e: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        false
+                    }
+                    if (!completed) throw BundleUpdateError("UNKNOWN", "cleanup")
                 }
-                if (includeInstalled) {
-                    val bundleDir = File(BundleUpdateStoreAndroid.getBundleDir(context))
-                    if (bundleDir.exists()) {
-                        BundleUpdateStoreAndroid.deleteDir(bundleDir)
-                        OneKeyLog.info("BundleUpdate", "bundle directory deleted")
+                synchronized(activeDownloads) {
+                    if (active.any { (key, run) ->
+                            val current = activeDownloads[key]
+                            current != null && current !== run
+                        }) {
+                        throw BundleUpdateError("UNKNOWN", "cleanup")
+                    }
+                    val downloadDir = File(BundleUpdateStoreAndroid.getDownloadBundleDir(context))
+                    if (downloadDir.exists()) {
+                        if (!BundleUpdateStoreAndroid.deleteDir(downloadDir)) throw BundleUpdateError("STORAGE_ERROR", "cleanup")
+                        OneKeyLog.info("BundleUpdate", "download directory deleted")
+                    }
+                    if (includeInstalled) {
+                        val bundleDir = File(BundleUpdateStoreAndroid.getBundleDir(context))
+                        if (bundleDir.exists()) {
+                            if (!BundleUpdateStoreAndroid.deleteDir(bundleDir)) throw BundleUpdateError("STORAGE_ERROR", "cleanup")
+                            OneKeyLog.info("BundleUpdate", "bundle directory deleted")
+                        }
                     }
                 }
-                clearingDownloads = false
+            } finally {
+                synchronized(activeDownloads) {
+                    clearingDownloads = false
+                }
             }
         }
     }
@@ -2213,9 +2218,8 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
      * appVersion's artifacts and the active currentBundleVersion. Tolerates
      * already-missing files. Returns the count of deleted version directories.
      *
-     * appVersion is parsed from the "{appVersion}-{bundleVersion}" stem using
-     * the SAME last-dash split as listLocalBundles / the installBundle fallback
-     * logic, so behavior matches the rest of the module.
+     * The running app version is matched as an exact prefix before best-effort
+     * classification of non-current stems.
      */
     override fun pruneStaleAppVersionBundles(): Promise<Double> {
         BundleUpdateStoreAndroid.invalidateValidatedBundleInfoCache()
@@ -2248,6 +2252,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             // unparseable (leave foreign names alone).
             fun shouldKeep(stem: String): Boolean {
                 if (currentBundleVersion != null && stem == currentBundleVersion) return true
+                if (BundleUpdateStoreAndroid.bundleVersionInFolder(stem, currentAppV) != null) return true
                 val appV = appVersionFromStem(stem) ?: return true
                 return appV == currentAppV
             }
@@ -2446,7 +2451,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             OneKeyLog.info("BundleUpdate", "setCurrentUpdateBundleData: GPG check: skipGPG=$skipGPGSwitch")
             if (!skipGPGSwitch) {
                 if (params.signature.isEmpty() ||
-                    !BundleUpdateStoreAndroid.validateMetadataFileSha256(context, bundleVersion, params.signature)) {
+                    !BundleUpdateStoreAndroid.validateMetadataFileSha256(context, bundleVersion, params.signature, params.appVersion, params.bundleVersion)) {
                     OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: GPG signature verification failed")
                     throw BundleUpdateError("INTEGRITY_FAILED", "install")
                 }
@@ -2669,19 +2674,15 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
     override fun listLocalBundles(): Promise<Array<LocalBundleInfo>> {
         return Promise.async {
             val context = getContext()
+            val appVersion = BundleUpdateStoreAndroid.getAppVersion(context) ?: return@async emptyArray<LocalBundleInfo>()
             val bundleDir = File(BundleUpdateStoreAndroid.getBundleDir(context))
             val results = mutableListOf<LocalBundleInfo>()
             if (bundleDir.exists() && bundleDir.isDirectory) {
                 bundleDir.listFiles()?.forEach { child ->
                     if (!child.isDirectory) return@forEach
                     val name = child.name
-                    val lastDash = name.lastIndexOf('-')
-                    if (lastDash <= 0) return@forEach
-                    val appVer = name.substring(0, lastDash)
-                    val bundleVer = name.substring(lastDash + 1)
-                    if (appVer.isNotEmpty() && bundleVer.isNotEmpty()) {
-                        results.add(LocalBundleInfo(appVersion = appVer, bundleVersion = bundleVer))
-                    }
+                    val bundleVersion = BundleUpdateStoreAndroid.bundleVersionInFolder(name, appVersion) ?: return@forEach
+                    results.add(LocalBundleInfo(appVersion = appVersion, bundleVersion = bundleVersion))
                 }
             }
             OneKeyLog.info("BundleUpdate", "listLocalBundles: found ${results.size} bundles")
