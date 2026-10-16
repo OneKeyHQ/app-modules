@@ -444,9 +444,9 @@ public class BundleUpdateStore: NSObject {
                 failPendingTask(mmkv: mmkv, taskDict: taskDict, reason: "ERR_VERIFY_FAILED:Failed to read metadata.json")
                 return
             }
-            if !validateEntryBundlesSha256(bundleDirPath: bundleDirPath, metadata: metadata) {
-                OneKeyLog.error("BundleUpdate", "processPreLaunchPendingTask: entry bundle SHA256 verification failed for \(folderName)")
-                failPendingTask(mmkv: mmkv, taskDict: taskDict, reason: "ERR_VERIFY_FAILED:Entry bundle SHA256 verification failed")
+            if !validateAllFilesInDir(bundleDirPath, metadata: metadata, appVersion: appVersion, bundleVersion: bundleVersion) {
+                OneKeyLog.error("BundleUpdate", "processPreLaunchPendingTask: extracted file verification failed for \(folderName)")
+                failPendingTask(mmkv: mmkv, taskDict: taskDict, reason: "ERR_VERIFY_FAILED:Extracted file verification failed")
                 return
             }
             if !validateBundlePairCompatibility(bundleDirPath: bundleDirPath, metadata: metadata) {
@@ -2192,8 +2192,8 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 OneKeyLog.error("BundleUpdate", "installBundle: failed to read metadata.json content for \(folderName)")
                 throw BundleUpdateError(.missing, .install)
             }
-            if !BundleUpdateStore.validateEntryBundlesSha256(bundleDirPath: bundleDirPath, metadata: metadata) {
-                OneKeyLog.error("BundleUpdate", "installBundle: entry bundle SHA256 verification failed for \(folderName)")
+            if !BundleUpdateStore.validateAllFilesInDir(bundleDirPath, metadata: metadata, appVersion: appVersion, bundleVersion: bundleVersion) {
+                OneKeyLog.error("BundleUpdate", "installBundle: extracted file verification failed for \(folderName)")
                 throw BundleUpdateError(.integrity, .install)
             }
             if !BundleUpdateStore.validateBundlePairCompatibility(bundleDirPath: bundleDirPath, metadata: metadata) {
@@ -2538,8 +2538,8 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: failed to read metadata.json content")
                 throw BundleUpdateError(.missing, .install)
             }
-            if !BundleUpdateStore.validateEntryBundlesSha256(bundleDirPath: bundleDirPath, metadata: metadata) {
-                OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: entry bundle SHA256 verification failed")
+            if !BundleUpdateStore.validateAllFilesInDir(bundleDirPath, metadata: metadata, appVersion: params.appVersion, bundleVersion: params.bundleVersion) {
+                OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: extracted file verification failed")
                 throw BundleUpdateError(.integrity, .install)
             }
             if !BundleUpdateStore.validateBundlePairCompatibility(bundleDirPath: bundleDirPath, metadata: metadata) {

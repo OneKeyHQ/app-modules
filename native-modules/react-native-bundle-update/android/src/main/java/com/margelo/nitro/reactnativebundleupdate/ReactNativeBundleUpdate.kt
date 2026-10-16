@@ -395,9 +395,9 @@ object BundleUpdateStoreAndroid {
             }
 
             val metadata = parseMetadataJson(readFileContent(metadataFile))
-            if (!validateEntryBundlesSha256(bundleDirPath.absolutePath, metadata)) {
-                OneKeyLog.error("BundleUpdate", "processPreLaunchPendingTask: entry bundle SHA256 verification failed for $folderName")
-                failPendingTask(mmkv, taskObj, "ERR_VERIFY_FAILED:Entry bundle SHA256 verification failed")
+            if (!validateAllFilesInDir(context, bundleDirPath.absolutePath, metadata, appVersion, bundleVersion)) {
+                OneKeyLog.error("BundleUpdate", "processPreLaunchPendingTask: extracted file verification failed for $folderName")
+                failPendingTask(mmkv, taskObj, "ERR_VERIFY_FAILED:Extracted file verification failed")
                 return
             }
             if (!validateBundlePairCompatibility(context, bundleDirPath.absolutePath, metadata)) {
@@ -2075,8 +2075,8 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             }
 
             val metadata = BundleUpdateStoreAndroid.parseMetadataJson(BundleUpdateStoreAndroid.readFileContent(metadataFile))
-            if (!BundleUpdateStoreAndroid.validateEntryBundlesSha256(bundleDirPath.absolutePath, metadata)) {
-                OneKeyLog.error("BundleUpdate", "installBundle: entry bundle SHA256 verification failed for $folderName")
+            if (!BundleUpdateStoreAndroid.validateAllFilesInDir(context, bundleDirPath.absolutePath, metadata, appVersion, bundleVersion)) {
+                OneKeyLog.error("BundleUpdate", "installBundle: extracted file verification failed for $folderName")
                 throw BundleUpdateError("INTEGRITY_FAILED", "install")
             }
             if (!BundleUpdateStoreAndroid.validateBundlePairCompatibility(context, bundleDirPath.absolutePath, metadata)) {
@@ -2466,8 +2466,8 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 throw BundleUpdateError("PACKAGE_MISSING", "install")
             }
             val metadata = BundleUpdateStoreAndroid.parseMetadataJson(BundleUpdateStoreAndroid.readFileContent(metadataFile))
-            if (!BundleUpdateStoreAndroid.validateEntryBundlesSha256(bundleDirPath.absolutePath, metadata)) {
-                OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: entry bundle SHA256 verification failed")
+            if (!BundleUpdateStoreAndroid.validateAllFilesInDir(context, bundleDirPath.absolutePath, metadata, params.appVersion, params.bundleVersion)) {
+                OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: extracted file verification failed")
                 throw BundleUpdateError("INTEGRITY_FAILED", "install")
             }
             if (!BundleUpdateStoreAndroid.validateBundlePairCompatibility(context, bundleDirPath.absolutePath, metadata)) {
