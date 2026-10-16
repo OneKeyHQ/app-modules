@@ -293,6 +293,67 @@ class ConcurrentRangeDownloaderOcdsTest {
     assertNoArtifactsLeft(partial)
   }
 
+  @Test
+  fun internalFallbackDoesNotMarkCallerCancelled() {
+    val target = parts[2]
+    startServer(RangeFaultServer(content).arm(
+      RangeFaultServer.FaultMode.STATUS_200, target.start, target.end, times = Int.MAX_VALUE,
+    ))
+    val handle = ConcurrentRangeDownloader.CancelHandle()
+
+    val outcome = newDownloader().download(url(), partialPath(), handle) { _, _ -> }
+
+    assertEquals(ConcurrentRangeDownloader.Outcome.FALLBACK, outcome)
+    assertFalse(handle.aborted.get())
+    assertNoArtifactsLeft(partialPath())
+  }
+
+  @Test
+  fun segment403PreservesHttpStatusWithoutMarkingCallerCancelled() {
+    val target = parts[2]
+    val normal = RangeFaultServer(content)
+    server = MockWebServer()
+    server.dispatcher = object : Dispatcher() {
+      override fun dispatch(request: RecordedRequest): MockResponse =
+        if (request.getHeader("Range") == "bytes=${target.start}-${target.end}") {
+          MockResponse().setResponseCode(403)
+        } else {
+          normal.dispatcher.dispatch(request)
+        }
+    }
+    server.start()
+    val handle = ConcurrentRangeDownloader.CancelHandle()
+
+    val failure = runCatching {
+      newDownloader().download(url(), partialPath(), handle) { _, _ -> }
+    }.exceptionOrNull()
+
+    assertTrue(failure is ConcurrentRangeDownloader.PermanentHttpException)
+    assertEquals(403, (failure as ConcurrentRangeDownloader.PermanentHttpException).code)
+    assertFalse(handle.aborted.get())
+  }
+
+  @Test
+  fun exhaustedSocketTimeoutDoesNotMarkCallerCancelled() {
+    val target = parts[2]
+    startServer(RangeFaultServer(content).arm(
+      RangeFaultServer.FaultMode.STALL, target.start, target.end, times = Int.MAX_VALUE,
+    ))
+    val handle = ConcurrentRangeDownloader.CancelHandle()
+    val client = OkHttpClient.Builder().readTimeout(200, TimeUnit.MILLISECONDS).build()
+    val downloader = ConcurrentRangeDownloader(client, maxPartRetry = 0)
+
+    val failure = runCatching {
+      downloader.download(url(), partialPath(), handle) { _, _ -> }
+    }.exceptionOrNull()
+
+    assertTrue(
+      "expected a socket timeout, got ${failure?.javaClass?.name}: ${failure?.message}",
+      failure is java.net.SocketTimeoutException,
+    )
+    assertFalse(handle.aborted.get())
+  }
+
   // ------------------------------------------------------------------------
   // OCDS-T4: 429 (+Retry-After: 0) once on a segment → transient retry succeeds.
   //   SHA correct; the affected segment requested twice; no from-0 restart.
@@ -532,6 +593,7 @@ class ConcurrentRangeDownloaderOcdsTest {
     worker.shutdownNow()
 
     assertTrue("cancel must abort promptly (took ${elapsed}ms)", elapsed < 12_000)
+    assertTrue("explicit cancellation must mark caller intent", handle.aborted.get())
 
     // cancel-then-delete: now that workers are terminated, deleting the artifacts
     // must STICK — no straggler worker resurrects a `.segN`.

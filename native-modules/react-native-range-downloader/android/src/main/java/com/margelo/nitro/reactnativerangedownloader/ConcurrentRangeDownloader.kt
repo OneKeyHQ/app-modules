@@ -100,7 +100,10 @@ class ConcurrentRangeDownloader(
      * segment files, so no in-flight worker resurrects a deleted file.
      */
     class CancelHandle {
+        // Only an explicit caller cancellation sets aborted. Worker failures use
+        // workerStop to stop sibling segments without changing that intent.
         val aborted = AtomicBoolean(false)
+        internal val workerStop = AtomicBoolean(false)
 
         @Volatile
         private var pool: java.util.concurrent.ExecutorService? = null
@@ -108,7 +111,7 @@ class ConcurrentRangeDownloader(
         internal fun attach(pool: java.util.concurrent.ExecutorService) {
             this.pool = pool
             // If cancel() already raced in before the pool was attached, honor it.
-            if (aborted.get()) pool.shutdownNow()
+            if (workerStop.get()) pool.shutdownNow()
         }
 
         /**
@@ -121,6 +124,7 @@ class ConcurrentRangeDownloader(
          */
         fun cancel() {
             aborted.set(true)
+            workerStop.set(true)
             pool?.let { p ->
                 p.shutdownNow()
                 try {
@@ -221,9 +225,9 @@ class ConcurrentRangeDownloader(
         )
         onProgress(transferred.get(), total)
 
-        // Share the abort flag with the cancel handle so an external cancel() is
-        // observed by the per-segment loops; default to a private flag otherwise.
-        val aborted = cancelHandle?.aborted ?: AtomicBoolean(false)
+        // External cancel also stops workers; internal fallback/failure must not
+        // mark the caller's explicit-cancellation flag.
+        val aborted = cancelHandle?.workerStop ?: AtomicBoolean(false)
         val fallback = AtomicBoolean(false)
         val firstError = AtomicReference<Exception?>(null)
 
@@ -243,11 +247,11 @@ class ConcurrentRangeDownloader(
                             }
                         } catch (e: FallbackException) {
                             fallback.set(true)
-                            aborted.set(true)
                             firstError.compareAndSet(null, e)
+                            aborted.set(true)
                         } catch (e: Exception) {
-                            aborted.set(true)
                             firstError.compareAndSet(null, e)
+                            aborted.set(true)
                         }
                     }
                 }
