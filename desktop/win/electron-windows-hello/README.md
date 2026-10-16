@@ -1,10 +1,10 @@
-# electron-windows-hello
+# @onekeyfe/electron-windows-hello
 
 Windows Hello verification associated with an Electron `BrowserWindow`.
 Independent Node-API implementation for Windows x64 and ARM64, with no runtime npm dependencies.
 
 ```sh
-npm install --save-exact electron-windows-hello@44.0.2-alpha.1
+npm install --save-exact @onekeyfe/electron-windows-hello@44.0.2-alpha.1
 ```
 
 ## API
@@ -16,7 +16,7 @@ import {
   allowSetForegroundWindow,
   checkAvailability,
   requestVerification,
-} from "electron-windows-hello";
+} from "@onekeyfe/electron-windows-hello";
 
 const availability = await checkAvailability();
 const result = await requestVerification({

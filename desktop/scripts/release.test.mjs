@@ -20,6 +20,7 @@ const sourceCommit = "a".repeat(40);
 const sourceRef = "refs/heads/codex/desktop-win-npm-release";
 const baseline = readBaseline();
 const name = "electron-windows-hello";
+const packageName = `@onekeyfe/${name}`;
 
 function temporary(context) {
   const directory = mkdtempSync(join(tmpdir(), "desktop-release-test-"));
@@ -49,7 +50,7 @@ function packageFixture(context) {
     writeFileSync(join(moduleRoot, file), `fixture ${file}`);
   }
   writeJson(join(moduleRoot, "package.json"), {
-    name,
+    name: packageName,
     version: "0.1.0",
     main: "index.cjs",
     types: "index.d.ts",
@@ -120,20 +121,26 @@ test("PE validation rejects wrong, short and out-of-bounds native artifacts", ()
 
 test("runtime packaging strips scripts and dev dependencies and rejects runtime dependencies", () => {
   const packed = runtimeManifest(
-    { name, scripts: { install: "bad" }, devDependencies: { electron: "1" } },
+    { name: packageName, scripts: { install: "bad" }, devDependencies: { electron: "1" } },
     baseline.version,
   );
   assert.equal(packed.version, baseline.version);
   assert.equal(packed.scripts, undefined);
   assert.equal(packed.devDependencies, undefined);
+  assert.equal(packed.name, packageName);
+  assert.equal(packed.repository.directory, `desktop/win/${name}`);
+  assert.throws(() => runtimeManifest({ name }, baseline.version), /package name/);
   assert.throws(() =>
-    runtimeManifest({ name, dependencies: { unexpected: "1" } }, baseline.version),
+    runtimeManifest({ name: packageName, dependencies: { unexpected: "1" } }, baseline.version),
   );
 });
 
 test("npm version checks reject an existing version, registry errors and network failures", async () => {
   await checkUnpublished(baseline, async (url) => {
-    assert.equal(url, `https://registry.npmjs.org/${name}/${baseline.version}`);
+    assert.equal(
+      url,
+      `https://registry.npmjs.org/${encodeURIComponent(packageName)}/${baseline.version}`,
+    );
     return { status: 404 };
   });
   await assert.rejects(
@@ -172,7 +179,9 @@ test("a combined npm tarball carries exactly the runtime inventory and portable 
     readFileSync(proof),
   );
   const manifest = JSON.parse(readFileSync(join(extracted, "package/package.json")));
-  assert.equal(manifest.name, name);
+  assert.equal(manifest.name, packageName);
+  assert.equal(entry.packageName, packageName);
+  assert.equal(entry.asset, `onekeyfe-${name}-${baseline.version}.tgz`);
   assert.equal(manifest.version, baseline.version);
   assert.equal(manifest.scripts, undefined);
 });
@@ -195,15 +204,15 @@ test("packaging rejects a changed source, baseline or staged file after inventor
 test("registry verification requires the exact npm archive, package identity and provenance metadata", () => {
   const archive = Buffer.from("approved npm archive");
   const metadata = {
-    ...runtimeManifest({ name }, baseline.version),
+    ...runtimeManifest({ name: packageName }, baseline.version),
     dist: {
       integrity: `sha512-${createHash("sha512").update(archive).digest("base64")}`,
       attestations: { url: "https://registry.npmjs.org/-/npm/v1/attestations/fixture" },
     },
   };
-  verifyRegistryPackage(metadata, archive, name, baseline.version);
+  verifyRegistryPackage(metadata, archive, packageName, baseline.version);
   assert.throws(
-    () => verifyRegistryPackage(metadata, Buffer.from("replaced"), name, baseline.version),
+    () => verifyRegistryPackage(metadata, Buffer.from("replaced"), packageName, baseline.version),
     /does not match/,
   );
   for (const changes of [
@@ -214,7 +223,8 @@ test("registry verification requires the exact npm archive, package identity and
     { dist: { ...metadata.dist, attestations: { url: "https://attacker/attestations" } } },
   ])
     assert.throws(
-      () => verifyRegistryPackage({ ...metadata, ...changes }, archive, name, baseline.version),
+      () =>
+        verifyRegistryPackage({ ...metadata, ...changes }, archive, packageName, baseline.version),
       /does not match/,
     );
 });
@@ -256,6 +266,9 @@ test("manifest approval pins bytes, source and version; inventory cannot travers
     /source\/version/,
   );
   const malicious = structuredClone(fixture.release);
+  malicious.modules[name].packageName = name;
+  assert.throws(() => policy.validateRelease(malicious), /inventory/);
+  malicious.modules[name].packageName = packageName;
   malicious.modules[name].files["../evil.node"] = "a".repeat(64);
   assert.throws(() => policy.validateRelease(malicious), /inventory/);
   assert.throws(

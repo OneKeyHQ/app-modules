@@ -6,7 +6,8 @@ Maintained in OneKeyHQ/app-modules. Imported from the independently developed
 MIT-licensed huhuanming/electron-windows-hello commit
 3fd42e8eacb2f90e80be616d957c27cad438b4bc, not a fork of passport-desktop.
 The native implementation and public API are unchanged by this migration.
-The existing npm electron-windows-hello@0.1.0 publication is untouched.
+The OneKey package is `@onekeyfe/electron-windows-hello`. The existing unscoped
+npm electron-windows-hello@0.1.0 publication and its ownership are untouched.
 
 ## Contract
 

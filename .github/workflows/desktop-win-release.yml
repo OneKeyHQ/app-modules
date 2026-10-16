@@ -198,9 +198,9 @@ jobs:
           NPM_DIST_TAG: ${{ needs.baseline.outputs.dist_tag }}
         run: |
           node desktop/scripts/release.mjs validate-publish
-          test -n "$NODE_AUTH_TOKEN" || { echo 'NPM_TOKEN is required and must have publish access to electron-windows-hello.' >&2; exit 1; }
+          test -n "$NODE_AUTH_TOKEN" || { echo 'NPM_TOKEN is required and must have publish access to @onekeyfe/electron-windows-hello.' >&2; exit 1; }
           npm whoami
           node desktop/scripts/release.mjs check-version
-          npm publish "desktop/dist/electron-windows-hello-$DESKTOP_VERSION.tgz" --access public --tag "$NPM_DIST_TAG" --provenance --ignore-scripts
+          npm publish "desktop/dist/onekeyfe-electron-windows-hello-$DESKTOP_VERSION.tgz" --access public --tag "$NPM_DIST_TAG" --provenance --ignore-scripts
       - name: Verify npm availability, dist-tag, integrity and provenance metadata
         run: node desktop/scripts/release.mjs verify-npm

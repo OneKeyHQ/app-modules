@@ -5,7 +5,8 @@
 Desktop native source lives under `desktop/{win,mac,linux}/<module>`.
 These modules are not root Yarn workspaces and never participate in mobile
 version bumps, mobile npm publishing, or mobile dependency synchronization.
-The first Windows module is `electron-windows-hello`; macOS and Linux have
+The first Windows module is `electron-windows-hello`, published as
+`@onekeyfe/electron-windows-hello`; macOS and Linux have
 no release jobs or modules yet.
 
 ## Version and validation baseline
@@ -44,7 +45,11 @@ Additional Windows modules must define their SPEC, locked build, test and
 pack contracts before being added. Unknown modules fail validation.
 
 Each module ships a dependency-free npm package with the desktop release
-version, without install scripts. npm is the only distribution channel:
+version under the `@onekeyfe` scope, without install scripts. Local module
+directories and native binary names retain the unscoped module identifier.
+The signed inventory requires the exact scoped `packageName` and npm archive
+name (`onekeyfe-<module>-<version>.tgz`); unscoped substitutes are rejected.
+npm is the only distribution channel:
 the workflow creates no GitHub Release or release tag and consumers never
 download GitHub Release assets. Historical publications are not deleted.
 
@@ -62,7 +67,7 @@ The isolated publish job verifies the archive attestation before extraction,
 then verifies the embedded inventory proof, source, baseline and all files.
 It uses the existing `runtime-npm-publish` environment and `NPM_TOKEN` convention
 to publish with npm provenance, public access and the validated dist-tag.
-The token must have publish permission for `electron-windows-hello`;
+The token must have publish permission for `@onekeyfe/electron-windows-hello`;
 permission failures require maintainer action, not an authentication fallback.
 Registry/network errors fail closed. Existing npm versions are rejected before
 building and again before publication; npm also rejects version replacement.

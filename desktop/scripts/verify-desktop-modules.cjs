@@ -96,7 +96,8 @@ function validateRelease(release) {
       `${name}.win32-arm64-msvc.node`,
     ].toSorted();
     if (
-      entry.asset !== `${name}-${release.baseline.version}.tgz` ||
+      entry.packageName !== `@onekeyfe/${name}` ||
+      entry.asset !== `onekeyfe-${name}-${release.baseline.version}.tgz` ||
       JSON.stringify(Object.keys(entry.files ?? {}).toSorted()) !== JSON.stringify(expectedFiles) ||
       Object.values(entry.files).some((digest) => !digestPattern.test(digest))
     ) {
@@ -178,13 +179,14 @@ function main() {
   const appDir = path.join(desktopRoot, "app");
   const runtimeManifest = JSON.parse(fs.readFileSync(path.join(appDir, "package.json")));
   for (const name of ["electron-windows-hello"]) {
+    const packageName = `@onekeyfe/${name}`;
     if (
-      app.dependencies[name] !== pin.version ||
-      runtimeManifest.dependencies[name] !== pin.version
+      app.dependencies[packageName] !== pin.version ||
+      runtimeManifest.dependencies[packageName] !== pin.version
     ) {
-      assert.fail(`Unpinned npm runtime dependency: ${name}`);
+      assert.fail(`Unpinned npm runtime dependency: ${packageName}`);
     }
-    const directory = path.join(appDir, "node_modules", name);
+    const directory = path.join(appDir, "node_modules", packageName);
     const file = path.join(directory, "desktop-win.json");
     const release = readApprovedRelease(file, pin);
     if (app.devDependencies.electron !== release.baseline.electronVersion) {

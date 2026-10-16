@@ -29,6 +29,9 @@ export function checkPe(bytes, arch) {
 }
 
 export function runtimeManifest(source, version) {
+  if (source.name !== "@onekeyfe/electron-windows-hello") {
+    throw new Error("Unsupported desktop npm package name");
+  }
   if (Object.keys(source.dependencies ?? {}).length > 0) {
     throw new Error("Runtime dependencies need an explicit packaging contract");
   }
@@ -44,7 +47,7 @@ export function runtimeManifest(source, version) {
     repository: {
       type: "git",
       url: `git+https://github.com/${policy.repository}.git`,
-      directory: `desktop/win/${source.name}`,
+      directory: `desktop/win/${source.name.split("/")[1]}`,
     },
   };
 }
@@ -77,7 +80,7 @@ export function prepareRelease(root, sourceCommit, sourceRef) {
     const fileNames = [...runtimeFiles, "package.json"];
     for (const file of runtimeFiles) copyFileSync(join(source, file), join(destination, file));
     const manifest = JSON.parse(readFileSync(join(source, "package.json")));
-    if (manifest.name !== name) throw new Error("Module package name mismatch");
+    if (manifest.name !== `@onekeyfe/${name}`) throw new Error("Module package name mismatch");
     writeFileSync(
       join(destination, "package.json"),
       `${JSON.stringify(runtimeManifest(manifest, baseline.version), null, 2)}\n`,
@@ -93,8 +96,9 @@ export function prepareRelease(root, sourceCommit, sourceRef) {
       fileNames.sort().map((file) => [file, policy.sha256(readFileSync(join(destination, file)))]),
     );
     policy.verifyRuntimeFiles(destination, files);
-    const asset = `${name}-${baseline.version}.tgz`;
+    const asset = `onekeyfe-${name}-${baseline.version}.tgz`;
     release.modules[name] = {
+      packageName: manifest.name,
       asset,
       files,
     };
@@ -131,11 +135,17 @@ export function packRelease(root, sourceCommit, sourceRef) {
 
 export async function checkUnpublished(baseline, request = fetch) {
   for (const name of baseline.modules.win) {
-    const response = await request(`https://registry.npmjs.org/${name}/${baseline.version}`, {
-      signal: AbortSignal.timeout(30_000),
-    });
+    const packageName = `@onekeyfe/${name}`;
+    const response = await request(
+      `https://registry.npmjs.org/${encodeURIComponent(packageName)}/${baseline.version}`,
+      {
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
     if (response.status === 200)
-      throw new Error(`Published npm version cannot be rebuilt: ${name}@${baseline.version}`);
+      throw new Error(
+        `Published npm version cannot be rebuilt: ${packageName}@${baseline.version}`,
+      );
     if (response.status !== 404)
       throw new Error(`Cannot check npm version: HTTP ${response.status}`);
   }
@@ -182,7 +192,10 @@ async function main() {
   } else if (process.argv[2] === "check-version") {
     await checkUnpublished(baseline);
   } else if (process.argv[2] === "verify-npm") {
-    const packages = baseline.modules.win.map((name) => ({ name, version: baseline.version }));
+    const packages = baseline.modules.win.map((name) => ({
+      name: `@onekeyfe/${name}`,
+      version: baseline.version,
+    }));
     const missing = await verifyPublished(
       packages,
       policy.releaseChannel(baseline.version, sourceRef),
@@ -190,14 +203,19 @@ async function main() {
     if (missing.length > 0)
       throw new Error(`npm publication not available: ${JSON.stringify(missing)}`);
     for (const { name, version } of packages) {
-      const response = await fetch(`https://registry.npmjs.org/${name}/${version}?write=true`, {
-        signal: AbortSignal.timeout(30_000),
-      });
+      const response = await fetch(
+        `https://registry.npmjs.org/${encodeURIComponent(name)}/${version}?write=true`,
+        {
+          signal: AbortSignal.timeout(30_000),
+        },
+      );
       if (!response.ok)
         throw new Error(`Cannot verify published npm metadata: HTTP ${response.status}`);
       verifyRegistryPackage(
         await response.json(),
-        readFileSync(join(desktopRoot, "dist", `${name}-${version}.tgz`)),
+        readFileSync(
+          join(desktopRoot, "dist", `${name.replace("@", "").replace("/", "-")}-${version}.tgz`),
+        ),
         name,
         version,
       );
@@ -220,7 +238,7 @@ async function main() {
     }
   } else if (process.argv[2] === "verify-release") {
     for (const name of baseline.modules.win) {
-      const asset = `${name}-${baseline.version}.tgz`;
+      const asset = `onekeyfe-${name}-${baseline.version}.tgz`;
       const file = join(desktopRoot, "dist", asset);
       policy.verifyAttestation(file, process.env.GITHUB_SHA, sourceRef);
       const destination = join(desktopRoot, "dist", "verified", name);
