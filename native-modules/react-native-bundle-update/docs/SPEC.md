@@ -39,8 +39,10 @@ signature sidecar is committed only when installation succeeds.
 Download writes and verifies a partial ZIP before promoting it to the managed
 ZIP name. A matching existing ZIP may be reused only after SHA-256 verification.
 ASC verification checks signed metadata and ZIP hash before extraction, then
-checks extracted files and bundle compatibility. Installation activates only the
-verified extracted bundle for the supplied versions. Existing cancellation,
+checks extracted files and bundle compatibility. Installation and every bundle
+switch, including a pre-launch pending switch, recheck every extracted file
+against signed metadata immediately before changing the active bundle. Routine
+startup retains its entry-bundle-only hot-path check. Existing cancellation,
 resume, cleanup, and fallback ownership remain with the native module.
 `clearDownload` and `clearBundle` first cancel each active writer, wait for its
 entire download operation (including resume-data and final ZIP writes) to stop,
