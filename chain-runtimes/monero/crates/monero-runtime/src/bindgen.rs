@@ -19,7 +19,7 @@ use wasm_bindgen::prelude::*;
 use crate::error::{ErrorCode, Result, RuntimeError};
 use zeroize::Zeroizing;
 
-use crate::{keys, network, query, runtime, spend, storage, sync, wallet};
+use crate::{keys, query, runtime, spend, storage, sync, wallet};
 
 fn json(value: serde_json::Value) -> std::result::Result<String, JsValue> {
     Ok(value.to_string())
@@ -30,6 +30,12 @@ fn json(value: serde_json::Value) -> std::result::Result<String, JsValue> {
 pub async fn init() -> std::result::Result<(), JsValue> {
     storage::install_persistent_vfs().await?;
     Ok(())
+}
+
+/// Preserve a failed call's result, then retire its poisoned storage owner.
+#[wasm_bindgen(js_name = storageRequiresWorkerRestart)]
+pub fn storage_requires_worker_restart() -> bool {
+    storage::requires_worker_restart()
 }
 
 /// Upstream versions pinned by this runtime, for host self-checks and logs.
@@ -58,15 +64,10 @@ pub fn close_wallet() -> std::result::Result<(), JsValue> {
 ///
 /// The old node is dropped before connecting the new one: a replaced or disabled
 /// node must receive no further requests, even if the new one fails to connect.
+/// If calls overlap, the last one wins.
 #[wasm_bindgen(js_name = setNodeUrl)]
 pub async fn set_node_url(url: &str) -> std::result::Result<(), JsValue> {
-    runtime::clear_daemon();
-    network::forget_node_url();
-    if url.trim().is_empty() {
-        return Ok(());
-    }
-    let (daemon, node_network) = network::connect(url).await?;
-    runtime::set_daemon(daemon, node_network);
+    runtime::select_node(url).await?;
     Ok(())
 }
 

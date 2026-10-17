@@ -22,6 +22,9 @@ fn node() -> Option<String> {
         .filter(|s| !s.trim().is_empty())
 }
 
+// `network::remember_node_url` after `connect` enables the batch block fetch, as
+// `runtime::select_node` does.
+
 /// Native transport uses `reqwest`, which needs a Tokio reactor;
 /// `futures_lite::block_on` panics with "there is no reactor running".
 fn block_on<F: std::future::Future>(f: F) -> F::Output {
@@ -42,6 +45,7 @@ fn connects_and_reads_the_chain_tip() {
 
     block_on(async {
         let (daemon, _) = network::connect(&url).await.expect("connect to node");
+        network::remember_node_url(&url);
         let tip = sync::chain_tip(&daemon).await.expect("fetch chain tip");
         println!("chain tip = {tip}");
         assert!(
@@ -69,6 +73,7 @@ fn scans_real_blocks_without_false_alarms() {
 
     block_on(async {
         let (daemon, _) = network::connect(&url).await.expect("connect to node");
+        network::remember_node_url(&url);
         let tip = sync::chain_tip(&daemon).await.expect("fetch chain tip");
 
         // Start 200 blocks below the tip: enough to hit transactions, still fast.
@@ -131,6 +136,7 @@ fn scans_a_real_wallet_if_view_keys_are_supplied() {
 
     block_on(async {
         let (daemon, _) = network::connect(&url).await.expect("connect to node");
+        network::remember_node_url(&url);
         let tip = sync::chain_tip(&daemon).await.expect("fetch chain tip");
 
         let mut db = wallet::Db::open(":memory:", keys::parse_network("mainnet").unwrap())
@@ -193,6 +199,7 @@ fn rewind_actually_rolls_back_and_requeues() {
 
     block_on(async {
         let (daemon, _) = network::connect(&url).await.expect("connect to node");
+        network::remember_node_url(&url);
         let tip = sync::chain_tip(&daemon).await.expect("fetch chain tip");
         let start = tip.saturating_sub(50);
 
