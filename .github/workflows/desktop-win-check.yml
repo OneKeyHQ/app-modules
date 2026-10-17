@@ -19,7 +19,6 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.baseline.outputs.version }}
-      tag: ${{ steps.baseline.outputs.tag }}
       electron: ${{ steps.baseline.outputs.electron }}
       rust: ${{ steps.baseline.outputs.rust }}
     steps:
@@ -128,12 +127,12 @@ jobs:
         with:
           pattern: native-*
           path: desktop/dist
-      - name: Pack Windows runtime modules
-        run: node desktop/scripts/release.mjs pack
+      - name: Prepare and validate unsigned Windows runtime inventory
+        run: node desktop/scripts/release.mjs prepare
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: desktop-win-check
           if-no-files-found: error
           path: |
-            desktop/dist/*.tgz
             desktop/dist/desktop-win.json
+            desktop/dist/staging/

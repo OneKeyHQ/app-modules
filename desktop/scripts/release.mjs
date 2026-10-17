@@ -1,7 +1,9 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { appendFileSync, copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { verifyPublished } from "../../scripts/verify-published.mjs";
 import policy from "./verify-desktop-modules.cjs";
 
 export const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -27,6 +29,9 @@ export function checkPe(bytes, arch) {
 }
 
 export function runtimeManifest(source, version) {
+  if (source.name !== "@onekeyfe/electron-windows-hello") {
+    throw new Error("Unsupported desktop npm package name");
+  }
   if (Object.keys(source.dependencies ?? {}).length > 0) {
     throw new Error("Runtime dependencies need an explicit packaging contract");
   }
@@ -42,21 +47,22 @@ export function runtimeManifest(source, version) {
     repository: {
       type: "git",
       url: `git+https://github.com/${policy.repository}.git`,
-      directory: `desktop/win/${source.name}`,
+      directory: `desktop/win/${source.name.split("/")[1]}`,
     },
   };
 }
 
-export function packRelease(root, sourceCommit) {
+export function prepareRelease(root, sourceCommit, sourceRef) {
   const baseline = readBaseline(root);
   if (!/^[a-f0-9]{40}$/.test(sourceCommit)) throw new Error("Expected full source commit");
+  policy.validateSourceRef(sourceRef);
   const dist = join(root, "dist");
   const release = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     repository: policy.repository,
     workflow: policy.workflow,
     sourceCommit,
-    tag: `desktop-win-v${baseline.version}`,
+    sourceRef,
     baseline,
     builders: {},
     modules: {},
@@ -74,7 +80,7 @@ export function packRelease(root, sourceCommit) {
     const fileNames = [...runtimeFiles, "package.json"];
     for (const file of runtimeFiles) copyFileSync(join(source, file), join(destination, file));
     const manifest = JSON.parse(readFileSync(join(source, "package.json")));
-    if (manifest.name !== name) throw new Error("Module package name mismatch");
+    if (manifest.name !== `@onekeyfe/${name}`) throw new Error("Module package name mismatch");
     writeFileSync(
       join(destination, "package.json"),
       `${JSON.stringify(runtimeManifest(manifest, baseline.version), null, 2)}\n`,
@@ -90,11 +96,10 @@ export function packRelease(root, sourceCommit) {
       fileNames.sort().map((file) => [file, policy.sha256(readFileSync(join(destination, file)))]),
     );
     policy.verifyRuntimeFiles(destination, files);
-    const asset = `${name}-${baseline.version}.tgz`;
-    execFileSync("tar", ["-czf", join(dist, asset), "-C", stage, "package"]);
+    const asset = `onekeyfe-${name}-${baseline.version}.tgz`;
     release.modules[name] = {
+      packageName: manifest.name,
       asset,
-      sha256: policy.sha256(readFileSync(join(dist, asset))),
       files,
     };
   }
@@ -103,10 +108,118 @@ export function packRelease(root, sourceCommit) {
   return release;
 }
 
-function main() {
+export function packRelease(root, sourceCommit, sourceRef) {
+  const dist = join(root, "dist");
+  const metadata = Object.fromEntries(
+    policy.proofFiles.map((file) => [file, readFileSync(join(dist, file))]),
+  );
+  const release = policy.validateRelease(JSON.parse(readFileSync(join(dist, "desktop-win.json"))));
+  if (
+    release.sourceCommit !== sourceCommit ||
+    release.sourceRef !== sourceRef ||
+    JSON.stringify(release.baseline) !== JSON.stringify(readBaseline(root))
+  ) {
+    throw new Error("Release differs from the expected source and baseline");
+  }
+  for (const [name, entry] of Object.entries(release.modules)) {
+    const stage = join(dist, "staging", name);
+    const destination = join(stage, "package");
+    policy.verifyRuntimeFiles(destination, entry.files);
+    for (const [file, bytes] of Object.entries(metadata))
+      writeFileSync(join(destination, file), bytes);
+    policy.verifyRuntimeFiles(destination, entry.files, policy.proofFiles);
+    execFileSync("tar", ["-czf", join(dist, entry.asset), "-C", stage, "package"]);
+  }
+  return release;
+}
+
+export async function checkUnpublished(baseline, request = fetch) {
+  for (const name of baseline.modules.win) {
+    const packageName = `@onekeyfe/${name}`;
+    const response = await request(
+      `https://registry.npmjs.org/${encodeURIComponent(packageName)}/${baseline.version}`,
+      {
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
+    if (response.status === 200)
+      throw new Error(
+        `Published npm version cannot be rebuilt: ${packageName}@${baseline.version}`,
+      );
+    if (response.status !== 404)
+      throw new Error(`Cannot check npm version: HTTP ${response.status}`);
+  }
+}
+
+export function verifyRegistryPackage(metadata, archive, name, version) {
+  const integrity = `sha512-${createHash("sha512").update(archive).digest("base64")}`;
+  if (
+    metadata.name !== name ||
+    metadata.version !== version ||
+    metadata.repository?.url !== `git+https://github.com/${policy.repository}.git` ||
+    metadata.dist?.integrity !== integrity ||
+    !metadata.dist?.attestations?.url?.startsWith(
+      "https://registry.npmjs.org/-/npm/v1/attestations/",
+    )
+  ) {
+    throw new Error(
+      "Published npm package does not match the archive, repository or provenance policy",
+    );
+  }
+}
+
+async function main() {
   const baseline = readBaseline();
-  if (process.argv[2] === "pack") {
-    packRelease(desktopRoot, process.env.GITHUB_SHA);
+  const sourceRef =
+    process.env.GITHUB_EVENT_NAME === "pull_request"
+      ? `refs/heads/${process.env.GITHUB_HEAD_REF}`
+      : process.env.GITHUB_REF;
+  if (process.argv[2] === "prepare") {
+    prepareRelease(desktopRoot, process.env.GITHUB_SHA, sourceRef);
+  } else if (process.argv[2] === "pack") {
+    packRelease(desktopRoot, process.env.GITHUB_SHA, sourceRef);
+  } else if (process.argv[2] === "validate-publish") {
+    if (
+      process.env.GITHUB_REPOSITORY !== policy.repository ||
+      process.env.GITHUB_EVENT_NAME !== "workflow_dispatch"
+    ) {
+      throw new Error("Desktop publication requires a manual run in the source repository");
+    }
+    const channel = policy.releaseChannel(baseline.version, sourceRef);
+    if (process.env.GITHUB_OUTPUT)
+      appendFileSync(process.env.GITHUB_OUTPUT, `dist_tag=${channel}\n`);
+    console.log(`Validated ${baseline.version} from ${sourceRef} for npm ${channel}`);
+  } else if (process.argv[2] === "check-version") {
+    await checkUnpublished(baseline);
+  } else if (process.argv[2] === "verify-npm") {
+    const packages = baseline.modules.win.map((name) => ({
+      name: `@onekeyfe/${name}`,
+      version: baseline.version,
+    }));
+    const missing = await verifyPublished(
+      packages,
+      policy.releaseChannel(baseline.version, sourceRef),
+    );
+    if (missing.length > 0)
+      throw new Error(`npm publication not available: ${JSON.stringify(missing)}`);
+    for (const { name, version } of packages) {
+      const response = await fetch(
+        `https://registry.npmjs.org/${encodeURIComponent(name)}/${version}?write=true`,
+        {
+          signal: AbortSignal.timeout(30_000),
+        },
+      );
+      if (!response.ok)
+        throw new Error(`Cannot verify published npm metadata: HTTP ${response.status}`);
+      verifyRegistryPackage(
+        await response.json(),
+        readFileSync(
+          join(desktopRoot, "dist", `${name.replace("@", "").replace("/", "-")}-${version}.tgz`),
+        ),
+        name,
+        version,
+      );
+    }
   } else if (process.argv[2] === "verify-native") {
     for (const arch of ["x64", "arm64"]) {
       const directory = join(desktopRoot, "dist", `native-${arch}`);
@@ -114,26 +227,40 @@ function main() {
         policy.verifyAttestation(
           join(directory, `${name}.win32-${arch}-msvc.node`),
           process.env.GITHUB_SHA,
+          sourceRef,
         );
       }
-      policy.verifyAttestation(join(directory, "build-info.json"), process.env.GITHUB_SHA);
+      policy.verifyAttestation(
+        join(directory, "build-info.json"),
+        process.env.GITHUB_SHA,
+        sourceRef,
+      );
     }
   } else if (process.argv[2] === "verify-release") {
-    const manifest = join(desktopRoot, "dist/desktop-win.json");
-    const bundle = join(desktopRoot, "dist/desktop-win.sigstore.json");
-    policy.verifyAttestation(manifest, process.env.GITHUB_SHA, bundle);
-    const release = policy.validateRelease(JSON.parse(readFileSync(manifest)));
-    if (
-      release.sourceCommit !== process.env.GITHUB_SHA ||
-      JSON.stringify(release.baseline) !== JSON.stringify(baseline)
-    ) {
-      throw new Error("Release differs from the expected source and baseline");
-    }
-    for (const entry of Object.values(release.modules)) {
-      const file = join(desktopRoot, "dist", entry.asset);
-      if (policy.sha256(readFileSync(file)) !== entry.sha256)
-        throw new Error("Release asset digest mismatch");
-      policy.verifyAttestation(file, process.env.GITHUB_SHA, bundle);
+    for (const name of baseline.modules.win) {
+      const asset = `onekeyfe-${name}-${baseline.version}.tgz`;
+      const file = join(desktopRoot, "dist", asset);
+      policy.verifyAttestation(file, process.env.GITHUB_SHA, sourceRef);
+      const destination = join(desktopRoot, "dist", "verified", name);
+      mkdirSync(destination, { recursive: true });
+      execFileSync("tar", ["-xzf", file, "-C", destination]);
+      const directory = join(destination, "package");
+      const manifest = join(directory, "desktop-win.json");
+      const release = policy.validateRelease(JSON.parse(readFileSync(manifest)));
+      if (
+        release.sourceCommit !== process.env.GITHUB_SHA ||
+        release.sourceRef !== sourceRef ||
+        JSON.stringify(release.baseline) !== JSON.stringify(baseline)
+      ) {
+        throw new Error("Release differs from the expected source and baseline");
+      }
+      policy.verifyRuntimeFiles(directory, release.modules[name].files, policy.proofFiles);
+      policy.verifyAttestation(
+        manifest,
+        process.env.GITHUB_SHA,
+        sourceRef,
+        join(directory, "desktop-win.sigstore.json"),
+      );
     }
   } else if (process.argv[2] === "validate") {
     const source = JSON.parse(
@@ -145,15 +272,15 @@ function main() {
     if (process.env.GITHUB_OUTPUT) {
       appendFileSync(
         process.env.GITHUB_OUTPUT,
-        `version=${baseline.version}\ntag=desktop-win-v${baseline.version}\nelectron=${baseline.electronVersion}\nrust=${baseline.rustToolchain}\n`,
+        `version=${baseline.version}\nelectron=${baseline.electronVersion}\nrust=${baseline.rustToolchain}\n`,
       );
     }
     console.log(JSON.stringify(baseline));
   } else {
     throw new Error(
-      "Usage: node desktop/scripts/release.mjs <validate|pack|verify-native|verify-release>",
+      "Usage: node desktop/scripts/release.mjs <validate|validate-publish|check-version|prepare|pack|verify-native|verify-release|verify-npm>",
     );
   }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) main();
+if (process.argv[1] === fileURLToPath(import.meta.url)) await main();

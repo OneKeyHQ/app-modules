@@ -1,5 +1,5 @@
 {
-  "name": "electron-windows-hello",
+  "name": "@onekeyfe/electron-windows-hello",
   "version": "0.1.0",
   "private": true,
   "description": "Window-owned Windows Hello verification for Electron, with x64 and ARM64 prebuilds",

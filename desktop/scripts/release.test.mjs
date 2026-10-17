@@ -1,15 +1,26 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { checkPe, packRelease, readBaseline, runtimeManifest } from "./release.mjs";
+import {
+  checkPe,
+  checkUnpublished,
+  packRelease,
+  prepareRelease,
+  readBaseline,
+  runtimeManifest,
+  verifyRegistryPackage,
+} from "./release.mjs";
 import policy from "./verify-desktop-modules.cjs";
 
 const sourceCommit = "a".repeat(40);
+const sourceRef = "refs/heads/codex/desktop-win-npm-release";
 const baseline = readBaseline();
 const name = "electron-windows-hello";
+const packageName = `@onekeyfe/${name}`;
 
 function temporary(context) {
   const directory = mkdtempSync(join(tmpdir(), "desktop-release-test-"));
@@ -39,7 +50,7 @@ function packageFixture(context) {
     writeFileSync(join(moduleRoot, file), `fixture ${file}`);
   }
   writeJson(join(moduleRoot, "package.json"), {
-    name,
+    name: packageName,
     version: "0.1.0",
     main: "index.cjs",
     types: "index.d.ts",
@@ -52,7 +63,7 @@ function packageFixture(context) {
     writeFileSync(join(directory, `${name}.win32-${arch}-msvc.node`), pe(arch));
     writeJson(join(directory, "build-info.json"), { arch });
   }
-  const release = packRelease(root, sourceCommit);
+  const release = prepareRelease(root, sourceCommit, sourceRef);
   return { root, release, file: join(root, "dist/desktop-win.json") };
 }
 
@@ -63,13 +74,40 @@ test("desktop versions track the Electron major, not its patch", () => {
   }
   for (const changes of [
     { version: "37.0.1", electronVersion: "36.0.1" },
-    { version: "44.0.1-alpha.1" },
+    { version: "44.0.2-alpha.0" },
+    { version: "44.0.2-alpha.01" },
+    { version: "44.0.2-beta.1" },
     { version: "044.0.1" },
     { rustToolchain: "stable" },
     { electronVersion: "^44.5.1" },
     { modules: { win: ["unknown"], mac: [], linux: [] } },
   ])
     assert.throws(() => policy.validateBaseline({ ...baseline, ...changes }));
+});
+
+test("only alpha previews can publish from branches and never use latest", () => {
+  assert.equal(policy.validateBaseline(baseline), baseline);
+  assert.equal(policy.releaseChannel("44.0.2-alpha.1", sourceRef), "next");
+  assert.equal(policy.releaseChannel("44.0.2-alpha.1", "refs/heads/main"), "next");
+  assert.equal(policy.releaseChannel("44.0.2", "refs/heads/main"), "latest");
+  assert.throws(() => policy.releaseChannel("44.0.2", sourceRef), /require main/);
+  for (const invalid of [
+    undefined,
+    "main",
+    "refs/tags/v44.0.2",
+    "refs/pull/156/merge",
+    "refs/heads/a..b",
+    "refs/heads/a//b",
+    "refs/heads/a.lock",
+    "refs/heads/a/.hidden",
+    "refs/heads/a/",
+  ]) {
+    assert.throws(() => policy.validateSourceRef(invalid), /source branch ref/);
+    assert.throws(
+      () => policy.attestationArgs("artifact", sourceCommit, invalid),
+      /source branch ref/,
+    );
+  }
 });
 
 test("PE validation rejects wrong, short and out-of-bounds native artifacts", () => {
@@ -83,29 +121,112 @@ test("PE validation rejects wrong, short and out-of-bounds native artifacts", ()
 
 test("runtime packaging strips scripts and dev dependencies and rejects runtime dependencies", () => {
   const packed = runtimeManifest(
-    { name, scripts: { install: "bad" }, devDependencies: { electron: "1" } },
+    { name: packageName, scripts: { install: "bad" }, devDependencies: { electron: "1" } },
     baseline.version,
   );
   assert.equal(packed.version, baseline.version);
   assert.equal(packed.scripts, undefined);
   assert.equal(packed.devDependencies, undefined);
+  assert.equal(packed.name, packageName);
+  assert.equal(packed.repository.directory, `desktop/win/${name}`);
+  assert.throws(() => runtimeManifest({ name }, baseline.version), /package name/);
   assert.throws(() =>
-    runtimeManifest({ name, dependencies: { unexpected: "1" } }, baseline.version),
+    runtimeManifest({ name: packageName, dependencies: { unexpected: "1" } }, baseline.version),
   );
 });
 
-test("a combined tarball has exactly the signed runtime inventory", (context) => {
+test("npm version checks reject an existing version, registry errors and network failures", async () => {
+  await checkUnpublished(baseline, async (url) => {
+    assert.equal(
+      url,
+      `https://registry.npmjs.org/${encodeURIComponent(packageName)}/${baseline.version}`,
+    );
+    return { status: 404 };
+  });
+  await assert.rejects(
+    checkUnpublished(baseline, async () => ({ status: 200 })),
+    /cannot be rebuilt/,
+  );
+  await assert.rejects(
+    checkUnpublished(baseline, async () => ({ status: 503 })),
+    /HTTP 503/,
+  );
+  await assert.rejects(
+    checkUnpublished(baseline, async () => {
+      throw new Error("offline");
+    }),
+    /offline/,
+  );
+});
+
+test("a combined npm tarball carries exactly the runtime inventory and portable proof", (context) => {
   const fixture = packageFixture(context);
   const entry = fixture.release.modules[name];
+  assert.throws(() => packRelease(fixture.root, sourceCommit, sourceRef), /ENOENT/);
+  const proof = join(fixture.root, "dist/desktop-win.sigstore.json");
+  writeFileSync(proof, "fixture proof; not a valid attestation");
+  packRelease(fixture.root, sourceCommit, sourceRef);
   const archive = join(fixture.root, "dist", entry.asset);
-  assert.equal(policy.sha256(readFileSync(archive)), entry.sha256);
   const extracted = temporary(context);
   execFileSync("tar", ["-xzf", archive, "-C", extracted]);
-  policy.verifyRuntimeFiles(join(extracted, "package"), entry.files);
+  policy.verifyRuntimeFiles(join(extracted, "package"), entry.files, policy.proofFiles);
+  assert.deepEqual(
+    readFileSync(join(extracted, "package/desktop-win.json")),
+    readFileSync(fixture.file),
+  );
+  assert.deepEqual(
+    readFileSync(join(extracted, "package/desktop-win.sigstore.json")),
+    readFileSync(proof),
+  );
   const manifest = JSON.parse(readFileSync(join(extracted, "package/package.json")));
-  assert.equal(manifest.name, name);
+  assert.equal(manifest.name, packageName);
+  assert.equal(entry.packageName, packageName);
+  assert.equal(entry.asset, `onekeyfe-${name}-${baseline.version}.tgz`);
   assert.equal(manifest.version, baseline.version);
   assert.equal(manifest.scripts, undefined);
+});
+
+test("packaging rejects a changed source, baseline or staged file after inventory preparation", (context) => {
+  const fixture = packageFixture(context);
+  writeFileSync(join(fixture.root, "dist/desktop-win.sigstore.json"), "fixture proof");
+  assert.throws(() => packRelease(fixture.root, "b".repeat(40), sourceRef), /expected source/);
+  assert.throws(
+    () => packRelease(fixture.root, sourceCommit, "refs/heads/other"),
+    /expected source/,
+  );
+  writeJson(join(fixture.root, "release.json"), { ...baseline, version: "44.0.3" });
+  assert.throws(() => packRelease(fixture.root, sourceCommit, sourceRef), /baseline/);
+  writeJson(join(fixture.root, "release.json"), baseline);
+  writeFileSync(join(fixture.root, "dist/staging", name, "package/index.cjs"), "replaced");
+  assert.throws(() => packRelease(fixture.root, sourceCommit, sourceRef), /digest mismatch/);
+});
+
+test("registry verification requires the exact npm archive, package identity and provenance metadata", () => {
+  const archive = Buffer.from("approved npm archive");
+  const metadata = {
+    ...runtimeManifest({ name: packageName }, baseline.version),
+    dist: {
+      integrity: `sha512-${createHash("sha512").update(archive).digest("base64")}`,
+      attestations: { url: "https://registry.npmjs.org/-/npm/v1/attestations/fixture" },
+    },
+  };
+  verifyRegistryPackage(metadata, archive, packageName, baseline.version);
+  assert.throws(
+    () => verifyRegistryPackage(metadata, Buffer.from("replaced"), packageName, baseline.version),
+    /does not match/,
+  );
+  for (const changes of [
+    { version: "0.1.0" },
+    { name: "unexpected" },
+    { repository: { url: "git+https://github.com/attacker/repo.git" } },
+    { dist: { integrity: metadata.dist.integrity } },
+    { dist: { ...metadata.dist, attestations: { url: "https://attacker/attestations" } } },
+  ])
+    assert.throws(
+      () =>
+        verifyRegistryPackage({ ...metadata, ...changes }, archive, packageName, baseline.version),
+      /does not match/,
+    );
 });
 
 test("runtime verification rejects tampering and extra or missing files without executing code", (context) => {
@@ -128,6 +249,7 @@ test("manifest approval pins bytes, source and version; inventory cannot travers
     schemaVersion: 1,
     version: baseline.version,
     sourceCommit,
+    sourceRef,
     manifestSha256: policy.sha256(readFileSync(fixture.file)),
   };
   assert.deepEqual(policy.readApprovedRelease(fixture.file, pin), fixture.release);
@@ -139,7 +261,14 @@ test("manifest approval pins bytes, source and version; inventory cannot travers
     () => policy.readApprovedRelease(fixture.file, { ...pin, sourceCommit: "b".repeat(40) }),
     /source\/version/,
   );
+  assert.throws(
+    () => policy.readApprovedRelease(fixture.file, { ...pin, sourceRef: "refs/heads/other" }),
+    /source\/version/,
+  );
   const malicious = structuredClone(fixture.release);
+  malicious.modules[name].packageName = name;
+  assert.throws(() => policy.validateRelease(malicious), /inventory/);
+  malicious.modules[name].packageName = packageName;
   malicious.modules[name].files["../evil.node"] = "a".repeat(64);
   assert.throws(() => policy.validateRelease(malicious), /inventory/);
   assert.throws(
@@ -148,8 +277,8 @@ test("manifest approval pins bytes, source and version; inventory cannot travers
   );
 });
 
-test("attestation verification constrains repository, workflow, commit, main and hosted runners", () => {
-  assert.deepEqual(policy.attestationArgs("artifact.tgz", sourceCommit), [
+test("attestation verification constrains repository, workflow, exact commit, branch and hosted runners", () => {
+  assert.deepEqual(policy.attestationArgs("artifact.tgz", sourceCommit, sourceRef), [
     "attestation",
     "verify",
     "artifact.tgz",
@@ -162,12 +291,12 @@ test("attestation verification constrains repository, workflow, commit, main and
     "--signer-digest",
     sourceCommit,
     "--source-ref",
-    "refs/heads/main",
+    sourceRef,
     "--deny-self-hosted-runners",
   ]);
-  assert.throws(() => policy.attestationArgs("artifact", "main"));
-  assert.deepEqual(policy.attestationArgs("artifact.tgz", sourceCommit, "proof.json").slice(-2), [
-    "--bundle",
-    "proof.json",
-  ]);
+  assert.throws(() => policy.attestationArgs("artifact", "main", sourceRef));
+  assert.deepEqual(
+    policy.attestationArgs("artifact.tgz", sourceCommit, sourceRef, "proof.json").slice(-2),
+    ["--bundle", "proof.json"],
+  );
 });
