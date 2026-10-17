@@ -216,15 +216,7 @@ pub fn create_with_account_xpub(
         })
         .map_err(failure)?
         .finish();
-    // Keep device RAM bounds explicit before asking the user to confirm.
-    let serialized = updated.serialize().map_err(failure)?;
-    if serialized.len() > 24 * 1024 {
-        return Err(KeysError::with(
-            ErrorCode::TransactionBuildFailed,
-            serde_json::json!({ "reason": "hardwarePcztTooLarge", "maxBytes": 24 * 1024 }),
-        ));
-    }
-    Ok(serialized)
+    updated.serialize().map_err(failure)
 }
 
 /// Combines a device's redacted signatures with the approved original, verifies
@@ -841,10 +833,9 @@ mod tests {
         }
     }
 
-    // The firmware (firmware-pro2 `signer_parse.rs`) rejects any Sapling data,
-    // including the `bsk` the IO Finalizer sets on the empty bundle, and any
-    // proving fields. The device signs a copy without them; combining its
-    // result into the original gives the same transaction.
+    // The device signs a copy without Sapling `bsk` (set by the IO Finalizer
+    // even on the empty bundle) or proving fields, which signing doesn't need;
+    // combining its result into the original gives the same transaction.
     #[test]
     fn hardware_signs_a_copy_without_sapling_or_proving_fields() {
         for transparent_destination in [false, true] {

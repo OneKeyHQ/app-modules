@@ -174,11 +174,11 @@ pub fn sign_pczt_with_account_keys(
 
 /// The copy of a PCZT sent to a hardware signer.
 ///
-/// The firmware rejects any Sapling data (the IO Finalizer sets `bsk` even on
-/// an empty bundle) and any proving fields (witnesses, dummy keys, proofs,
-/// binding keys). Signing needs none of them; the host keeps the original and
-/// combines the device's result into it, so proving and extraction still have
-/// them. Upstream `redact_pczt_for_signer` (compact view) clears the same.
+/// Drops what a signer doesn't need: Sapling `bsk` (the IO Finalizer sets it
+/// even on an empty bundle) and proving fields (witnesses, dummy keys, proofs,
+/// binding keys), matching upstream `redact_pczt_for_signer` (compact view).
+/// The host keeps the original and combines the device's result into it, so
+/// proving and extraction still have them.
 pub fn redact_for_hardware_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>> {
     fn redact_orchard_protocol(mut bundle: pczt::roles::redactor::orchard::OrchardRedactor<'_>) {
         bundle.clear_zkproof();

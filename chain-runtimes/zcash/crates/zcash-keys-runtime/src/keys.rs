@@ -193,7 +193,7 @@ mod tests {
     use super::*;
 
     /// Same items as the firmware's UFVK, so a device and a software account on
-    /// one seed agree; a Sapling item would also make the firmware reject PCZTs.
+    /// one seed agree.
     #[test]
     fn ufvk_holds_only_transparent_and_orchard() {
         use crate::account_keys::{test_keys, ufvk_from_account_keys};

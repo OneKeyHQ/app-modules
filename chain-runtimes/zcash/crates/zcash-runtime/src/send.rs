@@ -714,7 +714,8 @@ fn mark_wallet_outputs(
 /// name a `user_address` (real recipients) are left alone, as are outputs we do
 /// not own (padding). Undecryptable owned outputs are the zero-valued outputs
 /// the post-NU6.3 Orchard builder pairs with external-scope spends, with a
-/// randomized ciphertext: the firmware rejects those if they carry a path.
+/// randomized ciphertext: no one can decrypt them, so like padding they get no
+/// path claiming them as wallet outputs.
 fn mark_owned_outputs(
     pczt: pczt::Pczt,
     fvk: &orchard::keys::FullViewingKey,
