@@ -174,9 +174,10 @@ pub fn sign_pczt_with_account_keys(
 
 /// The copy of a PCZT sent to a hardware signer.
 ///
-/// Drops what a signer doesn't need: Sapling `bsk` (the IO Finalizer sets it
-/// even on an empty bundle) and proving fields (witnesses, dummy keys, proofs,
-/// binding keys), matching upstream `redact_pczt_for_signer` (compact view).
+/// A subset of upstream `redact_pczt_for_signer`'s compact-view redaction:
+/// clears the Sapling `bsk` (the IO Finalizer sets it even on an empty bundle)
+/// and, in Orchard and Ironwood, the proof, `bsk`, spend witnesses and dummy
+/// spend keys. Wallet metadata, anchors and resolvable fields are kept as is.
 /// The host keeps the original and combines the device's result into it, so
 /// proving and extraction still have them.
 pub fn redact_for_hardware_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>> {

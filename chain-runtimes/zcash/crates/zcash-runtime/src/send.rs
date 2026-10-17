@@ -1875,12 +1875,14 @@ mod owned_output_tests {
         mark_owned_outputs(pczt, &ours(), &derivation(), 133).unwrap()
     }
 
-    /// Mirrors the firmware's per-output acceptance (firmware-pro2
-    /// app/zcash/sign_pczt.py `_validate_orchard_protocol_outputs` and
-    /// signer_parse.rs): an output is accepted if it is an unrecoverable
-    /// fabricated zero output with nothing attached, carries a path whose
-    /// fingerprint/schema match and whose recipient the account FVK owns, carries
-    /// a `user_address`, or is a zero-valued output with no ock and no memo.
+    /// What a hardware signer needs to accept each Orchard-protocol output:
+    /// - a padding output the sender cannot recover must be zero-valued, in a
+    ///   bundle without cross-address, with no ock, ZIP-32 derivation or
+    ///   `user_address`;
+    /// - a wallet-owned output carries a ZIP-32 derivation matching the
+    ///   account's seed fingerprint and path, to a recipient its FVK owns;
+    /// - a payment carries a `user_address`;
+    /// - otherwise only a zero-valued output with no ock and an empty memo.
     fn firmware_rejection(bundle: &Bundle, ironwood: bool) -> Option<String> {
         let fvk = ours();
         for (index, action) in bundle.actions().iter().enumerate() {
