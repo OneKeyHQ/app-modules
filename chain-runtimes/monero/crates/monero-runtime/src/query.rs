@@ -3,6 +3,7 @@
 //! Paging, height filters and per-subaddress aggregation are indexed SQLite
 //! queries, so long histories are never loaded into memory.
 
+use monero_wallet::address::Network;
 use monero_wallet::WalletOutput;
 use rusqlite::{params, OptionalExtension};
 use serde_json::{json, Value};
@@ -15,6 +16,16 @@ use crate::wallet::Db;
 /// Younger outputs cannot be used in a ring; nodes reject them.
 /// `additional_timelock` applies on top of this.
 pub const COINBASE_AND_STANDARD_LOCK: u64 = 10;
+
+/// `CRYPTONOTE_MAX_BLOCK_NUMBER`: unlock values at or above it are Unix timestamps.
+const MAX_BLOCK_NUMBER: u64 = 500_000_000;
+/// `BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW`.
+const TIMESTAMP_CHECK_WINDOW: usize = 60;
+/// `CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_BLOCKS`: leeway on height-based unlock times.
+const LOCKED_TX_ALLOWED_DELTA_BLOCKS: u64 = 1;
+/// `DIFFICULTY_TARGET_V1` / `DIFFICULTY_TARGET_V2`, in seconds.
+const TARGET_SECONDS_V1: u64 = 60;
+const TARGET_SECONDS_V2: u64 = 120;
 
 #[derive(Debug, Default, Clone)]
 pub struct Balance {
@@ -53,6 +64,8 @@ impl Balance {
 /// Computes the balance. `chain_tip` drives the lock check; `None` (tip unknown)
 /// treats everything as locked rather than offer funds that cannot be spent.
 pub fn balance(db: &Db, identity_id: i64, chain_tip: Option<u64>) -> Result<Balance> {
+    let now = adjusted_time(db, identity_id)?;
+    let network = db.network();
     let mut stmt = db
         .conn()
         .prepare(
@@ -107,7 +120,7 @@ pub fn balance(db: &Db, identity_id: i64, chain_tip: Option<u64>) -> Result<Bala
             continue;
         }
         if let Some(tip) = chain_tip {
-            if is_unlocked(height, timelock, tip) {
+            if is_unlocked(height, timelock, tip, now, network) {
                 b.unlocked_atomic += amount;
             }
         }
@@ -133,26 +146,92 @@ pub fn balance(db: &Db, identity_id: i64, chain_tip: Option<u64>) -> Result<Bala
     Ok(b)
 }
 
-/// Whether an output is spendable now.
+/// Whether an output is spendable now, as wallet2's `is_transfer_unlocked`.
 ///
 /// Requires both the 10-block lock and any additional timelock to have passed.
-/// `additional_timelock` is raw: below 500M it is a height, otherwise a Unix
-/// timestamp (`CRYPTONOTE_MAX_BLOCK_NUMBER`).
-pub fn is_unlocked(height: u64, additional_timelock: u64, chain_tip: u64) -> bool {
-    const MAX_BLOCK_NUMBER: u64 = 500_000_000;
-
-    if chain_tip < height + COINBASE_AND_STANDARD_LOCK {
+/// `chain_tip` is the top block number. `additional_timelock` is raw: below 500M
+/// it is a height, otherwise a Unix timestamp compared against `now` (see
+/// `adjusted_time`); with no chain time (`None`) timestamp locks stay locked.
+pub fn is_unlocked(
+    height: u64,
+    additional_timelock: u64,
+    chain_tip: u64,
+    now: Option<u64>,
+    network: Network,
+) -> bool {
+    // wallet2 compares against get_blockchain_current_height(): the chain length, i.e. tip + 1.
+    let current_height = chain_tip.saturating_add(1);
+    if height + COINBASE_AND_STANDARD_LOCK > current_height {
         return false;
     }
     if additional_timelock == 0 {
         return true;
     }
     if additional_timelock < MAX_BLOCK_NUMBER {
-        chain_tip >= additional_timelock
+        current_height - 1 + LOCKED_TX_ALLOWED_DELTA_BLOCKS >= additional_timelock
     } else {
-        // Timestamp locks cannot be judged from height alone; treat as locked.
-        false
+        // wallet2::is_tx_spendtime_unlocked: one block of leeway past the timestamp.
+        now.is_some_and(|now| {
+            now.saturating_add(timestamp_lock_leeway(network, height)) >= additional_timelock
+        })
     }
+}
+
+/// `CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_SECONDS_V1/_V2`, picked by the output's
+/// height against the v2 fork heights wallet2 hard-codes.
+fn timestamp_lock_leeway(network: Network, height: u64) -> u64 {
+    let v2_height = match network {
+        Network::Testnet => 624_634,
+        Network::Stagenet => 32_000,
+        _ => 1_009_827,
+    };
+    if height < v2_height {
+        TARGET_SECONDS_V1
+    } else {
+        TARGET_SECONDS_V2
+    }
+}
+
+/// "Now" for timestamp locks.
+///
+/// wallet2 uses the node's `get_info.adjusted_time`; this recomputes it from the
+/// identity's latest stored block timestamps. With fewer than 60 stored there is
+/// no chain time (`None`): the local clock is never trusted for an unlock.
+pub fn adjusted_time(db: &Db, identity_id: i64) -> Result<Option<u64>> {
+    let mut timestamps: Vec<u64> = db
+        .conn()
+        .prepare(
+            "SELECT timestamp FROM blocks WHERE identity_id = ?1 ORDER BY height DESC LIMIT ?2",
+        )
+        .and_then(|mut stmt| {
+            stmt.query_map(params![identity_id, TIMESTAMP_CHECK_WINDOW as i64], |r| {
+                r.get::<_, i64>(0)
+            })?
+            .map(|t| t.map(|t| t.max(0) as u64))
+            .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(|e| db_err("adjustedTime", e))?;
+    if timestamps.len() < TIMESTAMP_CHECK_WINDOW {
+        return Ok(None);
+    }
+    Ok(Some(daemon_adjusted_time(&mut timestamps)))
+}
+
+/// monerod's `Blockchain::get_adjusted_time` over the last 60 block timestamps.
+fn daemon_adjusted_time(timestamps: &mut [u64]) -> u64 {
+    // epee median sorts in place, so the "top" timestamp upstream reads is the maximum.
+    timestamps.sort_unstable();
+    let n = timestamps.len() / 2;
+    let median = if timestamps.len() % 2 == 1 {
+        timestamps[n]
+    } else {
+        let (a, b) = (timestamps[n - 1], timestamps[n]);
+        a / 2 + b / 2 + (a % 2 + b % 2) / 2
+    };
+    let median_ts =
+        median.saturating_add((TIMESTAMP_CHECK_WINDOW as u64 + 1) * TARGET_SECONDS_V2 / 2);
+    let current_ts = timestamps[timestamps.len() - 1].saturating_add(TARGET_SECONDS_V2);
+    current_ts.min(median_ts)
 }
 
 /// Spendable output **metadata**, without the deserialized crypto object.
@@ -172,6 +251,8 @@ pub struct SpendableRow {
 /// Only outputs **with a key image**: without one we cannot tell whether it is
 /// already spent, and the node would reject a double spend.
 pub fn spendable_rows(db: &Db, identity_id: i64, chain_tip: u64) -> Result<Vec<SpendableRow>> {
+    let now = adjusted_time(db, identity_id)?;
+    let network = db.network();
     let mut stmt = db
         .conn()
         .prepare(
@@ -209,7 +290,7 @@ pub fn spendable_rows(db: &Db, identity_id: i64, chain_tip: u64) -> Result<Vec<S
     for row in rows {
         let (id, amount_atomic, global_index, height, timelock) =
             row.map_err(|e| db_err("spendableRows", e))?;
-        if !is_unlocked(height, timelock, chain_tip) {
+        if !is_unlocked(height, timelock, chain_tip, now, network) {
             continue;
         }
         out.push(SpendableRow {
@@ -409,25 +490,206 @@ mod tests {
         db.conn().last_insert_rowid()
     }
 
-    /// The 10-block lock is consensus: younger outputs cannot be used in a ring.
+    const MAIN: Network = Network::Mainnet;
+
+    /// wallet2::is_transfer_unlocked: locked while `height + 10 > current_height`,
+    /// where current_height is the chain length (tip + 1).
     #[test]
     fn the_ten_block_lock_is_enforced() {
-        assert!(!is_unlocked(100, 0, 100), "locked at the same height");
-        assert!(!is_unlocked(100, 0, 109), "locked one block short");
-        assert!(is_unlocked(100, 0, 110), "unlocked after 10 blocks");
+        assert!(
+            !is_unlocked(100, 0, 100, None, MAIN),
+            "locked at the same height"
+        );
+        assert!(
+            !is_unlocked(100, 0, 108, None, MAIN),
+            "locked one block before wallet2's unlock height"
+        );
+        assert!(
+            is_unlocked(100, 0, 109, None, MAIN),
+            "unlocked once the chain length reaches height + 10"
+        );
+        assert!(is_unlocked(100, 0, 110, None, MAIN));
     }
 
+    /// wallet2::is_tx_spendtime_unlocked: unlocked once
+    /// `current_height - 1 + 1 >= unlock_time`, i.e. tip + 1 >= unlock_time.
     #[test]
     fn additional_block_timelock_is_honoured() {
-        // Extra lock to height 200: still locked after the 10-block lock
-        assert!(!is_unlocked(100, 200, 150));
-        assert!(is_unlocked(100, 200, 200));
+        assert!(!is_unlocked(100, 200, 150, None, MAIN));
+        assert!(
+            !is_unlocked(100, 200, 198, None, MAIN),
+            "locked one block before wallet2's unlock height"
+        );
+        assert!(
+            is_unlocked(100, 200, 199, None, MAIN),
+            "unlocked at wallet2's unlock height"
+        );
+        assert!(is_unlocked(100, 200, 200, None, MAIN));
+        // Height locks ignore the clock
+        assert!(!is_unlocked(100, 200, 198, Some(u64::MAX), MAIN));
+        // The 10-block lock still applies when the height lock is already past
+        assert!(!is_unlocked(100, 50, 108, None, MAIN));
+        assert!(is_unlocked(100, 50, 109, None, MAIN));
     }
 
-    /// Timestamp timelocks cannot be judged from height; treat as locked.
+    /// wallet2::is_tx_spendtime_unlocked: `now + leeway >= unlock_time`, with a
+    /// 120 s leeway after the v2 fork and 60 s before it.
     #[test]
-    fn timestamp_timelocks_are_treated_as_locked() {
-        assert!(!is_unlocked(100, 1_700_000_000, 999_999));
+    fn timestamp_timelocks_unlock_at_the_leeway_boundary() {
+        let t = 1_700_000_000;
+        let h = 3_000_000;
+        assert!(
+            !is_unlocked(h, t, h + 10, Some(t - 121), MAIN),
+            "before expiry"
+        );
+        assert!(
+            is_unlocked(h, t, h + 10, Some(t - 120), MAIN),
+            "at the tolerance boundary"
+        );
+        assert!(is_unlocked(h, t, h + 10, Some(t + 1), MAIN), "after expiry");
+        assert!(
+            !is_unlocked(500, t, 510, Some(t - 61), MAIN),
+            "v1 era leeway is 60 s"
+        );
+        assert!(is_unlocked(500, t, 510, Some(t - 60), MAIN));
+        assert!(!is_unlocked(
+            31_999,
+            t,
+            32_009,
+            Some(t - 61),
+            Network::Stagenet
+        ));
+        assert!(is_unlocked(
+            32_000,
+            t,
+            32_010,
+            Some(t - 120),
+            Network::Stagenet
+        ));
+        assert!(is_unlocked(
+            624_634,
+            t,
+            624_644,
+            Some(t - 120),
+            Network::Testnet
+        ));
+        // The 10-block lock still applies to an expired timestamp lock
+        assert!(!is_unlocked(h, t, h + 8, Some(t + 1), MAIN));
+        assert!(is_unlocked(h, t, h + 9, Some(t + 1), MAIN));
+        // Timestamp boundary is unchanged at wallet2's first unlocked tip
+        assert!(!is_unlocked(h, t, h + 9, Some(t - 121), MAIN));
+        assert!(is_unlocked(h, t, h + 9, Some(t - 120), MAIN));
+        // Without chain time a timestamp lock stays locked, however old
+        assert!(!is_unlocked(h, 500_000_000, h + 10, None, MAIN));
+    }
+
+    /// Matches monerod's `get_adjusted_time`: min(max ts + 120, median + 3660).
+    #[test]
+    fn adjusted_time_follows_monerod() {
+        // Regular 120 s blocks: the max-timestamp projection wins
+        let mut regular: Vec<u64> = (0..60).map(|i| 1_000_000 + i * 120).collect();
+        assert_eq!(
+            daemon_adjusted_time(&mut regular),
+            1_000_000 + 59 * 120 + 120
+        );
+        // A far-future outlier is capped by the median projection
+        let mut outlier: Vec<u64> = (0..60).map(|i| 1_000_000 + i * 120).collect();
+        outlier[59] = 9_000_000;
+        let median = (1_000_000 + 29 * 120) / 2 + (1_000_000 + 30 * 120) / 2;
+        assert_eq!(daemon_adjusted_time(&mut outlier), median + 3_660);
+    }
+
+    fn add_block(db: &Db, identity_id: i64, height: u64, timestamp: u64) {
+        db.conn()
+            .execute(
+                "INSERT INTO blocks (identity_id, height, hash, ringct_next, timestamp)
+                 VALUES (?1, ?2, ?3, NULL, ?4)",
+                params![
+                    identity_id,
+                    height as i64,
+                    vec![(height % 251) as u8; 32],
+                    timestamp as i64
+                ],
+            )
+            .unwrap();
+    }
+
+    /// Stores `count` blocks from height 1_000 at 120 s spacing, ending at `last_timestamp`.
+    fn add_blocks(db: &Db, identity_id: i64, count: u64, last_timestamp: u64) {
+        for i in 0..count {
+            add_block(
+                db,
+                identity_id,
+                1_000 + i,
+                last_timestamp - (count - 1 - i) * 120,
+            );
+        }
+    }
+
+    /// Too few stored blocks for a median: no chain time, and no local clock.
+    #[test]
+    fn adjusted_time_needs_sixty_stored_blocks() {
+        let (db, id) = db_with_identity();
+        add_blocks(&db, id, 59, 1_000_000);
+        assert_eq!(adjusted_time(&db, id).unwrap(), None);
+        add_block(&db, id, 1_059, 1_000_120);
+        assert_eq!(adjusted_time(&db, id).unwrap(), Some(1_000_240));
+    }
+
+    /// Fewer than 60 stored blocks: a long-expired timestamp lock stays locked
+    /// in balance and selection, while height locks still unlock.
+    #[test]
+    fn timestamp_locked_outputs_stay_locked_without_chain_time() {
+        let (db, id) = db_with_identity();
+        let timestamp_locked = add_output(&db, id, 800, 1_000, true);
+        let height_locked = add_output(&db, id, 50, 1_001, true);
+        add_blocks(&db, id, 59, 2_000_000_000);
+        db.conn()
+            .execute(
+                "UPDATE outputs SET additional_timelock = ?1 WHERE id = ?2",
+                params![500_000_000i64, timestamp_locked],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "UPDATE outputs SET additional_timelock = ?1 WHERE id = ?2",
+                params![1_050i64, height_locked],
+            )
+            .unwrap();
+        assert_eq!(balance(&db, id, Some(1_100)).unwrap().unlocked_atomic, 50);
+        let rows = spendable_rows(&db, id, 1_100).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, height_locked);
+
+        add_block(&db, id, 1_059, 2_000_000_120);
+        assert_eq!(balance(&db, id, Some(1_100)).unwrap().unlocked_atomic, 850);
+        assert_eq!(spendable_rows(&db, id, 1_100).unwrap().len(), 2);
+    }
+
+    /// Balance and selection judge timestamp locks against the chain's adjusted time.
+    #[test]
+    fn timestamp_locked_outputs_unlock_in_balance_and_selection() {
+        let (db, id) = db_with_identity();
+        let o = add_output(&db, id, 800, 1_000, true);
+        add_blocks(&db, id, 60, 2_000_000_000);
+        // Adjusted time = 2_000_000_120; leeway 60 s (height 1_000 predates v2)
+        db.conn()
+            .execute(
+                "UPDATE outputs SET additional_timelock = ?1 WHERE id = ?2",
+                params![2_000_000_181i64, o],
+            )
+            .unwrap();
+        assert_eq!(balance(&db, id, Some(1_100)).unwrap().unlocked_atomic, 0);
+        assert!(spendable_rows(&db, id, 1_100).unwrap().is_empty());
+
+        db.conn()
+            .execute(
+                "UPDATE outputs SET additional_timelock = ?1 WHERE id = ?2",
+                params![2_000_000_180i64, o],
+            )
+            .unwrap();
+        assert_eq!(balance(&db, id, Some(1_100)).unwrap().unlocked_atomic, 800);
+        assert_eq!(spendable_rows(&db, id, 1_100).unwrap().len(), 1);
     }
 
     /// With an unknown chain tip the unlocked balance must be 0.

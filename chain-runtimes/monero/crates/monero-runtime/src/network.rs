@@ -436,7 +436,6 @@ pub async fn connect(base_url: &str) -> Result<(Daemon, monero_wallet::address::
         .await
         .map_err(|e| net_err("connect", format!("{e:?}")))?;
     let network = node_network(&daemon).await?;
-    CURRENT_NODE_URL.with(|c| *c.borrow_mut() = Some(base_url.to_owned()));
     Ok((daemon, network))
 }
 
@@ -494,6 +493,11 @@ thread_local! {
 
 pub fn current_node_url() -> Option<String> {
     CURRENT_NODE_URL.with(|c| c.borrow().clone())
+}
+
+/// Set only with the matching daemon (`runtime::select_node`), so a stale connect cannot win.
+pub fn remember_node_url(url: &str) {
+    CURRENT_NODE_URL.with(|c| *c.borrow_mut() = Some(url.to_owned()));
 }
 
 pub fn forget_node_url() {

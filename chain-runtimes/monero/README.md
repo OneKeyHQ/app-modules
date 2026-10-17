@@ -56,6 +56,7 @@ the host.
 
 ```
 init() / dependencyVersions()
+storageRequiresWorkerRestart()                  true after a VFS failure
 openWallet(dbName, network) / closeWallet() / deleteWallet(dbName)
 setNodeUrl(url) / setRequestHandler(handler)    no default node
 chainTip()                                      { height, network }

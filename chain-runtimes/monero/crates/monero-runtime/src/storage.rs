@@ -318,8 +318,9 @@ pub async fn durability_barrier() -> Result<()> {
     Ok(())
 }
 
+/// Poisoned pool: only a fresh Worker can reopen storage.
 #[cfg(target_arch = "wasm32")]
-fn requires_worker_restart() -> bool {
+pub fn requires_worker_restart() -> bool {
     VFS_UTIL.with(|slot| {
         slot.borrow()
             .as_ref()
@@ -328,7 +329,7 @@ fn requires_worker_restart() -> bool {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn requires_worker_restart() -> bool {
+pub fn requires_worker_restart() -> bool {
     false
 }
 
@@ -374,6 +375,14 @@ mod tests {
         let delete = || futures_lite::future::block_on(delete_database(&name));
         assert!(delete().unwrap());
         assert!(!delete().unwrap());
+    }
+
+    // Native storage has no pool to poison, so the restart signal stays clear
+    // and the barrier passes.
+    #[test]
+    fn healthy_storage_needs_no_worker_restart() {
+        assert!(!requires_worker_restart());
+        assert!(futures_lite::future::block_on(durability_barrier()).is_ok());
     }
 
     #[test]
