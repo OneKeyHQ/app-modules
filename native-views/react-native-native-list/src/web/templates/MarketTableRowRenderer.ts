@@ -461,7 +461,10 @@ function updateCell(
     });
     text.appendChild(title);
     if (cell.secondary?.length || cell.hoverSecondary?.length) {
-      const height = cell.secondary?.[0]?.style?.lineHeight ?? 16;
+      const height =
+        cell.secondary?.[0]?.style?.lineHeight ??
+        cell.hoverSecondary?.[0]?.style?.lineHeight ??
+        16;
       const clip = createElement(
         document,
         'span',

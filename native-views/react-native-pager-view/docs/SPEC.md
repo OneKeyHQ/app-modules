@@ -845,6 +845,19 @@ An empty adapter MUST reject transition starts and transition completion without
 
 ## Web parent-scroll owner identity
 
+Web Header and sticky overlays use the named scroll timeline only when the
+browser supports every CSS property needed for that linkage. Otherwise, the
+active scroll owner's offset drives the same clamped Header collapse in JS:
+`C = min(max(scrollTop, 0), max(headerHeight, 0))`. The fallback keeps the
+existing page owner, insets, body offset memory, and sticky anchor. It updates
+when scrolling, selecting or restoring a page, replacing an owner, or changing
+Header height, and releases its listener when that owner detaches. An inactive
+page cannot move the visible Header. This is a Web-only compatibility path; no
+native behavior or public prop changes.
+When an overlay forwards a vertical wheel or touch scroll to the active owner,
+the owner receives the same internal user-input notification used by route
+restoration to cancel an obsolete pending offset.
+
 On Web, an explicitly marked NativeScroller is selected before an implicit NativeList viewport. There is one vertical owner per page; callers using parent-owned NativeList pass that same scroll element as webScrollHost.
 
 The existing NativeScroller pagerScrollKey identifies a Web page scroll owner. Changing the key invalidates that page body offset without remounting its React business content. The active owner also resets the shared header collapse and cancels queued old restore/top commands. Inactive owners invalidate their saved body offset without imperative scrolling; selection checks the current identity before restoring. A→B→A identity changes never revive a prior owner offset. Stable keys preserve ordinary page C+B restoration. Current-page top commands continue to affect only the selected page.
