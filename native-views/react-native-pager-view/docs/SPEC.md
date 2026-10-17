@@ -841,3 +841,33 @@ The native Home Spotlight adapter consumes this snapshot in the main UI runtime 
 Removing a page or clearing the page collection MUST cancel the active horizontal transition and its temporary display snapshots before notifying the adapter. Cancellation MUST NOT rewrite the shared Header collapse or surviving pages' saved body reading memory. The previous observed owner MUST be detached without committing an offset under a shifted page key.
 
 An empty adapter MUST reject transition starts and transition completion without coercing an index into an empty range. The selected index uses zero as an empty-state sentinel; nonempty mutations clamp it to the remaining valid range. Readding pages MUST allow a fresh selection and MUST NOT resume a removed transition source. Conformance requires actual Android active-transition → zero-pages → readd/selection regression and remaining-page mutation checks; structural checks and compilation alone do not establish runtime behavior.
+
+
+## Web parent-scroll owner identity
+
+Web Header and sticky overlays use the named scroll timeline only when the
+browser supports every CSS property needed for that linkage. Otherwise, the
+active scroll owner's offset drives the same clamped Header collapse in JS:
+`C = min(max(scrollTop, 0), max(headerHeight, 0))`. The fallback keeps the
+existing page owner, insets, body offset memory, and sticky anchor. It updates
+when scrolling, selecting or restoring a page, replacing an owner, or changing
+Header height, and releases its listener when that owner detaches. An inactive
+page cannot move the visible Header. This is a Web-only compatibility path; no
+native behavior or public prop changes.
+When an overlay forwards a vertical wheel or touch scroll to the active owner,
+the owner receives the same internal user-input notification used by route
+restoration to cancel an obsolete pending offset.
+
+On Web, an explicitly marked NativeScroller is selected before an implicit NativeList viewport. There is one vertical owner per page; callers using parent-owned NativeList pass that same scroll element as webScrollHost.
+
+The existing NativeScroller pagerScrollKey identifies a Web page scroll owner. Changing the key invalidates that page body offset without remounting its React business content. The active owner also resets the shared header collapse and cancels queued old restore/top commands. Inactive owners invalidate their saved body offset without imperative scrolling; selection checks the current identity before restoring. A→B→A identity changes never revive a prior owner offset. Stable keys preserve ordinary page C+B restoration. Current-page top commands continue to affect only the selected page.
+
+Identity notifications and DOM owner listeners are internal implementation details, removed when the pager root or owner is replaced/unmounted. No native behavior or public configuration is added.
+
+### Web overlay input and keyed-page updates
+
+- Header and sticky slots remain overlays: overflow outside the sticky slot may remain visible without adding its portal height to page insets twice.
+- Vertical wheel or touch input over those overlays transfers only to the active page scroll owner when no nested scrollable consumes it. Horizontal controls, editable inputs, and ordinary button/tap behavior retain their own events. Input originating inside the page owner follows native scrolling once.
+- Reordering or removing keyed pages must save the previously configured key and owner, rather than resolving the old selected index against new children. Caller index synchronization preserves keyed body offsets and shared header collapse.
+- For an explicit NativeScroller, Pager chrome insets apply to the existing ScrollView content element, not its viewport. Insets taller than the available window cannot enlarge the scroll viewport. Existing owner/content padding is preserved and restored separately from Pager insets; direct NativeList/page-host fallback retains its prior layout path.
+- The Pager root clips without becoming a programmatically scrollable overflow box. Browser focus and descendant scrollIntoView cannot add a second horizontal page offset outside the selected-page transform.

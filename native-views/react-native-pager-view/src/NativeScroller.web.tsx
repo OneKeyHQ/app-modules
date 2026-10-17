@@ -13,19 +13,41 @@ export const NativeScroller = React.forwardRef<
 >(function NativeScroller(inputProps, ref) {
   const {
     dataSet,
-    pagerScrollKey: _pagerScrollKey,
+    pagerScrollKey,
     topOverlay: _topOverlay,
     topScrollEdgeEffect: _topScrollEdgeEffect,
     ...props
   } = inputProps as NativeScrollerWebProps;
+  const scrollRef = React.useRef<React.ElementRef<typeof ScrollView>>(null);
+  const setRef = React.useCallback(
+    (node: React.ElementRef<typeof ScrollView> | null) => {
+      scrollRef.current = node;
+      if (typeof ref === "function") ref(node);
+      else if (ref) ref.current = node;
+    },
+    [ref]
+  );
+  React.useLayoutEffect(() => {
+    const element = scrollRef.current?.getScrollableNode() as unknown as
+      | HTMLElement
+      | undefined;
+    const EventConstructor = element?.ownerDocument?.defaultView?.Event;
+    if (EventConstructor)
+      element.dispatchEvent(
+        new EventConstructor("ok-collapsible-pager-scroll-key-changed", {
+          bubbles: true,
+        })
+      );
+  }, [pagerScrollKey]);
   const webDataProps = {
     dataSet: {
       ...dataSet,
       collapsiblePagerScroll: "true",
+      collapsiblePagerScrollKey: pagerScrollKey ?? "",
     },
   };
 
-  return <ScrollView {...props} ref={ref} {...webDataProps} />;
+  return <ScrollView {...props} ref={setRef} {...webDataProps} />;
 });
 
 NativeScroller.displayName = "NativeScroller";

@@ -1676,3 +1676,113 @@ describe('declared nested style and line-limit boundaries', () => {
     }
   );
 });
+
+describe('Web Market table presentation contract', () => {
+  const tableRow = (key = 'table'): MarketRow => ({
+    ...marketRow(key),
+    webTable: {
+      columns: [{ key: 'price', width: 120 }],
+      cells: [{ key: 'price', kind: 'text', primary: [{ text: '$42' }] }],
+    },
+  });
+
+  it('accepts complete Web tables without adding fields to ordinary Market rows', () => {
+    const ordinary = marketRow();
+    expect(ordinary.webTable).toBeUndefined();
+    expect(() =>
+      validateSnapshot(snapshot([ordinary, tableRow()]))
+    ).not.toThrow();
+    expect(serializeSnapshot(snapshot([ordinary]))).not.toContain('webTable');
+  });
+
+  it('rejects mismatched columns, non-finite widths, and undeclared cell fields', () => {
+    const base = tableRow();
+    const invalid = [
+      { columns: [{ key: 'other' }], cells: base.webTable!.cells },
+      {
+        columns: [{ key: 'price', width: Infinity }],
+        cells: base.webTable!.cells,
+      },
+      {
+        columns: base.webTable!.columns,
+        cells: [
+          {
+            key: 'price',
+            kind: 'text',
+            primary: [{ text: '$42' }],
+            renderItem: 'unsupported',
+          },
+        ],
+      },
+    ];
+    for (const webTable of invalid) {
+      expect(() =>
+        validateSnapshot({
+          ...snapshot(),
+          rows: [{ ...base, webTable }],
+        } as NativeListSnapshot)
+      ).toThrow();
+    }
+  });
+
+  it('rejects the entire late-invalid table patch batch', () => {
+    const initial = snapshot([tableRow('a'), tableRow('b')]);
+    const before = serializeSnapshot(initial);
+    expect(() =>
+      applyRowPatches(initial, [
+        {
+          type: 'market',
+          key: 'a',
+          changes: {
+            price: '$43',
+            webTable: {
+              columns: [{ key: 'price', width: 120 }],
+              cells: [
+                { key: 'price', kind: 'text', primary: [{ text: '$43' }] },
+              ],
+            },
+          },
+        },
+        { type: 'market', key: 'b', changes: { price: '$44' } },
+      ])
+    ).toThrow();
+    expect(serializeSnapshot(initial)).toBe(before);
+  });
+
+  it('validates every ordered fallback URI without truncating the chain', () => {
+    const base = marketRow();
+    const leading = {
+      kind: 'token' as const,
+      image: {
+        uri: 'https://example.com/first.png',
+        width: 32,
+        height: 32,
+        fallbackUris: [
+          'https://example.com/second.png',
+          'https://example.com/third.png',
+        ],
+      },
+    };
+    const serialized = serializeSnapshot(snapshot([{ ...base, leading }]));
+    const decoded = JSON.parse(serialized) as { rows: readonly MarketRow[] };
+    const decodedLeading = decoded.rows[0]!.leading;
+    if (decodedLeading.kind !== 'token')
+      throw new Error('Expected token leading');
+    expect(decodedLeading.image?.fallbackUris).toEqual(
+      leading.image.fallbackUris
+    );
+    expect(() =>
+      validateSnapshot(
+        snapshot([
+          {
+            ...base,
+            leading: {
+              ...leading,
+              image: { ...leading.image, fallbackUris: ['valid', 3] },
+            },
+          },
+        ] as unknown as readonly RowModel[])
+      )
+    ).toThrow();
+  });
+});
