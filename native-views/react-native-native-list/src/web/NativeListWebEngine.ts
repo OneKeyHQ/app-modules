@@ -2100,21 +2100,29 @@ export class NativeListWebEngine {
 
   private notifyScrollCommandAccepted() {
     if (this.destroyed) return;
-    const EventConstructor = this.viewport.ownerDocument.defaultView?.Event;
+    const owner = this.externalScrollHost ?? this.viewport;
+    const EventConstructor = owner.ownerDocument.defaultView?.Event;
     if (EventConstructor)
-      this.viewport.dispatchEvent(
+      owner.dispatchEvent(
         new EventConstructor('ok-native-list-scroll-command-accepted')
       );
   }
 
   private readonly handlePagerScrollCommandCancel = (event: Event) => {
-    if (this.destroyed || event.target !== this.viewport) return;
+    const owner = this.externalScrollHost ?? this.viewport;
+    if (this.destroyed || event.target !== owner) return;
     this.pendingScroll = undefined;
-    this.viewport.scrollTo({
-      left: this.viewport.scrollLeft,
-      top: this.viewport.scrollTop,
+    const options: ScrollToOptions = {
+      left: owner.scrollLeft,
+      top: owner.scrollTop,
       behavior: 'instant',
-    });
+    };
+    if (this.externalScrollHost) {
+      const scrollTo: (options: ScrollToOptions) => void =
+        owner.ownerDocument.defaultView?.Element.prototype.scrollTo ??
+        owner.scrollTo;
+      scrollTo.call(owner, options);
+    } else this.viewport.scrollTo(options);
   };
 
   constructor(
@@ -2248,14 +2256,14 @@ export class NativeListWebEngine {
       );
     }
 
-    this.viewport.addEventListener(
+    (this.externalScrollHost ?? this.viewport).addEventListener(
       'ok-collapsible-pager-cancel-scroll-command',
       this.handlePagerScrollCommandCancel
     );
     this.viewport.addEventListener('scroll', this.handleScroll, {
       passive: true,
     });
-    this.viewport.addEventListener(
+    (this.externalScrollHost ?? this.viewport).addEventListener(
       'ok-collapsible-pager-insets-changed',
       this.handleCollapsiblePagerInsetsChanged
     );
@@ -2658,12 +2666,12 @@ export class NativeListWebEngine {
       this.handleWindowResize
     );
     this.pendingScroll = undefined;
-    this.viewport.removeEventListener(
+    (this.externalScrollHost ?? this.viewport).removeEventListener(
       'ok-collapsible-pager-cancel-scroll-command',
       this.handlePagerScrollCommandCancel
     );
     this.viewport.removeEventListener('scroll', this.handleScroll);
-    this.viewport.removeEventListener(
+    (this.externalScrollHost ?? this.viewport).removeEventListener(
       'ok-collapsible-pager-insets-changed',
       this.handleCollapsiblePagerInsetsChanged
     );
@@ -3774,7 +3782,10 @@ export class NativeListWebEngine {
   private writeExternalOffset(rawOffset: number, animated: boolean) {
     this.externalGeometryCache = undefined;
     const host = this.externalScrollHost!;
-    host.scrollTo({
+    const scrollTo: (options: ScrollToOptions) => void =
+      host.ownerDocument.defaultView?.Element.prototype.scrollTo ??
+      host.scrollTo;
+    scrollTo.call(host, {
       top: Math.max(
         0,
         Math.min(host.scrollHeight - host.clientHeight, rawOffset)

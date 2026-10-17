@@ -1160,3 +1160,20 @@ section slots remain unchanged; the pending title content retains its original
 row height; ordinary history rows retain their existing trailing spacing.
 
 Web enhanced History badges preserve the existing small Badge geometry (8px horizontal padding, 4px radius, medium text). Warning backgrounds consume the declared cautionBackground theme value with the prior fallback when absent. Native rendering is unchanged.
+
+
+### Web external parent-scroll commands
+
+When a caller supplies webScrollHost, scroll commands use the DOM scrollTo method from that element's document realm. React Native Web may decorate a NativeScroller node with a differently shaped React Native scrollTo method; the DOM host contract must not invoke that method with DOM options. The native/ref APIs and internally owned NativeList viewport keep their existing behavior.
+
+Existing Pager command-accepted/cancel notifications use the actual external scroll owner when supplied, otherwise the internally owned viewport. A list command cancels queued Pager restoration/top work; a Pager top command cancels a pending list command and stops motion on that same owner. Listener target guards and destruction removal must match. No new public method, event name or native behavior is introduced.
+
+
+### Web Pager inset notifications
+
+An externally hosted list listens for the existing Pager inset notification on
+its actual scroll owner, matching the notification target and removing the same
+listener on destroy. It measures the new content origin before Pager restores
+its C+B offset; a later ResizeObserver must not add that inset a second time.
+Ordinary subsequent slot-height changes retain the existing content-anchor
+compensation. Standalone lists continue listening on their own viewport.

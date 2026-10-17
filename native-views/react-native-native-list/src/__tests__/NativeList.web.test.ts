@@ -1,3 +1,4 @@
+import React from 'react';
 import type { IdentityRow, NativeListSnapshot, RowModel } from '../models';
 import {
   WEB_LIST_CSS,
@@ -3669,6 +3670,363 @@ describe('Web migration layout and table regressions', () => {
   const { JSDOM } = require('jsdom') as {
     JSDOM: new (html: string) => { window: { document: Document } };
   };
+
+  function commandFixture(external = true) {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const view = document.defaultView!;
+    const page = document.createElement('div');
+    const scrollHost = document.createElement('div');
+    const rowsHost = document.createElement('div');
+    scrollHost.dataset.collapsiblePagerScroll = 'true';
+    page.append(scrollHost);
+    scrollHost.append(rowsHost);
+    document.body.append(page);
+    let ready = true;
+    let origin = 120;
+    let frameId = 0;
+    const frames = new Map<number, FrameRequestCallback>();
+    const requestFrame = (callback: FrameRequestCallback) => {
+      frames.set(++frameId, callback);
+      return frameId;
+    };
+    const cancelFrame = (id: number) => frames.delete(id);
+    const globals = [
+      'Element',
+      'requestAnimationFrame',
+      'cancelAnimationFrame',
+    ];
+    const originalGlobals = globals.map((key) =>
+      Object.getOwnPropertyDescriptor(globalThis, key)
+    );
+    for (const [key, value] of Object.entries({
+      Element: view.Element,
+      requestAnimationFrame: requestFrame,
+      cancelAnimationFrame: cancelFrame,
+    }))
+      Object.defineProperty(globalThis, key, { configurable: true, value });
+    Object.assign(view, {
+      requestAnimationFrame: requestFrame,
+      cancelAnimationFrame: cancelFrame,
+    });
+    // JSDOM has no DOM scrollTo. Keep its realm method separate from RNW's
+    // instance decoration so calling the wrong signature cannot pass silently.
+    const domScroll = jest.fn(function (
+      this: HTMLElement,
+      options: ScrollToOptions
+    ) {
+      if (options.top !== undefined) this.scrollTop = options.top;
+      if (options.left !== undefined) this.scrollLeft = options.left;
+    });
+    Object.defineProperty(view.Element.prototype, 'scrollTo', {
+      configurable: true,
+      value: domScroll,
+    });
+    const rnwScroll = jest.fn((options: { x?: number; y?: number }) => {
+      scrollHost.scrollTop = options.y ?? 0;
+      scrollHost.scrollLeft = options.x ?? 0;
+    });
+    Object.defineProperty(scrollHost, 'scrollTo', {
+      configurable: true,
+      value: rnwScroll,
+    });
+    Object.defineProperties(scrollHost, {
+      clientWidth: { value: 360 },
+      clientHeight: { get: () => (ready ? 240 : 0) },
+      scrollHeight: { value: 3000 },
+    });
+    const rect = (top: number, height: number) => ({
+      x: 20,
+      y: top,
+      left: 20,
+      right: 380,
+      top,
+      bottom: top + height,
+      width: 360,
+      height,
+      toJSON: () => ({}),
+    });
+    scrollHost.getBoundingClientRect = () => rect(20, 240);
+    rowsHost.getBoundingClientRect = () =>
+      rect(20 + origin - scrollHost.scrollTop, 1200);
+    const sourceRows: RowModel[] = Array.from({ length: 30 }, (_, index) => ({
+      type: 'message',
+      key: `command-${index}`,
+      height: 40,
+      title: 'Row',
+      body: '',
+      time: '',
+    }));
+    const hostAddListener = jest.spyOn(scrollHost, 'addEventListener');
+    const engine = new NativeListWebEngine(
+      rowsHost,
+      { ...snapshot({ kind: 'linear' }, sourceRows), capabilities: {} },
+      {},
+      false,
+      null,
+      '{}',
+      external
+        ? { scrollHost, contentBounds: rowsHost, stickyInset: 20 }
+        : undefined
+    );
+    const viewport = rowsHost.querySelector<HTMLElement>(
+      '.ok-native-list-viewport'
+    )!;
+    Object.defineProperties(viewport, {
+      clientWidth: { value: 360 },
+      clientHeight: { get: () => (ready ? 240 : 0) },
+    });
+    viewport.getBoundingClientRect = rowsHost.getBoundingClientRect;
+    const resize = () => view.dispatchEvent(new view.Event('resize'));
+    resize();
+    const flushFrames = () => {
+      for (let count = 0; frames.size; count += 1) {
+        if (count === 20) throw new Error('Unexpected recurring scroll frame');
+        const pending = [...frames.entries()];
+        frames.clear();
+        pending.forEach(([, callback]) => callback(0));
+      }
+    };
+    return {
+      document,
+      page,
+      scrollHost,
+      viewport,
+      engine,
+      domScroll,
+      rnwScroll,
+      hostAddListener,
+      resize,
+      flushFrames,
+      frames,
+      setReady: (value: boolean) => {
+        ready = value;
+      },
+      setOrigin: (value: number) => {
+        origin = value;
+      },
+      cleanup: () => {
+        engine.destroy();
+        globals.forEach((key, index) => {
+          const descriptor = originalGlobals[index];
+          if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+          else Reflect.deleteProperty(globalThis, key);
+        });
+        view.close();
+      },
+    };
+  }
+
+  it('consumes Pager inset changes before restoring its external owner without losing later slot anchoring', () => {
+    const f = commandFixture();
+    try {
+      f.setOrigin(0);
+      f.resize();
+      f.setOrigin(345);
+      f.scrollHost.dispatchEvent(
+        new f.document.defaultView!.Event('ok-collapsible-pager-insets-changed')
+      );
+      // Pager restores C after configuring the inner inset; the subsequent
+      // ResizeObserver must not treat that inset as new list content.
+      f.scrollHost.scrollTop = 212;
+      f.resize();
+      expect(f.scrollHost.scrollTop).toBe(212);
+      f.scrollHost.scrollTop = 600;
+      f.setOrigin(385);
+      f.resize();
+      expect(f.scrollHost.scrollTop).toBe(640);
+    } finally {
+      f.cleanup();
+    }
+  });
+
+  it('uses realm DOM commands at nonzero offsets on an RNW-decorated external owner', () => {
+    const f = commandFixture();
+    try {
+      f.scrollHost.scrollTop = 80;
+      f.engine.scrollToOffset(200, false);
+      expect(f.scrollHost.scrollTop).toBe(320);
+      f.engine.scrollToIndex(5, {
+        alignment: 'start',
+        animated: false,
+        viewPosition: 0,
+        viewOffset: 0,
+      });
+      expect(f.scrollHost.scrollTop).toBe(300);
+      f.engine.scrollToEnd(false);
+      expect(f.scrollHost.scrollTop).toBe(1080);
+      expect(f.domScroll.mock.contexts).toEqual([
+        f.scrollHost,
+        f.scrollHost,
+        f.scrollHost,
+      ]);
+      expect(f.rnwScroll).not.toHaveBeenCalled();
+      expect(f.viewport.scrollTop).toBe(0);
+    } finally {
+      f.cleanup();
+    }
+  });
+
+  it('hands pending commands between the real Pager and List on their shared external owner', () => {
+    const { CollapsiblePagerView } = jest.requireActual(
+      '../../../react-native-pager-view/src/CollapsiblePagerView.web'
+    ) as {
+      CollapsiblePagerView: new (props: {
+        header: null;
+        stickyHeader: null;
+        headerHeight: number;
+        stickyHeaderHeight: number;
+        children: React.ReactNode;
+      }) => {
+        scrollToPageTop: (options: { animated: boolean }) => void;
+        scrollToStickyTop: (options: { animated: boolean }) => void;
+        componentWillUnmount: () => void;
+      };
+    };
+    const f = commandFixture();
+    const pager = new CollapsiblePagerView({
+      header: null,
+      stickyHeader: null,
+      headerHeight: 80,
+      stickyHeaderHeight: 40,
+      children: React.createElement('div', { key: 'page' }),
+    });
+    const internals = pager as unknown as {
+      pageHosts: Map<number, HTMLElement>;
+      configureActiveScrollElement: () => void;
+    };
+    internals.pageHosts.set(0, f.page);
+    internals.configureActiveScrollElement();
+    const accepted: EventTarget[] = [];
+    f.scrollHost.addEventListener(
+      'ok-native-list-scroll-command-accepted',
+      (e) => accepted.push(e.target!)
+    );
+    try {
+      f.scrollHost.scrollTop = 300;
+      f.setReady(false);
+      f.engine.scrollToOffset(600, false);
+      f.viewport.dispatchEvent(
+        new f.document.defaultView!.Event(
+          'ok-collapsible-pager-cancel-scroll-command',
+          { bubbles: true }
+        )
+      );
+      f.setReady(true);
+      f.resize();
+      expect(f.scrollHost.scrollTop).toBe(720);
+      f.setReady(false);
+      f.engine.scrollToOffset(600, false);
+      pager.scrollToStickyTop({ animated: false });
+      f.setReady(true);
+      f.resize();
+      f.flushFrames();
+      expect(f.scrollHost.scrollTop).toBe(80);
+
+      pager.scrollToPageTop({ animated: false });
+      // A bubbling event from the inner list viewport is not a new owner command.
+      f.viewport.dispatchEvent(
+        new f.document.defaultView!.Event(
+          'ok-native-list-scroll-command-accepted',
+          { bubbles: true }
+        )
+      );
+      const acceptedBeforeInvalid = accepted.length;
+      expect(() => f.engine.scrollToOffset(-1, false)).toThrow();
+      expect(accepted).toHaveLength(acceptedBeforeInvalid);
+      f.flushFrames();
+      expect(f.scrollHost.scrollTop).toBe(0);
+
+      pager.scrollToPageTop({ animated: false });
+      f.engine.scrollToOffset(270, false);
+      f.flushFrames();
+      expect(f.scrollHost.scrollTop).toBe(390);
+      expect(accepted.at(-1)).toBe(f.scrollHost);
+      expect(f.rnwScroll).not.toHaveBeenCalled();
+    } finally {
+      pager.componentWillUnmount();
+      f.cleanup();
+    }
+  });
+
+  it.each([true, false])(
+    'removes owner listeners and queued commands on destroy (external=%s)',
+    (external) => {
+      const f = commandFixture(external);
+      const owner = external ? f.scrollHost : f.viewport;
+      const removed = jest.spyOn(owner, 'removeEventListener');
+      const cancel = () =>
+        owner.dispatchEvent(
+          new f.document.defaultView!.Event(
+            'ok-collapsible-pager-cancel-scroll-command'
+          )
+        );
+      try {
+        owner.scrollTop = 125;
+        f.engine.scrollToOffset(200, false);
+        expect(owner.scrollTop).toBe(external ? 320 : 200);
+        cancel();
+        expect(f.domScroll).toHaveBeenLastCalledWith({
+          left: 0,
+          top: owner.scrollTop,
+          behavior: 'instant',
+        });
+        f.setReady(false);
+        f.engine.scrollToOffset(900, false);
+        expect(f.frames.size).toBeGreaterThan(0);
+        f.engine.destroy();
+        expect(f.frames.size).toBe(0);
+        if (external) {
+          const cancelBinding = f.hostAddListener.mock.calls.find(
+            ([type]) => type === 'ok-collapsible-pager-cancel-scroll-command'
+          );
+          const scrollBinding = f.hostAddListener.mock.calls.find(
+            ([type]) => type === 'scroll'
+          );
+          const insetBinding = f.hostAddListener.mock.calls.find(
+            ([type]) => type === 'ok-collapsible-pager-insets-changed'
+          );
+          expect(insetBinding).toBeDefined();
+          expect(removed).toHaveBeenCalledWith(
+            insetBinding![0],
+            insetBinding![1]
+          );
+          expect(cancelBinding).toBeDefined();
+          expect(scrollBinding).toBeDefined();
+          expect(removed).toHaveBeenCalledWith(
+            cancelBinding![0],
+            cancelBinding![1]
+          );
+          expect(scrollBinding![2]).toEqual({ passive: true, capture: true });
+          expect(removed).toHaveBeenCalledWith(
+            'scroll',
+            scrollBinding![1],
+            true
+          );
+          expect(
+            f.hostAddListener.mock.contexts.every((target) => target === owner)
+          ).toBe(true);
+          expect(
+            removed.mock.contexts.every((target) => target === owner)
+          ).toBe(true);
+        } else
+          expect(removed).toHaveBeenCalledWith(
+            'ok-collapsible-pager-cancel-scroll-command',
+            expect.any(Function)
+          );
+        const callsAfterDestroy = f.domScroll.mock.calls.length;
+        f.setReady(true);
+        cancel();
+        owner.dispatchEvent(new f.document.defaultView!.Event('scroll'));
+        f.resize();
+        f.flushFrames();
+        expect(f.frames.size).toBe(0);
+        expect(f.domScroll).toHaveBeenCalledTimes(callsAfterDestroy);
+        expect(f.rnwScroll).not.toHaveBeenCalled();
+      } finally {
+        f.cleanup();
+      }
+    }
+  );
 
   it('captures only external host and intermediate ancestor scrolls, then removes capture on destroy', () => {
     const { document } = new JSDOM('<!doctype html><body></body>').window;

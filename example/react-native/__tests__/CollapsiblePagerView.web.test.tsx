@@ -478,3 +478,117 @@ describe('PagerView web', () => {
     });
   });
 });
+
+describe('CollapsiblePagerView Web owner bookkeeping', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+    jest.useRealTimers();
+  });
+
+  it('saves the configured business owner when a caller remaps reordered keys', async () => {
+    const keyed = (keys: readonly string[]) =>
+      keys.map(key => <View key={key} />);
+    let renderer!: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        <CollapsiblePagerView {...requiredProps} initialPage={1}>
+          {keyed(['A', 'B', 'C'])}
+        </CollapsiblePagerView>,
+      );
+    });
+    const pager = renderer.root.findByType(CollapsiblePagerView).instance;
+    const owner = { scrollTop: 300, isConnected: true } as HTMLElement;
+    const nextOwner = {
+      scrollTop: 0,
+      getAttribute: () => 'A',
+    } as unknown as HTMLElement;
+    const state = pager as unknown as {
+      pageOffsets: Map<string, number>;
+      sharedHeaderOffset: number;
+      configuredScrollElement: { key: string; element: HTMLElement } | null;
+      pageHosts: Map<number, { querySelector: () => HTMLElement }>;
+    };
+    state.pageOffsets.set('.$A', 300);
+    state.pageOffsets.set('.$B', 200);
+    state.pageOffsets.set('.$C', 400);
+    state.sharedHeaderOffset = 100;
+    state.configuredScrollElement = { key: '.$B', element: owner };
+    await ReactTestRenderer.act(() => {
+      renderer.update(
+        <CollapsiblePagerView {...requiredProps} initialPage={1}>
+          {keyed(['B', 'A', 'C'])}
+        </CollapsiblePagerView>,
+      );
+    });
+    state.pageHosts.set(1, { querySelector: () => nextOwner });
+    await ReactTestRenderer.act(() => pager.setPageWithoutAnimation(0));
+    expect(pager.state.selectedPage).toBe(0);
+    expect(state.sharedHeaderOffset).toBe(100);
+    expect([...state.pageOffsets.entries()]).toEqual([
+      ['.$A', 300],
+      ['.$B', 200],
+      ['.$C', 400],
+    ]);
+    // The fabricated configured owner has no DOM styles/listeners to restore.
+    state.configuredScrollElement = null;
+    state.pageHosts.clear();
+    await ReactTestRenderer.act(() => renderer.unmount());
+  });
+
+  it('removes root input listeners and cancels queued work on unmount', async () => {
+    let renderer!: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        <CollapsiblePagerView {...requiredProps}>
+          {pages(1)}
+        </CollapsiblePagerView>,
+      );
+    });
+    const pager = renderer.root.findByType(CollapsiblePagerView).instance;
+    const addEventListener = jest.fn();
+    const removeEventListener = jest.fn();
+    const root = {
+      querySelector: () => null,
+      addEventListener,
+      removeEventListener,
+    };
+    const rendered = pager.render() as React.ReactElement<{
+      ref: (value: unknown) => void;
+    }>;
+    rendered.props.ref(root);
+    expect(addEventListener.mock.calls.map(([type]) => type)).toEqual([
+      'ok-collapsible-pager-scroll-key-changed',
+      'wheel',
+      'touchstart',
+      'touchmove',
+      'touchend',
+      'touchcancel',
+    ]);
+    const queued = jest.fn();
+    const frame = requestAnimationFrame(queued);
+    const cancel = jest.spyOn(globalThis, 'cancelAnimationFrame');
+    const state = pager as unknown as {
+      pendingTopFrame: {
+        frame: number;
+        element: HTMLElement;
+        key: string;
+      } | null;
+    };
+    state.pendingTopFrame = {
+      frame,
+      element: {} as HTMLElement,
+      key: '.$page-0',
+    };
+    await ReactTestRenderer.act(() => renderer.unmount());
+    for (const [type, handler] of addEventListener.mock.calls)
+      expect(removeEventListener).toHaveBeenCalledWith(type, handler);
+    expect(cancel).toHaveBeenCalledWith(frame);
+    expect(state.pendingTopFrame).toBeNull();
+    await ReactTestRenderer.act(() => jest.runOnlyPendingTimers());
+    expect(queued).not.toHaveBeenCalled();
+  });
+});
