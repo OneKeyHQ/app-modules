@@ -138,8 +138,8 @@ pub(crate) fn parse_orchard_sk(bytes: &[u8]) -> Result<Wiped<SpendingKey>> {
 
 /// Transparent + Orchard UFVK, the same items the OneKey firmware returns.
 ///
-/// Sapling is left out: this runtime can neither scan for nor spend it, and the
-/// firmware rejects PCZTs that carry it. Ironwood keys derive from the Orchard item.
+/// Sapling is left out: this runtime can neither scan for nor spend it.
+/// Ironwood keys derive from the Orchard item.
 pub(crate) fn ufvk_from_parts(
     params: Network,
     fvk: &FullViewingKey,
