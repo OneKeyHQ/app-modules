@@ -240,7 +240,7 @@ fn broadcast_outcome_ambiguous(message: &str) -> bool {
 /// Only replies proving these bytes can never be mined count as a rejection.
 ///
 /// A rejection makes the host show a failure and the user resend with other
-/// notes (the original's notes stay locked until expiry). If the original
+/// notes (the stored original holds its notes until expiry). If the original
 /// actually propagated, both would be mined. So this is an allowlist:
 /// consensus-invalid (proof, signature, value, branch) or expired. Transient or
 /// policy replies (busy, mempool full, lagging, non-standard) are an unknown

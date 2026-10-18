@@ -302,23 +302,6 @@ pub fn validate_address(network: &str, address: &str) -> std::result::Result<boo
     Ok(keys::validate_address(net, address))
 }
 
-/// Called before signing; every selected input must still belong to this review.
-#[wasm_bindgen(js_name = markReservationSigned)]
-pub fn mark_reservation_signed(
-    reservation_id: &str,
-    expected_inputs: u32,
-) -> std::result::Result<String, JsValue> {
-    let n = runtime::with_db(|db| spend::mark_signed(db, reservation_id, expected_inputs))?;
-    json(serde_json::json!({ "marked": n }))
-}
-
-/// Release a reservation (user cancelled or construction failed).
-#[wasm_bindgen(js_name = releaseReservation)]
-pub fn release_reservation(reservation_id: &str) -> std::result::Result<String, JsValue> {
-    let n = runtime::with_db(|db| spend::release(db, reservation_id))?;
-    json(serde_json::json!({ "released": n }))
-}
-
 /// Hand network requests to the host instead of `fetch`ing in wasm.
 ///
 /// `handler` is `(url, contentType, body: Uint8Array) => Promise<Uint8Array>`;
@@ -345,7 +328,6 @@ pub fn diag_database() -> std::result::Result<String, JsValue> {
             "transactions",
             "blocks",
             "scan_ranges",
-            "locked_outputs",
             "possible_spends",
         ] {
             let n: i64 = db
@@ -386,7 +368,7 @@ fn decode_hex(value: &str, field: &str) -> Result<Vec<u8>> {
 
 // ── Spend path ─────────────────────────────────────────────────────────────
 
-/// Select inputs, build and reserve. Needs no spend private key; does not broadcast.
+/// Select inputs and build. Needs no spend private key; does not broadcast.
 ///
 /// `recipientsJson` is `[{ "address": "...", "amountAtomic": "1000000000000" }]`.
 ///
@@ -394,18 +376,17 @@ fn decode_hex(value: &str, field: &str) -> Result<Vec<u8>> {
 /// spendable total minus fee; the passed amount is ignored. Merely omitting change
 /// would fold the remainder into the fee.
 ///
-/// Returns `{ reservationId, signableHex, feeAtomic, amountAtomic, changeAtomic,
-/// inputsAtomic, inputCount }`. `feeAtomic` and `amountAtomic` are what the
+/// Returns `{ signableHex, feeAtomic, amountAtomic, changeAtomic, inputsAtomic,
+/// inputCount }`. `feeAtomic` and `amountAtomic` are what the
 /// transaction will use: the confirmation page shows them and signing keeps them.
 ///
-/// Failure leaves no reservation. On success the host must call `signTransaction` +
-/// `broadcastTransaction`, or `releaseReservation`; otherwise the inputs stay locked.
+/// Inputs are not reserved: a second prepare before broadcast may select the same
+/// ones, and broadcast then refuses the later transaction as `inputAlreadySpent`.
 #[wasm_bindgen(js_name = prepareTransaction)]
 pub async fn prepare_transaction(
     account_id: i64,
     recipients_json: &str,
     max_send: bool,
-    reservation_id: &str,
     chain_tip: u64,
     priority: &str,
 ) -> std::result::Result<String, JsValue> {
@@ -427,11 +408,10 @@ pub async fn prepare_transaction(
     }
 
     let fee_priority = spend::parse_priority(priority)?;
-    let reservation = reservation_id.to_owned();
 
-    let v = runtime::with_db_and_daemon(move |mut db, daemon| async move {
+    let v = runtime::with_db_and_daemon(move |db, daemon| async move {
         let r = spend::prepare_for_host(
-            &mut db,
+            &db,
             &daemon,
             account_id,
             &recipients
@@ -439,7 +419,6 @@ pub async fn prepare_transaction(
                 .map(|r| (r.address.as_str(), r.amount_atomic.as_str()))
                 .collect::<Vec<_>>(),
             max_send,
-            &reservation,
             chain_tip,
             fee_priority,
         )
@@ -486,13 +465,11 @@ pub fn verify_transaction(
 pub async fn broadcast_transaction(
     account_id: i64,
     raw_hex: &str,
-    reservation_id: &str,
     chain_tip: u64,
     outgoing_atomic: Option<String>,
     change_atomic: Option<String>,
 ) -> std::result::Result<String, JsValue> {
     let raw = raw_hex.to_owned();
-    let reservation = reservation_id.to_owned();
     // Decimal strings: u64 cannot cross the host bridge. Used only for display and
     // balance; malformed values count as absent.
     let amounts = spend::SentAmounts {
@@ -500,16 +477,7 @@ pub async fn broadcast_transaction(
         change_atomic: change_atomic.and_then(|a| a.parse::<u64>().ok()),
     };
     let v = runtime::with_db_and_daemon(move |db, daemon| async move {
-        let r = spend::broadcast_signed(
-            &db,
-            &daemon,
-            account_id,
-            &raw,
-            &reservation,
-            chain_tip,
-            amounts,
-        )
-        .await;
+        let r = spend::broadcast_signed(&db, &daemon, account_id, &raw, chain_tip, amounts).await;
         (db, daemon, r)
     })
     .await?;

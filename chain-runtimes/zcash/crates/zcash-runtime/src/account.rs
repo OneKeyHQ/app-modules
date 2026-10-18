@@ -125,7 +125,7 @@ pub fn balance_json(db: &Db, account_uuid: &str, policy: ConfirmationsPolicy) ->
             "spendable": u64::from(b.spendable_value()),
             "pendingChange": u64::from(b.change_pending_confirmation()),
             "pendingSpendable": u64::from(b.value_pending_spendability()),
-            // Reserved by a PCZT proposal (see the reservation in send.rs).
+            // Held by an unexpired upstream output lock; this runtime's sends take none.
             "locked": u64::from(b.locked_value()),
             "total": u64::from(b.total()),
         })
@@ -172,7 +172,7 @@ pub fn remove_account(db: &mut Db, account_uuid: &str) -> Result<()> {
             )
             .detail(e)
         })?;
-        crate::tx_state::remove_account_rows(ext, account_uuid)
+        crate::tx_state::prune_orphaned_rows(ext)
     })
 }
 

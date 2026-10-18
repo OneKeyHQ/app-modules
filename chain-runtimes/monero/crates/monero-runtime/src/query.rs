@@ -31,10 +31,8 @@ const TARGET_SECONDS_V2: u64 = 120;
 pub struct Balance {
     /// Sum of all unspent outputs.
     pub total_atomic: u128,
-    /// Spendable now: past the 10-block lock and any extra timelock, and not reserved.
+    /// Spendable now: past the 10-block lock and any extra timelock.
     pub unlocked_atomic: u128,
-    /// Reserved by in-flight sends. Counted in total, not selectable.
-    pub locked_by_reservation_atomic: u128,
     /// Outputs without a key image that appear in some ring. **May already be
     /// spent** until the host supplies key images; outputs never seen in a ring
     /// are certainly unspent and excluded.
@@ -53,7 +51,6 @@ impl Balance {
         json!({
             "totalAtomic": self.total_atomic.to_string(),
             "unlockedAtomic": self.unlocked_atomic.to_string(),
-            "lockedByReservationAtomic": self.locked_by_reservation_atomic.to_string(),
             "unverifiableAtomic": self.unverifiable_atomic.to_string(),
             "pendingChangeAtomic": self.pending_change_atomic.to_string(),
             "outputsWithoutKeyImage": self.outputs_without_key_image,
@@ -71,39 +68,29 @@ pub fn balance(db: &Db, identity_id: i64, chain_tip: Option<u64>) -> Result<Bala
         .prepare(
             "SELECT o.amount_atomic, o.height, o.additional_timelock,
                     o.key_image IS NULL AS no_ki,
-                    l.output_id IS NOT NULL AS reserved,
                     EXISTS (SELECT 1 FROM possible_spends p
                             WHERE p.identity_id = o.identity_id
                               AND p.out_txid = o.txid AND p.out_index = o.index_in_tx) AS maybe_spent
              FROM outputs o
-             LEFT JOIN locked_outputs l ON l.output_id = o.id AND (l.locked_at > ?2 OR l.signed_at > ?3)
              WHERE o.identity_id = ?1 AND o.spent_at_height IS NULL",
         )
         .map_err(|e| db_err("balanceQuery", e))?;
 
     let rows = stmt
-        .query_map(
-            params![
-                identity_id,
-                crate::spend::reservation_cutoff(),
-                crate::spend::signed_reservation_cutoff()
-            ],
-            |r| {
-                Ok((
-                    r.get::<_, i64>(0)? as u128,
-                    r.get::<_, i64>(1)? as u64,
-                    r.get::<_, i64>(2)? as u64,
-                    r.get::<_, bool>(3)?,
-                    r.get::<_, bool>(4)?,
-                    r.get::<_, bool>(5)?,
-                ))
-            },
-        )
+        .query_map([identity_id], |r| {
+            Ok((
+                r.get::<_, i64>(0)? as u128,
+                r.get::<_, i64>(1)? as u64,
+                r.get::<_, i64>(2)? as u64,
+                r.get::<_, bool>(3)?,
+                r.get::<_, bool>(4)?,
+            ))
+        })
         .map_err(|e| db_err("balanceQuery", e))?;
 
     let mut b = Balance::default();
     for row in rows {
-        let (amount, height, timelock, no_key_image, reserved, maybe_spent) =
+        let (amount, height, timelock, no_key_image, maybe_spent) =
             row.map_err(|e| db_err("balanceQuery", e))?;
         b.total_atomic += amount;
         if no_key_image {
@@ -113,10 +100,6 @@ pub fn balance(db: &Db, identity_id: i64, chain_tip: Option<u64>) -> Result<Bala
         // they may be spent, so they are not counted as unlocked.
         if no_key_image && maybe_spent {
             b.unverifiable_atomic += amount;
-            continue;
-        }
-        if reserved {
-            b.locked_by_reservation_atomic += amount;
             continue;
         }
         if let Some(tip) = chain_tip {
@@ -258,32 +241,23 @@ pub fn spendable_rows(db: &Db, identity_id: i64, chain_tip: u64) -> Result<Vec<S
         .prepare(
             "SELECT o.id, o.amount_atomic, o.global_index, o.height, o.additional_timelock
              FROM outputs o
-             LEFT JOIN locked_outputs l ON l.output_id = o.id AND (l.locked_at > ?2 OR l.signed_at > ?3)
              WHERE o.identity_id = ?1
                AND o.spent_at_height IS NULL
                AND o.key_image IS NOT NULL
-               AND l.output_id IS NULL
              ORDER BY o.amount_atomic DESC",
         )
         .map_err(|e| db_err("spendableRows", e))?;
 
     let rows = stmt
-        .query_map(
-            params![
-                identity_id,
-                crate::spend::reservation_cutoff(),
-                crate::spend::signed_reservation_cutoff()
-            ],
-            |r| {
-                Ok((
-                    r.get::<_, i64>(0)?,
-                    r.get::<_, i64>(1)? as u64,
-                    r.get::<_, i64>(2)? as u64,
-                    r.get::<_, i64>(3)? as u64,
-                    r.get::<_, i64>(4)? as u64,
-                ))
-            },
-        )
+        .query_map([identity_id], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, i64>(1)? as u64,
+                r.get::<_, i64>(2)? as u64,
+                r.get::<_, i64>(3)? as u64,
+                r.get::<_, i64>(4)? as u64,
+            ))
+        })
         .map_err(|e| db_err("spendableRows", e))?;
 
     let mut out = Vec::new();
@@ -726,48 +700,6 @@ mod tests {
             b.unlocked_atomic, 1_000,
             "possibly spent outputs are not unlocked"
         );
-    }
-
-    /// Reserved outputs count toward total but are not selectable, so two
-    /// sends cannot spend the same output.
-    #[test]
-    fn reserved_outputs_are_excluded_from_unlocked_and_from_selection() {
-        let (db, id) = db_with_identity();
-        let a = add_output(&db, id, 500, 10, true);
-        add_output(&db, id, 400, 11, true);
-        db.conn()
-            .execute(
-                "INSERT INTO locked_outputs (output_id, reservation_id, locked_at) VALUES (?1, 'r', ?2)",
-                params![a, crate::wallet::now_secs()],
-            )
-            .unwrap();
-
-        let b = balance(&db, id, Some(100)).unwrap();
-        assert_eq!(b.total_atomic, 900);
-        assert_eq!(b.locked_by_reservation_atomic, 500);
-        assert_eq!(b.unlocked_atomic, 400);
-
-        let spendable = spendable_rows(&db, id, 100).unwrap();
-        assert_eq!(spendable.len(), 1, "reserved outputs must not be selected");
-        assert_eq!(spendable[0].amount_atomic, 400);
-    }
-
-    /// Abandoning the confirm screen does not notify the runtime; expired reservations must release funds.
-    #[test]
-    fn an_expired_reservation_no_longer_holds_its_outputs() {
-        let (db, id) = db_with_identity();
-        let a = add_output(&db, id, 500, 10, true);
-        db.conn()
-            .execute(
-                "INSERT INTO locked_outputs (output_id, reservation_id, locked_at) VALUES (?1, 'r', ?2)",
-                params![a, crate::spend::reservation_cutoff() - 1],
-            )
-            .unwrap();
-
-        let b = balance(&db, id, Some(100)).unwrap();
-        assert_eq!(b.locked_by_reservation_atomic, 0);
-        assert_eq!(b.unlocked_atomic, 500);
-        assert_eq!(spendable_rows(&db, id, 100).unwrap().len(), 1);
     }
 
     /// Spent outputs drop out of every balance figure.

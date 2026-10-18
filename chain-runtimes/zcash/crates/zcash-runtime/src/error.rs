@@ -99,8 +99,6 @@ pub enum ErrorCode {
     ///
     /// An empty active set must never fall back to every UFVK stored in the runtime database.
     NoActiveAccounts,
-    /// reservationId is not 64 hex chars. Params: `{ value }`
-    InvalidReservationId,
     /// Malformed txid (not 64 hex chars). Params: `{ value }` or `{ value, byteLen }`
     InvalidTxid,
     /// PCZT parse or serialization failed. Params: `{ stage }`
@@ -120,11 +118,6 @@ pub enum ErrorCode {
     /// during sync; scanning resolves it as mined or expired. Hosts must not treat
     /// this as a failed send. Params: `{ errorCode }`; `detail` holds the node's message.
     BroadcastOutcomeUnknown,
-    /// No persisted broadcast intent for this local transaction. Params: `{ txid }`.
-    BroadcastIntentNotFound,
-    /// Broadcast intent exists but its state does not allow broadcasting.
-    /// Params: `{ txid, state }`.
-    BroadcastIntentNotReady,
     /// The transaction may be in the in-memory wallet but persistence is unconfirmed.
     /// Do not unlock or rebuild the transaction.
     FinalizeOutcomeUnknown,
@@ -161,14 +154,11 @@ impl ErrorCode {
             WalletBusy => "WALLET_BUSY",
             InvalidScanPriority => "INVALID_SCAN_PRIORITY",
             NoActiveAccounts => "NO_ACTIVE_ACCOUNTS",
-            InvalidReservationId => "INVALID_RESERVATION_ID",
             InvalidTxid => "INVALID_TXID",
             PcztError => "PCZT_ERROR",
             TransactionBuildError => "TRANSACTION_BUILD_ERROR",
             BroadcastRejected => "BROADCAST_REJECTED",
             BroadcastOutcomeUnknown => "BROADCAST_OUTCOME_UNKNOWN",
-            BroadcastIntentNotFound => "BROADCAST_INTENT_NOT_FOUND",
-            BroadcastIntentNotReady => "BROADCAST_INTENT_NOT_READY",
             FinalizeOutcomeUnknown => "FINALIZE_OUTCOME_UNKNOWN",
             Unimplemented => "UNIMPLEMENTED",
         }
@@ -313,7 +303,6 @@ mod tests {
             InsufficientFunds,
             NetworkError,
             DatabaseError,
-            InvalidReservationId,
             InvalidTxid,
             PcztError,
             TransactionBuildError,
@@ -323,8 +312,6 @@ mod tests {
             ReorgDetected,
             WalletBusy,
             InvalidScanPriority,
-            BroadcastIntentNotFound,
-            BroadcastIntentNotReady,
             FinalizeOutcomeUnknown,
         ];
         let mut seen = std::collections::HashSet::new();

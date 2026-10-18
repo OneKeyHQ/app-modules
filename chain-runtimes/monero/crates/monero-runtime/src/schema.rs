@@ -224,21 +224,6 @@ CREATE TABLE IF NOT EXISTS transactions (
 );
 CREATE INDEX IF NOT EXISTS idx_transactions_height ON transactions(identity_id, height);
 
--- Outputs reserved by a pending transaction and not selectable again.
---
--- Without this, two in-flight transactions could spend the same output and
--- the second would be rejected by the network.
-CREATE TABLE IF NOT EXISTS locked_outputs (
-    output_id       INTEGER PRIMARY KEY REFERENCES outputs(id) ON DELETE CASCADE,
-    reservation_id  TEXT    NOT NULL,
-    locked_at       INTEGER NOT NULL,
-    -- When the host signed. Unsigned reservations are dropped on the next
-    -- prepare (the user left the confirm screen); signed ones wait for the
-    -- broadcast result or expiry.
-    signed_at       INTEGER
-);
-CREATE INDEX IF NOT EXISTS idx_locked_reservation ON locked_outputs(reservation_id);
-
 -- Possible spends (as in monero-lws).
 --
 -- A view-only wallet cannot recognise its own spends, but a spent output must
@@ -356,7 +341,6 @@ mod tests {
             "scan_ranges",
             "outputs",
             "transactions",
-            "locked_outputs",
             "possible_spends",
         ] {
             let n: i64 = conn

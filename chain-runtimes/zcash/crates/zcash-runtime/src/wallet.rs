@@ -41,7 +41,7 @@ pub fn open_and_migrate(network: &str, db_name: &str) -> Result<Db> {
     let mut db = WalletDb::from_connection(conn, params, HostClock, rng);
 
     WalletMigrator::new()
-        .with_external_migrations(vec![Box::new(crate::tx_state::Migration)])
+        .with_external_migrations(crate::tx_state::migrations())
         .init_or_migrate(&mut db)
         .map_err(|e| {
             RuntimeError::with(ErrorCode::DatabaseError, json!({ "operation": "migrate" }))

@@ -1,3 +1,12 @@
+//! OneKey-owned record of node rejections.
+//!
+//! Everything else about a sent transaction lives in `zcash_client_sqlite`:
+//! the signed transaction is stored before broadcast, and stays in
+//! `v_transactions` as unmined (holding its notes) until it is mined or
+//! expires. The one fact the wallet schema cannot hold is that the trusted node
+//! definitively rejected it; that must stop rebroadcasts and show the send as
+//! failed.
+
 use std::collections::HashSet;
 
 use rusqlite::{params, OptionalExtension};
@@ -12,14 +21,22 @@ use crate::error::{ErrorCode, Result, RuntimeError};
 use crate::history::{display_order_to_internal, hex_display_order, uuid_blob};
 use crate::wallet::Db;
 
-const MIGRATION_ID: Uuid = Uuid::from_u128(0x5be0af90_63f4_43ea_ae65_8207c84e46dd);
+const LIFECYCLE_MIGRATION_ID: Uuid = Uuid::from_u128(0x5be0af90_63f4_43ea_ae65_8207c84e46dd);
+const REJECTIONS_MIGRATION_ID: Uuid = Uuid::from_u128(0x0d3b6f2e_9a41_4c8e_b7d5_3e1f6a2c9b70);
 pub(crate) const TABLE: &str = "ext_onekey_tx_state";
 
-pub struct Migration;
+/// External migrations, in dependency order.
+pub fn migrations() -> Vec<Box<dyn RusqliteMigration<Error = WalletMigrationError>>> {
+    vec![Box::new(LifecycleMigration), Box::new(RejectionsMigration)]
+}
 
-impl schemerz::Migration<Uuid> for Migration {
+/// The original lifecycle table. Kept so databases that already applied it
+/// keep a consistent migration graph; `RejectionsMigration` replaces it.
+struct LifecycleMigration;
+
+impl schemerz::Migration<Uuid> for LifecycleMigration {
     fn id(&self) -> Uuid {
-        MIGRATION_ID
+        LIFECYCLE_MIGRATION_ID
     }
 
     fn dependencies(&self) -> HashSet<Uuid> {
@@ -31,7 +48,7 @@ impl schemerz::Migration<Uuid> for Migration {
     }
 }
 
-impl RusqliteMigration for Migration {
+impl RusqliteMigration for LifecycleMigration {
     type Error = WalletMigrationError;
 
     fn up(&self, transaction: &rusqlite::Transaction) -> std::result::Result<(), Self::Error> {
@@ -55,7 +72,53 @@ impl RusqliteMigration for Migration {
     }
 
     fn down(&self, _transaction: &rusqlite::Transaction) -> std::result::Result<(), Self::Error> {
-        Err(WalletMigrationError::CannotRevert(MIGRATION_ID))
+        Err(WalletMigrationError::CannotRevert(LIFECYCLE_MIGRATION_ID))
+    }
+}
+
+/// Keeps only node rejections. Pending/accepted rows are dropped: those
+/// transactions are already unmined rows in `v_transactions`.
+struct RejectionsMigration;
+
+impl schemerz::Migration<Uuid> for RejectionsMigration {
+    fn id(&self) -> Uuid {
+        REJECTIONS_MIGRATION_ID
+    }
+
+    fn dependencies(&self) -> HashSet<Uuid> {
+        HashSet::from([LIFECYCLE_MIGRATION_ID])
+    }
+
+    fn description(&self) -> &'static str {
+        "Reduces OneKey Zcash transaction state to node rejections."
+    }
+}
+
+impl RusqliteMigration for RejectionsMigration {
+    type Error = WalletMigrationError;
+
+    fn up(&self, transaction: &rusqlite::Transaction) -> std::result::Result<(), Self::Error> {
+        transaction.execute_batch(
+            "CREATE TABLE ext_onekey_tx_state_new (
+               txid BLOB PRIMARY KEY NOT NULL,
+               account_uuid BLOB NOT NULL,
+               rejection_code INTEGER,
+               rejection_reason TEXT
+             );
+             INSERT INTO ext_onekey_tx_state_new (
+               txid, account_uuid, rejection_code, rejection_reason
+             )
+               SELECT txid, account_uuid, rejection_code, rejection_reason
+               FROM ext_onekey_tx_state
+               WHERE broadcast_state = 'rejected';
+             DROP TABLE ext_onekey_tx_state;
+             ALTER TABLE ext_onekey_tx_state_new RENAME TO ext_onekey_tx_state;",
+        )?;
+        Ok(())
+    }
+
+    fn down(&self, _transaction: &rusqlite::Transaction) -> std::result::Result<(), Self::Error> {
+        Err(WalletMigrationError::CannotRevert(REJECTIONS_MIGRATION_ID))
     }
 }
 
@@ -67,214 +130,119 @@ fn db_err(operation: &'static str, error: impl std::fmt::Display) -> RuntimeErro
     .detail(error)
 }
 
-pub fn existing_txid_for_reservation(
-    ext: &ExtensionTransaction<'_>,
-    reservation_id: &str,
-    expected_account_uuid: Option<&str>,
-) -> Result<Option<String>> {
-    let txid = ext
-        .query_row(
-            &format!("SELECT txid, account_uuid FROM {TABLE} WHERE reservation_id = ?1"),
-            [reservation_id],
-            |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Vec<u8>>(1)?)),
+/// Account that sent this stored transaction, for a rejection row.
+pub fn account_uuid_for_txid(db: &mut Db, txid: &str) -> Result<String> {
+    let txid = display_order_to_internal(txid)?;
+    let bytes = db.transactionally_with_extension(|_wallet, ext| {
+        ext.query_row(
+            "SELECT account_uuid
+             FROM v_transactions
+             WHERE txid = ?1 AND COALESCE(total_spent, 0) > 0
+             LIMIT 1",
+            [&txid],
+            |row| row.get::<_, Vec<u8>>(0),
         )
-        .optional()
-        .map_err(|error| db_err("findBroadcastIntent", error))?;
-    if let (Some((_, owner)), Some(expected)) = (&txid, expected_account_uuid) {
-        if *owner != uuid_blob(expected)? {
-            return Err(RuntimeError::new(ErrorCode::InvalidReservationId));
-        }
-    }
-    Ok(txid.map(|(bytes, _)| hex_display_order(&bytes)))
+        .map_err(|error| db_err("readAccountForTxid", error))
+    })?;
+    uuid::Uuid::from_slice(&bytes)
+        .map(|uuid| uuid.to_string())
+        .map_err(|error| db_err("parseAccountForTxid", error))
 }
 
-pub fn insert_finalized(
-    ext: &ExtensionTransaction<'_>,
+/// Records the node's definitive rejection of a stored transaction.
+pub fn record_rejection(
+    db: &mut Db,
     txid: &str,
     account_uuid: &str,
-    reservation_id: &str,
+    error: &RuntimeError,
 ) -> Result<()> {
     let txid = display_order_to_internal(txid)?;
     let account_uuid = uuid_blob(account_uuid)?;
-    ext.execute(
-        &format!(
-            "INSERT INTO {TABLE} (
-               txid, account_uuid, reservation_id, recipient, broadcast_state
-             )
-             VALUES (
-               ?1, ?2, ?3,
-               (SELECT output.to_address
-                FROM v_tx_outputs output
-                WHERE output.txid = ?1
-                  AND output.from_account_uuid = ?2
-                  AND (output.to_account_uuid IS NULL OR output.to_account_uuid <> ?2)
-                  AND COALESCE(output.is_change, 0) = 0
-                LIMIT 1),
-               'pending'
-             )
-             ON CONFLICT(txid) DO UPDATE SET
-               account_uuid = excluded.account_uuid,
-               reservation_id = excluded.reservation_id,
-               recipient = COALESCE(excluded.recipient, {TABLE}.recipient),
-               broadcast_state = 'pending',
-               rejection_code = NULL,
-               rejection_reason = NULL"
-        ),
-        params![txid, account_uuid, reservation_id],
-    )
-    .map_err(|error| db_err("saveBroadcastIntent", error))?;
-    Ok(())
-}
-
-pub fn assert_broadcastable(db: &mut Db, txid: &str) -> Result<()> {
-    let txid = display_order_to_internal(txid)?;
-    db.transactionally_with_extension(|_wallet, ext| {
-        let state = ext
-            .query_row(
-                &format!(
-                    "SELECT broadcast_state, rejection_code, rejection_reason
-                     FROM {TABLE}
-                     WHERE txid = ?1"
-                ),
-                [&txid],
-                |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, Option<i64>>(1)?,
-                        row.get::<_, Option<String>>(2)?,
-                    ))
-                },
-            )
-            .optional()
-            .map_err(|error| db_err("readBroadcastIntent", error))?;
-        match state {
-            Some((state, _, _)) if state == "pending" || state == "accepted" => Ok(()),
-            Some((state, error_code, reason)) if state == "rejected" => {
-                let mut error = RuntimeError::with(
-                    ErrorCode::BroadcastRejected,
-                    serde_json::json!({ "errorCode": error_code }),
-                );
-                error.detail = reason;
-                Err(error)
-            }
-            Some((state, _, _)) => Err(RuntimeError::with(
-                ErrorCode::BroadcastIntentNotReady,
-                serde_json::json!({ "txid": hex_display_order(&txid), "state": state }),
-            )),
-            None => Err(RuntimeError::with(
-                ErrorCode::BroadcastIntentNotFound,
-                serde_json::json!({ "txid": hex_display_order(&txid) }),
-            )),
-        }
-    })
-}
-
-pub fn mark_accepted(db: &mut Db, txid: &str) -> Result<()> {
-    update_outcome(db, txid, "accepted", None)
-}
-
-pub fn mark_rejected(db: &mut Db, txid: &str, error: &RuntimeError) -> Result<()> {
-    let error_code = error
+    let rejection_code = error
         .params
         .get("errorCode")
         .and_then(serde_json::Value::as_i64);
-    update_outcome(
-        db,
-        txid,
-        "rejected",
-        Some((error_code, error.detail.as_deref())),
-    )
-}
-
-fn update_outcome(
-    db: &mut Db,
-    txid: &str,
-    state: &str,
-    rejection: Option<(Option<i64>, Option<&str>)>,
-) -> Result<()> {
-    let txid = display_order_to_internal(txid)?;
-    let (rejection_code, rejection_reason) = rejection.unwrap_or((None, None));
     db.transactionally_with_extension(|_wallet, ext| {
-        let changed = ext
-            .execute(
-                &format!(
-                    "UPDATE {TABLE}
-                     SET broadcast_state = ?2,
-                         rejection_code = ?3,
-                         rejection_reason = ?4
-                     WHERE txid = ?1"
-                ),
-                params![txid, state, rejection_code, rejection_reason],
-            )
-            .map_err(|error| db_err("updateBroadcastIntent", error))?;
-        if changed == 0 {
-            return Err(RuntimeError::with(
-                ErrorCode::BroadcastIntentNotFound,
-                serde_json::json!({ "txid": hex_display_order(&txid) }),
-            ));
-        }
+        ext.execute(
+            &format!(
+                "INSERT INTO {TABLE} (txid, account_uuid, rejection_code, rejection_reason)
+                 VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(txid) DO UPDATE SET
+                   account_uuid = excluded.account_uuid,
+                   rejection_code = excluded.rejection_code,
+                   rejection_reason = excluded.rejection_reason"
+            ),
+            params![txid, account_uuid, rejection_code, error.detail.as_deref()],
+        )
+        .map_err(|error| db_err("recordRejection", error))?;
         Ok(())
     })
 }
 
-pub fn unresolved_txids(conn: &rusqlite::Connection, account_uuid: &str) -> Result<Vec<String>> {
+/// Fails with the recorded `BroadcastRejected` if the node already rejected this transaction.
+pub fn assert_not_rejected(db: &mut Db, txid: &str) -> Result<()> {
+    let txid = display_order_to_internal(txid)?;
+    let rejection = db.transactionally_with_extension(|_wallet, ext| {
+        ext.query_row(
+            &format!("SELECT rejection_code, rejection_reason FROM {TABLE} WHERE txid = ?1"),
+            [&txid],
+            |row| {
+                Ok((
+                    row.get::<_, Option<i64>>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|error| db_err("readRejection", error))
+    })?;
+    match rejection {
+        None => Ok(()),
+        Some((error_code, reason)) => {
+            let mut error = RuntimeError::with(
+                ErrorCode::BroadcastRejected,
+                serde_json::json!({ "errorCode": error_code }),
+            );
+            error.detail = reason;
+            Err(error)
+        }
+    }
+}
+
+/// This account's stored outgoing transactions that are neither mined, expired
+/// nor rejected: the ones a sync must rebroadcast.
+pub fn pending_txids(conn: &rusqlite::Connection, account_uuid: &str) -> Result<Vec<String>> {
     let account_uuid = uuid_blob(account_uuid)?;
     let mut stmt = conn
         .prepare(&format!(
-            "SELECT state.txid
-             FROM {TABLE} state
-             LEFT JOIN v_transactions tx
-               ON tx.txid = state.txid AND tx.account_uuid = state.account_uuid
-             WHERE state.account_uuid = ?1
-               AND state.broadcast_state IN ('pending', 'accepted')
+            "SELECT tx.txid
+             FROM v_transactions tx
+             JOIN transactions chain_tx ON chain_tx.txid = tx.txid
+             WHERE tx.account_uuid = ?1
                AND tx.mined_height IS NULL
-               AND COALESCE(tx.expired_unmined, 0) = 0"
+               AND tx.expired_unmined = 0
+               AND COALESCE(tx.total_spent, 0) > 0
+               AND chain_tx.raw IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM {TABLE} rejected WHERE rejected.txid = tx.txid)"
         ))
-        .map_err(|error| db_err("listUnresolvedBroadcasts", error))?;
+        .map_err(|error| db_err("listPendingBroadcasts", error))?;
     let rows = stmt
         .query_map([account_uuid], |row| row.get::<_, Vec<u8>>(0))
-        .map_err(|error| db_err("listUnresolvedBroadcasts", error))?;
+        .map_err(|error| db_err("listPendingBroadcasts", error))?;
     rows.map(|row| {
         row.map(|bytes| hex_display_order(&bytes))
-            .map_err(|error| db_err("listUnresolvedBroadcasts", error))
+            .map_err(|error| db_err("listPendingBroadcasts", error))
     })
     .collect()
 }
 
-pub fn rebroadcastable_txids(
-    conn: &rusqlite::Connection,
-    account_uuid: &str,
-) -> Result<Vec<String>> {
-    let account_uuid = uuid_blob(account_uuid)?;
-    let mut stmt = conn
-        .prepare(&format!(
-            "SELECT state.txid
-             FROM {TABLE} state
-             JOIN v_transactions tx
-               ON tx.txid = state.txid AND tx.account_uuid = state.account_uuid
-             WHERE state.account_uuid = ?1
-               AND state.broadcast_state IN ('pending', 'accepted')
-               AND tx.mined_height IS NULL
-               AND COALESCE(tx.expired_unmined, 0) = 0"
-        ))
-        .map_err(|error| db_err("listRebroadcastableTransactions", error))?;
-    let rows = stmt
-        .query_map([account_uuid], |row| row.get::<_, Vec<u8>>(0))
-        .map_err(|error| db_err("listRebroadcastableTransactions", error))?;
-    rows.map(|row| {
-        row.map(|bytes| hex_display_order(&bytes))
-            .map_err(|error| db_err("listRebroadcastableTransactions", error))
-    })
-    .collect()
-}
-
-pub fn remove_account_rows(ext: &ExtensionTransaction<'_>, account_uuid: &str) -> Result<()> {
-    let account_uuid = uuid_blob(account_uuid)?;
+/// Drops rejections whose transaction left the wallet with a removed account.
+pub fn prune_orphaned_rows(ext: &ExtensionTransaction<'_>) -> Result<()> {
     ext.execute(
-        &format!("DELETE FROM {TABLE} WHERE account_uuid = ?1"),
-        [account_uuid],
+        &format!("DELETE FROM {TABLE} WHERE txid NOT IN (SELECT txid FROM transactions)"),
+        [],
     )
-    .map_err(|error| db_err("deleteAccountTransactionState", error))?;
+    .map_err(|error| db_err("pruneTransactionState", error))?;
     Ok(())
 }
 
@@ -287,144 +255,132 @@ mod tests {
     use zcash_client_sqlite::WalletDb;
     use zcash_protocol::consensus::Network;
 
-    #[test]
-    fn finalized_recipient_is_external_to_the_sending_account() {
-        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
-        conn.execute_batch(
-            "CREATE TABLE ext_onekey_tx_state (
-               txid BLOB PRIMARY KEY NOT NULL,
-               account_uuid BLOB NOT NULL,
-               reservation_id TEXT UNIQUE,
-               recipient TEXT,
-               broadcast_state TEXT NOT NULL,
-               rejection_code INTEGER,
-               rejection_reason TEXT
-             );
-             CREATE TABLE v_tx_outputs (
-               txid BLOB NOT NULL,
-               from_account_uuid BLOB,
-               to_account_uuid BLOB,
-               to_address TEXT,
-               is_change INTEGER
-             );",
+    fn wallet(conn: rusqlite::Connection) -> Db {
+        WalletDb::from_connection(
+            conn,
+            Network::TestNetwork,
+            HostClock,
+            ChaCha20Rng::from_seed([7; 32]),
         )
-        .unwrap();
-        let sender = Uuid::from_u128(1);
-        let receiver = Uuid::from_u128(2);
-        let cases = [
-            (Some(receiver), false, Some("synthetic-recipient")),
-            (None, false, Some("synthetic-recipient")),
-            (Some(sender), false, None),
-            (Some(sender), true, None),
-        ];
-        for (index, (to_account, is_change, expected_recipient)) in cases.into_iter().enumerate() {
-            let txid = vec![index as u8; 32];
-            conn.execute(
-                "INSERT INTO v_tx_outputs (
-                   txid, from_account_uuid, to_account_uuid, to_address, is_change
-                 ) VALUES (?1, ?2, ?3, 'synthetic-recipient', ?4)",
-                params![
-                    txid,
-                    sender.as_bytes().as_slice(),
-                    to_account.map(|account| account.as_bytes().to_vec()),
-                    is_change
-                ],
-            )
-            .unwrap();
-            {
-                let mut db = WalletDb::from_connection(
-                    &mut conn,
-                    Network::TestNetwork,
-                    HostClock,
-                    ChaCha20Rng::from_seed([7; 32]),
-                );
-                db.transactionally_with_extension(|_wallet, ext| {
-                    insert_finalized(
-                        ext,
-                        &hex_display_order(&txid),
-                        &sender.to_string(),
-                        &format!("reservation-{index}"),
-                    )
-                })
-                .unwrap();
-            }
-            let recipient: Option<String> = conn
-                .query_row(
-                    "SELECT recipient FROM ext_onekey_tx_state WHERE txid = ?1",
-                    [txid],
-                    |row| row.get(0),
-                )
-                .unwrap();
-            assert_eq!(recipient.as_deref(), expected_recipient);
-        }
     }
 
     #[test]
-    fn only_runtime_owned_active_intents_are_unresolved_and_rebroadcastable() {
+    fn the_rebuild_keeps_only_rejections() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        let tx = conn.unchecked_transaction().unwrap();
+        LifecycleMigration.up(&tx).unwrap();
+        for (byte, state) in [(1_u8, "pending"), (2, "accepted"), (3, "rejected")] {
+            tx.execute(
+                "INSERT INTO ext_onekey_tx_state (
+                   txid, account_uuid, broadcast_state, rejection_code, rejection_reason
+                 ) VALUES (?1, ?2, ?3, -26, 'bad-txns')",
+                params![vec![byte; 32], Uuid::nil().as_bytes().to_vec(), state],
+            )
+            .unwrap();
+        }
+        RejectionsMigration.up(&tx).unwrap();
+        tx.commit().unwrap();
+
+        let rows: Vec<(Vec<u8>, Vec<u8>, i64, String)> = conn
+            .prepare(
+                "SELECT txid, account_uuid, rejection_code, rejection_reason
+                 FROM ext_onekey_tx_state",
+            )
+            .unwrap()
+            .query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })
+            .unwrap()
+            .map(|row| row.unwrap())
+            .collect();
+        assert_eq!(
+            rows,
+            vec![(
+                vec![3_u8; 32],
+                Uuid::nil().as_bytes().to_vec(),
+                -26,
+                "bad-txns".to_owned()
+            )]
+        );
+    }
+
+    #[test]
+    fn a_recorded_rejection_is_returned_with_the_nodes_reason() {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         conn.execute_batch(
             "CREATE TABLE ext_onekey_tx_state (
                txid BLOB PRIMARY KEY NOT NULL,
                account_uuid BLOB NOT NULL,
-               reservation_id TEXT UNIQUE,
-               recipient TEXT,
-               broadcast_state TEXT NOT NULL,
                rejection_code INTEGER,
                rejection_reason TEXT
-             );
+             );",
+        )
+        .unwrap();
+        let mut db = wallet(conn);
+        let txid = "01".repeat(32);
+        let account = Uuid::nil().to_string();
+        assert_not_rejected(&mut db, &txid).unwrap();
+
+        let rejected = RuntimeError::with(
+            ErrorCode::BroadcastRejected,
+            serde_json::json!({ "errorCode": 18 }),
+        )
+        .detail("bad-txns-expired");
+        record_rejection(&mut db, &txid, &account, &rejected).unwrap();
+        record_rejection(&mut db, &txid, &account, &rejected).unwrap();
+
+        let error = assert_not_rejected(&mut db, &txid).unwrap_err();
+        assert_eq!(error.code, ErrorCode::BroadcastRejected);
+        assert_eq!(error.params["errorCode"], 18);
+        assert_eq!(error.detail.as_deref(), Some("bad-txns-expired"));
+    }
+
+    #[test]
+    fn only_unmined_unexpired_unrejected_outgoing_transactions_are_pending() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE ext_onekey_tx_state (txid BLOB PRIMARY KEY NOT NULL);
+             CREATE TABLE transactions (txid BLOB NOT NULL, raw BLOB);
              CREATE TABLE v_transactions (
                txid BLOB NOT NULL,
                account_uuid BLOB NOT NULL,
                mined_height INTEGER,
-               expired_unmined INTEGER NOT NULL
+               expired_unmined INTEGER NOT NULL,
+               total_spent INTEGER
              );",
         )
         .unwrap();
         let account = Uuid::nil().as_bytes().to_vec();
+        // (txid byte, mined_height, expired_unmined, total_spent, has raw, rejected)
         let rows = [
-            (1_u8, "pending", Some((None, 0))),
-            (2, "accepted", Some((None, 0))),
-            (3, "observed", Some((None, 0))),
-            (4, "rejected", Some((None, 0))),
-            (5, "accepted", Some((Some(100), 0))),
-            (6, "accepted", Some((None, 1))),
+            (1_u8, None, 0, 10, true, false),
+            (2, Some(100), 0, 10, true, false),
+            (3, None, 1, 10, true, false),
+            (4, None, 0, 0, true, false),
+            (5, None, 0, 10, false, false),
+            (6, None, 0, 10, true, true),
         ];
-        for (byte, state, chain_state) in rows {
+        for (byte, mined_height, expired_unmined, total_spent, has_raw, rejected) in rows {
             let txid = vec![byte; 32];
             conn.execute(
-                "INSERT INTO ext_onekey_tx_state (
-                   txid, account_uuid, broadcast_state
-                 ) VALUES (?1, ?2, ?3)",
-                params![txid, account, state],
+                "INSERT INTO transactions (txid, raw) VALUES (?1, ?2)",
+                params![txid, has_raw.then(|| vec![0_u8])],
             )
             .unwrap();
-            if let Some((mined_height, expired_unmined)) = chain_state {
-                conn.execute(
-                    "INSERT INTO v_transactions (
-                       txid, account_uuid, mined_height, expired_unmined
-                     ) VALUES (?1, ?2, ?3, ?4)",
-                    params![txid, account, mined_height, expired_unmined],
-                )
-                .unwrap();
+            conn.execute(
+                "INSERT INTO v_transactions VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![txid, account, mined_height, expired_unmined, total_spent],
+            )
+            .unwrap();
+            if rejected {
+                conn.execute("INSERT INTO ext_onekey_tx_state VALUES (?1)", [txid])
+                    .unwrap();
             }
         }
 
-        let mut unresolved = unresolved_txids(&conn, &Uuid::nil().to_string()).unwrap();
-        unresolved.sort();
         assert_eq!(
-            unresolved,
-            [1_u8, 2]
-                .map(|byte| hex_display_order(&[byte; 32]))
-                .to_vec()
-        );
-
-        let mut rebroadcastable = rebroadcastable_txids(&conn, &Uuid::nil().to_string()).unwrap();
-        rebroadcastable.sort();
-        assert_eq!(
-            rebroadcastable,
-            [1_u8, 2]
-                .map(|byte| hex_display_order(&[byte; 32]))
-                .to_vec()
+            pending_txids(&conn, &Uuid::nil().to_string()).unwrap(),
+            vec![hex_display_order(&[1_u8; 32])]
         );
     }
 }

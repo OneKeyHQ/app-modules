@@ -42,11 +42,18 @@ releases to `latest`. Branches other than `main` can publish alpha versions only
    block; a mismatch fails with `NODE_NETWORK_MISMATCH`. `chainTip` works without an
    open wallet and returns `network`; check it before picking a birthday.
 3. **An `unknown` broadcast is not a failure.** The send is recorded and its inputs
-   marked spent before broadcasting; pool checks and scanning settle it. Never report
-   it as failed or prompt a resend.
+   marked spent before broadcasting; pool checks and scanning settle it. Do not
+   translate an unclear broadcast result into a failure or prompt a resend.
 4. **The host schedules sync.** `syncStep` scans at most `maxBlocks` and returns.
+   Its existing pool refresh includes previously failed own sends. A matching
+   transaction seen in the pool restores the record and released inputs in one
+   SQLite transaction, unless a later local spend already owns an input.
+   `sendsRestored` reports those changes so the host can refresh balances/history.
 5. **Register subaddresses before use.** Funds to unregistered subaddresses go
    undetected.
+6. **Local management does not require a live tip.** Deletion needs only the local
+   database. For `rewindTo`, pass the last locally observed tip; normal sync fetches
+   a fresh one later. Rewind, cursor updates and range requeue commit together.
 
 ## API
 
@@ -73,21 +80,18 @@ rewindTo(accountId, height, tip)                destructive
 balance(accountId, chainTip?) / history(accountId, limit, offset)
 transactionDetails(accountId, txid)
 
-prepareTransaction(accountId, recipientsJson, maxSend, reservationId, chainTip, priority)
+prepareTransaction(accountId, recipientsJson, maxSend, chainTip, priority)
 verifyTransaction(signableHex, reviewJson)
-markReservationSigned(reservationId, expectedInputs)
 signTransaction(signableHex, spendPrivateKeyHex, reviewJson)
-broadcastTransaction(accountId, rawHex, reservationId, chainTip, outgoingAtomic?, changeAtomic?)
-releaseReservation(reservationId)
+broadcastTransaction(accountId, rawHex, chainTip, outgoingAtomic?, changeAtomic?)
 diagDatabase()
 ```
 
 ### Sending
 
 ```
-prepareTransaction      select and reserve inputs, build; no spend key
+prepareTransaction      select inputs, build; no spend key
 verifyTransaction       check recipient, amount, fee and change against the review
-markReservationSigned   claim the reserved inputs for this review
 signTransaction         verify again, then sign; no network, no DB
 broadcastTransaction    record, then broadcast → { txid, broadcast: accepted | unknown }
 ```
@@ -98,8 +102,13 @@ broadcastTransaction    record, then broadcast → { txid, broadcast: accepted |
 - `BROADCAST_REJECTED` is thrown only when the node explicitly rejects a first
   broadcast for a reason other than double spend; the record is undone and the
   inputs released.
-- Unsigned reservations expire after 1 hour, signed ones after 24 hours. Call
-  `releaseReservation` when the user cancels.
+- Inputs are not reserved between prepare and broadcast. Two sends built from
+  the same inputs both sign, but only the first broadcast is recorded; the second
+  is refused with `inputAlreadySpent`. Inputs of a send the node never received
+  are released after the propagation timeout and an explicit missing response,
+  and can be spent again. Failed sends remain eligible for normal pool refresh;
+  response transaction hashes are checked against their serialized bodies before
+  updating local input ownership.
 - The scanner derives RingCT output indexes itself and fails with
   `RINGCT_INDEX_MISMATCH` when the node's claim differs.
 
