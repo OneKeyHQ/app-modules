@@ -115,7 +115,6 @@ async function online() {
       id,
       JSON.stringify([{ address: a.primaryAddress, amountAtomic: '1000' }]),
       false,
-      'smoke-r1',
       BigInt(tip.height),
       'normal',
     );
@@ -134,7 +133,6 @@ async function online() {
         { address: sub.address, amountAtomic: '1000' },
       ]),
       false,
-      'smoke-r2',
       BigInt(tip.height),
       'normal',
     );
@@ -143,9 +141,6 @@ async function online() {
     const err = JSON.parse(e.message ?? e);
     check('two-recipient build is refused', err.params.reason, 'exactlyOneRecipient');
   }
-
-  const released = JSON.parse(rt.releaseReservation('smoke-r1'));
-  check('failed build leaves no reservation', released.released, 0);
 }
 
 online()

@@ -756,7 +756,16 @@ pub fn rewind_to(db: &mut Db, identity_id: i64, height: u64, tip: u64) -> Result
         .conn_mut()
         .transaction()
         .map_err(|e| db_err("beginRewind", e))?;
+    rewind_in_transaction(&tx, identity_id, height, tip)?;
+    tx.commit().map_err(|e| db_err("commitRewind", e))
+}
 
+pub(crate) fn rewind_in_transaction(
+    tx: &rusqlite::Transaction<'_>,
+    identity_id: i64,
+    height: u64,
+    tip: u64,
+) -> Result<()> {
     // Must run before clearing spend marks: that step keeps marks for pending transactions.
     let reorgable_above = height.max(tip.saturating_sub(REORG_WINDOW_BLOCKS));
     tx.execute(
@@ -801,7 +810,7 @@ pub fn rewind_to(db: &mut Db, identity_id: i64, height: u64, tip: u64) -> Result
     )
     .map_err(|e| db_err("rewindBlocks", e))?;
 
-    tx.commit().map_err(|e| db_err("commitRewind", e))
+    Ok(())
 }
 
 #[cfg(test)]

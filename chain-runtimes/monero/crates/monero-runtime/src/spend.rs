@@ -255,138 +255,6 @@ pub fn select_inputs(
     })
 }
 
-/// Unsigned reservations expire after an hour; leaving the confirm screen is not reported here.
-pub const RESERVATION_TTL_SECS: i64 = 60 * 60;
-
-/// Signed reservations that never reached broadcast expire after a day.
-///
-/// Broadcast marks inputs spent and records the send before publishing, so a
-/// signed reservation left here was never sent (rejected on device, cancelled,
-/// killed after signing). Locking it forever would push the next send onto
-/// other inputs, and if the old signature were broadcast later both would
-/// confirm. Released, the same inputs are selected first again, so both
-/// transactions share key images and at most one can confirm.
-pub const SIGNED_RESERVATION_TTL_SECS: i64 = 24 * 60 * 60;
-
-/// Reservations with `locked_at` after this are live.
-pub fn reservation_cutoff() -> i64 {
-    crate::wallet::now_secs() - RESERVATION_TTL_SECS
-}
-
-/// Signed reservations with `signed_at` after this are live.
-pub fn signed_reservation_cutoff() -> i64 {
-    crate::wallet::now_secs() - SIGNED_RESERVATION_TTL_SECS
-}
-
-/// Reserves selected outputs so a second in-flight transaction cannot select them.
-///
-/// Otherwise two transactions could spend the same output and the second would
-/// be rejected by the network.
-pub fn reserve(db: &mut Db, reservation_id: &str, output_ids: &[i64]) -> Result<()> {
-    let now = crate::wallet::now_secs();
-    let tx = db
-        .conn_mut()
-        .transaction()
-        .map_err(|e| db_err("beginReserve", e))?;
-    // Leaving the confirm screen is not reported, so expired reservations are cleared here.
-    tx.execute(
-        "DELETE FROM locked_outputs
-         WHERE (signed_at IS NULL AND locked_at <= ?1) OR signed_at <= ?2",
-        params![
-            now - RESERVATION_TTL_SECS,
-            now - SIGNED_RESERVATION_TTL_SECS
-        ],
-    )
-    .map_err(|e| db_err("expireReservations", e))?;
-    for id in output_ids {
-        // Fails on primary key conflict if already reserved: better to fail
-        // here than build a transaction that will be rejected.
-        tx.execute(
-            "INSERT INTO locked_outputs (output_id, reservation_id, locked_at) VALUES (?1, ?2, ?3)",
-            params![id, reservation_id, now],
-        )
-        .map_err(|e| {
-            db_err(
-                "reserveOutput",
-                format!("output {id} may be reserved by another pending send: {e}"),
-            )
-        })?;
-    }
-    tx.commit().map_err(|e| db_err("commitReserve", e))
-}
-
-/// Atomically claim every live input before the host obtains a spend signature.
-pub fn mark_signed(db: &mut Db, reservation_id: &str, expected_inputs: u32) -> Result<usize> {
-    let stale = || {
-        RuntimeError::with(
-            ErrorCode::InvalidRequest,
-            json!({"reason": "staleReservation"}),
-        )
-    };
-    if expected_inputs == 0 || expected_inputs > 1024 {
-        return Err(stale());
-    }
-    let tx = db
-        .conn_mut()
-        .transaction()
-        .map_err(|e| db_err("beginSignReservation", e))?;
-    let count: u32 = tx
-        .query_row(
-            "SELECT count(*) FROM locked_outputs WHERE reservation_id = ?1",
-            [reservation_id],
-            |row| row.get(0),
-        )
-        .map_err(|e| db_err("readSignReservation", e))?;
-    if count != expected_inputs {
-        return Err(stale());
-    }
-    let marked = tx
-        .execute(
-            "UPDATE locked_outputs SET signed_at = ?2
-         WHERE reservation_id = ?1 AND signed_at IS NULL AND locked_at > ?3
-           AND output_id IN (SELECT id FROM outputs WHERE spent_at_height IS NULL)",
-            params![
-                reservation_id,
-                crate::wallet::now_secs(),
-                reservation_cutoff()
-            ],
-        )
-        .map_err(|e| db_err("markReservationSigned", e))?;
-    if u32::try_from(marked).map_err(|_| stale())? != expected_inputs {
-        return Err(stale());
-    }
-    tx.commit()
-        .map_err(|e| db_err("commitSignReservation", e))?;
-    Ok(marked)
-}
-
-/// Releases all unsigned reservations of this identity.
-///
-/// Going back from the confirm screen is not reported; a new prepare means the
-/// earlier unsigned ones are abandoned. Signed ones stay: they may be broadcasting.
-fn release_unsigned(db: &Db, identity_id: i64) -> Result<usize> {
-    db.conn()
-        .execute(
-            "DELETE FROM locked_outputs
-             WHERE signed_at IS NULL
-               AND output_id IN (SELECT id FROM outputs WHERE identity_id = ?1)",
-            [identity_id],
-        )
-        .map_err(|e| db_err("releaseUnsignedReservations", e))
-}
-
-/// Releases a reservation (user cancelled or construction failed).
-pub fn release(db: &Db, reservation_id: &str) -> Result<usize> {
-    let n = db
-        .conn()
-        .execute(
-            "DELETE FROM locked_outputs WHERE reservation_id = ?1",
-            [reservation_id],
-        )
-        .map_err(|e| db_err("release", e))?;
-    Ok(n)
-}
-
 /// A constructed transaction awaiting signature.
 pub struct Prepared {
     pub signable: SignableTransaction,
@@ -1019,117 +887,6 @@ mod tests {
         assert!(select_inputs(&db, id, 105, 1_000).is_ok());
     }
 
-    #[test]
-    fn an_expired_reservation_gives_way_to_a_new_one() {
-        let (mut db, id) = db_with_identity();
-        let a = add_output(&db, id, 500, 10, true);
-        db.conn()
-            .execute(
-                "INSERT INTO locked_outputs (output_id, reservation_id, locked_at) VALUES (?1, 'old', ?2)",
-                params![a, reservation_cutoff() - 1],
-            )
-            .unwrap();
-        reserve(&mut db, "new", &[a]).expect("expired reservation must not block");
-    }
-
-    /// A new prepare releases unsigned reservations; signed ones may be broadcasting and stay.
-    #[test]
-    fn a_new_send_releases_only_unsigned_reservations() {
-        let (mut db, id) = db_with_identity();
-        let abandoned = add_output(&db, id, 500, 10, true);
-        let signed = add_output(&db, id, 400, 11, true);
-        reserve(&mut db, "abandoned", &[abandoned]).unwrap();
-        reserve(&mut db, "signed", &[signed]).unwrap();
-        mark_signed(&mut db, "signed", 1).unwrap();
-
-        assert_eq!(release_unsigned(&db, id).unwrap(), 1);
-
-        let left: Vec<String> = db
-            .conn()
-            .prepare("SELECT reservation_id FROM locked_outputs")
-            .unwrap()
-            .query_map([], |r| r.get(0))
-            .unwrap()
-            .collect::<rusqlite::Result<_>>()
-            .unwrap();
-        assert_eq!(left, vec!["signed".to_string()]);
-    }
-
-    #[test]
-    fn signing_rejects_expired_partial_or_replayed_reservations_atomically() {
-        let (mut db, id) = db_with_identity();
-        let first = add_output(&db, id, 500, 10, true);
-        let second = add_output(&db, id, 400, 11, true);
-        reserve(&mut db, "review", &[first, second]).unwrap();
-        assert!(mark_signed(&mut db, "review", 1).is_err());
-        db.conn()
-            .execute(
-                "UPDATE locked_outputs SET locked_at = ?1 WHERE output_id = ?2",
-                params![reservation_cutoff(), second],
-            )
-            .unwrap();
-        assert!(mark_signed(&mut db, "review", 2).is_err());
-        let marked: i64 = db
-            .conn()
-            .query_row(
-                "SELECT count(*) FROM locked_outputs WHERE signed_at IS NOT NULL",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(marked, 0, "partial claims must roll back");
-        db.conn()
-            .execute("DELETE FROM locked_outputs WHERE output_id = ?1", [second])
-            .unwrap();
-        assert!(mark_signed(&mut db, "review", 2).is_err());
-        mark_signed(&mut db, "review", 1).unwrap();
-        assert!(mark_signed(&mut db, "review", 1).is_err());
-    }
-
-    #[test]
-    fn signed_reservations_that_never_broadcast_expire_after_a_day() {
-        let (mut db, id) = db_with_identity();
-        let input = add_output(&db, id, 500, 10, true);
-        reserve(&mut db, "signed", &[input]).unwrap();
-        mark_signed(&mut db, "signed", 1).unwrap();
-        db.conn()
-            .execute(
-                "UPDATE locked_outputs SET locked_at = ?1, signed_at = ?1",
-                [signed_reservation_cutoff() - 1],
-            )
-            .unwrap();
-        assert_eq!(query::spendable_rows(&db, id, 100).unwrap().len(), 1);
-        assert_eq!(
-            query::balance(&db, id, Some(100))
-                .unwrap()
-                .locked_by_reservation_atomic,
-            0
-        );
-        reserve(&mut db, "replacement", &[input]).expect("expired signed reservation gives way");
-    }
-
-    #[test]
-    fn signed_reservations_stay_unspendable_after_the_unsigned_ttl() {
-        let (mut db, id) = db_with_identity();
-        let input = add_output(&db, id, 500, 10, true);
-        reserve(&mut db, "signed", &[input]).unwrap();
-        mark_signed(&mut db, "signed", 1).unwrap();
-        db.conn()
-            .execute(
-                "UPDATE locked_outputs SET locked_at = ?1",
-                [reservation_cutoff() - 1],
-            )
-            .unwrap();
-        assert!(query::spendable_rows(&db, id, 100).unwrap().is_empty());
-        assert_eq!(
-            query::balance(&db, id, Some(100))
-                .unwrap()
-                .locked_by_reservation_atomic,
-            500
-        );
-        assert!(reserve(&mut db, "replacement", &[input]).is_err());
-    }
-
     /// As wallet2: pending change counts in the total (locked), not unlocked, until the send fails.
     #[test]
     fn pending_change_counts_in_total_until_the_send_fails() {
@@ -1150,7 +907,6 @@ mod tests {
             id,
             &txid,
             &[key_image],
-            "r",
             900,
             SentAmounts {
                 outgoing_atomic: Some(200),
@@ -1170,9 +926,9 @@ mod tests {
         assert_eq!(b.total_atomic, 500);
     }
 
-    /// Broadcast marks inputs spent by the transaction's key images, even if the reservation is gone.
+    /// Broadcast marks inputs spent by the transaction's key images.
     #[test]
-    fn a_broadcast_marks_its_inputs_by_key_image_without_a_reservation() {
+    fn a_broadcast_marks_its_inputs_by_key_image() {
         let (db, id) = db_with_identity();
         let a = add_output(&db, id, 500, 10, true);
         let untouched = add_output(&db, id, 400, 11, true);
@@ -1190,7 +946,6 @@ mod tests {
             id,
             &txid,
             &[key_image],
-            "gone",
             900,
             SentAmounts {
                 outgoing_atomic: Some(123),
@@ -1222,9 +977,8 @@ mod tests {
     /// Recorded before broadcast: a rejection undoes only a fresh record; a retry is not fresh.
     #[test]
     fn a_rejected_first_broadcast_is_undone_but_a_retry_is_not_fresh() {
-        let (mut db, id) = db_with_identity();
+        let (db, id) = db_with_identity();
         let a = add_output(&db, id, 500, 10, true);
-        reserve(&mut db, "r", &[a]).unwrap();
         let key_image: Vec<u8> = db
             .conn()
             .query_row("SELECT key_image FROM outputs WHERE id = ?1", [a], |r| {
@@ -1234,16 +988,7 @@ mod tests {
         let key_image = <[u8; 32]>::try_from(key_image.as_slice()).unwrap();
         let txid = [0x66u8; 32];
         let record = |db: &Db| {
-            record_broadcast(
-                db,
-                id,
-                &txid,
-                &[key_image],
-                "r",
-                900,
-                SentAmounts::default(),
-            )
-            .unwrap()
+            record_broadcast(db, id, &txid, &[key_image], 900, SentAmounts::default()).unwrap()
         };
 
         assert!(record(&db), "first record is fresh");
@@ -1268,7 +1013,7 @@ mod tests {
     }
 
     /// A send passed with the wrong account records nothing and leaves the
-    /// source account's reservation and inputs as they were.
+    /// source account's inputs as they were.
     #[test]
     fn a_broadcast_under_another_account_is_refused_before_sending() {
         let (mut db, source) = db_with_identity();
@@ -1276,7 +1021,6 @@ mod tests {
         view[0] = 10;
         let other = db.add_identity("acct-2", &spend, &view, 100).unwrap().id;
         let a = add_output(&db, source, 500, 10, true);
-        reserve(&mut db, "r", &[a]).unwrap();
         let key_image: Vec<u8> = db
             .conn()
             .query_row("SELECT key_image FROM outputs WHERE id = ?1", [a], |r| {
@@ -1290,7 +1034,6 @@ mod tests {
                 identity,
                 txid,
                 &[key_image],
-                "r",
                 900,
                 SentAmounts::default(),
             )
@@ -1303,11 +1046,13 @@ mod tests {
             .query_row("SELECT count(*) FROM transactions", [], |r| r.get(0))
             .unwrap();
         assert_eq!(rows, 0);
-        let locked: i64 = db
-            .conn()
-            .query_row("SELECT count(*) FROM locked_outputs", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(locked, 1, "the source reservation is kept");
+        assert_eq!(
+            crate::query::spendable_rows(&db, source, 10_000)
+                .unwrap()
+                .len(),
+            1,
+            "the source inputs stay spendable"
+        );
 
         assert!(record(&db, source, &[0x66; 32]).unwrap());
         let err = record(&db, source, &[0x77; 32]).unwrap_err();
@@ -1321,21 +1066,55 @@ mod tests {
         );
     }
 
-    /// An output cannot be held by two reservations at once.
+    /// A send failed by the pending check releases its inputs; a new
+    /// transaction over the same inputs must be recordable again.
     #[test]
-    fn an_output_cannot_be_reserved_twice() {
-        let (mut db, id) = db_with_identity();
-        let a = add_output(&db, id, 5_000, 10, true);
-        reserve(&mut db, "r1", &[a]).unwrap();
-        assert!(reserve(&mut db, "r2", &[a]).is_err(), "already reserved");
-        assert_eq!(release(&db, "r1").unwrap(), 1);
-        reserve(&mut db, "r2", &[a]).expect("can reserve again after release");
-    }
+    fn an_input_released_by_a_failed_send_can_be_spent_again() {
+        let (db, id) = db_with_identity();
+        let a = add_output(&db, id, 500, 10, true);
+        let key_image: Vec<u8> = db
+            .conn()
+            .query_row("SELECT key_image FROM outputs WHERE id = ?1", [a], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        let key_image = <[u8; 32]>::try_from(key_image.as_slice()).unwrap();
+        let failed = [0x66u8; 32];
+        let retry = [0x77u8; 32];
+        let record = |txid: &[u8; 32]| {
+            record_broadcast(&db, id, txid, &[key_image], 900, SentAmounts::default())
+        };
 
-    #[test]
-    fn releasing_an_unknown_reservation_is_a_no_op() {
-        let (db, _) = db_with_identity();
-        assert_eq!(release(&db, "nope").unwrap(), 0);
+        assert!(record(&failed).unwrap());
+        crate::pool::mark_failed(&db, id, &failed).unwrap();
+        assert_eq!(
+            crate::query::spendable_rows(&db, id, 10_000).unwrap().len(),
+            1,
+            "the failed send released its input"
+        );
+
+        assert!(record(&retry).expect("a released input is not already spent"));
+        let (spent_at, spent_in): (Option<i64>, Option<Vec<u8>>) = db
+            .conn()
+            .query_row(
+                "SELECT spent_at_height, spent_in_txid FROM outputs WHERE id = ?1",
+                [a],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((spent_at, spent_in), (Some(900), Some(retry.to_vec())));
+        assert!(crate::query::spendable_rows(&db, id, 10_000)
+            .unwrap()
+            .is_empty());
+        let failed_kept: i64 = db
+            .conn()
+            .query_row(
+                "SELECT failed FROM transactions WHERE txid = ?1",
+                [failed.as_slice()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(failed_kept, 1, "the failed send stays in history");
     }
 
     #[test]
@@ -1437,8 +1216,8 @@ pub fn parse_priority(name: &str) -> Result<monero_wallet::interface::FeePriorit
     })
 }
 
-/// Constructs a transaction to sign and reserves its inputs. No private spend
-/// key needed; does not broadcast.
+/// Constructs a transaction to sign. No private spend key needed; does not
+/// broadcast.
 ///
 /// ## `signableHex` contains the private view key
 ///
@@ -1458,12 +1237,11 @@ pub fn parse_priority(name: &str) -> Result<monero_wallet::interface::FeePriorit
 /// signing; `amountAtomic` is what the recipient actually receives under max-send.
 #[allow(clippy::too_many_arguments)]
 pub async fn prepare_for_host(
-    db: &mut Db,
+    db: &Db,
     daemon: &crate::network::Daemon,
     identity_id: i64,
     recipients: &[(&str, &str)],
     max_send: bool,
-    reservation_id: &str,
     chain_tip: u64,
     priority: monero_wallet::interface::FeePriority,
 ) -> Result<Value> {
@@ -1489,9 +1267,6 @@ pub async fn prepare_for_host(
     // fork, not by the node; a wrong type is rejected network-wide.
     let rct_type = monero_wallet::ringct::RctType::ClsagBulletproofPlus;
     let mut rng = rand_core::OsRng;
-
-    // Before selection, so outputs held by abandoned reservations can be selected.
-    release_unsigned(db, identity_id)?;
     let decoys = CachedDecoys::new(daemon);
 
     let prepared = if max_send {
@@ -1530,11 +1305,7 @@ pub async fn prepare_for_host(
         .saturating_sub(prepared.amount_atomic)
         .saturating_sub(prepared.fee_atomic);
 
-    // Reserve last so an earlier failure leaves no outputs locked.
-    reserve(db, reservation_id, &prepared.output_ids)?;
-
     Ok(json!({
-        "reservationId": reservation_id,
         "signableHex": hex::encode(prepared.signable.serialize()),
         "feeAtomic": prepared.fee_atomic.to_string(),
         "amountAtomic": prepared.amount_atomic.to_string(),
@@ -1566,8 +1337,8 @@ pub struct SentAmounts {
     pub change_atomic: Option<u64>,
 }
 
-/// Pre-broadcast bookkeeping in one transaction: mark inputs spent, record a
-/// pending send, release the reservation.
+/// Pre-broadcast bookkeeping in one transaction: mark inputs spent and record a
+/// pending send.
 ///
 /// Returns whether the record is fresh. An existing record means the same
 /// transaction was sent before (a retry), which the node may have accepted.
@@ -1579,7 +1350,6 @@ fn record_broadcast(
     identity_id: i64,
     txid: &[u8; 32],
     key_images: &[[u8; 32]],
-    reservation_id: &str,
     chain_tip: u64,
     amounts: SentAmounts,
 ) -> Result<bool> {
@@ -1629,19 +1399,15 @@ fn record_broadcast(
             ],
         )
         .map_err(|e| db_err("recordOutgoing", e))?;
-    tx_db
-        .execute(
-            "DELETE FROM locked_outputs WHERE reservation_id = ?1
-               AND output_id IN (SELECT id FROM outputs WHERE identity_id = ?2)",
-            params![reservation_id, identity_id],
-        )
-        .map_err(|e| db_err("releaseAfterBroadcast", e))?;
     tx_db.commit().map_err(|e| db_err("commitRecordSend", e))?;
     Ok(!existed)
 }
 
 /// Every input must be an output of `identity_id` not spent by another transaction.
-fn check_inputs_owned(
+///
+/// A failed send releases its inputs (`spent_at_height` cleared) but keeps
+/// `spent_in_txid` for its history; such an input is spendable again.
+pub(crate) fn check_inputs_owned(
     db: &rusqlite::Connection,
     identity_id: i64,
     txid: &[u8; 32],
@@ -1656,7 +1422,8 @@ fn check_inputs_owned(
     for key_image in key_images {
         let spent_in: Option<Option<Vec<u8>>> = db
             .query_row(
-                "SELECT spent_in_txid FROM outputs WHERE identity_id = ?1 AND key_image = ?2",
+                "SELECT CASE WHEN spent_at_height IS NULL THEN NULL ELSE spent_in_txid END
+                 FROM outputs WHERE identity_id = ?1 AND key_image = ?2",
                 params![identity_id, key_image.as_slice()],
                 |r| r.get(0),
             )
@@ -1708,7 +1475,6 @@ pub async fn broadcast_signed(
     daemon: &crate::network::Daemon,
     identity_id: i64,
     raw_hex: &str,
-    reservation_id: &str,
     chain_tip: u64,
     amounts: SentAmounts,
 ) -> Result<Value> {
@@ -1723,8 +1489,7 @@ pub async fn broadcast_signed(
         .map_err(|e| db_err("parseSignedTransaction", e))?;
     let txid = tx.hash();
 
-    // Mark by the transaction's own key images, not the reservation, which may
-    // have expired or been released before the same signature is resent.
+    // Mark by the transaction's own key images.
     let key_images: Vec<[u8; 32]> = tx
         .prefix()
         .inputs
@@ -1737,15 +1502,7 @@ pub async fn broadcast_signed(
         })
         .collect();
     // If recording fails, do not send; nothing has happened yet.
-    let fresh = record_broadcast(
-        db,
-        identity_id,
-        &txid,
-        &key_images,
-        reservation_id,
-        chain_tip,
-        amounts,
-    )?;
+    let fresh = record_broadcast(db, identity_id, &txid, &key_images, chain_tip, amounts)?;
     // Same for a record that may not be durable: a restart could make its
     // inputs selectable again while the transaction is in flight.
     crate::storage::durability_barrier().await?;

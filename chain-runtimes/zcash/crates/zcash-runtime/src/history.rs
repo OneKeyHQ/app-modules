@@ -89,18 +89,15 @@ const HISTORY_ROW_SELECT: &str = "SELECT
              ORDER BY activity.pool
            ) pool_delta
          ), '') AS per_pool_balance_deltas,
-         tx_state.broadcast_state,
-         COALESCE(
-           tx_state.recipient,
-           (SELECT output.to_address
-            FROM v_tx_outputs output
-            WHERE output.txid = tx_summary.txid
-              AND output.from_account_uuid = tx_summary.account_uuid
-              AND (output.to_account_uuid IS NULL
-                   OR output.to_account_uuid <> tx_summary.account_uuid)
-              AND COALESCE(output.is_change, 0) = 0
-            LIMIT 1)
-         ) AS recipient,
+         rejected.txid IS NOT NULL AS rejected,
+         (SELECT output.to_address
+          FROM v_tx_outputs output
+          WHERE output.txid = tx_summary.txid
+            AND output.from_account_uuid = tx_summary.account_uuid
+            AND (output.to_account_uuid IS NULL
+                 OR output.to_account_uuid <> tx_summary.account_uuid)
+            AND COALESCE(output.is_change, 0) = 0
+          LIMIT 1) AS recipient,
          (SELECT COUNT(*)
             FROM v_tx_outputs output
            WHERE output.txid = tx_summary.txid
@@ -111,9 +108,8 @@ const HISTORY_ROW_SELECT: &str = "SELECT
          ) AS external_output_count
      FROM v_transactions tx_summary
      JOIN transactions chain_tx ON chain_tx.txid = tx_summary.txid
-     LEFT JOIN ext_onekey_tx_state tx_state
-       ON tx_state.txid = tx_summary.txid
-      AND tx_state.account_uuid = tx_summary.account_uuid";
+     LEFT JOIN ext_onekey_tx_state rejected
+       ON rejected.txid = tx_summary.txid";
 
 const NON_SAPLING_ACTIVITY: &str = "(
   EXISTS (
@@ -242,7 +238,8 @@ fn row_to_json(row: &rusqlite::Row<'_>) -> rusqlite::Result<serde_json::Value> {
         // Signed account-owned value change for each exact pool. This cannot be
         // recovered from the aggregate row after an Orchard-to-Ironwood move.
         "perPoolBalanceDeltaZat": per_pool_balance_delta_zat,
-        "broadcastState": row.get::<_, Option<String>>(15)?,
+        // The trusted node definitively rejected it; it can never be mined.
+        "rejected": row.get::<_, bool>(15)?,
         "recipient": row.get::<_, Option<String>>(16)?,
         // Outputs sent to addresses outside this account. Zero with spends means
         // an internal transfer, whether or not the fee is known; inferring from
@@ -591,7 +588,7 @@ mod tests {
             let rng = ChaCha20Rng::from_seed([7; 32]);
             let mut db = WalletDb::from_connection(&mut conn, Network::TestNetwork, HostClock, rng);
             WalletMigrator::new()
-                .with_external_migrations(vec![Box::new(crate::tx_state::Migration)])
+                .with_external_migrations(crate::tx_state::migrations())
                 .init_or_migrate(&mut db)
                 .unwrap();
         }
@@ -631,10 +628,6 @@ mod tests {
              );
              CREATE TABLE ext_onekey_tx_state (
                txid BLOB PRIMARY KEY NOT NULL,
-               account_uuid BLOB NOT NULL,
-               reservation_id TEXT UNIQUE,
-               recipient TEXT,
-               broadcast_state TEXT NOT NULL,
                rejection_code INTEGER,
                rejection_reason TEXT
              );

@@ -288,11 +288,13 @@ pub async fn step(
     }
     let max_blocks = max_blocks.min(MAX_BLOCKS_PER_CALL);
 
-    let sends_failed = crate::pool::check_pending(db, daemon, identity_id).await?;
+    let (sends_failed, sends_restored) =
+        crate::pool::check_pending(db, daemon, identity_id).await?;
 
     let Some((start, end)) = next_range(db, identity_id)? else {
         let mut v = progress(db, identity_id, &ScanOutcome::default(), true)?;
         v["sendsFailed"] = json!(sends_failed);
+        v["sendsRestored"] = json!(sends_restored);
         return Ok(v);
     };
 
@@ -354,6 +356,7 @@ pub async fn step(
     let done = next_range(db, identity_id)?.is_none();
     let mut v = progress(db, identity_id, &outcome, done)?;
     v["sendsFailed"] = json!(sends_failed);
+    v["sendsRestored"] = json!(sends_restored);
     Ok(v)
 }
 
@@ -407,29 +410,30 @@ pub fn peek(db: &Db, identity_id: i64) -> Result<Value> {
 
 /// Reorg recovery: rewind to `height` and requeue everything above it.
 pub fn rewind_and_requeue(db: &mut Db, identity_id: i64, height: u64, tip: u64) -> Result<Value> {
-    scan::rewind_to(db, identity_id, height, tip)?;
+    let tx = db
+        .conn_mut()
+        .transaction()
+        .map_err(|e| db_err("beginRewindAndRequeue", e))?;
+    scan::rewind_in_transaction(&tx, identity_id, height, tip)?;
     // Rewind progress too, or the next step resumes from a discarded height and the
     // gap is never rescanned. Keep NULL if nothing was scanned: 0 would make the next
     // `update_chain_tip` queue from genesis.
-    db.conn()
-        .execute(
-            "UPDATE identities SET scanned_to_height = min(scanned_to_height, ?2)
+    tx.execute(
+        "UPDATE identities SET scanned_to_height = min(scanned_to_height, ?2)
              WHERE id = ?1 AND scanned_to_height IS NOT NULL",
-            params![identity_id, height as i64],
-        )
-        .map_err(|e| db_err("rewindScannedTo", e))?;
+        params![identity_id, height as i64],
+    )
+    .map_err(|e| db_err("rewindScannedTo", e))?;
     // Rescan before the birthday (user picked an earlier date): move the birthday
     // back so progress starts there.
-    db.conn()
-        .execute(
-            "UPDATE identities SET birthday_height = ?2 WHERE id = ?1 AND birthday_height > ?2",
-            params![identity_id, (height + 1) as i64],
-        )
-        .map_err(|e| db_err("rewindBirthday", e))?;
+    tx.execute(
+        "UPDATE identities SET birthday_height = ?2 WHERE id = ?1 AND birthday_height > ?2",
+        params![identity_id, (height + 1) as i64],
+    )
+    .map_err(|e| db_err("rewindBirthday", e))?;
     // Requeue the rewound span here instead of relying on the host to call `update_chain_tip`.
     if tip > height {
-        db.conn()
-            .execute(
+        tx.execute(
                 "INSERT INTO scan_ranges (identity_id, start_height, end_height)
                  VALUES (?1, ?2, ?3)
                  ON CONFLICT (identity_id, start_height) DO UPDATE SET end_height = max(end_height, ?3)",
@@ -437,6 +441,8 @@ pub fn rewind_and_requeue(db: &mut Db, identity_id: i64, height: u64, tip: u64) 
             )
             .map_err(|e| db_err("requeueAfterRewind", e))?;
     }
+    tx.commit()
+        .map_err(|e| db_err("commitRewindAndRequeue", e))?;
     Ok(json!({ "rewoundTo": height, "requeuedTo": tip }))
 }
 
@@ -603,6 +609,39 @@ mod tests {
         rewind_and_requeue(&mut db, id, 180, 200).unwrap();
         let (start, end) = next_range(&db, id).unwrap().expect("rewind should requeue");
         assert_eq!((start, end), (181, 201));
+    }
+
+    #[test]
+    fn a_failed_rewind_cursor_write_keeps_the_scan_data_intact() {
+        let (mut db, id) = db_with_identity();
+        update_chain_tip(&mut db, id, 200).unwrap();
+        advance_scanned_to(&db, id, 200).unwrap();
+        consume_range(&mut db, id, 100, 200).unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO blocks (identity_id, height, hash, timestamp) VALUES (?1, 190, ?2, 1)",
+                params![id, [1u8; 32].as_slice()],
+            )
+            .unwrap();
+        db.conn()
+            .execute_batch(
+                "CREATE TRIGGER refuse_cursor BEFORE UPDATE OF scanned_to_height ON identities
+            BEGIN SELECT RAISE(ABORT, 'synthetic cursor failure'); END;",
+            )
+            .unwrap();
+
+        assert!(rewind_and_requeue(&mut db, id, 180, 200).is_err());
+        let blocks: i64 = db
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM blocks WHERE identity_id = ?1",
+                [id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(blocks, 1);
+        assert_eq!(scanned_to_height(&db, id).unwrap(), Some(200));
+        assert!(next_range(&db, id).unwrap().is_none());
     }
 
     #[test]

@@ -63,7 +63,8 @@ chainTip() / chainTipAt(baseUrl)
 importAccountUfvk(name, ufvk, birthday, seedFingerprintHex?, accountIndex?)
                                          → UUID; the server's tree state must be
                                          exactly the block before birthday
-removeAccount(uuid) / removeDeletedAccount(uuid)
+removeAccount(uuid)                     pending transactions do not block removal
+removeDeletedAccount(uuid)              compatibility alias for removeAccount
 accountByUfvk(ufvk) / listAccounts() / accountSyncStatus(uuid)
 accountBalance(uuid, trusted, untrusted, allowZeroConfShielding)
 
@@ -78,14 +79,12 @@ transactionDetails(uuid, txid) / transactionOutputs(uuid, txid)
 deleteWallet(dbName)                     deletes the local cache (rebuildable)
 storageStats()
 
-pcztQuote(...)                           quote only; builds nothing, locks nothing
-pcztCreate(...) → { pcztHex, reservationId }   build and lock the selected notes
-releaseReservation(id)                   user cancel; idempotent
-clearLockedOutputs(uuid)                 repair; refused while broadcasts are pending
+pcztQuote(...)                           quote only; builds nothing
+pcztCreate(...) → { pcztHex, feeZat }    build; locks no notes
 pcztProve(pczt)
 pcztCombine(original, signed)            merge an external signer's copy (signatures only)
-pcztSubmit(uuid, pczt, reservationId)    → { txid, broadcast }
-pendingBroadcastTxids(uuid) / broadcastRetryTxids(uuid)
+pcztSubmit(uuid, pczt)                   → { txid, broadcast }
+pendingBroadcastTxids(uuid)              stored, unmined, unexpired, not rejected
 broadcastTransaction(txid)               rebroadcast a stored transaction
 
 prewarmPczt(network, height)             build proving parameters; no wallet
@@ -117,28 +116,34 @@ keysCapabilities() / keysDependencyVersions()
 ### Sending
 
 ```
-runtime.pcztCreate()             build (selection, witness, anchor) and lock notes
+runtime.pcztCreate()             build (selection, witness, anchor)
 runtime.pcztProve()              zero-knowledge proofs (slow)
 keys.pcztSignWithAccountKeys()   check against the review, then sign
   or hardware: keys.pcztRedactForHardwareSigner() → device → runtime.pcztCombine()
-runtime.pcztSubmit()             combine check → extract → store → broadcast
+runtime.pcztSubmit()             extract → store → broadcast
 ```
 
 Prove before signing: the upstream Signer must be able to verify what the proofs
-cover. The signed bytes and the reservation→txid link are stored before broadcast,
-so every retry and crash recovery sends the same bytes. Broadcast outcomes:
+cover. Building locks no notes: the signed transaction is stored before broadcast
+and from then on holds its notes until mined or expired. Storing is refused when
+another stored, unexpired transaction already spends one of the same notes (two
+reviews opened at once). Sync rebroadcasts the stored bytes. Broadcast outcomes:
 
 - `accepted`: the node took it (`already known` / `in mempool` / `in blockchain`
   count as success).
-- `rejected`: only an explicit consensus-invalid or expired reply. The transaction
-  stays stored; its notes return after its expiry height.
+- `rejected`: only an explicit consensus-invalid or expired reply, recorded in
+  `ext_onekey_tx_state` (the only rows it holds). The transaction stays stored;
+  its notes return after its expiry height.
 - `unknown`: anything else. It stays pending and sync rebroadcasts the same bytes.
-  Never show it as failed or prompt a resend; check `pendingBroadcastTxids` before
-  building another payment.
+  Pending transactions do not block another payment or user-requested local-data
+  deletion, reset or rescan.
+
+Submission always extracts and stores the current signed transaction, including
+on retry. A shared nullifier identifies an input conflict; it never authorizes
+returning or broadcasting a different stored transaction in its place.
 
 `FINALIZE_OUTCOME_UNKNOWN` means persistence is unconfirmed: treat it like `unknown`
-and do not unlock notes or rebuild. A `reservationId` with a stored transaction
-cannot build again. Network calls time out after 30 seconds.
+and do not rebuild. Network calls time out after 30 seconds.
 
 Transparent-only sends (t-address or Unified Address recipients, no wallet or scan)
 use the stateless API in

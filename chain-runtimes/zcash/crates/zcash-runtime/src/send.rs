@@ -6,7 +6,7 @@
 //!   runtime.pcztCreate()          build (needs wallet state: note selection, witness, anchor)
 //!   runtime.pcztProve()           prove; pure computation, no private keys
 //!   keys.pcztSignWithAccountKeys() sign (needs the spending keys; in onekey-zcash-keys)
-//!   runtime.pcztSubmit()          extract, store, broadcast (retries resend the stored bytes)
+//!   runtime.pcztSubmit()          extract, store, broadcast (sync rebroadcasts the stored bytes)
 //! ```
 //!
 //! Proving precedes signing: the upstream Signer role needs enough information
@@ -25,10 +25,9 @@
 //! padding) all come from the host; this crate makes no product decisions and
 //! hides no defaults.
 
-use zcash_client_backend::data_api::locking::LockOwner;
 use zcash_client_backend::data_api::wallet::{
     create_pczt_from_proposal, extract_and_store_transaction_from_pczt,
-    input_selection::GreedyInputSelector, propose_transfer, unlock_proposal_inputs, LockRequest,
+    input_selection::GreedyInputSelector, propose_transfer,
 };
 use zcash_client_backend::data_api::WalletRead;
 use zcash_client_backend::fees::{zip317::SingleOutputChangeStrategy, DustOutputPolicy};
@@ -261,7 +260,6 @@ fn build_proposal(
     amount_zat: u64,
     memo: Option<&MemoBytes>,
     policy: SendPolicy,
-    lock: Option<zcash_client_backend::data_api::wallet::LockRequest>,
 ) -> Result<TransferProposal> {
     let params = *db.params();
     let account_id = account::parse_account_id(db, account_uuid)?;
@@ -324,19 +322,7 @@ fn build_proposal(
                 json!({ "stage": "spendSource", "reason": "required" }),
             )
         })?;
-        let mut base = SpendPolicy::shielded_pools([pool]);
-        // A retry under the same reservation id must reselect what that id
-        // already holds. The default policy excludes every lock, the caller's
-        // own included, so the retry would lock a second set and leave the
-        // first frozen until expiry. Only this owner's locks are admitted.
-        if let Some(lock) = &lock {
-            use zcash_client_backend::data_api::locking::LockedInputPolicy;
-            use zcash_client_backend::data_api::wallet::input_selection::NonEmptyBTreeSet;
-            base = base.with_locked_input_policy(LockedInputPolicy::PreferLocked(
-                NonEmptyBTreeSet::singleton(lock.owner()),
-            ));
-        }
-        base
+        SpendPolicy::shielded_pools([pool])
     };
 
     let selector = GreedyInputSelector::<Db>::new();
@@ -358,7 +344,7 @@ fn build_proposal(
             request,
             confirmations,
             &spend_policy,
-            lock,
+            None,
             None,
         );
 
@@ -376,7 +362,7 @@ pub fn quote(
     memo: Option<&MemoBytes>,
     policy: SendPolicy,
 ) -> Result<String> {
-    let proposal = build_proposal(db, account_uuid, to_address, amount_zat, memo, policy, None)?;
+    let proposal = build_proposal(db, account_uuid, to_address, amount_zat, memo, policy)?;
     let fee: u64 = proposal
         .steps()
         .iter()
@@ -390,206 +376,12 @@ pub fn quote(
     .to_string())
 }
 
-// ── Note locking (the host contract's "reservation") ────────────────────
-//
-// Notes behave like UTXOs: spent whole, revealing a nullifier; a second
-// transaction spending the same note is rejected by the node.
-//
-// Between selection and broadcast (select -> review -> password -> sign -> broadcast)
-// a second send or shield would reselect the same notes. Locking marks them as
-// held by one operation so other selections skip them; cancel releases them.
-// Upstream locks also expire by block height, covering an app crash.
-//
-// The proposal stays in memory: `unlock_proposal_inputs` needs it to know which notes to unlock.
-thread_local! {
-    static RESERVATIONS: std::cell::RefCell<
-        std::collections::HashMap<String, (String, TransferProposal, Vec<u8>)>,
-    > = std::cell::RefCell::new(std::collections::HashMap::new());
-}
-
-fn hex32(bytes: &[u8; 32]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-fn parse_owner(reservation_id: &str) -> Result<LockOwner> {
-    let bad = || {
-        RuntimeError::with(
-            ErrorCode::InvalidReservationId,
-            json!({ "value": reservation_id }),
-        )
-    };
-    if reservation_id.len() != 64 {
-        return Err(bad());
-    }
-    let mut out = [0u8; 32];
-    for (i, chunk) in reservation_id.as_bytes().chunks(2).enumerate() {
-        let hex = std::str::from_utf8(chunk).map_err(|_| bad())?;
-        out[i] = u8::from_str_radix(hex, 16).map_err(|_| bad())?;
-    }
-    Ok(LockOwner::new(out))
-}
-
-/// Releases the notes held by a reservation.
+/// Builds an unsigned transfer PCZT for review. Returns `(pcztBytes, feeZat)`.
 ///
-/// Idempotent: an unknown id (sent, already released, or never locked) returns
-/// `false`, not an error.
-pub fn release_reservation(db: &mut Db, reservation_id: &str) -> Result<bool> {
-    let owner = parse_owner(reservation_id)?;
-
-    // Finalization is committed in the wallet database before the host can
-    // observe the txid. A durability/bridge failure can therefore leave the
-    // host holding a reservation id for a transaction that already spends the
-    // selected notes. In that state release must only discard the in-memory
-    // proposal; unlocking its inputs would make spent notes selectable again.
-    let finalized_txid = db.transactionally_with_extension(|_wallet, ext| {
-        tx_state::existing_txid_for_reservation(ext, reservation_id, None)
-    })?;
-    if finalized_txid.is_some() {
-        forget_reservation(reservation_id);
-        return Ok(false);
-    }
-
-    if let Some((account_uuid, proposal, approved_pczt)) =
-        RESERVATIONS.with(|r| r.borrow_mut().remove(reservation_id))
-    {
-        if let Err(e) = unlock_proposal_inputs(db, &proposal, owner) {
-            RESERVATIONS.with(|r| {
-                r.borrow_mut().insert(
-                    reservation_id.to_owned(),
-                    (account_uuid, proposal, approved_pczt),
-                );
-            });
-            return Err(build_err("unlockProposalInputs", format!("{e:?}")));
-        }
-        // Anything else this owner still holds (a set locked before a retry
-        // replaced the in-memory proposal) goes too.
-        release_persisted_reservation(db, reservation_id, owner)?;
-        return Ok(true);
-    }
-    release_persisted_reservation(db, reservation_id, owner)
-}
-
-// The proposal map is process-local, but the lock owner survives in SQLite.
-// Read the owner's exact output references and use the upstream lock API;
-// never clear another proposal's locks or write wallet-owned tables directly.
-fn release_persisted_reservation(
-    db: &mut Db,
-    reservation_id: &str,
-    owner: LockOwner,
-) -> Result<bool> {
-    use rusqlite::OptionalExtension;
-    use zcash_client_backend::{data_api::OutputLockStore, wallet::OutputRef};
-    use zcash_primitives::transaction::TxId;
-    use zcash_protocol::PoolType;
-
-    db.transactionally_with_extension(|wallet, ext| {
-        if tx_state::existing_txid_for_reservation(ext, reservation_id, None)?.is_some() {
-            return Ok(false);
-        }
-        let mut released = false;
-        for (table, index, pool) in [
-            (
-                "sapling_received_notes",
-                "output_index",
-                PoolType::Shielded(ShieldedPool::Sapling),
-            ),
-            (
-                "orchard_received_notes",
-                "action_index",
-                PoolType::Shielded(ShieldedPool::Orchard),
-            ),
-            (
-                "ironwood_received_notes",
-                "action_index",
-                PoolType::Shielded(ShieldedPool::Ironwood),
-            ),
-            (
-                "transparent_received_outputs",
-                "output_index",
-                PoolType::Transparent,
-            ),
-        ] {
-            loop {
-                let output = ext
-                    .query_row(
-                        &format!(
-                            "SELECT tx.txid, output.{index}
-                              FROM {table} output
-                              JOIN transactions tx ON tx.id_tx = output.transaction_id
-                              WHERE output.lock_owner = ?1 LIMIT 1"
-                        ),
-                        [owner.as_bytes()],
-                        |row| Ok((row.get::<_, [u8; 32]>(0)?, row.get::<_, u32>(1)?)),
-                    )
-                    .optional()
-                    .map_err(|e| build_err("readReservationLocks", e))?;
-                let Some((txid, output_index)) = output else {
-                    break;
-                };
-                let output = OutputRef::new(TxId::from_bytes(txid), pool, output_index);
-                if !wallet
-                    .unlock_output(&output, owner)
-                    .map_err(|e| build_err("releaseReservationLock", e))?
-                {
-                    return Err(build_err(
-                        "releaseReservationLock",
-                        "persisted lock was not released",
-                    ));
-                }
-                released = true;
-            }
-        }
-        Ok(released)
-    })
-}
-
-/// Drops the reservation record once the transaction is stored.
-///
-/// The stored spend now holds the notes; unlocking would make spent notes
-/// selectable again.
-pub fn forget_reservation(reservation_id: &str) {
-    RESERVATIONS.with(|r| r.borrow_mut().remove(reservation_id));
-}
-
-/// Drops in-memory proposals of a deleted account; its notes are gone with it.
-pub fn forget_account_reservations(account_uuid: &str) {
-    RESERVATIONS.with(|r| {
-        r.borrow_mut()
-            .retain(|_, (owner_uuid, _, _)| owner_uuid.as_str() != account_uuid)
-    });
-}
-
-/// A reservation maps to one transaction. Rebuilding under a stored id would lock
-/// a second set under the same owner while submit only replays the old one, so
-/// the new locks could be neither used nor released.
-fn refuse_submitted_reservation(db: &mut Db, reservation_id: &str) -> Result<()> {
-    let submitted = db.transactionally_with_extension(|_wallet, ext| {
-        tx_state::existing_txid_for_reservation(ext, reservation_id, None)
-    })?;
-    match submitted {
-        Some(txid) => Err(RuntimeError::with(
-            ErrorCode::InvalidReservationId,
-            json!({ "reason": "alreadySubmitted", "txid": txid }),
-        )),
-        None => Ok(()),
-    }
-}
-
-/// Builds an unsigned transfer PCZT and locks the selected notes.
-///
-/// Returns `{ pcztHex, reservationId }`. The caller must keep `reservationId`
-/// until submit (`pcztSubmit`) or cancel (`releaseReservation`). Locks also
-/// expire by block height, but only as a fallback.
-///
-/// `lock_for_blocks` is host-chosen and must outlast the transaction's expiry
-/// height. The lock covers build until storage; after that the stored
-/// transaction holds the notes.
-///
-/// `reservation_id` may be supplied (64 hex chars) so the caller can generate
-/// and persist it before building, and after a crash still release or relock
-/// its notes. Otherwise one is generated randomly.
-// The public binding keeps proposal policy explicit at the call boundary.
-#[allow(clippy::too_many_arguments)]
+/// Locks nothing: a review the user abandons, or an app killed on the review
+/// page, must leave the notes spendable. Notes are held from the moment
+/// `submit_signed_pczt` stores the signed transaction, until it is mined or
+/// expires.
 pub fn create_pczt(
     db: &mut Db,
     account_uuid: &str,
@@ -597,27 +389,10 @@ pub fn create_pczt(
     amount_zat: u64,
     memo: Option<&MemoBytes>,
     policy: SendPolicy,
-    lock_for_blocks: u32,
-    reservation_id: Option<&str>,
-) -> Result<(Vec<u8>, String, u64)> {
+) -> Result<(Vec<u8>, u64)> {
     let params = *db.params();
     let account_id = account::parse_account_id(db, account_uuid)?;
-
-    let owner = match reservation_id {
-        Some(id) => parse_owner(id)?,
-        None => LockOwner::random(&mut rand::rngs::OsRng),
-    };
-    let reservation_id = hex32(owner.as_bytes());
-    refuse_submitted_reservation(db, &reservation_id)?;
-    let proposal = build_proposal(
-        db,
-        account_uuid,
-        to_address,
-        amount_zat,
-        memo,
-        policy,
-        Some(LockRequest::new(owner, lock_for_blocks)),
-    )?;
+    let proposal = build_proposal(db, account_uuid, to_address, amount_zat, memo, policy)?;
     let fee_zat = proposal
         .steps()
         .iter()
@@ -625,51 +400,29 @@ pub fn create_pczt(
         .sum();
 
     // InputsErrT / ChangeErrT appear only in the Err branch and cannot be inferred.
-    // The notes are already locked: any failure below must unlock before returning,
-    // since the caller has no reservationId yet and could not release them.
-    let built = (|| -> Result<Vec<u8>> {
-        let pczt = create_pczt_from_proposal::<
-            Db,
-            _,
-            std::convert::Infallible,
-            _,
-            std::convert::Infallible,
-            _,
-        >(
-            db,
-            &params,
-            account_id,
-            OvkPolicy::Sender,
-            &proposal,
-            None,
-            policy.padding(),
-        )
-        .map_err(|e| build_err("createPczt", format!("{e:?}")))?;
-        let pczt = mark_wallet_outputs(db, account_id, pczt)?;
-
-        pczt.serialize().map_err(|e| {
-            RuntimeError::with(ErrorCode::PcztError, json!({ "stage": "serialize" }))
-                .detail(format!("{e:?}"))
-        })
-    })();
-
-    let bytes = match built {
-        Ok(b) => b,
-        Err(e) => {
-            // Best effort: keep the original error; lock expiry covers an unlock failure.
-            let _ = unlock_proposal_inputs(db, &proposal, owner);
-            return Err(e);
-        }
-    };
-
-    // Keep the proposal: unlocking needs it to know which notes to release.
-    RESERVATIONS.with(|r| {
-        r.borrow_mut().insert(
-            reservation_id.clone(),
-            (account_uuid.to_owned(), proposal, bytes.clone()),
-        );
-    });
-    Ok((bytes, reservation_id, fee_zat))
+    let pczt = create_pczt_from_proposal::<
+        Db,
+        _,
+        std::convert::Infallible,
+        _,
+        std::convert::Infallible,
+        _,
+    >(
+        db,
+        &params,
+        account_id,
+        OvkPolicy::Sender,
+        &proposal,
+        None,
+        policy.padding(),
+    )
+    .map_err(|e| build_err("createPczt", format!("{e:?}")))?;
+    let pczt = mark_wallet_outputs(db, account_id, pczt)?;
+    let bytes = pczt.serialize().map_err(|e| {
+        RuntimeError::with(ErrorCode::PcztError, json!({ "stage": "serialize" }))
+            .detail(format!("{e:?}"))
+    })?;
+    Ok((bytes, fee_zat))
 }
 
 /// Adds the account's ZIP 32 path to every Orchard/Ironwood output that pays
@@ -1021,13 +774,85 @@ pub fn prove_pczt_at_height(
     })
 }
 
-/// Stores the signed PCZT in the wallet; from now on this transaction holds its spent notes.
+/// Spend tables and their spent-output columns, one per pool.
+const SPEND_TABLES: [(&str, &str); 4] = [
+    ("sapling_received_note_spends", "sapling_received_note_id"),
+    ("orchard_received_note_spends", "orchard_received_note_id"),
+    ("ironwood_received_note_spends", "ironwood_received_note_id"),
+    (
+        "transparent_received_output_spends",
+        "transparent_received_output_id",
+    ),
+];
+
+/// Refuses a just-stored transaction that does not spend from `account_uuid`,
+/// or that spends an output another stored transaction still holds (mined, or
+/// unmined and unexpired). Reviews lock nothing, so two open at once can select
+/// the same notes; storing both would leave the second pending until expiry
+/// for a spend the node can never accept.
+fn assert_sole_spend(
+    ext: &zcash_client_sqlite::ExtensionTransaction<'_>,
+    txid: &str,
+    account_uuid: &str,
+) -> Result<()> {
+    let internal = crate::history::display_order_to_internal(txid)?;
+    let refuse = |reason: &str| {
+        RuntimeError::with(
+            ErrorCode::TransactionBuildError,
+            json!({ "stage": "storeSignedPczt", "reason": reason }),
+        )
+    };
+    let spends_from_account: bool = ext
+        .query_row(
+            "SELECT EXISTS(
+               SELECT 1 FROM v_transactions
+               WHERE txid = ?1 AND account_uuid = ?2 AND COALESCE(total_spent, 0) > 0
+             )",
+            rusqlite::params![internal, crate::history::uuid_blob(account_uuid)?],
+            |row| row.get(0),
+        )
+        .map_err(|e| build_err("readStoredSpend", e))?;
+    if !spends_from_account {
+        return Err(refuse("accountMismatch"));
+    }
+    for (table, output) in SPEND_TABLES {
+        let conflict: bool = ext
+            .query_row(
+                &format!(
+                    "SELECT EXISTS(
+                       SELECT 1
+                       FROM transactions own
+                       JOIN {table} own_spend ON own_spend.transaction_id = own.id_tx
+                       JOIN {table} other_spend
+                         ON other_spend.{output} = own_spend.{output}
+                        AND other_spend.transaction_id <> own.id_tx
+                       JOIN transactions other ON other.id_tx = other_spend.transaction_id
+                       WHERE own.txid = ?1
+                         AND (other.mined_height IS NOT NULL
+                              OR COALESCE(other.expiry_height, 0) = 0
+                              OR other.expiry_height
+                                 > COALESCE((SELECT MAX(height) FROM blocks), 0))
+                     )"
+                ),
+                [&internal],
+                |row| row.get(0),
+            )
+            .map_err(|e| build_err("readConflictingSpends", e))?;
+        if conflict {
+            return Err(refuse("inputsAlreadySpent"));
+        }
+    }
+    Ok(())
+}
+
+/// Stores the signed PCZT in the wallet; from now on this transaction holds its
+/// spent notes until it is mined or expires. Stored atomically with its checks:
+/// a refusal leaves the wallet unchanged.
 fn store_signed_pczt(
     db: &mut Db,
     account_uuid: &str,
     pczt: pczt::Pczt,
     orchard_vk: &orchard::circuit::VerifyingKey,
-    reservation_id: &str,
 ) -> Result<String> {
     db.transactionally_with_extension(|wallet, ext| {
         let txid =
@@ -1039,7 +864,7 @@ fn store_signed_pczt(
             )
             .map_err(|e| build_err("extractAndStore", format!("{e:?}")))?
             .to_string();
-        tx_state::insert_finalized(ext, &txid, account_uuid, reservation_id)?;
+        assert_sole_spend(ext, &txid, account_uuid)?;
         Ok(txid)
     })
 }
@@ -1049,7 +874,7 @@ pub enum SubmitOutcome {
     Accepted {
         txid: String,
     },
-    /// The trusted node rejected it; keep the durable record until chain expiry.
+    /// The trusted node rejected it; the stored transaction holds its notes until chain expiry.
     Rejected {
         txid: String,
         error: RuntimeError,
@@ -1070,14 +895,16 @@ fn first_submit_rejection(error: RuntimeError) -> std::result::Result<RuntimeErr
     }
 }
 
-fn record_submit_outcome(db: &mut Db, txid: String, result: Result<()>) -> SubmitOutcome {
+fn record_submit_outcome(
+    db: &mut Db,
+    account_uuid: &str,
+    txid: String,
+    result: Result<()>,
+) -> SubmitOutcome {
     match result {
-        Ok(()) => match tx_state::mark_accepted(db, &txid) {
-            Ok(()) => SubmitOutcome::Accepted { txid },
-            Err(error) => SubmitOutcome::Unknown { txid, error },
-        },
+        Ok(()) => SubmitOutcome::Accepted { txid },
         Err(error) => match first_submit_rejection(error) {
-            Ok(error) => match tx_state::mark_rejected(db, &txid, &error) {
+            Ok(error) => match tx_state::record_rejection(db, &txid, account_uuid, &error) {
                 Ok(()) => SubmitOutcome::Rejected { txid, error },
                 Err(error) => SubmitOutcome::Unknown { txid, error },
             },
@@ -1087,50 +914,17 @@ fn record_submit_outcome(db: &mut Db, txid: String, result: Result<()>) -> Submi
 }
 
 /// Persist the exact authorized transaction before any external broadcast.
-/// Retries and crash recovery always rebroadcast the stored bytes.
+///
+/// Submitting the same signed PCZT again stores the same txid again (upstream
+/// upserts it) and rebroadcasts; a transaction the node already rejected is
+/// not sent again.
 pub async fn submit_signed_pczt(
     db: &mut Db,
     client: &mut crate::network::LightClient,
     account_uuid: &str,
     pczt_bytes: &[u8],
-    reservation_id: &str,
 ) -> Result<SubmitOutcome> {
-    // Already stored by an earlier submit (host retried): rebroadcast it, never extract again.
-    let stored = db.transactionally_with_extension(|_wallet, ext| {
-        tx_state::existing_txid_for_reservation(ext, reservation_id, Some(account_uuid))
-    })?;
-    if let Some(txid) = stored {
-        if let Err(error) = tx_state::assert_broadcastable(db, &txid) {
-            return Ok(if error.code == ErrorCode::BroadcastRejected {
-                SubmitOutcome::Rejected { txid, error }
-            } else {
-                SubmitOutcome::Unknown { txid, error }
-            });
-        }
-        let raw = match raw_transaction(db, &txid) {
-            Ok(raw) => raw,
-            Err(error) => return Ok(SubmitOutcome::Unknown { txid, error }),
-        };
-        let result = crate::network::broadcast(client, raw).await;
-        return Ok(record_submit_outcome(db, txid, result));
-    }
-
-    let approved_pczt = RESERVATIONS
-        .with(|reservations| {
-            reservations
-                .borrow()
-                .get(reservation_id)
-                .filter(|(owner, _, _)| owner == account_uuid)
-                .map(|(_, _, pczt)| pczt.clone())
-        })
-        .ok_or_else(|| {
-            RuntimeError::with(
-                ErrorCode::InvalidReservationId,
-                json!({ "reason": "missingOrWrongAccount" }),
-            )
-        })?;
-    let bound_pczt = combine_pczt(&approved_pczt, pczt_bytes)?;
-    let pczt = pczt::Pczt::parse(&bound_pczt).map_err(|e| {
+    let pczt = pczt::Pczt::parse(pczt_bytes).map_err(|e| {
         RuntimeError::with(ErrorCode::PcztError, json!({ "stage": "parse" }))
             .detail(format!("{e:?}"))
     })?;
@@ -1143,23 +937,19 @@ pub async fn submit_signed_pczt(
         circuit_version_for_branch(&params, *pczt.global().consensus_branch_id(), chain_tip);
     let orchard_vk = crate::circuit_keys::verifying_key(version);
 
-    // This transaction atomically stores raw bytes and the reservation/txid association.
-    // If it fails, nothing has been sent and the caller can safely abandon the proposal.
-    let stored_txid = store_signed_pczt(db, account_uuid, pczt, orchard_vk, reservation_id)?;
-    forget_reservation(reservation_id);
-    // Extraction randomizes binding signatures. Broadcast only the stored bytes,
-    // so the first attempt and every recovery attempt use identical authorizations.
-    let raw = match raw_transaction(db, &stored_txid) {
+    let txid = store_signed_pczt(db, account_uuid, pczt, orchard_vk)?;
+    if let Err(error) = tx_state::assert_not_rejected(db, &txid) {
+        return Ok(match error.code {
+            ErrorCode::BroadcastRejected => SubmitOutcome::Rejected { txid, error },
+            _ => SubmitOutcome::Unknown { txid, error },
+        });
+    }
+    let raw = match raw_transaction(db, &txid) {
         Ok(raw) => raw,
-        Err(error) => {
-            return Ok(SubmitOutcome::Unknown {
-                txid: stored_txid,
-                error,
-            })
-        }
+        Err(error) => return Ok(SubmitOutcome::Unknown { txid, error }),
     };
     let result = crate::network::broadcast(client, raw).await;
-    Ok(record_submit_outcome(db, stored_txid, result))
+    Ok(record_submit_outcome(db, account_uuid, txid, result))
 }
 
 /// Reads a stored transaction's raw bytes from the wallet for rebroadcast.
@@ -1199,27 +989,8 @@ pub const PROVE_ORCHARD: bool = true;
 pub const PROVE_SAPLING: bool = false;
 pub const PROVE_IRONWOOD: bool = true;
 
-/// Clears all advisory locks for an account during explicit state repair.
-/// Normal cancellation uses the durable owner-scoped `release_reservation`,
-/// including after restart. This broader operation also clears other proposals
-/// and must not be used as an automatic cancellation fallback.
-pub fn clear_locked_outputs(db: &mut Db, account_uuid: &str) -> Result<u32> {
-    use zcash_client_backend::data_api::OutputLockStore;
-
-    let account_id = account::parse_account_id(db, account_uuid)?;
-    let n = db
-        .clear_locked_outputs(account_id)
-        .map_err(|e| build_err("clearLockedOutputs", e))?;
-
-    RESERVATIONS.with(|r| {
-        r.borrow_mut()
-            .retain(|_, (owner_account_uuid, _, _)| owner_account_uuid != account_uuid);
-    });
-    Ok(n as u32)
-}
-
 #[cfg(all(test, not(target_arch = "wasm32")))]
-mod reservation_recovery_tests {
+mod submit_state_tests {
     use super::*;
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
@@ -1236,30 +1007,44 @@ mod reservation_recovery_tests {
         )
     }
 
-    fn outcome_wallet(fail_update: bool) -> (Db, String) {
+    fn outcome_wallet(fail_write: bool) -> (Db, String) {
         let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch("CREATE TABLE ext_onekey_tx_state (txid BLOB PRIMARY KEY, account_uuid BLOB, reservation_id TEXT, broadcast_state TEXT, rejection_code INTEGER, rejection_reason TEXT);").unwrap();
-        conn.execute("INSERT INTO ext_onekey_tx_state (txid,account_uuid,reservation_id,broadcast_state) VALUES (?1,?2,'review','pending')", rusqlite::params![[1u8;32].as_slice(), uuid::Uuid::from_u128(1).as_bytes().as_slice()]).unwrap();
-        if fail_update {
-            conn.execute_batch("CREATE TRIGGER fail_state BEFORE UPDATE ON ext_onekey_tx_state BEGIN SELECT RAISE(ABORT,'synthetic write failure'); END;").unwrap();
+        conn.execute_batch(
+            "CREATE TABLE ext_onekey_tx_state (
+               txid BLOB PRIMARY KEY NOT NULL,
+               account_uuid BLOB NOT NULL,
+               rejection_code INTEGER,
+               rejection_reason TEXT
+             );",
+        )
+        .unwrap();
+        if fail_write {
+            conn.execute_batch(
+                "CREATE TRIGGER fail_state BEFORE INSERT ON ext_onekey_tx_state
+                 BEGIN SELECT RAISE(ABORT, 'synthetic write failure'); END;",
+            )
+            .unwrap();
         }
         (wallet(conn), "01".repeat(32))
     }
 
     #[test]
-    fn both_first_and_retried_broadcasts_record_definitive_node_outcomes() {
+    fn only_a_node_rejection_is_recorded() {
         let (mut db, txid) = outcome_wallet(false);
+        let account = uuid::Uuid::nil().to_string();
         assert!(matches!(
-            record_submit_outcome(&mut db, txid.clone(), Ok(())),
+            record_submit_outcome(&mut db, &account, txid.clone(), Ok(())),
             SubmitOutcome::Accepted { .. }
         ));
+        tx_state::assert_not_rejected(&mut db, &txid).unwrap();
+
         let rejected = RuntimeError::new(ErrorCode::BroadcastRejected).detail("bad-txns-expired");
         assert!(matches!(
-            record_submit_outcome(&mut db, txid.clone(), Err(rejected)),
+            record_submit_outcome(&mut db, &account, txid.clone(), Err(rejected)),
             SubmitOutcome::Rejected { .. }
         ));
         assert_eq!(
-            tx_state::assert_broadcastable(&mut db, &txid)
+            tx_state::assert_not_rejected(&mut db, &txid)
                 .unwrap_err()
                 .code,
             ErrorCode::BroadcastRejected
@@ -1267,126 +1052,103 @@ mod reservation_recovery_tests {
     }
 
     #[test]
-    fn accepted_broadcast_with_failed_state_write_keeps_its_known_txid() {
-        let (mut db, txid) = outcome_wallet(true);
-        match record_submit_outcome(&mut db, txid.clone(), Ok(())) {
-            SubmitOutcome::Unknown { txid: retained, .. } => assert_eq!(retained, txid),
-            _ => panic!("an accepted transaction must not become a signing failure"),
-        }
-        tx_state::assert_broadcastable(&mut db, &txid).unwrap();
-    }
-
-    #[test]
-    fn duplicate_spend_or_network_failure_keeps_the_persisted_send_pending() {
+    fn duplicate_spend_or_network_failure_keeps_the_stored_send_pending() {
         for code in [ErrorCode::BroadcastOutcomeUnknown, ErrorCode::NetworkError] {
             let (mut db, txid) = outcome_wallet(false);
             assert!(matches!(
-                record_submit_outcome(&mut db, txid.clone(), Err(RuntimeError::new(code))),
+                record_submit_outcome(
+                    &mut db,
+                    &uuid::Uuid::nil().to_string(),
+                    txid.clone(),
+                    Err(RuntimeError::new(code))
+                ),
                 SubmitOutcome::Unknown { .. }
             ));
-            tx_state::assert_broadcastable(&mut db, &txid).unwrap();
+            tx_state::assert_not_rejected(&mut db, &txid).unwrap();
         }
     }
 
     #[test]
-    fn a_reservation_that_already_has_a_stored_transaction_cannot_build_again() {
-        let (mut db, txid) = outcome_wallet(false);
-        let e = refuse_submitted_reservation(&mut db, "review").unwrap_err();
-        assert_eq!(e.code, ErrorCode::InvalidReservationId);
-        assert_eq!(e.params["txid"], txid);
-        refuse_submitted_reservation(&mut db, &"ab".repeat(32)).unwrap();
+    fn a_rejection_that_cannot_be_recorded_stays_unknown() {
+        let (mut db, txid) = outcome_wallet(true);
+        let rejected = RuntimeError::new(ErrorCode::BroadcastRejected);
+        match record_submit_outcome(
+            &mut db,
+            &uuid::Uuid::nil().to_string(),
+            txid.clone(),
+            Err(rejected),
+        ) {
+            SubmitOutcome::Unknown { txid: retained, .. } => assert_eq!(retained, txid),
+            _ => panic!("an unrecorded rejection must not drop the stored transaction"),
+        }
     }
 
-    #[test]
-    fn retry_cannot_use_another_accounts_reservation() {
-        let (mut db, txid) = outcome_wallet(false);
-        let owner = uuid::Uuid::from_u128(1).to_string();
-        let other = uuid::Uuid::from_u128(2).to_string();
-        db.transactionally_with_extension(|_, ext| {
-            assert_eq!(
-                tx_state::existing_txid_for_reservation(ext, "review", Some(&owner))?,
-                Some(txid)
-            );
-            assert_eq!(
-                tx_state::existing_txid_for_reservation(ext, "review", Some(&other))
-                    .unwrap_err()
-                    .code,
-                ErrorCode::InvalidReservationId
-            );
-            Ok::<(), RuntimeError>(())
-        })
-        .unwrap();
-    }
-
-    #[test]
-    fn restart_cancellation_releases_only_its_owner_and_preserves_finalized_locks() {
-        let path =
-            std::env::temp_dir().join(format!("zcash-reservation-{}.sqlite", uuid::Uuid::new_v4()));
-        let owner = [1_u8; 32];
-        let other_owner = [2_u8; 32];
-        let conn = Connection::open(&path).unwrap();
+    /// Transaction 1 is the one just stored; it spends orchard note 7.
+    fn spend_fixture(other: Option<(Option<u32>, Option<u32>)>) -> Db {
+        let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(
-            "CREATE TABLE transactions (id_tx INTEGER PRIMARY KEY, txid BLOB);
-                            CREATE TABLE ext_onekey_tx_state (txid BLOB, reservation_id TEXT, account_uuid BLOB);",
+            "CREATE TABLE transactions (
+               id_tx INTEGER PRIMARY KEY, txid BLOB, mined_height INTEGER, expiry_height INTEGER
+             );
+             CREATE TABLE blocks (height INTEGER);
+             INSERT INTO blocks VALUES (1000);
+             CREATE TABLE v_transactions (txid BLOB, account_uuid BLOB, total_spent INTEGER);",
         )
         .unwrap();
-        conn.execute("INSERT INTO transactions VALUES (1, ?1)", [[3_u8; 32]])
-            .unwrap();
-        for (table, index) in [
-            ("sapling_received_notes", "output_index"),
-            ("orchard_received_notes", "action_index"),
-            ("ironwood_received_notes", "action_index"),
-            ("transparent_received_outputs", "output_index"),
-        ] {
+        for (table, output) in SPEND_TABLES {
             conn.execute_batch(&format!(
-                "CREATE TABLE {table} (
-                transaction_id INTEGER, {index} INTEGER, lock_owner BLOB, lock_expiry_height INTEGER
-            );"
+                "CREATE TABLE {table} ({output} INTEGER, transaction_id INTEGER);"
             ))
             .unwrap();
-            conn.execute(
-                &format!("INSERT INTO {table} VALUES (1, 0, ?1, 1000), (1, 1, ?2, 1000)"),
-                rusqlite::params![owner, other_owner],
-            )
-            .unwrap();
-        }
-        drop(wallet(conn));
-
-        let mut db = wallet(Connection::open(&path).unwrap());
-        assert!(release_reservation(&mut db, &hex32(&owner)).unwrap());
-        assert!(!release_reservation(&mut db, &hex32(&owner)).unwrap());
-        let conn = Connection::open(&path).unwrap();
-        for table in [
-            "sapling_received_notes",
-            "orchard_received_notes",
-            "ironwood_received_notes",
-            "transparent_received_outputs",
-        ] {
-            let locks: u32 = conn.query_row(&format!("SELECT COUNT(*) FROM {table} WHERE lock_owner = ?1 AND lock_expiry_height = 1000"), [other_owner], |row| row.get(0)).unwrap();
-            assert_eq!(locks, 1);
-            let released: u32 = conn.query_row(&format!("SELECT COUNT(*) FROM {table} WHERE lock_owner IS NULL AND lock_expiry_height IS NULL"), [], |row| row.get(0)).unwrap();
-            assert_eq!(released, 1);
         }
         conn.execute(
-            "INSERT INTO ext_onekey_tx_state (txid, reservation_id, account_uuid) VALUES (?1, ?2, ?3)",
-            rusqlite::params![[4_u8; 32], hex32(&other_owner), uuid::Uuid::from_u128(1).as_bytes()],
+            "INSERT INTO transactions VALUES (1, ?1, NULL, 1040)",
+            [[1_u8; 32]],
         )
         .unwrap();
-        assert!(!release_reservation(&mut db, &hex32(&other_owner)).unwrap());
-        let locks: u32 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM orchard_received_notes WHERE lock_owner = ?1",
-                [other_owner],
-                |row| row.get(0),
+        conn.execute(
+            "INSERT INTO v_transactions VALUES (?1, ?2, 10)",
+            rusqlite::params![[1_u8; 32], uuid::Uuid::from_u128(1).as_bytes().as_slice()],
+        )
+        .unwrap();
+        conn.execute("INSERT INTO orchard_received_note_spends VALUES (7, 1)", [])
+            .unwrap();
+        if let Some((mined_height, expiry_height)) = other {
+            conn.execute(
+                "INSERT INTO transactions VALUES (2, ?1, ?2, ?3)",
+                rusqlite::params![[2_u8; 32], mined_height, expiry_height],
             )
             .unwrap();
-        assert_eq!(locks, 1);
-        drop(conn);
-        drop(db);
-        std::fs::remove_file(path).unwrap();
+            conn.execute("INSERT INTO orchard_received_note_spends VALUES (7, 2)", [])
+                .unwrap();
+        }
+        wallet(conn)
+    }
+
+    fn check(db: &mut Db, account: u128) -> Result<()> {
+        let txid = crate::history::hex_display_order(&[1_u8; 32]);
+        let account = uuid::Uuid::from_u128(account).to_string();
+        db.transactionally_with_extension(|_, ext| assert_sole_spend(ext, &txid, &account))
+    }
+
+    #[test]
+    fn a_spend_already_held_by_another_stored_transaction_is_refused() {
+        check(&mut spend_fixture(None), 1).unwrap();
+        // Expired at 990, below the 1000 tip: its notes are free again.
+        check(&mut spend_fixture(Some((None, Some(990)))), 1).unwrap();
+        for held in [(None, Some(1040)), (None, None), (Some(900), Some(990))] {
+            let error = check(&mut spend_fixture(Some(held)), 1).unwrap_err();
+            assert_eq!(error.code, ErrorCode::TransactionBuildError);
+            assert_eq!(error.params["reason"], "inputsAlreadySpent");
+        }
+    }
+
+    #[test]
+    fn a_pczt_spending_from_another_account_is_refused() {
+        let error = check(&mut spend_fixture(None), 2).unwrap_err();
+        assert_eq!(error.params["reason"], "accountMismatch");
     }
 }
-
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod policy_tests {
     use super::*;
@@ -1575,6 +1337,21 @@ mod combine_tests {
         let approved = Signer::new(pczt::Pczt::parse(&original).unwrap()).unwrap();
         let result = Signer::new(pczt::Pczt::parse(&combined).unwrap()).unwrap();
         assert_eq!(result.shielded_sighash(), approved.shielded_sighash());
+    }
+
+    #[test]
+    fn transaction_identity_is_stable_on_retry_and_changes_with_the_recipient() {
+        let signed = signed_copy(&transparent_pczt(90_000, 0xaa, false));
+        let extract = |bytes: &[u8]| {
+            let finalized = SpendFinalizer::new(pczt::Pczt::parse(bytes).unwrap())
+                .finalize_spends()
+                .unwrap();
+            extract_pczt(finalized).unwrap()
+        };
+        let first = extract(&signed);
+        assert_eq!(first.txid(), extract(&signed).txid());
+        let other = extract(&signed_copy(&transparent_pczt(90_000, 0xbb, false)));
+        assert_ne!(first.txid(), other.txid());
     }
 
     // Conflicting values on a field both sides carry: the bare Combiner already
@@ -1775,8 +1552,12 @@ mod owned_output_tests {
     /// Ironwood or (when `orchard_change`) in Orchard. The external recipient
     /// gets `user_address` as `create_pczt_from_proposal` sets it.
     fn spend(spent_scope: Scope, orchard_change: bool) -> Built {
+        spend_to(spent_scope, orchard_change, 9)
+    }
+
+    fn spend_to(spent_scope: Scope, orchard_change: bool, recipient_seed: u8) -> Built {
         let fvk = ours();
-        let foreign = FullViewingKey::from(&spending_key(&[9; 32], 0));
+        let foreign = FullViewingKey::from(&spending_key(&[recipient_seed; 32], 0));
         let recipient = foreign.address_at(0u32, Scope::External);
         let change_address = fvk.address_at(0u32, Scope::Internal);
         let spent = note(fvk.address_at(0u32, spent_scope), INPUT, NoteVersion::V2);
@@ -1852,6 +1633,76 @@ mod owned_output_tests {
             orchard_change,
             ironwood_recipient,
             ironwood_change,
+        }
+    }
+
+    #[tokio::test]
+    async fn another_payment_with_a_shared_input_cannot_reuse_the_stored_transaction() {
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha20Rng;
+
+        let first = spend_to(Scope::External, false, 9).pczt;
+        let other = spend_to(Scope::External, false, 10).pczt;
+        let common = first
+            .orchard()
+            .actions()
+            .iter()
+            .find_map(|action| {
+                let nf = action.spend().nullifier();
+                other
+                    .orchard()
+                    .actions()
+                    .iter()
+                    .any(|a| a.spend().nullifier() == nf)
+                    .then_some(*nf)
+            })
+            .expect("synthetic payments spend the same note");
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE scan_queue (block_range_end INTEGER);
+            INSERT INTO scan_queue VALUES (3500001);
+            CREATE TABLE blocks (height INTEGER);
+            INSERT INTO blocks VALUES (3500000);
+            CREATE TABLE transactions (id_tx INTEGER, txid BLOB, raw BLOB, mined_height INTEGER, expiry_height INTEGER);
+            CREATE TABLE orchard_received_notes (id INTEGER, nf BLOB);
+            CREATE TABLE orchard_received_note_spends (orchard_received_note_id INTEGER, transaction_id INTEGER);
+            CREATE TABLE ironwood_received_notes (id INTEGER, nf BLOB);
+            CREATE TABLE ironwood_received_note_spends (ironwood_received_note_id INTEGER, transaction_id INTEGER);
+            CREATE TABLE ext_onekey_tx_state (txid BLOB, account_uuid BLOB, rejection_code INTEGER, rejection_reason TEXT);")
+            .unwrap();
+        conn.execute(
+            "INSERT INTO transactions VALUES (1, ?1, x'00', NULL, 3500040)",
+            [[1u8; 32]],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO orchard_received_notes VALUES (7, ?1)",
+            [common],
+        )
+        .unwrap();
+        conn.execute("INSERT INTO orchard_received_note_spends VALUES (7, 1)", [])
+            .unwrap();
+        let mut db = zcash_client_sqlite::WalletDb::from_connection(
+            conn,
+            Network::MainNetwork,
+            crate::clock::HostClock,
+            ChaCha20Rng::from_seed([0; 32]),
+        );
+        let mut client = crate::network::LightClient::new(
+            tonic::transport::Endpoint::from_static("http://127.0.0.1:1").connect_lazy(),
+        );
+
+        // The second payment has no proof or authorization. A stored shared
+        // input must never let it skip extraction and return the first txid.
+        match submit_signed_pczt(
+            &mut db,
+            &mut client,
+            &uuid::Uuid::nil().to_string(),
+            &other.serialize().unwrap(),
+        )
+        .await
+        {
+            Err(error) => assert_eq!(error.params["stage"], "extractAndStore"),
+            Ok(_) => panic!("a different payment must not reuse a stored transaction"),
         }
     }
 

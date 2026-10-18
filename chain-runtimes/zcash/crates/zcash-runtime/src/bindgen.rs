@@ -22,7 +22,7 @@ use crate::perf;
 use crate::{
     account,
     error::{ErrorCode, RuntimeError},
-    guard, history, network, runtime, send, storage, sync, tx_state, wallet,
+    history, network, runtime, send, storage, sync, tx_state, wallet,
 };
 
 /// Inject a Fetch-compatible host transport; None retains browser Fetch.
@@ -85,7 +85,7 @@ pub fn init_memory_storage() {
 /// The capabilities of this version-locked wallet and keys package set.
 ///
 /// Lets the host hide unsupported actions up front instead of failing at proving time,
-/// after notes are locked and the user has entered a password.
+/// after the user has reviewed the send and entered a password.
 ///
 #[wasm_bindgen(js_name = capabilities)]
 pub fn capabilities() -> String {
@@ -229,31 +229,16 @@ pub async fn import_account_ufvk(
 /// Removes one account from the shared database. Does not delete the database, which holds other wallets' accounts.
 #[wasm_bindgen(js_name = removeAccount)]
 pub async fn remove_account(account_uuid: String) -> Result<(), JsValue> {
-    runtime::with_read_conn(|conn| {
-        guard::assert_idle(
-            conn,
-            Some(&account_uuid),
-            "removeAccount",
-            guard::LockPolicy::Blocking,
-        )
-    })?;
     runtime::with_db(|db| account::remove_account(db, &account_uuid))?;
     storage::durability_barrier().await?;
     runtime::reclaim_storage(storage::RECLAIM_PAGES_AFTER_DELETE);
     Ok(())
 }
 
-/// The host already deleted this account: removes it regardless of in-flight transactions,
-/// skipping `removeAccount`'s idle check.
-///
-/// Funds are on chain and the seed is with the user, so a re-import and rescan recovers them.
+/// Compatibility alias for hosts that distinguish app-account removal.
 #[wasm_bindgen(js_name = removeDeletedAccount)]
 pub async fn remove_deleted_account(account_uuid: String) -> Result<(), JsValue> {
-    runtime::with_db(|db| account::remove_account(db, &account_uuid))?;
-    send::forget_account_reservations(&account_uuid);
-    storage::durability_barrier().await?;
-    runtime::reclaim_storage(storage::RECLAIM_PAGES_AFTER_DELETE);
-    Ok(())
+    remove_account(account_uuid).await
 }
 
 /// Finds the account for a UFVK, returning `{ uuid }` or `"null"` if absent.
@@ -364,7 +349,7 @@ pub async fn sync_probe_download(batch_size: u32) -> Result<String, JsValue> {
     )
 }
 
-/// Quotes only: no transaction built, no notes locked. Returns `{ feeZat, steps }`.
+/// Quotes only: no transaction built. Returns `{ feeZat, steps }`.
 ///
 /// Shares the proposal path with `pcztCreate`, so the quoted fee is the fee paid.
 /// Insufficient balance throws `INSUFFICIENT_FUNDS` (with shortfallZat).
@@ -541,8 +526,6 @@ pub fn pczt_create(
     untrusted: u32,
     fallback_change_pool: String,
     pad_orchard_bundle: bool,
-    lock_for_blocks: u32,
-    reservation_id: Option<String>,
     allow_zero_conf_shielding: Option<bool>,
     spend_source: Option<String>,
     memo_hex: Option<String>,
@@ -556,19 +539,16 @@ pub fn pczt_create(
         spend_source.as_deref(),
     )?;
     Ok(runtime::with_db(|db| {
-        let (bytes, reservation_id, fee_zat) = send::create_pczt(
+        let (bytes, fee_zat) = send::create_pczt(
             db,
             &account_uuid,
             &to_address,
             amount_zat,
             send::parse_memo(memo.as_deref(), memo_hex.as_deref())?.as_ref(),
             policy,
-            lock_for_blocks,
-            reservation_id.as_deref(),
         )?;
         Ok(serde_json::json!({
             "pcztHex": bytes.iter().map(|b| format!("{b:02x}")).collect::<String>(),
-            "reservationId": reservation_id,
             "feeZat": fee_zat,
         })
         .to_string())
@@ -589,41 +569,6 @@ pub fn pczt_prove(pczt_bytes: Vec<u8>) -> Result<Vec<u8>, JsValue> {
 #[wasm_bindgen(js_name = pcztCombine)]
 pub fn pczt_combine(original: Vec<u8>, signed: Vec<u8>) -> Result<Vec<u8>, JsValue> {
     Ok(send::combine_pczt(&original, &signed)?)
-}
-
-/// Releases all locked notes of the account; returns the number unlocked.
-///
-/// For crash recovery: `releaseReservation` relies on the in-memory proposal table, which is
-/// lost when the app / offscreen restarts.
-///
-/// Also releases in-progress proposals, so call only from a user-triggered repair action,
-/// never from the normal flow.
-#[wasm_bindgen(js_name = clearLockedOutputs)]
-pub fn clear_locked_outputs(account_uuid: String) -> Result<u32, JsValue> {
-    // Locks are not "busy" (they are what this clears), but sent transactions are: unlocking
-    // notes spent by a pending broadcast would return them to selection and allow a double spend.
-    runtime::with_read_conn(|conn| {
-        guard::assert_idle(
-            conn,
-            Some(&account_uuid),
-            "clearLockedOutputs",
-            guard::LockPolicy::Ignored,
-        )
-    })?;
-    Ok(runtime::with_db(|db| {
-        send::clear_locked_outputs(db, &account_uuid)
-    })?)
-}
-
-/// Releases the notes held by a reservation (called when the user cancels a send).
-///
-/// Idempotent: returns `false` instead of an error when the id was sent, already released,
-/// or never existed; repeated calls on the cancel path are normal.
-#[wasm_bindgen(js_name = releaseReservation)]
-pub fn release_reservation(reservation_id: String) -> Result<bool, JsValue> {
-    Ok(runtime::with_db(|db| {
-        send::release_reservation(db, &reservation_id)
-    })?)
 }
 
 /// Durability barrier after an irreversible step.
@@ -648,20 +593,9 @@ async fn barrier_after_irreversible(params: serde_json::Value) -> Result<(), cra
 /// - `unknown`: delivery to the node is uncertain. The transaction stays pending and is
 ///   rebroadcast on sync; the host must not treat it as a failed send.
 #[wasm_bindgen(js_name = pcztSubmit)]
-pub async fn pczt_submit(
-    account_uuid: String,
-    pczt_bytes: Vec<u8>,
-    reservation_id: String,
-) -> Result<String, JsValue> {
+pub async fn pczt_submit(account_uuid: String, pczt_bytes: Vec<u8>) -> Result<String, JsValue> {
     let outcome = runtime::with_db_and_client(move |mut db, mut client| async move {
-        let r = send::submit_signed_pczt(
-            &mut db,
-            &mut client,
-            &account_uuid,
-            &pczt_bytes,
-            &reservation_id,
-        )
-        .await;
+        let r = send::submit_signed_pczt(&mut db, &mut client, &account_uuid, &pczt_bytes).await;
         (db, client, r)
     })
     .await?;
@@ -684,12 +618,12 @@ pub async fn pczt_submit(
     Ok(json.to_string())
 }
 
-/// Runtime-owned unresolved broadcast intents for this account. The host uses
-/// this only to fail closed before constructing another payment; it does not
-/// persist or reinterpret the returned transaction IDs.
+/// Stored outgoing transactions of this account that are unmined, unexpired, and not
+/// rejected by the node. The host refuses to build another payment while any exist and
+/// rebroadcasts them on sync.
 #[wasm_bindgen(js_name = pendingBroadcastTxids)]
 pub fn pending_broadcast_txids(account_uuid: String) -> Result<String, JsValue> {
-    let txids = runtime::with_read_conn(|conn| tx_state::unresolved_txids(conn, &account_uuid))?;
+    let txids = runtime::with_read_conn(|conn| tx_state::pending_txids(conn, &account_uuid))?;
     Ok(serde_json::to_string(&txids).map_err(|error| {
         crate::RuntimeError::with(
             crate::ErrorCode::DatabaseError,
@@ -699,20 +633,7 @@ pub fn pending_broadcast_txids(account_uuid: String) -> Result<String, JsValue> 
     })?)
 }
 
-#[wasm_bindgen(js_name = broadcastRetryTxids)]
-pub fn rebroadcastable_txids(account_uuid: String) -> Result<String, JsValue> {
-    let txids =
-        runtime::with_read_conn(|conn| tx_state::rebroadcastable_txids(conn, &account_uuid))?;
-    Ok(serde_json::to_string(&txids).map_err(|error| {
-        crate::RuntimeError::with(
-            crate::ErrorCode::DatabaseError,
-            serde_json::json!({ "operation": "serializeRebroadcastableTransactions" }),
-        )
-        .detail(error)
-    })?)
-}
-
-/// Rebroadcasts a stored transaction with an unknown outcome (called during sync). Irreversible.
+/// Rebroadcasts a stored pending transaction (called during sync). Irreversible.
 ///
 /// Throws `BROADCAST_REJECTED` when the node definitively rejects it (do not retry);
 /// `BROADCAST_OUTCOME_UNKNOWN` when the node errored without proving it can never be mined;
@@ -721,46 +642,41 @@ pub fn rebroadcastable_txids(account_uuid: String) -> Result<String, JsValue> {
 #[wasm_bindgen(js_name = broadcastTransaction)]
 pub async fn broadcast_transaction(txid: String) -> Result<(), JsValue> {
     let result = runtime::with_db_and_client(move |mut db, mut client| async move {
-        let r = match tx_state::assert_broadcastable(&mut db, &txid)
+        let r = match tx_state::assert_not_rejected(&mut db, &txid)
             .and_then(|_| send::raw_transaction(&db, &txid))
         {
             Ok(raw) => network::broadcast(&mut client, raw).await,
             Err(e) => Err(e),
         };
         let r = match r {
-            Ok(()) => tx_state::mark_accepted(&mut db, &txid),
             Err(e) if e.code == crate::ErrorCode::BroadcastRejected => {
                 // Even if persisting fails, return the node's rejection reason: it is what the
                 // user can act on. The persistence failure is attached as detail.
-                match tx_state::mark_rejected(&mut db, &txid, &e) {
+                let recorded =
+                    tx_state::account_uuid_for_txid(&mut db, &txid).and_then(|account_uuid| {
+                        tx_state::record_rejection(&mut db, &txid, &account_uuid, &e)
+                    });
+                match recorded {
                     Ok(()) => Err(e),
                     Err(persist_error) => {
-                        Err(e.detail(format!("mark_rejected failed: {persist_error}")))
+                        Err(e.detail(format!("record_rejection failed: {persist_error}")))
                     }
                 }
             }
-            Err(e) => Err(e),
+            r => r,
         };
         (db, client, r)
     })
     .await;
-    let changed_lifecycle = result.is_ok()
-        || result
-            .as_ref()
-            .is_err_and(|error| error.code == crate::ErrorCode::BroadcastRejected);
-    if changed_lifecycle {
-        // The broadcast happened and the lifecycle is committed; the outcome must reach the host unchanged.
-        let outcome = match &result {
-            Ok(()) => serde_json::json!({ "broadcast": "accepted" }),
-            Err(rejection) => serde_json::json!({
-                "broadcast": "rejected",
-                "rejection": rejection.to_json(),
-            }),
-        };
-        barrier_after_irreversible(
-            serde_json::json!({ "operation": "broadcastTransaction", "outcome": outcome }),
-        )
-        .await?;
+    if let Err(rejection) = &result {
+        if rejection.code == crate::ErrorCode::BroadcastRejected {
+            // The rejection is recorded; it must reach the host unchanged.
+            barrier_after_irreversible(serde_json::json!({
+                "operation": "broadcastTransaction",
+                "outcome": { "broadcast": "rejected", "rejection": rejection.to_json() },
+            }))
+            .await?;
+        }
     }
     Ok(result?)
 }

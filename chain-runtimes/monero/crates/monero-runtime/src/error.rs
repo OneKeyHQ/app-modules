@@ -64,7 +64,7 @@ pub enum ErrorCode {
     NetworkError,
     /// Node response does not decode (bad epee/JSON). Params: `{ operation }`
     MalformedNodeResponse,
-    /// Node explicitly rejected the transaction (double spend, low fee, ...). Input reservations are released.
+    /// Node explicitly rejected the transaction (double spend, low fee, ...). The fresh record is undone and its inputs released.
     BroadcastRejected,
 
     // ── Storage ────────────────────────────────────────────────────────────
