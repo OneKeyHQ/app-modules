@@ -1,5 +1,5 @@
 import React from 'react';
-import { View } from 'react-native';
+import { Platform, View } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 
 import { CollapsiblePagerView as NativeCollapsiblePagerView } from '../../../native-views/react-native-pager-view/src/CollapsiblePagerView';
@@ -19,7 +19,50 @@ const requiredProps = {
   stickyHeaderHeight: 44,
 };
 
+const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+const originalResizeObserver = globalThis.ResizeObserver;
+const originalPlatform = Platform.OS;
+
+function setWebTestRuntime() {
+  Object.defineProperty(Platform, 'OS', { configurable: true, value: 'web' });
+  Object.defineProperty(globalThis, 'document', {
+    configurable: true,
+    value: {},
+  });
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
+
+function restoreTestRuntime() {
+  Object.defineProperty(Platform, 'OS', {
+    configurable: true,
+    value: originalPlatform,
+  });
+  if (originalDocument)
+    Object.defineProperty(globalThis, 'document', originalDocument);
+  else Reflect.deleteProperty(globalThis, 'document');
+  globalThis.ResizeObserver = originalResizeObserver;
+}
+
 describe('CollapsiblePagerView native wrapper', () => {
+  it('loads Web-named root exports without a DOM in the native runtime', () => {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'document');
+    Object.defineProperty(globalThis, 'document', { configurable: true, value: undefined });
+    try {
+      jest.isolateModules(() => {
+        const root = require('../../../native-views/react-native-pager-view/src/index') as typeof import('../../../native-views/react-native-pager-view/src/index');
+        expect(root.WebCollapsiblePagerView).toBeDefined();
+        expect(root.useWebCollapsiblePagerPage).toBeDefined();
+      });
+    } finally {
+      if (descriptor) Object.defineProperty(globalThis, 'document', descriptor);
+      else Reflect.deleteProperty(globalThis, 'document');
+    }
+  });
+
   it('passes the rendered-page-clamped initial index to native', async () => {
     let renderer!: ReactTestRenderer.ReactTestRenderer;
     await ReactTestRenderer.act(() => {
@@ -272,6 +315,8 @@ describe('CollapsiblePagerView native wrapper', () => {
 });
 
 describe('CollapsiblePagerView web', () => {
+  beforeAll(setWebTestRuntime);
+  afterAll(restoreTestRuntime);
   afterEach(() => {
     jest.useRealTimers();
   });
@@ -480,6 +525,8 @@ describe('PagerView web', () => {
 });
 
 describe('CollapsiblePagerView Web owner bookkeeping', () => {
+  beforeAll(setWebTestRuntime);
+  afterAll(restoreTestRuntime);
   beforeEach(() => {
     jest.useFakeTimers();
   });
@@ -505,6 +552,9 @@ describe('CollapsiblePagerView Web owner bookkeeping', () => {
     const nextOwner = {
       scrollTop: 0,
       getAttribute: () => 'A',
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      firstElementChild: null,
     } as unknown as HTMLElement;
     const state = pager as unknown as {
       pageOffsets: Map<string, number>;
