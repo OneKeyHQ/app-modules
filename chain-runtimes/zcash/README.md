@@ -115,6 +115,11 @@ keysCapabilities() / keysDependencyVersions()
 
 ### Sending
 
+The transaction-output history API distinguishes recorded payment outputs from
+change using the exact transaction, pool and output index in `sent_notes`. Its
+`isChange` excludes explicit self-payments, which compact scanning also flags as
+change for wallet accounting. This read projection does not modify scan state.
+
 ```
 runtime.pcztCreate()             build (selection, witness, anchor)
 runtime.pcztProve()              zero-knowledge proofs (slow)
