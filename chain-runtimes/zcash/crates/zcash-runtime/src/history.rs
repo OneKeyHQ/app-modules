@@ -302,10 +302,16 @@ pub fn details_outputs(
     {
         let mut stmt = conn
             .prepare(
-                "SELECT output_pool, value, is_change, memo, to_address,
-                        to_account_uuid, from_account_uuid
-                 FROM v_tx_outputs
-                 WHERE txid = ?1",
+                "SELECT output.output_pool, output.value, output.is_change,
+                        output.memo, output.to_address,
+                        output.to_account_uuid, output.from_account_uuid,
+                        payment.to_address
+                 FROM v_tx_outputs output
+                 LEFT JOIN sent_notes payment
+                   ON payment.transaction_id = output.transaction_id
+                  AND payment.output_pool = output.output_pool
+                  AND payment.output_index = output.output_index
+                 WHERE output.txid = ?1",
             )
             .map_err(db_err)?;
         let mut rows = stmt.query(rusqlite::params![internal]).map_err(db_err)?;
@@ -321,6 +327,12 @@ pub fn details_outputs(
             // Account UUIDs are BLOBs; reading them as String fails.
             let to_acct: Option<Vec<u8>> = row.get(5).map_err(db_err)?;
             let from_acct: Option<Vec<u8>> = row.get(6).map_err(db_err)?;
+            let payment_address: Option<String> = row.get(7).map_err(db_err)?;
+            // Compact scanning also marks explicit self-payments as change.
+            // A recorded shielded recipient identifies a payment; actual change
+            // has no sent-note recipient address. Keep the scan flags intact.
+            let is_change = is_change && (pool == 0 || payment_address.is_none());
+            let address = payment_address.or(address);
 
             if pool == 2 {
                 continue;
@@ -599,6 +611,10 @@ mod tests {
             details(&conn, &account_uuid, &"00".repeat(32)).unwrap(),
             "null"
         );
+        let outputs: serde_json::Value =
+            serde_json::from_str(&details_outputs(&conn, &account_uuid, &"00".repeat(32)).unwrap())
+                .unwrap();
+        assert_eq!(outputs["received"], json!([]));
     }
 
     fn history_fixture() -> rusqlite::Connection {
@@ -620,11 +636,19 @@ mod tests {
                received_output_id INTEGER NOT NULL
              );
              CREATE TABLE v_tx_outputs (
+               transaction_id INTEGER,
+               output_index INTEGER DEFAULT 0,
                txid BLOB NOT NULL,
                from_account_uuid BLOB,
                to_account_uuid BLOB,
                to_address TEXT,
                is_change INTEGER
+             );
+             CREATE TABLE sent_notes (
+               transaction_id INTEGER,
+               output_pool INTEGER,
+               output_index INTEGER,
+               to_address TEXT
              );
              CREATE TABLE ext_onekey_tx_state (
                txid BLOB PRIMARY KEY NOT NULL,
@@ -817,6 +841,84 @@ mod tests {
         .unwrap();
         assert_eq!(output["external"], json!([]));
         assert_eq!(output["received"], json!([]));
+    }
+
+    #[test]
+    fn explicit_self_payment_is_not_displayed_as_change_after_scanning() {
+        let conn = history_fixture();
+        conn.execute_batch(
+            "ALTER TABLE v_tx_outputs ADD COLUMN output_pool INTEGER DEFAULT 4;
+             ALTER TABLE v_tx_outputs ADD COLUMN value INTEGER;
+             ALTER TABLE v_tx_outputs ADD COLUMN memo BLOB;
+             ALTER TABLE v_received_outputs ADD COLUMN address_id INTEGER;
+             CREATE TABLE addresses (id INTEGER PRIMARY KEY, address TEXT);",
+        )
+        .unwrap();
+        let account = uuid::Uuid::from_u128(1);
+        let txid = [7u8; 32];
+        let text = "  self payment\n\u{1f642}  ";
+        for (index, value, recipient, memo) in [
+            (0, 10_000, Some("synthetic-self-recipient"), Some(text)),
+            (1, 2_536_200, None, None),
+        ] {
+            conn.execute(
+                "INSERT INTO v_tx_outputs
+                 (transaction_id, output_index, txid, from_account_uuid,
+                  to_account_uuid, to_address, is_change, value, memo)
+                 VALUES (1, ?1, ?2, ?3, ?3, ?4, 1, ?5, ?6)",
+                rusqlite::params![
+                    index,
+                    txid.as_slice(),
+                    account.as_bytes().as_slice(),
+                    recipient,
+                    value,
+                    memo.map(str::as_bytes),
+                ],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO sent_notes
+                 (transaction_id, output_pool, output_index, to_address)
+                 VALUES (1, 4, ?1, ?2)",
+                rusqlite::params![index, recipient],
+            )
+            .unwrap();
+        }
+        conn.execute_batch(
+            "INSERT INTO sent_notes
+             (transaction_id, output_pool, output_index, to_address) VALUES
+               (1, 3, 1, 'different-pool-payment'),
+               (2, 4, 1, 'different-transaction-payment');",
+        )
+        .unwrap();
+
+        let output: serde_json::Value = serde_json::from_str(
+            &details_outputs(&conn, &account.to_string(), &hex_display_order(&txid)).unwrap(),
+        )
+        .unwrap();
+        let received = output["received"].as_array().unwrap();
+        let payment = received
+            .iter()
+            .find(|row| row["valueZat"] == 10_000)
+            .unwrap();
+        let change = received
+            .iter()
+            .find(|row| row["valueZat"] == 2_536_200)
+            .unwrap();
+        assert_eq!(payment["isChange"], false);
+        assert_eq!(payment["memo"], text);
+        assert_eq!(payment["address"], "synthetic-self-recipient");
+        assert_eq!(change["isChange"], true);
+        assert_eq!(output["external"], json!([]));
+        // This is a read projection, not a rewrite of upstream wallet state.
+        let scanner_change_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM v_tx_outputs WHERE is_change = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(scanner_change_count, 2);
     }
 
     #[test]
