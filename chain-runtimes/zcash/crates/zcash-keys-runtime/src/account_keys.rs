@@ -312,41 +312,47 @@ mod tests {
         let oracle = usk(seed, account);
         let oracle_ufvk = oracle.to_unified_full_viewing_key();
         let sk = orchard_sk(seed, account);
-        assert_eq!(
-            &sk,
-            oracle.orchard().to_bytes(),
-            "orchard sk, account {account}"
+        assert!(
+            &sk == oracle.orchard().to_bytes(),
+            "Orchard spending key must match the seed oracle"
         );
 
         let keys = signing_keys(seed, account);
         let new_ufvk = keys.ufvk().unwrap();
-        assert_eq!(
-            new_ufvk,
-            keys::without_sapling(Network::MainNetwork, &oracle_ufvk).unwrap(),
-            "UFVK, account {account}"
+        assert!(
+            new_ufvk == keys::without_sapling(Network::MainNetwork, &oracle_ufvk).unwrap(),
+            "UFVK must match the seed oracle"
         );
-        assert_eq!(
-            ufvk_from_account_keys("main", &sk, &account_xpub(seed, account), account).unwrap(),
-            new_ufvk
+        assert!(
+            ufvk_from_account_keys("main", &sk, &account_xpub(seed, account), account).unwrap()
+                == new_ufvk,
+            "Account keys must derive the same UFVK"
         );
 
         let new_fvk = FullViewingKey::from(keys.orchard());
         let oracle_fvk = oracle_ufvk.orchard().unwrap().clone();
-        assert_eq!(new_fvk.to_bytes(), oracle_fvk.to_bytes(), "FVK bytes");
+        assert!(
+            new_fvk.to_bytes() == oracle_fvk.to_bytes(),
+            "Orchard full viewing key must match the seed oracle"
+        );
         // ak, the SpendValidatingKey encoding, is the first 32 bytes of the FVK encoding.
-        assert_eq!(new_fvk.to_bytes()[..32], oracle_fvk.to_bytes()[..32]);
-        assert_eq!(
-            SpendValidatingKey::from(&SpendAuthorizingKey::from(keys.orchard())),
-            SpendValidatingKey::from(&SpendAuthorizingKey::from(oracle.orchard())),
-            "SpendValidatingKey, account {account}"
+        assert!(
+            new_fvk.to_bytes()[..32] == oracle_fvk.to_bytes()[..32],
+            "Spend validating key encoding must match the seed oracle"
         );
-        assert_eq!(
-            SpendValidatingKey::from(new_fvk),
-            SpendValidatingKey::from(oracle_fvk)
+        assert!(
+            SpendValidatingKey::from(&SpendAuthorizingKey::from(keys.orchard()))
+                == SpendValidatingKey::from(&SpendAuthorizingKey::from(oracle.orchard())),
+            "Spend authorizing keys must derive the same spend validating key"
         );
-        assert_eq!(
-            keys.transparent().to_account_pubkey().serialize(),
-            oracle.transparent().to_account_pubkey().serialize()
+        assert!(
+            SpendValidatingKey::from(new_fvk) == SpendValidatingKey::from(oracle_fvk),
+            "Full viewing keys must derive the same spend validating key"
+        );
+        assert!(
+            keys.transparent().to_account_pubkey().serialize()
+                == oracle.transparent().to_account_pubkey().serialize(),
+            "Transparent account public key must match the seed oracle"
         );
     }
 
@@ -482,7 +488,10 @@ mod tests {
         for e in errors {
             let rendered = format!("{e} {}", e.to_json());
             for secret in &secrets {
-                assert!(!rendered.contains(secret.as_str()), "{rendered}");
+                assert!(
+                    !rendered.contains(secret.as_str()),
+                    "Error output must not contain key material"
+                );
             }
         }
     }
@@ -550,12 +559,14 @@ mod tests {
                 account,
             )
             .unwrap();
-            assert_eq!(fvk_items(&ours), fvk_items(hw_ufvk), "account {account}");
+            assert!(
+                fvk_items(&ours) == fvk_items(hw_ufvk),
+                "UFVK items must match the hardware vector"
+            );
             let our_ua = keys::unified_address_with("main", &ours, "all").unwrap();
-            assert_eq!(
-                ua_receivers(&our_ua),
-                ua_receivers(hw_ua),
-                "account {account}"
+            assert!(
+                ua_receivers(&our_ua) == ua_receivers(hw_ua),
+                "Unified address receivers must match the hardware vector"
             );
         }
     }

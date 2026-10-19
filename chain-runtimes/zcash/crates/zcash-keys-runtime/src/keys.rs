@@ -316,7 +316,7 @@ mod tests {
         let tag = &hex_key[64..66];
         assert!(
             tag == "02" || tag == "03",
-            "compressed key prefix must be 02/03, got {tag}"
+            "compressed key prefix must be 02/03"
         );
     }
 
@@ -399,20 +399,7 @@ mod ua_inspect {
         let ufvk =
             super::ufvk_from_mnemonic(&network, mnemonic.trim(), account).expect("derive UFVK");
 
-        // Fingerprint -> UFVK -> address, for comparing against hardware level by level.
-        let parsed =
-            bip0039::Mnemonic::<bip0039::English>::from_phrase(mnemonic.trim()).expect("mnemonic");
-        let seed = parsed.to_seed("");
-        println!("network      {network}  account {account}");
-        println!(
-            "fingerprint  {}",
-            hex::encode(
-                zip32::fingerprint::SeedFingerprint::from_seed(seed.as_ref())
-                    .expect("fingerprint")
-                    .to_bytes()
-            )
-        );
-        println!("ufvk         {ufvk}");
+        println!("network      {network}");
         println!(
             "t-addr       {}",
             super::transparent_address(&network, &ufvk).expect("t-address")
