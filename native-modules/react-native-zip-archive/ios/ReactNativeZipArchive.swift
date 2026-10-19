@@ -18,10 +18,28 @@ final class ReactNativeZipArchive: HybridReactNativeZipArchiveSpec {
     }
   }
 
+  private static let maxUncompressedBytes: UInt64 = 512 * 1024 * 1024
+
+  private static func validateArchivePayloadSize(atPath path: String) throws {
+    var sizeError: NSError?
+    let payloadSize = SSZipArchive.payloadSizeForArchive(atPath: path, error: &sizeError)
+    if let sizeError {
+      throw sizeError
+    }
+    if payloadSize.uint64Value > maxUncompressedBytes {
+      throw NSError(
+        domain: "ZipArchive",
+        code: -1,
+        userInfo: [NSLocalizedDescriptionKey: "Archive uncompressed size exceeds maximum allowed (512 MB)"]
+      )
+    }
+  }
+
   // MARK: - unzip
 
   func unzip(from: String, to: String) throws -> Promise<String> {
     return Promise.async {
+      try Self.validateArchivePayloadSize(atPath: from)
       var error: NSError?
       let success = SSZipArchive.unzipFile(
         atPath: from,
@@ -52,6 +70,7 @@ final class ReactNativeZipArchive: HybridReactNativeZipArchiveSpec {
 
   func unzipWithPassword(from: String, to: String, password: String) throws -> Promise<String> {
     return Promise.async {
+      try Self.validateArchivePayloadSize(atPath: from)
       var error: NSError?
       let success = SSZipArchive.unzipFile(
         atPath: from,

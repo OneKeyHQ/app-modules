@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { NativeScroller, type NativeScrollerRef } from "../NativeScroller";
 import NativeScrollerHost, { Commands } from "../NativeScrollerNativeComponent";
+import { ScrollEdgeEffect } from "../ScrollEdgeEffect";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -79,7 +80,8 @@ const touch = (target: object) =>
 describe("NativeScroller bridge", () => {
   let renderer: ReactTestRenderer;
   const host = () => renderer.root.findByType(NativeScrollerHost).props;
-  const content = () => renderer.root.findByType(View).props;
+  const content = () =>
+    renderer.root.findByType(NativeScrollerHost).findByType(View).props;
   const mount = (element: React.ReactElement) =>
     act(() => {
       renderer = create(element, { createNodeMock: () => nativeHandle });
@@ -87,6 +89,32 @@ describe("NativeScroller bridge", () => {
   beforeEach(() => jest.clearAllMocks());
   afterEach(() => {
     if (renderer) act(() => renderer.unmount());
+  });
+
+  it("keeps the fixed overlay and its inset when changing edge style", () => {
+    const overlay = <View testID="fixed-toolbar" />;
+    const renderScroller = (effect?: ScrollEdgeEffect) => (
+      <NativeScroller topOverlay={overlay} topScrollEdgeEffect={effect} />
+    );
+    mount(renderScroller(ScrollEdgeEffect.Hard));
+    const overlaySlot = renderer.root
+      .findAllByType(View)
+      .find((view) => view.props.onLayout && view.props.children === overlay)!;
+    act(() => overlaySlot.props.onLayout(layout(320, 64)));
+    expect(host().topScrollEdgeEffect).toBe("hard");
+    expect(host().topOverlayHeight).toBe(64);
+    act(() => renderer.update(renderScroller(ScrollEdgeEffect.Soft)));
+    expect(host().topScrollEdgeEffect).toBe("soft");
+    expect(host().topOverlayHeight).toBe(64);
+    expect(
+      renderer.root.findByProps({ testID: "fixed-toolbar" })
+    ).toBeDefined();
+    act(() => renderer.update(renderScroller()));
+    expect(host().topScrollEdgeEffect).toBe("none");
+    expect(host().topOverlayHeight).toBe(0);
+    expect(
+      renderer.root.findAllByProps({ testID: "fixed-toolbar" })
+    ).toHaveLength(0);
   });
 
   it("mounts one Yoga content view and reports changed dimensions without a layout feedback loop", () => {
@@ -109,7 +137,7 @@ describe("NativeScroller bridge", () => {
     expect(host().nativeID).toBe("rnc-collapsible-pager-native-scroller:spot");
     expect(host().nestedScrollEnabled).toBe(true);
     expect(content().collapsable).toBe(false);
-    act(() => host().onLayout(layout(320, 600)));
+    act(() => renderer.root.findByType(View).props.onLayout(layout(320, 600)));
     expect(onLayout).toHaveBeenCalledTimes(1);
     expect(StyleSheet.flatten(content().style).minHeight).toBe(100);
     act(() => host().onContentViewportChange({ nativeEvent: { height: 500 } }));

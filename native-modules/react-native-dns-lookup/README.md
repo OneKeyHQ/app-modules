@@ -33,13 +33,25 @@ The JavaScript wrapper is in [src/index.tsx](src/index.tsx), and the native
 interface is in [src/NativeDnsLookup.ts](src/NativeDnsLookup.ts). Integrations
 should handle rejection and validate actual connections independently of DNS.
 
+## Keeping DNS and transport checks separate
+
+Both `getIpAddressesForHostname(hostname)` and
+`DnsLookup.getIpAddresses(hostname)` call the same native method. They do not
+open a socket, send an HTTP request, validate a certificate or measure endpoint
+latency. A returned address is input to a separate connection decision.
+
+Importing the wrapper enforces native TurboModule registration. A missing
+registration is an integration error, while a rejected resolution promise is
+an operation failure. Keep any resolver-result cache scoped to the application's
+network policy; this interface provides no cache-clear or cancellation method.
+
 ## Upstream attribution
 
 First, a sincere thank-you to the
 `react-native-dns-lookup` maintainers for their excellent work 🙏
 
 This package is built on, and inspired by,
-[nicola/react-native-dns-lookup](https://github.com/nicola/react-native-dns-lookup).
+[tableau/react-native-dns-lookup](https://github.com/tableau/react-native-dns-lookup).
 
 Our original plan was to keep our customizations as patches on top of upstream
 `react-native-dns-lookup`.
@@ -53,7 +65,7 @@ development and delivery stable.
 
 ## Upstream Project
 
-- Repository: [nicola/react-native-dns-lookup](https://github.com/nicola/react-native-dns-lookup)
+- Repository: [tableau/react-native-dns-lookup](https://github.com/tableau/react-native-dns-lookup)
 - License: MIT
 
 ## Notes

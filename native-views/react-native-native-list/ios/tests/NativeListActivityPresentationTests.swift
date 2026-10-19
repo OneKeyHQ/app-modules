@@ -21,7 +21,7 @@ final class NativeListActivityPresentationTests: XCTestCase {
       ],
     ])
     let view = NativeListActivityDetailsView()
-    view.bind(item, theme: nil)
+    view.bind(item, theme: nil, fonts: NativeListFontFamilies())
     func labels(in view: UIView) -> [UILabel] {
       (view as? UILabel).map { [$0] } ?? view.subviews.flatMap { labels(in: $0) }
     }
@@ -87,11 +87,13 @@ final class NativeListActivityPresentationTests: XCTestCase {
         view.trailingAnchor.constraint(equalTo: container.trailingAnchor),
         view.topAnchor.constraint(equalTo: container.topAnchor),
       ])
-      view.bind(item, theme: nil)
+      view.bind(item, theme: nil, fonts: NativeListFontFamilies())
       container.layoutIfNeeded()
       container.layoutIfNeeded()
       let rendered = ceil(view.frame.height) + vertical * 2
-      XCTAssertEqual(NativeListActivityDetailsView.measure(data, width: width), rendered, accuracy: 1, name)
+      XCTAssertEqual(
+        NativeListActivityDetailsView.measure(data, width: width, fonts: NativeListFontFamilies()),
+        rendered, accuracy: 1, name)
     }
   }
 }

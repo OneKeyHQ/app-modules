@@ -2,9 +2,10 @@ import UIKit
 
 final class NativeListSystemCell: NativeListRendererCell {
   override class func measure(
-    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String
+    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String,
+    fonts: NativeListFontFamilies
   ) -> CGFloat? {
-    return NativeListSystemRenderer.measure(item, width: width)
+    return NativeListSystemRenderer.measure(item, width: width, fonts: fonts)
   }
   override class func appliesSizePreset(_ item: NativeListItem) -> Bool {
     NativeListSystemRenderer.appliesSizePreset(item)
@@ -75,7 +76,8 @@ final class NativeListSystemCell: NativeListRendererCell {
       label.text = nil
       label.isHidden = true
       label.font = nativeListFont(
-        ofSize: label === titleLabel ? 16 : 14, weight: label === titleLabel ? .medium : .regular)
+        ofSize: label === titleLabel ? 16 : 14, weight: label === titleLabel ? .medium : .regular,
+        fonts: fonts)
       label.textColor = nativeListColor(
         theme, label === titleLabel ? "primaryText" : "secondaryText",
         label === titleLabel ? "#202020" : "#646464")
@@ -90,7 +92,7 @@ final class NativeListSystemCell: NativeListRendererCell {
     button.setAttributedTitle(nil, for: .normal)
     button.setTitle(nil, for: .normal)
     button.isHidden = true
-    button.titleLabel?.font = nativeListFont(ofSize: 16, weight: .medium)
+    button.titleLabel?.font = nativeListFont(ofSize: 16, weight: .medium, fonts: fonts)
     button.titleLabel?.numberOfLines = 1
     button.contentEdgeInsets = .zero
     button.contentHorizontalAlignment = .center
@@ -116,13 +118,13 @@ final class NativeListSystemCell: NativeListRendererCell {
     if style["trailingGap"] != nil { trailingStack.spacing = CGFloat(style.double("trailingGap")) }
     let warning = item.data.string("variant") == "warning"
     if warning, let text = style.dictionary("title") {
-      NativeListTextStyles.applyStyledText(titleLabel, text)
+      NativeListTextStyles.applyStyledText(titleLabel, text, fonts: fonts)
     }
     if let text = style.dictionary("message") {
-      NativeListTextStyles.applyStyledText(warning ? subtitleLabel : titleLabel, text)
+      NativeListTextStyles.applyStyledText(warning ? subtitleLabel : titleLabel, text, fonts: fonts)
     }
     if let text = style.dictionary("actionText") {
-      NativeListTextStyles.applyStyledButton(button, text)
+      NativeListTextStyles.applyStyledButton(button, text, fonts: fonts)
     }
     contentInsets = UIEdgeInsets(
       top: topInset, left: leftInset, bottom: -bottomInset, right: -rightInset)
@@ -229,7 +231,7 @@ final class NativeListSystemCell: NativeListRendererCell {
       bottomInset = -(height - top - (message.isEmpty ? 30 : 61))
       if !message.isEmpty {
         show(titleLabel, message, lines: 2)
-        titleLabel.font = nativeListTabularFont(ofSize: 16)
+        titleLabel.font = nativeListTabularFont(ofSize: 16, fonts: fonts)
         titleLabel.textColor = nativeListColor(theme, "secondaryText", "#646464")
         titleLabel.textAlignment = .center
         setLineHeight(titleLabel, text: message, lineHeight: 24)
@@ -240,7 +242,7 @@ final class NativeListSystemCell: NativeListRendererCell {
       button.backgroundColor = .clear
       button.layer.cornerRadius = 15
       setButtonLine(
-        button, text: text, font: nativeListTabularFont(ofSize: 14, weight: .medium),
+        button, text: text, font: nativeListTabularFont(ofSize: 14, weight: .medium, fonts: fonts),
         color: nativeListColor(theme, "secondaryText", "#646464"), lineHeight: 20)
       let textWidth = button.intrinsicContentSize.width
       selectorConstraints.append(contentsOf: [
@@ -284,7 +286,7 @@ final class NativeListSystemCell: NativeListRendererCell {
       root.addArrangedSubview(mainStack)
       mainStack.alignment = .center
       mainStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
-      titleLabel.font = nativeListTabularFont(ofSize: 16)
+      titleLabel.font = nativeListTabularFont(ofSize: 16, fonts: fonts)
       titleLabel.textColor = nativeListColor(theme, "secondaryText", "#646464")
       titleLabel.textAlignment = .center
       show(titleLabel, item.data.string("message"), lines: 1)
@@ -324,9 +326,9 @@ final class NativeListSystemCell: NativeListRendererCell {
       topInset = 14
       bottomInset = -14
       mainStack.spacing = 4
-      titleLabel.font = nativeListFont(ofSize: 14, weight: .medium)
+      titleLabel.font = nativeListFont(ofSize: 14, weight: .medium, fonts: fonts)
       titleLabel.numberOfLines = 0
-      subtitleLabel.font = nativeListFont(ofSize: 14)
+      subtitleLabel.font = nativeListFont(ofSize: 14, fonts: fonts)
       subtitleLabel.numberOfLines = 0
       show(titleLabel, item.data.string("title"), lines: 0)
       show(subtitleLabel, item.data.string("message"), lines: 0)
@@ -375,7 +377,7 @@ final class NativeListSystemCell: NativeListRendererCell {
     mainStack.alignment = variant == "loading" || alignsToStart ? .leading : .center
     if alignsToStart {
       mainStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
-      titleLabel.font = nativeListFont(ofSize: 14)
+      titleLabel.font = nativeListFont(ofSize: 14, fonts: fonts)
       titleLabel.textColor = nativeListColor(theme, "secondaryText", "#646464")
       setLineHeight(titleLabel, text: titleLabel.text ?? "", lineHeight: 20)
     }
@@ -388,7 +390,7 @@ final class NativeListSystemCell: NativeListRendererCell {
       setButtonLine(
         accessoryButtons[0],
         text: "Retry",
-        font: nativeListFont(ofSize: 14, weight: .medium),
+        font: nativeListFont(ofSize: 14, weight: .medium, fonts: fonts),
         color: nativeListColor(theme, "primaryText", "#202020"),
         lineHeight: 20
       )
@@ -512,7 +514,7 @@ enum NativeListSystemRenderer {
   static func appliesSizePreset(_ item: NativeListItem) -> Bool {
     !["warning", "spacer"].contains(item.data.string("variant"))
   }
-  static func measure(_ item: NativeListItem, width: CGFloat) -> CGFloat {
+  static func measure(_ item: NativeListItem, width: CGFloat, fonts: NativeListFontFamilies) -> CGFloat {
     if item.type == "system", item.data.string("variant") == "spacer" {
       return CGFloat(item.data.int("height"))
     }
@@ -536,7 +538,7 @@ enum NativeListSystemRenderer {
               .font: nativeListFont(
                 ofSize: fontSize,
                 weight: NativeListTextStyles.marketFontWeight(
-                  textStyle?.string("fontWeight") ?? "", fallback: weight)),
+                  textStyle?.string("fontWeight") ?? "", fallback: weight), fonts: fonts),
               .paragraphStyle: paragraph,
             ], context: nil
           ).height / lineHeight)

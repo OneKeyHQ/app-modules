@@ -36,6 +36,18 @@ existing validation flow before using extracted content. The full signatures
 are in [src/ReactNativeZipArchive.nitro.ts](src/ReactNativeZipArchive.nitro.ts),
 and [src/index.tsx](src/index.tsx) documents the compatibility exports.
 
+## Choosing an archive operation
+
+`zipFolder(from, to)` archives a directory, while `zipFiles(files, to)` takes an
+explicit array of local file paths. Both resolve with the destination string.
+The `zip(source, target)` compatibility name calls `zipFolder`, not `zipFiles`.
+`unzipWithPassword(from, to, password)` is separate from ordinary `unzip`.
+
+`isPasswordProtected(file)` returns a boolean through a promise; it is not an
+authenticity check. A failed size inspection returns `-1`, which must not be
+used as a valid byte budget. Type-only consumers can import `ZipArchiveSpec`
+without initializing the native hybrid object.
+
 ## Upstream attribution
 
 First, a sincere thank-you to Mockingbot and the

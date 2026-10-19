@@ -1,4 +1,10 @@
-import type { IdentityRow, NativeListSnapshot, RowModel } from '../models';
+import React from 'react';
+import type {
+  ActivityRow,
+  IdentityRow,
+  NativeListSnapshot,
+  RowModel,
+} from '../models';
 import {
   WEB_LIST_CSS,
   WEB_REORDER_ANIMATION,
@@ -606,6 +612,116 @@ describe('web row style', () => {
   const { JSDOM } = require('jsdom') as {
     JSDOM: new (html: string) => { window: { document: Document } };
   };
+
+  test('font configuration is instance-local, literal, and preserves patched rows', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const firstHost = document.createElement('div');
+    const secondHost = document.createElement('div');
+    document.body.append(firstHost, secondHost);
+    const initial = snapshot({ kind: 'sectioned' }, [
+      { type: 'message', key: 'm', title: 'Initial', body: 'Body', time: '' },
+    ]);
+    const literal = 'Host, "Quoted" Family';
+    const first = new NativeListWebEngine(
+      firstHost,
+      initial,
+      {},
+      false,
+      undefined,
+      JSON.stringify({ regular: literal, medium: 'Medium' })
+    );
+    const second = new NativeListWebEngine(secondHost, initial, {}, false);
+    try {
+      const root = firstHost.querySelector<HTMLElement>(
+        '.ok-native-list-root'
+      )!;
+      expect(root.style.getPropertyValue('--nl-font-regular')).toBe(
+        `${JSON.stringify(
+          literal
+        )},-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif`
+      );
+      const secondRoot = secondHost.querySelector<HTMLElement>(
+        '.ok-native-list-root'
+      )!;
+      expect(
+        secondRoot.style.getPropertyValue('--nl-font-regular')
+      ).not.toContain('Host');
+      first.applyPatches([
+        { type: 'message', key: 'm', changes: { title: 'Patched' } },
+      ]);
+      first.setFontFamiliesJson(JSON.stringify({ bold: 'Bold' }));
+      expect(firstHost.textContent).toContain('Patched');
+      expect(firstHost.textContent).not.toContain('Initial');
+      expect(root.style.getPropertyValue('--nl-font-regular')).not.toContain(
+        'Host'
+      );
+      expect(root.style.getPropertyValue('--nl-font-bold')).toContain('"Bold"');
+      const preview = document.querySelector<HTMLElement>(
+        '.ok-native-list-reorder-preview'
+      )!;
+      expect(preview.style.getPropertyValue('--nl-font-bold')).toBe(
+        root.style.getPropertyValue('--nl-font-bold')
+      );
+      first.setFontFamiliesJson('{}');
+      expect(root.style.getPropertyValue('--nl-font-bold')).not.toContain(
+        'Bold'
+      );
+      expect(secondRoot.style.getPropertyValue('--nl-font-bold')).not.toContain(
+        'Bold'
+      );
+    } finally {
+      first.destroy();
+      second.destroy();
+    }
+  });
+
+  test('semibold CSS templates use the configured face through updates and reset', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.append(host);
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }),
+      {},
+      false,
+      undefined,
+      JSON.stringify({ semibold: 'Host Semibold' })
+    );
+    try {
+      const root = host.querySelector<HTMLElement>('.ok-native-list-root')!;
+      const rules = Array.from(
+        document.querySelector<HTMLStyleElement>('style')!.sheet!.cssRules
+      ).filter((rule): rule is CSSStyleRule => 'selectorText' in rule);
+      const selectors = [
+        '.ok-native-list-title',
+        '.ok-native-list-action-title',
+        '.ok-native-list-action-button',
+        '.ok-native-list-visual-fallback',
+        '.ok-native-list-composite-value',
+        '.ok-native-list-index-preview',
+        '.ok-native-list-reorder-count',
+      ];
+      const fallback = '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';
+      for (const face of ['Host Semibold', 'Updated Semibold', undefined]) {
+        engine.setFontFamiliesJson(JSON.stringify({ semibold: face }));
+        for (const selector of selectors) {
+          const rule = rules.find((entry) => entry.selectorText === selector)!;
+          const font =
+            rule.style.getPropertyValue('font-family') ||
+            rule.style.getPropertyValue('font');
+          const variable = font.match(/var\((--nl-font-[a-z]+)\)/)?.[1];
+          expect(variable).toBeDefined();
+          expect(root.style.getPropertyValue(variable!)).toBe(
+            face === undefined
+              ? fallback
+              : `${JSON.stringify(face)},${fallback}`
+          );
+        }
+      }
+    } finally {
+      engine.destroy();
+    }
+  });
 
   const render = (styledRow: RowModel): HTMLElement => {
     const { document } = new JSDOM('<!doctype html><body></body>').window;
@@ -3554,3 +3670,1462 @@ describe('legacy default regressions', () => {
     }
   });
 });
+
+describe('Web migration layout and table regressions', () => {
+  const { JSDOM } = require('jsdom') as {
+    JSDOM: new (html: string) => { window: { document: Document } };
+  };
+
+  function commandFixture(external = true) {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const view = document.defaultView!;
+    const page = document.createElement('div');
+    const scrollHost = document.createElement('div');
+    const rowsHost = document.createElement('div');
+    scrollHost.dataset.collapsiblePagerScroll = 'true';
+    page.append(scrollHost);
+    scrollHost.append(rowsHost);
+    document.body.append(page);
+    let ready = true;
+    let origin = 120;
+    let frameId = 0;
+    const frames = new Map<number, FrameRequestCallback>();
+    const requestFrame = (callback: FrameRequestCallback) => {
+      frames.set(++frameId, callback);
+      return frameId;
+    };
+    const cancelFrame = (id: number) => frames.delete(id);
+    const globals = [
+      'Element',
+      'requestAnimationFrame',
+      'cancelAnimationFrame',
+    ];
+    const originalGlobals = globals.map((key) =>
+      Object.getOwnPropertyDescriptor(globalThis, key)
+    );
+    for (const [key, value] of Object.entries({
+      Element: view.Element,
+      requestAnimationFrame: requestFrame,
+      cancelAnimationFrame: cancelFrame,
+    }))
+      Object.defineProperty(globalThis, key, { configurable: true, value });
+    Object.assign(view, {
+      requestAnimationFrame: requestFrame,
+      cancelAnimationFrame: cancelFrame,
+    });
+    // JSDOM has no DOM scrollTo. Keep its realm method separate from RNW's
+    // instance decoration so calling the wrong signature cannot pass silently.
+    const domScroll = jest.fn(function (
+      this: HTMLElement,
+      options: ScrollToOptions
+    ) {
+      if (options.top !== undefined) this.scrollTop = options.top;
+      if (options.left !== undefined) this.scrollLeft = options.left;
+    });
+    Object.defineProperty(view.Element.prototype, 'scrollTo', {
+      configurable: true,
+      value: domScroll,
+    });
+    const rnwScroll = jest.fn((options: { x?: number; y?: number }) => {
+      scrollHost.scrollTop = options.y ?? 0;
+      scrollHost.scrollLeft = options.x ?? 0;
+    });
+    Object.defineProperty(scrollHost, 'scrollTo', {
+      configurable: true,
+      value: rnwScroll,
+    });
+    Object.defineProperties(scrollHost, {
+      clientWidth: { value: 360 },
+      clientHeight: { get: () => (ready ? 240 : 0) },
+      scrollHeight: { value: 3000 },
+    });
+    const rect = (top: number, height: number) => ({
+      x: 20,
+      y: top,
+      left: 20,
+      right: 380,
+      top,
+      bottom: top + height,
+      width: 360,
+      height,
+      toJSON: () => ({}),
+    });
+    scrollHost.getBoundingClientRect = () => rect(20, 240);
+    rowsHost.getBoundingClientRect = () =>
+      rect(20 + origin - scrollHost.scrollTop, 1200);
+    const sourceRows: RowModel[] = Array.from({ length: 30 }, (_, index) => ({
+      type: 'message',
+      key: `command-${index}`,
+      height: 40,
+      title: 'Row',
+      body: '',
+      time: '',
+    }));
+    const hostAddListener = jest.spyOn(scrollHost, 'addEventListener');
+    const engine = new NativeListWebEngine(
+      rowsHost,
+      { ...snapshot({ kind: 'linear' }, sourceRows), capabilities: {} },
+      {},
+      false,
+      null,
+      '{}',
+      external
+        ? { scrollHost, contentBounds: rowsHost, stickyInset: 20 }
+        : undefined
+    );
+    const viewport = rowsHost.querySelector<HTMLElement>(
+      '.ok-native-list-viewport'
+    )!;
+    Object.defineProperties(viewport, {
+      clientWidth: { value: 360 },
+      clientHeight: { get: () => (ready ? 240 : 0) },
+    });
+    viewport.getBoundingClientRect = rowsHost.getBoundingClientRect;
+    const resize = () => view.dispatchEvent(new view.Event('resize'));
+    resize();
+    const flushFrames = () => {
+      for (let count = 0; frames.size; count += 1) {
+        if (count === 20) throw new Error('Unexpected recurring scroll frame');
+        const pending = [...frames.entries()];
+        frames.clear();
+        pending.forEach(([, callback]) => callback(0));
+      }
+    };
+    return {
+      document,
+      page,
+      scrollHost,
+      viewport,
+      engine,
+      domScroll,
+      rnwScroll,
+      hostAddListener,
+      resize,
+      flushFrames,
+      frames,
+      setReady: (value: boolean) => {
+        ready = value;
+      },
+      setOrigin: (value: number) => {
+        origin = value;
+      },
+      cleanup: () => {
+        engine.destroy();
+        globals.forEach((key, index) => {
+          const descriptor = originalGlobals[index];
+          if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+          else Reflect.deleteProperty(globalThis, key);
+        });
+        view.close();
+      },
+    };
+  }
+
+  it('consumes Pager inset changes before restoring its external owner without losing later slot anchoring', () => {
+    const f = commandFixture();
+    try {
+      f.setOrigin(0);
+      f.resize();
+      f.setOrigin(345);
+      f.scrollHost.dispatchEvent(
+        new f.document.defaultView!.Event('ok-collapsible-pager-insets-changed')
+      );
+      // Pager restores C after configuring the inner inset; the subsequent
+      // ResizeObserver must not treat that inset as new list content.
+      f.scrollHost.scrollTop = 212;
+      f.resize();
+      expect(f.scrollHost.scrollTop).toBe(212);
+      f.scrollHost.scrollTop = 600;
+      f.setOrigin(385);
+      f.resize();
+      expect(f.scrollHost.scrollTop).toBe(640);
+    } finally {
+      f.cleanup();
+    }
+  });
+
+  it('uses realm DOM commands at nonzero offsets on an RNW-decorated external owner', () => {
+    const f = commandFixture();
+    try {
+      f.scrollHost.scrollTop = 80;
+      f.engine.scrollToOffset(200, false);
+      expect(f.scrollHost.scrollTop).toBe(320);
+      f.engine.scrollToIndex(5, {
+        alignment: 'start',
+        animated: false,
+        viewPosition: 0,
+        viewOffset: 0,
+      });
+      expect(f.scrollHost.scrollTop).toBe(300);
+      f.engine.scrollToEnd(false);
+      expect(f.scrollHost.scrollTop).toBe(1080);
+      expect(f.domScroll.mock.contexts).toEqual([
+        f.scrollHost,
+        f.scrollHost,
+        f.scrollHost,
+      ]);
+      expect(f.rnwScroll).not.toHaveBeenCalled();
+      expect(f.viewport.scrollTop).toBe(0);
+    } finally {
+      f.cleanup();
+    }
+  });
+
+  it('hands pending commands between the real Pager and List on their shared external owner', () => {
+    const { CollapsiblePagerView } = jest.requireActual(
+      '../../../react-native-pager-view/src/CollapsiblePagerView.web'
+    ) as {
+      CollapsiblePagerView: new (props: {
+        header: null;
+        stickyHeader: null;
+        headerHeight: number;
+        stickyHeaderHeight: number;
+        children: React.ReactNode;
+      }) => {
+        scrollToPageTop: (options: { animated: boolean }) => void;
+        scrollToStickyTop: (options: { animated: boolean }) => void;
+        componentWillUnmount: () => void;
+      };
+    };
+    const f = commandFixture();
+    const pager = new CollapsiblePagerView({
+      header: null,
+      stickyHeader: null,
+      headerHeight: 80,
+      stickyHeaderHeight: 40,
+      children: React.createElement('div', { key: 'page' }),
+    });
+    const internals = pager as unknown as {
+      pageHosts: Map<number, HTMLElement>;
+      configureActiveScrollElement: () => void;
+    };
+    internals.pageHosts.set(0, f.page);
+    internals.configureActiveScrollElement();
+    const accepted: EventTarget[] = [];
+    f.scrollHost.addEventListener(
+      'ok-native-list-scroll-command-accepted',
+      (e) => accepted.push(e.target!)
+    );
+    try {
+      f.scrollHost.scrollTop = 300;
+      f.setReady(false);
+      f.engine.scrollToOffset(600, false);
+      f.viewport.dispatchEvent(
+        new f.document.defaultView!.Event(
+          'ok-collapsible-pager-cancel-scroll-command',
+          { bubbles: true }
+        )
+      );
+      f.setReady(true);
+      f.resize();
+      expect(f.scrollHost.scrollTop).toBe(720);
+      f.setReady(false);
+      f.engine.scrollToOffset(600, false);
+      pager.scrollToStickyTop({ animated: false });
+      f.setReady(true);
+      f.resize();
+      f.flushFrames();
+      expect(f.scrollHost.scrollTop).toBe(80);
+
+      pager.scrollToPageTop({ animated: false });
+      // A bubbling event from the inner list viewport is not a new owner command.
+      f.viewport.dispatchEvent(
+        new f.document.defaultView!.Event(
+          'ok-native-list-scroll-command-accepted',
+          { bubbles: true }
+        )
+      );
+      const acceptedBeforeInvalid = accepted.length;
+      expect(() => f.engine.scrollToOffset(-1, false)).toThrow();
+      expect(accepted).toHaveLength(acceptedBeforeInvalid);
+      f.flushFrames();
+      expect(f.scrollHost.scrollTop).toBe(0);
+
+      pager.scrollToPageTop({ animated: false });
+      f.engine.scrollToOffset(270, false);
+      f.flushFrames();
+      expect(f.scrollHost.scrollTop).toBe(390);
+      expect(accepted.at(-1)).toBe(f.scrollHost);
+      expect(f.rnwScroll).not.toHaveBeenCalled();
+    } finally {
+      pager.componentWillUnmount();
+      f.cleanup();
+    }
+  });
+
+  it.each([true, false])(
+    'removes owner listeners and queued commands on destroy (external=%s)',
+    (external) => {
+      const f = commandFixture(external);
+      const owner = external ? f.scrollHost : f.viewport;
+      const removed = jest.spyOn(owner, 'removeEventListener');
+      const cancel = () =>
+        owner.dispatchEvent(
+          new f.document.defaultView!.Event(
+            'ok-collapsible-pager-cancel-scroll-command'
+          )
+        );
+      try {
+        owner.scrollTop = 125;
+        f.engine.scrollToOffset(200, false);
+        expect(owner.scrollTop).toBe(external ? 320 : 200);
+        cancel();
+        expect(f.domScroll).toHaveBeenLastCalledWith({
+          left: 0,
+          top: owner.scrollTop,
+          behavior: 'instant',
+        });
+        f.setReady(false);
+        f.engine.scrollToOffset(900, false);
+        expect(f.frames.size).toBeGreaterThan(0);
+        f.engine.destroy();
+        expect(f.frames.size).toBe(0);
+        if (external) {
+          const cancelBinding = f.hostAddListener.mock.calls.find(
+            ([type]) => type === 'ok-collapsible-pager-cancel-scroll-command'
+          );
+          const scrollBinding = f.hostAddListener.mock.calls.find(
+            ([type]) => type === 'scroll'
+          );
+          const insetBinding = f.hostAddListener.mock.calls.find(
+            ([type]) => type === 'ok-collapsible-pager-insets-changed'
+          );
+          expect(insetBinding).toBeDefined();
+          expect(removed).toHaveBeenCalledWith(
+            insetBinding![0],
+            insetBinding![1]
+          );
+          expect(cancelBinding).toBeDefined();
+          expect(scrollBinding).toBeDefined();
+          expect(removed).toHaveBeenCalledWith(
+            cancelBinding![0],
+            cancelBinding![1]
+          );
+          expect(scrollBinding![2]).toEqual({ passive: true, capture: true });
+          expect(removed).toHaveBeenCalledWith(
+            'scroll',
+            scrollBinding![1],
+            true
+          );
+          expect(
+            f.hostAddListener.mock.contexts.every((target) => target === owner)
+          ).toBe(true);
+          expect(
+            removed.mock.contexts.every((target) => target === owner)
+          ).toBe(true);
+        } else
+          expect(removed).toHaveBeenCalledWith(
+            'ok-collapsible-pager-cancel-scroll-command',
+            expect.any(Function)
+          );
+        const callsAfterDestroy = f.domScroll.mock.calls.length;
+        f.setReady(true);
+        cancel();
+        owner.dispatchEvent(new f.document.defaultView!.Event('scroll'));
+        f.resize();
+        f.flushFrames();
+        expect(f.frames.size).toBe(0);
+        expect(f.domScroll).toHaveBeenCalledTimes(callsAfterDestroy);
+        expect(f.rnwScroll).not.toHaveBeenCalled();
+      } finally {
+        f.cleanup();
+      }
+    }
+  );
+
+  it('captures only external host and intermediate ancestor scrolls, then removes capture on destroy', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    const pager = document.createElement('div');
+    const rowsHost = document.createElement('div');
+    const unrelated = document.createElement('div');
+    host.append(pager, unrelated);
+    pager.append(rowsHost);
+    document.body.append(host);
+    const originalElement = Object.getOwnPropertyDescriptor(
+      globalThis,
+      'Element'
+    );
+    Object.defineProperty(globalThis, 'Element', {
+      configurable: true,
+      value: document.defaultView!.Element,
+    });
+    const engine = new NativeListWebEngine(
+      rowsHost,
+      snapshot({ kind: 'sectioned' }, [
+        {
+          type: 'message',
+          key: 'scroll-row',
+          title: 'Row',
+          body: '',
+          time: '',
+        },
+      ]),
+      {},
+      false,
+      null,
+      '{}',
+      { scrollHost: host }
+    );
+    const scroll = jest.spyOn(
+      engine as unknown as { handleScroll: () => void },
+      'handleScroll'
+    );
+    const dispatch = (target: HTMLElement) =>
+      target.dispatchEvent(new document.defaultView!.Event('scroll'));
+    try {
+      dispatch(pager);
+      expect(scroll).toHaveBeenCalledTimes(1);
+      dispatch(host);
+      expect(scroll).toHaveBeenCalledTimes(2);
+      dispatch(unrelated);
+      expect(scroll).toHaveBeenCalledTimes(2);
+      dispatch(rowsHost);
+      const root = rowsHost.querySelector<HTMLElement>('.ok-native-list-root')!;
+      const slot = document.createElement('div');
+      root.append(slot);
+      dispatch(root);
+      dispatch(slot);
+      expect(scroll).toHaveBeenCalledTimes(3);
+      engine.destroy();
+      dispatch(pager);
+      dispatch(host);
+      expect(scroll).toHaveBeenCalledTimes(3);
+      expect(host.scrollTop).toBe(0);
+    } finally {
+      engine.destroy();
+      if (originalElement) {
+        Object.defineProperty(globalThis, 'Element', originalElement);
+      } else {
+        Reflect.deleteProperty(globalThis, 'Element');
+      }
+    }
+  });
+
+  it('gates table pointer reveal on primary hover while retaining keyboard focus reveal', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const style = document.createElement('style');
+    style.textContent = WEB_LIST_CSS;
+    document.head.append(style);
+    const rules = Array.from(style.sheet!.cssRules);
+    expect(WEB_LIST_CSS).toContain(
+      '.ok-native-list-table-secondary{display:block;min-width:0;overflow:clip}'
+    );
+    const media = rules.filter(
+      (rule): rule is CSSMediaRule => 'media' in rule && 'cssRules' in rule
+    );
+    const hover = media.find(
+      (rule) => rule.media.mediaText.replace(/\s/g, '') === '(hover:hover)'
+    )!;
+    expect(hover).toBeDefined();
+    expect(hover.cssText).toContain('.ok-native-list-market-table:hover');
+    expect(
+      rules.some(
+        (rule) =>
+          !('media' in rule) &&
+          rule.cssText.includes('.ok-native-list-market-table:hover')
+      )
+    ).toBe(false);
+    expect(
+      rules.some(
+        (rule) =>
+          !('media' in rule) &&
+          rule.cssText.includes('.ok-native-list-market-table:focus-within')
+      )
+    ).toBe(true);
+  });
+
+  it('keeps compact touch holds for pointer-only micro-moves but cancels real touch movement', () => {
+    jest.useFakeTimers();
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.append(host);
+    const originalElement = Object.getOwnPropertyDescriptor(
+      globalThis,
+      'Element'
+    );
+    Object.defineProperty(globalThis, 'Element', {
+      configurable: true,
+      value: document.defaultView!.Element,
+    });
+    const onRowAction = jest.fn();
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [
+        {
+          type: 'market',
+          key: 'touch-hold',
+          variant: 'token',
+          title: 'Token',
+          leading: { kind: 'icon', name: 'CryptoCoinOutline' },
+          price: '$1',
+          change: { text: '+1%', tone: 'positive' },
+          pressActionKey: 'press',
+          longPressActionKey: 'hold',
+        },
+      ]),
+      { onRowAction },
+      false
+    );
+    const row = host.querySelector<HTMLElement>('[data-native-list-row-key]')!;
+    const pointer = (type: string, pointerType: string, x: number) =>
+      row.dispatchEvent(
+        Object.assign(
+          new document.defaultView!.Event(type, { bubbles: true }),
+          {
+            pointerId: 1,
+            pointerType,
+            button: 0,
+            clientX: x,
+            clientY: 20,
+          }
+        )
+      );
+    const touch = (points: Array<{ clientX: number; clientY: number }>) =>
+      row.dispatchEvent(
+        Object.assign(
+          new document.defaultView!.Event('touchmove', { bubbles: true }),
+          {
+            touches: points,
+            changedTouches: points,
+          }
+        )
+      );
+    try {
+      pointer('pointerdown', 'touch', 10);
+      pointer('pointermove', 'touch', 15);
+      jest.advanceTimersByTime(800);
+      expect(onRowAction.mock.calls.map(([event]) => event.actionKey)).toEqual([
+        'hold',
+      ]);
+      onRowAction.mockClear();
+      pointer('pointerdown', 'touch', 10);
+      touch([{ clientX: 15, clientY: 20 }]);
+      jest.advanceTimersByTime(800);
+      expect(onRowAction).not.toHaveBeenCalled();
+      pointer('pointerdown', 'touch', 10);
+      touch([
+        { clientX: 10, clientY: 20 },
+        { clientX: 11, clientY: 20 },
+      ]);
+      jest.advanceTimersByTime(800);
+      expect(onRowAction).not.toHaveBeenCalled();
+      pointer('pointerdown', 'mouse', 10);
+      pointer('pointermove', 'mouse', 15);
+      jest.advanceTimersByTime(800);
+      expect(onRowAction).not.toHaveBeenCalled();
+      pointer('pointerdown', 'touch', 10);
+      engine.destroy();
+      jest.advanceTimersByTime(800);
+      expect(onRowAction).not.toHaveBeenCalled();
+    } finally {
+      engine.destroy();
+      if (originalElement)
+        Object.defineProperty(globalThis, 'Element', originalElement);
+      else Reflect.deleteProperty(globalThis, 'Element');
+      jest.useRealTimers();
+    }
+  });
+
+  it.each([2, 3, 4, 6, 7] as const)(
+    'retains fractional grid widths for %i columns',
+    (columns) => {
+      const source: RowModel[] = Array.from(
+        { length: columns },
+        (_, index) => ({
+          type: 'message',
+          key: `fraction-${index}`,
+          title: 'Grid',
+          body: '',
+          time: '',
+          height: 50,
+        })
+      );
+      for (const width of [1000, 1001]) {
+        const layout = computeWebListLayout(
+          snapshot(
+            {
+              kind: 'grid',
+              gridColumns: columns,
+              itemSpacing: 7,
+              contentPaddingHorizontal: 13,
+            },
+            source
+          ),
+          width,
+          400
+        );
+        const first = layout.items[0]!;
+        const last = layout.items[columns - 1]!;
+        expect(first.x).toBe(13);
+        expect(last.x + last.width).toBeCloseTo(width - 13, 8);
+        expect(first.width).toBeCloseTo(
+          (width - 26 - 7 * (columns - 1)) / columns,
+          8
+        );
+      }
+    }
+  );
+
+  it('keeps favorite focus and row/image identity through table quote patches', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const originalElement = Object.getOwnPropertyDescriptor(
+      globalThis,
+      'Element'
+    );
+    Object.defineProperty(globalThis, 'Element', {
+      configurable: true,
+      value: document.defaultView!.Element,
+    });
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const row: Extract<RowModel, { type: 'market' }> = {
+      type: 'market',
+      key: 'table-quote',
+      variant: 'token',
+      change: { text: '+1%', tone: 'positive' },
+      title: 'Token',
+      leading: { kind: 'token', image },
+      price: '$42',
+      webTable: {
+        columns: [
+          { key: 'favorite', width: 38 },
+          { key: 'asset', width: 280 },
+          { key: 'price', flex: 1 },
+        ],
+        cells: [
+          {
+            key: 'favorite',
+            kind: 'favorite',
+            active: false,
+            actionKey: 'favorite',
+            accessibilityLabel: 'Favorite',
+          },
+          {
+            key: 'asset',
+            kind: 'asset',
+            leading: { kind: 'token', image },
+            title: { text: 'Token' },
+          },
+          { key: 'price', kind: 'text', primary: [{ text: '$42' }] },
+        ],
+      },
+    };
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [row]),
+      {},
+      false
+    );
+    try {
+      const body = host.querySelector<HTMLElement>(
+        '[data-nl-renderer="marketTable"]'
+      )!;
+      const favorite = body.querySelector<HTMLButtonElement>(
+        '[data-native-list-action="favorite"]'
+      )!;
+      const bitmap = body.querySelector('img');
+      expect(bitmap).not.toBeNull();
+      expect(bitmap!.getAttribute('src')).toBe(image.uri);
+      favorite.focus();
+      for (let tick = 0; tick < 100; tick++) {
+        const price = `$${43 + tick}`;
+        engine.applyPatches([
+          {
+            type: 'market',
+            key: row.key,
+            changes: {
+              price,
+              webTable: {
+                ...row.webTable!,
+                cells: [
+                  {
+                    key: 'favorite',
+                    kind: 'favorite',
+                    active: true,
+                    actionKey: 'favorite',
+                    accessibilityLabel: 'Remove favorite',
+                  },
+                  row.webTable!.cells[1]!,
+                  { key: 'price', kind: 'text', primary: [{ text: price }] },
+                ],
+              },
+            },
+          },
+        ]);
+      }
+      expect(host.querySelector('[data-nl-renderer="marketTable"]')).toBe(body);
+      expect(body.querySelector('img')).toBe(bitmap);
+      expect(body.querySelector('[data-native-list-action="favorite"]')).toBe(
+        favorite
+      );
+      expect(document.activeElement).toBe(favorite);
+      expect(favorite.getAttribute('aria-pressed')).toBe('true');
+      expect(body.textContent).toContain('$142');
+    } finally {
+      engine.destroy();
+      if (originalElement)
+        Object.defineProperty(globalThis, 'Element', originalElement);
+      else Reflect.deleteProperty(globalThis, 'Element');
+    }
+  });
+
+  it('retains gallery collection padding with and without a network without changing legacy subtitles', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.append(host);
+    const gallery: Extract<RowModel, { type: 'mediaTile' }> = {
+      type: 'mediaTile',
+      key: 'gallery',
+      variant: 'gallery',
+      imageState: 'empty',
+      title: 'NFT',
+      subtitle: 'Collection',
+    };
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [
+        gallery,
+        { ...gallery, key: 'network', networkImage: image },
+        { ...gallery, key: 'legacy', variant: 'browserPreview' },
+      ]),
+      {},
+      false
+    );
+    try {
+      const subtitles = host.querySelectorAll<HTMLElement>(
+        '.ok-native-list-media-subtitle'
+      );
+      for (const subtitle of Array.from(subtitles).slice(0, 2)) {
+        expect(subtitle.style.paddingRight).toBe('8px');
+        expect(subtitle.style.boxSizing).toBe('border-box');
+        expect(subtitle.parentElement!.style.gap).toBe('0px');
+      }
+      expect(
+        subtitles[1]!.parentElement!.querySelector(
+          '.ok-native-list-media-network'
+        )
+      ).not.toBeNull();
+      expect(subtitles[2]!.style.paddingRight).toBe('');
+    } finally {
+      engine.destroy();
+    }
+  });
+
+  it('preserves table token frame colors, border and external overlays through loading and reuse', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const row = (dark: boolean): Extract<RowModel, { type: 'market' }> => ({
+      type: 'market',
+      key: 'parity',
+      variant: 'token',
+      title: 'Token',
+      price: '$1',
+      leading: { kind: 'token', image },
+      change: { text: '+1%', tone: 'positive' },
+      webTable: {
+        columns: [{ key: 'asset', width: 300 }],
+        cells: [
+          {
+            key: 'asset',
+            kind: 'asset',
+            title: { text: 'Token' },
+            leading: {
+              kind: 'token',
+              image: { ...image, loadingStrategy: 'static', retryTimes: 0 },
+              backgroundColor: dark ? '#2b2b2b' : '#ffffff',
+              borderColor: dark ? '#777777' : undefined,
+              fallbackIcon: { name: 'CryptoCoinOutline' },
+              overlays: [
+                {
+                  position: 'bottomRight',
+                  size: 20,
+                  padding: 2,
+                  offset: 4,
+                  image,
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [row(true)]),
+      {},
+      false
+    );
+    try {
+      const visual = host.querySelector<HTMLElement>(
+        '[data-column-key="asset"] .ok-native-list-visual'
+      )!;
+      const bitmap = visual.querySelector<HTMLImageElement>(
+        '.ok-native-list-visual-main'
+      );
+      expect(bitmap).not.toBeNull();
+      expect(visual.style.background).toBe('rgb(43, 43, 43)');
+      expect(visual.style.borderWidth).toBe('1px');
+      expect(visual.style.boxSizing).toBe('border-box');
+      expect(bitmap!.style.width).toBe('100%');
+      const overlay = visual.querySelector<HTMLElement>(
+        '.ok-native-list-visual-overlay'
+      )!;
+      expect(overlay.style.right).toBe('-5px');
+      expect(overlay.style.bottom).toBe('-5px');
+      const ErrorEvent = document.defaultView!.Event;
+      bitmap!.dispatchEvent(new ErrorEvent('error'));
+      expect(
+        visual.querySelector('.ok-native-list-visual-fallback')
+      ).not.toBeNull();
+      expect(visual.style.background).toBe('rgb(43, 43, 43)');
+      engine.applySnapshot(snapshot({ kind: 'sectioned' }, [row(false)]));
+      const light = host.querySelector<HTMLElement>(
+        '[data-column-key="asset"] .ok-native-list-visual'
+      )!;
+      expect(light.style.background).toBe('rgb(255, 255, 255)');
+      expect(light.style.borderWidth).toBe('0px');
+      expect(light.querySelector('.ok-native-list-visual-fallback')).toBeNull();
+      expect(
+        light.querySelector<HTMLElement>('.ok-native-list-visual-overlay')!
+          .style.right
+      ).toBe('-4px');
+    } finally {
+      engine.destroy();
+    }
+  });
+
+  it('uses the legacy two pixel address-copy gap while keeping Stock hover logos at four', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const row: Extract<RowModel, { type: 'market' }> = {
+      type: 'market',
+      key: 'gaps',
+      variant: 'token',
+      title: 'Token',
+      price: '$1',
+      leading: { kind: 'token', image },
+      change: { text: '+1%', tone: 'positive' },
+      webTable: {
+        columns: [
+          { key: 'copy', width: 300 },
+          { key: 'stock', width: 300 },
+        ],
+        cells: [
+          {
+            key: 'copy',
+            kind: 'asset',
+            title: { text: 'Token' },
+            secondary: [{ text: '1D' }],
+            hoverSecondary: [{ text: '0x123...456' }],
+            hoverActionKey: 'copy',
+            leading: { kind: 'token', image },
+          },
+          {
+            key: 'stock',
+            kind: 'asset',
+            title: { text: 'Stock' },
+            secondary: [{ text: 'Company' }],
+            hoverSecondary: [{ text: '2 tokens' }],
+            hoverImages: [image, image],
+            leading: { kind: 'token', image },
+          },
+        ],
+      },
+    };
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [row]),
+      {},
+      false
+    );
+    try {
+      const copy = host.querySelector<HTMLElement>(
+        '[data-native-list-action="copy"]'
+      )!;
+      expect(copy.parentElement!.style.gap).toBe('2px');
+      const stockTrack = host.querySelector<HTMLElement>(
+        '[data-column-key="stock"] .ok-native-list-table-secondary-track'
+      )!;
+      expect((stockTrack.lastElementChild as HTMLElement).style.gap).toBe(
+        '4px'
+      );
+      expect(
+        stockTrack.querySelectorAll('.ok-native-list-visual')
+      ).toHaveLength(2);
+    } finally {
+      engine.destroy();
+    }
+  });
+  it('recycles history loading headings and explicit compact Pending content', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const header = {
+      type: 'sectionHeader',
+      key: 'pending-title',
+      sectionKey: 'pending',
+      variant: 'history',
+      title: 'Confirming',
+      titleLoading: true,
+      height: 32,
+    } as const;
+    const pending = {
+      type: 'activity',
+      key: 'pending-row',
+      presentation: 'stacked',
+      leading: { kind: 'icon', name: 'Document2Outline' },
+      title: 'Receive',
+      amounts: [{ key: 'amount', text: '+1 USDC' }],
+      badges: [{ key: 'risk', text: 'Malicious', tone: 'warning' }],
+      height: 60,
+    } as const;
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [header, pending]),
+      {},
+      false
+    );
+    const heading = () =>
+      host.querySelector<HTMLElement>('[data-nl-renderer="sectionHeader"]')!;
+    const activity = () =>
+      host.querySelector<HTMLElement>('[data-nl-renderer="activity"]')!;
+    try {
+      expect(heading().querySelector('[role="progressbar"]')).not.toBeNull();
+      expect(heading().style.height).toBe('calc(100% + 4px)');
+      expect(
+        heading().querySelector<HTMLElement>('.ok-native-list-section-title')!
+          .style.textTransform
+      ).toBe('uppercase');
+      expect(activity().style.height).toBe('100%');
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [
+          { ...header, titleLoading: false, title: 'Today' },
+          { ...pending, height: undefined },
+        ])
+      );
+      expect(heading().querySelector('[role="progressbar"]')).toBeNull();
+      expect(heading().style.height).not.toBe('calc(100% + 4px)');
+      expect(
+        heading().querySelector<HTMLElement>('.ok-native-list-section-title')!
+          .style.textTransform
+      ).toBe('');
+      expect(activity().style.height).toBe('calc(100% - 8px)');
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [
+          header,
+          {
+            ...pending,
+            height: undefined,
+            footerActions: [
+              { key: 'speed-up', label: 'Speed up' },
+              { key: 'cancel', label: 'Cancel' },
+            ],
+          },
+        ])
+      );
+      expect(heading().querySelector('[role="progressbar"]')).not.toBeNull();
+      expect(
+        activity().querySelectorAll('.ok-native-list-action-button')
+      ).toHaveLength(2);
+      expect(activity().style.height).toBe('100%');
+      engine.applySnapshot(snapshot({ kind: 'sectioned' }, [header, pending]));
+      expect(
+        activity().querySelectorAll('.ok-native-list-action-button')
+      ).toHaveLength(0);
+      expect(activity().style.height).toBe('100%');
+      const badge = activity().querySelector<HTMLElement>(
+        '.ok-native-list-badge'
+      )!;
+      expect(badge.style.padding).toBe('2px 8px');
+      expect(badge.style.borderRadius).toBe('4px');
+      expect(badge.style.fontWeight).toBe('500');
+      expect(badge.style.background).toContain('--nl-caution-background');
+    } finally {
+      engine.destroy();
+    }
+  });
+});
+
+describe.each([375, 1920])('review DOM regressions at %ipx', (width) => {
+  const { JSDOM } = require('jsdom') as {
+    JSDOM: new (html: string) => {
+      window: {
+        document: Document;
+        Element: typeof Element;
+        HTMLElement: typeof HTMLElement;
+      };
+    };
+  };
+  it('patches hover copy labels without replacing the button or action', () => {
+    const { window } = new JSDOM('<!doctype html><body></body>');
+    const host = window.document.createElement('div');
+    host.style.width = `${width}px`;
+    Object.defineProperty(host, 'clientWidth', { value: width });
+    window.document.body.append(host);
+    const onRowAction = jest.fn();
+    const row = (label?: string): Extract<RowModel, { type: 'market' }> => ({
+      type: 'market',
+      key: 'copy-label',
+      variant: 'token',
+      title: 'Token',
+      price: '$1',
+      leading: { kind: 'token', image },
+      change: { text: '+1%', tone: 'positive' },
+      webTable: {
+        columns: [{ key: 'asset', width: 300 }],
+        cells: [
+          {
+            key: 'asset',
+            kind: 'asset',
+            leading: { kind: 'token', image },
+            title: { text: 'Token' },
+            hoverSecondary: [{ text: '0x123' }],
+            hoverActionKey: 'copy',
+            hoverActionLabel: label,
+          },
+        ],
+      },
+    });
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [row('Copy token')]),
+      { onRowAction },
+      false
+    );
+    const previousElement = global.Element;
+    const previousHTMLElement = global.HTMLElement;
+    global.Element = window.Element;
+    global.HTMLElement = window.HTMLElement;
+    try {
+      const button = host.querySelector<HTMLButtonElement>('button')!;
+      expect(button.getAttribute('aria-label')).toBe('Copy token');
+      for (const label of ['Copier', undefined]) {
+        engine.applyPatches([
+          {
+            type: 'market',
+            key: 'copy-label',
+            changes: { webTable: row(label).webTable },
+          },
+        ]);
+        expect(host.querySelector('button')).toBe(button);
+        expect(button.getAttribute('aria-label')).toBe(label ?? 'Copy address');
+        engine.applySnapshot(
+          snapshot({ kind: 'sectioned' }, [
+            row(label === undefined ? 'Snapshot label' : 'Snapshot translated'),
+          ])
+        );
+        expect(host.querySelector('button')).toBe(button);
+        expect(button.getAttribute('aria-label')).toBe(
+          label === undefined ? 'Snapshot label' : 'Snapshot translated'
+        );
+        button.click();
+      }
+      expect(onRowAction.mock.calls.map(([event]) => event.actionKey)).toEqual([
+        'copy',
+        'copy',
+      ]);
+    } finally {
+      engine.destroy();
+      global.Element = previousElement;
+      global.HTMLElement = previousHTMLElement;
+    }
+  });
+
+  it('honors gallery media precedence and explicit states while releasing stale probes', () => {
+    const { window } = new JSDOM('<!doctype html><body></body>');
+    const host = window.document.createElement('div');
+    host.style.width = `${width}px`;
+    Object.defineProperty(host, 'clientWidth', { value: width });
+    window.document.body.append(host);
+    const row: Extract<RowModel, { type: 'mediaTile' }> = {
+      type: 'mediaTile',
+      key: 'precedence',
+      variant: 'gallery',
+      title: 'NFT',
+      image,
+      media: {
+        source: {
+          uri: 'https://example.test/media.png',
+          width: 40,
+          height: 40,
+        },
+        probeOrder: ['image'],
+      },
+    };
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [row]),
+      {},
+      false
+    );
+    try {
+      const probe = host.querySelector<HTMLImageElement>(
+        '.ok-native-list-media-image img'
+      )!;
+      expect(probe).not.toBeNull();
+      expect(probe.getAttribute('src')).toBe(row.media!.source.uri);
+      const staleReady = probe.onload!;
+      const staleError = probe.onerror!;
+      for (const imageState of ['empty', 'error'] as const) {
+        engine.applySnapshot(
+          snapshot({ kind: 'sectioned' }, [
+            { ...row, image: undefined, imageState },
+          ])
+        );
+        expect(host.querySelector('img, video')).toBeNull();
+        expect(
+          host.querySelector('.ok-native-list-media-fallback')
+        ).not.toBeNull();
+        expect(probe.isConnected).toBe(false);
+        expect(probe.getAttribute('src')).toBeNull();
+        staleReady.call(probe, new Event('load'));
+        staleError.call(probe, new Event('error'));
+        expect(host.querySelector('img, video')).toBeNull();
+      }
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [{ ...row, media: undefined }])
+      );
+      expect(host.querySelector('img')?.getAttribute('src')).toBe(image.uri);
+      engine.applySnapshot(snapshot({ kind: 'sectioned' }, [row]));
+      expect(
+        host
+          .querySelector('.ok-native-list-media-image img')
+          ?.getAttribute('src')
+      ).toBe(row.media!.source.uri);
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [
+          { ...row, image: undefined, media: undefined, imageState: 'empty' },
+        ])
+      );
+      expect(
+        host.querySelector('.ok-native-list-media-fallback')
+      ).not.toBeNull();
+    } finally {
+      engine.destroy();
+    }
+  });
+});
+
+describe.each([375, 1920])('ordered image fallback gaps at %ipx', (width) => {
+  const { JSDOM } = require('jsdom') as {
+    JSDOM: new (html: string) => {
+      window: { document: Document; Event: typeof Event };
+    };
+  };
+  const primary = 'https://example.test/primary.png';
+  const fallback = 'https://example.test/fallback.png';
+  const row = (
+    fallbackUris: readonly string[],
+    retryTimes = 0
+  ): IdentityRow => ({
+    type: 'identity',
+    key: 'fallback-gaps',
+    title: 'Token',
+    leading: {
+      kind: 'token',
+      fallbackText: 'Missing',
+      image: {
+        ...image,
+        uri: primary,
+        fallbackUris,
+        retryTimes,
+        loadingStrategy: 'static',
+      },
+    },
+  });
+  const mount = (item: IdentityRow) => {
+    const { window } = new JSDOM('<!doctype html><body></body>');
+    const host = window.document.createElement('div');
+    window.document.body.append(host);
+    Object.defineProperty(host, 'clientWidth', { value: width });
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [item]),
+      {},
+      false
+    );
+    return {
+      window,
+      host,
+      engine,
+      bitmap: host.querySelector<HTMLImageElement>('img')!,
+    };
+  };
+  it('skips empty, whitespace and unsafe entries and preserves duplicate usable continuations', () => {
+    const { window, host, engine, bitmap } = mount(
+      row(['', '  ', 'data:text/html,ignored', fallback, fallback])
+    );
+    const terminal = jest.fn();
+    bitmap.addEventListener('error', terminal);
+    try {
+      bitmap.dispatchEvent(new window.Event('error'));
+      expect(bitmap.getAttribute('src')).toBe(fallback);
+      expect(bitmap.isConnected).toBe(true);
+      expect(terminal).not.toHaveBeenCalled();
+      bitmap.dispatchEvent(new window.Event('load'));
+      expect(bitmap.style.opacity).toBe('1');
+      bitmap.dispatchEvent(new window.Event('error'));
+      expect(bitmap.getAttribute('src')).toBe(fallback);
+      expect(bitmap.isConnected).toBe(true);
+      expect(terminal).not.toHaveBeenCalled();
+      bitmap.dispatchEvent(new window.Event('error'));
+      expect(terminal).toHaveBeenCalledTimes(1);
+      expect(host.querySelector('img')).toBeNull();
+      expect(host.textContent).toContain('Missing');
+    } finally {
+      engine.destroy();
+    }
+  });
+  it('exhausts an entirely unusable chain and exposes the existing visual fallback', () => {
+    const { window, host, engine, bitmap } = mount(
+      row(['', '  ', 'data:text/html,ignored', 'not-a-uri'])
+    );
+    const terminal = jest.fn();
+    bitmap.addEventListener('error', terminal);
+    try {
+      bitmap.dispatchEvent(new window.Event('error'));
+      expect(terminal).toHaveBeenCalledTimes(1);
+      expect(host.querySelector('img')).toBeNull();
+      expect(host.textContent).toContain('Missing');
+    } finally {
+      engine.destroy();
+    }
+  });
+  it('keeps each usable source retry budget and cancels old timers on rebind and destroy', () => {
+    jest.useFakeTimers();
+    const next = 'https://example.test/next.png';
+    const replacement = 'https://example.test/replacement.png';
+    const { window, host, engine, bitmap } = mount(
+      row(['', fallback, ' ', next], 1)
+    );
+    const error = (element: HTMLImageElement) =>
+      element.dispatchEvent(new window.Event('error'));
+    try {
+      error(bitmap);
+      expect(bitmap.getAttribute('src')).toBe(primary);
+      jest.advanceTimersByTime(2100);
+      error(bitmap);
+      expect(bitmap.getAttribute('src')).toBe(fallback);
+      error(bitmap);
+      expect(bitmap.getAttribute('src')).toBe(fallback);
+      jest.advanceTimersByTime(2100);
+      error(bitmap);
+      expect(bitmap.getAttribute('src')).toBe(next);
+      error(bitmap);
+      const initial = row([fallback], 1);
+      if (initial.leading.kind !== 'token' || !initial.leading.image)
+        throw new Error('Expected token image');
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [
+          {
+            ...initial,
+            leading: {
+              ...initial.leading,
+              image: { ...initial.leading.image, uri: replacement },
+            },
+          },
+        ])
+      );
+      const current = host.querySelector<HTMLImageElement>('img')!;
+      expect(current).not.toBe(bitmap);
+      expect(current.getAttribute('src')).toBe(replacement);
+      jest.advanceTimersByTime(2100);
+      error(bitmap);
+      expect(bitmap.getAttribute('src')).toBe(next);
+      expect(current.getAttribute('src')).toBe(replacement);
+      error(current);
+      engine.destroy();
+      jest.advanceTimersByTime(2100);
+      expect(current.getAttribute('src')).toBe(replacement);
+    } finally {
+      engine.destroy();
+      jest.useRealTimers();
+    }
+  });
+});
+
+describe.each([375, 1920])(
+  'retained History visual binding at %ipx',
+  (width) => {
+    const { JSDOM } = require('jsdom') as {
+      JSDOM: new (html: string) => {
+        window: { document: Document; Event: typeof Event };
+      };
+    };
+    it.each([
+      [false, 'load', 'static'],
+      [false, 'load', 'none'],
+      [true, 'load', 'none'],
+      [false, 'load', undefined],
+      [true, 'load', undefined],
+      [true, 'load', 'static'],
+      [false, 'error', 'static'],
+      [true, 'error', 'static'],
+    ] as const)(
+      'matches fresh styling through presentation changes (pair=%s, state=%s, strategy=%s)',
+      (pair, state, loadingStrategy) => {
+        const { window } = new JSDOM('<!doctype html><body></body>');
+        const mount = (row: ActivityRow) => {
+          const host = window.document.createElement('div');
+          window.document.body.append(host);
+          Object.defineProperty(host, 'clientWidth', { value: width });
+          const engine = new NativeListWebEngine(
+            host,
+            snapshot({ kind: 'sectioned' }, [row]),
+            {},
+            false
+          );
+          return { host, engine };
+        };
+        const base: ActivityRow = {
+          type: 'activity',
+          key: 'retained-history',
+          presentation: 'table',
+          title: 'Receive',
+          height: 60,
+          amounts: [{ key: 'amount', text: '+1 USDC' }],
+          leading: {
+            kind: 'token',
+            image: { ...image, loadingStrategy },
+            fallbackText: 'Token',
+            fallbackIcon: { name: 'CoinsOutline' },
+            networkImage: { ...image, uri: 'https://example.test/network.png' },
+          },
+          ...(pair
+            ? {
+                secondaryLeading: {
+                  kind: 'token' as const,
+                  image: {
+                    ...image,
+                    uri: 'https://example.test/secondary.png',
+                    loadingStrategy,
+                  },
+                  fallbackText: 'Other',
+                },
+              }
+            : {}),
+        };
+        const { host, engine } = mount(base);
+        const corners = Array.from(
+          host.querySelectorAll('.ok-native-list-visual-corner')
+        );
+        const images = Array.from(
+          host.querySelectorAll<HTMLImageElement>('.ok-native-list-visual-main')
+        );
+        images.forEach((bitmap) =>
+          bitmap.dispatchEvent(new window.Event(state))
+        );
+        const fallbacks = Array.from(
+          host.querySelectorAll<HTMLElement>('.ok-native-list-visual-fallback')
+        );
+        const geometry = (root: HTMLElement) =>
+          Array.from(
+            root.querySelector<HTMLElement>('.ok-native-list-history-visual')!
+              .children
+          ).map((visual) => {
+            const node = visual as HTMLElement;
+            const bitmap = node.querySelector<HTMLElement>(
+              '.ok-native-list-visual-main, .ok-native-list-visual-fallback'
+            )!;
+            return [
+              [
+                'width',
+                'height',
+                'border-radius',
+                'background',
+                'border',
+                'position',
+                'left',
+                'top',
+                'overflow',
+                'box-sizing',
+              ].map((key) => node.style.getPropertyValue(key)),
+              bitmap.style.borderRadius,
+              bitmap.style.objectFit,
+              bitmap.style.width,
+              bitmap.style.height,
+              bitmap.parentElement === node,
+            ];
+          });
+        try {
+          for (const row of [
+            {
+              ...base,
+              style: {
+                image: {
+                  shape: 'square' as const,
+                  contentFit: 'contain' as const,
+                },
+              },
+            },
+            {
+              ...base,
+              presentation: 'stacked' as const,
+              style: {
+                image: { cornerRadius: 7, contentFit: 'center' as const },
+              },
+            },
+            { ...base, presentation: 'stacked' as const },
+            base,
+          ]) {
+            engine.applySnapshot(snapshot({ kind: 'sectioned' }, [row]));
+            const fresh = mount(row);
+            fresh.host
+              .querySelectorAll('.ok-native-list-visual-main')
+              .forEach((bitmap) =>
+                bitmap.dispatchEvent(new window.Event(state))
+              );
+            try {
+              if (state === 'load')
+                expect(geometry(host)).toEqual(geometry(fresh.host));
+              else {
+                expect(geometry(host).map(([frame]) => frame)).toEqual(
+                  geometry(fresh.host).map(([frame]) => frame)
+                );
+                fallbacks.forEach((fallback) => {
+                  expect(fallback.style.borderRadius).toBe(
+                    row.style?.image?.cornerRadius !== undefined
+                      ? `${row.style.image.cornerRadius}px`
+                      : row.style?.image?.shape === 'square'
+                      ? '0px'
+                      : ''
+                  );
+                  expect(fallback.style.objectFit).toBe(
+                    row.style?.image?.contentFit === 'center'
+                      ? 'none'
+                      : row.style?.image?.contentFit ?? ''
+                  );
+                });
+              }
+            } finally {
+              fresh.engine.destroy();
+              fresh.host.remove();
+            }
+            expect(
+              Array.from(host.querySelectorAll('.ok-native-list-visual-main'))
+            ).toEqual(state === 'load' ? images : []);
+            expect(
+              Array.from(
+                host.querySelectorAll('.ok-native-list-visual-fallback')
+              )
+            ).toEqual(fallbacks);
+            expect(
+              Array.from(host.querySelectorAll('.ok-native-list-visual-corner'))
+            ).toEqual(corners);
+            images.forEach((bitmap) =>
+              expect(bitmap.style.opacity).toBe(state === 'load' ? '1' : '0')
+            );
+            fallbacks.forEach((fallback) =>
+              expect(fallback.isConnected).toBe(true)
+            );
+          }
+        } finally {
+          engine.destroy();
+        }
+      }
+    );
+  }
+);

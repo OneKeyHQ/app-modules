@@ -43,6 +43,7 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
     )
     host.pager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
       override fun onPageScrolled(position: Int, offset: Float, offsetPixels: Int) {
+        host.onPagerScrolled(position, offset)
         dispatch(reactContext, host, PageScrollEvent(host.id, position, offset))
       }
 
@@ -55,6 +56,7 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
       }
 
       override fun onPageScrollStateChanged(state: Int) {
+        host.onPagerScrollStateChanged(state)
         val value = when (state) {
           ViewPager2.SCROLL_STATE_IDLE -> "idle"
           ViewPager2.SCROLL_STATE_DRAGGING -> "dragging"
@@ -92,6 +94,9 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
         ),
       )
     }
+    host.onHeaderSettledStateChanged = {
+      dispatchDiagnostics(reactContext, host, "header-settled-state")
+    }
     host.onHeaderOffsetChanged = {
       if (!host.pager.isFakeDragging && host.pager.scrollState == ViewPager2.SCROLL_STATE_IDLE) {
         dispatchDiagnostics(reactContext, host, "vertical-idle")
@@ -125,6 +130,8 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
         host.observedScrollableCount(),
         host.retainedPages,
         reason,
+        host.headerStatePageKey(),
+        host.headerSettledAtTop,
       ),
     )
   }
@@ -198,6 +205,16 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
   override fun setStickyHeaderHeight(view: CollapsiblePagerHost?, value: Int) {
     view?.stickyHeaderHeightPx = PixelUtil.toPixelFromDIP(value.toDouble()).roundToInt()
   }
+
+  // The scroll-edge effect and external overlay are UIKit-only.
+  @ReactProp(name = "topScrollEdgeEffect")
+  override fun setTopScrollEdgeEffect(view: CollapsiblePagerHost?, value: String?) = Unit
+  @ReactProp(name = "topOverlayColorScheme")
+  override fun setTopOverlayColorScheme(view: CollapsiblePagerHost?, value: String?) = Unit
+  @ReactProp(name = "topOverlayHeight", defaultDouble = 0.0)
+  override fun setTopOverlayHeight(view: CollapsiblePagerHost?, value: Double) = Unit
+  @ReactProp(name = "externalTopOverlayTag", defaultInt = 0)
+  override fun setExternalTopOverlayTag(view: CollapsiblePagerHost?, value: Int) = Unit
 
   @ReactProp(name = "pageKeys")
   override fun setPageKeys(view: CollapsiblePagerHost?, value: String?) {
@@ -322,15 +339,25 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
     delegate.receiveCommand(root, commandId, args)
   }
 
+  override fun scrollToTop(view: CollapsiblePagerHost?, target: Int, animated: Boolean) {
+    view?.scrollToTop(target, animated)
+  }
+
   override fun setPage(view: CollapsiblePagerHost?, selectedPage: Int) {
     if (view != null && selectedPage in 0 until view.adapter.itemCount) {
+      view.beginPageTransition(selectedPage)
       view.pager.setCurrentItem(selectedPage, true)
+      if (view.pager.scrollState == ViewPager2.SCROLL_STATE_IDLE) {
+        view.onPagerScrollStateChanged(ViewPager2.SCROLL_STATE_IDLE)
+      }
     }
   }
 
   override fun setPageWithoutAnimation(view: CollapsiblePagerHost?, selectedPage: Int) {
     if (view != null && selectedPage in 0 until view.adapter.itemCount) {
+      view.beginPageTransition(selectedPage)
       view.pager.setCurrentItem(selectedPage, false)
+      view.onPagerScrollStateChanged(ViewPager2.SCROLL_STATE_IDLE)
     }
   }
 

@@ -35,3 +35,8 @@ export type {
   SelectionResult,
   SelectionState,
 } from './selection';
+
+export { configureNativeListFonts } from './fonts';
+export type { NativeListFontFamilies } from './fonts';
+
+export { ScrollEdgeEffect } from './ScrollEdgeEffect';

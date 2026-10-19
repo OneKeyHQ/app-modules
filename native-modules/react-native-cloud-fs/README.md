@@ -36,13 +36,26 @@ See [src/NativeCloudFs.ts](src/NativeCloudFs.ts) for complete option/result shap
 A successful availability check does not establish that a later transfer has
 completed or that every requested scope is permitted.
 
+## Provider option and result shapes
+
+`listFiles({ scope, targetPath? })` returns an object with a `files` array.
+Entries include `id`, `name`, `lastModified` and optional `isFile`.
+`copyToCloud` takes `scope`, `sourcePath: { path?, uri? }`, `targetPath` and
+optional `mimetype`; it returns a string through a promise.
+
+`fileExists` accepts optional `fileId`, `targetPath` and `scope` fields, while
+`deleteFromCloud` takes an item with `id` and optional `path`. Choose the fields
+for the configured provider rather than treating cloud IDs as local paths.
+`getCurrentlySignedInUserData()` can return `null`; when present its `avatarUrl`
+can also be `null`. Use `CloudFsSpec` for adapter typing.
+
 ## Upstream attribution
 
 First, a sincere thank-you to the
 `react-native-cloud-fs` maintainers for their excellent work 🙏
 
 This package is built on, and inspired by,
-[nicola/react-native-cloud-fs](https://github.com/nicola/react-native-cloud-fs).
+[npomfret/react-native-cloud-fs](https://github.com/npomfret/react-native-cloud-fs).
 
 Our original plan was to keep our customizations as patches on top of upstream
 `react-native-cloud-fs`.
@@ -56,7 +69,7 @@ development and delivery stable.
 
 ## Upstream Project
 
-- Repository: [nicola/react-native-cloud-fs](https://github.com/nicola/react-native-cloud-fs)
+- Repository: [npomfret/react-native-cloud-fs](https://github.com/npomfret/react-native-cloud-fs)
 - License: MIT
 
 ## Notes
@@ -67,3 +80,7 @@ development and delivery stable.
 
 Thank you again to everyone who contributes to
 `react-native-cloud-fs` 💙
+
+The upstream MIT notice is preserved verbatim in [LICENSE](LICENSE). Its
+copyright line retains upstream year/name placeholders; no replacement author
+or year is inferred here.

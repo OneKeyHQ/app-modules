@@ -9,16 +9,7 @@ enum NativeListFontWeight {
   case semibold
   case bold
 
-  fileprivate var postScriptName: String {
-    switch self {
-    case .regular: return "Roobert-Regular"
-    case .medium: return "Roobert-Medium"
-    case .semibold: return "Roobert-SemiBold"
-    case .bold: return "Roobert-Bold"
-    }
-  }
-
-  fileprivate var systemWeight: UIFont.Weight {
+  var systemWeight: UIFont.Weight {
     switch self {
     case .regular: return .regular
     case .medium: return .medium
@@ -39,40 +30,58 @@ private enum NativeListResources {
     }
     return Bundle(for: NativeListResourceToken.self)
   }()
-
-  static let registerFonts: Void = {
-    ["Regular", "Medium", "SemiBold", "Bold"].forEach { weight in
-      let directURL = bundle.url(forResource: "Roobert-\(weight)", withExtension: "ttf")
-      let nestedURL = bundle.url(
-        forResource: "Roobert-\(weight)",
-        withExtension: "ttf",
-        subdirectory: "fonts"
-      )
-      guard let url = directURL ?? nestedURL else { return }
-      CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
-    }
-  }()
 }
 
-func nativeListFont(ofSize size: CGFloat, weight: NativeListFontWeight = .regular) -> UIFont {
-  _ = NativeListResources.registerFonts
-  return UIFont(name: weight.postScriptName, size: size)
-    ?? UIFont.systemFont(ofSize: size, weight: weight.systemWeight)
+struct NativeListFontFamilies: Equatable {
+  let names: [String: String]
+  init(names: [String: String] = [:]) { self.names = names }
+
+  init?(json: String) {
+    guard let data = json.data(using: .utf8),
+      let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    else { return nil }
+    let weights: Set<String> = ["regular", "medium", "semibold", "bold"]
+    var names: [String: String] = [:]
+    for (key, value) in value {
+      guard weights.contains(key), let name = value as? String, !name.isEmpty,
+        name.utf16.count <= 128,
+        !name.unicodeScalars.contains(where: { $0.value < 32 || $0.value == 127 })
+      else { return nil }
+      names[key] = name
+    }
+    self.names = names
+  }
+
+  func font(ofSize size: CGFloat, weight: NativeListFontWeight) -> UIFont {
+    let key: String
+    switch weight {
+    case .regular: key = "regular"
+    case .medium: key = "medium"
+    case .semibold: key = "semibold"
+    case .bold: key = "bold"
+    }
+    return names[key].flatMap { UIFont(name: $0, size: size) }
+      ?? UIFont.systemFont(ofSize: size, weight: weight.systemWeight)
+  }
+}
+
+func nativeListFont(
+  ofSize size: CGFloat, weight: NativeListFontWeight = .regular,
+  fonts: NativeListFontFamilies = NativeListFontFamilies()
+) -> UIFont {
+  fonts.font(ofSize: size, weight: weight)
 }
 
 func nativeListTabularFont(
-  ofSize size: CGFloat,
-  weight: NativeListFontWeight = .regular
+  ofSize size: CGFloat, weight: NativeListFontWeight = .regular,
+  fonts: NativeListFontFamilies = NativeListFontFamilies()
 ) -> UIFont {
-  let font = nativeListFont(ofSize: size, weight: weight)
+  let font = fonts.font(ofSize: size, weight: weight)
   let settings: [[UIFontDescriptor.FeatureKey: Int]] = [[
-    .type: kNumberSpacingType,
-    .selector: kMonospacedNumbersSelector,
+      .type: kNumberSpacingType, .selector: kMonospacedNumbersSelector
   ]]
-  let descriptor = font.fontDescriptor.addingAttributes([
-    .featureSettings: settings,
-  ])
-  return UIFont(descriptor: descriptor, size: size)
+  return UIFont(
+    descriptor: font.fontDescriptor.addingAttributes([.featureSettings: settings]), size: size)
 }
 
 func nativeListIcon(named name: String) -> UIImage? {

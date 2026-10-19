@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-bundle-crypto",
-  "version": "3.0.170",
+  "version": "6.7.0-6",
   "description": "react-native-bundle-crypto",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -53,7 +53,7 @@
     "directory": "native-modules/react-native-bundle-crypto"
   },
   "author": "onekeyfe <huanming@onekey.so> (https://github.com/OneKeyHQ/app-modules)",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "bugs": {
     "url": "https://github.com/OneKeyHQ/app-modules/issues"
   },

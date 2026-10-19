@@ -904,7 +904,7 @@ const styles = StyleSheet.create({
   walletFooterLabel: {
     color: '#FFFFFFED',
     fontSize: 12,
-    fontFamily: 'Roobert-Regular',
+    fontWeight: '400',
     lineHeight: 16,
     marginTop: 4,
   },
@@ -937,7 +937,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     color: '#FFFFFFED',
     fontSize: 16,
-    fontFamily: 'Roobert-Medium',
+    fontWeight: '500',
     lineHeight: 24,
     maxWidth: 132,
   },
@@ -986,7 +986,7 @@ const styles = StyleSheet.create({
     paddingRight: 34,
     color: '#FFFFFFED',
     fontSize: 14,
-    fontFamily: 'Roobert-Regular',
+    fontWeight: '400',
   },
   searchIcon: {
     position: 'absolute',
