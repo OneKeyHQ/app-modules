@@ -953,6 +953,11 @@ matching the consumer's existing finite logo group. Geometry/badge/image changes
 use normal rebind and release replaced image leases; price-only updates retain
 these nodes. No native caller emits these Web-only fields.
 
+Web gallery media follows the shared input precedence: media wins over image,
+unless an explicit empty/error imageState suppresses media probing. An empty/error
+gallery without either source retains the gallery fallback surface when
+imageState explicitly selects that state.
+
 Web gallery media preserves the consuming NFT card presentation: healthy image
 and exhausted fallback surfaces have a10px radius, while a healthy video surface
 has square corners. The image/video frame uses the list page background; only

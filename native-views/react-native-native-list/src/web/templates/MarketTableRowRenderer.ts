@@ -344,6 +344,9 @@ function updateCell(
       );
       if (view.hover) {
         const button = view.hover.querySelector('button');
+        view.hover.parentElement
+          ?.querySelector('button')
+          ?.setAttribute('aria-label', cell.hoverActionLabel ?? 'Copy address');
         for (const child of [...view.hover.children])
           if (child !== button) child.remove();
         for (const part of cell.hoverSecondary ?? [])

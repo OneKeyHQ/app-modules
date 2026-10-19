@@ -719,3 +719,34 @@ it('same commit blur and Activity hide and restores it after same-owner growth',
   expect(latestSnapshot()?.pendingRouteScrollTop).toBeNull();
 });
 
+
+it.each([375, 1920])('isolates retained inactive pages and reverses the attributes after selection at %ipx', async (width) => {
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
+  const pager = React.createRef<CollapsiblePagerView>();
+  await act(async () => root.render(
+    <CollapsiblePagerView ref={pager} header={<div />} stickyHeader={<div />}
+      headerHeight={0} stickyHeaderHeight={0} isActive pageRetentionDistance={2}>
+      {makePage('A')}{makePage('B')}
+    </CollapsiblePagerView>,
+  ));
+  const pageHost = (key: string) => container.querySelector<HTMLElement>(`[data-collapsible-pager-scroll-key="${key}"]`)!.closest<HTMLElement>('[aria-hidden]')!;
+  const a = pageHost('A');
+  const b = pageHost('B');
+  expect(a.isConnected && b.isConnected).toBe(true);
+  expect(a.inert).toBe(false);
+  expect(a.getAttribute('aria-hidden')).toBe('false');
+  expect(b.inert).toBe(true);
+  expect(b.getAttribute('aria-hidden')).toBe('true');
+  await act(async () => pager.current!.setPageWithoutAnimation(1));
+  expect(pageHost('A')).toBe(a);
+  expect(pageHost('B')).toBe(b);
+  expect(a.inert).toBe(true);
+  expect(a.getAttribute('aria-hidden')).toBe('true');
+  expect(b.inert).toBe(false);
+  expect(b.getAttribute('aria-hidden')).toBe('false');
+  await act(async () => pager.current!.setPageWithoutAnimation(0));
+  expect(a.inert).toBe(false);
+  expect(a.getAttribute('aria-hidden')).toBe('false');
+  expect(b.inert).toBe(true);
+  expect(b.getAttribute('aria-hidden')).toBe('true');
+});

@@ -4643,3 +4643,163 @@ describe('Web migration layout and table regressions', () => {
     }
   });
 });
+
+describe.each([375, 1920])('review DOM regressions at %ipx', (width) => {
+  const { JSDOM } = require('jsdom') as {
+    JSDOM: new (html: string) => {
+      window: {
+        document: Document;
+        Element: typeof Element;
+        HTMLElement: typeof HTMLElement;
+      };
+    };
+  };
+  it('patches hover copy labels without replacing the button or action', () => {
+    const { window } = new JSDOM('<!doctype html><body></body>');
+    const host = window.document.createElement('div');
+    host.style.width = `${width}px`;
+    Object.defineProperty(host, 'clientWidth', { value: width });
+    window.document.body.append(host);
+    const onRowAction = jest.fn();
+    const row = (label?: string): Extract<RowModel, { type: 'market' }> => ({
+      type: 'market',
+      key: 'copy-label',
+      variant: 'token',
+      title: 'Token',
+      price: '$1',
+      leading: { kind: 'token', image },
+      change: { text: '+1%', tone: 'positive' },
+      webTable: {
+        columns: [{ key: 'asset', width: 300 }],
+        cells: [
+          {
+            key: 'asset',
+            kind: 'asset',
+            leading: { kind: 'token', image },
+            title: { text: 'Token' },
+            hoverSecondary: [{ text: '0x123' }],
+            hoverActionKey: 'copy',
+            hoverActionLabel: label,
+          },
+        ],
+      },
+    });
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [row('Copy token')]),
+      { onRowAction },
+      false
+    );
+    const previousElement = global.Element;
+    const previousHTMLElement = global.HTMLElement;
+    global.Element = window.Element;
+    global.HTMLElement = window.HTMLElement;
+    try {
+      const button = host.querySelector<HTMLButtonElement>('button')!;
+      expect(button.getAttribute('aria-label')).toBe('Copy token');
+      for (const label of ['Copier', undefined]) {
+        engine.applyPatches([
+          {
+            type: 'market',
+            key: 'copy-label',
+            changes: { webTable: row(label).webTable },
+          },
+        ]);
+        expect(host.querySelector('button')).toBe(button);
+        expect(button.getAttribute('aria-label')).toBe(label ?? 'Copy address');
+        engine.applySnapshot(
+          snapshot({ kind: 'sectioned' }, [
+            row(label === undefined ? 'Snapshot label' : 'Snapshot translated'),
+          ])
+        );
+        expect(host.querySelector('button')).toBe(button);
+        expect(button.getAttribute('aria-label')).toBe(
+          label === undefined ? 'Snapshot label' : 'Snapshot translated'
+        );
+        button.click();
+      }
+      expect(onRowAction.mock.calls.map(([event]) => event.actionKey)).toEqual([
+        'copy',
+        'copy',
+      ]);
+    } finally {
+      engine.destroy();
+      global.Element = previousElement;
+      global.HTMLElement = previousHTMLElement;
+    }
+  });
+
+  it('honors gallery media precedence and explicit states while releasing stale probes', () => {
+    const { window } = new JSDOM('<!doctype html><body></body>');
+    const host = window.document.createElement('div');
+    host.style.width = `${width}px`;
+    Object.defineProperty(host, 'clientWidth', { value: width });
+    window.document.body.append(host);
+    const row: Extract<RowModel, { type: 'mediaTile' }> = {
+      type: 'mediaTile',
+      key: 'precedence',
+      variant: 'gallery',
+      title: 'NFT',
+      image,
+      media: {
+        source: {
+          uri: 'https://example.test/media.png',
+          width: 40,
+          height: 40,
+        },
+        probeOrder: ['image'],
+      },
+    };
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [row]),
+      {},
+      false
+    );
+    try {
+      const probe = host.querySelector<HTMLImageElement>(
+        '.ok-native-list-media-image img'
+      )!;
+      expect(probe).not.toBeNull();
+      expect(probe.getAttribute('src')).toBe(row.media!.source.uri);
+      const staleReady = probe.onload!;
+      const staleError = probe.onerror!;
+      for (const imageState of ['empty', 'error'] as const) {
+        engine.applySnapshot(
+          snapshot({ kind: 'sectioned' }, [
+            { ...row, image: undefined, imageState },
+          ])
+        );
+        expect(host.querySelector('img, video')).toBeNull();
+        expect(
+          host.querySelector('.ok-native-list-media-fallback')
+        ).not.toBeNull();
+        expect(probe.isConnected).toBe(false);
+        expect(probe.getAttribute('src')).toBeNull();
+        staleReady.call(probe, new Event('load'));
+        staleError.call(probe, new Event('error'));
+        expect(host.querySelector('img, video')).toBeNull();
+      }
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [{ ...row, media: undefined }])
+      );
+      expect(host.querySelector('img')?.getAttribute('src')).toBe(image.uri);
+      engine.applySnapshot(snapshot({ kind: 'sectioned' }, [row]));
+      expect(
+        host
+          .querySelector('.ok-native-list-media-image img')
+          ?.getAttribute('src')
+      ).toBe(row.media!.source.uri);
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [
+          { ...row, image: undefined, media: undefined, imageState: 'empty' },
+        ])
+      );
+      expect(
+        host.querySelector('.ok-native-list-media-fallback')
+      ).not.toBeNull();
+    } finally {
+      engine.destroy();
+    }
+  });
+});

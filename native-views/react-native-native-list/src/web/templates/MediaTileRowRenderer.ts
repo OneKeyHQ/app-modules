@@ -192,7 +192,7 @@ type GalleryViews = {
 };
 const galleries = new WeakMap<HTMLElement, GalleryViews>();
 const isGalleryMedia = (row: MediaTileRow) =>
-  row.variant === 'gallery' && !row.image;
+  row.variant === 'gallery' && (!row.image || (!!row.media && !row.imageState));
 
 function clearGalleryMedia(v: GalleryViews) {
   v.epoch += 1;
@@ -332,7 +332,7 @@ function bindGallery(
     v.mediaKey = mediaKey;
     v.fallback.style.visibility = 'visible';
     const epoch = v.epoch;
-    const source = row.media?.source;
+    const source = row.imageState ? undefined : row.media?.source;
     const probe = (attempt: number) => {
       if (v.epoch !== epoch) return;
       const kind = row.media?.probeOrder[attempt];
