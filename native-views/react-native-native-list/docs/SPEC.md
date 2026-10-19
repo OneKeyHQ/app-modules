@@ -1013,8 +1013,9 @@ sources without changing default native mapper output.
 
 ImageSource.fallbackUris is an optional Web-only ordered continuation after uri.
 It retains the complete caller-provided sequence (no truncation or deduplication).
-An empty/unusable continuation terminates in the declared visual fallback, like
-an empty current source in the existing Web Image.WithFallbackSources. Each URI
+Empty or unusable continuation entries are skipped in order until a usable URI
+is found or the complete sequence is exhausted. Exhaustion reaches the declared
+visual fallback. Skipped entries consume no retry budget; each usable URI
 uses its declared retryTimes before proceeding; Market Web callers pass the
 existing ImageV2 default of one retry per source. This array path does not change
 legacy fallbackUri switching/retry order when fallbackUris is absent. Native

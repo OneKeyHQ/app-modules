@@ -4803,3 +4803,141 @@ describe.each([375, 1920])('review DOM regressions at %ipx', (width) => {
     }
   });
 });
+
+describe.each([375, 1920])('ordered image fallback gaps at %ipx', (width) => {
+  const { JSDOM } = require('jsdom') as {
+    JSDOM: new (html: string) => {
+      window: { document: Document; Event: typeof Event };
+    };
+  };
+  const primary = 'https://example.test/primary.png';
+  const fallback = 'https://example.test/fallback.png';
+  const row = (
+    fallbackUris: readonly string[],
+    retryTimes = 0
+  ): IdentityRow => ({
+    type: 'identity',
+    key: 'fallback-gaps',
+    title: 'Token',
+    leading: {
+      kind: 'token',
+      fallbackText: 'Missing',
+      image: {
+        ...image,
+        uri: primary,
+        fallbackUris,
+        retryTimes,
+        loadingStrategy: 'static',
+      },
+    },
+  });
+  const mount = (item: IdentityRow) => {
+    const { window } = new JSDOM('<!doctype html><body></body>');
+    const host = window.document.createElement('div');
+    window.document.body.append(host);
+    Object.defineProperty(host, 'clientWidth', { value: width });
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [item]),
+      {},
+      false
+    );
+    return {
+      window,
+      host,
+      engine,
+      bitmap: host.querySelector<HTMLImageElement>('img')!,
+    };
+  };
+  it('skips empty, whitespace and unsafe entries and preserves duplicate usable continuations', () => {
+    const { window, host, engine, bitmap } = mount(
+      row(['', '  ', 'data:text/html,ignored', fallback, fallback])
+    );
+    const terminal = jest.fn();
+    bitmap.addEventListener('error', terminal);
+    try {
+      bitmap.dispatchEvent(new window.Event('error'));
+      expect(bitmap.getAttribute('src')).toBe(fallback);
+      expect(bitmap.isConnected).toBe(true);
+      expect(terminal).not.toHaveBeenCalled();
+      bitmap.dispatchEvent(new window.Event('load'));
+      expect(bitmap.style.opacity).toBe('1');
+      bitmap.dispatchEvent(new window.Event('error'));
+      expect(bitmap.getAttribute('src')).toBe(fallback);
+      expect(bitmap.isConnected).toBe(true);
+      expect(terminal).not.toHaveBeenCalled();
+      bitmap.dispatchEvent(new window.Event('error'));
+      expect(terminal).toHaveBeenCalledTimes(1);
+      expect(host.querySelector('img')).toBeNull();
+      expect(host.textContent).toContain('Missing');
+    } finally {
+      engine.destroy();
+    }
+  });
+  it('exhausts an entirely unusable chain and exposes the existing visual fallback', () => {
+    const { window, host, engine, bitmap } = mount(
+      row(['', '  ', 'data:text/html,ignored', 'not-a-uri'])
+    );
+    const terminal = jest.fn();
+    bitmap.addEventListener('error', terminal);
+    try {
+      bitmap.dispatchEvent(new window.Event('error'));
+      expect(terminal).toHaveBeenCalledTimes(1);
+      expect(host.querySelector('img')).toBeNull();
+      expect(host.textContent).toContain('Missing');
+    } finally {
+      engine.destroy();
+    }
+  });
+  it('keeps each usable source retry budget and cancels old timers on rebind and destroy', () => {
+    jest.useFakeTimers();
+    const next = 'https://example.test/next.png';
+    const replacement = 'https://example.test/replacement.png';
+    const { window, host, engine, bitmap } = mount(
+      row(['', fallback, ' ', next], 1)
+    );
+    const error = (element: HTMLImageElement) =>
+      element.dispatchEvent(new window.Event('error'));
+    try {
+      error(bitmap);
+      expect(bitmap.getAttribute('src')).toBe(primary);
+      jest.advanceTimersByTime(2100);
+      error(bitmap);
+      expect(bitmap.getAttribute('src')).toBe(fallback);
+      error(bitmap);
+      expect(bitmap.getAttribute('src')).toBe(fallback);
+      jest.advanceTimersByTime(2100);
+      error(bitmap);
+      expect(bitmap.getAttribute('src')).toBe(next);
+      error(bitmap);
+      const initial = row([fallback], 1);
+      if (initial.leading.kind !== 'token' || !initial.leading.image)
+        throw new Error('Expected token image');
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [
+          {
+            ...initial,
+            leading: {
+              ...initial.leading,
+              image: { ...initial.leading.image, uri: replacement },
+            },
+          },
+        ])
+      );
+      const current = host.querySelector<HTMLImageElement>('img')!;
+      expect(current).not.toBe(bitmap);
+      expect(current.getAttribute('src')).toBe(replacement);
+      jest.advanceTimersByTime(2100);
+      error(bitmap);
+      expect(bitmap.getAttribute('src')).toBe(next);
+      expect(current.getAttribute('src')).toBe(replacement);
+      error(current);
+      engine.destroy();
+      jest.advanceTimersByTime(2100);
+      expect(current.getAttribute('src')).toBe(replacement);
+    } finally {
+      engine.destroy();
+      jest.useRealTimers();
+    }
+  });
+});

@@ -987,7 +987,10 @@ function configureWebImageRetry(
     }
     if (orderedFallbacks !== undefined && retryCount >= retryLimit) {
       if (fallbackIndex >= orderedFallbacks.length) return;
-      const nextUri = safeImageUri(orderedFallbacks[fallbackIndex++]);
+      let nextUri: string | undefined;
+      while (!nextUri && fallbackIndex < orderedFallbacks.length) {
+        nextUri = safeImageUri(orderedFallbacks[fallbackIndex++]);
+      }
       if (!nextUri) return;
       event.stopImmediatePropagation();
       retryCount = 0;
