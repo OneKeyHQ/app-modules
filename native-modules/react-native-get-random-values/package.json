@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-get-random-values",
-  "version": "6.7.0-3",
+  "version": "6.7.0-4",
   "description": "react-native-get-random-values",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
