@@ -2,7 +2,8 @@ use monero_wallet::{
     address::MoneroAddress,
     ed25519::{CompressedPoint, Point, Scalar},
     io::{read_byte, read_bytes, read_u32, read_u64, read_vec},
-    send::SignableTransaction,
+    send::{Eventuality, SignableTransaction},
+    transaction::Transaction,
     OutputWithDecoys,
 };
 use serde::Deserialize;
@@ -42,6 +43,19 @@ fn amount(value: &str) -> Result<u64> {
 
 pub fn parse_request(json: &str) -> Result<ReviewRequest> {
     serde_json::from_str(json).map_err(|_| mismatch("reviewRequest"))
+}
+
+pub fn verify_sender(
+    request: &ReviewRequest,
+    pair: &monero_wallet::ViewPair,
+    network: monero_wallet::address::Network,
+) -> Result<()> {
+    if keys::parse_network(&request.network)? != network
+        || request.from_address != keys::primary_address(pair, network)
+    {
+        return Err(mismatch("fromAddress"));
+    }
+    Ok(())
 }
 
 /// Read the pinned monero-wallet 0.2 serialization after its own strict validator.
@@ -160,6 +174,39 @@ pub fn verify(
     Ok(signable)
 }
 
+/// Bind the reviewed outputs to the actual signed transaction without changing
+/// signing or scanning. Eventuality validates output keys, commitments and ciphertexts.
+pub fn verify_signed(
+    signable_hex: &str,
+    request: &ReviewRequest,
+    raw_hex: &str,
+) -> Result<Transaction> {
+    let signable = verify(signable_hex, request, None)?;
+    if raw_hex.len() > 8 * 1024 * 1024 {
+        return Err(mismatch("rawHex"));
+    }
+    let raw = hex::decode(raw_hex).map_err(|_| mismatch("rawHex"))?;
+    let mut reader = raw.as_slice();
+    let transaction: Transaction =
+        Transaction::read(&mut reader).map_err(|_| mismatch("rawHex"))?;
+    if !reader.is_empty() {
+        return Err(mismatch("trailingBytes"));
+    }
+    let Transaction::V2 {
+        proofs: Some(ref proofs),
+        ..
+    } = transaction
+    else {
+        return Err(mismatch("signedTransaction"));
+    };
+    if proofs.base.fee != amount(&request.fee_atomic)?
+        || !Eventuality::from(signable).matches(&transaction.clone().pruned_with_prunable().0)
+    {
+        return Err(mismatch("signedTransaction"));
+    }
+    Ok(transaction)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -187,6 +234,147 @@ mod tests {
         fixture_with(extra, |pair| Change::new(pair, None))
     }
 
+    fn review_json(review: &ReviewRequest) -> String {
+        serde_json::json!({
+            "network": review.network, "fromAddress": review.from_address,
+            "toAddress": review.to_address, "amountAtomic": review.amount_atomic,
+            "feeAtomic": review.fee_atomic, "changeAtomic": review.change_atomic,
+            "isMaxSend": review.is_max_send,
+        })
+        .to_string()
+    }
+
+    fn signed_fixture() -> (String, ReviewRequest, String) {
+        let (bytes, review, spend) = fixture(vec![]);
+        let encoded = hex::encode(bytes);
+        let signed = crate::spend::sign_for_host(&encoded, &spend, &review_json(&review)).unwrap();
+        (
+            encoded,
+            review,
+            signed["rawHex"].as_str().unwrap().to_owned(),
+        )
+    }
+
+    #[test]
+    fn signed_outputs_and_fee_must_match_the_prepared_review() {
+        let (encoded, review, raw) = signed_fixture();
+        let transaction = verify_signed(&encoded, &review, &raw).unwrap();
+        let mut wrong_outputs = transaction.clone();
+        wrong_outputs.prefix_mut().outputs.swap(0, 1);
+        assert!(verify_signed(&encoded, &review, &hex::encode(wrong_outputs.serialize())).is_err());
+        let mut wrong_extra = transaction.clone();
+        wrong_extra.prefix_mut().extra.push(0);
+        assert!(verify_signed(&encoded, &review, &hex::encode(wrong_extra.serialize())).is_err());
+        let mut wrong_fee = transaction;
+        if let Transaction::V2 {
+            proofs: Some(ref mut proofs),
+            ..
+        } = wrong_fee
+        {
+            proofs.base.fee += 1;
+        }
+        assert!(verify_signed(&encoded, &review, &hex::encode(wrong_fee.serialize())).is_err());
+        assert!(verify_signed(&encoded, &review, &format!("{raw}00")).is_err());
+        assert!(verify_signed(&encoded, &review, "zz").is_err());
+    }
+
+    #[test]
+    fn signed_multiple_inputs_match_the_prepared_review() {
+        let (bytes, review, spend) = fixture_with_inputs(vec![], |pair| Change::new(pair, None), 3);
+        let encoded = hex::encode(bytes);
+        let signed = crate::spend::sign_for_host(&encoded, &spend, &review_json(&review)).unwrap();
+        assert!(verify_signed(&encoded, &review, signed["rawHex"].as_str().unwrap()).is_ok());
+    }
+
+    #[test]
+    fn broadcast_review_must_belong_to_the_local_account_and_network() {
+        let (_, review, _) = fixture(vec![]);
+        assert!(verify_sender(&review, &other_account(1), Network::Mainnet).is_ok());
+        assert!(verify_sender(&review, &other_account(2), Network::Mainnet).is_err());
+        assert!(verify_sender(&review, &other_account(1), Network::Testnet).is_err());
+    }
+
+    #[test]
+    fn signed_self_payments_and_max_sends_match_the_prepared_review() {
+        for (self_payment, max_send) in [(true, false), (false, true), (true, true)] {
+            let (bytes, review, spend) = fixture_with_options(
+                vec![],
+                |pair| Change::new(pair, None),
+                3,
+                self_payment,
+                max_send,
+            );
+            let encoded = hex::encode(bytes);
+            let signed =
+                crate::spend::sign_for_host(&encoded, &spend, &review_json(&review)).unwrap();
+            let amounts = crate::spend::reviewed_broadcast_amounts(
+                &encoded,
+                &review,
+                signed["rawHex"].as_str().unwrap(),
+                None,
+                None,
+            )
+            .unwrap();
+            assert_eq!(
+                amounts.change_atomic,
+                Some(review.change_atomic.parse::<u64>().unwrap())
+            );
+            if max_send {
+                assert_eq!(amounts.change_atomic, Some(0));
+                assert_eq!(amounts.outgoing_atomic, Some(INPUT_AMOUNT * 3));
+            }
+        }
+    }
+
+    #[test]
+    fn broadcast_amounts_are_derived_from_verified_outputs_not_optional_host_values() {
+        let (encoded, review, raw) = signed_fixture();
+        let expected = PAYMENT_AMOUNT + review.fee_atomic.parse::<u64>().unwrap();
+        let amounts =
+            crate::spend::reviewed_broadcast_amounts(&encoded, &review, &raw, None, None).unwrap();
+        assert_eq!(amounts.outgoing_atomic, Some(expected));
+        assert_eq!(
+            amounts.change_atomic,
+            Some(review.change_atomic.parse::<u64>().unwrap())
+        );
+        let outgoing = expected.to_string();
+        assert!(crate::spend::reviewed_broadcast_amounts(
+            &encoded,
+            &review,
+            &raw,
+            Some(&outgoing),
+            Some(&review.change_atomic)
+        )
+        .is_ok());
+        for bad in [
+            "",
+            "-1",
+            "+1",
+            "01",
+            "1.0",
+            "1e3",
+            "18446744073709551616",
+            "1",
+        ] {
+            assert!(crate::spend::reviewed_broadcast_amounts(
+                &encoded,
+                &review,
+                &raw,
+                None,
+                Some(bad)
+            )
+            .is_err());
+            assert!(crate::spend::reviewed_broadcast_amounts(
+                &encoded,
+                &review,
+                &raw,
+                Some(bad),
+                None
+            )
+            .is_err());
+        }
+    }
+
     /// A view pair for another account: spend key `value`, view key derived as OneKey does.
     fn other_account(value: u8) -> ViewPair {
         let bytes = <[u8; 32]>::from(scalar(value));
@@ -201,56 +389,94 @@ mod tests {
         extra: Vec<Vec<u8>>,
         change: impl FnOnce(ViewPair) -> Change,
     ) -> (Vec<u8>, ReviewRequest, [u8; 32]) {
+        fixture_with_inputs(extra, change, 1)
+    }
+
+    fn fixture_with_inputs(
+        extra: Vec<Vec<u8>>,
+        change: impl FnOnce(ViewPair) -> Change,
+        input_count: u8,
+    ) -> (Vec<u8>, ReviewRequest, [u8; 32]) {
+        fixture_with_options(extra, change, input_count, false, false)
+    }
+
+    fn fixture_with_options(
+        extra: Vec<Vec<u8>>,
+        change: impl FnOnce(ViewPair) -> Change,
+        input_count: u8,
+        self_payment: bool,
+        max_send: bool,
+    ) -> (Vec<u8>, ReviewRequest, [u8; 32]) {
         let mut public_bytes = [0x66u8; 32];
         public_bytes[0] = 0x58;
         let public = CompressedPoint::from(public_bytes).decompress().unwrap();
-        let commitment = Commitment::new(scalar(1), INPUT_AMOUNT);
-        let mut input_bytes = Vec::new();
-        input_bytes.extend(public_bytes);
-        scalar(0).write(&mut input_bytes).unwrap();
-        commitment.write(&mut input_bytes).unwrap();
-        let members = (0..16)
-            .map(|index| {
-                if index == 0 {
-                    [public, commitment.commit()]
-                } else {
-                    [
-                        Point::biased_hash([index; 32]),
-                        Point::biased_hash([index + 100; 32]),
-                    ]
-                }
+        let inputs: Vec<OutputWithDecoys> = (0..input_count)
+            .map(|input_index| {
+                let private: curve25519_dalek::Scalar = scalar(input_index + 1).into();
+                let input_public =
+                    Point::from(private * curve25519_dalek::constants::ED25519_BASEPOINT_POINT);
+                let commitment = Commitment::new(scalar(input_index + 1), INPUT_AMOUNT);
+                let mut input_bytes = Vec::new();
+                input_public.compress().write(&mut input_bytes).unwrap();
+                scalar(input_index).write(&mut input_bytes).unwrap();
+                commitment.write(&mut input_bytes).unwrap();
+                let members = (0..16)
+                    .map(|index| {
+                        if index == 0 {
+                            [input_public, commitment.commit()]
+                        } else {
+                            [
+                                Point::biased_hash([index + input_index * 16; 32]),
+                                Point::biased_hash([index + 100 + input_index * 16; 32]),
+                            ]
+                        }
+                    })
+                    .collect();
+                Decoys::new(vec![1; 16], 0, members)
+                    .unwrap()
+                    .write(&mut input_bytes)
+                    .unwrap();
+                OutputWithDecoys::read(&mut input_bytes.as_slice()).unwrap()
             })
             .collect();
-        Decoys::new(vec![1; 16], 0, members)
-            .unwrap()
-            .write(&mut input_bytes)
-            .unwrap();
-        let input = OutputWithDecoys::read(&mut input_bytes.as_slice()).unwrap();
         let spend_bytes = <[u8; 32]>::from(scalar(1));
         let pair = ViewPair::new(public, Zeroizing::new(Scalar::hash(spend_bytes))).unwrap();
         let sender = pair.legacy_address(Network::Mainnet).to_string();
-        let tx = SignableTransaction::new(
-            RctType::ClsagBulletproofPlus,
-            Zeroizing::new([7; 32]),
-            vec![input],
-            vec![(
-                MoneroAddress::from_str(Network::Mainnet, RECIPIENT).unwrap(),
-                PAYMENT_AMOUNT,
-            )],
-            change(pair),
-            extra,
-            FeeRate::new(20_000, 1).unwrap(),
-        )
-        .unwrap();
+        let recipient = if self_payment { &sender } else { RECIPIENT };
+        let change = change(pair);
+        let build = |payment_amount| {
+            SignableTransaction::new(
+                RctType::ClsagBulletproofPlus,
+                Zeroizing::new([7; 32]),
+                inputs.clone(),
+                vec![(
+                    MoneroAddress::from_str(Network::Mainnet, recipient).unwrap(),
+                    payment_amount,
+                )],
+                change.clone(),
+                extra.clone(),
+                FeeRate::new(20_000, 1).unwrap(),
+            )
+            .unwrap()
+        };
+        let total = INPUT_AMOUNT * u64::from(input_count);
+        let mut tx = build(PAYMENT_AMOUNT);
+        let paid = if max_send {
+            let paid = total - tx.necessary_fee();
+            tx = build(paid);
+            paid
+        } else {
+            PAYMENT_AMOUNT
+        };
         let fee = tx.necessary_fee();
         let review = ReviewRequest {
             network: "mainnet".into(),
-            from_address: sender,
-            to_address: RECIPIENT.into(),
-            amount_atomic: PAYMENT_AMOUNT.to_string(),
+            from_address: sender.clone(),
+            to_address: recipient.into(),
+            amount_atomic: paid.to_string(),
             fee_atomic: fee.to_string(),
-            change_atomic: (INPUT_AMOUNT - PAYMENT_AMOUNT - fee).to_string(),
-            is_max_send: false,
+            change_atomic: (total - paid - fee).to_string(),
+            is_max_send: max_send,
         };
         (tx.serialize(), review, spend_bytes)
     }

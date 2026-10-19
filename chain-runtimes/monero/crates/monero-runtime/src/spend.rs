@@ -920,10 +920,56 @@ mod tests {
         assert_eq!(b.pending_change_atomic, 300);
         assert_eq!(b.unlocked_atomic, 0);
 
+        record_broadcast(
+            &db,
+            id,
+            &txid,
+            &[key_image],
+            901,
+            SentAmounts {
+                outgoing_atomic: Some(499),
+                change_atomic: Some(1),
+            },
+        )
+        .unwrap();
+        let recorded: (String, String) = db.conn().query_row(
+            "SELECT outgoing_atomic, change_atomic FROM transactions WHERE identity_id = ?1 AND txid = ?2",
+            params![id, txid.as_slice()], |row| Ok((row.get(0)?, row.get(1)?)),
+        ).unwrap();
+        assert_eq!(recorded, ("200".to_owned(), "300".to_owned()));
+        assert_eq!(
+            crate::query::balance(&db, id, Some(10_000))
+                .unwrap()
+                .total_atomic,
+            300
+        );
+
         crate::pool::mark_failed(&db, id, &txid).unwrap();
         let b = crate::query::balance(&db, id, Some(10_000)).unwrap();
         assert_eq!(b.pending_change_atomic, 0);
         assert_eq!(b.total_atomic, 500);
+    }
+
+    #[test]
+    fn a_known_incoming_transaction_cannot_bypass_input_ownership_on_rebroadcast() {
+        let (db, id) = db_with_identity();
+        let txid = [0x57u8; 32];
+        db.conn().execute(
+            "INSERT INTO transactions (identity_id, txid, height, direction) VALUES (?1, ?2, 90, 'in')",
+            params![id, txid.as_slice()],
+        ).unwrap();
+        assert!(
+            record_broadcast(&db, id, &txid, &[[0x99; 32]], 100, SentAmounts::default()).is_err()
+        );
+        let direction: String = db
+            .conn()
+            .query_row(
+                "SELECT direction FROM transactions WHERE identity_id = ?1 AND txid = ?2",
+                params![id, txid.as_slice()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(direction, "in");
     }
 
     /// Broadcast marks inputs spent by the transaction's key images.
@@ -1337,6 +1383,57 @@ pub struct SentAmounts {
     pub change_atomic: Option<u64>,
 }
 
+pub fn reviewed_broadcast_amounts(
+    signable_hex: &str,
+    request: &crate::review::ReviewRequest,
+    raw_hex: &str,
+    outgoing_atomic: Option<&str>,
+    change_atomic: Option<&str>,
+) -> Result<SentAmounts> {
+    crate::review::verify_signed(signable_hex, request, raw_hex)?;
+    let parse = |value: &str, field: &str| -> Result<u64> {
+        let parsed = value.parse::<u64>().map_err(|_| {
+            RuntimeError::with(
+                ErrorCode::InvalidRequest,
+                json!({"field": field, "reason": "invalidAmount"}),
+            )
+        })?;
+        if parsed.to_string() != value {
+            return Err(RuntimeError::with(
+                ErrorCode::InvalidRequest,
+                json!({"field": field, "reason": "invalidAmount"}),
+            ));
+        }
+        Ok(parsed)
+    };
+    let outgoing = parse(&request.amount_atomic, "amountAtomic")?
+        .checked_add(parse(&request.fee_atomic, "feeAtomic")?)
+        .ok_or_else(|| {
+            RuntimeError::with(
+                ErrorCode::InvalidRequest,
+                json!({"field": "outgoingAtomic", "reason": "amountOverflow"}),
+            )
+        })?;
+    let change = parse(&request.change_atomic, "changeAtomic")?;
+    for (supplied, expected, field) in [
+        (outgoing_atomic, outgoing, "outgoingAtomic"),
+        (change_atomic, change, "changeAtomic"),
+    ] {
+        if let Some(value) = supplied {
+            if parse(value, field)? != expected {
+                return Err(RuntimeError::with(
+                    ErrorCode::InvalidRequest,
+                    json!({"field": field, "reason": "transactionDoesNotMatchReview"}),
+                ));
+            }
+        }
+    }
+    Ok(SentAmounts {
+        outgoing_atomic: Some(outgoing),
+        change_atomic: Some(change),
+    })
+}
+
 /// Pre-broadcast bookkeeping in one transaction: mark inputs spent and record a
 /// pending send.
 ///
@@ -1364,9 +1461,7 @@ fn record_broadcast(
             |r| r.get(0),
         )
         .map_err(|e| db_err("findRecordedSend", e))?;
-    if !existed {
-        check_inputs_owned(&tx_db, identity_id, txid, key_images)?;
-    }
+    check_inputs_owned(&tx_db, identity_id, txid, key_images)?;
     for key_image in key_images {
         tx_db
             .execute(
@@ -1388,8 +1483,8 @@ fn record_broadcast(
              VALUES (?1, ?2, NULL, 'out', ?3, ?4, ?5)
              ON CONFLICT (identity_id, txid) DO UPDATE
                SET direction = 'out', sent_at = ?3, failed = 0,
-                   outgoing_atomic = COALESCE(?4, outgoing_atomic),
-                   change_atomic = COALESCE(?5, change_atomic)",
+                   outgoing_atomic = COALESCE(outgoing_atomic, ?4),
+                   change_atomic = COALESCE(change_atomic, ?5)",
             params![
                 identity_id,
                 txid.as_slice(),

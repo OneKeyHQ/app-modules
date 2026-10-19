@@ -456,6 +456,17 @@ pub fn verify_transaction(
     Ok(())
 }
 
+#[wasm_bindgen(js_name = verifySignedTransaction)]
+pub fn verify_signed_transaction(
+    signable_hex: &str,
+    review_json: &str,
+    raw_hex: &str,
+) -> std::result::Result<String, JsValue> {
+    let request = crate::review::parse_request(review_json)?;
+    let transaction = crate::review::verify_signed(signable_hex, &request, raw_hex)?;
+    Ok(hex::encode(transaction.hash()))
+}
+
 /// Broadcast a signed transaction. Irreversible.
 ///
 /// Accepted and uncertain (network error) outcomes are both recorded: spent outputs
@@ -468,16 +479,33 @@ pub async fn broadcast_transaction(
     chain_tip: u64,
     outgoing_atomic: Option<String>,
     change_atomic: Option<String>,
+    signable_hex: Option<String>,
+    review_json: Option<String>,
 ) -> std::result::Result<String, JsValue> {
     let raw = raw_hex.to_owned();
-    // Decimal strings: u64 cannot cross the host bridge. Used only for display and
-    // balance; malformed values count as absent.
-    let amounts = spend::SentAmounts {
-        outgoing_atomic: outgoing_atomic.and_then(|a| a.parse::<u64>().ok()),
-        change_atomic: change_atomic.and_then(|a| a.parse::<u64>().ok()),
+    let required = |value: Option<String>, field: &str| {
+        value.ok_or_else(|| {
+            RuntimeError::with(
+                ErrorCode::InvalidRequest,
+                serde_json::json!({"field": field, "reason": "reviewRequired"}),
+            )
+        })
     };
+    let request = crate::review::parse_request(&required(review_json, "reviewJson")?)?;
+    let amounts = spend::reviewed_broadcast_amounts(
+        &required(signable_hex, "signableHex")?,
+        &request,
+        &raw,
+        outgoing_atomic.as_deref(),
+        change_atomic.as_deref(),
+    )?;
     let v = runtime::with_db_and_daemon(move |db, daemon| async move {
-        let r = spend::broadcast_signed(&db, &daemon, account_id, &raw, chain_tip, amounts).await;
+        let r = async {
+            let identity = db.identity_by_id(account_id)?;
+            crate::review::verify_sender(&request, &identity.view_pair, db.network())?;
+            spend::broadcast_signed(&db, &daemon, account_id, &raw, chain_tip, amounts).await
+        }
+        .await;
         (db, daemon, r)
     })
     .await?;

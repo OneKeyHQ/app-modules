@@ -84,6 +84,33 @@ for (const [label, hex, req, field] of [
   }
 }
 
+check('signed transaction verifier is exported', typeof rt.verifySignedTransaction, 'function');
+try {
+  rt.verifySignedTransaction('zz', review, '00');
+  check('signed verification rejects malformed input', 'succeeded', 'failed');
+} catch (e) {
+  const err = JSON.parse(e.message ?? e);
+  check('signed verification rejects malformed input', err.params.field, 'signableHex');
+}
+
+async function broadcastReviewBoundaries() {
+  for (const [label, signable, req, field] of [
+    ['missing review', undefined, undefined, 'reviewJson'],
+    ['missing signable', undefined, review, 'signableHex'],
+    ['malformed signable', 'zz', review, 'signableHex'],
+  ]) {
+    try {
+      await rt.broadcastTransaction(id, '00', 3700100n, '1', '0', signable, req);
+      check(`broadcast rejects ${label}`, 'succeeded', 'failed');
+    } catch (e) {
+      const err = JSON.parse(e.message ?? e);
+      check(`broadcast rejects ${label}`, err.params.field, field);
+    }
+  }
+  const after = JSON.parse(rt.diagDatabase());
+  check('rejected broadcasts do not record transactions', after.counts.transactions, 0);
+}
+
 // Node checks; skipped (and reported as skipped) without XMR_NODE.
 async function online() {
   const url = process.env.XMR_NODE;
@@ -143,7 +170,8 @@ async function online() {
   }
 }
 
-online()
+broadcastReviewBoundaries()
+  .then(online)
   .catch((e) => {
     failures += 1;
     console.log(`✗ node checks threw: ${e.message ?? e}`);

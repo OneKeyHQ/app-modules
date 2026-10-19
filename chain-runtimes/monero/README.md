@@ -82,8 +82,9 @@ transactionDetails(accountId, txid)
 
 prepareTransaction(accountId, recipientsJson, maxSend, chainTip, priority)
 verifyTransaction(signableHex, reviewJson)
+verifySignedTransaction(signableHex, reviewJson, rawHex)
 signTransaction(signableHex, spendPrivateKeyHex, reviewJson)
-broadcastTransaction(accountId, rawHex, chainTip, outgoingAtomic?, changeAtomic?)
+broadcastTransaction(accountId, rawHex, chainTip, outgoingAtomic?, changeAtomic?, signableHex, reviewJson)
 diagDatabase()
 ```
 
@@ -97,7 +98,21 @@ broadcastTransaction    record, then broadcast → { txid, broadcast: accepted |
 ```
 
 - `prepareTransaction` takes exactly one recipient.
-- A first `broadcastTransaction` whose inputs are not this account's, or are already
+- Before broadcasting, the host verifies the signed transaction
+  against the same prepared transaction and review before broadcasting. The
+  broadcast boundary repeats that verification before touching the database or
+  node. Missing review evidence is rejected, including calls from older hosts.
+  The reviewed sender and network must match the local account before recording
+  a send, so another account's change cannot be credited to this account.
+- Pending outgoing and change amounts come from that verified review. Optional
+  host amount strings must be canonical unsigned integers equal to those values;
+  missing strings do not discard the amounts derived from the review. A retry
+  retains previously recorded amounts and fills only missing values.
+- `verifySignedTransaction` returns the signed transaction id. It uses the pinned
+  wallet library's output matching and the transaction's fee; it performs no
+  network request and persists no data. This matches outputs and the fee; it
+  does not replace the node's signature and consensus validation.
+- A `broadcastTransaction` whose inputs are not this account's, or are already
   spent elsewhere, is refused with `INVALID_REQUEST` before anything is recorded.
 - `BROADCAST_REJECTED` is thrown only when the node explicitly rejects a first
   broadcast for a reason other than double spend; the record is undone and the
