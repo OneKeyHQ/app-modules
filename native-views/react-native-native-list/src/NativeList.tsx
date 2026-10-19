@@ -106,6 +106,8 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       topScrollEdgeEffect,
       scrollPositionThresholds,
       webVirtualizationEnabled: _webVirtualizationEnabled,
+      webScrollHost: _webScrollHost,
+      webStickyInset: _webStickyInset,
       webSectionIndexContainerRef: _webSectionIndexContainerRef,
       keyboardDismissMode = 'none',
       keyboardShouldPersistTaps = 'never',

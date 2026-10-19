@@ -7,7 +7,7 @@ architecture and runtime evidence.
 ## Purpose and non-goals
 
 NativeList renders bounded data with fixed row templates on iOS, Android and
-Web. Data rows do not render arbitrary React children. Native-only named container slots
+Web. Data rows do not render arbitrary React children. Named container slots
 may render React chrome outside the data-row stream. Integrators own overflow
 prevention; there is no automatic fitting or shrinking pass.
 
@@ -119,8 +119,9 @@ and does not create a separate accessibility target. Clearing the field, full
 rebind, recycling and disposal stop and hide the indicator; detached native views do
 not keep a visible animation. The History template's minimum content height
 increases from 16 to 20 points while loading. Explicit caller row/container
-heights still take precedence and must fit their padding. Web does not render
-this new native-only indicator; its existing section presentation is unchanged.
+heights still take precedence and must fit their padding. Web History also
+consumes titleLoading, using its existing section-slot geometry and the Web
+History presentation described below.
 
 Acceptance requires loading → idle → loading reuse, title color updates and
 detachment on each native platform. A title's localized confirming text remains
@@ -558,8 +559,8 @@ is an opt-in native-only preview descriptor: `{ source: ImageSource, probeOrder:
 ('image' | 'video')[] }`. The order contains one or two distinct candidates.
 The caller supplies the order; the renderer never guesses asset semantics.
 When provided, media takes precedence over `image`, unless `imageState` is
-explicitly empty/error. Web keeps its existing `image` behavior; native callers
-that also target Web must supply that existing image independently.
+explicitly empty/error. Web gallery media probing follows the separate Web migration contract below;
+legacy Web image-only tiles retain their existing behavior.
 
 Image uses the shared OneKeyImage lifecycle. Video uses a paused, muted AVPlayer
 on iOS and Media3 ExoPlayer on Android, preserving the native Video source
@@ -619,8 +620,8 @@ leaked audio/player resources. Static API checks do not prove these cases.
 `listHeader`, `listEmpty` and `listFooter` accept React nodes on iOS and Android
 vertical lists only. They are optional and default to absent. They are common
 container capabilities, not row templates, and MUST NOT be used for per-item
-rendering. Horizontal orientation with any supplied slot is rejected. Web ignores
-these new native-only props; existing Web lists and callers retain their behavior.
+rendering. Horizontal orientation with any supplied slot is rejected. Web container slots follow the separate Web parent-scrolling contract below;
+the native placement and lifecycle described in this section remain unchanged.
 
 The order is header, data rows (or empty slot when there are no data rows), footer.
 On iOS, after the laid-out vertical content shrinks, an offset beyond the new
@@ -735,8 +736,8 @@ visible title/description/status lines, the description measured at the identity
 column's actual width (stacked or table, including the fee column), fee height and the
 footer-action button height. Android sizes the row to its content. The existing height override contract still applies. RTL follows
 semantic leading/trailing anchors. Clearing rich fields returns to the legacy
-renderer, and removing amount lines recycles their visual slots. Web rendering
-remains unchanged; rich fields are native-only until a separate Web migration.
+renderer, and removing amount lines recycles their visual slots. Web rich presentation follows the separate Web migration contract below;
+legacy Activity rows without rich fields retain their existing behavior.
 
 Acceptance: 1/2/6/32 lines, changed keys/order, paired icons and network overlays,
 small-number segments in amounts/fiat/fee (ceil(0.6 × parent font size), unchanged
@@ -821,3 +822,383 @@ The consumer Gradle project compiles the actual NativeListView and passes all
 seven Kotlin alignment tests; SwiftPM compiles the shipping helper and passes
 all seven geometry tests. These are local unit/build checks, not a new
 combined-package application or physical-device acceptance run.
+
+
+## Web parent scrolling and React container slots
+
+Status: implemented. Focused DOM/wrapper tests and controlled consuming
+Home/Market Web and Electron checks cover parent ownership, slots, host
+replacement, hidden tabs, and the migrated touch/reorder interactions. These
+checks do not establish native runtime or complete performance acceptance.
+
+`webScrollHost` is Web-only: omitted preserves the existing owned viewport;
+`null` defers initialization until the parent host is ready; an element opts
+into that explicit parent as the sole vertical scroll owner. `webStickyInset`
+is a non-negative finite CSS-pixel inset, default zero. Native ignores both.
+External horizontal list orientation is rejected. The host is never inferred
+from class names. Its replacement disposes the old engine and exact observers,
+listeners, pending commands and anchors before the next host is attached.
+
+On Web, listHeader/listEmpty/listFooter are React-owned siblings around the
+engine-owned row host. They remain normal scrolling content, never row models;
+empty replaces the body only when there are no rows. listEmpty takes precedence
+over snapshot.emptyState. Grid slots span the list's complete width and reserve
+their actual intrinsic height. The wrapper owns an internal scroll viewport when
+slots are used without an external parent; the slot-free internal path retains
+its existing structure. No ReactDOM dependency or arbitrary row children exist.
+
+The engine reads list-local width, row-host origin, host viewport intersection,
+sticky inset and complete wrapper bounds together. Row-index/key scrolling is
+relative to the data body; scrollToOffset starts at the complete container,
+including its header, and scrollToEnd includes the final footer. End reached
+is based on visible data-row indices, before footer content, as existing lists.
+Hidden/zero-sized or fully offscreen lists emit no end-reached event. Resize,
+slot and ancestor layout changes remeasure origin. Increasing content before a
+visible row preserves that row's screen position while the parent is scrolled.
+No React state updates run on scroll frames. External refresh gestures remain
+owned by the parent control; only internal mode handles its own pull gesture.
+
+The explicit external host captures scroll events from itself and descendant
+scroll containers that are ancestors of the list root. Horizontal pager movement
+therefore invalidates cached viewport intersection and restores visible rows on
+the next scheduled frame. Scrolls within unrelated slots or list descendants do
+not invalidate this list. Destroy removes the same capture listener; no second
+vertical owner or scroll-position correction is introduced.
+
+Required acceptance: unchanged slot-free internal behavior; parent content on
+both sides and sticky inset; dynamic header/footer; empty to populated; grid
+last row; all imperative alignments; null/ready/replaced host; hidden/visible;
+unmount cleanup, mouse/touch scroll and drag autoscroll. Type/helper results do
+not establish rendered product, native or performance acceptance.
+
+
+## Web Market table presentation
+
+Status: implemented on the 6.7.0-1 source baseline. Package unit/type/build
+checks and controlled Web/shared consumer backfill checks passed; consuming
+Home/Market Web and Electron checks cover the migrated presentation. No native
+runtime or completed performance acceptance is claimed.
+
+MarketRow.webTable is an optional Web-only serializable presentation. It does
+not change DataRow's 2..4-column contract or add a row type/native renderer.
+Native parsers retain row dictionaries/JSON and read known fields; they ignore
+webTable. Mobile callers continue emitting their existing Market snapshots
+without this field, preserving their serialized shape. Shared validation checks
+the complete declared extension on both platforms. No arbitrary React cells,
+HTML, scripts or product formatting runs inside NativeList.
+
+The presentation declares 1..12 unique keyed columns and one matching keyed
+cell per column. Width/minWidth (0..4096 CSS px), flex (0..16), semantic alignment
+and leading/trailing padding (0..64) are explicit. Presentation cell kinds are
+favorite, asset, text and sparkline. Favorite has its own action/accessible
+label/pressed state; asset uses existing leading image primitives, title/badges
+and a secondary line optionally replaced on row hover/focus; text accepts at
+most eight caller-formatted primary/secondary text parts with existing small
+number segments and typography; sparkline accepts at most256 finite numeric
+samples, explicit size and colors. Unknown fields are rejected. Table rows use
+an explicit row/container height. Text is single-line with ellipsis; no automatic
+multiline geometry or business numeric interpretation exists.
+
+The consumer derives mobile fields and table cells from the same domain row.
+A quote transaction changes its formatted scalar fields and table cells together.
+A legacy scalar-only price/change patch on a table row is rejected unless it
+also supplies its corresponding table presentation, preventing hidden/visible
+values from diverging. Stable-column/same-image patches update only changed
+cells, preserving body/avatar identity and avoiding geometry reads/layout.
+Changes to column structure, image/badge/action identity invalidate anchors and
+use normal rebind/layout. Header and body take widths from the same consumer
+column calculation; React retains sorting/header/filter portals.
+
+The Web registry separately pools market and marketTable presentations while
+both retain type:market. Row keys, revisions, anchor epochs and event dispatch
+remain common. Cell actions use data-native-list-action; favorite/copy/badge
+buttons do not activate the row. Recycling clears actions, title/aria, hover
+and styles and disposes image leases. The SDK emits copy action data; application
+copyText/logging remains consumer-owned. Sparklines use bounded numeric drawing,
+not arbitrary SVG/HTML input.
+
+Acceptance: every cell kind, dynamic formatting, hover/focus/keyboard actions,
+row/presentation recycling, strict validation, native dictionary safe-ignore,
+header/body geometry, 100 quote ticks preserving nodes with zero geometry reads,
+then a real complex Market table before expanding to all five families.
+
+
+### Web grid fractional column geometry
+
+Status: implemented; fractional geometry verified in focused DOM/browser and
+controlled consuming NFT backfill checks.
+Web grid columns divide
+available CSS width without flooring each cell. With non-integral division,
+all column edges and width-derived tile heights retain the fractional value;
+the final column reaches the content edge without accumulating discarded
+pixels. Item spacing, horizontal padding and structural full-span rows retain
+their existing meanings. Native rounding is unchanged. Known app Web consumers
+are the migrated NFT grid and developer gallery; external SDK consumers are not
+claimed audited. Required geometry coverage: 2/3/4/6/7 columns, divisible and
+fractional widths, spacing, padding, row height and structural/footer boundaries.
+
+Table column width is the CSS base width. When flex is supplied, it grows with
+`flex-basis:auto`, matching the consumer's existing fixed-base React column;
+without flex, width remains fixed. Pausing a Web parent-host list retains only
+its last row-host height in normal flow while releasing row DOM/avatar leases.
+The wrapper preserves the engine's successfully patched snapshot for host
+reconstruction; inactive patches merge into one latest snapshot, with no
+retained batch queue. A rejected imperative snapshot never replaces that state.
+
+Stock asset cells additionally declare lineGap (0...8, default4), up to three
+secondaryBadges limited to the existing Market badge key/text/style subset, and up to four hoverImages
+using ImageSource. Secondary badges precede the company name. Hover logos follow
+the variant-count text at16 CSS px with a1px page-background ring and4px overlap,
+matching the consumer's existing finite logo group. Geometry/badge/image changes
+use normal rebind and release replaced image leases; price-only updates retain
+these nodes. No native caller emits these Web-only fields.
+
+Web gallery media follows the shared input precedence: media wins over image,
+unless an explicit empty/error imageState suppresses media probing. An empty/error
+gallery without either source retains the gallery fallback surface when
+imageState explicitly selects that state.
+
+Web gallery media preserves the consuming NFT card presentation: healthy image
+and exhausted fallback surfaces have a10px radius, while a healthy video surface
+has square corners. The image/video frame uses the list page background; only
+the exhausted fallback surface uses the strong background. Rebinding the same
+video key retains square corners, and failed-video fallback to an image restores
+the image radius. This is Web renderer behavior; native media presentation and
+probe-order contracts are unchanged.
+
+Gallery pointer activation follows the actual media-card body; extra grid row
+height reserved between cards does not enlarge its pointer hit area. Keyboard
+row activation remains supported through the normal row keyboard handler.
+
+When React listEmpty owns an empty list, content bottom padding follows that
+empty slot instead of advancing its origin. Header/top padding retain their
+positions, and populated row/footer padding semantics remain unchanged.
+
+Text cells may declare partGap (0...8 CSS px, default2) for their caller-formatted
+inline parts. Favorite cells may declare hoverActionKey; hover/focus emits this
+anchored help action, while click/Enter/Space emits actionKey. No browser title
+bubble is added. Pointer leave/focus departure invalidate help anchors. Existing
+Market badge styles apply to table title pills and their title gap is4px.
+
+Web table title badges accept only declared key/text/iconName/icon/colors/action/
+accessibility/style fields. The unused native tone field is not accepted in this
+presentation. Inline icon sources use image primitives and release on recycling.
+
+
+### Web Market watchlist actions and reorder
+
+Only a market row with `webTable.draggable:true` and list capability
+`reorderable:true` joins existing Web reorder. Other Market rows and native
+reorder semantics are unchanged. `webTable.contextMenuActionKey` declares a
+bounded row context-menu action; right click is prevented only for such rows,
+and nested cell actions retain ownership. Context menu and Market long press
+may emit `RowActionEvent.windowPoint`, finite client/window CSS pixel coordinates.
+Keyboard-triggered context menus use the row anchor rectangle when pointer
+coordinates are unavailable. Anchors retain binding epoch validation and are
+invalidated on scroll/rebind/layout/destroy; consumers close their menu on that
+invalidation. Compact Market mouse/pen long press cancels after 3px of pointer
+movement; touch follows actual touchmove as specified below. Table rows retain
+the 10px pointer threshold.
+Gallery, wallet and other row reorder eligibility stays unchanged. A gesture
+that activates row reorder cancels pending Market long press and suppresses its
+subsequent row navigation.
+
+Compact Web Market network corners honor the declared ImageSource dimensions
+(default 16px), with the existing corner padding outside the image. Native image
+rendering is unchanged. Consumer Web presentation permits its original SVG image
+sources without changing default native mapper output.
+
+
+### Web ordered image fallback sources
+
+ImageSource.fallbackUris is an optional Web-only ordered continuation after uri.
+It retains the complete caller-provided sequence (no truncation or deduplication).
+Empty or unusable continuation entries are skipped in order until a usable URI
+is found or the complete sequence is exhausted. Exhaustion reaches the declared
+visual fallback. Skipped entries consume no retry budget; each usable URI
+uses its declared retryTimes before proceeding; Market Web callers pass the
+existing ImageV2 default of one retry per source. This array path does not change
+legacy fallbackUri switching/retry order when fallbackUris is absent. Native
+callers do not emit this field. Validation requires an array of serializable
+strings. Rebind identity includes the complete array; quote-only changes retain
+the image node, while a changed chain rebinds and cancels previous retries.
+Recycling/destroy disposes listeners, retry timers and avatar subscriptions.
+Required coverage: one/two/three+ sources, first two fail/third succeeds, terminal
+failure, empty continuation, chain replacement/cancel and legacy fallbackUri.
+
+Enhanced Web History section titles retain the consumer headingXs 0.8px letter
+spacing; hover uses rowPressedBackground and pointer-active enhanced History
+uses rowSelectedBackground. Other Activity presentations are unchanged.
+
+Parent-scroll compact Market rows retain the consumer's pointer states: ordinary
+token/perp cards use active opacity0.8, stock cards active selected background.
+Consumers supply the page background as hover color. New table image fallbacks
+use a28px icon in the40px image frame; compact32px frames retain24px icons.
+These styles do not change legacy internally scrolling Market rows.
+
+The optional theme.imageFallbackBackground is consumed by Web only when a
+declared visual fallback is displayed; unset leaves the existing transparent
+fallback over its original frame. It never changes healthy image backgrounds,
+Stock tags or hover logo slots. Native callers do not emit it. HoverImages may
+contain explicit null entries to preserve the original16px empty round logo
+slots, including their ring/overlap/order; non-null entries remain ImageSource
+and the existing four-slot limit stays unchanged.
+
+Compact Market subtitlePrefix preserves intrinsic text width with flex-shrink
+and its existing maxWidth cap; it does not grow short names to that cap.
+Its optional Web-only hoverActionKey requests anchored help only when the
+actual prefix text is truncated (scrollWidth > clientWidth + 1). The consumer
+owns the existing tooltip content/presentation. Pointer/focus departure, scroll,
+rebind and destroy invalidate its existing anchor. Text, cap or action identity
+changes use normal rebind; unchanged quote updates preserve that node/focus.
+Native callers do not emit this field and native renderers ignore it.
+
+
+### Host-provided Web fonts
+
+configureNativeListFonts and NativeListFontFamilies retain the source baseline
+public API and validation. In the historical controlled 3.0.177 consumer
+backfill, only Web was backported:
+empty configuration uses system families; each supplied regular/medium/semibold/
+bold name belongs to fonts already loaded by the UI host. Hosts load fonts
+before configuring the mapping; the historical consumer supplied Roobert for
+all four weights. The SDK registers no fonts. That controlled backfill retained
+the 3.0.177 native wrapper and native platform font behavior.
+Web roots, section rails, reorder previews and all finite row text presentations
+select the family matching their existing numeric weight; layout and numeric
+weights are unchanged. A live configuration change invalidates active anchors,
+cancels reorder, clears measurement caches and remeasures; the same configuration
+is a no-op. A paused/null host initializes with the latest configuration.
+The 6.7.0-1 source integration preserves its existing native font policy/API.
+
+Market Web badge text uses tabular numeric glyphs, matching the consuming
+Market text style for leverage/provider labels. This rule is limited to the
+Market badge renderer class; generic Activity/time badge typography is unchanged.
+
+React prop snapshots commit in the layout phase alongside React-owned slots.
+For an external host with cached viewport dimensions, recomputation calculates
+and expands the normal-flow row extent before geometry reads, avoiding an append
+plus footer-removal intermediate clamp. The calculated layout is reused when
+viewport dimensions are unchanged; changed dimensions receive a fresh layout.
+Final measured layout owns legitimate shrinking; no scroll restoration offset
+or retained minimum-height state is added. First creation without cached geometry
+and imperative snapshot acceptance retain their existing contracts.
+
+Web gallery media fit consumes the existing ImageSource.contentFit values:
+cover/contain/fill map directly to CSS object-fit and center maps to none.
+When omitted, a video uses contain and an image uses cover, preserving the
+consuming Web NFT defaults. Failed-video transitions resolve the image default
+again rather than retaining video fit. Native fit/probe contracts are unchanged.
+
+
+### Source integration status (2026-10-16)
+
+The Web migration was integrated onto source 655789b01 (6.7.0-1), preserving
+its native font resolver, iOS 26 overlay, package metadata and native implementation.
+The PR rebases that source onto main dd0d77af3, whose independent desktop Windows
+release changes do not overlap this package. The consuming PR targets 3.0.180;
+its reproducible patch and dependency verification are separate from the
+historical 3.0.177 backfill evidence below.
+The prior 3.0.178 source integration was an intermediate validated checkpoint.
+Controlled Web/shared consumer backfill was verified against 3.0.177 while
+retaining that version's native wrapper, binary boundary and native type
+declarations. This historical backfill is separate from consumer dependency
+updates.
+Merged package tests/typecheck/build and controlled consumer backfill smoke
+passed. The final Web-focused suite passed 89 checks; broader package checks
+and consuming Web/Electron presentation checks are recorded separately. Pending
+remote-row display and the real business hook/controller navigation contract
+were verified with explicit auxiliary fixtures/stub boundaries; no real eligible
+account SendReplaceTx confirmation page, signing, or broadcast was exercised.
+The consumer backfill does not establish native runtime acceptance of this
+merged package. Final performance sampling was stopped at the user's request
+and is partial evidence, not a completed performance signoff.
+
+### Desktop/Web Market asset parity
+
+The Web table asset renderer consumes the existing leading visual backgroundColor
+and borderColor descriptors without changing the schema or native primitives.
+Its token frame remains40 CSS px including an optional1px solid border; the main
+bitmap fills the content box (38px with border,40px without). Overlay visuals
+remain outside that frame and fallback surfaces retain their existing color/icon
+contract. Theme/leading changes rebind the visual and clear old border styles.
+The address-copy revealed line uses a2px text-to-action gap, while Stock hover
+logo groups retain their4px gap and overlap geometry. No other text-part gaps
+change. Regression acceptance includes Dark/Light recycled visuals, preserved
+network overlays, independent copy actions and Stock hover group spacing.
+
+Gallery collection subtitles retain an 8px trailing text inset whether or not
+a network thumbnail is present. The subtitle uses border-box sizing and its row
+has no extra gap, preserving the same 8px separation with a thumbnail and the
+legacy truncation width without one. Legacy MediaTile/native rendering is
+unchanged.
+
+Compact Market touch long-press cancellation follows actual `touchmove`
+events and valid touch coordinates beyond the existing 3px stationary limit.
+Pointer-only micro-movement within browser tap tolerance does not prematurely
+cancel a touch long-press. Pointer cancellation and real ancestor scrolling
+still cancel it; mouse, pen and table pointer thresholds remain unchanged.
+The passive touch listener is removed when the engine is destroyed.
+
+Table secondary-line pointer hover is enabled only when the primary input
+reports `(hover: hover)`, matching the consuming Web row's hover media rule.
+Touch capability alone does not disable hover. Existing focus-within reveal
+remains available to keyboard navigation; no input-modality configuration or
+native behavior is introduced.
+
+The declared table asset background remains on its outer token frame during
+source loading, matching the consumer's Token wrapper. The existing image
+placeholder/retry path and fallback span are unchanged; only the fallback span
+uses the fallback background. A solid frame border does not move external
+overlays: their primitive-generated edge positions are shifted outward by the
+1px border once per new visual, preserving the caller's unbordered outer-anchor
+geometry. No shift is accumulated during same-visual quote patches.
+
+Table secondary-line clipping uses `overflow: clip` so keyboard focus cannot
+scroll the two-line reveal viewport in addition to its existing transform.
+Focus-within and primary-hover reveal behavior remain unchanged; no scroll
+position writes or global overflow policy are introduced.
+
+Web history section headers consume the existing titleLoading flag with the
+original20px spinner,8px title gap and heading casing. The declared32/52px
+section slots remain unchanged; the pending title content retains its original
+4px intrinsic overflow. Explicit60px stacked history content fills its stated
+row height; ordinary history rows retain their existing trailing spacing.
+
+Web enhanced History badges preserve the existing small Badge geometry (8px horizontal padding, 4px radius, medium text). Warning backgrounds consume the declared cautionBackground theme value with the prior fallback when absent. Native rendering is unchanged.
+
+
+### Web external parent-scroll commands
+
+When a caller supplies webScrollHost, scroll commands use the DOM scrollTo method from that element's document realm. React Native Web may decorate a NativeScroller node with a differently shaped React Native scrollTo method; the DOM host contract must not invoke that method with DOM options. The native/ref APIs and internally owned NativeList viewport keep their existing behavior.
+
+Existing Pager command-accepted/cancel notifications use the actual external scroll owner when supplied, otherwise the internally owned viewport. A list command cancels queued Pager restoration/top work; a Pager top command cancels a pending list command and stops motion on that same owner. Listener target guards and destruction removal must match. No new public method, event name or native behavior is introduced.
+
+
+### Web Pager inset notifications
+
+An externally hosted list listens for the existing Pager inset notification on
+its actual scroll owner, matching the notification target and removing the same
+listener on destroy. It measures the new content origin before Pager restores
+its C+B offset; a later ResizeObserver must not add that inset a second time.
+Ordinary subsequent slot-height changes retain the existing content-anchor
+compensation. Standalone lists continue listening on their own viewport.
+
+### Web History retained visual binding
+
+Implemented contract: same-source History visuals retain their image, placeholder
+and corner nodes while image styles or table/stacked presentation change. Every
+bind restores the factory geometry and applies the current image style and
+presentation, including clearing omitted radius/contentFit/shape overrides.
+Presentation wrapper changes move the existing nodes and preserve asynchronous
+loading/error visibility; they do not recreate or reload an unchanged source.
+Changing the source set retains the existing rebuild/disposal behavior.
+
+### Web slot-list scroll ownership
+
+When container slots create an owned Web scroll host without `webScrollHost`,
+that actual host exposes the existing `data-collapsible-pager-scroll` marker.
+A containing Web pager therefore applies insets, collapse/top commands and route
+restoration to the owned host, with slot content as its padding target. The
+ordinary no-slot viewport and explicit external-host paths keep their existing
+ownership; no Pager dependency or new API is required.

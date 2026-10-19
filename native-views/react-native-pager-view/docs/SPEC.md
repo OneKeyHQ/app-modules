@@ -841,3 +841,62 @@ The native Home Spotlight adapter consumes this snapshot in the main UI runtime 
 Removing a page or clearing the page collection MUST cancel the active horizontal transition and its temporary display snapshots before notifying the adapter. Cancellation MUST NOT rewrite the shared Header collapse or surviving pages' saved body reading memory. The previous observed owner MUST be detached without committing an offset under a shifted page key.
 
 An empty adapter MUST reject transition starts and transition completion without coercing an index into an empty range. The selected index uses zero as an empty-state sentinel; nonempty mutations clamp it to the remaining valid range. Readding pages MUST allow a fresh selection and MUST NOT resume a removed transition source. Conformance requires actual Android active-transition → zero-pages → readd/selection regression and remaining-page mutation checks; structural checks and compilation alone do not establish runtime behavior.
+
+
+## Web parent-scroll owner identity
+
+Web Header and sticky overlays use the named scroll timeline only when the
+browser supports every CSS property needed for that linkage. Otherwise, the
+active scroll owner's offset drives the same clamped Header collapse in JS:
+`C = min(max(scrollTop, 0), max(headerHeight, 0))`. The fallback keeps the
+existing page owner, insets, body offset memory, and sticky anchor. It updates
+when scrolling, selecting or restoring a page, replacing an owner, or changing
+Header height, and releases its listener when that owner detaches. An inactive
+page cannot move the visible Header. This is a Web-only compatibility path; no
+native behavior or public prop changes.
+When an overlay forwards a vertical wheel or touch scroll to the active owner,
+the owner receives the same internal user-input notification used by route
+restoration to cancel an obsolete pending offset.
+
+On Web, an explicitly marked NativeScroller is selected before an implicit NativeList viewport. There is one vertical owner per page; callers using parent-owned NativeList pass that same scroll element as webScrollHost.
+
+The existing NativeScroller pagerScrollKey identifies a Web page scroll owner. Changing the key invalidates that page body offset without remounting its React business content. The active owner also resets the shared header collapse and cancels queued old restore/top commands. Inactive owners invalidate their saved body offset without imperative scrolling; selection checks the current identity before restoring. A→B→A identity changes never revive a prior owner offset. Stable keys preserve ordinary page C+B restoration. Current-page top commands continue to affect only the selected page.
+
+Identity notifications and DOM owner listeners are internal implementation details, removed when the pager root or owner is replaced/unmounted. No native behavior or public configuration is added.
+
+### Web overlay input and keyed-page updates
+
+- Header and sticky slots remain overlays: overflow outside the sticky slot may remain visible without adding its portal height to page insets twice.
+- Vertical wheel or touch input over those overlays transfers only to the active page scroll owner when no nested scrollable consumes it. Horizontal controls, editable inputs, and ordinary button/tap behavior retain their own events. Input originating inside the page owner follows native scrolling once.
+- Reordering or removing keyed pages must save the previously configured key and owner, rather than resolving the old selected index against new children. Caller index synchronization preserves keyed body offsets and shared header collapse.
+- For an explicit NativeScroller, Pager chrome insets apply to the existing ScrollView content element, not its viewport. Insets taller than the available window cannot enlarge the scroll viewport. Existing owner/content padding is preserved and restored separately from Pager insets; direct NativeList/page-host fallback retains its prior layout path.
+- The Pager root clips without becoming a programmatically scrollable overflow box. Browser focus and descendant scrollIntoView cannot add a second horizontal page offset outside the selected-page transform.
+
+## Web page geometry and route restoration
+
+Status: Implemented in Web source and focused tests; browser and native runtime acceptance remain separate.
+
+`WebCollapsiblePagerView` is the existing Web `CollapsiblePagerView` class under an explicit root export. Its `isActive` prop defaults to true and represents route visibility, independently of the selected page. The Web-only `useWebCollapsiblePagerPage()` hook returns null outside a Web pager and otherwise exposes `isFocused`, `isRouteActive`, `owner`, `content`, optional `contentHeight`, `width`, `height`, content-relative `scrollTop`, `registerContent`, and read-only `pendingRouteScrollTop`. Native `CollapsiblePagerView`, its bridge, and its props are unchanged. The Web component rejects mounting without a DOM; importing the root or Web module alone must not access DOM globals.
+
+Web callers may supply finite nonnegative `headerHeight` and `stickyHeaderHeight`. When omitted or invalid (negative, NaN, or infinite), the SDK measures the natural inner Header and sticky content with `ResizeObserver`; explicit valid values take precedence, including zero. An initial unmeasured zero is not ready for route restoration; a measured empty chrome element may legitimately have zero height. Measurement must not use the constrained slot height as its own input. Height changes update the owned insets before route restoration. Existing explicit-height callers retain their layout path.
+
+Each page has one SDK-discovered vertical owner: explicit `NativeScroller`, then implicit NativeList viewport, then page host. Registration accepts a connected content element and optional finite nonnegative explicit height; invalid height metadata is ignored. It does not change DOM layout or make a pending target reachable. A later registration of the same element supersedes an earlier one, and stale cleanup cannot remove it. An explicit-height change schedules geometry measurement even if the element border box is unchanged. Metrics use owner client width; `pinnedBottom = ownerRect.top + max(0, headerHeight - owner.scrollTop) + stickyHeaderHeight`; `visibleTop = max(ownerRect.top, pinnedBottom, contentRect.top if present)`; visible height is `max(0, ownerRect.bottom - visibleTop)` and content-relative scroll top is `max(0, pinnedBottom - contentRect.top)`. Unregistered content falls back to the first owner child. Detached content and callbacks from old owners are ignored. One animation-frame measurement per page coalesces scroll, resize, registration, owner configuration, and active-page changes. Disposal releases observers, listeners, frames, and subscriptions.
+
+On active-to-inactive transition, the Web pager freezes the selected logical React page key, `pagerScrollKey` identity, actual owner generation, and last valid raw DOM top. Inactive scroll/geometry changes cannot replace the snapshot. A second blur of the same pending identity preserves the original target. On focus, owner, content, chrome, or inset changes, the pager retries without a timer only when the route is active, that exact key/identity/owner remains selected and connected, the viewport has positive height, the pager has configured the expected insets, and real `scrollHeight - clientHeight` reaches the target. Short content keeps the target pending. Restoration clears pending before one instant scroll and synchronizes the existing shared Header C and per-page body B memory. An idempotent Web `restoreScrollPosition()` returns false while inactive or not ready and true when no target remains or it applies; normal callers need no polling.
+
+Valid vertical wheel, scroll keys, scrollbar drag, overlay-forwarded input, accepted NativeList commands, and explicit page-top/sticky-top commands cancel pending route intent through the existing SDK takeover path. As in the prior Web app adapter, any owner `pointerdown` or `touchstart`, including a child target, cancels only route pending; this does not newly commit or clear SDK C+B memory. Geometry-only scroll/resize/scrollend cannot cancel intent. Valid same-offset commands cancel it; invalid or stale commands do not. A matching route target takes priority over automatic tab C+B restoration. Selection of a different key, owner identity reset (including A→B→A), genuine DOM owner replacement, or removal cancels pending; a same-key index reorder preserves it. A same-commit blur and Activity/Offscreen effect disconnect captures the current route target before releasing the owner; repeated disconnects preserve an existing pending target. A temporary React ref null or Activity/Offscreen effect disconnect followed by the identical connected owner preserves the logical route target and owner generation while releasing all observers, listeners, frames, and DOM configuration during disconnect. Restoration is unavailable while disconnected; reconnect remeasures automatic chrome before applying pending. A truly removed pager instance cannot transfer its pending target to a new instance. Older queued tab/top callbacks must validate generation before writing after route restoration or cancellation. The app owns navigation focus and business tab names; the SDK never infers them from escaped React child keys.
+
+Platform matrix: Web owns this DOM geometry, registration, route pending, and explicit Web export. iOS and Android keep native scrolling, restoration, and page coordination documented above, with no new prop, native bridge call, JS heap sharing, or process resource. The UI main runtime owns Web state; background runtimes do not deserialize it. Source/type tests establish only Web contract implementation, not browser rendering or native device behavior. Acceptance requires real Web/Desktop route blur, short content then growth, user takeover, dynamic chrome, key reset, and Home/Market scroll regressions.
+
+## Native package entry isolation
+
+The Native package entry exports the existing Native PagerView,
+CollapsiblePagerView, NativeScroller, usePagerView and ScrollEdgeEffect APIs.
+Native package resolution MUST NOT evaluate the Web pager or Web page-context
+modules. The react-native field and conditional export resolve to a real Native
+entry; the browser entry retains the Web runtime APIs. The generic declaration
+entry preserves the existing shared Web value/type API for TypeScript callers.
+This separates package initialization in the Native UI main runtime; it does not
+add a bridge, share JS heaps with background, or change Native scroll commands.
+Acceptance includes the actual Native dependency graph and unchanged startup
+budgets, Web runtime/type exports, and package source/module/declaration entries.

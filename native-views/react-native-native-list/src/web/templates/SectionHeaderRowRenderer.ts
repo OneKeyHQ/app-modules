@@ -114,7 +114,48 @@ function createSectionHeader(
       title.replaceChildren(text, dotted);
     }
   }
-  body.appendChild(column);
+  if (row.variant === 'history' && row.titleLoading) {
+    const pendingLine = createElement(document, 'div');
+    pendingLine.style.cssText =
+      'display:flex;align-items:center;gap:8px;min-width:0;width:100%;height:20px';
+    const spinner = createElement(document, 'span');
+    spinner.setAttribute('role', 'progressbar');
+    spinner.setAttribute('aria-valuemin', '0');
+    spinner.setAttribute('aria-valuemax', '1');
+    spinner.style.cssText =
+      'display:block;width:20px;height:20px;flex:0 0 20px';
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 32 32');
+    svg.setAttribute('class', 'ok-native-list-spinner');
+    svg.style.cssText =
+      'display:block;width:20px;height:20px;border:0;animation-duration:.75s';
+    for (const track of [true, false]) {
+      const circle = document.createElementNS(
+        'http://www.w3.org/2000/svg',
+        'circle'
+      );
+      for (const [name, value] of Object.entries({
+        cx: '16',
+        cy: '16',
+        r: '14',
+        fill: 'none',
+        'stroke-width': '4',
+      }))
+        circle.setAttribute(name, value);
+      circle.style.stroke = row.style?.title?.color ?? 'var(--nl-secondary)';
+      if (track) circle.style.opacity = '.2';
+      else {
+        circle.style.strokeDasharray = '80';
+        circle.style.strokeDashoffset = '60';
+      }
+      svg.appendChild(circle);
+    }
+    spinner.appendChild(svg);
+    title.style.textTransform = 'uppercase';
+    pendingLine.append(spinner, column);
+    body.style.height = 'calc(100% + 4px)';
+    body.appendChild(pendingLine);
+  } else body.appendChild(column);
   if (row.value) {
     const value = tagSlot(
       createElement(
