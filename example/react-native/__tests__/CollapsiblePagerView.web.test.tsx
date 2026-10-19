@@ -48,12 +48,12 @@ function restoreTestRuntime() {
 }
 
 describe('CollapsiblePagerView native wrapper', () => {
-  it('loads Web-named root exports without a DOM in the native runtime', () => {
+  it('keeps the generic entry Web-named exports loadable without a DOM', () => {
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'document');
     Object.defineProperty(globalThis, 'document', { configurable: true, value: undefined });
     try {
       jest.isolateModules(() => {
-        const root = require('../../../native-views/react-native-pager-view/src/index') as typeof import('../../../native-views/react-native-pager-view/src/index');
+        const root = require('../../../native-views/react-native-pager-view/src/index.tsx') as typeof import('../../../native-views/react-native-pager-view/src/index');
         expect(root.WebCollapsiblePagerView).toBeDefined();
         expect(root.useWebCollapsiblePagerPage).toBeDefined();
       });

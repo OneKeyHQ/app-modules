@@ -1,5 +1,10 @@
 import React from 'react';
-import type { IdentityRow, NativeListSnapshot, RowModel } from '../models';
+import type {
+  ActivityRow,
+  IdentityRow,
+  NativeListSnapshot,
+  RowModel,
+} from '../models';
 import {
   WEB_LIST_CSS,
   WEB_REORDER_ANIMATION,
@@ -4941,3 +4946,186 @@ describe.each([375, 1920])('ordered image fallback gaps at %ipx', (width) => {
     }
   });
 });
+
+describe.each([375, 1920])(
+  'retained History visual binding at %ipx',
+  (width) => {
+    const { JSDOM } = require('jsdom') as {
+      JSDOM: new (html: string) => {
+        window: { document: Document; Event: typeof Event };
+      };
+    };
+    it.each([
+      [false, 'load', 'static'],
+      [false, 'load', 'none'],
+      [true, 'load', 'none'],
+      [false, 'load', undefined],
+      [true, 'load', undefined],
+      [true, 'load', 'static'],
+      [false, 'error', 'static'],
+      [true, 'error', 'static'],
+    ] as const)(
+      'matches fresh styling through presentation changes (pair=%s, state=%s, strategy=%s)',
+      (pair, state, loadingStrategy) => {
+        const { window } = new JSDOM('<!doctype html><body></body>');
+        const mount = (row: ActivityRow) => {
+          const host = window.document.createElement('div');
+          window.document.body.append(host);
+          Object.defineProperty(host, 'clientWidth', { value: width });
+          const engine = new NativeListWebEngine(
+            host,
+            snapshot({ kind: 'sectioned' }, [row]),
+            {},
+            false
+          );
+          return { host, engine };
+        };
+        const base: ActivityRow = {
+          type: 'activity',
+          key: 'retained-history',
+          presentation: 'table',
+          title: 'Receive',
+          height: 60,
+          amounts: [{ key: 'amount', text: '+1 USDC' }],
+          leading: {
+            kind: 'token',
+            image: { ...image, loadingStrategy },
+            fallbackText: 'Token',
+            fallbackIcon: { name: 'CoinsOutline' },
+            networkImage: { ...image, uri: 'https://example.test/network.png' },
+          },
+          ...(pair
+            ? {
+                secondaryLeading: {
+                  kind: 'token' as const,
+                  image: {
+                    ...image,
+                    uri: 'https://example.test/secondary.png',
+                    loadingStrategy,
+                  },
+                  fallbackText: 'Other',
+                },
+              }
+            : {}),
+        };
+        const { host, engine } = mount(base);
+        const corners = Array.from(
+          host.querySelectorAll('.ok-native-list-visual-corner')
+        );
+        const images = Array.from(
+          host.querySelectorAll<HTMLImageElement>('.ok-native-list-visual-main')
+        );
+        images.forEach((bitmap) =>
+          bitmap.dispatchEvent(new window.Event(state))
+        );
+        const fallbacks = Array.from(
+          host.querySelectorAll<HTMLElement>('.ok-native-list-visual-fallback')
+        );
+        const geometry = (root: HTMLElement) =>
+          Array.from(
+            root.querySelector<HTMLElement>('.ok-native-list-history-visual')!
+              .children
+          ).map((visual) => {
+            const node = visual as HTMLElement;
+            const bitmap = node.querySelector<HTMLElement>(
+              '.ok-native-list-visual-main, .ok-native-list-visual-fallback'
+            )!;
+            return [
+              [
+                'width',
+                'height',
+                'border-radius',
+                'background',
+                'border',
+                'position',
+                'left',
+                'top',
+                'overflow',
+                'box-sizing',
+              ].map((key) => node.style.getPropertyValue(key)),
+              bitmap.style.borderRadius,
+              bitmap.style.objectFit,
+              bitmap.style.width,
+              bitmap.style.height,
+              bitmap.parentElement === node,
+            ];
+          });
+        try {
+          for (const row of [
+            {
+              ...base,
+              style: {
+                image: {
+                  shape: 'square' as const,
+                  contentFit: 'contain' as const,
+                },
+              },
+            },
+            {
+              ...base,
+              presentation: 'stacked' as const,
+              style: {
+                image: { cornerRadius: 7, contentFit: 'center' as const },
+              },
+            },
+            { ...base, presentation: 'stacked' as const },
+            base,
+          ]) {
+            engine.applySnapshot(snapshot({ kind: 'sectioned' }, [row]));
+            const fresh = mount(row);
+            fresh.host
+              .querySelectorAll('.ok-native-list-visual-main')
+              .forEach((bitmap) =>
+                bitmap.dispatchEvent(new window.Event(state))
+              );
+            try {
+              if (state === 'load')
+                expect(geometry(host)).toEqual(geometry(fresh.host));
+              else {
+                expect(geometry(host).map(([frame]) => frame)).toEqual(
+                  geometry(fresh.host).map(([frame]) => frame)
+                );
+                fallbacks.forEach((fallback) => {
+                  expect(fallback.style.borderRadius).toBe(
+                    row.style?.image?.cornerRadius !== undefined
+                      ? `${row.style.image.cornerRadius}px`
+                      : row.style?.image?.shape === 'square'
+                      ? '0px'
+                      : ''
+                  );
+                  expect(fallback.style.objectFit).toBe(
+                    row.style?.image?.contentFit === 'center'
+                      ? 'none'
+                      : row.style?.image?.contentFit ?? ''
+                  );
+                });
+              }
+            } finally {
+              fresh.engine.destroy();
+              fresh.host.remove();
+            }
+            expect(
+              Array.from(host.querySelectorAll('.ok-native-list-visual-main'))
+            ).toEqual(state === 'load' ? images : []);
+            expect(
+              Array.from(
+                host.querySelectorAll('.ok-native-list-visual-fallback')
+              )
+            ).toEqual(fallbacks);
+            expect(
+              Array.from(host.querySelectorAll('.ok-native-list-visual-corner'))
+            ).toEqual(corners);
+            images.forEach((bitmap) =>
+              expect(bitmap.style.opacity).toBe(state === 'load' ? '1' : '0')
+            );
+            fallbacks.forEach((fallback) =>
+              expect(fallback.isConnected).toBe(true)
+            );
+          }
+        } finally {
+          engine.destroy();
+        }
+      }
+    );
+  }
+);

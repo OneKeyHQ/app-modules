@@ -887,3 +887,16 @@ On active-to-inactive transition, the Web pager freezes the selected logical Rea
 Valid vertical wheel, scroll keys, scrollbar drag, overlay-forwarded input, accepted NativeList commands, and explicit page-top/sticky-top commands cancel pending route intent through the existing SDK takeover path. As in the prior Web app adapter, any owner `pointerdown` or `touchstart`, including a child target, cancels only route pending; this does not newly commit or clear SDK C+B memory. Geometry-only scroll/resize/scrollend cannot cancel intent. Valid same-offset commands cancel it; invalid or stale commands do not. A matching route target takes priority over automatic tab C+B restoration. Selection of a different key, owner identity reset (including A→B→A), genuine DOM owner replacement, or removal cancels pending; a same-key index reorder preserves it. A same-commit blur and Activity/Offscreen effect disconnect captures the current route target before releasing the owner; repeated disconnects preserve an existing pending target. A temporary React ref null or Activity/Offscreen effect disconnect followed by the identical connected owner preserves the logical route target and owner generation while releasing all observers, listeners, frames, and DOM configuration during disconnect. Restoration is unavailable while disconnected; reconnect remeasures automatic chrome before applying pending. A truly removed pager instance cannot transfer its pending target to a new instance. Older queued tab/top callbacks must validate generation before writing after route restoration or cancellation. The app owns navigation focus and business tab names; the SDK never infers them from escaped React child keys.
 
 Platform matrix: Web owns this DOM geometry, registration, route pending, and explicit Web export. iOS and Android keep native scrolling, restoration, and page coordination documented above, with no new prop, native bridge call, JS heap sharing, or process resource. The UI main runtime owns Web state; background runtimes do not deserialize it. Source/type tests establish only Web contract implementation, not browser rendering or native device behavior. Acceptance requires real Web/Desktop route blur, short content then growth, user takeover, dynamic chrome, key reset, and Home/Market scroll regressions.
+
+## Native package entry isolation
+
+The Native package entry exports the existing Native PagerView,
+CollapsiblePagerView, NativeScroller, usePagerView and ScrollEdgeEffect APIs.
+Native package resolution MUST NOT evaluate the Web pager or Web page-context
+modules. The react-native field and conditional export resolve to a real Native
+entry; the browser entry retains the Web runtime APIs. The generic declaration
+entry preserves the existing shared Web value/type API for TypeScript callers.
+This separates package initialization in the Native UI main runtime; it does not
+add a bridge, share JS heaps with background, or change Native scroll commands.
+Acceptance includes the actual Native dependency graph and unchanged startup
+budgets, Web runtime/type exports, and package source/module/declaration entries.

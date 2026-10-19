@@ -179,6 +179,14 @@ type HistoryViews = {
   actions: HTMLElement;
   actionButtons: Map<string, HTMLButtonElement>;
   visualKey: string;
+  visuals: {
+    node: HTMLElement;
+    style: RowVisualStyle;
+    background: string;
+    loaded: boolean;
+    fallback?: HTMLElement;
+    fallbackStyle?: RowVisualStyle;
+  }[];
   primitives: RowPrimitives;
 };
 const histories = new WeakMap<HTMLElement, HistoryViews>();
@@ -255,6 +263,7 @@ function createHistory(body: HTMLElement, primitives: RowPrimitives) {
     actions,
     actionButtons: new Map(),
     visualKey: '',
+    visuals: [],
     primitives,
   };
   histories.set(body, v);
@@ -400,98 +409,156 @@ function bindHistory(
       primitives.dispose(n as HTMLElement)
     );
     v.visual.replaceChildren();
+    v.visuals = [];
     const sources = [row.leading, row.secondaryLeading].filter(Boolean);
-    sources.forEach((source, index) => {
+    sources.forEach((source) => {
       const visual = primitives.visual(source);
       if (!visual) return;
-      const size = sources.length > 1 ? (index ? 28 : 24) : 40;
-      new RowVisualStyle(visual).apply(row.style?.image, size, size, 0);
-      Object.assign(visual.style, {
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      });
-      if (sources.length > 1)
-        Object.assign(visual.style, {
-          position: 'absolute',
-          left: index ? '12px' : '0',
-          top: index ? '12px' : '0',
-          border: index ? '2px solid var(--nl-row)' : '0',
-          boxSizing: 'border-box',
-        });
       historyIcon(visual, source, table || sources.length > 1 ? 24 : 28);
-      if (!table && sources.length > 1) {
-        const token = visual.ownerDocument.createElement('span');
-        Object.assign(token.style, {
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          position: 'relative',
-          width: '24px',
-          height: '24px',
-          flex: '0 0 24px',
-          borderRadius: 'inherit',
-          boxSizing: 'border-box',
-          overflow: 'hidden',
-          background:
-            source && 'backgroundColor' in source
-              ? source.backgroundColor ?? ''
-              : '',
-          border:
-            source && 'borderColor' in source && source.borderColor
-              ? `1px solid ${source.borderColor}`
-              : '0',
-        });
-        token.append(
-          ...Array.from(visual.children).filter(
-            (child) => !child.classList.contains('ok-native-list-visual-corner')
-          )
-        );
-        const fallback = token.querySelector<HTMLElement>(
-          ':scope > .ok-native-list-visual-fallback'
-        );
-        if (fallback) {
-          fallback.style.width = '24px';
-          fallback.style.height = '24px';
-          fallback.style.flexShrink = '0';
-        }
-        const mainImage = token.querySelector<HTMLImageElement>(
-          ':scope > .ok-native-list-visual-main'
-        );
-        if (mainImage) {
-          mainImage.style.width = '100%';
-          mainImage.style.height = '100%';
-        }
-        visual.append(token);
+      const retained = {
+        node: visual,
+        style: new RowVisualStyle(visual),
+        background: visual.style.background,
+        loaded: false,
+      };
+      // Only placeholder-backed sources restore their frame background on load.
+      const image = source && 'image' in source ? source.image : undefined;
+      if (image?.loadingStrategy && image.loadingStrategy !== 'none') {
+        visual
+          .querySelector('.ok-native-list-visual-main')
+          ?.addEventListener('load', () => {
+            retained.background =
+              source && 'backgroundColor' in source && source.backgroundColor
+                ? source.backgroundColor
+                : 'transparent';
+            retained.loaded = true;
+          });
       }
-      if (table) {
-        visual.style.background =
-          source && 'backgroundColor' in source && source.backgroundColor
-            ? source.backgroundColor
-            : 'var(--nl-strong)';
-        const borderColor =
-          source && 'borderColor' in source && source.borderColor
-            ? source.borderColor
-            : 'var(--nl-separator)';
-        visual.style.border = `1px solid ${borderColor}`;
-        visual.style.boxSizing = 'border-box';
-      } else if (sources.length === 1 && source?.kind === 'token') {
-        visual.style.border = source.borderColor
-          ? `1px solid ${source.borderColor}`
-          : '0';
-        visual.style.boxSizing = 'border-box';
-        const mainImage = visual.querySelector<HTMLImageElement>(
-          ':scope > .ok-native-list-visual-main'
-        );
-        if (mainImage) {
-          mainImage.style.width = '100%';
-          mainImage.style.height = '100%';
-        }
-      }
+      v.visuals.push(retained);
       v.visual.append(visual);
     });
     v.visualKey = visualKey;
   }
+  const sources = [row.leading, row.secondaryLeading].filter(Boolean);
+  v.visuals.forEach((retained, index) => {
+    const { node: visual, style, background, loaded } = retained;
+    const source = sources[index];
+    const previousToken = visual.querySelector<HTMLElement>(
+      ':scope > .ok-native-list-history-token'
+    );
+    if (previousToken) {
+      visual.append(...Array.from(previousToken.children));
+      previousToken.remove();
+    }
+    const currentFallback = visual.querySelector<HTMLElement>(
+      ':scope > .ok-native-list-visual-fallback:not(.ok-native-list-visual-corner)'
+    );
+    if (currentFallback && retained.fallback !== currentFallback) {
+      retained.fallback = currentFallback;
+      retained.fallbackStyle = new RowVisualStyle(currentFallback);
+    }
+    // A terminal image error creates a new fallback node after the factory bind.
+    retained.fallbackStyle?.restore();
+    const size = sources.length > 1 ? (index ? 28 : 24) : 40;
+    style.apply(row.style?.image, size, size, 0);
+    Object.assign(visual.style, {
+      background,
+      position: '',
+      left: '',
+      top: '',
+    });
+    const svg = visual.querySelector<SVGElement>(
+      '.ok-native-list-visual-fallback > svg'
+    );
+    if (svg) {
+      const iconSize = String(table || sources.length > 1 ? 24 : 28);
+      svg.setAttribute('width', iconSize);
+      svg.setAttribute('height', iconSize);
+    }
+    Object.assign(visual.style, {
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+    });
+    if (sources.length > 1)
+      Object.assign(visual.style, {
+        position: 'absolute',
+        left: index ? '12px' : '0',
+        top: index ? '12px' : '0',
+        border: index ? '2px solid var(--nl-row)' : '0',
+        boxSizing: 'border-box',
+      });
+    if (!table && sources.length > 1) {
+      const token = visual.ownerDocument.createElement('span');
+      token.className = 'ok-native-list-history-token';
+      Object.assign(token.style, {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        position: 'relative',
+        width: '24px',
+        height: '24px',
+        flex: '0 0 24px',
+        borderRadius: 'inherit',
+        boxSizing: 'border-box',
+        overflow: 'hidden',
+        background:
+          source && 'backgroundColor' in source
+            ? source.backgroundColor ?? ''
+            : '',
+        border:
+          source && 'borderColor' in source && source.borderColor
+            ? `1px solid ${source.borderColor}`
+            : '0',
+      });
+      token.append(
+        ...Array.from(visual.children).filter(
+          (child) => !child.classList.contains('ok-native-list-visual-corner')
+        )
+      );
+      const fallback = token.querySelector<HTMLElement>(
+        ':scope > .ok-native-list-visual-fallback'
+      );
+      if (fallback) {
+        fallback.style.width = '24px';
+        fallback.style.height = '24px';
+        fallback.style.flexShrink = '0';
+      }
+      const mainImage = token.querySelector<HTMLImageElement>(
+        ':scope > .ok-native-list-visual-main'
+      );
+      if (mainImage) {
+        mainImage.style.width = '100%';
+        mainImage.style.height = '100%';
+      }
+      visual.append(token);
+    }
+    if (table) {
+      visual.style.background = loaded
+        ? background
+        : source && 'backgroundColor' in source && source.backgroundColor
+        ? source.backgroundColor
+        : 'var(--nl-strong)';
+      const borderColor =
+        source && 'borderColor' in source && source.borderColor
+          ? source.borderColor
+          : 'var(--nl-separator)';
+      visual.style.border = `1px solid ${borderColor}`;
+      visual.style.boxSizing = 'border-box';
+    } else if (sources.length === 1 && source?.kind === 'token') {
+      visual.style.border = source.borderColor
+        ? `1px solid ${source.borderColor}`
+        : '0';
+      visual.style.boxSizing = 'border-box';
+      const mainImage = visual.querySelector<HTMLImageElement>(
+        ':scope > .ok-native-list-visual-main'
+      );
+      if (mainImage) {
+        mainImage.style.width = '100%';
+        mainImage.style.height = '100%';
+      }
+    }
+  });
   Object.assign(v.text.style, {
     minWidth: '0',
     flex: '1 1 auto',

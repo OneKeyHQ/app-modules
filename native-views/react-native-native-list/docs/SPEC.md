@@ -1183,3 +1183,13 @@ listener on destroy. It measures the new content origin before Pager restores
 its C+B offset; a later ResizeObserver must not add that inset a second time.
 Ordinary subsequent slot-height changes retain the existing content-anchor
 compensation. Standalone lists continue listening on their own viewport.
+
+### Web History retained visual binding
+
+Implemented contract: same-source History visuals retain their image, placeholder
+and corner nodes while image styles or table/stacked presentation change. Every
+bind restores the factory geometry and applies the current image style and
+presentation, including clearing omitted radius/contentFit/shape overrides.
+Presentation wrapper changes move the existing nodes and preserve asynchronous
+loading/error visibility; they do not recreate or reload an unchanged source.
+Changing the source set retains the existing rebuild/disposal behavior.
