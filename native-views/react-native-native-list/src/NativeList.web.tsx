@@ -436,9 +436,17 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       },
       []
     );
+    const ownedScrollElementRef = useRef<HTMLElement | null>(null);
     const setScrollHostRef = useCallback(
       (value: React.ComponentRef<typeof View> | null) => {
-        setOwnedScrollHost(value as unknown as HTMLElement | null);
+        const element = value as unknown as HTMLElement | null;
+        if (ownedScrollElementRef.current !== element)
+          ownedScrollElementRef.current?.removeAttribute(
+            'data-collapsible-pager-scroll'
+          );
+        element?.setAttribute('data-collapsible-pager-scroll', 'true');
+        ownedScrollElementRef.current = element;
+        setOwnedScrollHost(element);
       },
       []
     );

@@ -5,8 +5,15 @@ import {
   CollapsiblePagerView,
 } from '../../../native-views/react-native-pager-view/src/CollapsiblePagerView.web';
 import { useWebCollapsiblePagerPage } from '../../../native-views/react-native-pager-view/src/WebCollapsiblePagerPage';
+import { NativeList as WebNativeList } from '../../../native-views/react-native-native-list/src/NativeList.web';
+import type { NativeListSnapshot } from '../../../native-views/react-native-native-list/src/models';
 
 import type { WebCollapsiblePagerPageState } from '../../../native-views/react-native-pager-view/src/WebCollapsiblePagerPage';
+
+jest.mock('../../../native-views/react-native-native-list/src/web/NativeListWebAvatarCache', () => ({
+  acquireNativeListAvatar: jest.fn(),
+  canonicalNativeListAvatarUri: jest.fn(),
+}));
 
 jest.mock('react-native', () => {
   const react = require('react') as typeof React;
@@ -749,4 +756,85 @@ it.each([375, 1920])('isolates retained inactive pages and reverses the attribut
   expect(a.getAttribute('aria-hidden')).toBe('false');
   expect(b.inert).toBe(true);
   expect(b.getAttribute('aria-hidden')).toBe('true');
+});
+
+
+describe.each([375, 1920])('nested NativeList scroll ownership at %ipx', (width) => {
+  const snapshot: NativeListSnapshot = { schemaVersion: 1, generation: 1, layout: { kind: 'sectioned' }, rows: [{ type: 'identity', key: 'nested-row', title: 'Token' }] };
+  function geometry(element: HTMLElement) {
+    Object.defineProperties(element, {
+      clientWidth: { configurable: true, value: width },
+      clientHeight: { configurable: true, value: 400 },
+      scrollHeight: { configurable: true, value: 1600 },
+    });
+    element.getBoundingClientRect = () => ({ top: 100, bottom: 500, left: 0, right: width, width, height: 400, x: 0, y: 100, toJSON() {} });
+  }
+  it('uses the owned slot host for insets, collapse, top commands and route restoration', async () => {
+    const pager = React.createRef<CollapsiblePagerView>();
+    const render = (active: boolean) => <React.Activity mode={active ? 'visible' : 'hidden'}><CollapsiblePagerView ref={pager} header={<div data-testid="slot-header" />} stickyHeader={<div />} headerHeight={100} stickyHeaderHeight={44} isActive={active}>
+      <div key="A"><SnapshotProbe pageKey="A" /><WebNativeList testID="slot-list" snapshot={snapshot} listHeader={<div>Summary</div>} listFooter={<div>Footer</div>} /></div>
+    </CollapsiblePagerView></React.Activity>;
+    await act(async () => root.render(render(true)));
+    const list = container.querySelector<HTMLElement>('[data-testid="slot-list"]')!;
+    const owned = list.firstElementChild as HTMLElement;
+    const bounds = owned.firstElementChild as HTMLElement;
+    const viewport = list.querySelector<HTMLElement>('.ok-native-list-viewport')!;
+    expect(viewport).not.toBeNull();
+    geometry(owned);
+    bounds.getBoundingClientRect = () => ({ top: 100 - owned.scrollTop, bottom: 1500 - owned.scrollTop, left: 0, right: width, width, height: 1400, x: 0, y: 100 - owned.scrollTop, toJSON() {} });
+    await act(async () => resizeCallbacks.forEach((callback) => callback([], {} as ResizeObserver)));
+    await flushFrames();
+    expect(latestSnapshot()?.owner).toBe(owned);
+    expect(latestSnapshot()?.owner).not.toBe(viewport);
+    expect(owned.getAttribute('data-collapsible-pager-scroll')).toBe('true');
+    expect(bounds.style.paddingTop).toContain('144px');
+    expect(viewport.style.paddingTop).toBe('');
+    await act(async () => { owned.scrollTop = 80; owned.dispatchEvent(new window.Event('scroll')); });
+    await flushFrames();
+    expect(container.querySelector('[data-testid="slot-header"]')!.parentElement!.style.transform).toBe('translateY(-80px)');
+    expect(viewport.scrollTop).toBe(0);
+    await act(async () => pager.current!.scrollToPageTop({ animated: false }));
+    await flushFrames();
+    expect(owned.scrollTop).toBe(0);
+    expect(viewport.scrollTop).toBe(0);
+    await act(async () => { owned.scrollTop = 300; owned.dispatchEvent(new window.Event('scroll')); });
+    await act(async () => root.render(render(false)));
+    expect(latestSnapshot()?.pendingRouteScrollTop).toBe(300);
+    owned.scrollTop = 0;
+    await act(async () => root.render(render(true)));
+    await flushFrames();
+    expect(owned.scrollTop).toBe(300);
+    expect(viewport.scrollTop).toBe(0);
+    expect(latestSnapshot()?.pendingRouteScrollTop).toBeNull();
+    await act(async () => root.render(null));
+    expect(owned.isConnected).toBe(false);
+    expect(owned.hasAttribute('data-collapsible-pager-scroll')).toBe(false);
+    expect(container.querySelectorAll('[data-collapsible-pager-scroll]')).toHaveLength(0);
+  });
+  it('keeps the ordinary no-slot viewport as the owner', async () => {
+    await act(async () => root.render(<CollapsiblePagerView header={<div />} stickyHeader={<div />} headerHeight={0} stickyHeaderHeight={0}>
+      <div key="A"><SnapshotProbe pageKey="A" /><WebNativeList snapshot={snapshot} /></div>
+    </CollapsiblePagerView>));
+    await flushFrames();
+    const viewport = container.querySelector<HTMLElement>('.ok-native-list-viewport')!;
+    expect(latestSnapshot()?.owner).toBe(viewport);
+    expect(container.querySelectorAll('[data-collapsible-pager-scroll]')).toHaveLength(0);
+  });
+  it('preserves an explicit external host instead of claiming a second owner', async () => {
+    function ExternalPage() {
+      const [external, setExternal] = React.useState<HTMLDivElement | null>(null);
+      return <div data-testid="external-owner" data-collapsible-pager-scroll="true" ref={setExternal}>
+        <SnapshotProbe pageKey="A" /><WebNativeList snapshot={snapshot} listHeader={<div>Summary</div>} webScrollHost={external} />
+      </div>;
+    }
+    await act(async () => root.render(<CollapsiblePagerView header={<div />} stickyHeader={<div />} headerHeight={0} stickyHeaderHeight={0}>
+      <ExternalPage key="A" />
+    </CollapsiblePagerView>));
+    const external = container.querySelector<HTMLElement>('[data-testid="external-owner"]')!;
+    geometry(external);
+    await flushFrames();
+    expect(latestSnapshot()?.owner).toBe(external);
+    expect(container.querySelectorAll('[data-collapsible-pager-scroll]')).toHaveLength(1);
+    expect(external.querySelector('.ok-native-list-viewport')).not.toBe(external);
+  });
 });

@@ -1193,3 +1193,12 @@ presentation, including clearing omitted radius/contentFit/shape overrides.
 Presentation wrapper changes move the existing nodes and preserve asynchronous
 loading/error visibility; they do not recreate or reload an unchanged source.
 Changing the source set retains the existing rebuild/disposal behavior.
+
+### Web slot-list scroll ownership
+
+When container slots create an owned Web scroll host without `webScrollHost`,
+that actual host exposes the existing `data-collapsible-pager-scroll` marker.
+A containing Web pager therefore applies insets, collapse/top commands and route
+restoration to the owned host, with slot content as its padding target. The
+ordinary no-slot viewport and explicit external-host paths keep their existing
+ownership; no Pager dependency or new API is required.
