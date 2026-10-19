@@ -25,6 +25,7 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
 static void *RNCRefreshControlLayerContext = &RNCRefreshControlLayerContext;
 static void *RNCScrollRefreshControlContext = &RNCScrollRefreshControlContext;
 static char RNCRefreshControlOffsetKey;
+static void RNCCollapsiblePagerLog(NSString *message);
 
 @interface RNCRefreshControlOffsetState : NSObject
 + (void)setOffset:(CGFloat)offset forControl:(UIRefreshControl *)control owner:(id)owner;
@@ -39,6 +40,10 @@ static char RNCRefreshControlOffsetKey;
   BOOL _originalMasksToBounds;
   BOOL _applying;
   BOOL _observing;
+  CGFloat _lastLoggedOffset;
+  NSUInteger _lastLoggedOwnerCount;
+  CGFloat _lastLoggedTransformY;
+  BOOL _hasLoggedState;
 }
 
 - (instancetype)initWithControl:(UIRefreshControl *)control
@@ -79,6 +84,21 @@ static char RNCRefreshControlOffsetKey;
   }
   [CATransaction commit];
   _applying = NO;
+#if DEBUG
+  if (!_hasLoggedState || fabs(_lastLoggedOffset - offset) > 0.01 ||
+      _lastLoggedOwnerCount != _offsets.count ||
+      fabs(_lastLoggedTransformY - transform.m42) > 0.01) {
+    _hasLoggedState = YES;
+    _lastLoggedOffset = offset;
+    _lastLoggedOwnerCount = _offsets.count;
+    _lastLoggedTransformY = transform.m42;
+    RNCCollapsiblePagerLog([NSString stringWithFormat:
+      @"[IOS-HOME-VISUAL] epochMs=%.0f monoMs=%.0f phase=refresh-transform ownerCount=%lu offsetSum=%.1f baselineY=%.1f appliedY=%.1f masksToBounds=%d",
+      [NSDate.date timeIntervalSince1970] * 1000, CACurrentMediaTime() * 1000,
+      (unsigned long)_offsets.count, offset, _baselineTransform.m42,
+      transform.m42, control.layer.masksToBounds]);
+  }
+#endif
 }
 
 + (void)setOffset:(CGFloat)offset forControl:(UIRefreshControl *)control owner:(id)owner
@@ -1464,10 +1484,12 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 - (void)detachSharedHeaderPressCancellationGesture;
 - (void)updateRefreshControlForScrollView:(UIScrollView *)scrollView;
 - (void)releaseRefreshControlForScrollView:(UIScrollView *)scrollView;
+- (void)logHomeVisualGeometry:(NSString *)phase scrollView:(UIScrollView *)scrollView;
 - (void)cancelTopInsetReboundCheck;
 - (void)scheduleTopInsetReboundCheck;
 - (void)syncScrollEdgeAppearance;
 - (void)updateHardEdgeSeparatorCovers;
+- (void)updateTopOverlayThemeBackground;
 - (void)updateScrollEdgeContentMasks;
 - (void)restoreScrollEdgeContentMasks;
 - (void)sharedHeaderPressCancellationGestureChanged:(UIPanGestureRecognizer *)recognizer;
@@ -1506,6 +1528,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   UILabel *_stickyEdgeMarker;
   CALayer *_topEdgeSeparatorCover;
   CALayer *_stickyEdgeSeparatorCover;
+  CALayer *_topOverlayThemeBackgroundLayer;
   __weak UIView *_topEdgeInteractionHost;
   __weak UIView *_stickyEdgeInteractionHost;
   __weak UIScrollView *_topEdgeScrollView;
@@ -1576,6 +1599,13 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   NSMapTable<UIScrollView *, NSValue *> *_originalInsets;
   NSMapTable<UIScrollView *, UIRefreshControl *> *_managedRefreshControls;
   NSHashTable<UIScrollView *> *_refreshControlObservedScrollViews;
+  CFTimeInterval _homeVisualLastScrollLog;
+  CFTimeInterval _homeVisualLastLayoutLog;
+  CFTimeInterval _homeVisualStartMono;
+  NSString *_homeVisualLastGeometrySignature;
+  CGFloat _homeVisualLastThemeOpacity;
+  CFTimeInterval _homeVisualLastThemeLog;
+  BOOL _homeVisualThemeHolding;
   NSMapTable<UIScrollView *, NSNumber *> *_appliedTopInsets;
   NSMapTable<UIScrollView *, NSValue *> *_originalIndicatorInsets;
   NSMapTable<UIScrollView *, NSNumber *> *_originalAlwaysBounceVertical;
@@ -1803,6 +1833,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   [self updateTopScrollEdgeForScrollView:_observedScrollView];
   [self updateSharedHeaderPressCancellationGesture];
   [self updateHeaderSettledStateForceBusy:NO];
+  [self logHomeVisualGeometry:@"window" scrollView:_observedScrollView];
   for (UIScrollView *scrollView in _originalInsets.keyEnumerator) {
     [self updateNativeScrollerViewport:scrollView stickyHeight:self.window == nil ? 0 : _stickyHeaderHeight + self.effectiveTopOverlayHeight];
   }
@@ -1830,7 +1861,10 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 - (CGFloat)effectiveTopOverlayHeight
 {
-  return _topOverlayView != nil ? _topOverlayHeight : _externalTopOverlayHeight;
+  BOOL localOverlayPending = _topScrollEdgeEnabled && _topOverlayHeight > 0 &&
+    _externalTopOverlayTag <= 0;
+  return _topOverlayView != nil || localOverlayPending
+    ? _topOverlayHeight : _externalTopOverlayHeight;
 }
 
 - (BOOL)hasFixedTopOverlay
@@ -1913,6 +1947,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   [super traitCollectionDidChange:previousTraitCollection];
   if (previousTraitCollection.userInterfaceStyle != self.traitCollection.userInterfaceStyle) {
     [self syncScrollEdgeAppearance];
+    [self updateTopOverlayThemeBackground];
+    [self logHomeVisualGeometry:@"trait" scrollView:_observedScrollView];
   }
 }
 
@@ -1962,6 +1998,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     self.window != nil && !_isBeingRecycled;
   if (!enabled) {
     [self restoreScrollEdgeContentMasks];
+    [self updateTopOverlayThemeBackground];
     return;
   }
   if (self.hasFixedTopOverlay && _sharedHeaderHostView.window == self.window &&
@@ -2030,6 +2067,102 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     }
     [_ownedPageMasks removeObjectForKey:page];
     [_originalPageMasks removeObjectForKey:page];
+  }
+  [self updateTopOverlayThemeBackground];
+}
+
+- (void)updateTopOverlayThemeBackground
+{
+  if (@available(iOS 27.0, *)) {
+    BOOL localHardOverlay = !_isBeingRecycled && _topScrollEdgeEnabled &&
+      _topScrollEdgeEffect == RNCCollapsiblePagerViewTopScrollEdgeEffect::Hard &&
+      _nativeSmoothHeaderScrollEnabled && _topOverlayView != nil &&
+      _externalTopOverlayTag <= 0 && _topOverlayHeight > 0 && _headerHeight > 0 &&
+      _topOverlayHostView.window == self.window && self.window != nil &&
+      !CGRectIsEmpty(_topOverlayHostView.bounds);
+    if (!localHardOverlay) {
+      [_topOverlayThemeBackgroundLayer removeFromSuperlayer];
+      _topOverlayThemeBackgroundLayer = nil;
+      _homeVisualThemeHolding = NO;
+      return;
+    }
+
+    UIColor *color = nil;
+    for (UIView *view = self; view != nil; view = view.superview) {
+      UIColor *candidate = [view.backgroundColor resolvedColorWithTraitCollection:
+        _topOverlayHostView.traitCollection];
+      if (candidate != nil && CGColorGetAlpha(candidate.CGColor) >= 1) {
+        color = candidate;
+        break;
+      }
+    }
+    if (color == nil) {
+      [_topOverlayThemeBackgroundLayer removeFromSuperlayer];
+      _topOverlayThemeBackgroundLayer = nil;
+      return;
+    }
+
+    UIScrollView *scrollView = _observedScrollView;
+    BOOL geometryReady = scrollView != nil &&
+      _sharedHeaderScrollView == scrollView && _topEdgeScrollView == scrollView &&
+      _topEdgeInteraction.scrollView == scrollView &&
+      scrollView.topEdgeEffect.style == UIScrollEdgeEffectStyle.hardStyle &&
+      _sharedHeaderMaskView != nil &&
+      _sharedHeaderHostView.maskView == _sharedHeaderMaskView &&
+      _headerView.window == self.window;
+    if (_topOverlayThemeBackgroundLayer == nil && !geometryReady) return;
+    BOOL created = _topOverlayThemeBackgroundLayer == nil;
+    if (created) {
+      _topOverlayThemeBackgroundLayer = [CALayer layer];
+      _topOverlayThemeBackgroundLayer.name = @"onekey-top-overlay-theme-background";
+      _topOverlayThemeBackgroundLayer.actions = @{
+        @"position": NSNull.null, @"bounds": NSNull.null,
+        @"opacity": NSNull.null, @"backgroundColor": NSNull.null
+      };
+      [_topOverlayHostView.layer insertSublayer:_topOverlayThemeBackgroundLayer atIndex:0];
+    }
+    _topOverlayThemeBackgroundLayer.frame = _topOverlayHostView.bounds;
+    _topOverlayThemeBackgroundLayer.backgroundColor = color.CGColor;
+    if (!geometryReady) {
+      if (!_homeVisualThemeHolding) {
+        _homeVisualThemeHolding = YES;
+#if DEBUG
+        RNCCollapsiblePagerLog([NSString stringWithFormat:
+          @"[IOS-HOME-VISUAL] phase=theme-background-hold pagerTag=%ld generation=%lu pageIndex=%ld opacity=%.3f",
+          (long)self.tag, (unsigned long)_generation, (long)_currentIndex,
+          _topOverlayThemeBackgroundLayer.opacity]);
+#endif
+      }
+      return;
+    }
+    _homeVisualThemeHolding = NO;
+    CGRect overlayWindow = [_topOverlayHostView convertRect:_topOverlayHostView.bounds
+                                                     toView:self.window];
+    CGRect headerWindow = [_headerView convertRect:_headerView.bounds
+                                           toView:self.window];
+    CGFloat overlayBottom = CGRectGetMaxY(overlayWindow);
+    CGFloat collapse = MIN(MAX(overlayBottom - CGRectGetMinY(headerWindow), 0),
+      _headerHeight);
+    CGFloat opacity = 1 - collapse / _headerHeight;
+    _topOverlayThemeBackgroundLayer.opacity = opacity;
+#if DEBUG
+    CFTimeInterval now = CACurrentMediaTime();
+    if (created || fabs(opacity - _homeVisualLastThemeOpacity) >= 0.1 ||
+        now - _homeVisualLastThemeLog >= 2.0) {
+      _homeVisualLastThemeOpacity = opacity;
+      _homeVisualLastThemeLog = now;
+      CGFloat red = 0, green = 0, blue = 0, alpha = 0;
+      [color getRed:&red green:&green blue:&blue alpha:&alpha];
+      RNCCollapsiblePagerLog([NSString stringWithFormat:
+        @"[IOS-HOME-VISUAL] phase=theme-background epochMs=%.0f monoMs=%.0f pagerTag=%ld generation=%lu pageIndex=%ld opacity=%.3f collapse=%.1f header=%.1f overlayBottom=%.1f headerY=%.1f bodyYEstimate=%.1f hardOwner=%d rgba=%.3f,%.3f,%.3f,%.3f",
+        NSDate.date.timeIntervalSince1970 * 1000, now * 1000,
+        (long)self.tag, (unsigned long)_generation, (long)_currentIndex,
+        opacity, collapse, (CGFloat)_headerHeight, overlayBottom,
+        CGRectGetMinY(headerWindow), overlayBottom + _headerHeight +
+          _stickyHeaderHeight - collapse, _topEdgeInteraction.scrollView == scrollView,
+        red, green, blue, alpha]);
+    }
+#endif
   }
 }
 
@@ -2187,6 +2320,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
         CGRectGetWidth(_containerView.bounds), pixel);
       cover.contentsScale = scale;
       cover.backgroundColor = color.CGColor;
+      cover.hidden = index == 0 && _stickyHeaderIsPinned;
     }
     if (index == 0) _topEdgeSeparatorCover = cover;
     else _stickyEdgeSeparatorCover = cover;
@@ -2538,6 +2672,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   [_nativeTabBarView updateAncestorGesturePrecedence];
   [_nativeSubHeaderView updateAncestorGesturePrecedence];
   [self updateTopScrollEdgeForScrollView:_observedScrollView];
+  [self logHomeVisualGeometry:shouldPin ? @"pin" : @"unpin"
+                    scrollView:_observedScrollView];
 }
 
 - (void)preparePageForHorizontalTransitionAtIndex:(NSInteger)pageIndex
@@ -2689,6 +2825,15 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 - (void)mountingTransactionDidMount:(const MountingTransaction &)transaction
                withSurfaceTelemetry:(const SurfaceTelemetry &)surfaceTelemetry
 {
+  if (_needsSlotRebuild && _deferTopEdgeSlotRebuild &&
+      _topScrollEdgeEnabled && _nativeSmoothHeaderScrollEnabled &&
+      _topScrollEdgeEffect == RNCCollapsiblePagerViewTopScrollEdgeEffect::Hard &&
+      _topOverlayHeight > 0 && _pageKeys.count > 0 &&
+      _externalTopOverlayTag <= 0 &&
+      _logicalChildren.count == _pageKeys.count + 3 &&
+      !_transitioning && !_isPagerDragging && !_isBeingRecycled) {
+    _deferTopEdgeSlotRebuild = NO;
+  }
   if (_needsSlotRebuild && !_deferTopEdgeSlotRebuild &&
       !_transitioning && !_isPagerDragging) {
     [self rebuildSlots];
@@ -2711,6 +2856,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   }
   [self updateScrollEdgeContentMasks];
   [_mountingRemovedScrollViews removeAllObjects];
+  [self logHomeVisualGeometry:@"did-mount" scrollView:_observedScrollView];
   if (!_nativeSmoothHeaderScrollEnabled || _isBeingRecycled || self.window == nil ||
       _currentIndex < 0 || _currentIndex >= _pageControllers.count) return;
   // Prepare newly mounted owned scrollers before their first frame, even while
@@ -2991,6 +3137,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   [self updateTopScrollEdgeForScrollView:_observedScrollView];
   [self updateScrollEdgeContentMasks];
   [self updateHeaderSettledStateForceBusy:NO];
+  [self logHomeVisualGeometry:@"layout" scrollView:_observedScrollView];
   dispatch_async(dispatch_get_main_queue(), ^{
     if (!self->_isBeingRecycled) {
       [self prepareAdjacentPageInsets];
@@ -3110,6 +3257,10 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   _externalOuterTransitioning = NO;
   _topScrollEdgeEnabled = NO;
   _topScrollEdgeEffect = RNCCollapsiblePagerViewTopScrollEdgeEffect::None;
+  _homeVisualStartMono = 0;
+  _homeVisualLastScrollLog = 0;
+  _homeVisualLastLayoutLog = 0;
+  _homeVisualLastGeometrySignature = nil;
   _nativeTabBarHeight = 44;
   _nativeSubHeaderHeight = 74;
   _headerOffset = 0;
@@ -3314,6 +3465,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   if (insetsChanged) {
     [self reapplyInsetsToObservedScrollView];
     [self setNeedsLayout];
+    [self logHomeVisualGeometry:@"props-inset" scrollView:_observedScrollView];
   }
   _applyingTopOverlayInsetChange = NO;
   if (!_nativeTabBarView.hidden) {
@@ -3894,8 +4046,105 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     [_managedRefreshControls removeObjectForKey:scrollView];
     if (current != nil) [_managedRefreshControls setObject:current forKey:scrollView];
   }
-  [RNCRefreshControlOffsetState setOffset:self.effectiveTopOverlayHeight + _headerHeight + _stickyHeaderHeight
+  [RNCRefreshControlOffsetState setOffset:_headerHeight + _stickyHeaderHeight
                              forControl:current owner:self];
+  if (previous != current) [self logHomeVisualGeometry:@"refresh-bind" scrollView:scrollView];
+}
+
+- (void)logHomeVisualGeometry:(NSString *)phase scrollView:(UIScrollView *)scrollView
+{
+#if DEBUG
+  if (self.window == nil || _isBeingRecycled) return;
+  CFTimeInterval now = CACurrentMediaTime();
+  if (_homeVisualStartMono == 0) _homeVisualStartMono = now;
+  if ([phase isEqualToString:@"pull"] && now - _homeVisualLastScrollLog < 0.2) return;
+  if ([phase isEqualToString:@"pull"]) _homeVisualLastScrollLog = now;
+  UIRefreshControl *control = scrollView.refreshControl;
+  CGRect controlWindow = control != nil
+    ? [control convertRect:control.bounds toView:self.window] : CGRectZero;
+  CGRect overlayWindow = [_topOverlayHostView convertRect:_topOverlayHostView.bounds
+                                                   toView:self.window];
+  CGRect stickyWindow = [_stickyHeaderView convertRect:_stickyHeaderView.bounds
+                                                toView:self.window];
+  CGRect maskWindow = _sharedHeaderMaskView != nil
+    ? [_sharedHeaderHostView convertRect:_sharedHeaderMaskView.frame toView:self.window]
+    : CGRectZero;
+  CGFloat pageMaskWindowY = [_containerView convertPoint:
+    CGPointMake(0, _pageMaskBoundary) toView:self.window].y;
+  BOOL layoutPhase = [phase isEqualToString:@"layout"] ||
+    [phase isEqualToString:@"did-mount"];
+  NSString *signature = [NSString stringWithFormat:
+    @"%.1f:%ld:%ld:%.1f:%d:%.1f:%.1f:%.1f:%d:%d",
+    self.effectiveTopOverlayHeight, (long)_headerHeight,
+    (long)_stickyHeaderHeight, scrollView.contentInset.top, control != nil,
+    CGRectGetMinY(maskWindow), CGRectGetHeight(maskWindow), _pageMaskBoundary,
+    _stickyHeaderIsPinned, _topScrollEdgeEnabled];
+  if (layoutPhase && now - _homeVisualStartMono >= 2.0 &&
+      [_homeVisualLastGeometrySignature isEqualToString:signature] &&
+      now - _homeVisualLastLayoutLog < 2.0) return;
+  if (layoutPhase) {
+    _homeVisualLastLayoutLog = now;
+    _homeVisualLastGeometrySignature = signature;
+  }
+  CGFloat visualYEstimate = CGRectGetMinY(controlWindow) +
+    (control != nil ? control.layer.sublayerTransform.m42 : 0);
+  CALayer *firstChild = control.layer.sublayers.firstObject;
+  BOOL childAttached = firstChild != nil && control.window == self.window;
+  CGRect firstChildWindow = childAttached
+    ? [firstChild convertRect:firstChild.bounds toLayer:self.window.layer]
+    : CGRectZero;
+  CGFloat overscroll = scrollView != nil
+    ? -(scrollView.contentOffset.y + scrollView.contentInset.top) : 0;
+  double epochMs = [NSDate.date timeIntervalSince1970] * 1000;
+  double monoMs = now * 1000;
+  RNCCollapsiblePagerLog([NSString stringWithFormat:
+    @"[IOS-HOME-VISUAL] epochMs=%.0f monoMs=%.0f phase=%@ pagerTag=%ld generation=%lu pageIndex=%ld window=%d edge=%d overlay=%.1f header=%ld sticky=%ld collapse=%.1f scrollY=%.1f insetTop=%.1f overscroll=%.1f refresh=%d refreshing=%d controlY=%.1f controlH=%.1f sublayerY=%.1f visualYEstimate=%.1f overlayY=%.1f overlayBottom=%.1f stickyY=%.1f stickyBottom=%.1f maskY=%.1f maskH=%.1f pageMaskWindowY=%.1f",
+    epochMs, monoMs, phase, (long)self.tag, (unsigned long)_generation,
+    (long)_currentIndex, self.window != nil, _topScrollEdgeEnabled,
+    self.effectiveTopOverlayHeight, (long)_headerHeight, (long)_stickyHeaderHeight,
+    _headerOffset, scrollView.contentOffset.y, scrollView.contentInset.top,
+    overscroll, control != nil, control.isRefreshing,
+    CGRectGetMinY(controlWindow), CGRectGetHeight(controlWindow),
+    control != nil ? control.layer.sublayerTransform.m42 : 0, visualYEstimate,
+    CGRectGetMinY(overlayWindow), CGRectGetMaxY(overlayWindow),
+    CGRectGetMinY(stickyWindow), CGRectGetMaxY(stickyWindow),
+    CGRectGetMinY(maskWindow), CGRectGetHeight(maskWindow), pageMaskWindowY]);
+  RNCCollapsiblePagerLog([NSString stringWithFormat:
+    @"[IOS-HOME-VISUAL] epochMs=%.0f monoMs=%.0f phase=%@-refresh-layer pagerTag=%ld generation=%lu pageIndex=%ld boundsY=%.1f boundsH=%.1f centerY=%.1f transformTY=%.1f layerPositionY=%.1f layerTransformY=%.1f directChildCount=%lu firstChildAttached=%d firstChildWindowY=%.1f firstChildWindowH=%.1f",
+    epochMs, monoMs, phase, (long)self.tag, (unsigned long)_generation,
+    (long)_currentIndex, control.bounds.origin.y, control.bounds.size.height,
+    control.center.y, control.transform.ty, control.layer.position.y,
+    control.layer.transform.m42, (unsigned long)control.layer.sublayers.count,
+    childAttached, CGRectGetMinY(firstChildWindow), CGRectGetHeight(firstChildWindow)]);
+  if (![phase isEqualToString:@"pull"]) {
+    CALayer *topCover = _topEdgeSeparatorCover;
+    CALayer *stickyCover = _stickyEdgeSeparatorCover;
+    UIColor *color = topCover.backgroundColor != nil
+      ? [UIColor colorWithCGColor:topCover.backgroundColor] : nil;
+    CGFloat red = 0, green = 0, blue = 0, alpha = 0;
+    [color getRed:&red green:&green blue:&blue alpha:&alpha];
+    CGRect topCoverWindow = topCover.superlayer != nil
+      ? [topCover convertRect:topCover.bounds toLayer:self.window.layer] : CGRectZero;
+    CGRect stickyCoverWindow = stickyCover.superlayer != nil
+      ? [stickyCover convertRect:stickyCover.bounds toLayer:self.window.layer] : CGRectZero;
+    RNCCollapsiblePagerLog([NSString stringWithFormat:
+      @"[IOS-HOME-VISUAL] epochMs=%.0f monoMs=%.0f phase=%@-edge pagerTag=%ld generation=%lu pageIndex=%ld trait=%ld override=%ld style=%ld pinned=%d topHostY=%.1f topHostBottom=%.1f stickyHostY=%.1f stickyHostBottom=%.1f topInteractionSameScroll=%d stickyInteractionSameScroll=%d topCover=%d topCoverHidden=%d topCoverY=%.1f topCoverH=%.3f stickyCover=%d stickyCoverHidden=%d stickyCoverY=%.1f stickyCoverH=%.3f coverRGBA=%.3f,%.3f,%.3f,%.3f scale=%.1f",
+      epochMs, monoMs, phase, (long)self.tag, (unsigned long)_generation,
+      (long)_currentIndex, (long)self.traitCollection.userInterfaceStyle,
+      (long)_topOverlayHostView.overrideUserInterfaceStyle,
+      (long)_topScrollEdgeEffect, _stickyHeaderIsPinned,
+      CGRectGetMinY(overlayWindow), CGRectGetMaxY(overlayWindow),
+      CGRectGetMinY(stickyWindow), CGRectGetMaxY(stickyWindow),
+      _topEdgeInteraction.scrollView == scrollView,
+      _stickyEdgeInteraction.scrollView == scrollView,
+      topCover != nil, topCover.hidden, CGRectGetMinY(topCoverWindow),
+      CGRectGetHeight(topCoverWindow), stickyCover != nil,
+      stickyCover.hidden,
+      CGRectGetMinY(stickyCoverWindow),
+      CGRectGetHeight(stickyCoverWindow), red, green, blue, alpha,
+      self.window.screen.scale]);
+  }
+#endif
 }
 
 - (void)releaseRefreshControlForScrollView:(UIScrollView *)scrollView
@@ -4313,6 +4562,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   if (context == RNCScrollRefreshControlContext) {
     UIScrollView *scrollView = (UIScrollView *)object;
     [self updateRefreshControlForScrollView:scrollView];
+    [self logHomeVisualGeometry:@"refresh-control-change" scrollView:scrollView];
     if (scrollView == _observedScrollView && !_syntheticPageRestore &&
         (!_nativeSmoothHeaderScrollEnabled || (!_transitioning && _transitionPageOffsets == nil))) {
       [self updateHeaderForScrollView:scrollView];
@@ -4320,6 +4570,11 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     return;
   }
   if (context == RNCCollapsiblePagerContentOffsetContext && object == _observedScrollView) {
+    if ([keyPath isEqualToString:@"contentOffset"] &&
+        -(((UIScrollView *)object).contentOffset.y +
+          ((UIScrollView *)object).contentInset.top) > 5) {
+      [self logHomeVisualGeometry:@"pull" scrollView:(UIScrollView *)object];
+    }
     if (_pendingTopInsetReboundScrollView == object &&
         ([keyPath isEqualToString:@"contentOffset"] || [keyPath isEqualToString:@"contentInset"])) {
       if (((UIScrollView *)object).panGestureRecognizer.state == UIGestureRecognizerStateChanged) {
