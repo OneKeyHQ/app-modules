@@ -8,6 +8,8 @@ import {
   type LayoutChangeEvent,
 } from "react-native";
 import { NativeScroller, type NativeScrollerRef } from "../NativeScroller";
+import { CollapsiblePagerView } from "../CollapsiblePagerView";
+import CollapsiblePagerViewHost from "../CollapsiblePagerViewNativeComponent";
 import NativeScrollerHost, { Commands } from "../NativeScrollerNativeComponent";
 import { ScrollEdgeEffect } from "../ScrollEdgeEffect";
 
@@ -19,6 +21,7 @@ const mockView = { view: true };
 jest.mock("react-native", () => ({
   View: "View",
   Platform: { OS: "ios", Version: 26 },
+  I18nManager: { isRTL: false },
   StyleSheet: {
     create: (styles: object) => styles,
     flatten: (style: object | object[]) =>
@@ -58,6 +61,16 @@ jest.mock("../NativeScrollerNativeComponent", () => {
     },
   };
 });
+jest.mock("../CollapsiblePagerViewNativeComponent", () => {
+  const ReactMock = jest.requireActual<typeof React>("react");
+  return {
+    __esModule: true,
+    default: ReactMock.forwardRef((props: object, ref) =>
+      ReactMock.createElement("CollapsibleNativeHost", { ...props, ref })
+    ),
+    Commands: {},
+  };
+});
 
 const nativeHandle = {
   measure: jest.fn(),
@@ -76,6 +89,45 @@ const touch = (target: object) =>
     target,
     nativeEvent: { target, touches: [] },
   } as unknown as GestureResponderEvent);
+
+describe("CollapsiblePagerView overlay height handoff", () => {
+  let renderer: ReactTestRenderer;
+  const overlay = <View testID="home-overlay" />;
+  const host = () => renderer.root.findByType(CollapsiblePagerViewHost).props;
+  const renderPager = (enabled: boolean, hint: number) => (
+    <CollapsiblePagerView
+      header={<View />}
+      stickyHeader={<View />}
+      headerHeight={180}
+      stickyHeaderHeight={48}
+      topScrollEdgeEffect={enabled ? ScrollEdgeEffect.Hard : undefined}
+      topOverlayHeightHint={hint}
+      topOverlay={overlay}
+    />
+  );
+  afterEach(() => {
+    if (renderer) act(() => renderer.unmount());
+  });
+
+  it("reserves a known overlay height before layout, then accepts its measurement", () => {
+    act(() => {
+      renderer = create(renderPager(false, 162));
+    });
+    expect(host().topOverlayHeight).toBe(0);
+    act(() => renderer.update(renderPager(true, 162)));
+    expect(host().topScrollEdgeEffect).toBe("hard");
+    expect(host().topOverlayHeight).toBe(162);
+    const overlaySlot = renderer.root
+      .findAllByType(View)
+      .find((view) => view.props.onLayout && view.props.children === overlay)!;
+    act(() => overlaySlot.props.onLayout(layout(320, 164)));
+    expect(host().topOverlayHeight).toBe(164);
+    act(() => renderer.update(renderPager(false, 180)));
+    expect(host().topOverlayHeight).toBe(0);
+    act(() => renderer.update(renderPager(true, 180)));
+    expect(host().topOverlayHeight).toBe(180);
+  });
+});
 
 describe("NativeScroller bridge", () => {
   let renderer: ReactTestRenderer;

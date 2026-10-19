@@ -8,6 +8,25 @@
 
 using namespace facebook::react;
 
+static void RNCNativeScrollerHomeVisualLog(NSString *phase, UIScrollView *scrollView)
+{
+#if DEBUG
+  Class logClass = NSClassFromString(@"ReactNativeNativeLogger.OneKeyLog");
+  if (logClass == nil) logClass = NSClassFromString(@"OneKeyLog");
+  SEL selector = NSSelectorFromString(@"debug::");
+  if (logClass == nil || ![logClass respondsToSelector:selector]) return;
+  UIRefreshControl *control = scrollView.refreshControl;
+  NSString *message = [NSString stringWithFormat:
+    @"[IOS-HOME-VISUAL] epochMs=%.0f monoMs=%.0f phase=scroller-%@ scrollTag=%ld refresh=%d refreshing=%d scrollY=%.1f insetTop=%.1f",
+    [NSDate.date timeIntervalSince1970] * 1000, CACurrentMediaTime() * 1000,
+    phase, (long)scrollView.tag, control != nil, control.isRefreshing,
+    scrollView.contentOffset.y, scrollView.contentInset.top];
+  typedef void (*LogFunction)(id, SEL, NSString *, NSString *);
+  LogFunction logFunction = (LogFunction)[logClass methodForSelector:selector];
+  logFunction(logClass, selector, @"NativeScroller", message);
+#endif
+}
+
 @interface RNCNativeVerticalScrollView : UIScrollView
 @end
 @implementation RNCNativeVerticalScrollView
@@ -156,6 +175,7 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
     [_refreshControl addTarget:self action:@selector(refreshTriggered:)
              forControlEvents:UIControlEventValueChanged];
     _scrollView.refreshControl = _refreshControl;
+    RNCNativeScrollerHomeVisualLog(@"refresh-created", _scrollView);
   } else if (!next.refreshEnabled && _refreshControl != nil) {
     [_refreshControl endRefreshing];
     _scrollView.refreshControl = nil;
@@ -174,8 +194,10 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
     }
     if (next.refreshing && !_refreshControl.refreshing) {
       [_refreshControl beginRefreshing];
+      RNCNativeScrollerHomeVisualLog(@"refresh-begin-prop", _scrollView);
     } else if (!next.refreshing && (previous.refreshing || createdRefreshControl)) {
       [_refreshControl endRefreshing];
+      if (previous.refreshing) RNCNativeScrollerHomeVisualLog(@"refresh-end-prop", _scrollView);
     }
   }
 
@@ -379,6 +401,7 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
   const auto &props = *std::static_pointer_cast<const RNCNativeScrollerProps>(_props);
   if (!props.refreshEnabled || props.refreshing) return;
   _refreshEventSentForDrag = YES;
+  RNCNativeScrollerHomeVisualLog(@"refresh-native-trigger", _scrollView);
   if (_eventEmitter) {
     std::static_pointer_cast<const RNCNativeScrollerEventEmitter>(_eventEmitter)->onRefresh({});
   }
@@ -523,6 +546,7 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
 - (void)setRefreshing:(BOOL)refreshing
 {
   if (_recycled || _refreshControl == nil) return;
+  RNCNativeScrollerHomeVisualLog(refreshing ? @"refresh-command-start" : @"refresh-command-stop", _scrollView);
   if (refreshing) {
     if (!_refreshControl.refreshing) [_refreshControl beginRefreshing];
   } else {

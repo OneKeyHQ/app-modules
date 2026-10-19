@@ -60,6 +60,56 @@
   XCTAssertEqualWithAccuracy(control.bounds.origin.x, 3, 0.001);
 }
 
+- (void)testRefreshLayerWindowGeometryStartsBelowFixedOverlay
+{
+  for (NSNumber *overlayHeight in @[@0, @162]) {
+    CGFloat fixedHeight = overlayHeight.doubleValue;
+    CGFloat baseInset = fixedHeight + 180 + 44;
+    UIWindow *window = [[UIWindow alloc] initWithFrame:CGRectMake(0, 0, 390, 844)];
+    UIViewController *root = [UIViewController new];
+    window.rootViewController = root;
+    UIScrollView *scroll = [[UIScrollView alloc] initWithFrame:window.bounds];
+    scroll.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
+    scroll.contentSize = CGSizeMake(390, 1500);
+    scroll.contentInset = UIEdgeInsetsMake(baseInset + 60, 0, 0, 0);
+    scroll.contentOffset = CGPointMake(0, -baseInset - 102);
+    [root.view addSubview:scroll];
+    UIView *overlay = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 390, fixedHeight)];
+    [root.view addSubview:overlay];
+    UIRefreshControl *control = [UIRefreshControl new];
+    scroll.refreshControl = control;
+    window.hidden = NO;
+    [root.view layoutIfNeeded];
+    [control layoutIfNeeded];
+    // Match the control's window position recorded during a real refresh drag.
+    control.frame = [scroll convertRect:CGRectMake(0, baseInset, 390, 60)
+                                fromView:window];
+
+    RNCCollapsiblePagerViewComponentView *pager = [self pagerWithHeader:180];
+    [pager setValue:@(fixedHeight) forKey:@"topOverlayHeight"];
+    if (fixedHeight > 0) [pager setValue:overlay forKey:@"topOverlayView"];
+    [pager updateRefreshControlForScrollView:scroll];
+    [CATransaction flush];
+    CALayer *firstChild = control.layer.sublayers.firstObject;
+    XCTAssertNotNil(firstChild);
+    XCTAssertEqual(control.window, window);
+    CGRect overlayWindow = [overlay convertRect:overlay.bounds toView:window];
+    CGRect controlWindow = [control convertRect:control.bounds toView:window];
+    CGRect childWindow = [firstChild convertRect:firstChild.bounds toLayer:window.layer];
+    XCTAssertEqualWithAccuracy(CGRectGetMinY(controlWindow), baseInset, 0.01);
+    XCTAssertEqualWithAccuracy(CGRectGetMinY(childWindow),
+      CGRectGetMaxY(overlayWindow), 0.01);
+    XCTAssertEqualWithAccuracy(scroll.contentInset.top, baseInset + 60, 0.01);
+    [pager updateRefreshControlForScrollView:scroll];
+    XCTAssertEqualWithAccuracy(CGRectGetMinY(
+      [firstChild convertRect:firstChild.bounds toLayer:window.layer]),
+      CGRectGetMaxY(overlayWindow), 0.01);
+    [pager releaseRefreshControlForScrollView:scroll];
+    XCTAssertTrue(CATransform3DIsIdentity(control.layer.sublayerTransform));
+    window.hidden = YES;
+  }
+}
+
 - (void)testUIKitSizeChangesAndRefreshCycleDoNotAccumulateOffset
 {
   RNCCollapsiblePagerViewComponentView *pager = [self pagerWithHeader:64];

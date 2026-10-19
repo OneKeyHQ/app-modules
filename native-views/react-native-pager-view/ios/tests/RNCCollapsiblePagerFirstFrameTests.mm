@@ -1,6 +1,7 @@
 #import <XCTest/XCTest.h>
 #import "RNCCollapsiblePagerViewComponentView.h"
 #import "RNCNativeScrollerComponentView.h"
+#import <react/renderer/components/pagerview/Props.h>
 #import <react/renderer/mounting/MountingTransaction.h>
 
 using namespace facebook::react;
@@ -22,6 +23,10 @@ using namespace facebook::react;
 - (void)updateHeaderSettledStateForceBusy:(BOOL)forceBusy;
 - (void)preparePageForHorizontalTransitionAtIndex:(NSInteger)index;
 - (void)applyInsetsToScrollView:(UIScrollView *)scrollView pageIndex:(NSInteger)index restore:(BOOL)restore;
+- (void)updateProps:(const Props::Shared &)props oldProps:(const Props::Shared &)oldProps;
+- (void)mountChildComponentView:(UIView<RCTComponentViewProtocol> *)childComponentView index:(NSInteger)index;
+- (CGFloat)effectiveTopOverlayHeight;
+- (void)updateRefreshControlForScrollView:(UIScrollView *)scrollView;
 @end
 
 @interface RNCNativeScrollerComponentView (ScrollCommandTesting)
@@ -33,6 +38,125 @@ using namespace facebook::react;
 @end
 
 @implementation RNCCollapsiblePagerFirstFrameTests
+
+- (void)testPendingLocalOverlayReservesManagedScrollerInsetBeforeSlotRebuild
+{
+  RNCCollapsiblePagerViewComponentView *pager =
+    [[RNCCollapsiblePagerViewComponentView alloc] initWithFrame:CGRectMake(0, 0, 320, 844)];
+  UIWindow *window = [[UIWindow alloc] initWithFrame:pager.frame];
+  UIViewController *root = [UIViewController new];
+  window.rootViewController = root;
+  [root.view addSubview:pager];
+  window.hidden = NO;
+  [self addTeardownBlock:^{
+    [pager prepareForRecycle];
+    window.hidden = YES;
+  }];
+
+  auto baseline = std::make_shared<RNCCollapsiblePagerViewProps>();
+  baseline->nativeSmoothHeaderScrollEnabled = true;
+  baseline->headerHeight = 120;
+  baseline->stickyHeaderHeight = 44;
+  baseline->pageKeys = "[\"page-0\"]";
+  [pager updateProps:baseline oldProps:nullptr];
+
+  UIView *header = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 320, 120)];
+  UIView *sticky = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 320, 44)];
+  UIView *page = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 320, 844)];
+  RNCNativeScrollerComponentView *scroller = [RNCNativeScrollerComponentView new];
+  scroller.frame = page.bounds;
+  scroller.scrollView.frame = scroller.bounds;
+  scroller.scrollView.contentSize = CGSizeMake(320, 1500);
+  [page addSubview:scroller];
+  [pager mountChildComponentView:(id)header index:0];
+  [pager mountChildComponentView:(id)sticky index:1];
+  [pager mountChildComponentView:(id)page index:2];
+  [root.view layoutIfNeeded];
+  [pager layoutIfNeeded];
+  XCTestExpectation *settled = [self expectationWithDescription:@"Baseline slots and observer settled"];
+  dispatch_async(dispatch_get_main_queue(), ^{ [settled fulfill]; });
+  [self waitForExpectations:@[settled] timeout:1];
+  [pager attachScrollObserverForCurrentPage];
+  UIScrollView *ownedScroll = scroller.scrollView;
+  XCTAssertEqual([pager valueForKey:@"observedScrollView"], ownedScroll);
+  XCTAssertEqualWithAccuracy(ownedScroll.contentInset.top, 164, 0.01);
+  [scroller scrollTo:0 y:40 - ownedScroll.contentInset.top animated:NO];
+  [pager setValue:@40 forKey:@"headerOffset"];
+  CGFloat initialLogicalOffset = ownedScroll.contentOffset.y + ownedScroll.contentInset.top;
+  XCTAssertEqualWithAccuracy(initialLogicalOffset, 40, 0.01);
+
+  auto hard = std::make_shared<RNCCollapsiblePagerViewProps>();
+  hard->nativeSmoothHeaderScrollEnabled = true;
+  hard->headerHeight = 120;
+  hard->stickyHeaderHeight = 44;
+  hard->pageKeys = "[\"page-0\"]";
+  hard->topScrollEdgeEffect = RNCCollapsiblePagerViewTopScrollEdgeEffect::Hard;
+  hard->topOverlayHeight = 162;
+  [pager updateProps:hard oldProps:baseline];
+  XCTAssertNil([pager valueForKey:@"topOverlayView"]);
+  XCTAssertEqual([pager valueForKey:@"observedScrollView"], ownedScroll);
+  XCTAssertEqualWithAccuracy([pager effectiveTopOverlayHeight], 162, 0.01);
+  XCTAssertEqualWithAccuracy(ownedScroll.contentInset.top, 326, 0.01);
+  XCTAssertEqualWithAccuracy(ownedScroll.contentOffset.y + ownedScroll.contentInset.top,
+                             initialLogicalOffset, 0.01);
+  [self finishMount:pager];
+  XCTAssertNil([pager valueForKey:@"topOverlayView"]);
+  XCTAssertTrue([[pager valueForKey:@"deferTopEdgeSlotRebuild"] boolValue]);
+
+  UIView *overlay = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 320, 162)];
+  [pager mountChildComponentView:(id)overlay index:2];
+  XCTAssertNil([pager valueForKey:@"topOverlayView"]);
+  [self finishMount:pager];
+  UIView *overlayHost = [pager valueForKey:@"topOverlayHostView"];
+  XCTAssertEqual([pager valueForKey:@"topOverlayView"], overlay);
+  XCTAssertEqual(overlay.superview, overlayHost);
+  XCTAssertEqual(overlay.window, window);
+  XCTAssertEqualWithAccuracy(ownedScroll.contentInset.top, 326, 0.01);
+  XCTAssertEqualWithAccuracy(ownedScroll.contentOffset.y + ownedScroll.contentInset.top,
+                             initialLogicalOffset, 0.01);
+  XCTestExpectation *rebuilt = [self expectationWithDescription:@"Post-mount observer restored"];
+  dispatch_async(dispatch_get_main_queue(), ^{ [rebuilt fulfill]; });
+  [self waitForExpectations:@[rebuilt] timeout:1];
+  [pager attachScrollObserverForCurrentPage];
+  XCTAssertEqual([pager valueForKey:@"topOverlayView"], overlay);
+  XCTAssertEqual([pager valueForKey:@"observedScrollView"], ownedScroll);
+  XCTAssertEqualWithAccuracy(ownedScroll.contentInset.top, 326, 0.01);
+  XCTAssertEqualWithAccuracy(ownedScroll.contentOffset.y + ownedScroll.contentInset.top,
+                             initialLogicalOffset, 0.01);
+
+  UIRefreshControl *control = [UIRefreshControl new];
+  ownedScroll.refreshControl = control;
+  [pager updateRefreshControlForScrollView:ownedScroll];
+  UIEdgeInsets refreshingInset = ownedScroll.contentInset;
+  refreshingInset.top += 60;
+  ownedScroll.contentInset = refreshingInset;
+  auto disabled = std::make_shared<RNCCollapsiblePagerViewProps>();
+  disabled->nativeSmoothHeaderScrollEnabled = true;
+  disabled->headerHeight = 120;
+  disabled->stickyHeaderHeight = 44;
+  disabled->pageKeys = "[\"page-0\"]";
+  disabled->topScrollEdgeEffect = RNCCollapsiblePagerViewTopScrollEdgeEffect::None;
+  disabled->topOverlayHeight = 0;
+  [pager updateProps:disabled oldProps:hard];
+  XCTAssertEqual(ownedScroll.refreshControl, control);
+  XCTAssertEqualWithAccuracy([pager effectiveTopOverlayHeight], 0, 0.01);
+  XCTAssertEqualWithAccuracy(ownedScroll.contentInset.top, 224, 0.01);
+}
+
+- (void)testPendingLocalOverlayHeightDoesNotOverrideExternalGeometry
+{
+  RNCCollapsiblePagerViewComponentView *pager = [RNCCollapsiblePagerViewComponentView new];
+  auto props = std::make_shared<RNCCollapsiblePagerViewProps>();
+  props->topScrollEdgeEffect = RNCCollapsiblePagerViewTopScrollEdgeEffect::Hard;
+  props->topOverlayHeight = 162;
+  props->externalTopOverlayTag = 999;
+  [pager updateProps:props oldProps:nullptr];
+  XCTAssertNil([pager valueForKey:@"topOverlayView"]);
+  XCTAssertEqualWithAccuracy([pager effectiveTopOverlayHeight], 0, 0.01);
+  [pager setValue:@64 forKey:@"externalTopOverlayHeight"];
+  XCTAssertEqualWithAccuracy([pager effectiveTopOverlayHeight], 64, 0.01);
+  [pager prepareForRecycle];
+}
 
 - (void)testHeaderSettledAtTopRequiresCurrentQuietOwnerAndCancelsDetachedTimer
 {

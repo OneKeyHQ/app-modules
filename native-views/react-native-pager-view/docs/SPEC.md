@@ -14,17 +14,32 @@ valid prop values. Both the style and overlay are
 disabled by default. On iOS 26 or newer, a local overlay remains fixed at the
 top of the viewport while the owned vertical `UIScrollView` can draw behind it.
 The component measures the overlay's Fabric layout height and owns the
-corresponding top content inset. It binds UIKit's
+corresponding top content inset.
+For callers with a known initial height, `topOverlayHeightHint` reserves that
+height on the first frame after the overlay is enabled, before Fabric delivers
+`onLayout`. The measured height replaces the hint, and disabling the overlay
+clears the measurement so a later enablement can use a new hint. The hint does
+not enable the effect or reserve an inset without an active local overlay.
+This uses the existing native `topOverlayHeight` prop without changing the
+native interface. For native smooth local Hard mode, a complete Fabric mount
+attaches the overlay slot synchronously before `didMount` returns; incomplete
+slots retain the deferred fallback. It binds UIKit's
 `UIScrollEdgeElementContainerInteraction` to that exact scroll view and selects
 the requested top edge style. Hard has UIKit's dividing line; Soft has its
 gradual blurred transition. A pager owns the effect and inset for its current page;
 its nested NativeList or NativeScroller must not opt into another top overlay.
 Invisible, noninteractive native labels let UIKit recognize the React-drawn
 overlay and sticky header as scroll-edge elements. The pager does not add an
-auxiliary full-area glass or opaque material. It clips scrolling assets above
+auxiliary full-area glass. It clips scrolling assets above
 the fixed overlay boundary; during horizontal transitions it clips its owned
 visible page hosts below the current sticky boundary so text cannot pass in
 front of the fixed controls. Masked assets must not intercept their hit targets.
+On iOS 27 or newer, a local smooth Hard pager with a valid shared-header mask
+fades a bottommost overlay layer using the resolved opaque pager or ancestor
+theme color as the real header collapses, without hard-coded colors or changing
+UIKit's Hard style, owner or interactions. During temporary horizontal owner
+transitions the layer holds its last opacity until geometry is valid again;
+disabling the local overlay, changing style or recycling removes it.
 
 For an iOS 26 pager whose fixed header is rendered by a sibling in the same
 React surface, `externalTopOverlayTag` may identify that header's native view.
@@ -61,6 +76,8 @@ The measured overlay height is excluded from the collapsible header distance:
 overlay. Selection, cancellation, reuse and disposal rebind or release the
 interaction and restore any prior scroll-edge style. Native scroll/refresh
 coordination continues on the main thread without per-frame JavaScript work.
+Refresh retains the pager-owned `overlay + header + sticky` top inset but offsets
+the indicator by `header + sticky`, so its spinner begins below the fixed overlay.
 
 On iOS before 26, the external tag is not forwarded to native. On iOS before
 26, Android and Web the new props have no scroll-edge effect.
@@ -73,17 +90,15 @@ Acceptance requires real iOS 26 scrolling, partial collapse, short/empty page,
 refresh, page transition/cancellation, dynamic tabs and light/dark checks;
 source and build checks alone do not establish visual correctness.
 
-Experimental trial: `CollapsiblePagerView` paints a cover at each owned
+`CollapsiblePagerView` paints a cover at each owned
 fixed-overlay or pinned-sticky boundary with one physical pixel of the nearest
 opaque ancestor background color (system background if none is available).
 These native layers do not receive touches, change insets, or clip glass shadows.
 They are removed for Soft, disabled/detached effects, and recycling. This is a
-visual workaround using public layer APIs, not a UIKit separator setting; rendered
-light/dark, scrolling, and transition acceptance is pending. Standalone
+visual workaround using public layer APIs, not a UIKit separator setting. While
+the sticky header is pinned, only the top cover is hidden; it reappears on unpin,
+and the sticky cover and both Hard interactions remain active. Standalone
 NativeScroller and NativeList retain UIKit's unmodified Hard appearance.
-On the iOS 26.5 simulator, a runtime probe confirmed Hard and the cover layers,
-including pinned-header ownership. The original hairline was not reliably
-reproduced with the covers hidden, so separator suppression is not yet verified.
 
 Style selection crosses Fabric as the enum `none | hard | soft`, defaulting to
 `none`, rather than a hard-effect boolean. Switching Hard ↔ Soft on an attached

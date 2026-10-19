@@ -120,6 +120,8 @@ export interface CollapsiblePagerViewProps
   stickyHeaderHeight: number;
   /** Fixed content above the collapsible header on iOS 26 and newer. */
   topOverlay?: React.ReactNode;
+  /** Known overlay height to reserve until its first layout measurement. */
+  topOverlayHeightHint?: number;
   /** Existing fixed header shared with a parent pager on iOS 26 and newer. */
   externalTopOverlayTag?: number;
   /** Selects UIKit's top scroll-edge effect on iOS 26 and newer. */
@@ -158,7 +160,7 @@ export interface CollapsiblePagerViewProps
 type State = {
   selectedPage: number;
   transientRetainedPages: readonly number[];
-  topOverlayHeight: number;
+  topOverlayHeight: number | null;
 };
 
 const pageIndex = (value: number) => {
@@ -186,7 +188,7 @@ export class CollapsiblePagerView extends React.PureComponent<
   State
 > {
   state: State = {
-    topOverlayHeight: 0,
+    topOverlayHeight: null,
     selectedPage: clampedPageIndex(
       this.props.initialPage ?? 0,
       React.Children.toArray(this.props.children).length
@@ -219,7 +221,22 @@ export class CollapsiblePagerView extends React.PureComponent<
     this.notifyMountedPagesChanged();
   }
 
-  componentDidUpdate() {
+  componentDidUpdate(previousProps: CollapsiblePagerViewProps) {
+    const previousOverlayEnabled =
+      previousProps.topOverlay != null &&
+      (previousProps.topScrollEdgeEffect === "hard" ||
+        previousProps.topScrollEdgeEffect === "soft");
+    const overlayEnabled =
+      this.props.topOverlay != null &&
+      (this.props.topScrollEdgeEffect === "hard" ||
+        this.props.topScrollEdgeEffect === "soft");
+    if (
+      previousOverlayEnabled &&
+      !overlayEnabled &&
+      this.state.topOverlayHeight !== null
+    ) {
+      this.setState({ topOverlayHeight: null });
+    }
     const pageCount = this.pages().length;
     const selectedPage = clampedPageIndex(this.state.selectedPage, pageCount);
     if (selectedPage !== this.state.selectedPage) {
@@ -473,6 +490,7 @@ export class CollapsiblePagerView extends React.PureComponent<
       headerHeight,
       stickyHeaderHeight,
       topOverlay,
+      topOverlayHeightHint,
       externalTopOverlayTag,
       topScrollEdgeEffect,
       topOverlayColorScheme,
@@ -498,6 +516,11 @@ export class CollapsiblePagerView extends React.PureComponent<
       supportsTopScrollEdge &&
       (topScrollEdgeEffect === "hard" || topScrollEdgeEffect === "soft");
     const hasTopOverlay = scrollEdgeEnabled && topOverlay != null;
+    const initialTopOverlayHeight =
+      typeof topOverlayHeightHint === "number" &&
+      Number.isFinite(topOverlayHeightHint)
+        ? Math.max(0, Math.ceil(topOverlayHeightHint))
+        : 0;
     const pageKeys = pages.map(pageKey);
     const retained = new Set(this.mountedPages(pages.length));
     const deducedLayoutDirection =
@@ -542,7 +565,11 @@ export class CollapsiblePagerView extends React.PureComponent<
         topOverlayColorScheme={
           scrollEdgeEnabled ? topOverlayColorScheme : undefined
         }
-        topOverlayHeight={hasTopOverlay ? this.state.topOverlayHeight : 0}
+        topOverlayHeight={
+          hasTopOverlay
+            ? this.state.topOverlayHeight ?? initialTopOverlayHeight
+            : 0
+        }
         externalTopOverlayTag={
           supportsTopScrollEdge && !hasTopOverlay
             ? externalTopOverlayTag ?? 0
