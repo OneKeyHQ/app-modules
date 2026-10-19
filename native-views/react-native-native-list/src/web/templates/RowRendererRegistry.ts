@@ -5,6 +5,7 @@ import { identityRowRenderer } from './IdentityRowRenderer';
 import { sectionHeaderRowRenderer } from './SectionHeaderRowRenderer';
 import type { MarketRow } from '../../models';
 import { marketRowRenderer } from './MarketRowRenderer';
+import { marketTableRowRenderer } from './MarketTableRowRenderer';
 import type { MetricCardRow } from '../../models';
 import { metricCardRowRenderer } from './MetricCardRowRenderer';
 import type { DataRow } from '../../models';
@@ -59,7 +60,10 @@ const factories = {
     registration(identityRowRenderer, row as IdentityRow),
   sectionHeader: (row: RowModel) =>
     registration(sectionHeaderRowRenderer, row as SectionHeaderRow),
-  market: (row: RowModel) => registration(marketRowRenderer, row as MarketRow),
+  market: (row: RowModel) =>
+    (row as MarketRow).webTable
+      ? registration(marketTableRowRenderer, row as MarketRow)
+      : registration(marketRowRenderer, row as MarketRow),
   metricCard: (row: RowModel) =>
     registration(metricCardRowRenderer, row as MetricCardRow),
   dataRow: (row: RowModel) => registration(dataRowRenderer, row as DataRow),
@@ -81,6 +85,7 @@ const renderers = {
   identity: identityRowRenderer,
   sectionHeader: sectionHeaderRowRenderer,
   market: marketRowRenderer,
+  marketTable: marketTableRowRenderer,
   metricCard: metricCardRowRenderer,
   dataRow: dataRowRenderer,
   activity: activityRowRenderer,
@@ -90,7 +95,7 @@ const renderers = {
   rail: railRowRenderer,
   mediaTile: mediaTileRowRenderer,
 };
-export type RowRendererKey = RowModel['type'];
+export type RowRendererKey = RowModel['type'] | 'marketTable';
 const isRegistered = (key: string): key is keyof typeof factories =>
   Object.prototype.hasOwnProperty.call(factories, key);
 
@@ -101,11 +106,11 @@ export function rowRenderer(row: RowModel) {
   return factories[row.type](row);
 }
 export function rowRendererKey(row: RowModel): RowRendererKey {
-  return row.type;
+  return row.type === 'market' && row.webTable ? 'marketTable' : row.type;
 }
 export function recycleRowBody(body: HTMLElement): boolean {
   const key = body.dataset.nlRenderer ?? '';
-  if (!isRegistered(key)) return false;
-  renderers[key].recycle(body);
+  if (!Object.prototype.hasOwnProperty.call(renderers, key)) return false;
+  renderers[key as RowRendererKey].recycle(body);
   return true;
 }

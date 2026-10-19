@@ -14,6 +14,8 @@ class CollapsibleStateChangedEvent(
   private val observedScrollableCount: Int,
   private val retainedPages: String,
   private val reason: String,
+  private val pageKey: String,
+  private val headerSettledAtTop: Boolean,
 ) : Event<CollapsibleStateChangedEvent>(viewTag) {
   override fun getEventName() = EVENT_NAME
 
@@ -31,6 +33,8 @@ class CollapsibleStateChangedEvent(
     putInt("observedScrollableCount", observedScrollableCount)
     putString("retainedPages", retainedPages)
     putString("reason", reason)
+    putString("pageKey", pageKey)
+    putBoolean("headerSettledAtTop", headerSettledAtTop)
   }
 
   companion object {

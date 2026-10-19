@@ -44,7 +44,27 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
 -----END PGP SIGNATURE-----"""
 
   @Test
-  fun signedMetadataRejectsChangedBodyAndUnsignedInput() {
+  fun signedMetadataAcceptsReleaseKeyAndRejectsChangedBodyAndUnsignedInput() {
+    val verified = BundleCryptoCore.verifyGpgCleartext(signedMetadata)
+    assertTrue(verified.valid)
+    assertEquals(expectedSignedHash, verified.sha256)
+    assertNull(verified.reason)
+
+    val missingBinding = BundleCryptoCore.verifyGpgCleartext(
+      signedMetadata, expectedAppVersion = "5.12.0"
+    )
+    assertFalse(missingBinding.valid)
+    assertNull(missingBinding.sha256)
+    assertEquals("METADATA_APPVERSION_MISMATCH", missingBinding.reason)
+    assertEquals(
+      "METADATA_APPTYPE_MISMATCH",
+      BundleCryptoCore.verifyGpgCleartext(signedMetadata, expectedAppType = "mobile").reason
+    )
+    assertEquals(
+      "METADATA_BUNDLEVERSION_MISMATCH",
+      BundleCryptoCore.verifyGpgCleartext(signedMetadata, expectedBundleVersion = "20250919").reason
+    )
+
     val tampered = signedMetadata.replace("158590", "158591")
     val rejected = BundleCryptoCore.verifyGpgCleartext(tampered)
     assertFalse(rejected.valid)
@@ -59,10 +79,21 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
 
   @Test
   fun validSignatureWithWrongAscBodyIsRejectedAfterVerification() {
-    val result = BundleCryptoCore.verifyDetachedAsc(signedMetadata)
+    val result = BundleCryptoCore.verifyDetachedAsc(signedMetadata, "OneKey.apk")
     assertFalse(result.valid)
     assertNull(result.sha256)
     assertEquals("SHA256_TOKEN_INVALID", result.reason)
+
+    assertEquals(expectedSignedHash, BundleCryptoCore.extractDetachedAscSha256(expectedSignedHash, null))
+    assertEquals("", BundleCryptoCore.extractDetachedAscSha256(expectedSignedHash, "OneKey.apk"))
+    assertEquals(
+      expectedSignedHash,
+      BundleCryptoCore.extractDetachedAscSha256("$expectedSignedHash  *OneKey.apk", "OneKey.apk")
+    )
+    assertEquals(
+      "",
+      BundleCryptoCore.extractDetachedAscSha256("$expectedSignedHash  *Other.apk", "OneKey.apk")
+    )
   }
 
   @Test

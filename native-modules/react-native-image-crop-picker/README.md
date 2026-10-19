@@ -76,7 +76,10 @@ The cropper is a full-screen page with the same layout and metrics on iOS and An
 - The crop area. The crop box keeps 20 pt from every edge, and the image outside it shows the page background at 70% opacity. The rule-of-thirds grid shows while the image is moved, unless `showCropGuidelines` is `false`.
 - A footer with two capsule buttons, `cropperCancelText` and `cropperChooseText`, 50 pt tall with 10 pt between them. The confirm button shows a spinner while the image is saved.
 
-`cropperAppearance` sets its colors and fonts:
+`cropperAppearance` sets its colors and fonts. The optional font-family fields
+below require the app to provide these Roobert faces and own the applicable
+font license; this package contains no font files. Omit the fields to use
+platform defaults.
 
 ```ts
 await ImageCropPicker.openPicker({

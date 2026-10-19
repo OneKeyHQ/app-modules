@@ -67,6 +67,15 @@ Web scroll child can opt in by exposing a DOM element with
 `data-collapsible-pager-scroll`. CSS scroll timelines drive header/sticky
 movement, so React is not updated on each vertical scroll frame.
 
+On Web, `WebCollapsiblePagerView` is an explicit root export of the existing Web
+pager. It measures Header and sticky content when their heights are omitted.
+`isActive` describes route visibility; the pager preserves a pending scroll
+target across a short or temporarily hidden page and retries when real content
+geometry becomes ready. `useWebCollapsiblePagerPage()` exposes the selected
+page's scroll owner, visible metrics, content registration and pending target
+to descendants. These Web-only APIs require a DOM when mounted. Native callers
+continue to use `CollapsiblePagerView`.
+
 On iOS and Android, `nativeTabBar` renders the tab bar natively and
 `onNativeTabPress` reports presses. By default, adjacent tab presses animate and
 non-adjacent presses jump directly to the target without passing intermediate

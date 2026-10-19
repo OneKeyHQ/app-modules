@@ -16,13 +16,13 @@ enum NativeListRailRenderer {
     let visual: [String: Any]?
     let alignment: UIStackView.Alignment
 
-    init(_ item: NativeListItem, theme: [String: Any]?) {
+    init(_ item: NativeListItem, theme: [String: Any]?, fonts: NativeListFontFamilies) {
       let style = item.data.dictionary("style") ?? [:]
       let badge = item.data.dictionary("badge") ?? [:]
       title = NativeListResolvedText(
         item.data.string("title"), style: style.dictionary("title"),
         size: 12, weight: .medium, color: nativeListColor(theme, "primaryText", "#202020"),
-        lineHeight: 16, lines: 1)
+        lineHeight: 16, lines: 1, fonts: fonts)
       self.badge = NativeListResolvedText(
         badge.string("text"), style: style.dictionary("badge"),
         size: 12, weight: .medium,
@@ -32,12 +32,12 @@ enum NativeListRailRenderer {
             ? "positive" : badge.string("tone") == "danger" ? "negative" : "secondaryText",
           badge.string("tone") == "success"
             ? "#218358" : badge.string("tone") == "danger" ? "#CE2C31" : "#646464"), lineHeight: 16,
-        lines: 1, tabular: true)
+        lines: 1, tabular: true, fonts: fonts)
       let status = item.data.string("status")
       self.status = NativeListResolvedText(
         status == "none" ? "" : status, style: style.dictionary("status"),
         size: 12, color: nativeListColor(theme, "secondaryText", "#646464"), lineHeight: 16,
-        lines: 1, tabular: true)
+        lines: 1, tabular: true, fonts: fonts)
       horizontalPadding = CGFloat(style.double("horizontalPadding", default: 4))
       verticalPadding = CGFloat(style.double("verticalPadding", default: 4))
       leadingGap = CGFloat(style.double("leadingGap", default: 6))
@@ -75,7 +75,8 @@ enum NativeListRailRenderer {
 
 final class NativeListRailCell: NativeListRendererCell {
   override class func measure(
-    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String
+    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String,
+    fonts: NativeListFontFamilies
   ) -> CGFloat? {
     return 40
   }
@@ -116,7 +117,7 @@ final class NativeListRailCell: NativeListRendererCell {
     _ item: NativeListItem, theme: [String: Any]?, layout: String,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
   ) {
-    let r = NativeListRailRenderer.Resolved(item, theme: theme)
+    let r = NativeListRailRenderer.Resolved(item, theme: theme, fonts: fonts)
     r.title.bind(title)
     r.badge.bind(badge)
     r.status.bind(status)
@@ -136,7 +137,8 @@ final class NativeListRailCell: NativeListRendererCell {
       let view = visual ?? NativeListLeadingVisual(frame: .zero)
       visual = view
       if view.superview == nil { root.insertArrangedSubview(view, at: 0) }
-      view.bind(source, style: r.imageStyle, key: item.key, theme: theme, isUnread: false)
+      view.bind(
+        source, style: r.imageStyle, key: item.key, theme: theme, isUnread: false, fonts: fonts)
       dimensions = [
         view.widthAnchor.constraint(equalToConstant: r.imageWidth),
         view.heightAnchor.constraint(equalToConstant: r.imageHeight),

@@ -2,7 +2,8 @@ import UIKit
 
 final class NativeListDataRowCell: NativeListRendererCell {
   override class func measure(
-    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String
+    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String,
+    fonts: NativeListFontFamilies
   ) -> CGFloat? {
     let secondary = item.data.dictionaries("columns").contains {
       !$0.string("secondaryText").isEmpty
@@ -64,7 +65,7 @@ final class NativeListDataRowCell: NativeListRendererCell {
     root.setCustomSpacing(layout == "table" ? 8 : root.spacing, after: favorite)
     visual.isHidden = data.dictionary("leading") == nil
     if let leading = data.dictionary("leading") {
-      visual.bind(leading, style: image, key: item.key, theme: theme, isUnread: false)
+      visual.bind(leading, style: image, key: item.key, theme: theme, isUnread: false, fonts: fonts)
     } else {
       visual.recycle()
     }
@@ -83,7 +84,7 @@ final class NativeListDataRowCell: NativeListRendererCell {
     accessoryStyle["value"] = style.dictionary("index")
     accessories.bind(
       item, descriptors: descriptors, theme: theme, style: accessoryStyle,
-      checkboxState: checkboxState)
+      checkboxState: checkboxState, fonts: fonts)
     accessories.isHidden = descriptors.isEmpty
     NSLayoutConstraint.deactivate(rowConstraints)
     rowConstraints = [
@@ -101,11 +102,13 @@ final class NativeListDataRowCell: NativeListRendererCell {
       }
       let badges = index == 0 ? data.dictionaries("badges") : []
       if layout == "table" {
-        cell.bind(column: values[index], badges: badges, theme: theme)
+        cell.bind(column: values[index], badges: badges, theme: theme, fonts: fonts)
       } else {
-        cell.bindLinear(column: values[index], badges: badges, theme: theme, style: style)
+        cell.bindLinear(column: values[index], badges: badges, theme: theme, style: style, fonts: fonts)
       }
-      cell.applyStyle(style, text: NativeListTextStyles.applyStyledText)
+      cell.applyStyle(style) { label, style in
+        NativeListTextStyles.applyStyledText(label, style, fonts: fonts)
+      }
       if index > 0 {
         rowConstraints.append(
           cell.widthAnchor.constraint(
@@ -202,7 +205,8 @@ private final class NativeListTableColumnView: UIStackView {
   func bind(
     column: [String: Any],
     badges: [[String: Any]],
-    theme: [String: Any]?
+    theme: [String: Any]?,
+    fonts: NativeListFontFamilies
   ) {
     reset()
     let textAlignment: NSTextAlignment
@@ -220,12 +224,12 @@ private final class NativeListTableColumnView: UIStackView {
     primaryLabel.textAlignment = textAlignment
     secondaryLeadingLabel.textAlignment = textAlignment
     secondaryLabel.textAlignment = textAlignment
-    primaryLabel.font = nativeListFont(ofSize: 14, weight: .medium)
-    secondaryLeadingLabel.font = nativeListFont(ofSize: 12)
-    secondaryLabel.font = nativeListFont(ofSize: 12)
+    primaryLabel.font = nativeListFont(ofSize: 14, weight: .medium, fonts: fonts)
+    secondaryLeadingLabel.font = nativeListFont(ofSize: 12, fonts: fonts)
+    secondaryLabel.font = nativeListFont(ofSize: 12, fonts: fonts)
     primaryLabel.attributedText = line(
       column.string("text"),
-      font: nativeListFont(ofSize: 14, weight: .medium),
+      font: nativeListFont(ofSize: 14, weight: .medium, fonts: fonts),
       color: textColor(column.string("tone"), theme: theme),
       height: 20
     )
@@ -234,7 +238,7 @@ private final class NativeListTableColumnView: UIStackView {
       let label = NativeListInsetLabel()
       label.horizontalInset = 6
       label.text = badge.string("text")
-      label.font = nativeListFont(ofSize: 10)
+      label.font = nativeListFont(ofSize: 10, fonts: fonts)
       label.textColor = nativeListColor(theme, "info", "#0D74CE")
       label.textAlignment = .center
       label.backgroundColor = UIColor(nativeListHex: "#008FF519", fallback: .systemBlue)
@@ -250,7 +254,7 @@ private final class NativeListTableColumnView: UIStackView {
     if !secondaryLeading.isEmpty {
       secondaryLeadingLabel.attributedText = line(
         secondaryLeading,
-        font: nativeListFont(ofSize: 12),
+        font: nativeListFont(ofSize: 12, fonts: fonts),
         color: nativeListColor(theme, "secondaryText", "#646464"),
         height: 16
       )
@@ -261,7 +265,7 @@ private final class NativeListTableColumnView: UIStackView {
     if !secondary.isEmpty {
       secondaryLabel.attributedText = line(
         secondary,
-        font: nativeListFont(ofSize: 12),
+        font: nativeListFont(ofSize: 12, fonts: fonts),
         color: textColor(
           column.string("secondaryTone", default: "secondary"),
           theme: theme
@@ -280,7 +284,7 @@ private final class NativeListTableColumnView: UIStackView {
   /// alignment); `lines`/`truncate` and vertical alignment/offset act on the single label.
   func bindLinear(
     column: [String: Any], badges: [[String: Any]], theme: [String: Any]?,
-    style: [String: Any] = [:]
+    style: [String: Any] = [:], fonts: NativeListFontFamilies
   ) {
     reset()
     linear = true
@@ -290,12 +294,12 @@ private final class NativeListTableColumnView: UIStackView {
     let secondaryStyle = style.dictionary("columnSecondary") ?? [:]
     func font(_ textStyle: [String: Any], size: CGFloat, weight: NativeListFontWeight) -> UIFont {
       guard textStyle["fontSize"] != nil || textStyle["fontWeight"] != nil else {
-        return nativeListFont(ofSize: size, weight: weight)
+        return nativeListFont(ofSize: size, weight: weight, fonts: fonts)
       }
       return nativeListFont(
         ofSize: CGFloat(textStyle.double("fontSize", default: Double(size))),
         weight: NativeListTextStyles.marketFontWeight(
-          textStyle.string("fontWeight"), fallback: weight))
+          textStyle.string("fontWeight"), fallback: weight), fonts: fonts)
     }
     func color(_ textStyle: [String: Any], _ fallback: UIColor) -> UIColor {
       (textStyle["color"] as? String).map { UIColor(nativeListHex: $0, fallback: fallback) }
@@ -351,7 +355,7 @@ private final class NativeListTableColumnView: UIStackView {
         NSAttributedString(
           string: "  \(badge.string("text")) ",
           attributes: [
-            .font: nativeListFont(ofSize: 12, weight: .medium),
+            .font: nativeListFont(ofSize: 12, weight: .medium, fonts: fonts),
             .foregroundColor: nativeListColor(theme, "info", "#0D74CE"),
             .backgroundColor: UIColor(nativeListHex: "#008FF519", fallback: .systemBlue),
           ]))
@@ -377,7 +381,7 @@ private final class NativeListTableColumnView: UIStackView {
       attributed.append(NSAttributedString(string: "\n\(secondary)", attributes: attributes))
       lines = min(3, lines + max(1, secondaryStyle.int("lines", default: 1)))
     }
-    primaryLabel.font = nativeListFont(ofSize: 12)
+    primaryLabel.font = nativeListFont(ofSize: 12, fonts: fonts)
     primaryLabel.numberOfLines = lines
     primaryLabel.attributedText = attributed
     let truncation =

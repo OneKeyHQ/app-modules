@@ -80,7 +80,10 @@ Follow the repository's
 
 ## License
 
-MIT
+[LICENSE](LICENSE) contains the OneKey MIT grant and identified Gopenpgp MIT
+and Go mobile BSD notices. Only the Catalyst slice has the recorded versions
+above; other slice origins and the complete linked dependency closure still
+require verification before treating the entire artifact as license-cleared.
 
 ---
 

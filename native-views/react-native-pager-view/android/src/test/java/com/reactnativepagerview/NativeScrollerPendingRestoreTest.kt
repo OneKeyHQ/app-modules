@@ -27,5 +27,16 @@ fun main() {
   restore.cancel()
   check(restore.target == null)
   check(restore.anchor(120) == 120)
+  // Cancellation clears the old target without requiring the reached offset to change.
+  restore.request(target = 640, reached = 120)
+  check(restore.anchor(120) == 640)
+  restore.cancel()
+  check(restore.target == null)
+  check(restore.anchor(120) == 120)
+  // A fresh request owns its target after cancellation.
+  restore.request(target = 320, reached = 120)
+  check(restore.target == 320)
+  restore.settle(reached = 320)
+  check(restore.target == null)
   println("Native scroller pending restore: clamp retry, partial growth, settle and cancel passed")
 }

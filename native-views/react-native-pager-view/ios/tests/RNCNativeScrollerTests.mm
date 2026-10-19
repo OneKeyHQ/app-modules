@@ -69,6 +69,45 @@ using namespace facebook::react;
   XCTAssertFalse([self.scroller.scrollView isKindOfClass:NSClassFromString(@"RCTEnhancedScrollView")]);
 }
 
+- (void)testScrollEdgeStyleSwitchPreservesOverlayInsetAndRestoresOriginalStyle
+{
+  if (@available(iOS 26.0, *)) {
+    UIWindow *window = [[UIWindow alloc] initWithFrame:CGRectMake(0, 0, 320, 600)];
+    UIView *root = [[UIView alloc] initWithFrame:window.bounds];
+    [window addSubview:root];
+    [root addSubview:self.scroller];
+    RCTViewComponentView *overlay = [RCTViewComponentView new];
+    overlay.frame = CGRectMake(0, 0, 320, 64);
+    [root addSubview:overlay];
+    UIScrollEdgeEffectStyle *original = self.scroller.scrollView.topEdgeEffect.style;
+    auto props = std::make_shared<RNCNativeScrollerProps>();
+    props->contentHeight = 1500;
+    props->topOverlayHeight = 64;
+    props->topScrollEdgeEffect = RNCNativeScrollerTopScrollEdgeEffect::Hard;
+    [self.scroller updateProps:props oldProps:nullptr];
+    XCTAssertEqual(self.scroller.scrollView.topEdgeEffect.style, UIScrollEdgeEffectStyle.hardStyle);
+    XCTAssertEqualWithAccuracy(self.scroller.scrollView.contentInset.top, 64, 0.01);
+    CGPoint offset = self.scroller.scrollView.contentOffset;
+    auto soft = std::make_shared<RNCNativeScrollerProps>();
+    soft->contentHeight = 1500;
+    soft->topOverlayHeight = 64;
+    soft->topScrollEdgeEffect = RNCNativeScrollerTopScrollEdgeEffect::Soft;
+    [self.scroller updateProps:soft oldProps:props];
+    XCTAssertEqual(self.scroller.scrollView.topEdgeEffect.style, UIScrollEdgeEffectStyle.softStyle);
+    XCTAssertEqualWithAccuracy(self.scroller.scrollView.contentInset.top, 64, 0.01);
+    XCTAssertTrue(CGPointEqualToPoint(self.scroller.scrollView.contentOffset, offset));
+    auto disabled = std::make_shared<RNCNativeScrollerProps>();
+    disabled->contentHeight = 1500;
+    disabled->topScrollEdgeEffect = RNCNativeScrollerTopScrollEdgeEffect::None;
+    [self.scroller updateProps:disabled oldProps:soft];
+    XCTAssertEqual(self.scroller.scrollView.topEdgeEffect.style, original);
+    XCTAssertEqualWithAccuracy(self.scroller.scrollView.contentInset.top, 0, 0.01);
+    [self.scroller removeFromSuperview];
+  } else {
+    XCTSkip(@"Scroll-edge styles require iOS 26 or newer");
+  }
+}
+
 - (void)testShrinkClampsOnlyUnreachableUpperOffset
 {
   auto props = std::make_shared<RNCNativeScrollerProps>();

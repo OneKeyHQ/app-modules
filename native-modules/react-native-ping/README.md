@@ -35,13 +35,25 @@ The wrapper is in [src/index.tsx](src/index.tsx), with the bridge defined in
 [src/NativePing.ts](src/NativePing.ts). Native behavior remains platform-specific;
 this wrapper does not add a continuous network monitor or a Web implementation.
 
+## One-shot diagnostic calls
+
+The `option` object is required by the bridge signature, even when using no
+optional settings; pass `{}` rather than omitting it. `timeout` and
+`payloadSize` configure the native attempt. The wrapper exposes no event stream,
+stop method or cancellation token.
+
+Keep each result associated with the target and network conditions used for
+that call. A failed ping and an unavailable native registration are different
+failures; the TurboModule is required at import time. Diagnostic retries and
+lifecycle handling remain in the application.
+
 ## Upstream attribution
 
 First, a sincere thank-you to the
 `react-native-ping` maintainers for their excellent work 🙏
 
 This package is built on, and inspired by,
-[nicola/react-native-ping](https://github.com/nicola/react-native-ping).
+[RoJoHub/react-native-ping](https://github.com/RoJoHub/react-native-ping).
 
 Our original plan was to keep our customizations as patches on top of upstream
 `react-native-ping`.
@@ -55,8 +67,9 @@ development and delivery stable.
 
 ## Upstream Project
 
-- Repository: [nicola/react-native-ping](https://github.com/nicola/react-native-ping)
-- License: MIT
+- Repository: [RoJoHub/react-native-ping](https://github.com/RoJoHub/react-native-ping)
+- The RoJoHub package manifest declares MIT; that repository does not provide a
+  full MIT grant file. This limitation is retained in the package audit.
 
 ## Notes
 
@@ -66,3 +79,17 @@ development and delivery stable.
 
 Thank you again to everyone who contributes to
 `react-native-ping` 💙
+
+## Bundled third-party notices
+
+The `ios/GBPing` implementation derives from
+[lmirosevic/GBPing](https://github.com/lmirosevic/GBPing/tree/bb1156f1c4425981f4cf495952623935d6e124d2)
+and is covered by [LICENSE.GBPing](LICENSE.GBPing), the upstream Apache 2.0
+license. Upstream attributes GBPing to Luka Mirosevic (2015); the retained
+`ICMPHeader.h` also names Goonbee (2012). OneKey's native integration contains
+local modifications. There is no upstream NOTICE file at that revision.
+
+`ios/LHNetwork/LHDefinition.h` retains its Pomato (2019) source notice and
+matches the RoJoHub tree. The package manifest records `MIT AND Apache-2.0`
+to distinguish the declared primary license from the known vendored license.
+No missing upstream MIT copyright or full grant is fabricated.

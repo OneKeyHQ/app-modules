@@ -17,7 +17,7 @@ internal data class NativeListActionOrigin(
 )
 
 /** List-facing lifecycle shared by template renderers. */
-internal abstract class NativeListRowHost(context: ThemedReactContext) : LinearLayout(context) {
+internal abstract class NativeListRowHost(context: ThemedReactContext, val fonts: NativeListFonts) : LinearLayout(context) {
   var bindingEpoch: Long = 0
     protected set
 

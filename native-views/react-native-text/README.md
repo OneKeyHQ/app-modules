@@ -47,6 +47,18 @@ to export React Native Text directly.
 See [src/types.ts](src/types.ts) for the public props and the platform-specific
 files under `src` for the wrapper implementation.
 
+## Choosing the platform component
+
+Both `import { Text }` and the package's default import select the same public
+component. `TextProps` extends the supported text prop surface; the package
+does not add a font-size-fitting or container-resizing prop.
+
+The Android implementation distinguishes root and nested text to preserve
+React Native text composition. On other platforms it forwards to React Native
+Text. Keep the component opt-in at the call sites needing the clipping guard,
+and validate native builds when changing the React Native version because
+Android registration depends on its renderer internals.
+
 ## License
 
 MIT.

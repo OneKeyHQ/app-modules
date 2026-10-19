@@ -15,6 +15,7 @@ import {
 } from "react-native";
 
 import NativeScrollerHost, { Commands } from "./NativeScrollerNativeComponent";
+import type { ScrollEdgeEffect } from "./ScrollEdgeEffect";
 
 export const NATIVE_SCROLLER_NATIVE_ID_PREFIX =
   "rnc-collapsible-pager-native-scroller";
@@ -44,6 +45,10 @@ export interface NativeScrollerProps
       | "onMomentumScrollEnd"
     > {
   pagerScrollKey?: string;
+  /** Fixed overlay above scrolling content on iOS 26 and newer. */
+  topOverlay?: React.ReactNode;
+  /** Selects UIKit's top scroll-edge effect on iOS 26 and newer. */
+  topScrollEdgeEffect?: `${ScrollEdgeEffect}`;
   /** iOS only. Android retains AndroidX's native fling physics. */
   decelerationRate?: ScrollViewProps["decelerationRate"];
   /** Standard RefreshControl props are mapped to the independently owned native controller. */
@@ -81,6 +86,8 @@ export const NativeScroller = React.forwardRef<
 >(function NativeScroller(
   {
     children,
+    topOverlay,
+    topScrollEdgeEffect,
     nativeID,
     pagerScrollKey,
     style,
@@ -109,6 +116,11 @@ export const NativeScroller = React.forwardRef<
   const generatedId = React.useId();
   const [contentViewportHeight, setContentViewportHeight] = React.useState(0);
   const [contentSize, setContentSize] = React.useState({ width: 0, height: 0 });
+  const [topOverlayHeight, setTopOverlayHeight] = React.useState(0);
+  const hasTopOverlay =
+    Platform.OS === "ios" && parseInt(String(Platform.Version), 10) >= 26 &&
+    (topScrollEdgeEffect === "hard" || topScrollEdgeEffect === "soft") &&
+    topOverlay != null;
   const [refreshEpoch, requestRefreshSync] = React.useReducer(
     (value: number) => value + 1,
     0
@@ -187,13 +199,14 @@ export const NativeScroller = React.forwardRef<
     );
 
   return (
+    <View collapsable={false} style={[styles.viewport, style]} onLayout={onLayout}>
     <NativeScrollerHost
       {...props}
       ref={hostRef}
       nativeID={`${NATIVE_SCROLLER_NATIVE_ID_PREFIX}:${
         pagerScrollKey ?? nativeID ?? generatedId
       }`}
-      style={[styles.viewport, style]}
+      style={StyleSheet.absoluteFill}
       nestedScrollEnabled={nestedScrollEnabled}
       contentWidth={contentSize.width}
       contentHeight={contentSize.height}
@@ -201,6 +214,8 @@ export const NativeScroller = React.forwardRef<
       contentInsetRight={contentInset?.right ?? 0}
       contentInsetBottom={contentInset?.bottom ?? 0}
       contentInsetLeft={contentInset?.left ?? 0}
+      topScrollEdgeEffect={hasTopOverlay ? topScrollEdgeEffect : "none"}
+      topOverlayHeight={hasTopOverlay ? topOverlayHeight : 0}
       decelerationRate={rate}
       keyboardShouldPersistTaps={persistTaps}
       refreshEnabled={Boolean(refresh) && refresh?.enabled !== false}
@@ -219,7 +234,6 @@ export const NativeScroller = React.forwardRef<
           requestRefreshSync();
         }
       }}
-      onLayout={onLayout}
       onContentViewportChange={(event) => {
         const height = event.nativeEvent.height;
         if (!Number.isFinite(height) || height < 0) return;
@@ -306,6 +320,19 @@ export const NativeScroller = React.forwardRef<
         {children}
       </View>
     </NativeScrollerHost>
+    {hasTopOverlay ? (
+      <View
+        collapsable={false}
+        style={{ position: "absolute", top: 0, left: 0, right: 0 }}
+        onLayout={(event) => {
+          const height = Math.ceil(event.nativeEvent.layout.height);
+          setTopOverlayHeight((previous) => previous === height ? previous : height);
+        }}
+      >
+        {topOverlay}
+      </View>
+    ) : null}
+    </View>
   );
 });
 

@@ -35,12 +35,15 @@ export type OnCollapsibleStateChangedEventData = Readonly<{
   observedScrollableCount: Int32;
   retainedPages: string;
   reason: string;
+  pageKey: string;
+  headerSettledAtTop: boolean;
 }>;
 
 export type OnNativeTabPressEventData = Readonly<{
   position: Int32;
   key: string;
 }>;
+export type OnScrollEdgeCapabilityEventData = Readonly<{ available: boolean }>;
 
 /**
  * Internal native props. Consumers should use CollapsiblePagerViewProps from
@@ -56,6 +59,10 @@ export interface NativeProps extends ViewProps {
   nativeSmoothHeaderScrollEnabled?: WithDefault<boolean, false>;
   headerHeight?: Int32;
   stickyHeaderHeight?: Int32;
+  topScrollEdgeEffect?: WithDefault<"none" | "hard" | "soft", "none">;
+  topOverlayColorScheme?: string;
+  topOverlayHeight?: WithDefault<Double, 0>;
+  externalTopOverlayTag?: WithDefault<Int32, 0>;
   pageKeys?: string;
   retainedPages?: string;
   nativeTabBarItems?: string;
@@ -78,11 +85,17 @@ export interface NativeProps extends ViewProps {
   onCollapsibleStateChanged?: DirectEventHandler<OnCollapsibleStateChangedEventData>;
   onNativeTabPress?: DirectEventHandler<OnNativeTabPressEventData>;
   onNativeSubHeaderPress?: DirectEventHandler<OnNativeTabPressEventData>;
+  onScrollEdgeCapability?: DirectEventHandler<OnScrollEdgeCapabilityEventData>;
 }
 
 type CollapsiblePagerViewNativeType = HostComponent<NativeProps>;
 
 export interface NativeCommands {
+  scrollToTop: (
+    viewRef: React.ElementRef<CollapsiblePagerViewNativeType>,
+    target: Int32,
+    animated: boolean
+  ) => void;
   setPage: (
     viewRef: React.ElementRef<CollapsiblePagerViewNativeType>,
     selectedPage: Int32
@@ -99,6 +112,7 @@ export interface NativeCommands {
 
 export const Commands: NativeCommands = codegenNativeCommands<NativeCommands>({
   supportedCommands: [
+    "scrollToTop",
     "setPage",
     "setPageWithoutAnimation",
     "setScrollEnabledImperatively",

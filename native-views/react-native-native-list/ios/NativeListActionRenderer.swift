@@ -2,7 +2,8 @@ import UIKit
 
 final class NativeListActionCell: NativeListRendererCell {
   override class func measure(
-    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String
+    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String,
+    fonts: NativeListFontFamilies
   ) -> CGFloat? {
     return item.data.string("presentation") == "accountSelector"
       ? 48 : item.data.dictionary("icon") == nil ? 44 : 60
@@ -53,7 +54,8 @@ final class NativeListActionCell: NativeListRendererCell {
         return [checkbox]
       } ?? item.data.dictionaries("trailing")
     accessories.bind(
-      item, descriptors: descriptors, theme: theme, style: style, checkboxState: checkboxState)
+      item, descriptors: descriptors, theme: theme, style: style, checkboxState: checkboxState,
+      fonts: fonts)
     let hp = CGFloat(style.double("horizontalPadding", default: layout == "table" ? 16 : 12))
     let vp = CGFloat(style.double("verticalPadding", default: 8))
     let end =
@@ -75,7 +77,8 @@ final class NativeListActionCell: NativeListRendererCell {
         tone == "danger" ? "#CE2C31" : "#202020")
     NativeListResolvedText(
       item.data.string("title"), style: style.dictionary("title"), size: 16,
-      weight: selector && icon == nil ? .regular : .medium, color: color, lineHeight: 24, lines: 1
+      weight: selector && icon == nil ? .regular : .medium, color: color, lineHeight: 24, lines: 1,
+      fonts: fonts
     ).bind(title)
     visual.isHidden = icon == nil
     if var icon {
@@ -89,7 +92,7 @@ final class NativeListActionCell: NativeListRendererCell {
       }
       visualWidth.constant = CGFloat(image.double("width", default: selector ? 32 : 40))
       visualHeight.constant = CGFloat(image.double("height", default: selector ? 32 : 40))
-      visual.bind(icon, style: image, key: item.key, theme: theme, isUnread: false)
+      visual.bind(icon, style: image, key: item.key, theme: theme, isUnread: false, fonts: fonts)
       if !keepsBorder { visual.layer.borderWidth = 0 }
     } else {
       visual.recycle()

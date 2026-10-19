@@ -14,8 +14,8 @@ import com.facebook.react.uimanager.ThemedReactContext
 import org.json.JSONObject
 
 /** Composite only; each keyed member owns an independent Identity binding. */
-internal class NativeListWalletGroupRowView(context: ThemedReactContext) :
-  NativeListRendererRowView(context) {
+internal class NativeListWalletGroupRowView(context: ThemedReactContext, fonts: NativeListFonts) :
+  NativeListRendererRowView(context, fonts) {
   private val membersColumn = LinearLayout(context).apply { orientation = VERTICAL }
   private val memberViews = linkedMapOf<String, NativeListIdentityRowView>()
   private var members = emptyList<NativeListItem>()
@@ -74,7 +74,7 @@ internal class NativeListWalletGroupRowView(context: ThemedReactContext) :
     addView(membersColumn, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
     addView(compactContainer, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
     dragBadge.gravity = Gravity.CENTER
-    dragBadge.typeface = NativeListFonts.semibold(context)
+    dragBadge.typeface = fonts.semibold(context)
     compactContainer.addView(dragBadge)
   }
 
@@ -84,6 +84,7 @@ internal class NativeListWalletGroupRowView(context: ThemedReactContext) :
     layout: String,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
   ) {
+    dragBadge.typeface = fonts.semibold(context)
     currentTheme = theme
     currentLayout = layout
     members = memberItems(item)
@@ -135,7 +136,7 @@ internal class NativeListWalletGroupRowView(context: ThemedReactContext) :
     members.forEachIndexed { index, member ->
       val view =
         memberViews.getOrPut(member.key) {
-          NativeListIdentityRowView(reactContext).also { view ->
+          NativeListIdentityRowView(reactContext, fonts).also { view ->
             // Legacy: members own their disabled state; the group never gates them.
             view.onRowPress = { source, origin -> onRowPress?.invoke(source, origin) }
             view.onAction = { source, key, target, origin ->
@@ -168,7 +169,7 @@ internal class NativeListWalletGroupRowView(context: ThemedReactContext) :
     }
     if (compactParent == null) {
       compactParent =
-        NativeListIdentityRowView(reactContext).also {
+        NativeListIdentityRowView(reactContext, fonts).also {
           compactContainer.addView(
             it,
             0,

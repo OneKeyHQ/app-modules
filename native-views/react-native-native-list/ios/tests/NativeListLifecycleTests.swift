@@ -4,6 +4,91 @@ import XCTest
 
 @MainActor
 final class NativeListLifecycleTests: XCTestCase {
+  func testScrollEdgeStylesPreserveOverlayGeometryAndRestoreOriginalStyle() throws {
+    guard #available(iOS 26.0, *) else {
+      throw XCTSkip("Scroll-edge styles require iOS 26 or newer")
+    }
+    let view = try makeScrollingList()
+    let window = UIWindow(frame: view.frame)
+    window.addSubview(view)
+    let list = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+    let originalStyle = list.topEdgeEffect.style
+    let originalInset = list.contentInset.top
+    let overlay = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 64))
+    view.mountContainerSlot(overlay, atIndex: 3)
+    view.setTopScrollEdge(effect: .hard, overlayHeight: 64)
+    XCTAssertEqual(list.topEdgeEffect.style, .hard)
+    XCTAssertEqual(list.contentInset.top, originalInset + 64, accuracy: 0.01)
+    let offset = list.contentOffset
+    view.setTopScrollEdge(effect: .soft, overlayHeight: 64)
+    XCTAssertEqual(list.topEdgeEffect.style, .soft)
+    XCTAssertEqual(list.contentInset.top, originalInset + 64, accuracy: 0.01)
+    XCTAssertEqual(list.contentOffset, offset)
+    XCTAssertNotNil(overlay.superview)
+    view.setTopScrollEdge(effect: .none, overlayHeight: 0)
+    XCTAssertEqual(list.topEdgeEffect.style, originalStyle)
+    XCTAssertEqual(list.contentInset.top, originalInset, accuracy: 0.01)
+    view.unmountContainerSlot(overlay)
+    view.removeFromSuperview()
+  }
+
+  func testInvalidCommandsPreserveAcceptedAnimationCompletion() throws {
+    for invalid in 0..<3 {
+      let view = try makeScrollingList()
+      let window = UIWindow(frame: view.frame)
+      let controller = UIViewController()
+      window.rootViewController = controller
+      controller.view.addSubview(view)
+      window.isHidden = false
+      defer { window.isHidden = true }
+      window.layoutIfNeeded()
+      view.layoutIfNeeded()
+      drainMainQueue()
+      let list = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+      XCTAssertNotNil(view.window)
+      XCTAssertGreaterThan(list.contentSize.height - list.bounds.height +
+        list.adjustedContentInset.top + list.adjustedContentInset.bottom, 800)
+      let phases = NSMutableArray()
+      let observer = NotificationCenter.default.addObserver(
+        forName: Notification.Name("OneKeyNativeListScrollCommandAccepted"),
+        object: list, queue: nil
+      ) { notification in
+        if let phase = notification.userInfo?["phase"] as? Int { phases.add(phase) }
+      }
+      defer { NotificationCenter.default.removeObserver(observer) }
+      view.scrollToOffset(800, animated: true)
+      XCTAssertEqual(phases as? [Int], [0, 1])
+      switch invalid {
+      case 0: view.scrollToKey("missing-fixture-key", animated: true, alignment: "start")
+      case 1: view.scrollToIndex(-1, animated: true, alignment: "start")
+      default: view.scrollToOffset(.nan, animated: true)
+      }
+      XCTAssertEqual(phases as? [Int], [0, 1], "Invalid input must not accept or end another command")
+      // Exercise the actual delegate terminal callback, not a copied state helper.
+      view.scrollViewDidEndScrollingAnimation(list)
+      XCTAssertEqual(phases as? [Int], [0, 1, 2])
+      view.scrollViewDidEndScrollingAnimation(list)
+      XCTAssertEqual(phases as? [Int], [0, 1, 2], "Completion is emitted once")
+    }
+  }
+
+  func testInvalidKeyPreservesValidPendingScrollUntilGeometryArrives() throws {
+    let view = try makeScrollingList()
+    let list = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+    view.frame.size.height = 0
+    view.setNeedsLayout()
+    view.layoutIfNeeded()
+    XCTAssertEqual(list.bounds.height, 0)
+    view.scrollToOffset(500, animated: false)
+    view.scrollToKey("missing-fixture-key", animated: true, alignment: "start")
+    view.frame.size.height = 708
+    view.setNeedsLayout()
+    view.layoutIfNeeded()
+    list.layoutIfNeeded()
+    drainMainQueue()
+    XCTAssertEqual(list.contentOffset.y, 500 - list.adjustedContentInset.top, accuracy: 0.5)
+  }
+
   func testSectionLoadingStopsOnRebindReuseAndDetach() throws {
     let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
     let controller = UIViewController()
@@ -19,7 +104,7 @@ final class NativeListLifecycleTests: XCTestCase {
         "style": ["title": ["color": "#FFAA00"]],
       ])
       cell.bind(item: item, theme: nil, layout: "sectioned", selected: false,
-                checkboxState: { _, _, fallback in fallback })
+        checkboxState: { _, _, fallback in fallback }, fonts: NativeListFontFamilies())
     }
     try bind(loading: true)
     let spinner = try XCTUnwrap(cell.root.arrangedSubviews.first as? UIActivityIndicatorView)
@@ -49,7 +134,7 @@ final class NativeListLifecycleTests: XCTestCase {
 
     func bind(_ item: NativeListItem) {
       cell.bind(item: item, theme: nil, layout: "linear", selected: false,
-                checkboxState: { _, _, fallback in fallback })
+        checkboxState: { _, _, fallback in fallback }, fonts: NativeListFontFamilies())
     }
 
     bind(first)
@@ -107,6 +192,81 @@ final class NativeListLifecycleTests: XCTestCase {
 
     view.applySnapshotJson(try snapshot(footer: nil))
     XCTAssertTrue(second.isHidden)
+  }
+
+  func testFontResolversMeasureBindResetAndKeepIndependentInstances() throws {
+    let first = NativeListFontFamilies(names: ["regular": "Courier", "bold": "Courier-Bold"])
+    let second = NativeListFontFamilies(names: ["regular": "Georgia", "bold": "Georgia-Bold"])
+    XCTAssertNotNil(UIFont(name: "Courier", size: 16))
+    XCTAssertNotNil(UIFont(name: "Georgia", size: 16))
+    func resolve(_ fonts: NativeListFontFamilies) -> NativeListResolvedText {
+      NativeListResolvedText(
+        "WWWWiiii", style: nil, size: 16, color: .label,
+        lineHeight: 24, lines: 1, fonts: fonts)
+    }
+    let a = resolve(first)
+    let b = resolve(second)
+    let label = NativeListTextLabel()
+    a.bind(label)
+    XCTAssertEqual(label.font.fontName, a.font.fontName)
+    XCTAssertEqual(a.measureWidth(), ceil(a.attributed(direction: .leftToRight).size().width))
+    XCTAssertNotEqual(a.font.fontName, b.font.fontName)
+    XCTAssertNotEqual(a.measureWidth(), b.measureWidth())
+    b.bind(label)
+    XCTAssertEqual(label.font.fontName, "Georgia")
+    resolve(NativeListFontFamilies()).bind(label)
+    XCTAssertEqual(label.font.fontName, UIFont.systemFont(ofSize: 16).fontName)
+    XCTAssertEqual(a.font.fontName, "Courier")
+  }
+
+  func testUnstyledLeadingVisualAndFooterRebindConfiguredFonts() throws {
+    let first = NativeListFontFamilies(names: ["regular": "Courier", "bold": "Courier-Bold"])
+    let second = NativeListFontFamilies(names: ["regular": "Georgia", "bold": "Georgia-Bold"])
+    let visual = NativeListLeadingVisual()
+    for fonts in [first, second] {
+      visual.bind(
+        ["kind": "account", "fallbackText": "A"], style: [:], key: "a", theme: nil,
+        isUnread: false, fonts: fonts)
+      XCTAssertEqual(
+        visual.fallbackTextView.font.fontName, fonts.font(ofSize: 13, weight: .bold).fontName)
+    }
+    let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+    view.setFontFamiliesJson("{\"regular\":\"Courier\",\"medium\":\"Courier\"}")
+    view.applySnapshotJson(
+      try snapshot(footer: [
+        "key": "footer", "type": "action", "title": "Continue", "actionKey": "continue",
+      ]))
+    let footer = try XCTUnwrap(footerCell(in: view))
+    func labels(_ view: UIView) -> [UILabel] {
+      (view as? UILabel).map { [$0] } ?? view.subviews.flatMap(labels)
+    }
+    XCTAssertEqual(labels(footer).first { $0.text == "Continue" }?.font.fontName, "Courier")
+    view.setFontFamiliesJson("{\"regular\":\"Georgia\",\"medium\":\"Georgia\"}")
+    XCTAssertEqual(labels(footer).first { $0.text == "Continue" }?.font.fontName, "Georgia")
+    XCTAssertEqual(footer.accessibilityLabel, "Continue")
+  }
+
+  func testNestedWalletMembersAndDragBadgeFollowEachBindMapping() throws {
+    let group = NativeListWalletGroupCell(frame: CGRect(x: 0, y: 0, width: 320, height: 200))
+    let item = try NativeListItem(data: [
+      "type": "walletGroup", "key": "group",
+      "parent": ["type": "identity", "key": "parent", "title": "Parent", "variant": "wallet"],
+      "children": [["type": "identity", "key": "child", "title": "Child", "variant": "wallet"]],
+    ])
+    func labels(_ view: UIView) -> [UILabel] {
+      (view as? UILabel).map { [$0] } ?? view.subviews.flatMap(labels)
+    }
+    for face in ["Courier", "Georgia"] {
+      let fonts = NativeListFontFamilies(names: ["regular": face, "medium": face, "semibold": face])
+      group.bind(
+        item: item, theme: nil, layout: "linear", selected: false,
+        checkboxState: { _, _, fallback in fallback }, fonts: fonts)
+      let rendered = labels(group)
+      let members = rendered.filter { ["Parent", "Child"].contains($0.text ?? "") }
+      XCTAssertGreaterThanOrEqual(members.count, 2)
+      XCTAssertTrue(members.allSatisfy { $0.font.fontName == face })
+      XCTAssertEqual(rendered.first { $0.text == "+1" }?.font.fontName, face)
+    }
   }
 
   private func snapshot(footer: [String: Any]?) throws -> String {

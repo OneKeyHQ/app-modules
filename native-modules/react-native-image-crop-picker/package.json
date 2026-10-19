@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-image-crop-picker",
-  "version": "3.0.170",
+  "version": "6.7.0-6",
   "description": "Single photo picker and cropper Nitro module for OneKey, replacing react-native-image-crop-picker",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",

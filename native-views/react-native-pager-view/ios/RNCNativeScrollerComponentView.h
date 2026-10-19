@@ -10,6 +10,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 // Native inset ownership stays separate from Fabric/Yoga content layout.
 @protocol RNCNativeScrollerInsetCoordinator <NSObject>
+- (void)nativeScrollerWillReceiveScrollCommand:(RNCNativeScrollerComponentView *)scroller;
 - (void)nativeScroller:(RNCNativeScrollerComponentView *)scroller
     callerInsetChangedFrom:(UIEdgeInsets)previous to:(UIEdgeInsets)next;
 @end

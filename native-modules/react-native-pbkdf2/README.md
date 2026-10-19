@@ -34,13 +34,25 @@ key bytes are needed. The package does not store keys or choose parameters.
 See [src/NativePbkdf2.ts](src/NativePbkdf2.ts) for the native interface and the
 platform sources for encoding and derivation behavior.
 
+## Matching an existing derived-key format
+
+The method argument order is password, salt, rounds, output-byte length and
+hash name. The encoded password and salt are byte sequences, so do not pass
+an unencoded user password in place of Base64 or reinterpret a textual salt
+without the application's format rules.
+
+The default export exposes `derive`; this package does not export the AES
+module's differently shaped `pbkdf2` helper. `Pbkdf2Spec` can be imported as a
+type when adapting this method. A derived key must still be decoded, stored or
+used by the caller; resolving the promise does not persist it.
+
 ## Upstream attribution
 
 First, a sincere thank-you to the
 `react-native-pbkdf2` maintainers for their excellent work 🙏
 
 This package is built on, and inspired by,
-[nicola/react-native-pbkdf2](https://github.com/nicola/react-native-pbkdf2).
+[PublicaIO/react-native-pbkdf2](https://github.com/PublicaIO/react-native-pbkdf2).
 
 Our original plan was to keep our customizations as patches on top of upstream
 `react-native-pbkdf2`.
@@ -54,7 +66,7 @@ development and delivery stable.
 
 ## Upstream Project
 
-- Repository: [nicola/react-native-pbkdf2](https://github.com/nicola/react-native-pbkdf2)
+- Repository: [PublicaIO/react-native-pbkdf2](https://github.com/PublicaIO/react-native-pbkdf2)
 - License: MIT
 
 ## Notes

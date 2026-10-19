@@ -45,6 +45,18 @@ actual content.
 The current interface is in [src/Skeleton.nitro.ts](src/Skeleton.nitro.ts), and
 the public component is exported from [src/index.tsx](src/index.tsx).
 
+## Loading-state ownership
+
+`SkeletonView` is the exported native host component. The package declares no
+`onLoad`, `onError` or network-request prop: the application removes or hides
+the placeholder when its own loading state changes.
+
+`shimmerGradientColors` supplies a string array rather than React Native color
+objects, and `shimmerSpeed` is a duration rather than frames per second.
+Preserve layout dimensions when replacing the skeleton with loaded content if
+the consumer needs to avoid a layout shift. Native animation results remain
+separate from the application's data-loading completion.
+
 ## License
 
 MIT.

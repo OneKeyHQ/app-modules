@@ -1,3 +1,4 @@
+import { applyTextWeight } from './templates/RowText';
 import {
   applyRowContainerStyle,
   resetRowContainerStyle,
@@ -5,6 +6,10 @@ import {
 import { hasExplicitRowHeight, rowSizeModifier } from './templates/RowElements';
 import { applyTextStyleToSlot, applyValueSegments } from './templates/RowText';
 import { setMarketQuoteContent } from './templates/MarketRowRenderer';
+import {
+  canPatchMarketTableValues,
+  updateMarketTableValues,
+} from './templates/MarketTableRowRenderer';
 export {
   resolveWebMarketLayoutStyle,
   type WebMarketLayoutStyle,
@@ -310,6 +315,7 @@ export function isWebRowReorderable(
   if (row.type === 'rail' && row.draggable) return true;
   if (row.type === 'identity' && row.draggable) return true;
   if (row.type === 'walletGroup' && row.draggable) return true;
+  if (row.type === 'market' && row.webTable?.draggable) return true;
   return (
     (row.type === 'identity' || row.type === 'action') &&
     Boolean(row.trailing?.some((accessory) => accessory.kind === 'drag'))
@@ -562,9 +568,7 @@ export function computeWebListLayout(
   }
 
   const columns = snapshot.layout.gridColumns ?? 2;
-  const itemWidth = Math.floor(
-    (availableWidth - spacing * (columns - 1)) / columns
-  );
+  const itemWidth = (availableWidth - spacing * (columns - 1)) / columns;
   let y = padding.top;
   let column = 0;
   let bandStart = y;
@@ -788,12 +792,15 @@ export function webMarketImageBindDeltaForPatches(
 
 // OneKey patch: selector names must shrink before the sidebar clips their contents.
 export const WEB_LIST_CSS = `
+.ok-native-list-table-secondary{display:block;min-width:0;overflow:clip}.ok-native-list-table-secondary-track{display:flex;flex-direction:column;transition:transform 100ms ease}.ok-native-list-market-table:focus-within .ok-native-list-table-secondary[data-has-hover="true"]>.ok-native-list-table-secondary-track{transform:translateY(calc(-1 * var(--nl-table-secondary-height)))}@media(hover:hover){.ok-native-list-market-table:hover .ok-native-list-table-secondary[data-has-hover="true"]>.ok-native-list-table-secondary-track{transform:translateY(calc(-1 * var(--nl-table-secondary-height)))}}.ok-native-list-market-table button:focus-visible{outline:2px solid var(--nl-accent);outline-offset:1px}.ok-native-list-market-table button:hover{opacity:.75}.ok-native-list-market-table button:active{opacity:.5}
+
 [data-native-list-selector="walletSidebar"] .ok-native-list-title{max-width:100%;min-width:0}
-.ok-native-list-root{--nl-bg:#f7f7f7;--nl-row:#fff;--nl-selected:#eaf2ff;--nl-pressed:#e8e8e8;--nl-subdued:#f9f9f9;--nl-strong:#0000000f;--nl-primary:#111;--nl-secondary:#6b7280;--nl-disabled:#8d8d8d;--nl-icon:#111;--nl-icon-subdued:#8d8d8d;--nl-separator:#e5e7eb;--nl-accent:#2f6bff;--nl-positive:#15803d;--nl-negative:#dc2626;--nl-critical:#feecec;--nl-inverse:#202020;--nl-inverse-text:#fcfcfc;--nl-info:#0d74ce;position:absolute;inset:0;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;background:var(--nl-bg);color:var(--nl-primary);font-family:Roobert,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-synthesis:none}
+.ok-native-list-root{--nl-bg:#f7f7f7;--nl-row:#fff;--nl-selected:#eaf2ff;--nl-pressed:#e8e8e8;--nl-subdued:#f9f9f9;--nl-strong:#0000000f;--nl-primary:#111;--nl-secondary:#6b7280;--nl-disabled:#8d8d8d;--nl-icon:#111;--nl-icon-subdued:#8d8d8d;--nl-separator:#e5e7eb;--nl-accent:#2f6bff;--nl-positive:#15803d;--nl-negative:#dc2626;--nl-critical:#feecec;--nl-inverse:#202020;--nl-inverse-text:#fcfcfc;--nl-info:#0d74ce;position:absolute;inset:0;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;background:var(--nl-bg);color:var(--nl-primary);font-synthesis:none;font-family:var(--nl-font-regular)}
 .ok-native-list-viewport-frame{position:relative;flex:1;min-width:0;min-height:0;overflow:hidden}
 .ok-native-list-viewport{position:absolute;inset:0;overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scrollbar-gutter:stable}
 .ok-native-list-content{position:relative;min-width:100%;min-height:100%}
 .ok-native-list-item{position:absolute;left:0;top:0;box-sizing:border-box;contain:layout paint style;outline:none}
+.ok-native-list-item[data-native-list-media-gallery="true"]{pointer-events:none}.ok-native-list-item[data-native-list-media-gallery="true"]>.ok-native-list-media{pointer-events:auto}
 .ok-native-list-row{width:100%;height:100%;box-sizing:border-box;display:flex;align-items:center;gap:12px;overflow:hidden;background:var(--nl-row);color:var(--nl-primary);cursor:default;user-select:none;-webkit-user-select:none}
 .ok-native-list-item[data-table-alternate="true"]>.ok-native-list-row{background:var(--nl-bg)}
 .ok-native-list-item[data-native-list-selected="true"]>.ok-native-list-row{background:var(--nl-selected)}
@@ -818,10 +825,10 @@ export const WEB_LIST_CSS = `
 .ok-native-list-item[data-native-list-dragging="true"]>.ok-native-list-row>*{visibility:hidden}
 .ok-native-list-item[data-native-list-dragging="true"]>.ok-native-list-wallet-group{border-color:transparent;background:var(--nl-pressed)}
 .ok-native-list-item[data-native-list-dragging="true"]>.ok-native-list-wallet-group>*{visibility:hidden}
-.ok-native-list-reorder-preview{position:fixed;left:0;top:0;z-index:100001;pointer-events:none;overflow:hidden;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.12);transform-origin:center;will-change:transform;font-family:Roobert,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.ok-native-list-reorder-preview{position:fixed;left:0;top:0;z-index:100001;pointer-events:none;overflow:hidden;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.12);transform-origin:center;will-change:transform;font-family:var(--nl-font-regular);font-synthesis:none}
 .ok-native-list-reorder-preview>.ok-native-list-row{background:var(--nl-pressed);cursor:grabbing}
 .ok-native-list-reorder-preview[data-native-list-selected="true"]>.ok-native-list-row{background:var(--nl-selected)}
-.ok-native-list-reorder-count{position:absolute;right:4px;bottom:4px;display:flex;align-items:center;justify-content:center;box-sizing:border-box;min-width:24px;height:24px;padding:0 6px;border:1px solid var(--nl-row);border-radius:12px;background:var(--nl-inverse);color:var(--nl-inverse-text);font-size:12px;line-height:22px;font-weight:600}
+.ok-native-list-reorder-count{position:absolute;right:4px;bottom:4px;display:flex;align-items:center;justify-content:center;box-sizing:border-box;min-width:24px;height:24px;padding:0 6px;border:1px solid var(--nl-row);border-radius:12px;background:var(--nl-inverse);color:var(--nl-inverse-text);font-size:12px;line-height:22px;font-weight:600;font-family:var(--nl-font-semibold)}
 .ok-native-list-item[data-separator="true"]>.ok-native-list-row{border-bottom:1px solid var(--nl-separator-color,var(--nl-separator))}
 /* An inset separator keeps the transparent border so the row's height is unchanged, and paints the visible line with a logical-inset overlay so it follows RTL. */
 .ok-native-list-root[data-separator-inset="true"] .ok-native-list-item[data-separator="true"]>.ok-native-list-row{position:relative;border-bottom-color:transparent}
@@ -830,30 +837,34 @@ export const WEB_LIST_CSS = `
 .ok-native-list-item[data-group-position="last"]>.ok-native-list-row{border-radius:0 0 var(--nl-group-radius,12px) var(--nl-group-radius,12px)}
 .ok-native-list-item[data-group-position="single"]>.ok-native-list-row{border-radius:var(--nl-group-radius,12px)}
 .ok-native-list-standard{padding:8px 12px}.ok-native-list-network-row{padding:0 12px}.ok-native-list-wallet-row{padding:4px 8px;flex-direction:column;justify-content:center;gap:4px}.ok-native-list-account-row{padding:4px 12px;gap:8px}
-.ok-native-list-account-row .ok-native-list-visual,.ok-native-list-account-action-row .ok-native-list-visual{width:32px;height:32px;flex-basis:32px}.ok-native-list-account-row .ok-native-list-visual>img,.ok-native-list-account-row .ok-native-list-visual-main,.ok-native-list-account-action-row .ok-native-list-visual>img,.ok-native-list-account-action-row .ok-native-list-visual-main{width:32px;height:32px}.ok-native-list-account-row .ok-native-list-visual>.ok-native-list-visual-corner{width:20px;height:20px;padding:2px}.ok-native-list-account-action-row .ok-native-list-visual{border-radius:8px!important}.ok-native-list-wallet-row .ok-native-list-title{color:var(--nl-secondary);font-size:12px;line-height:16px;font-weight:400}.ok-native-list-item[data-native-list-selected="true"]>.ok-native-list-wallet-row .ok-native-list-title{color:var(--nl-primary)}.ok-native-list-account-row .ok-native-list-title{font-size:16px;line-height:20px;font-weight:400}.ok-native-list-account-row .ok-native-list-secondary{font-size:14px;line-height:20px;font-weight:400}
-.ok-native-list-flex{display:flex;flex:1;min-width:0;flex-direction:column;justify-content:center}.ok-native-list-title{font-size:15px;line-height:20px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-secondary{font-size:13px;line-height:18px;color:var(--nl-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-tertiary{color:var(--nl-secondary)}.ok-native-list-info{color:var(--nl-info)}
+.ok-native-list-account-row .ok-native-list-visual,.ok-native-list-account-action-row .ok-native-list-visual{width:32px;height:32px;flex-basis:32px}.ok-native-list-account-row .ok-native-list-visual>img,.ok-native-list-account-row .ok-native-list-visual-main,.ok-native-list-account-action-row .ok-native-list-visual>img,.ok-native-list-account-action-row .ok-native-list-visual-main{width:32px;height:32px}.ok-native-list-account-row .ok-native-list-visual>.ok-native-list-visual-corner{width:20px;height:20px;padding:2px}.ok-native-list-account-action-row .ok-native-list-visual{border-radius:8px!important}.ok-native-list-wallet-row .ok-native-list-title{color:var(--nl-secondary);font-size:12px;line-height:16px;font-weight:400;font-family:var(--nl-font-regular)}.ok-native-list-item[data-native-list-selected="true"]>.ok-native-list-wallet-row .ok-native-list-title{color:var(--nl-primary)}.ok-native-list-account-row .ok-native-list-title{font-size:16px;line-height:20px;font-weight:400;font-family:var(--nl-font-regular)}.ok-native-list-account-row .ok-native-list-secondary{font-size:14px;line-height:20px;font-weight:400;font-family:var(--nl-font-regular)}
+.ok-native-list-flex{display:flex;flex:1;min-width:0;flex-direction:column;justify-content:center}.ok-native-list-title{font-size:15px;line-height:20px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--nl-font-semibold)}.ok-native-list-secondary{font-size:13px;line-height:18px;color:var(--nl-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-tertiary{color:var(--nl-secondary)}.ok-native-list-info{color:var(--nl-info)}
 .ok-native-list-identity-row .ok-native-list-title,.ok-native-list-identity-row .ok-native-list-amounts>span:first-child{font-size:16px;line-height:20px}.ok-native-list-identity-row .ok-native-list-secondary{font-size:14px;line-height:20px}
-.ok-native-list-value{font-size:14px;line-height:20px;font-weight:500;white-space:nowrap}.ok-native-list-time{font-size:11px;line-height:16px;color:var(--nl-secondary);align-self:flex-start}.ok-native-list-amounts{display:flex;flex-direction:column;align-items:flex-end;min-width:0}.ok-native-list-actions{display:flex;gap:16px;margin-top:6px}
-.ok-native-list-action-button{appearance:none;border:0;background:transparent;padding:2px;color:var(--nl-accent);font:600 12px/16px inherit;cursor:pointer}.ok-native-list-action-button[data-tone="danger"]{color:var(--nl-negative)}.ok-native-list-action-button:disabled{opacity:.5;cursor:default}
-.ok-native-list-visual{position:relative;flex:0 0 40px;width:40px;height:40px;border-radius:20px;overflow:visible;background:var(--nl-strong)}.ok-native-list-visual>img,.ok-native-list-visual-main{display:block;width:40px;height:40px;border-radius:inherit;object-fit:cover}.ok-native-list-visual-fallback{display:flex;width:100%;height:100%;align-items:center;justify-content:center;border-radius:inherit;color:var(--nl-primary);font-size:15px;font-weight:600;overflow:hidden}.ok-native-list-visual>.ok-native-list-visual-corner{position:absolute;right:-4px;bottom:-4px;width:18px;height:18px;padding:2px;border-radius:50%;background:var(--nl-row);object-fit:cover}.ok-native-list-stacked{display:flex;align-items:center;width:48px;flex-basis:48px}.ok-native-list-stacked img{width:28px;height:28px;border:2px solid var(--nl-row);border-radius:50%;object-fit:cover;margin-left:-10px}.ok-native-list-stacked img:first-child{margin-left:0}
-.ok-native-list-accessories{display:flex;align-items:center;gap:10px;min-width:0}.ok-native-list-accessory{font-size:14px;color:var(--nl-primary);white-space:nowrap}.ok-native-list-accessory-secondary{color:var(--nl-secondary)}.ok-native-list-icon-button{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:24px;border:0;background:transparent;color:var(--nl-icon);font-size:20px;line-height:1;font-weight:500;font-family:inherit;cursor:pointer}.ok-native-list-checkbox{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:20px;height:20px;border:2px solid color-mix(in srgb,var(--nl-primary) 19%,transparent);border-radius:5px;background:var(--nl-row);cursor:pointer}.ok-native-list-checkbox[data-state="checked"],.ok-native-list-checkbox[data-state="indeterminate"]{border-color:transparent;background:var(--nl-primary)}.ok-native-list-checkbox[data-state="checked"]::after{content:"";width:6px;height:10px;margin-top:-2px;border-right:2px solid var(--nl-row);border-bottom:2px solid var(--nl-row);transform:rotate(45deg)}.ok-native-list-checkbox[data-state="indeterminate"]::after{content:"";width:8px;height:2px;border-radius:1px;background:var(--nl-row)}.ok-native-list-spinner{width:16px;height:16px;border:2px solid var(--nl-separator);border-top-color:var(--nl-primary);border-radius:50%;animation:ok-native-list-spin .8s linear infinite}@keyframes ok-native-list-spin{to{transform:rotate(360deg)}}
+.ok-native-list-value{font-size:14px;line-height:20px;font-weight:500;white-space:nowrap;font-family:var(--nl-font-medium)}.ok-native-list-time{font-size:11px;line-height:16px;color:var(--nl-secondary);align-self:flex-start}.ok-native-list-amounts{display:flex;flex-direction:column;align-items:flex-end;min-width:0}.ok-native-list-actions{display:flex;gap:16px;margin-top:6px}
+.ok-native-list-action-button{appearance:none;border:0;background:transparent;padding:2px;color:var(--nl-accent);cursor:pointer;font:600 12px/16px var(--nl-font-semibold)}.ok-native-list-action-button[data-tone="danger"]{color:var(--nl-negative)}.ok-native-list-action-button:disabled{opacity:.5;cursor:default}
+.ok-native-list-visual{position:relative;flex:0 0 40px;width:40px;height:40px;border-radius:20px;overflow:visible;background:var(--nl-strong)}.ok-native-list-visual>img,.ok-native-list-visual-main{display:block;width:40px;height:40px;border-radius:inherit;object-fit:cover}.ok-native-list-visual-fallback{display:flex;width:100%;height:100%;align-items:center;justify-content:center;border-radius:inherit;color:var(--nl-primary);font-size:15px;font-weight:600;overflow:hidden;font-family:var(--nl-font-semibold)}.ok-native-list-visual>.ok-native-list-visual-corner{position:absolute;right:-4px;bottom:-4px;width:18px;height:18px;padding:2px;border-radius:50%;background:var(--nl-row);object-fit:cover}.ok-native-list-stacked{display:flex;align-items:center;width:48px;flex-basis:48px}.ok-native-list-stacked img{width:28px;height:28px;border:2px solid var(--nl-row);border-radius:50%;object-fit:cover;margin-left:-10px}.ok-native-list-stacked img:first-child{margin-left:0}
+.ok-native-list-accessories{display:flex;align-items:center;gap:10px;min-width:0}.ok-native-list-accessory{font-size:14px;color:var(--nl-primary);white-space:nowrap}.ok-native-list-accessory-secondary{color:var(--nl-secondary)}.ok-native-list-icon-button{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:24px;border:0;background:transparent;color:var(--nl-icon);font-size:20px;line-height:1;font-weight:500;cursor:pointer;font-family:var(--nl-font-medium)}.ok-native-list-checkbox{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:20px;height:20px;border:2px solid color-mix(in srgb,var(--nl-primary) 19%,transparent);border-radius:5px;background:var(--nl-row);cursor:pointer}.ok-native-list-checkbox[data-state="checked"],.ok-native-list-checkbox[data-state="indeterminate"]{border-color:transparent;background:var(--nl-primary)}.ok-native-list-checkbox[data-state="checked"]::after{content:"";width:6px;height:10px;margin-top:-2px;border-right:2px solid var(--nl-row);border-bottom:2px solid var(--nl-row);transform:rotate(45deg)}.ok-native-list-checkbox[data-state="indeterminate"]::after{content:"";width:8px;height:2px;border-radius:1px;background:var(--nl-row)}.ok-native-list-spinner{width:16px;height:16px;border:2px solid var(--nl-separator);border-top-color:var(--nl-primary);border-radius:50%;animation:ok-native-list-spin .8s linear infinite}@keyframes ok-native-list-spin{to{transform:rotate(360deg)}}
 .ok-native-list-badge{display:inline-flex;align-items:center;max-width:100%;height:18px;padding:0 5px;border-radius:5px;background:color-mix(in srgb,var(--nl-accent) 12%,transparent);color:var(--nl-accent);font-size:11px;line-height:18px;white-space:nowrap}.ok-native-list-badge[data-tone="danger"]{background:var(--nl-critical);color:var(--nl-negative)}.ok-native-list-badges{display:inline-flex;gap:4px;margin-left:6px;vertical-align:middle}
-.ok-native-list-section{padding:0 8px;background:var(--nl-bg);gap:8px}.ok-native-list-section[data-variant="summary"]{padding:0 20px}.ok-native-list-section[data-variant="gallery"]{padding:0 12px}.ok-native-list-section[data-variant="history"]{padding:0 8px}.ok-native-list-section-title{font-size:13px;line-height:18px;font-weight:700;color:var(--nl-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-section[data-variant="summary"] .ok-native-list-section-title{font-size:16px;font-weight:500;color:var(--nl-primary)}.ok-native-list-section[data-variant="gallery"] .ok-native-list-section-title{font-size:16px;color:var(--nl-primary)}.ok-native-list-section[data-variant="history"] .ok-native-list-section-title{font-size:12px;line-height:16px}.ok-native-list-section-value{margin-left:auto}
-.ok-native-list-action-row{justify-content:space-between;padding:0 16px}.ok-native-list-action-title{font-size:15px;font-weight:600;color:var(--nl-accent)}.ok-native-list-action-title[data-tone="danger"]{color:var(--nl-negative)}
-.ok-native-list-account-action-row{justify-content:flex-start;gap:12px;padding:0 12px}.ok-native-list-account-action-row .ok-native-list-action-title{color:var(--nl-secondary);font-size:16px;line-height:24px;font-weight:400}
+.ok-native-list-section{padding:0 8px;background:var(--nl-bg);gap:8px}.ok-native-list-section[data-variant="summary"]{padding:0 20px}.ok-native-list-section[data-variant="gallery"]{padding:0 12px}.ok-native-list-section[data-variant="history"]{padding:0 8px}.ok-native-list-section-title{font-size:13px;line-height:18px;font-weight:700;color:var(--nl-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--nl-font-bold)}.ok-native-list-section[data-variant="summary"] .ok-native-list-section-title{font-size:16px;font-weight:500;color:var(--nl-primary);font-family:var(--nl-font-medium)}.ok-native-list-section[data-variant="gallery"] .ok-native-list-section-title{font-size:16px;color:var(--nl-primary)}.ok-native-list-section[data-variant="history"] .ok-native-list-section-title{font-size:12px;line-height:16px;letter-spacing:0.8px}.ok-native-list-section-value{margin-left:auto}
+.ok-native-list-action-row{justify-content:space-between;padding:0 16px}.ok-native-list-action-title{font-size:15px;font-weight:600;color:var(--nl-accent);font-family:var(--nl-font-semibold)}.ok-native-list-action-title[data-tone="danger"]{color:var(--nl-negative)}
+.ok-native-list-account-action-row{justify-content:flex-start;gap:12px;padding:0 12px}.ok-native-list-account-action-row .ok-native-list-action-title{color:var(--nl-secondary);font-size:16px;line-height:24px;font-weight:400;font-family:var(--nl-font-regular)}
 .ok-native-list-system{justify-content:center;padding:8px 12px;background:var(--nl-bg);color:var(--nl-secondary);cursor:default}.ok-native-list-system[data-variant="retry"],.ok-native-list-system[data-variant="noMatch"],.ok-native-list-system[data-variant="end"]{justify-content:flex-start}.ok-native-list-system[data-variant="retry"]{cursor:pointer}
-.ok-native-list-rail{padding:4px;gap:6px;border-radius:8px}.ok-native-list-rail .ok-native-list-visual{width:20px;height:20px;flex-basis:20px}.ok-native-list-rail .ok-native-list-visual>img,.ok-native-list-rail .ok-native-list-visual-main{width:20px;height:20px}.ok-native-list-rail-title{font-size:12px;font-weight:500;white-space:nowrap}
-.ok-native-list-media{display:block;padding:0 5px;background:transparent;border-radius:16px}.ok-native-list-media-image{display:block;width:100%;aspect-ratio:1;border-radius:10px;background:var(--nl-strong);object-fit:cover}.ok-native-list-media-image[data-state="empty"]{background:transparent}.ok-native-list-media-image[data-state="error"]{display:flex;align-items:center;justify-content:center;color:var(--nl-icon-subdued);font-size:24px}.ok-native-list-media-meta{padding-top:7px}.ok-native-list-media-subtitle-row{display:flex;align-items:center;gap:6px}.ok-native-list-media-subtitle{flex:1;min-width:0;font-size:12px;color:var(--nl-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-media-network{width:14px;height:14px;border-radius:50%}.ok-native-list-media-title{font-size:16px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-media-close{position:absolute;right:9px;top:4px;border:0;background:color-mix(in srgb,var(--nl-inverse) 72%,transparent);color:var(--nl-inverse-text);width:24px;height:24px;border-radius:50%;font:18px/20px inherit;cursor:pointer}
-.ok-native-list-metric{display:flex;flex-direction:column;align-items:flex-start;padding:12px;border-radius:12px;gap:5px;background:var(--nl-row)}.ok-native-list-metric-value{font-size:22px;line-height:28px;font-weight:700}.ok-native-list-composite{display:flex;flex-direction:column;align-items:stretch;padding:14px;border-radius:12px;gap:12px;background:var(--nl-subdued)}.ok-native-list-composite-heading{font-size:14px;letter-spacing:1px;color:var(--nl-secondary)}.ok-native-list-composite-row{display:flex;gap:12px}.ok-native-list-composite-cell{flex:1;min-width:0}.ok-native-list-composite-cell[data-shaded="true"]{padding:10px;border-radius:10px;background:color-mix(in srgb,var(--nl-primary) 5%,transparent)}.ok-native-list-composite-value{font-size:18px;font-weight:600}.ok-native-list-divider{height:1px;background:var(--nl-separator)}.ok-native-list-progress{height:4px;border-radius:2px;overflow:hidden;background:var(--nl-negative)}.ok-native-list-progress>span{display:block;height:100%;border-radius:2px;background:var(--nl-positive)}
-.ok-native-list-data{padding:6px 12px}.ok-native-list-index{flex:0 0 28px;color:var(--nl-secondary);font-size:13px}.ok-native-list-favorite{flex:0 0 24px;color:var(--nl-icon-subdued);font-size:22px}.ok-native-list-favorite[data-active="true"]{color:var(--nl-accent)}.ok-native-list-data-cell{display:flex;flex-direction:column;min-width:0}.ok-native-list-data-cell[data-align="center"]{align-items:center}.ok-native-list-data-cell[data-align="end"]{align-items:flex-end}.ok-native-list-data-primary{display:flex;align-items:center;gap:5px;max-width:100%;font-size:16px;font-weight:500;white-space:nowrap}.ok-native-list-unread{width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:var(--nl-accent)}.ok-native-list-thumbnail{width:64px;height:64px;border-radius:10px;object-fit:cover}
-.ok-native-list-market{padding:12px 20px;gap:14px}.ok-native-list-market>.ok-native-list-visual{width:32px;height:32px;flex-basis:32px}.ok-native-list-market[data-variant="stock"]>.ok-native-list-visual{width:40px;height:40px;flex-basis:40px}.ok-native-list-market>.ok-native-list-visual>.ok-native-list-visual-main{width:100%;height:100%}.ok-native-list-market-main{display:flex;flex:1;min-width:0;flex-direction:column;justify-content:center}.ok-native-list-market-title-line{display:flex;align-items:center;min-width:0;gap:4px}.ok-native-list-market-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--nl-primary);font-size:16px;line-height:24px;font-weight:500}.ok-native-list-market-subtitle{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--nl-secondary);font-size:14px;line-height:20px;font-weight:400}.ok-native-list-market-badge{display:inline-flex;flex:0 0 auto;align-items:center;justify-content:center;box-sizing:border-box;max-width:72px;height:18px;padding:0 5px;border:0;border-radius:4px;background:var(--nl-strong);color:var(--nl-secondary);font:500 11px/18px inherit;overflow:hidden;white-space:nowrap}.ok-native-list-market-badge img{width:14px;height:14px;object-fit:contain}.ok-native-list-market-trailing{display:flex;flex:0 0 auto;align-items:center;gap:8px}.ok-native-list-market-price{max-width:112px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;color:var(--nl-primary);font-size:16px;line-height:24px;font-weight:500;font-variant-numeric:tabular-nums}.ok-native-list-market-change{display:flex;align-items:center;justify-content:center;box-sizing:border-box;width:80px;height:32px;border-radius:8px;color:#fff;background:#8d8d8d;font-size:14px;line-height:20px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}.ok-native-list-market-change[data-tone="positive"]{background:var(--nl-positive)}.ok-native-list-market-change[data-tone="negative"]{background:var(--nl-negative)}
+.ok-native-list-rail{padding:4px;gap:6px;border-radius:8px}.ok-native-list-rail .ok-native-list-visual{width:20px;height:20px;flex-basis:20px}.ok-native-list-rail .ok-native-list-visual>img,.ok-native-list-rail .ok-native-list-visual-main{width:20px;height:20px}.ok-native-list-rail-title{font-size:12px;font-weight:500;white-space:nowrap;font-family:var(--nl-font-medium)}
+.ok-native-list-media{display:block;padding:0 5px;background:transparent;border-radius:16px}.ok-native-list-media-image{display:block;width:100%;aspect-ratio:1;border-radius:10px;background:var(--nl-strong);object-fit:cover}.ok-native-list-media-image[data-state="empty"]{background:transparent}.ok-native-list-media-image[data-state="error"]{display:flex;align-items:center;justify-content:center;color:var(--nl-icon-subdued);font-size:24px}.ok-native-list-media-meta{padding-top:7px}.ok-native-list-media-subtitle-row{display:flex;align-items:center;gap:6px}.ok-native-list-media-subtitle{flex:1;min-width:0;font-size:12px;color:var(--nl-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-media-network{width:14px;height:14px;border-radius:50%}.ok-native-list-media-title{font-size:16px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--nl-font-medium)}.ok-native-list-media-close{position:absolute;right:9px;top:4px;border:0;background:color-mix(in srgb,var(--nl-inverse) 72%,transparent);color:var(--nl-inverse-text);width:24px;height:24px;border-radius:50%;cursor:pointer;font:18px/20px var(--nl-font-regular)}
+.ok-native-list-metric{display:flex;flex-direction:column;align-items:flex-start;padding:12px;border-radius:12px;gap:5px;background:var(--nl-row)}.ok-native-list-metric-value{font-size:22px;line-height:28px;font-weight:700;font-family:var(--nl-font-bold)}.ok-native-list-composite{display:flex;flex-direction:column;align-items:stretch;padding:14px;border-radius:12px;gap:12px;background:var(--nl-subdued)}.ok-native-list-composite-heading{font-size:14px;letter-spacing:1px;color:var(--nl-secondary)}.ok-native-list-composite-row{display:flex;gap:12px}.ok-native-list-composite-cell{flex:1;min-width:0}.ok-native-list-composite-cell[data-shaded="true"]{padding:10px;border-radius:10px;background:color-mix(in srgb,var(--nl-primary) 5%,transparent)}.ok-native-list-composite-value{font-size:18px;font-weight:600;font-family:var(--nl-font-semibold)}.ok-native-list-divider{height:1px;background:var(--nl-separator)}.ok-native-list-progress{height:4px;border-radius:2px;overflow:hidden;background:var(--nl-negative)}.ok-native-list-progress>span{display:block;height:100%;border-radius:2px;background:var(--nl-positive)}
+.ok-native-list-data{padding:6px 12px}.ok-native-list-index{flex:0 0 28px;color:var(--nl-secondary);font-size:13px}.ok-native-list-favorite{flex:0 0 24px;color:var(--nl-icon-subdued);font-size:22px}.ok-native-list-favorite[data-active="true"]{color:var(--nl-accent)}.ok-native-list-data-cell{display:flex;flex-direction:column;min-width:0}.ok-native-list-data-cell[data-align="center"]{align-items:center}.ok-native-list-data-cell[data-align="end"]{align-items:flex-end}.ok-native-list-data-primary{display:flex;align-items:center;gap:5px;max-width:100%;font-size:16px;font-weight:500;white-space:nowrap;font-family:var(--nl-font-medium)}.ok-native-list-unread{width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:var(--nl-accent)}.ok-native-list-thumbnail{width:64px;height:64px;border-radius:10px;object-fit:cover}
+.ok-native-list-item[data-native-list-row-press-enabled="true"]:active>.ok-native-list-history{background:var(--nl-selected)}
+.ok-native-list-root[data-native-list-parent-scroll="true"] .ok-native-list-item[data-native-list-row-press-enabled="true"]:active>.ok-native-list-market:not([data-variant="stock"]){opacity:.8}
+.ok-native-list-root[data-native-list-parent-scroll="true"] .ok-native-list-item[data-native-list-row-press-enabled="true"]:active>.ok-native-list-market[data-variant="stock"]{background:var(--nl-selected)}
+.ok-native-list-market-table .ok-native-list-visual-fallback>svg{width:28px;height:28px}
+.ok-native-list-market{padding:12px 20px;gap:14px}.ok-native-list-market>.ok-native-list-visual{width:32px;height:32px;flex-basis:32px}.ok-native-list-market[data-variant="stock"]>.ok-native-list-visual{width:40px;height:40px;flex-basis:40px}.ok-native-list-market>.ok-native-list-visual>.ok-native-list-visual-main{width:100%;height:100%}.ok-native-list-market-main{display:flex;flex:1;min-width:0;flex-direction:column;justify-content:center}.ok-native-list-market-title-line{display:flex;align-items:center;min-width:0;gap:4px}.ok-native-list-market-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--nl-primary);font-size:16px;line-height:24px;font-weight:500;font-family:var(--nl-font-medium)}.ok-native-list-market-subtitle{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--nl-secondary);font-size:14px;line-height:20px;font-weight:400;font-family:var(--nl-font-regular)}.ok-native-list-market-badge{display:inline-flex;flex:0 0 auto;align-items:center;justify-content:center;box-sizing:border-box;max-width:72px;height:18px;padding:0 5px;border:0;border-radius:4px;background:var(--nl-strong);color:var(--nl-secondary);overflow:hidden;white-space:nowrap;font:500 11px/18px var(--nl-font-medium);font-variant-numeric:tabular-nums}.ok-native-list-market-badge img{width:14px;height:14px;object-fit:contain}.ok-native-list-market-trailing{display:flex;flex:0 0 auto;align-items:center;gap:8px}.ok-native-list-market-price{max-width:112px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;color:var(--nl-primary);font-size:16px;line-height:24px;font-weight:500;font-variant-numeric:tabular-nums;font-family:var(--nl-font-medium)}.ok-native-list-market-change{display:flex;align-items:center;justify-content:center;box-sizing:border-box;width:80px;height:32px;border-radius:8px;color:#fff;background:#8d8d8d;font-size:14px;line-height:20px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap;font-family:var(--nl-font-medium)}.ok-native-list-market-change[data-tone="positive"]{background:var(--nl-positive)}.ok-native-list-market-change[data-tone="negative"]{background:var(--nl-negative)}
 .ok-native-list-market-badge>svg,.ok-native-list-market-badge>.ok-native-list-market-badge-icon>svg{display:block;width:16px;height:16px;flex:0 0 16px}.ok-native-list-system[data-native-list-presentation="market"]{box-sizing:border-box;padding:12px 20px}.ok-native-list-system[data-native-list-presentation="market"]>.ok-native-list-spinner{width:32px;height:32px}
-.ok-native-list-index-preview{position:absolute;z-index:8;right:40px;top:50%;display:flex;width:48px;height:48px;align-items:center;justify-content:center;transform:translateY(-50%) scale(.92);border-radius:14px;background:var(--nl-inverse);color:var(--nl-inverse-text);font-size:22px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .15s ease,transform .15s ease}.ok-native-list-index-preview[data-visible="true"]{opacity:1;transform:translateY(-50%) scale(1)}
+.ok-native-list-index-preview{position:absolute;z-index:8;right:40px;top:50%;display:flex;width:48px;height:48px;align-items:center;justify-content:center;transform:translateY(-50%) scale(.92);border-radius:14px;background:var(--nl-inverse);color:var(--nl-inverse-text);font-size:22px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .15s ease,transform .15s ease;font-family:var(--nl-font-semibold)}.ok-native-list-index-preview[data-visible="true"]{opacity:1;transform:translateY(-50%) scale(1)}
 .ok-native-list-row.ok-native-list-market-skeleton{padding:12px 20px;gap:0}.ok-native-list-skeleton-left{display:flex;align-items:center;gap:12px;flex:1}.ok-native-list-skeleton-text{display:flex;flex-direction:column;gap:4px}.ok-native-list-skeleton-right{display:flex;align-items:center;gap:8px}.ok-native-list-skeleton-mark{display:block;flex-shrink:0;border-radius:8px;animation:ok-native-list-skeleton 1.5s linear infinite alternate}@keyframes ok-native-list-skeleton{from{background-color:var(--nl-skeleton-base)}to{background-color:var(--nl-skeleton-highlight)}}.ok-native-list-market-spinner{display:block;width:20px;height:20px;flex-shrink:0;color:var(--nl-icon);animation:ok-native-list-spin .75s linear infinite}
 @media (prefers-reduced-motion:reduce){.ok-native-list-index-preview,.ok-native-list-refresh{transition:none}.ok-native-list-spinner,.ok-native-list-market-spinner{animation:none}.ok-native-list-skeleton-mark{animation:none;background:var(--nl-skeleton-base)}}
-.ok-native-list-footer{flex:0 0 auto;min-height:0}.ok-native-list-sticky{position:absolute;z-index:4;left:0;right:0;top:0;pointer-events:auto;box-shadow:0 1px 0 var(--nl-separator)}.ok-native-list-viewport-frame:has(>.ok-native-list-index-rail:not([hidden]))>.ok-native-list-viewport,.ok-native-list-viewport-frame[data-section-index-visible="true"]>.ok-native-list-viewport{scrollbar-width:none}.ok-native-list-viewport-frame:has(>.ok-native-list-index-rail:not([hidden]))>.ok-native-list-viewport::-webkit-scrollbar,.ok-native-list-viewport-frame[data-section-index-visible="true"]>.ok-native-list-viewport::-webkit-scrollbar{display:none}.ok-native-list-index-rail{position:absolute;z-index:6;top:0;right:0;bottom:0;width:${SECTION_INDEX_RAIL_WIDTH}px;touch-action:none;cursor:pointer;font-family:Roobert,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.ok-native-list-index-rail[hidden]{display:none}.ok-native-list-index-button{appearance:none;position:absolute;left:15px;display:flex;width:14px;height:14px;align-items:center;justify-content:center;padding:0;transform:translateY(-50%);border:0;border-radius:7px;background:transparent;color:var(--nl-disabled);font-family:inherit;font-size:10px;font-weight:400;line-height:1;cursor:pointer;opacity:.5;transition:opacity .15s ease}.ok-native-list-index-rail:hover .ok-native-list-index-button,.ok-native-list-index-rail:focus-within .ok-native-list-index-button,.ok-native-list-index-button[data-active="true"]{opacity:1}.ok-native-list-index-button[data-active="true"]{background:var(--nl-positive);color:var(--nl-inverse-text);font-weight:500}.ok-native-list-index-button:focus-visible{outline:2px solid var(--nl-positive);outline-offset:1px}
+.ok-native-list-footer{flex:0 0 auto;min-height:0}.ok-native-list-sticky{position:absolute;z-index:4;left:0;right:0;top:0;pointer-events:auto;box-shadow:0 1px 0 var(--nl-separator)}.ok-native-list-viewport-frame:has(>.ok-native-list-index-rail:not([hidden]))>.ok-native-list-viewport,.ok-native-list-viewport-frame[data-section-index-visible="true"]>.ok-native-list-viewport{scrollbar-width:none}.ok-native-list-viewport-frame:has(>.ok-native-list-index-rail:not([hidden]))>.ok-native-list-viewport::-webkit-scrollbar,.ok-native-list-viewport-frame[data-section-index-visible="true"]>.ok-native-list-viewport::-webkit-scrollbar{display:none}.ok-native-list-index-rail{position:absolute;z-index:6;top:0;right:0;bottom:0;width:${SECTION_INDEX_RAIL_WIDTH}px;touch-action:none;cursor:pointer;font-family:var(--nl-font-regular);font-synthesis:none}.ok-native-list-index-rail[hidden]{display:none}.ok-native-list-index-button{appearance:none;position:absolute;left:15px;display:flex;width:14px;height:14px;align-items:center;justify-content:center;padding:0;transform:translateY(-50%);border:0;border-radius:7px;background:transparent;color:var(--nl-disabled);font-size:10px;font-weight:400;line-height:1;cursor:pointer;opacity:.5;transition:opacity .15s ease;font-family:var(--nl-font-regular)}.ok-native-list-index-rail:hover .ok-native-list-index-button,.ok-native-list-index-rail:focus-within .ok-native-list-index-button,.ok-native-list-index-button[data-active="true"]{opacity:1}.ok-native-list-index-button[data-active="true"]{background:var(--nl-positive);color:var(--nl-inverse-text);font-weight:500;font-family:var(--nl-font-medium)}.ok-native-list-index-button:focus-visible{outline:2px solid var(--nl-positive);outline-offset:1px}
 .ok-native-list-refresh{position:absolute;z-index:7;left:50%;top:8px;display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:var(--nl-inverse);color:var(--nl-inverse-text);font-size:12px;opacity:0;transform:translate(-50%,-16px);transition:opacity .15s ease,transform .15s ease;pointer-events:none}.ok-native-list-refresh[data-visible="true"]{opacity:1;transform:translate(-50%,0)}
-.ok-native-list-warning{height:auto;display:flex;flex-direction:column;align-items:stretch;gap:4px;padding:14px 12px;border-top:1px solid;border-bottom:1px solid;box-sizing:border-box;cursor:default}.ok-native-list-warning-title,.ok-native-list-warning-message{font-size:14px;line-height:20px;white-space:normal;overflow-wrap:anywhere}.ok-native-list-warning-title{font-weight:500;color:var(--nl-primary)}.ok-native-list-warning-message{font-weight:400;color:var(--nl-secondary)}
+.ok-native-list-warning{height:auto;display:flex;flex-direction:column;align-items:stretch;gap:4px;padding:14px 12px;border-top:1px solid;border-bottom:1px solid;box-sizing:border-box;cursor:default}.ok-native-list-warning-title,.ok-native-list-warning-message{font-size:14px;line-height:20px;white-space:normal;overflow-wrap:anywhere}.ok-native-list-warning-title{font-weight:500;color:var(--nl-primary);font-family:var(--nl-font-medium)}.ok-native-list-warning-message{font-weight:400;color:var(--nl-secondary);font-family:var(--nl-font-regular)}
 .ok-native-list-subtitle-segments{display:flex;align-items:center;min-width:0;max-width:100%;height:20px}.ok-native-list-subtitle-segments>.ok-native-list-secondary{flex:0 1 auto;min-width:0}.ok-native-list-subtitle-dot{flex:0 0 4px;width:4px;height:4px;margin:0 6px;border-radius:50%;background:var(--nl-disabled)}.ok-native-list-wallet-row>.ok-native-list-flex{flex:0 1 auto;width:100%;align-items:center}.ok-native-list-wallet-badges{display:flex;gap:4px;justify-content:center;margin-top:4px;height:20px;max-width:100%}.ok-native-list-wallet-badges>.ok-native-list-badge{background:var(--nl-strong);color:var(--nl-secondary);font-size:12px;line-height:16px;height:20px;box-sizing:border-box;padding:2px 4px}.ok-native-list-visual-overlay{position:absolute;display:flex;align-items:center;justify-content:center;box-sizing:border-box;border-radius:50%;overflow:hidden;line-height:1;font-size:10px}.ok-native-list-visual-overlay img,.ok-native-list-visual-overlay svg{width:100%;height:100%;object-fit:contain}/* OneKey patch: selector controls follow their original semantic colors and geometry. */
 .ok-native-list-checkbox[data-selector="networkSelector"]{padding:0;border-radius:4px;border-color:var(--nl-checkbox-border,var(--nl-separator));background:var(--nl-checkbox-icon,var(--nl-inverse-text))}
 .ok-native-list-checkbox[data-selector="networkSelector"]::after{display:none}
@@ -865,7 +876,7 @@ export const WEB_LIST_CSS = `
 /* OneKey patch: selected group members use the same primary title color as standalone wallets. */
 .ok-native-list-wallet-member[data-native-list-selected="true"]>.ok-native-list-wallet-row[data-native-list-selector="walletSidebar"] .ok-native-list-title{color:var(--nl-primary)}
 .ok-native-list-wallet-row[data-native-list-selector="walletSidebar"] .ok-native-list-wallet-badges{height:18px}
-.ok-native-list-wallet-row[data-native-list-selector="walletSidebar"] .ok-native-list-wallet-badges>.ok-native-list-badge{font-size:11px;line-height:14px;font-weight:400;height:18px;padding:2px 6px;border-radius:4px;background:var(--nl-subdued);color:var(--nl-secondary)}
+.ok-native-list-wallet-row[data-native-list-selector="walletSidebar"] .ok-native-list-wallet-badges>.ok-native-list-badge{font-size:11px;line-height:14px;font-weight:400;height:18px;padding:2px 6px;border-radius:4px;background:var(--nl-subdued);color:var(--nl-secondary);font-family:var(--nl-font-regular)}
 .ok-native-list-wallet-row[data-native-list-selector="walletSidebar"] .ok-native-list-wallet-badges>.ok-native-list-badge[data-tone="warning"]{background:var(--nl-caution-background);color:var(--nl-caution)}
 .ok-native-list-account-row[data-native-list-selector="accountSelector"] .ok-native-list-accessories>.ok-native-list-icon-button{box-sizing:border-box;flex:0 0 38px;width:38px;height:38px;margin:-7px;padding:7px}
 .ok-native-list-account-row[data-native-list-selector="accountSelector"] .ok-native-list-accessories>.ok-native-list-icon-button[data-native-list-action]:not([data-native-list-account-control="createAddress"]):hover{background:var(--nl-strong);border-radius:50%}
@@ -873,7 +884,7 @@ export const WEB_LIST_CSS = `
 /* OneKey patch: AccountSelectorAccountListItem fixes the borderless Plus slot at top18/right20. */
 .ok-native-list-account-row[data-native-list-selector="accountSelector"]>.ok-native-list-accessories[data-native-list-account-control="createAddress"]{position:absolute;top:18px;right:12px}
 .ok-native-list-account-row[data-native-list-selector="accountSelector"] .ok-native-list-accessories>[data-native-list-account-control="createAddress"]{flex-basis:36px;width:36px;height:36px;padding:6px;border-radius:8px}
-.ok-native-list-account-action-row{padding-left:12px;padding-right:12px}.ok-native-list-account-action-row .ok-native-list-action-title{font-size:16px;line-height:24px;font-weight:400}.ok-native-list-account-action-row .ok-native-list-action-title[data-tone="primary"]{color:var(--nl-primary)}
+.ok-native-list-account-action-row{padding-left:12px;padding-right:12px}.ok-native-list-account-action-row .ok-native-list-action-title{font-size:16px;line-height:24px;font-weight:400;font-family:var(--nl-font-regular)}.ok-native-list-account-action-row .ok-native-list-action-title[data-tone="primary"]{color:var(--nl-primary)}
 /* OneKey patch: account selector wallets and accounts keep the default cursor instead of pointer or grab affordances.
    Only the row surface is matched: cursor inherits, so plain children follow the row, while icon buttons,
    checkboxes, and action buttons keep advertising themselves with their own pointer cursor. */
@@ -955,10 +966,13 @@ function configureWebImageRetry(
   const retryLimit = Number.isFinite(source.retryTimes)
     ? Math.max(0, Math.floor(source.retryTimes ?? 0))
     : 0;
-  if (!fallbackUri && retryLimit === 0) return;
+  const orderedFallbacks = source.fallbackUris;
+  if (!fallbackUri && retryLimit === 0 && orderedFallbacks === undefined)
+    return;
   const view = image.ownerDocument.defaultView;
   let currentUri = initialUri;
   let usedFallback = false;
+  let fallbackIndex = 0;
   let retryCount = 0;
   let retryTimer: number | undefined;
   let disposed = false;
@@ -971,7 +985,25 @@ function configureWebImageRetry(
       event.stopImmediatePropagation();
       return;
     }
-    if (fallbackUri && !usedFallback && fallbackUri !== currentUri) {
+    if (orderedFallbacks !== undefined && retryCount >= retryLimit) {
+      if (fallbackIndex >= orderedFallbacks.length) return;
+      let nextUri: string | undefined;
+      while (!nextUri && fallbackIndex < orderedFallbacks.length) {
+        nextUri = safeImageUri(orderedFallbacks[fallbackIndex++]);
+      }
+      if (!nextUri) return;
+      event.stopImmediatePropagation();
+      retryCount = 0;
+      currentUri = nextUri;
+      image.src = currentUri;
+      return;
+    }
+    if (
+      orderedFallbacks === undefined &&
+      fallbackUri &&
+      !usedFallback &&
+      fallbackUri !== currentUri
+    ) {
       event.stopImmediatePropagation();
       usedFallback = true;
       currentUri = fallbackUri;
@@ -1011,6 +1043,12 @@ function configureWebAvatar(
       image.src = resolvedUri;
     },
     () => {
+      if (source.fallbackUris !== undefined) {
+        configureWebImageRetry(image, source, uri);
+        const ImageEvent = image.ownerDocument.defaultView?.Event;
+        if (ImageEvent) image.dispatchEvent(new ImageEvent('error'));
+        return;
+      }
       const fallbackUri = source.fallbackUri
         ? safeImageUri(source.fallbackUri)
         : undefined;
@@ -1143,6 +1181,23 @@ const selectorIcons: Readonly<
     }>
   >
 > = {
+  CryptoCoinOutline: {
+    viewBox: '0 0 24 24',
+    paths: [
+      {
+        d: 'M11 16.387a4.5 4.5 0 0 1 0-8.775V6h2v1.613a4.5 4.5 0 0 1 2.856 2.067l-1.712 1.032a2.5 2.5 0 1 0 0 2.576l1.712 1.032A4.5 4.5 0 0 1 13 16.386V18h-2z',
+        fill: 'currentColor',
+        fillRule: 'nonzero',
+        opacity: 1,
+      },
+      {
+        d: 'M22 12c0 5.523-4.477 10-10 10S2 17.523 2 12 6.477 2 12 2s10 4.477 10 10m-2 0a8 8 0 1 0-16 0 8 8 0 0 0 16 0',
+        fill: 'currentColor',
+        fillRule: 'evenodd',
+        opacity: 1,
+      },
+    ],
+  },
   GlobusOutline: {
     viewBox: '0 0 24 24',
     paths: [
@@ -1576,6 +1631,8 @@ function createVisual(
         if (fallbackIcon.tintColor)
           fallback.style.color = fallbackIcon.tintColor;
       }
+      fallback.style.backgroundColor =
+        'var(--nl-image-fallback-background, transparent)';
       frame.prepend(fallback);
     };
     if (image) image.addEventListener('error', showFallback, { once: true });
@@ -1612,7 +1669,7 @@ function createVisual(
       if (isWalletText) {
         corner.style.fontSize = '12px';
         corner.style.lineHeight = '16px';
-        corner.style.fontWeight = '400';
+        applyTextWeight(corner, '400');
       }
       if (
         isWalletText ||
@@ -1928,7 +1985,23 @@ export function createRowBody(
   return rowRenderer(row).create(context.document, rendererPrimitives(context));
 }
 
+export type NativeListWebScrollOptions = Readonly<{
+  scrollHost?: HTMLElement;
+  contentBounds?: HTMLElement;
+  stickyInset?: number;
+  ownsRefresh?: boolean;
+}>;
+
 export class NativeListWebEngine {
+  private readonly externalScrollHost: HTMLElement | undefined;
+  private readonly ownsRefresh: boolean;
+  private readonly pullTarget: HTMLElement;
+  private readonly contentBounds: HTMLElement | undefined;
+  private externalStickyInset: number;
+  private externalOrigin: number | undefined;
+  private externalGeometryCache:
+    | ReturnType<NativeListWebEngine['readExternalGeometry']>
+    | undefined;
   private readonly document: Document;
   private readonly root: HTMLElement;
   private readonly viewportFrame: HTMLElement;
@@ -1963,6 +2036,7 @@ export class NativeListWebEngine {
     dataRow: [],
     metricCard: [],
     market: [],
+    marketTable: [],
     identity: [],
     sectionHeader: [],
   };
@@ -2008,6 +2082,8 @@ export class NativeListWebEngine {
   private marketPointer:
     | Readonly<{
         pointerId: number;
+        pointerType: string;
+        compact: boolean;
         rowKey: string;
         startX: number;
         startY: number;
@@ -2025,13 +2101,64 @@ export class NativeListWebEngine {
     { signature: string; height: number }
   >();
 
+  private notifyScrollCommandAccepted() {
+    if (this.destroyed) return;
+    const owner = this.externalScrollHost ?? this.viewport;
+    const EventConstructor = owner.ownerDocument.defaultView?.Event;
+    if (EventConstructor)
+      owner.dispatchEvent(
+        new EventConstructor('ok-native-list-scroll-command-accepted')
+      );
+  }
+
+  private readonly handlePagerScrollCommandCancel = (event: Event) => {
+    const owner = this.externalScrollHost ?? this.viewport;
+    if (this.destroyed || event.target !== owner) return;
+    this.pendingScroll = undefined;
+    const options: ScrollToOptions = {
+      left: owner.scrollLeft,
+      top: owner.scrollTop,
+      behavior: 'instant',
+    };
+    if (this.externalScrollHost) {
+      const scrollTo: (options: ScrollToOptions) => void =
+        owner.ownerDocument.defaultView?.Element.prototype.scrollTo ??
+        owner.scrollTo;
+      scrollTo.call(owner, options);
+    } else this.viewport.scrollTo(options);
+  };
+
   constructor(
     host: HTMLElement,
     snapshot: NativeListSnapshot,
     callbacks: NativeListWebCallbacks,
     virtualizationEnabled = true,
-    sectionIndexContainer?: HTMLElement | null
+    sectionIndexContainer?: HTMLElement | null,
+    fontFamiliesJson = '{}',
+    scrollOptions: NativeListWebScrollOptions = {}
   ) {
+    if (
+      scrollOptions.scrollHost &&
+      (!(
+        scrollOptions.scrollHost instanceof
+        host.ownerDocument.defaultView!.HTMLElement
+      ) ||
+        !scrollOptions.scrollHost.contains(host))
+    )
+      throw new Error(
+        'webScrollHost must be an ancestor HTMLElement in the same document'
+      );
+    this.ownsRefresh = scrollOptions.ownsRefresh === true;
+    if (
+      scrollOptions.scrollHost &&
+      snapshot.layout.orientation === 'horizontal'
+    )
+      throw new Error('External scrolling supports vertical lists only');
+    this.externalScrollHost = scrollOptions.scrollHost;
+    this.contentBounds = scrollOptions.contentBounds;
+    this.externalStickyInset = this.validateStickyInset(
+      scrollOptions.stickyInset
+    );
     this.document = host.ownerDocument;
     this.snapshot = validateSnapshot(snapshot);
     this.callbacks = callbacks;
@@ -2041,6 +2168,7 @@ export class NativeListWebEngine {
     if (!host.style.position) host.style.position = 'relative';
 
     this.root = createElement(this.document, 'div', 'ok-native-list-root');
+    setData(this.root, 'nativeListParentScroll', !!this.externalScrollHost);
     const style = this.document.createElement('style');
     style.textContent = WEB_LIST_CSS;
     this.viewportFrame = createElement(
@@ -2053,6 +2181,10 @@ export class NativeListWebEngine {
       'div',
       'ok-native-list-viewport'
     );
+    this.pullTarget =
+      this.externalScrollHost && this.ownsRefresh
+        ? this.externalScrollHost
+        : this.viewport;
     this.viewport.setAttribute('role', 'list');
     this.content = createElement(
       this.document,
@@ -2099,21 +2231,58 @@ export class NativeListWebEngine {
     );
     this.root.append(style, this.viewportFrame, this.footer);
     host.appendChild(this.root);
+    if (this.externalScrollHost) {
+      Object.assign(this.root.style, {
+        position: 'relative',
+        inset: 'auto',
+        overflow: 'visible',
+        flex: 'none',
+      });
+      Object.assign(this.viewportFrame.style, {
+        overflow: 'visible',
+        flex: 'none',
+      });
+      Object.assign(this.viewport.style, {
+        position: 'relative',
+        inset: 'auto',
+        overflow: 'visible',
+        scrollbarGutter: 'auto',
+      });
+      this.content.style.minHeight = '0';
+      this.externalScrollHost.addEventListener(
+        'scroll',
+        this.handleExternalScroll,
+        {
+          passive: true,
+          capture: true,
+        }
+      );
+    }
 
+    (this.externalScrollHost ?? this.viewport).addEventListener(
+      'ok-collapsible-pager-cancel-scroll-command',
+      this.handlePagerScrollCommandCancel
+    );
     this.viewport.addEventListener('scroll', this.handleScroll, {
       passive: true,
     });
-    this.viewport.addEventListener(
+    (this.externalScrollHost ?? this.viewport).addEventListener(
       'ok-collapsible-pager-insets-changed',
       this.handleCollapsiblePagerInsetsChanged
     );
     this.root.addEventListener('click', this.handleClick);
+    this.root.addEventListener('contextmenu', this.handleMarketContextMenu);
     this.root.addEventListener('pointerdown', this.handleMarketPointerDown);
     this.root.addEventListener('pointermove', this.handleMarketPointerMove);
+    this.root.addEventListener('touchmove', this.handleMarketTouchMove, {
+      passive: true,
+    });
     this.root.addEventListener('pointerup', this.handleMarketPointerEnd);
     this.root.addEventListener('pointercancel', this.handleMarketPointerEnd);
     // OneKey patch: preserve web tooltip hover for section titles.
     this.root.addEventListener('pointerover', this.handleTitlePointerOver);
+    this.root.addEventListener('focusin', this.handleTitlePointerOver);
+    this.root.addEventListener('focusout', this.handleTitlePointerOut);
     this.root.addEventListener('pointerout', this.handleTitlePointerOut);
     this.root.addEventListener('keydown', this.handleKeyDown);
     this.viewport.addEventListener(
@@ -2149,14 +2318,14 @@ export class NativeListWebEngine {
       this.handleIndexPointerEnd
     );
     this.indexRail.addEventListener('click', this.handleIndexClick);
-    this.viewport.addEventListener('pointerdown', this.handlePullStart, {
+    this.pullTarget.addEventListener('pointerdown', this.handlePullStart, {
       passive: true,
     });
-    this.viewport.addEventListener('pointermove', this.handlePullMove, {
+    this.pullTarget.addEventListener('pointermove', this.handlePullMove, {
       passive: false,
     });
-    this.viewport.addEventListener('pointerup', this.handlePullEnd);
-    this.viewport.addEventListener('pointercancel', this.handlePullEnd);
+    this.pullTarget.addEventListener('pointerup', this.handlePullEnd);
+    this.pullTarget.addEventListener('pointercancel', this.handlePullEnd);
 
     const ResizeObserverConstructor = this.document.defaultView?.ResizeObserver;
     if (ResizeObserverConstructor) {
@@ -2164,14 +2333,102 @@ export class NativeListWebEngine {
         this.recomputeLayout()
       );
       this.resizeObserver.observe(this.viewport);
+      if (this.externalScrollHost) {
+        this.resizeObserver.observe(this.externalScrollHost);
+        let ancestor: HTMLElement | null = host;
+        while (ancestor && ancestor !== this.externalScrollHost) {
+          this.resizeObserver.observe(ancestor);
+          for (const sibling of ancestor.parentElement?.children ?? []) {
+            if (sibling instanceof this.document.defaultView!.HTMLElement)
+              this.resizeObserver.observe(sibling);
+          }
+          ancestor = ancestor.parentElement;
+        }
+      }
     } else {
       this.document.defaultView?.addEventListener(
         'resize',
         this.handleWindowResize
       );
     }
+    this.document.fonts?.addEventListener(
+      'loadingdone',
+      this.handleWindowResize
+    );
     this.observeSectionIndexTransforms();
+    this.applyFontFamilies(fontFamiliesJson);
     this.applySnapshot(this.snapshot);
+  }
+
+  private validateStickyInset(value = 0): number {
+    if (!Number.isFinite(value) || value < 0)
+      throw new Error('webStickyInset must be finite and non-negative');
+    return value;
+  }
+
+  setStickyInset(value = 0) {
+    const next = this.validateStickyInset(value);
+    if (next === this.externalStickyInset) return;
+    this.externalStickyInset = next;
+    this.recomputeLayout();
+  }
+
+  private externalGeometry() {
+    return (this.externalGeometryCache ??= this.readExternalGeometry());
+  }
+
+  private readExternalGeometry() {
+    const host = this.externalScrollHost!;
+    const hostRect = host.getBoundingClientRect();
+    const bodyRect = this.viewport.getBoundingClientRect();
+    const boundsRect = (
+      this.contentBounds ?? this.root
+    ).getBoundingClientRect();
+    const top = hostRect.top + host.clientTop + this.externalStickyInset;
+    const bottom = hostRect.top + host.clientTop + host.clientHeight;
+    return {
+      origin: bodyRect.top - hostRect.top - host.clientTop + host.scrollTop,
+      containerOrigin:
+        boundsRect.top - hostRect.top - host.clientTop + host.scrollTop,
+      end: boundsRect.bottom - hostRect.top - host.clientTop + host.scrollTop,
+      top,
+      bottom,
+      offset: top - bodyRect.top,
+      viewportLength: Math.max(0, bottom - top),
+      visible:
+        bodyRect.width > 0 &&
+        bodyRect.right > hostRect.left &&
+        bodyRect.left < hostRect.right &&
+        host.clientHeight > 0 &&
+        boundsRect.bottom > top &&
+        boundsRect.top < bottom,
+    };
+  }
+
+  private fontFamiliesJson = '{}';
+
+  private applyFontFamilies(json: string) {
+    const families = JSON.parse(json) as Record<string, string | undefined>;
+    const fallback = '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';
+    for (const face of ['regular', 'medium', 'semibold', 'bold']) {
+      const name = families[face];
+      const family =
+        name === undefined ? fallback : `${JSON.stringify(name)},${fallback}`;
+      for (const element of [this.root, this.indexRail, this.reorderPreview]) {
+        element.style.setProperty(`--nl-font-${face}`, family);
+      }
+    }
+    this.fontFamiliesJson = json;
+  }
+
+  setFontFamiliesJson(json: string) {
+    if (json === this.fontFamiliesJson || this.destroyed) return;
+    this.invalidateActionAnchor('layout');
+    this.cancelPointerReorder(true);
+    this.cancelKeyboardReorder();
+    this.applyFontFamilies(json);
+    this.measuredRendererHeights.clear();
+    this.recomputeLayout();
   }
 
   updateCallbacks(callbacks: NativeListWebCallbacks) {
@@ -2186,8 +2443,21 @@ export class NativeListWebEngine {
 
   applySnapshot(snapshot: NativeListSnapshot) {
     const validated = validateSnapshot(snapshot);
+    if (
+      this.externalScrollHost &&
+      validated.layout.orientation === 'horizontal'
+    )
+      throw new Error('External scrolling supports vertical lists only');
     this.invalidateActionAnchor('snapshot');
     this.setSnapshot(validated);
+  }
+
+  currentContentHeight(): number {
+    return this.layout.contentHeight;
+  }
+
+  currentSnapshot(): NativeListSnapshot {
+    return this.snapshot;
   }
 
   applyPatches(patches: readonly RowPatch[]) {
@@ -2200,7 +2470,21 @@ export class NativeListWebEngine {
       if (selected === true) selection.add(patch.key);
       else if (selected === false) selection.delete(patch.key);
     });
-    if (webMarketImageBindDeltaForPatches(patches) === 0) {
+    const tableValuesOnly = patches.every((patch) => {
+      const index = this.rows.findIndex((row) => row.key === patch.key);
+      const before = this.rows[index],
+        after = next.rows[index];
+      return (
+        patch.type === 'market' &&
+        before?.type === 'market' &&
+        after?.type === 'market' &&
+        Object.keys(patch.changes).every(
+          (key) => MARKET_QUOTE_PATCH_FIELDS.has(key) || key === 'webTable'
+        ) &&
+        canPatchMarketTableValues(before, after)
+      );
+    });
+    if (webMarketImageBindDeltaForPatches(patches) === 0 || tableValuesOnly) {
       this.snapshot = next;
       this.rows = effectiveRows(next);
       this.selectedKeys = selection;
@@ -2209,14 +2493,16 @@ export class NativeListWebEngine {
         const row = this.rows[index];
         const element = this.mounted.get(index);
         if (row?.type === 'market' && element) {
-          setMarketQuoteContent(element, row);
+          if (row.webTable) updateMarketTableValues(element, row);
+          else setMarketQuoteContent(element, row);
           element.dataset.renderSignature = webRowRenderSignature(row);
         }
         if (
           row?.type === 'market' &&
           this.sticky.dataset.nativeListRowKey === row.key
         ) {
-          setMarketQuoteContent(this.sticky, row);
+          if (row.webTable) updateMarketTableValues(this.sticky, row);
+          else setMarketQuoteContent(this.sticky, row);
           this.sticky.dataset.renderSignature = webRowRenderSignature(row);
         }
       });
@@ -2242,6 +2528,7 @@ export class NativeListWebEngine {
       this.emitScrollFailure(index, 'index-out-of-range');
       return;
     }
+    this.notifyScrollCommandAccepted();
     if (!this.canScroll()) {
       this.pendingScroll = { kind: 'index', index, scroll };
       return;
@@ -2274,22 +2561,34 @@ export class NativeListWebEngine {
 
   scrollToOffset(offset: number, animated: boolean) {
     validateOffset(offset);
+    this.notifyScrollCommandAccepted();
     if (!this.canScroll()) {
       this.pendingScroll = { kind: 'offset', offset, animated };
       return;
     }
-    this.scrollToAbsoluteOffset(offset, animated);
+    if (this.externalScrollHost) {
+      const geometry = this.externalGeometry();
+      this.writeExternalOffset(geometry.containerOrigin + offset, animated);
+    } else this.scrollToAbsoluteOffset(offset, animated);
   }
 
   scrollToEnd(animated: boolean) {
+    this.notifyScrollCommandAccepted();
     if (!this.canScroll()) {
       this.pendingScroll = { kind: 'end', animated };
       return;
     }
-    this.scrollToAbsoluteOffset(
-      Math.max(0, this.contentLength() - this.viewportLength()),
-      animated
-    );
+    if (this.externalScrollHost) {
+      const geometry = this.externalGeometry();
+      this.writeExternalOffset(
+        geometry.end - this.externalScrollHost.clientHeight,
+        animated
+      );
+    } else
+      this.scrollToAbsoluteOffset(
+        Math.max(0, this.contentLength() - this.viewportLength()),
+        animated
+      );
   }
 
   scrollToLocation(
@@ -2355,23 +2654,41 @@ export class NativeListWebEngine {
     if (this.reorderMovementTimer !== undefined)
       this.document.defaultView?.clearTimeout(this.reorderMovementTimer);
     this.resizeObserver?.disconnect();
+    this.externalScrollHost?.removeEventListener(
+      'scroll',
+      this.handleExternalScroll,
+      true
+    );
+    this.document.fonts?.removeEventListener(
+      'loadingdone',
+      this.handleWindowResize
+    );
     this.sectionIndexTransformObserver?.disconnect();
     this.document.defaultView?.removeEventListener(
       'resize',
       this.handleWindowResize
     );
+    this.pendingScroll = undefined;
+    (this.externalScrollHost ?? this.viewport).removeEventListener(
+      'ok-collapsible-pager-cancel-scroll-command',
+      this.handlePagerScrollCommandCancel
+    );
     this.viewport.removeEventListener('scroll', this.handleScroll);
-    this.viewport.removeEventListener(
+    (this.externalScrollHost ?? this.viewport).removeEventListener(
       'ok-collapsible-pager-insets-changed',
       this.handleCollapsiblePagerInsetsChanged
     );
     this.root.removeEventListener('click', this.handleClick);
+    this.root.removeEventListener('contextmenu', this.handleMarketContextMenu);
     this.cancelMarketPointer();
     this.root.removeEventListener('pointerdown', this.handleMarketPointerDown);
     this.root.removeEventListener('pointermove', this.handleMarketPointerMove);
+    this.root.removeEventListener('touchmove', this.handleMarketTouchMove);
     this.root.removeEventListener('pointerup', this.handleMarketPointerEnd);
     this.root.removeEventListener('pointercancel', this.handleMarketPointerEnd);
     this.root.removeEventListener('pointerover', this.handleTitlePointerOver);
+    this.root.removeEventListener('focusin', this.handleTitlePointerOver);
+    this.root.removeEventListener('focusout', this.handleTitlePointerOut);
     this.root.removeEventListener('pointerout', this.handleTitlePointerOut);
     this.root.removeEventListener('keydown', this.handleKeyDown);
     this.cancelPointerReorder(true);
@@ -2405,10 +2722,10 @@ export class NativeListWebEngine {
       this.handleIndexPointerEnd
     );
     this.indexRail.removeEventListener('click', this.handleIndexClick);
-    this.viewport.removeEventListener('pointerdown', this.handlePullStart);
-    this.viewport.removeEventListener('pointermove', this.handlePullMove);
-    this.viewport.removeEventListener('pointerup', this.handlePullEnd);
-    this.viewport.removeEventListener('pointercancel', this.handlePullEnd);
+    this.pullTarget.removeEventListener('pointerdown', this.handlePullStart);
+    this.pullTarget.removeEventListener('pointermove', this.handlePullMove);
+    this.pullTarget.removeEventListener('pointerup', this.handlePullEnd);
+    this.pullTarget.removeEventListener('pointercancel', this.handlePullEnd);
     const host = this.root.parentElement;
     disposeWebImageRetries(this.root);
     Object.values(this.pool).forEach((elements) =>
@@ -2454,6 +2771,8 @@ export class NativeListWebEngine {
       '--nl-pressed': theme.rowPressedBackground,
       '--nl-subdued': theme.subduedBackground,
       '--nl-strong': theme.strongBackground,
+      '--nl-image-fallback-background':
+        theme.imageFallbackBackground ?? 'transparent',
       '--nl-primary': theme.primaryText,
       '--nl-secondary': theme.secondaryText,
       '--nl-disabled': theme.disabledText,
@@ -2506,8 +2825,79 @@ export class NativeListWebEngine {
     });
   }
 
+  private computeLayout(
+    viewportWidth: number,
+    viewportHeight: number
+  ): WebListLayout {
+    const measuredSnapshot: NativeListSnapshot = {
+      ...this.snapshot,
+      rows: this.snapshot.rows.map((row) =>
+        row.style?.container?.height === undefined &&
+        row.height === undefined &&
+        this.measuredRendererHeights.get(row.key)?.signature ===
+          webRowRenderSignature(row)
+          ? {
+              ...row,
+              height: this.measuredRendererHeights.get(row.key)!.height,
+            }
+          : row
+      ),
+    };
+    let layout = computeWebListLayout(
+      measuredSnapshot,
+      viewportWidth,
+      viewportHeight,
+      this.reorderCompactKey
+    );
+    if (this.externalScrollHost) {
+      const padding = paddingValues(this.snapshot);
+      layout = {
+        ...layout,
+        contentHeight:
+          Math.max(
+            padding.top,
+            ...layout.items.map((item) => item.y + item.height)
+          ) + padding.bottom,
+      };
+    }
+    return layout;
+  }
+
+  private writeExternalHeight(height: number) {
+    const value = String(height) + 'px';
+    this.content.style.height = value;
+    this.viewport.style.height = value;
+    this.viewportFrame.style.height = value;
+    this.root.style.height = value;
+  }
+
   private recomputeLayout = () => {
     if (this.destroyed) return;
+    const cachedWidth = this.lastViewportWidth;
+    const cachedHeight = this.lastViewportHeight;
+    const precomputedLayout =
+      this.externalScrollHost && cachedWidth > 0 && cachedHeight > 0
+        ? this.computeLayout(cachedWidth, cachedHeight)
+        : undefined;
+    if (precomputedLayout) {
+      // Commit appended row extent before measuring React-owned slot changes.
+      this.writeExternalHeight(
+        Math.max(this.layout.contentHeight, precomputedLayout.contentHeight)
+      );
+    }
+    this.externalGeometryCache = undefined;
+    if (this.externalScrollHost) {
+      const geometry = this.externalGeometry();
+      const previousOrigin = this.externalOrigin;
+      this.externalOrigin = geometry.origin;
+      if (
+        previousOrigin !== undefined &&
+        geometry.origin !== previousOrigin &&
+        this.externalScrollHost.scrollTop > previousOrigin &&
+        geometry.visible
+      )
+        this.externalScrollHost.scrollTop += geometry.origin - previousOrigin;
+    }
     const viewportWidth = this.viewport.clientWidth;
     const viewportHeight =
       this.snapshot.layout.orientation === 'horizontal'
@@ -2535,28 +2925,18 @@ export class NativeListWebEngine {
     this.lastViewportWidth = viewportWidth;
     this.lastViewportHeight = viewportHeight;
     const previousHorizontal = this.layout.horizontal;
-    const measuredSnapshot: NativeListSnapshot = {
-      ...this.snapshot,
-      rows: this.snapshot.rows.map((row) =>
-        row.style?.container?.height === undefined &&
-        row.height === undefined &&
-        this.measuredRendererHeights.get(row.key)?.signature ===
-          webRowRenderSignature(row)
-          ? {
-              ...row,
-              height: this.measuredRendererHeights.get(row.key)!.height,
-            }
-          : row
-      ),
-    };
-    this.layout = computeWebListLayout(
-      measuredSnapshot,
-      viewportWidth,
-      viewportHeight,
-      this.reorderCompactKey
-    );
+    this.layout =
+      precomputedLayout &&
+      viewportWidth === cachedWidth &&
+      viewportHeight === cachedHeight
+        ? precomputedLayout
+        : this.computeLayout(viewportWidth, viewportHeight);
     this.content.style.width = String(this.layout.contentWidth) + 'px';
     this.content.style.height = String(this.layout.contentHeight) + 'px';
+    if (this.externalScrollHost) {
+      this.writeExternalHeight(this.layout.contentHeight);
+      this.externalGeometryCache = undefined;
+    }
     this.renderSectionIndex(
       this.viewport.clientHeight <= 0
         ? DEFAULT_VIEWPORT_HEIGHT
@@ -2572,6 +2952,11 @@ export class NativeListWebEngine {
   };
 
   private updateAvatarWindow() {
+    if (this.externalScrollHost && !this.externalGeometry().visible) {
+      this.avatarLeases.forEach((lease) => lease());
+      this.avatarLeases.clear();
+      return;
+    }
     const offset = this.currentOffset();
     if (offset !== this.avatarOffset)
       this.avatarDirection = Math.sign(offset - this.avatarOffset);
@@ -2628,13 +3013,16 @@ export class NativeListWebEngine {
   private renderWindow() {
     this.updateAvatarWindow();
     const viewportLength = this.viewportLength();
-    const visible = webLayoutItemsForMount(
-      this.layout,
-      this.currentOffset(),
-      viewportLength,
-      this.virtualizationEnabled,
-      viewportLength * OVERSCAN_VIEWPORTS
-    );
+    const visible =
+      this.externalScrollHost && !this.externalGeometry().visible
+        ? []
+        : webLayoutItemsForMount(
+            this.layout,
+            this.currentOffset(),
+            viewportLength,
+            this.virtualizationEnabled,
+            viewportLength * OVERSCAN_VIEWPORTS
+          );
     const desired = new Set(visible.map((item) => item.index));
     this.mounted.forEach((element, index) => {
       const nextRow = this.rows[index];
@@ -2737,6 +3125,11 @@ export class NativeListWebEngine {
       ? 'ok-native-list-item ok-native-list-sticky'
       : 'ok-native-list-item';
     setData(element, 'nativeListRowKey', row.key);
+    setData(
+      element,
+      'nativeListMediaGallery',
+      row.type === 'mediaTile' && row.variant === 'gallery' ? 'true' : undefined
+    );
     setData(element, 'nativeListBindingEpoch', bindingEpoch);
     setData(element, 'nativeListRowIndex', index);
     setData(element, 'nativeListDisabled', Boolean(row.disabled));
@@ -3161,11 +3554,14 @@ export class NativeListWebEngine {
   }
 
   private updateVisibleState() {
-    const visible = visibleWebLayoutItems(
-      this.layout,
-      this.currentOffset(),
-      this.viewportLength()
-    );
+    const visible =
+      this.externalScrollHost && !this.externalGeometry().visible
+        ? []
+        : visibleWebLayoutItems(
+            this.layout,
+            this.currentOffset(),
+            this.viewportLength()
+          );
     const first = visible[0];
     const last = visible.at(-1);
     const signature =
@@ -3235,6 +3631,8 @@ export class NativeListWebEngine {
     this.sticky.style.right = 'auto';
     this.sticky.style.width = String(item.width) + 'px';
     this.sticky.style.height = String(item.height) + 'px';
+    if (this.externalScrollHost)
+      this.sticky.style.top = String(Math.max(0, this.currentOffset())) + 'px';
     let nextIndex = -1;
     for (let cursor = index + 1; cursor < this.rows.length; cursor += 1) {
       const candidate = this.rows[cursor];
@@ -3273,6 +3671,7 @@ export class NativeListWebEngine {
 
   private checkEndReached(lastVisibleIndex: number) {
     if (
+      (this.externalScrollHost && !this.externalGeometry().visible) ||
       !this.snapshot.capabilities?.loadMore ||
       this.reachedGeneration === this.snapshot.generation ||
       this.rows.length === 0
@@ -3311,6 +3710,11 @@ export class NativeListWebEngine {
   }
 
   private canScroll(): boolean {
+    if (this.externalScrollHost)
+      return (
+        this.viewport.clientWidth > 0 &&
+        this.externalScrollHost.clientHeight > 0
+      );
     const viewportLength = this.layout.horizontal
       ? this.viewport.clientWidth
       : this.viewport.clientHeight;
@@ -3321,11 +3725,19 @@ export class NativeListWebEngine {
     if (this.layout.horizontal) {
       return this.viewport.clientWidth || DEFAULT_VIEWPORT_WIDTH;
     }
+    if (this.externalScrollHost) return this.externalGeometry().viewportLength;
     if (this.viewport.clientHeight <= 0) return DEFAULT_VIEWPORT_HEIGHT;
     return Math.max(1, this.verticalScrollMetrics().viewportLength);
   }
 
   private contentLength(): number {
+    if (this.externalScrollHost) {
+      const geometry = this.externalGeometry();
+      return Math.max(
+        this.layout.contentHeight,
+        geometry.end - geometry.origin
+      );
+    }
     return this.layout.horizontal
       ? this.layout.contentWidth
       : this.layout.contentHeight;
@@ -3341,6 +3753,8 @@ export class NativeListWebEngine {
     header: number;
     sticky: number;
   }> {
+    if (this.externalScrollHost)
+      return { header: 0, sticky: this.externalStickyInset };
     const readInset = (name: string) => {
       const parsed = Number.parseFloat(
         this.viewport.style.getPropertyValue(name)
@@ -3354,6 +3768,7 @@ export class NativeListWebEngine {
   }
 
   private verticalScrollMetrics(): WebCollapsiblePagerScrollMetrics {
+    if (this.externalScrollHost) return this.externalGeometry();
     const insets = this.collapsiblePagerInsets();
     return resolveWebCollapsiblePagerScrollMetrics(
       this.viewport.scrollTop,
@@ -3367,7 +3782,31 @@ export class NativeListWebEngine {
     this.recomputeLayout();
   };
 
+  private writeExternalOffset(rawOffset: number, animated: boolean) {
+    this.externalGeometryCache = undefined;
+    const host = this.externalScrollHost!;
+    const scrollTo: (options: ScrollToOptions) => void =
+      host.ownerDocument.defaultView?.Element.prototype.scrollTo ??
+      host.scrollTo;
+    scrollTo.call(host, {
+      top: Math.max(
+        0,
+        Math.min(host.scrollHeight - host.clientHeight, rawOffset)
+      ),
+      behavior: animated ? 'smooth' : 'auto',
+    });
+    this.scheduleFrame();
+  }
+
   private scrollToAbsoluteOffset(offset: number, animated: boolean) {
+    if (this.externalScrollHost) {
+      const geometry = this.externalGeometry();
+      this.writeExternalOffset(
+        geometry.origin + offset - this.externalStickyInset,
+        animated
+      );
+      return;
+    }
     const resolved = Math.min(
       Math.max(0, offset),
       Math.max(0, this.contentLength() - this.viewportLength())
@@ -3447,7 +3886,8 @@ export class NativeListWebEngine {
     row: RowModel,
     actionKey: string,
     actionElement?: HTMLElement,
-    rowElement?: HTMLElement
+    rowElement?: HTMLElement,
+    windowPoint?: RowActionEvent['windowPoint']
   ) {
     const anchor =
       actionElement && rowElement
@@ -3458,6 +3898,11 @@ export class NativeListWebEngine {
       actionKey,
       sectionKey: row.sectionKey,
       anchor,
+      ...(windowPoint &&
+      Number.isFinite(windowPoint.x) &&
+      Number.isFinite(windowPoint.y)
+        ? { windowPoint }
+        : {}),
     });
   }
 
@@ -3594,6 +4039,38 @@ export class NativeListWebEngine {
     this.marketPointer = undefined;
   }
 
+  private handleMarketContextMenu = (event: MouseEvent) => {
+    if (
+      !(event.target instanceof Element) ||
+      event.target.closest('[data-native-list-action]')
+    )
+      return;
+    const element = event.target.closest<HTMLElement>(
+      '[data-native-list-row-key]'
+    );
+    const row = this.rowAtElement(element);
+    if (
+      row?.type !== 'market' ||
+      !row.webTable?.contextMenuActionKey ||
+      !element ||
+      !isRowPressEnabled(row)
+    )
+      return;
+    event.preventDefault();
+    this.cancelMarketPointer();
+    markActionAnchorSource(element, 'row');
+    const rect = element.getBoundingClientRect();
+    this.emitRowAction(
+      row,
+      row.webTable.contextMenuActionKey,
+      element,
+      element,
+      event.clientX || event.clientY
+        ? { x: event.clientX, y: event.clientY }
+        : { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+    );
+  };
+
   private handleMarketPointerDown = (event: PointerEvent) => {
     if (event.button !== 0 || !(event.target instanceof Element)) return;
     this.marketLongPressFired = false;
@@ -3613,16 +4090,35 @@ export class NativeListWebEngine {
       );
     if (!row.longPressActionKey || !rowElement) return;
     markActionAnchorSource(rowElement, 'row');
+    const bindingEpoch = rowElement.dataset.nativeListBindingEpoch;
     const timer = this.document.defaultView?.setTimeout(() => {
       const current = this.marketPointer;
       if (!current || current.pointerId !== event.pointerId) return;
+      const currentRow = this.rowAtElement(rowElement);
       this.marketPointer = undefined;
+      if (
+        !rowElement.isConnected ||
+        rowElement.dataset.nativeListBindingEpoch !== bindingEpoch ||
+        currentRow?.key !== row.key ||
+        currentRow.type !== 'market' ||
+        !isRowPressEnabled(currentRow) ||
+        !currentRow.longPressActionKey
+      )
+        return;
       this.marketLongPressFired = true;
-      this.emitRowAction(row, row.longPressActionKey!, rowElement, rowElement);
+      this.emitRowAction(
+        currentRow,
+        currentRow.longPressActionKey,
+        rowElement,
+        rowElement,
+        { x: event.clientX, y: event.clientY }
+      );
     }, MARKET_LONG_PRESS_MS);
     if (timer === undefined) return;
     this.marketPointer = {
       pointerId: event.pointerId,
+      pointerType: event.pointerType,
+      compact: !row.webTable,
       rowKey: row.key,
       startX: event.clientX,
       startY: event.clientY,
@@ -3633,9 +4129,41 @@ export class NativeListWebEngine {
   private handleMarketPointerMove = (event: PointerEvent) => {
     const state = this.marketPointer;
     if (!state || state.pointerId !== event.pointerId) return;
+    if (state.compact && state.pointerType === 'touch') return;
+    const row = this.rows.find((item) => item.key === state.rowKey);
+    const threshold =
+      row?.type === 'market' && !row.webTable ? 3 : MARKET_MOVE_CANCEL_PX;
     if (
-      Math.abs(event.clientX - state.startX) > MARKET_MOVE_CANCEL_PX ||
-      Math.abs(event.clientY - state.startY) > MARKET_MOVE_CANCEL_PX
+      Math.abs(event.clientX - state.startX) > threshold ||
+      Math.abs(event.clientY - state.startY) > threshold
+    )
+      this.cancelMarketPointer();
+  };
+
+  private handleMarketTouchMove = (event: TouchEvent) => {
+    const state = this.marketPointer;
+    if (
+      !state?.compact ||
+      state.pointerType !== 'touch' ||
+      !(event.target instanceof Element) ||
+      event.target.closest<HTMLElement>('[data-native-list-row-key]')?.dataset
+        .nativeListRowKey !== state.rowKey
+    )
+      return;
+    if (event.touches.length > 1) {
+      this.cancelMarketPointer();
+      return;
+    }
+    const touch = event.touches[0] ?? event.changedTouches[0];
+    if (
+      !touch ||
+      !Number.isFinite(touch.clientX) ||
+      !Number.isFinite(touch.clientY)
+    )
+      return;
+    if (
+      Math.abs(touch.clientX - state.startX) > 3 ||
+      Math.abs(touch.clientY - state.startY) > 3
     )
       this.cancelMarketPointer();
   };
@@ -3646,7 +4174,7 @@ export class NativeListWebEngine {
   };
 
   // OneKey patch: hover opens the same anchored help action as native taps.
-  private handleTitlePointerOver = (event: PointerEvent) => {
+  private handleTitlePointerOver = (event: PointerEvent | FocusEvent) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
     const action = target.closest<HTMLElement>(
@@ -3656,6 +4184,11 @@ export class NativeListWebEngine {
       !action ||
       (event.relatedTarget instanceof Node &&
         action.contains(event.relatedTarget))
+    )
+      return;
+    if (
+      action.classList.contains('ok-native-list-market-subtitle-prefix') &&
+      action.scrollWidth <= action.clientWidth + 1
     )
       return;
     const rowElement = action.closest<HTMLElement>(
@@ -3681,7 +4214,7 @@ export class NativeListWebEngine {
       this.emitRowAction(sourceRow, actionKey, action, rowElement ?? undefined);
   };
 
-  private handleTitlePointerOut = (event: PointerEvent) => {
+  private handleTitlePointerOut = (event: PointerEvent | FocusEvent) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
     const action = target.closest<HTMLElement>(
@@ -3874,7 +4407,20 @@ export class NativeListWebEngine {
       ?.focus({ preventScroll: true });
   }
 
+  private handleExternalScroll = (event: Event) => {
+    const target = event.target;
+    if (
+      target === this.externalScrollHost ||
+      (target instanceof Element &&
+        target !== this.root &&
+        this.externalScrollHost?.contains(target) &&
+        target.contains(this.root))
+    )
+      this.handleScroll();
+  };
+
   private handleScroll = () => {
+    this.externalGeometryCache = undefined;
     this.cancelMarketPointer();
     this.invalidateActionAnchor('scroll');
     this.scheduleFrame();
@@ -3890,6 +4436,9 @@ export class NativeListWebEngine {
     if (this.frameHandle !== undefined || this.destroyed) return;
     this.frameHandle = this.requestFrame(() => {
       this.frameHandle = undefined;
+      this.externalGeometryCache = undefined;
+      if (this.externalScrollHost)
+        this.externalOrigin = this.externalGeometry().origin;
       if (this.virtualizationEnabled) this.renderWindow();
       else {
         this.updateAvatarWindow();
@@ -3990,7 +4539,8 @@ export class NativeListWebEngine {
     if (
       this.pointerReorder?.pointerId === event.pointerId ||
       !this.snapshot.capabilities?.pullToRefresh ||
-      this.viewport.scrollTop > 0 ||
+      (!!this.externalScrollHost && !this.ownsRefresh) ||
+      this.pullTarget.scrollTop > 0 ||
       (event.pointerType !== 'touch' && event.pointerType !== 'pen')
     )
       return;
@@ -4089,6 +4639,7 @@ export class NativeListWebEngine {
     if (this.pointerReorder !== state) return;
     this.clearReorderLongPress(state);
     state.active = true;
+    this.cancelMarketPointer();
     state.activatedAt = Date.now();
     state.viewportRect = this.reorderViewportRect();
     this.captureReorderPointer(state);
@@ -4187,6 +4738,10 @@ export class NativeListWebEngine {
   };
 
   private setCurrentOffset(offset: number) {
+    if (this.externalScrollHost) {
+      this.scrollToAbsoluteOffset(offset, false);
+      return;
+    }
     const maximum = Math.max(0, this.contentLength() - this.viewportLength());
     const next = Math.max(0, Math.min(maximum, offset));
     if (this.layout.horizontal) this.viewport.scrollLeft = next;
@@ -4279,12 +4834,13 @@ export class NativeListWebEngine {
     const insets = this.collapsiblePagerInsets();
     const left =
       viewportRect.left + destinationLayout.x - this.viewport.scrollLeft;
-    const top =
-      viewportRect.top +
-      destinationLayout.y +
-      insets.header +
-      insets.sticky -
-      this.viewport.scrollTop;
+    const top = this.externalScrollHost
+      ? viewportRect.top + destinationLayout.y
+      : viewportRect.top +
+        destinationLayout.y +
+        insets.header +
+        insets.sticky -
+        this.viewport.scrollTop;
     this.reorderPreview.getBoundingClientRect();
     this.reorderPreview.style.transition =
       'transform ' +
@@ -4356,6 +4912,18 @@ export class NativeListWebEngine {
   }
 
   private reorderViewportRect() {
+    if (this.externalScrollHost) {
+      const geometry = this.externalGeometry();
+      const body = this.viewport.getBoundingClientRect();
+      return {
+        left: body.left,
+        right: body.right,
+        width: body.width,
+        top: geometry.top,
+        bottom: geometry.bottom,
+        height: geometry.viewportLength,
+      };
+    }
     const { left, top, right, bottom, width, height } =
       this.viewport.getBoundingClientRect();
     return { left, top, right, bottom, width, height };

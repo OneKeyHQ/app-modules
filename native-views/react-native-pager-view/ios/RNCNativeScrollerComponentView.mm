@@ -36,6 +36,12 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
   RNCNativeScrollerShadowNode::ConcreteState::Shared _state;
   RNCNativeVerticalScrollView *_scrollView;
   UIView<RCTComponentViewProtocol> *_reactContent;
+  __weak UIView *_topOverlay;
+  CGFloat _appliedOverlayInset;
+  UIScrollEdgeElementContainerInteraction *_topEdgeInteraction;
+  __weak UIView *_topEdgeInteractionHost;
+  UILabel *_topEdgeMarker;
+  UIScrollEdgeEffectStyle *_originalTopEdgeStyle;
   UIRefreshControl *_refreshControl;
   UIEdgeInsets _callerInset;
   BOOL _dragActive;
@@ -189,9 +195,91 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
   }
   BOOL refreshEnded = previous.refreshing && !next.refreshing;
   [super updateProps:props oldProps:oldProps];
+  [self updateTopScrollEdge];
+  if ((next.topScrollEdgeEffect != RNCNativeScrollerTopScrollEdgeEffect::None) && _topOverlay == nil) {
+    __weak __typeof__(self) weakSelf = self;
+    dispatch_async(dispatch_get_main_queue(), ^{ [weakSelf updateTopScrollEdge]; });
+  }
   if (refreshEnded) [self scheduleContentClamp];
   [self updateFabricContentOrigin];
   [self emitContentViewportChangeIfNeeded];
+}
+
+- (void)updateTopScrollEdge
+{
+  if (@available(iOS 26.0, *)) {
+    const auto &props = *std::static_pointer_cast<const RNCNativeScrollerProps>(_props);
+    UIView *overlay = nil;
+    if ((props.topScrollEdgeEffect != RNCNativeScrollerTopScrollEdgeEffect::None) && !_recycled) {
+      NSUInteger fabricSiblings = 0;
+      for (UIView *candidate in self.superview.subviews) {
+        if (![candidate conformsToProtocol:@protocol(RCTComponentViewProtocol)]) continue;
+        fabricSiblings++;
+        if (candidate != self) overlay = candidate;
+      }
+      if (fabricSiblings != 2) overlay = nil;
+    }
+    _topOverlay = overlay;
+    CGFloat requestedOverlayInset = (props.topScrollEdgeEffect != RNCNativeScrollerTopScrollEdgeEffect::None) && !_recycled && overlay != nil &&
+      isfinite(props.topOverlayHeight) ? MAX(0, props.topOverlayHeight) : 0;
+    if (_appliedOverlayInset != requestedOverlayInset) {
+      // Keep UIKit's refresh rebound animation in control while it is overscrolled.
+      BOOL wasReturningFromPull = _scrollView.contentOffset.y < -_scrollView.adjustedContentInset.top - 0.5;
+      CGFloat logicalOffset = _scrollView.contentOffset.y + _scrollView.contentInset.top;
+      UIEdgeInsets current = _scrollView.contentInset;
+      current.top += requestedOverlayInset - _appliedOverlayInset;
+      _scrollView.contentInset = current;
+      _appliedOverlayInset = requestedOverlayInset;
+      if (!wasReturningFromPull) {
+        [_scrollView setContentOffset:CGPointMake(_scrollView.contentOffset.x,
+          logicalOffset - current.top) animated:NO];
+      }
+      [self emitContentViewportChangeIfNeeded];
+    }
+    BOOL enabled = (props.topScrollEdgeEffect != RNCNativeScrollerTopScrollEdgeEffect::None) && !_recycled && overlay != nil && self.window != nil;
+    if (!enabled || _topEdgeInteractionHost != overlay) {
+      if (_topEdgeInteraction != nil) {
+        [_topEdgeInteractionHost removeInteraction:_topEdgeInteraction];
+        _topEdgeInteraction.scrollView = nil;
+        _topEdgeInteraction = nil;
+        _topEdgeInteractionHost = nil;
+      }
+      [_topEdgeMarker removeFromSuperview];
+      _topEdgeMarker = nil;
+      if (_originalTopEdgeStyle != nil) {
+        _scrollView.topEdgeEffect.style = _originalTopEdgeStyle;
+        _originalTopEdgeStyle = nil;
+      }
+      if (!enabled) return;
+    }
+    if (_topEdgeInteraction == nil) {
+      _originalTopEdgeStyle = _scrollView.topEdgeEffect.style;
+      // UIKit needs a native element to shape the edge effect around React-drawn content.
+      _topEdgeMarker = [UILabel new];
+      _topEdgeMarker.frame = overlay.bounds;
+      _topEdgeMarker.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+      _topEdgeMarker.text = @" ";
+      _topEdgeMarker.textColor = UIColor.clearColor;
+      _topEdgeMarker.backgroundColor = UIColor.clearColor;
+      _topEdgeMarker.userInteractionEnabled = NO;
+      _topEdgeMarker.isAccessibilityElement = NO;
+      _topEdgeMarker.accessibilityElementsHidden = YES;
+      [overlay addSubview:_topEdgeMarker];
+      _topEdgeInteraction = [UIScrollEdgeElementContainerInteraction new];
+      _topEdgeInteraction.edge = UIRectEdgeTop;
+      _topEdgeInteraction.scrollView = _scrollView;
+      [overlay addInteraction:_topEdgeInteraction];
+      _topEdgeInteractionHost = overlay;
+    }
+    _scrollView.topEdgeEffect.style = props.topScrollEdgeEffect == RNCNativeScrollerTopScrollEdgeEffect::Soft
+      ? UIScrollEdgeEffectStyle.softStyle : UIScrollEdgeEffectStyle.hardStyle;
+  }
+}
+
+- (void)didMoveToSuperview
+{
+  [super didMoveToSuperview];
+  [self updateTopScrollEdge];
 }
 
 - (void)updateLayoutMetrics:(const LayoutMetrics &)layoutMetrics
@@ -211,7 +299,8 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
 {
   CGFloat stickyHeight = 0;
   for (NSNumber *height in _pagerStickyHeights.objectEnumerator) stickyHeight += height.doubleValue;
-  return MAX(0, _scrollView.bounds.size.height - _callerInset.top - _callerInset.bottom - stickyHeight);
+  return MAX(0, _scrollView.bounds.size.height - _callerInset.top - _callerInset.bottom
+    - _appliedOverlayInset - stickyHeight);
 }
 
 - (void)setPagerStickyHeight:(CGFloat)height forOwner:(id)owner
@@ -313,6 +402,8 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
 {
   if (!_momentumActive) return;
   _momentumActive = NO;
+  [[NSNotificationCenter defaultCenter] postNotificationName:@"OneKeyNativeListScrollCommandAccepted"
+    object:_scrollView userInfo:@{@"phase": @2}];
   [self emitScrollEvent:4 velocity:CGPointZero target:_scrollView.contentOffset];
 }
 
@@ -394,6 +485,11 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
 - (void)scrollTo:(double)x y:(double)y animated:(BOOL)animated
 {
   if (_recycled || !isfinite(x) || !isfinite(y)) return;
+  for (UIView *owner = self.superview; owner != nil; owner = owner.superview) {
+    if ([owner conformsToProtocol:@protocol(RNCNativeScrollerInsetCoordinator)]) {
+      [(id<RNCNativeScrollerInsetCoordinator>)owner nativeScrollerWillReceiveScrollCommand:self];
+    }
+  }
   [self stopScrolling];
   UIEdgeInsets inset = _scrollView.adjustedContentInset;
   CGPoint target = CGPointMake(MAX(-inset.left, MIN(x,
@@ -401,11 +497,15 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
     MAX(-inset.top, MIN(y,
     MAX(-inset.top, _scrollView.contentSize.height - _scrollView.bounds.size.height + inset.bottom))));
   if (CGPointEqualToPoint(target, _scrollView.contentOffset)) return;
+  [[NSNotificationCenter defaultCenter] postNotificationName:@"OneKeyNativeListScrollCommandAccepted"
+    object:_scrollView userInfo:@{@"phase": @1}];
   if (animated) {
     _momentumActive = YES;
     [self emitScrollEvent:3 velocity:CGPointZero target:target];
   }
   [_scrollView setContentOffset:target animated:animated];
+  if (!animated) [[NSNotificationCenter defaultCenter] postNotificationName:@"OneKeyNativeListScrollCommandAccepted"
+    object:_scrollView userInfo:@{@"phase": @2}];
 }
 
 - (void)scrollToEnd:(BOOL)animated
@@ -441,6 +541,7 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
 - (void)didMoveToWindow
 {
   [super didMoveToWindow];
+  [self updateTopScrollEdge];
   if (self.window == nil) {
     [self stopScrolling];
     [_pagerStickyHeights removeAllObjects];
@@ -456,6 +557,9 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
 {
   [self stopScrolling];
   _recycled = YES;
+  [self updateTopScrollEdge];
+  _topOverlay = nil;
+  _appliedOverlayInset = 0;
   _scrollView.delegate = nil;
   ++_generation;
   _state.reset();

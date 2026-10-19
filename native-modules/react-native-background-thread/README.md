@@ -49,6 +49,19 @@ platforms. Bundle switches must restart both runtimes so their module tables
 remain consistent. These differences and restart validation are documented in
 [src/NativeBackgroundThread.ts](src/NativeBackgroundThread.ts).
 
+## Shared bridge readiness
+
+SharedStore is a process bridge, not a JavaScript object shared between heaps.
+`get(key)` may return `undefined`; distinguish that from stored `false`, zero
+or an empty string. `keys()` returns strings and `size` is a read-only property.
+The exported `ISharedStore` and `ISharedRPC` types describe those surfaces.
+
+SharedRPC delivers the call ID and payload together through `onWrite`.
+There is no `read`, `has` or pending-count API on that RPC object.
+`registerReadinessKey(key)` identifies the SharedStore key native teardown should
+clear for the calling runtime. Register and publish readiness in each runtime;
+a UI runtime's initialization does not establish background-runtime readiness.
+
 ## License
 
 MIT.
