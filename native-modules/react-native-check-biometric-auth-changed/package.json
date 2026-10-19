@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-check-biometric-auth-changed",
-  "version": "6.7.0-6",
+  "version": "6.7.0-7",
   "description": "Detect stored biometric authentication state changes on iOS",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
