@@ -71,6 +71,13 @@ export type ScrollToIndexFailedInfo = Readonly<{
     | 'item-not-found';
 }>;
 
+/** Minimal DOM-free structural surface for an explicit Web scroll element. */
+export type NativeListWebScrollHost = Readonly<{
+  clientWidth: number;
+  clientHeight: number;
+  scrollTop: number;
+}>;
+
 type InitialScrollProps =
   | Readonly<{
       initialScrollIndex?: never;
@@ -120,7 +127,7 @@ export type NativeListRef = Readonly<{
 export type NativeListProps = Omit<ViewProps, 'children'> &
   Readonly<{
     snapshot: NativeListSnapshot;
-    /** Native-only, container-owned scroll content. Never rendered as a data row. */
+    /** Container-owned scroll content. Never rendered as a data row. */
     listHeader?: ReactNode;
     listFooter?: ReactNode;
     listEmpty?: ReactNode;
@@ -130,6 +137,10 @@ export type NativeListProps = Omit<ViewProps, 'children'> &
     topScrollEdgeEffect?: `${ScrollEdgeEffect}`;
     /** Web only. Defaults to true and is ignored by the native host. */
     webVirtualizationEnabled?: boolean;
+    /** Web only: undefined owns scrolling, null waits for a host element. */
+    webScrollHost?: NativeListWebScrollHost | null;
+    /** Web only: visible sticky chrome above the parent's list viewport. */
+    webStickyInset?: number;
     /** Web only. Hosts the section index inside this container. */
     webSectionIndexContainerRef?: RefObject<View | null>;
     /** Defaults to `none`. `interactive` behaves as `none` on Android. */

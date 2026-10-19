@@ -198,8 +198,18 @@ function createMarketRow(
             ? 'none'
             : style?.image?.contentFit ?? image.style.objectFit;
       } else {
-        image.style.width = '20px';
-        image.style.height = '20px';
+        image.style.width =
+          String(
+            row.leading.kind === 'token'
+              ? row.leading.networkImage?.width ?? 16
+              : 16
+          ) + 'px';
+        image.style.height =
+          String(
+            row.leading.kind === 'token'
+              ? row.leading.networkImage?.height ?? 16
+              : 16
+          ) + 'px';
         if (borderColor) {
           image.style.right = '-5px';
           image.style.bottom = '-5px';
@@ -314,8 +324,14 @@ function createMarketRow(
         weight: 400,
         alignment: 'start',
       });
+      if (row.subtitlePrefix.hoverActionKey) {
+        prefix.dataset.nativeListHoverAction =
+          row.subtitlePrefix.hoverActionKey;
+        prefix.dataset.nativeListAnchorSource = 'row';
+        prefix.tabIndex = 0;
+      }
       prefix.style.display = 'block';
-      prefix.style.flex = '1 1 auto';
+      prefix.style.flex = '0 1 auto';
       prefix.style.minWidth = '0';
       prefix.style.overflow = 'hidden';
       prefix.style.textOverflow = 'ellipsis';
