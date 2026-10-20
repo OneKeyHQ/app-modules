@@ -747,6 +747,11 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
         if (floatingTouchView !== view) {
           return true
         }
+        val deltaX = event.rawX - floatingTouchStartRawX
+        val deltaY = event.rawY - floatingTouchStartRawY
+        if (deltaX * deltaX + deltaY * deltaY > floatingTouchSlop * floatingTouchSlop) {
+          floatingDragging = true
+        }
         if (floatingDragging) {
           updateFloatingDrag(event.rawX, event.eventTime)
         }

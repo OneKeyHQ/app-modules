@@ -66,6 +66,9 @@ Floating interaction (single finger; motion splitting is disabled):
    becomes the candidate, is magnified, and ticks haptically when it changes.
    No page change or event happens during the drag.
 3. Release without drag performs the tab's click (selection or reselection).
+   Release displacement is also checked against touch slop, including when no
+   MOVE was delivered or the last MOVE remained within slop. If release crosses
+   slop, it starts a drag and updates the candidate from the release position.
    Release after a drag selects the candidate once, only if it differs from the
    current tab. Cancel selects nothing.
 4. The lens then settles back into the pill on the selected tab, which stays on
