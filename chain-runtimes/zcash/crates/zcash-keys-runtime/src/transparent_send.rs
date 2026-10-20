@@ -408,10 +408,11 @@ fn plan_transaction(request: TransparentTxRequest) -> Result<TransactionPlan> {
         }
         let change_path =
             parse_derivation_path(&change_request.derivation_path, request.account_index)?;
-        if change_path.scope != 1 {
+        // Reuse the default receive address, while accepting legacy internal change.
+        if change_path.scope == 0 && change_path.index != 0 {
             return Err(KeysError::with(
                 ErrorCode::InvalidDerivationPath,
-                serde_json::json!({ "field": "change.derivationPath", "reason": "internalScopeRequired" }),
+                serde_json::json!({ "field": "change.derivationPath", "reason": "defaultReceiveAddressRequired" }),
             ));
         }
         // The change index must be within the signer's scan range
@@ -1048,6 +1049,99 @@ mod tests {
                 .unwrap();
         assert_eq!(built.fee_zat, "15000");
         assert_eq!(built.spent_outpoints, quote.spent_outpoints);
+    }
+
+    #[test]
+    fn receive_address_and_legacy_internal_change_can_both_be_spent() {
+        for scope in [0, 1] {
+            let (change, script) = address_and_script(&seed(), 0, scope, 0);
+            let mut request: serde_json::Value =
+                serde_json::from_str(&request_json(&[100_000], false)).unwrap();
+            request["change"] = serde_json::json!({
+                "address": change,
+                "derivationPath": format!("m/44'/133'/0'/{scope}/0"),
+            });
+            let quote: TransparentQuote =
+                serde_json::from_str(&quote_json(&request.to_string()).unwrap()).unwrap();
+            assert_eq!(quote.send_amount_zat, "50000");
+            assert_eq!(quote.change_zat, "40000");
+            assert_eq!(quote.fee_zat, "10000");
+            let built: TransparentBuildResult = serde_json::from_str(
+                &build_with_account_xprv_json(&request.to_string(), &xprv()).unwrap(),
+            )
+            .unwrap();
+            let tx = zcash_primitives::transaction::Transaction::read(
+                hex::decode(&built.raw_tx).unwrap().as_slice(),
+                BranchId::Nu6_3,
+            )
+            .unwrap();
+            let outputs = &tx.transparent_bundle().unwrap().vout;
+            assert_eq!(outputs.len(), 2);
+            assert_eq!(u64::from(outputs[1].value()), 40_000);
+            assert_eq!(hex::encode(outputs[1].script_pubkey().0.to_bytes()), script);
+
+            let mut spend: serde_json::Value =
+                serde_json::from_str(&request_json(&[40_000], true)).unwrap();
+            spend["utxos"][0]["txid"] = built.txid.clone().into();
+            spend["utxos"][0]["vout"] = 1.into();
+            spend["utxos"][0]["scriptPubKey"] = script.into();
+            spend["utxos"][0]["derivationPath"] = format!("m/44'/133'/0'/{scope}/0").into();
+            spend["selectedOutpoints"][0] = serde_json::json!({ "txid": built.txid, "vout": 1 });
+            let spent: TransparentBuildResult = serde_json::from_str(
+                &build_with_account_xprv_json(&spend.to_string(), &xprv()).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(spent.fee_zat, "10000");
+        }
+    }
+
+    #[test]
+    fn self_payment_and_change_keep_separate_amounts_at_the_receive_address() {
+        let (address, script) = address_and_script(&seed(), 0, 0, 0);
+        let mut request: serde_json::Value =
+            serde_json::from_str(&request_json(&[100_000], false)).unwrap();
+        request["recipients"][0]["address"] = address.clone().into();
+        request["change"] = serde_json::json!({
+            "address": address,
+            "derivationPath": "m/44'/133'/0'/0/0",
+        });
+        let built: TransparentBuildResult = serde_json::from_str(
+            &build_with_account_xprv_json(&request.to_string(), &xprv()).unwrap(),
+        )
+        .unwrap();
+        let tx = zcash_primitives::transaction::Transaction::read(
+            hex::decode(&built.raw_tx).unwrap().as_slice(),
+            BranchId::Nu6_3,
+        )
+        .unwrap();
+        let outputs = &tx.transparent_bundle().unwrap().vout;
+        assert_eq!(outputs.len(), 2);
+        assert_eq!(u64::from(outputs[0].value()), 50_000);
+        assert_eq!(u64::from(outputs[1].value()), 40_000);
+        assert!(outputs
+            .iter()
+            .all(|output| hex::encode(output.script_pubkey().0.to_bytes()) == script));
+    }
+
+    #[test]
+    fn receive_address_change_preserves_path_and_ownership_checks() {
+        let mut request: serde_json::Value =
+            serde_json::from_str(&request_json(&[100_000], false)).unwrap();
+        for path in ["m/44'/133'/0'/0/1", "m/44'/133'/1'/0/0"] {
+            request["change"]["derivationPath"] = path.into();
+            assert_eq!(
+                quote_json(&request.to_string()).unwrap_err().code,
+                ErrorCode::InvalidDerivationPath
+            );
+        }
+        request["change"]["derivationPath"] = "m/44'/133'/0'/0/0".into();
+        // The existing internal address is not the declared receive address.
+        assert_eq!(
+            build_with_account_xprv_json(&request.to_string(), &xprv())
+                .unwrap_err()
+                .code,
+            ErrorCode::KeyMismatch
+        );
     }
 
     /// Sub-dust change is added to the fee instead of failing.
