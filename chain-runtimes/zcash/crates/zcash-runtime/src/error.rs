@@ -114,8 +114,8 @@ pub enum ErrorCode {
     /// The node returned an error that does not prove the transaction can never be
     /// mined: it may already be mined or in the mempool (double spend, duplicate
     /// nullifier, missing inputs), or the node may be temporarily refusing (busy,
-    /// mempool full, lagging). The transaction stays pending and is rebroadcast
-    /// during sync; scanning resolves it as mined or expired. Hosts must not treat
+    /// mempool full, lagging). The transaction stays pending and the host does not
+    /// resubmit it; scanning resolves it as mined or expired. Hosts must not treat
     /// this as a failed send. Params: `{ errorCode }`; `detail` holds the node's message.
     BroadcastOutcomeUnknown,
     /// The transaction may be in the in-memory wallet but persistence is unconfirmed.

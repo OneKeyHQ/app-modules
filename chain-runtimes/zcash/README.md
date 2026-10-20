@@ -85,7 +85,7 @@ pcztProve(pczt)
 pcztCombine(original, signed)            merge an external signer's copy (signatures only)
 pcztSubmit(uuid, pczt)                   → { txid, broadcast }
 pendingBroadcastTxids(uuid)              stored, unmined, unexpired, not rejected
-broadcastTransaction(txid)               rebroadcast a stored transaction
+broadcastTransaction(txid)               resend a stored transaction; explicit user request only
 
 prewarmPczt(network, height)             build proving parameters; no wallet
 pcztProveAtHeight(height, pczt)          prove without a wallet
@@ -132,14 +132,15 @@ Prove before signing: the upstream Signer must be able to verify what the proofs
 cover. Building locks no notes: the signed transaction is stored before broadcast
 and from then on holds its notes until mined or expired. Storing is refused when
 another stored, unexpired transaction already spends one of the same notes (two
-reviews opened at once). Sync rebroadcasts the stored bytes. Broadcast outcomes:
+reviews opened at once). Sync does not rebroadcast it. Broadcast outcomes:
 
 - `accepted`: the node took it (`already known` / `in mempool` / `in blockchain`
   count as success).
 - `rejected`: only an explicit consensus-invalid or expired reply, recorded in
   `ext_onekey_tx_state` (the only rows it holds). The transaction stays stored;
   its notes return after its expiry height.
-- `unknown`: anything else. It stays pending and sync rebroadcasts the same bytes.
+- `unknown`: anything else. It stays pending until mined or expired; the host does
+  not resubmit it.
   Pending transactions do not block another payment or user-requested local-data
   deletion, reset or rescan.
 

@@ -4,8 +4,9 @@
 //! the signed transaction is stored before broadcast, and stays in
 //! `v_transactions` as unmined (holding its notes) until it is mined or
 //! expires. The one fact the wallet schema cannot hold is that the trusted node
-//! definitively rejected it; that must stop rebroadcasts and show the send as
-//! failed.
+//! definitively rejected it; that must stop any resend and show the send as
+//! failed. An unmined send that was not rejected stays pending until mined or
+//! expired; the host does not resubmit it.
 
 use std::collections::HashSet;
 
@@ -210,7 +211,7 @@ pub fn assert_not_rejected(db: &mut Db, txid: &str) -> Result<()> {
 }
 
 /// This account's stored outgoing transactions that are neither mined, expired
-/// nor rejected: the ones a sync must rebroadcast.
+/// nor rejected: still pending. The host does not resubmit them.
 pub fn pending_txids(conn: &rusqlite::Connection, account_uuid: &str) -> Result<Vec<String>> {
     let account_uuid = uuid_blob(account_uuid)?;
     let mut stmt = conn

@@ -6,7 +6,7 @@
 //!   runtime.pcztCreate()          build (needs wallet state: note selection, witness, anchor)
 //!   runtime.pcztProve()           prove; pure computation, no private keys
 //!   keys.pcztSignWithAccountKeys() sign (needs the spending keys; in onekey-zcash-keys)
-//!   runtime.pcztSubmit()          extract, store, broadcast (sync rebroadcasts the stored bytes)
+//!   runtime.pcztSubmit()          extract, store, broadcast once (sync does not rebroadcast)
 //! ```
 //!
 //! Proving precedes signing: the upstream Signer role needs enough information
@@ -879,7 +879,8 @@ pub enum SubmitOutcome {
         txid: String,
         error: RuntimeError,
     },
-    /// Unknown whether the node received it: stored, holds its notes, rebroadcast on sync.
+    /// Unknown whether the node received it: stored, holds its notes, and stays pending
+    /// until mined or expired; the host does not resubmit it.
     Unknown {
         txid: String,
         error: RuntimeError,
@@ -952,7 +953,7 @@ pub async fn submit_signed_pczt(
     Ok(record_submit_outcome(db, account_uuid, txid, result))
 }
 
-/// Reads a stored transaction's raw bytes from the wallet for rebroadcast.
+/// Reads a stored transaction's raw bytes from the wallet for broadcast.
 pub fn raw_transaction(db: &Db, txid: &str) -> Result<Vec<u8>> {
     use zcash_primitives::transaction::TxId;
 
