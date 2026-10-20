@@ -31,6 +31,7 @@ private final class NativeOverlaySheetTransitionAnimator: NSObject,
   private let presenting: Bool
   private let motion: NativeOverlayMotion
   private var animator: UIViewPropertyAnimator?
+  private var cancellationCompletion: (() -> Void)?
 
   init(presenting: Bool, motion: NativeOverlayMotion) {
     self.presenting = presenting
@@ -90,13 +91,30 @@ private final class NativeOverlaySheetTransitionAnimator: NSObject,
     animator.addCompletion { position in
       let completed = position == .end && !transitionContext.transitionWasCancelled
       if !completed {
+        sheetView.alpha = self.presenting && reduceMotion ? 0 : 1
         sheetView.transform = self.presenting ? offscreen : .identity
         sheetController.setDimmingAlpha(self.presenting ? 0 : 1)
       }
       transitionContext.completeTransition(completed)
+      if position == .start { self.cancellationCompletion?() }
+      self.cancellationCompletion = nil
     }
     self.animator = animator
     return animator
+  }
+
+  func reverseDismissal(completion: @escaping () -> Void) -> Bool {
+    guard !presenting, let animator, animator.isRunning, !animator.isReversed else { return false }
+    cancellationCompletion = completion
+    animator.isReversed = true
+    return true
+  }
+
+  func resumeDismissal() -> Bool {
+    guard !presenting, let animator, animator.isRunning, animator.isReversed else { return false }
+    cancellationCompletion = nil
+    animator.isReversed = false
+    return true
   }
 
   func animationEnded(_ transitionCompleted: Bool) {
@@ -119,6 +137,7 @@ final class NativeOverlaySheetController: UIViewController,
   private var dimmingView: UIView?
   private var backdropTap: UITapGestureRecognizer?
   private var heightAnimator: UIViewPropertyAnimator?
+  private var dismissalAnimator: NativeOverlaySheetTransitionAnimator?
   private var shadowSuppressionDisplayLink: CADisplayLink?
   /// Set while the host itself asked UIKit to dismiss.
   var dismissRequestedByHost = false
@@ -230,7 +249,22 @@ final class NativeOverlaySheetController: UIViewController,
   func animationController(
     forDismissed dismissed: UIViewController
   ) -> UIViewControllerAnimatedTransitioning? {
-    NativeOverlaySheetTransitionAnimator(presenting: false, motion: style.exitMotion)
+    let animator = NativeOverlaySheetTransitionAnimator(presenting: false, motion: style.exitMotion)
+    dismissalAnimator = animator
+    return animator
+  }
+
+  func cancelHostDismissal(completion: @escaping () -> Void) -> Bool {
+    guard dismissRequestedByHost,
+          dismissalAnimator?.reverseDismissal(completion: completion) == true else { return false }
+    dismissRequestedByHost = false
+    return true
+  }
+
+  func resumeHostDismissal() -> Bool {
+    guard dismissalAnimator?.resumeDismissal() == true else { return false }
+    dismissRequestedByHost = true
+    return true
   }
 
   override func viewWillAppear(_ animated: Bool) {

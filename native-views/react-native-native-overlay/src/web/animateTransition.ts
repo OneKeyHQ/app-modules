@@ -100,7 +100,8 @@ export function animateTransition(
   element: HTMLElement,
   contentRoot: HTMLElement,
   transition: IResolvedOverlayTransition,
-  direction: 'in' | 'out'
+  direction: 'in' | 'out',
+  interruptedFrames?: ReadonlyMap<HTMLElement, Keyframe>
 ): Animation | undefined {
   if (transition.type === 'none') {
     return undefined;
@@ -127,7 +128,13 @@ export function animateTransition(
   Object.keys(hidden).forEach((key) => {
     visible[key] = VISIBLE_KEYFRAME[key];
   });
-  const keyframes = direction === 'in' ? [hidden, visible] : [visible, hidden];
+  const sampled = interruptedFrames?.get(target);
+  const initial = direction === 'in' ? hidden : visible;
+  const start: Keyframe = {};
+  Object.keys(initial).forEach((key) => {
+    start[key] = sampled?.[key] ?? initial[key];
+  });
+  const keyframes = [start, direction === 'in' ? visible : hidden];
   return target.animate(keyframes, {
     ...toTiming(effective.motion),
     fill: 'forwards',
@@ -137,11 +144,13 @@ export function animateTransition(
 export function animateBackdrop(
   element: HTMLElement,
   motion: IOverlayMotion,
-  direction: 'in' | 'out'
+  direction: 'in' | 'out',
+  interruptedFrames?: ReadonlyMap<HTMLElement, Keyframe>
 ): Animation {
-  const keyframes =
-    direction === 'in'
-      ? [{ opacity: 0 }, { opacity: 1 }]
-      : [{ opacity: 1 }, { opacity: 0 }];
+  const sampled = interruptedFrames?.get(element)?.opacity;
+  const keyframes = [
+    { opacity: sampled ?? (direction === 'in' ? 0 : 1) },
+    { opacity: direction === 'in' ? 1 : 0 },
+  ];
   return element.animate(keyframes, { ...toTiming(motion), fill: 'forwards' });
 }

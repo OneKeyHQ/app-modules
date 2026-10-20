@@ -323,8 +323,17 @@ final class NativeOverlayEntryView: UIView {
     }
     if visible {
       cycleOpen = true
-      // A sheet that is still animating out is re-presented after it finishes.
-      if phase == .hidden || (phase == .exiting && !usesSystemSheet) {
+      if phase == .exiting, usesSystemSheet, let controller = sheetController,
+         controller.cancelHostDismissal(completion: { [weak self, weak controller] in
+           DispatchQueue.main.async {
+             guard let self, self.sheetController === controller, self.phase == .entering else { return }
+             self.phase = .shown
+             self.didPresent()
+             if !self.visible { self.dismissSheet() }
+           }
+         }) {
+        phase = .entering
+      } else if phase == .hidden || (phase == .exiting && !usesSystemSheet) {
         present()
       }
     } else if cycleOpen {
@@ -473,13 +482,13 @@ final class NativeOverlayEntryView: UIView {
     reportContentOffset()
     NativeOverlayWindowManager.shared.entryRemoved(from: hostWindow)
     guard let reason, cycleOpen else { return }
-    cycleOpen = visible
-    onDismissed?(["reason": reason])
-    // Reopened while the exit animation ran; UIKit-initiated dismissals
-    // ("system") are left for JS to settle instead.
+    // A reopen at UIKit's completion boundary keeps the same JS entry.
     if reason == "programmatic", visible, window != nil {
       present()
+      return
     }
+    cycleOpen = visible
+    onDismissed?(["reason": reason])
   }
 
   private func didPresent() {
@@ -568,12 +577,16 @@ final class NativeOverlayEntryView: UIView {
       finishDismiss(reason: "programmatic")
       return
     }
+    if controller.resumeHostDismissal() {
+      phase = .exiting
+      return
+    }
     // Closing mid-presentation is handled by the present completion.
     guard !controller.isBeingPresented, phase != .exiting else { return }
     phase = .exiting
     controller.dismissRequestedByHost = true
     controller.dismiss(animated: true) { [weak self, weak controller] in
-      guard let self, self.sheetController === controller else { return }
+      guard let self, self.sheetController === controller, self.phase == .exiting else { return }
       self.finishDismiss(reason: "programmatic")
     }
   }

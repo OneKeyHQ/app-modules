@@ -296,3 +296,38 @@ describe('OverlayStore back resolution for non-blocking entries', () => {
     expect(store.resolveBack()).toEqual({ kind: 'dismiss', id: 'popover' });
   });
 });
+
+it('reopens a closing entry without timing it out or changing its removal owner', () => {
+  const store = new OverlayStore({ closingTimeoutMs: 100 });
+  const onRemoved = jest.fn();
+  store.request({ id: 'reopen' }, { onRemoved });
+  const order = store.getEntry('reopen')?.seq;
+  store.dismiss('reopen');
+  store.reopen('reopen');
+  jest.advanceTimersByTime(200);
+  expect(store.getEntry('reopen')).toMatchObject({
+    phase: 'active',
+    seq: order,
+    dismissReason: undefined,
+  });
+  expect(onRemoved).not.toHaveBeenCalled();
+  store.dismiss('reopen', 'backdrop');
+  store.finalize('reopen');
+  expect(onRemoved).toHaveBeenCalledTimes(1);
+  expect(onRemoved).toHaveBeenCalledWith('backdrop');
+});
+
+it('delivers a queued removal to its original handler after same-tick ID reuse', () => {
+  const store = new OverlayStore();
+  const previous = jest.fn();
+  const current = jest.fn();
+  store.request({ id: 'active' });
+  store.request({ id: 'reused', strategy: 'queue' }, { onRemoved: previous });
+  store.dismiss('reused', 'backdrop');
+  store.request({ id: 'reused' }, { onRemoved: current });
+  jest.runAllTicks();
+  expect(previous).toHaveBeenCalledWith('backdrop');
+  expect(current).not.toHaveBeenCalled();
+  store.finalize('reused');
+  expect(current).toHaveBeenCalledTimes(1);
+});

@@ -148,6 +148,16 @@ export class OverlayStore {
     }
   }
 
+  /** Reverses an unfinished close without creating a new presentation cycle. */
+  reopen(id: string): void {
+    const entry = this.shown.get(id);
+    if (!entry || entry.phase !== 'closing') return;
+    this.clearClosingTimer(id);
+    entry.phase = 'active';
+    entry.dismissReason = undefined;
+    this.emit();
+  }
+
   /** Removes a closing (or active) entry once its exit animation finished. */
   finalize(id: string): void {
     const entry = this.shown.get(id);
@@ -280,7 +290,9 @@ export class OverlayStore {
     if (queuedIndex !== -1) {
       this.queued = this.queued.filter((e) => e.id !== id);
       // Queued entries never rendered, so they leave without an exit animation.
-      queueMicrotask(() => this.notifyRemoved(id, reason));
+      const handlers = this.handlers.get(id);
+      this.handlers.delete(id);
+      queueMicrotask(() => handlers?.onRemoved?.(reason));
       return true;
     }
     const entry = this.shown.get(id);

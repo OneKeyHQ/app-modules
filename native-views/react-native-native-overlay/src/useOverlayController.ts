@@ -77,6 +77,7 @@ export function useOverlayController(
   // still true, so the effect below does not immediately reopen it.
   const closedByStoreRef = useRef(false);
   const propsRef = useLatest(props);
+  const previousVisibleRef = useRef(visible);
 
   const snapshot = useSyncExternalStore(
     overlayStore.subscribe,
@@ -93,6 +94,9 @@ export function useOverlayController(
   );
 
   useEffect(() => {
+    const reopening = visible && !previousVisibleRef.current;
+    previousVisibleRef.current = visible;
+    if (reopening && entryId) overlayStore.reopen(entryId);
     if (!visible) {
       closedByStoreRef.current = false;
       if (entryId) {

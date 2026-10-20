@@ -478,3 +478,69 @@ it('clears an interrupted sheet pan and pointer capture when switching to center
   expect(dismiss).not.toHaveBeenCalled();
   expect(inputFor('pan')).toBe(input);
 });
+
+it('retargets an unfinished web exit without unmounting content or reporting close', async () => {
+  const finishes: Array<() => void> = [];
+  const cancel = jest.fn();
+  const targets: HTMLElement[] = [];
+  const starts: Keyframe[] = [];
+  Element.prototype.animate = jest.fn(function animateMock(
+    this: HTMLElement,
+    frames: Keyframe[]
+  ) {
+    targets.push(this);
+    starts.push(frames[0]!);
+    let finish!: () => void;
+    let reject!: (reason: Error) => void;
+    const finished = new Promise<void>((resolve, fail) => {
+      finish = resolve;
+      reject = fail;
+    });
+    const animation = {
+      finished,
+      playState: 'running',
+      effect: { target: this },
+      cancel: () => {
+        cancel();
+        animation.playState = 'idle';
+        this.style.opacity = '1';
+        this.style.transform = 'none';
+        reject(new Error('cancelled'));
+      },
+    };
+    finishes.push(() => {
+      animation.playState = 'finished';
+      finish();
+    });
+    return animation;
+  }) as unknown as typeof Element.prototype.animate;
+  const onClose = jest.fn();
+  const show = (visible: boolean) =>
+    createElement(OverlayView, {
+      visible,
+      onClose,
+      children: createElement('input', { 'aria-label': 'Reopen draft' }),
+    });
+  await act(async () => root.render(show(true)));
+  const input = document.querySelector('input')!;
+  input.value = 'keep draft';
+  const id = overlayStore.getSnapshot().entries[0]!.id;
+  await act(async () => finishes.splice(0).forEach((finish) => finish()));
+  await act(async () => root.render(show(false)));
+  expect(overlayStore.getEntry(id)?.phase).toBe('closing');
+  const contentTarget = targets[targets.length - 2]!;
+  contentTarget.style.opacity = '0.4';
+  contentTarget.style.transform = 'matrix(0.9, 0, 0, 0.9, 0, 0)';
+  await act(async () => root.render(show(true)));
+  expect(starts[starts.length - 2]?.opacity).toBe('0.4');
+  expect(starts[starts.length - 2]?.transform).toContain('0.9');
+  expect(cancel).toHaveBeenCalled();
+  expect(overlayStore.getEntry(id)?.phase).toBe('active');
+  expect(document.querySelector('input')).toBe(input);
+  expect(input.value).toBe('keep draft');
+  await act(async () => finishes.splice(0).forEach((finish) => finish()));
+  expect(onClose).not.toHaveBeenCalled();
+  await act(async () => root.render(show(false)));
+  await act(async () => finishes.splice(0).forEach((finish) => finish()));
+  expect(onClose).toHaveBeenCalledTimes(1);
+});

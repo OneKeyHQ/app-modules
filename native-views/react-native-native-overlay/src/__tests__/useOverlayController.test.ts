@@ -151,3 +151,22 @@ it('still presents a default global overlay without page keys', async () => {
   expect(controller.presented).toBe(true);
   expect(controller.entry?.scope).toBe('global');
 });
+
+it('reverses an unfinished close on false-to-true without a close callback', async () => {
+  jest.useFakeTimers();
+  const onClose = jest.fn();
+  await render(createElement(Probe, { visible: true, onClose }));
+  const id = controller.entry?.id;
+  await render(createElement(Probe, { visible: false, onClose }));
+  expect(controller.entry?.phase).toBe('closing');
+  await render(createElement(Probe, { visible: true, onClose }));
+  expect(controller.entry).toMatchObject({ id, phase: 'active' });
+  expect(controller.presented).toBe(true);
+  await act(async () => jest.advanceTimersByTime(6000));
+  expect(controller.entry?.id).toBe(id);
+  expect(onClose).not.toHaveBeenCalled();
+  await render(createElement(Probe, { visible: false, onClose }));
+  await act(async () => controller.onHostDismissed());
+  expect(onClose).toHaveBeenCalledTimes(1);
+  jest.useRealTimers();
+});

@@ -131,7 +131,18 @@ function WebOverlayEntry({
       restoreFocusRef.current = document.activeElement as HTMLElement | null;
       entryRef.current?.focus({ preventScroll: true });
     }
-    runningAnimationsRef.current.forEach((running) => running.cancel());
+    const interruptedFrames = new Map<HTMLElement, Keyframe>();
+    for (const running of runningAnimationsRef.current) {
+      const target = (running.effect as KeyframeEffect | null)?.target;
+      if (running.playState === 'running' && target instanceof HTMLElement) {
+        const style = getComputedStyle(target);
+        interruptedFrames.set(target, {
+          opacity: style.opacity,
+          transform: style.transform,
+        });
+      }
+      running.cancel();
+    }
     // A sheet is measured as a whole; other presentations by the children
     // of the full-window React root.
     const contentRoot = isSheet
@@ -139,12 +150,19 @@ function WebOverlayEntry({
       : (sheetRef.current?.firstElementChild as HTMLElement | null) ?? content;
     const transition = direction === 'in' ? animation.enter : animation.exit;
     const running = [
-      animateTransition(content, contentRoot, transition, direction),
+      animateTransition(
+        content,
+        contentRoot,
+        transition,
+        direction,
+        interruptedFrames
+      ),
       backdropRef.current
         ? animateBackdrop(
             backdropRef.current,
             animation.backdrop.motion,
-            direction
+            direction,
+            interruptedFrames
           )
         : undefined,
     ].filter((item): item is Animation => !!item);

@@ -113,6 +113,14 @@ come only from props.
 - `dismiss(id, reason)` moves an entry to `closing`. `finalize(id)` removes it
   after the native exit animation. A closing entry that is never finalized is
   removed after 5 s.
+- `reopen(id)` restores a closing entry to active, cancels its fallback timer,
+  and keeps its ordering, content and removal handler. A declarative
+  false-to-true change before exit completion uses this path; it does not
+  report a completed close. Hosts retarget the in-flight animation, including
+  cancelling the host-requested UIKit sheet dismissal when still running.
+- Removing a queued entry detaches its removal handler before notifying store
+  subscribers or scheduling its callback. Same-tick reuse of that ID owns a
+  separate handler; the old removal cannot invoke or delete the new handler.
 - `dismissAll({ scope, belowLevel, reason })`, `setPageVisible(ownerKey,
 visible)`, `removePage(ownerKey)`.
 - `resolveBack(focusedHostKey?)` returns `dismiss(id)`, `block`, or `pass`.
@@ -538,8 +546,10 @@ P4e lock screen notes:
   interactive (OK-62416).
 - Android back is swallowed on the lock screen (blocking, not dismissible);
   it no longer reaches navigation behind the lock.
-- The web lock tamper check and the lock screen's body-level inert pass are
-  unchanged; the lock layer root is a `document.body` child.
+- The web lock tamper check is retained. The body-level inert pass starts
+  when the lock node actually mounts, covers later body portals, and restores
+  each node's previous inert state on unlock. The lock layer root is a
+  `document.body` child.
 
 P5a native popover notes:
 
@@ -547,14 +557,18 @@ P5a native popover notes:
   (`NativeSheetPresentation`); the Tamagui Popover sheet (`TMPopover.Adapt`),
   its external backdrop, z-index and back handler are gone, and
   the removed `nativeSheet` option throws. iPad / wide windows keep the 400–480 pt centered
-  frame inside the sheet. `usingSheet={false}` still renders no panel on
-  native (web / desktop floating panels).
+  frame inside the sheet. Native keeps this supported sheet presentation
+  even when a cross-platform caller sets `usingSheet={false}` for its web panel.
 - The native popover renders inline in the caller's tree (its contexts
   apply) instead of through the full-window portal. Every popover remains
   mounted until the exit callback (1 s fallback); content then unmounts
   unless `keepChildrenMounted`. Reopening cancels pending teardown.
 - `closePopover()` waits for exit completion; repeated requests share the
   same completion promise, and completion or unmount clears its timer.
+- Percent sheet snap points set the viewport height on native and web; fit
+  mode keeps content measurement. Both keep the header and bottom spacing
+  inside the bounded surface. Native Popover and custom Toast also retain
+  their deferred-guide blocker while open.
 - Sheet options are package-owned. Unsupported legacy `sheetProps` keys
   and floating-panel `zIndex` / `portalProps` throw instead of being ignored.
 
@@ -578,6 +592,8 @@ P5b web popover notes:
   the page underneath. Presses on the panel or inside an overlay ranked above
   it do not close it, so a nested Select or a Dialog opened from the panel
   keeps it open. They also close on Escape, unless `hoverable`.
+- Press-triggered anchored panels own a focus scope and forward caller
+  open/close autofocus callbacks. Hover panels never move or trap focus.
 - `hoverable` opens and closes on mouse enter / leave of the trigger and
   panel. The default close delay is 100 ms, so the pointer can cross the gap.
 - `keepChildrenMounted` maps to `keepContentMounted`. On web a closed entry
