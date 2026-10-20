@@ -316,6 +316,49 @@ it('keeps anchored positioning ancestors unscaled while preserving enter and exi
   expect(exit[1]).toEqual(enter[1]);
 });
 
+it.each([false, true])(
+  'only intercepts a non-blocking backdrop when dismissal is enabled: %s',
+  async (dismissOnPress) => {
+    const onRequestDismiss = jest.fn();
+    const onPageClick = jest.fn();
+    const outside = document.createElement('input');
+    document.body.append(outside);
+    outside.focus();
+    await render(
+      createElement(
+        'div',
+        { onClick: onPageClick },
+        createElement(
+          OverlayView,
+          {
+            visible: true,
+            presentation: 'anchored',
+            blocking: false,
+            backdrop: { color: 'transparent', dismissOnPress },
+            onRequestDismiss,
+          },
+          createElement('button', { type: 'button' }, 'Panel action')
+        )
+      )
+    );
+    const entry = document.querySelector<HTMLElement>(
+      '[data-onekey-overlay-entry]'
+    )!;
+    const backdrop = entry.firstElementChild as HTMLElement;
+    expect(backdrop.style.pointerEvents).toBe(dismissOnPress ? 'auto' : 'none');
+    expect(backdrop.style.background).toBe('transparent');
+    expect(entry.hasAttribute('aria-modal')).toBe(false);
+    expect(document.activeElement).toBe(outside);
+    expect(outside.closest('[inert]')).toBeNull();
+    if (dismissOnPress) {
+      await act(async () => backdrop.click());
+      expect(onRequestDismiss).toHaveBeenCalledTimes(1);
+      expect(onRequestDismiss).toHaveBeenCalledWith('backdrop');
+      expect(onPageClick).not.toHaveBeenCalled();
+    }
+  }
+);
+
 it('lifts the centered card after switching from a sheet with the keyboard open', async () => {
   const previousViewport = Object.getOwnPropertyDescriptor(
     globalThis,

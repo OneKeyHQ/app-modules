@@ -304,7 +304,7 @@ function WebOverlayEntry({
             inset: 0,
             opacity: 0,
             background: backdropColor ?? 'transparent',
-            pointerEvents: blocking ? 'auto' : 'none',
+            pointerEvents: blocking || dismissOnBackdropPress ? 'auto' : 'none',
           }}
         />
       ) : null}

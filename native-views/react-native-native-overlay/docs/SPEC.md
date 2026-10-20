@@ -257,6 +257,11 @@ excluded. Positive tabindex values precede ordinary DOM-order tab stops.
 Non-blocking, lower, closing, suspended and parked entries MUST NOT run a
 focus loop. Existing focus entry/restore and Escape policies are unchanged.
 
+A Web backdrop with `dismissOnPress: true` MUST receive pointer events even
+when its entry is non-blocking. This permits a transparent outside-click
+shield without modal focus or accessibility isolation. A passive backdrop on
+a non-blocking entry remains pointer-transparent.
+
 | Concern                                    | iOS                                                                                                                                                          | Android                                                                                                                                                                                                                                                                                                                                                                                                                 | Web                                                                                                                 |
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | Global level host                          | One passthrough `UIWindow` per active level per `UIWindowScene`, ordered by `windowLevel`. `lock` sits above RN Alert (2001).                                | One `OverlayHost` FrameLayout in `android.R.id.content` above the ReactRootView, with one child container per level.                                                                                                                                                                                                                                                                                                    | Sibling `div[data-onekey-layer]` roots under `body`, one z-index band per level (`OVERLAY_WEB_Z_INDEX_BASE`).       |
@@ -555,7 +560,8 @@ P5b web popover notes:
   level; the Tamagui Popover and `PopoverContent` are gone.
   - Below `md` with `usingSheet` (the default): an overlay sheet with a
     header and a dismissing backdrop.
-  - Otherwise: `presentation="anchored"`, non-blocking and without a backdrop.
+  - Otherwise: `presentation="anchored"`, non-blocking, with a transparent
+    dismissing backdrop for press-triggered panels. Hover panels have no backdrop.
     Floating UI (`@floating-ui/dom`) places the panel: offset, flip, shift,
     and a max height from the available space. `autoUpdate` follows scroll
     and resize.
@@ -564,10 +570,10 @@ P5b web popover notes:
   untransformed, so Floating UI uses the same coordinate space during and after
   the animation. Completion positioning must not correct coordinates distorted
   by the enter scale. Multi-child roots retain their shared full-window motion.
-- Anchored panels close on an outside press. Presses on the trigger, on the
-  panel, or inside an overlay ranked above it do not close it, so a nested
-  Select or a Dialog opened from the panel keeps it open. They also close on
-  Escape, unless `hoverable`.
+- Press-triggered anchored panels close on a backdrop press without activating
+  the page underneath. Presses on the panel or inside an overlay ranked above
+  it do not close it, so a nested Select or a Dialog opened from the panel
+  keeps it open. They also close on Escape, unless `hoverable`.
 - `hoverable` opens and closes on mouse enter / leave of the trigger and
   panel. The default close delay is 100 ms, so the pointer can cross the gap.
 - `keepChildrenMounted` maps to `keepContentMounted`. On web a closed entry
