@@ -49,9 +49,9 @@ pub const RING_LEN: u8 = 16;
 fn key_image_for(output: &WalletOutput, spend: &Zeroizing<Scalar>) -> Result<[u8; 32]> {
     use core::ops::Deref;
 
-    let spend_dalek: curve25519_dalek::Scalar = (**spend).into();
+    let spend_dalek: Zeroizing<curve25519_dalek::Scalar> = Zeroizing::new((**spend).into());
     let offset: curve25519_dalek::Scalar = output.key_offset().into();
-    let input_key = Zeroizing::new(spend_dalek + offset);
+    let input_key = Zeroizing::new(*spend_dalek + offset);
 
     let derived =
         Point::from(input_key.deref() * curve25519_dalek::constants::ED25519_BASEPOINT_POINT);
@@ -101,13 +101,30 @@ pub fn import_key_images(
             .map_err(|e| db_err("listOutputsWithoutKeyImage", e))?
     };
 
+    let computed = compute_key_images(pending, &spend);
+    keys::scrub_stack();
+    apply_key_images(db, identity_id, &computed?)
+}
+
+/// `(output id, blob, txid, index in tx)` of an output lacking a key image.
+type PendingOutput = (i64, Vec<u8>, Vec<u8>, i64);
+/// `(output id, key image, txid, index in tx)`.
+type ComputedKeyImage = (i64, [u8; 32], Vec<u8>, i64);
+
+// Separate frame so `scrub_stack` can overwrite what the key-image math left
+// on the stack.
+#[inline(never)]
+fn compute_key_images(
+    pending: Vec<PendingOutput>,
+    spend: &Zeroizing<Scalar>,
+) -> Result<Vec<ComputedKeyImage>> {
     let mut computed = Vec::with_capacity(pending.len());
     for (id, blob, txid, index) in pending {
         let output = WalletOutput::read(&mut blob.as_slice())
             .map_err(|e| db_err("deserializeOutput", format!("output {id}: {e}")))?;
-        computed.push((id, key_image_for(&output, &spend)?, txid, index));
+        computed.push((id, key_image_for(&output, spend)?, txid, index));
     }
-    apply_key_images(db, identity_id, &computed)
+    Ok(computed)
 }
 
 /// Stores computed key images and confirms earlier spends from possible spends.
@@ -182,12 +199,12 @@ pub struct KeyImageImport {
 }
 
 fn parse_spend_key(bytes: &[u8]) -> Result<Zeroizing<Scalar>> {
-    let arr = <[u8; 32]>::try_from(bytes).map_err(|_| {
+    let arr = Zeroizing::new(<[u8; 32]>::try_from(bytes).map_err(|_| {
         RuntimeError::with(
             ErrorCode::InvalidKeyMaterial,
             json!({ "field": "spendPrivateKey", "byteLen": bytes.len(), "expected": 32 }),
         )
-    })?;
+    })?);
     let scalar = Scalar::read(&mut arr.as_slice()).map_err(|_| {
         RuntimeError::with(
             ErrorCode::InvalidKeyMaterial,
@@ -1538,13 +1555,26 @@ pub(crate) fn sign_for_host_with_rng<R: RngCore + CryptoRng>(
     rng: &mut R,
 ) -> Result<Value> {
     let request = crate::review::parse_request(review_json)?;
-    let signable = crate::review::verify(signable_hex, &request, Some(spend_private))?;
-    let (raw, txid) = sign_prepared(signable, rng, spend_private)?;
+    let signed = verify_and_sign(signable_hex, &request, spend_private, rng);
+    keys::scrub_stack();
+    let (raw, txid) = signed?;
     Ok(json!({
         "txid": hex::encode(txid),
         "rawHex": hex::encode(&raw),
         "sizeBytes": raw.len(),
     }))
+}
+
+// Separate frame so `scrub_stack` can overwrite what signing left on the stack.
+#[inline(never)]
+fn verify_and_sign<R: RngCore + CryptoRng>(
+    signable_hex: &str,
+    request: &crate::review::ReviewRequest,
+    spend_private: &[u8],
+    rng: &mut R,
+) -> Result<(Vec<u8>, [u8; 32])> {
+    let signable = crate::review::verify(signable_hex, request, Some(spend_private))?;
+    sign_prepared(signable, rng, spend_private)
 }
 
 /// Amounts of our own send, known only at broadcast.
