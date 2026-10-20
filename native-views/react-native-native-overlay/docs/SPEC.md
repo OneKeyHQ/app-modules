@@ -28,10 +28,14 @@ TypeScript declarations; React Native generates the Fabric bindings at app
 build time. Publish `common/cpp`, `src`, `lib`, Android/iOS sources, podspec and
 autolinking configuration. Web consumers additionally provide `react-dom`.
 
-`react-native-native-sheet` remains separately published for existing consumers;
-its compatibility shim/deprecation is a subsequent migration step, not a
-silent API change in this release. Sheet behavior derived from that package
-retains its original implementation attribution in source comments.
+`react-native-native-sheet` is retired from this repository after the App
+consumer migration. Its source workspace, example dependency, and dedicated
+tests are removed; sheet presentation is owned by this package and has no
+dependency on the retired package. The old `NativeSheet` API is not retained as
+a compatibility shim. Previously published npm versions remain unchanged, and
+this repository cleanup does not publish or change package versions. Sheet
+behavior derived from that package retains its original implementation
+attribution in source comments.
 
 ### Release boundary
 
