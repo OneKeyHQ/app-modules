@@ -31,6 +31,7 @@ import android.widget.SeekBar
 import android.widget.TextView
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.recyclerview.widget.ConcatAdapter
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -43,6 +44,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.lang.ref.WeakReference
 import java.util.UUID
+import java.util.function.BiConsumer
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.cos
@@ -53,9 +55,71 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
 
+private class NativeListGridLayoutManager(
+  context: Context,
+  spanCount: Int,
+) : GridLayoutManager(context, spanCount) {
+  var onChildLaidOut: ((View, Int) -> Unit)? = null
+  var onLayoutPassCompleted: (() -> Unit)? = null
+  var onBeforeDataLayout: (() -> Unit)? = null
+  var onDiagnosticLayout: ((String, RecyclerView.State) -> Unit)? = null
+
+  override fun onLayoutChildren(recycler: RecyclerView.Recycler, state: RecyclerView.State) {
+    onDiagnosticLayout?.invoke("layout-children-before", state)
+    if (!state.isPreLayout) onBeforeDataLayout?.invoke()
+    super.onLayoutChildren(recycler, state)
+    onDiagnosticLayout?.invoke("layout-children-after", state)
+  }
+
+  // Scroll fills and layout passes both place children here, including rows that a
+  // positional jump lays out and immediately leaves offscreen.
+  override fun layoutDecoratedWithMargins(child: View, left: Int, top: Int, right: Int, bottom: Int) {
+    super.layoutDecoratedWithMargins(child, left, top, right, bottom)
+    onChildLaidOut?.invoke(child, if (orientation == RecyclerView.VERTICAL) bottom - top else right - left)
+  }
+
+  override fun onLayoutCompleted(state: RecyclerView.State) {
+    super.onLayoutCompleted(state)
+    onDiagnosticLayout?.invoke("layout-completed", state)
+    onLayoutPassCompleted?.invoke()
+  }
+
+  override fun removeAndRecycleViewAt(index: Int, recycler: RecyclerView.Recycler) {
+    val child = getChildAt(index) ?: return
+    removeViewAt(index)
+    // An index-based removal can leave the selected child attached during rapid
+    // nested scrolling. Detach that exact view before giving it to RecyclerView.
+    if (child.parent != null) removeView(child)
+    if (child.parent == null) {
+      recycler.recycleView(child)
+    } else {
+      requestLayout()
+    }
+  }
+}
+
 class NativeListView(
   private val reactContext: ThemedReactContext,
 ) : LinearLayout(reactContext) {
+  private val fonts = NativeListFonts()
+
+  fun setFontFamiliesJson(json: String) {
+    if (!fonts.configure(json)) return
+    invalidateActionAnchor("layout")
+    measuredRowExtentsPx.clear()
+    measuredRowExtentSumPx = 0L
+    config?.let { updateReordering(it) }
+    adapter.rebindFonts()
+    config?.let { bindFooter(it) }
+    sectionIndexView.refreshFonts()
+    sectionIndexPreview.typeface = fonts.regular(context)
+    stickyHeaderSignature = null
+    stickyHeaderConfig = null
+    updateStickyHeader()
+    recyclerView.requestLayout()
+    requestLayout()
+  }
+
   private data class VisibleMarketAnchor(
     val key: String,
     val offset: Int,
@@ -93,6 +157,43 @@ class NativeListView(
     data class End(val animated: Boolean) : ScrollRequest()
   }
 
+  private val coordinatorOffsetListener = Runnable { emitScrollPositionThresholdIfNeeded() }
+  private var logicalScrollDistancePx = 0
+  private val scrollPositionTracker = NativeListScrollPositionTracker()
+  private val measuredRowExtentsPx = HashMap<String, Int>()
+  private var measuredRowExtentSumPx = 0L
+  var onScrollPositionThresholdChange: ((Boolean) -> Unit)? = null
+    set(value) {
+      field = value
+      scrollPositionTracker.resetDelivery()
+      emitScrollPositionThresholdIfNeeded(resync = true)
+    }
+
+  fun setScrollPositionThresholdsJson(json: String) {
+    val config = runCatching { JSONObject(json) }.getOrNull()
+    scrollPositionTracker.configure(config?.optDouble("start"), config?.optDouble("end"))
+    emitScrollPositionThresholdIfNeeded(resync = true)
+  }
+
+  /**
+   * Continuous scrolling accumulates the exact consumed dy. Layout passes and positional
+   * jumps (scrollToIndex/End, anchor restores, inserts above) report no dy, so they re-derive
+   * the distance from the laid-out first item plus the extents of every item before it.
+   */
+  private fun emitScrollPositionThresholdIfNeeded(resync: Boolean = false) {
+    if (disposed) return
+    val callback = onScrollPositionThresholdChange ?: return
+    if (!scrollPositionTracker.isConfigured) return
+    if (resync || layoutManager.findFirstVisibleItemPosition() == 0) {
+      measuredScrollDistancePx()?.let { logicalScrollDistancePx = it }
+    }
+    val contributions = recyclerView.getTag(R.id.onekey_native_scroll_coordinator_consumed_offsets) as? Map<*, *>
+    val parentDistance = contributions?.values?.sumOf { (it as? Int)?.coerceAtLeast(0)?.toLong() ?: 0L } ?: 0L
+    val distance = logicalScrollDistancePx.toLong() + parentDistance
+    val next = scrollPositionTracker.update(distance.toDouble() / density) ?: return
+    callback(next)
+  }
+
   var onRowAction: ((String) -> Unit)? = null
   var onActionAnchorInvalidated: ((String) -> Unit)? = null
   var onSelectionDelta: ((String) -> Unit)? = null
@@ -104,13 +205,174 @@ class NativeListView(
   private val density = resources.displayMetrics.density
   private val recyclerView = RecyclerView(context)
   private var configuredTopPaddingPx = 0
+  private var slotInsetPx = 0
   private var configuredBottomPaddingPx = 0
   private val refreshLayout = SwipeRefreshLayout(context)
   private val refreshIndicatorTravelPx = refreshLayout.progressViewEndOffset
+  private val defaultRefreshTriggerDistancePx = (64 * resources.displayMetrics.density).roundToInt()
   private var refreshIndicatorOffsetPx = 0
   private val contentContainer = FrameLayout(context)
-  private val adapter = NativeListAdapter(reactContext)
-  private val layoutManager = GridLayoutManager(context, 1)
+  private val adapter = NativeListAdapter(reactContext, fonts)
+  private val containerSlots = mutableListOf<View>()
+  private val slotHeights = IntArray(3)
+  private var containerSlotRelayoutPending = false
+  private var containerSlotRelayoutScheduled = false
+  private val headerSlotAdapter = NativeListContainerSlotAdapter()
+  private val emptySlotAdapter = NativeListContainerSlotAdapter()
+  private val footerSlotAdapter = NativeListContainerSlotAdapter()
+  private val scrollContentAdapter = ConcatAdapter(headerSlotAdapter, adapter, emptySlotAdapter, footerSlotAdapter)
+
+  private val homeOffsetDiagnosticEnabled =
+    context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
+  private var homeOffsetDiagnosticSequence = 0L
+
+  private fun homeOffsetDiagnostic(phase: String, state: RecyclerView.State? = null) {
+    if (!homeOffsetDiagnosticEnabled) return
+    try {
+      val first = layoutManager.findFirstVisibleItemPosition()
+      val firstView = layoutManager.findViewByPosition(first)
+      val holder = firstView?.let { recyclerView.getChildViewHolder(it) }
+      val lastView = layoutManager.findViewByPosition(layoutManager.findLastVisibleItemPosition())
+      val lastHolder = lastView?.let { recyclerView.getChildViewHolder(it) }
+      fun adapterOrdinal(value: RecyclerView.Adapter<*>?): Int = when (value) {
+        headerSlotAdapter -> 0
+        adapter -> 1
+        emptySlotAdapter -> 2
+        footerSlotAdapter -> 3
+        else -> -1
+      }
+      val focused = recyclerView.findFocus()
+      val focusChild = focused?.let { recyclerView.findContainingItemView(it) }
+      val focusHolder = focusChild?.let { recyclerView.getChildViewHolder(it) }
+      OneKeyLog.debug("NativeList", "[HOME-OFFSET-DIAG] listPhase=$phase " +
+        "seq=${++homeOffsetDiagnosticSequence} wallMs=${System.currentTimeMillis()} monoMs=${SystemClock.uptimeMillis()} " +
+        "list=${System.identityHashCode(this)} view=${System.identityHashCode(recyclerView)} tag=$id " +
+        "generation=${config?.generation} configuredCount=${config?.items?.size} " +
+        "counts=${headerSlotAdapter.itemCount},${adapter.itemCount},${emptySlotAdapter.itemCount},${footerSlotAdapter.itemCount} " +
+        "total=${scrollContentAdapter.itemCount} pendingCommand=${pendingScrollRequest?.javaClass?.simpleName ?: "none"} " +
+        "stateCount=${state?.itemCount} preLayout=${state?.isPreLayout} structureChanged=${state?.didStructureChange()} predictive=${state?.willRunPredictiveAnimations()} " +
+        "first=$first last=${layoutManager.findLastVisibleItemPosition()} " +
+        "adapterOrdinal=${adapterOrdinal(holder?.bindingAdapter)} layout=${holder?.layoutPosition} absolute=${holder?.absoluteAdapterPosition} binding=${holder?.bindingAdapterPosition} lastAdapterOrdinal=${adapterOrdinal(lastHolder?.bindingAdapter)} lastLayout=${lastHolder?.layoutPosition} lastAbsolute=${lastHolder?.absoluteAdapterPosition} lastBinding=${lastHolder?.bindingAdapterPosition} " +
+        "anchorTop=${firstView?.let(layoutManager::getDecoratedTop)} paddingTop=${recyclerView.paddingTop} " +
+        "childHeight=${firstView?.height} height=${recyclerView.height} range=${recyclerView.computeVerticalScrollRange()} extent=${recyclerView.computeVerticalScrollExtent()} " +
+        "canUp=${recyclerView.canScrollVertically(-1)} canDown=${recyclerView.canScrollVertically(1)} " +
+        "focusClass=${focused?.javaClass?.simpleName ?: "none"} focusId=${focused?.id} focusAdapterOrdinal=${adapterOrdinal(focusHolder?.bindingAdapter)} focusLayout=${focusHolder?.layoutPosition} focusPosition=${focusHolder?.absoluteAdapterPosition} focusBinding=${focusHolder?.bindingAdapterPosition}")
+    } catch (_: Exception) {
+      // Diagnostic reads must not affect layout or command delivery.
+    }
+  }
+
+  fun mountContainerSlot(view: View, index: Int) {
+    containerSlots.add(index.coerceIn(0, containerSlots.size), view)
+    updateContainerSlots()
+    scheduleContainerSlotRelayout()
+  }
+
+  fun containerSlotCount(): Int = containerSlots.size
+  fun containerSlotAt(index: Int): View = containerSlots[index]
+  fun unmountContainerSlot(index: Int) {
+    val view = containerSlots.removeAt(index)
+    (view.parent as? ViewGroup)?.removeView(view)
+    updateContainerSlots()
+    scheduleContainerSlotRelayout()
+  }
+
+  fun setContainerSlotHeightsJson(json: String) {
+    val values = runCatching { JSONArray(json) }.getOrNull() ?: return
+    if (values.length() != 3) return
+    for (index in 0..2) {
+      val value = values.optDouble(index)
+      if (!value.isFinite() || value < 0) return
+    }
+    var changed = false
+    for (index in 0..2) {
+      val height = (values.getDouble(index) * density).roundToInt()
+      if (slotHeights[index] != height) changed = true
+      slotHeights[index] = height
+    }
+    updateContainerSlots()
+    if (changed) scheduleContainerSlotRelayout()
+  }
+
+  private fun scheduleContainerSlotRelayout() {
+    if (disposed) return
+    containerSlotRelayoutPending = true
+    if (containerSlotRelayoutScheduled) return
+    containerSlotRelayoutScheduled = true
+    recyclerView.post {
+      containerSlotRelayoutScheduled = false
+      if (disposed) {
+        containerSlotRelayoutPending = false
+        return@post
+      }
+      if (!containerSlotRelayoutPending || recyclerView.width <= 0 ||
+        recyclerView.height <= 0 || recyclerView.isComputingLayout) return@post
+      containerSlotRelayoutPending = false
+      relayoutRecyclerViewImmediately()
+    }
+  }
+
+  private fun updateContainerSlots() {
+    homeOffsetDiagnostic("slots-before")
+    headerSlotAdapter.update(containerSlots.getOrNull(0), slotHeights[0], true)
+    emptySlotAdapter.update(containerSlots.getOrNull(1), slotHeights[1], config?.items?.isEmpty() != false)
+    footerSlotAdapter.update(containerSlots.getOrNull(2), slotHeights[2], true)
+    homeOffsetDiagnostic("slots-after")
+    layoutManager.spanSizeLookup.invalidateSpanIndexCache()
+    recyclerView.requestLayout()
+  }
+
+  private fun scrollPositionForRow(index: Int): Int = index + headerSlotAdapter.itemCount
+
+  private fun recordLaidOutRowExtent(child: View, extentPx: Int) {
+    val holder = recyclerView.getChildViewHolder(child) as? NativeListViewHolder ?: return
+    if (holder.bindingAdapter !== adapter) return
+    val key = adapter.itemAt(holder.bindingAdapterPosition)?.key ?: return
+    val previous = measuredRowExtentsPx.put(key, extentPx)
+    measuredRowExtentSumPx += extentPx - (previous ?: 0)
+  }
+
+  private fun pruneMeasuredRowExtents(items: List<NativeListItem>) {
+    if (measuredRowExtentsPx.isEmpty()) return
+    val keys = items.mapTo(HashSet(items.size)) { it.key }
+    measuredRowExtentsPx.keys.retainAll(keys)
+    measuredRowExtentSumPx = measuredRowExtentsPx.values.sumOf { it.toLong() }
+  }
+
+  /** Rows skipped by a jump have never been laid out; explicit heights beat the average. */
+  private fun estimatedScrollExtentPx(position: Int): Int {
+    val headerCount = headerSlotAdapter.itemCount
+    if (position < headerCount) return slotHeights[0]
+    val row = position - headerCount
+    if (row >= adapter.itemCount) {
+      return if (row - adapter.itemCount < emptySlotAdapter.itemCount) slotHeights[1] else slotHeights[2]
+    }
+    val item = adapter.itemAt(row)
+    item?.key?.let(measuredRowExtentsPx::get)?.let { return it }
+    val explicit = item?.styledHeight ?: item?.json?.optDouble("height")?.takeIf { it.isFinite() }
+    if (explicit != null) return (explicit * density).roundToInt()
+    return if (measuredRowExtentsPx.isEmpty()) 0 else (measuredRowExtentSumPx / measuredRowExtentsPx.size).toInt()
+  }
+
+  private fun measuredScrollDistancePx(): Int? {
+    if (layoutManager.orientation != RecyclerView.VERTICAL) return null
+    val first = layoutManager.findFirstVisibleItemPosition()
+    if (first == RecyclerView.NO_POSITION) return null
+    val view = layoutManager.findViewByPosition(first) ?: return null
+    val prefix = nativeListScrollPrefixPx(
+      first,
+      layoutManager.spanCount,
+      layoutManager.spanSizeLookup::getSpanSize,
+      ::estimatedScrollExtentPx,
+    )
+    val topMargin = (view.layoutParams as? ViewGroup.MarginLayoutParams)?.topMargin ?: 0
+    val top = layoutManager.getDecoratedTop(view) - topMargin
+    return (prefix + recyclerView.paddingTop - top).coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+  }
+  private fun rowPositionForScroll(index: Int): Int =
+    if (index == RecyclerView.NO_POSITION) RecyclerView.NO_POSITION else index - headerSlotAdapter.itemCount
+
+  private val layoutManager = NativeListGridLayoutManager(context, 1)
   // OneKey patch: vertical lists retain vertical drags and leave horizontal drags to a parent pager.
   private val pagerGestureTouchSlop = ViewConfiguration.get(context).scaledTouchSlop
   private var pagerGestureIsVertical = false
@@ -208,14 +470,73 @@ class NativeListView(
     mass = REORDER_SPRING_MASS,
     durationSeconds = REORDER_SPRING_DURATION_MS / 1_000.0,
   )
-  private val footerView = NativeListRowView(reactContext)
-  private val sectionIndexView = NativeListSectionIndexView(context)
+  private var footerView: NativeListRowHost = NativeListRendererRegistry.create(reactContext, NativeListRendererKey.ACTION.ordinal, fonts)
+  private var footerRendererKey = NativeListRendererKey.ACTION
+  private val sectionIndexView = NativeListSectionIndexView(context, fonts)
   private val sectionIndexPreview = TextView(context)
   private var config: NativeListConfig? = null
   private var usesSelectorSourceScale = false
-  private var stickyDecoration: StickySectionHeaderDecoration? = null
+  private val stickyHeaderView = NativeListRendererRegistry.create(reactContext, NativeListRendererKey.SECTION_HEADER.ordinal, fonts)
+  private var stickyHeaderSignature: String? = null
+  private var stickyHeaderConfig: NativeListConfig? = null
+  private val stickyHeaderHost = object : FrameLayout(reactContext) {
+    private var down: MotionEvent? = null
+    private var forwarding = false
+
+    private fun forward(event: MotionEvent) {
+      val copy = MotionEvent.obtain(event)
+      copy.offsetLocation(x - refreshLayout.x - recyclerView.x, y - refreshLayout.y - recyclerView.y)
+      recyclerView.dispatchTouchEvent(copy)
+      copy.recycle()
+    }
+
+    override fun onInterceptTouchEvent(event: MotionEvent): Boolean {
+      when (event.actionMasked) {
+        MotionEvent.ACTION_DOWN -> { down?.recycle(); down = MotionEvent.obtain(event); forwarding = false }
+        MotionEvent.ACTION_MOVE -> {
+          val initial = down
+          if (initial != null && kotlin.math.abs(event.y - initial.y) > pagerGestureTouchSlop) {
+            startForwarding(initial, event)
+            return true
+          }
+        }
+        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { down?.recycle(); down = null }
+      }
+      return false
+    }
+
+    // The intercepting MOVE is not redelivered to onTouchEvent, so forward it
+    // together with the initial DOWN to keep the list's drag continuous.
+    private fun startForwarding(initial: MotionEvent, event: MotionEvent) {
+      forward(initial)
+      forward(event)
+      forwarding = true
+      parent?.requestDisallowInterceptTouchEvent(true)
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+      if (!forwarding) return super.onTouchEvent(event)
+      forward(event)
+      if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
+        forwarding = false
+        down?.recycle(); down = null
+      }
+      return true
+    }
+
+    override fun onDetachedFromWindow() { down?.recycle(); down = null; super.onDetachedFromWindow() }
+  }
+  private val stickyPreDraw = android.view.ViewTreeObserver.OnPreDrawListener {
+    updateStickyHeader()
+    finishScrollCommandIfSettled()
+    true
+  }
+  // Registered only while attached, on the captured window observer, so detach
+  // removes the same instance the listener was merged into.
+  private var stickyObservedTree: ViewTreeObserver? = null
   private var spacingDecoration: ItemSpacingDecoration? = null
   private var itemTouchHelper: ItemTouchHelper? = null
+  private var activeReorderHolder: NativeListViewHolder? = null
   private var reorderTouchListener: RecyclerView.OnItemTouchListener? = null
   private var reorderTouchHandler: Handler? = null
   private var endReachedGeneration: Int? = null
@@ -246,6 +567,14 @@ class NativeListView(
     true
   }
   private var pendingScrollRequest: ScrollRequest? = null
+  private var acceptedScrollRequest: ScrollRequest? = null
+  private var executingScrollCommand = false
+  private var dispatchingScrollRequest: ScrollRequest? = null
+  private var commandLayoutRequest: ScrollRequest? = null
+  private var commandAlignmentRequest: ScrollRequest? = null
+  private var commandFinishDiagnosticReason: String? = null
+  private var readingIntentEpoch = 0L
+  private var pendingBodyStartEpoch: Long? = null
   private val actionAnchorInstanceId = UUID.randomUUID().toString()
   private var actionAnchorCounter = 0L
   private var actionAnchor: ActionAnchorRecord? = null
@@ -258,7 +587,7 @@ class NativeListView(
 
   init {
     orientation = VERTICAL
-    recyclerView.adapter = adapter
+    recyclerView.adapter = scrollContentAdapter
     recyclerView.layoutManager = layoutManager
     recyclerView.itemAnimator = null
     recyclerView.addOnItemTouchListener(keyboardTapTouchListener)
@@ -266,11 +595,29 @@ class NativeListView(
     recyclerView.addItemDecoration(reorderPlaceholderDecoration)
     // OneKey patch: full-width selector header backgrounds do not change row content insets.
     recyclerView.addItemDecoration(SelectorBackgroundDecoration(adapter))
+    recyclerView.addItemDecoration(ContainerSlotInsetDecoration { slotInsetPx })
+    if (homeOffsetDiagnosticEnabled) layoutManager.onDiagnosticLayout = ::homeOffsetDiagnostic
+    layoutManager.onBeforeDataLayout = {
+      if (pendingBodyStartEpoch == readingIntentEpoch && adapter.itemCount > 0 && pendingScrollRequest == null) {
+        layoutManager.scrollToPositionWithOffset(0, 0)
+        pendingBodyStartEpoch = null
+        homeOffsetDiagnostic("first-fill-body-start")
+      }
+    }
+    layoutManager.onChildLaidOut = ::recordLaidOutRowExtent
+    layoutManager.onLayoutPassCompleted = {
+      emitScrollPositionThresholdIfNeeded(resync = true)
+      if (containerSlotRelayoutPending) scheduleContainerSlotRelayout()
+      if (commandLayoutRequest === acceptedScrollRequest) commandLayoutRequest = null
+      finishScrollCommandIfSettled()
+    }
     recyclerView.setHasFixedSize(false)
     layoutManager.spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
       override fun getSpanSize(position: Int): Int {
         if (config?.layout != "grid") return 1
-        val type = adapter.itemAt(position)?.type
+        val rowPosition = rowPositionForScroll(position)
+        if (rowPosition !in 0 until adapter.itemCount) return layoutManager.spanCount
+        val type = adapter.itemAt(rowPosition)?.type
         return if (type == "sectionHeader" || type == "system" || type == "action") {
           layoutManager.spanCount
         } else {
@@ -289,6 +636,9 @@ class NativeListView(
         FrameLayout.LayoutParams.MATCH_PARENT,
       ),
     )
+    stickyHeaderHost.visibility = GONE
+    stickyHeaderHost.addView(stickyHeaderView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
+    contentContainer.addView(stickyHeaderHost, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP))
     contentContainer.addView(
       sectionIndexView,
       FrameLayout.LayoutParams(
@@ -300,7 +650,7 @@ class NativeListView(
     sectionIndexPreview.apply {
       gravity = Gravity.CENTER
       textSize = 30f
-      typeface = NativeListFonts.regular(context)
+      typeface = fonts.regular(context)
       setPadding(0, 0, sectionIndexDp(10), 0)
       visibility = INVISIBLE
       alpha = 0f
@@ -324,6 +674,9 @@ class NativeListView(
     adapter.onAction = ::handleAction
     adapter.onBindingInvalidated = ::handleBindingInvalidated
     adapter.checkboxState = ::resolveCheckboxState
+    stickyHeaderView.onRowPress = ::handleRowPress
+    stickyHeaderView.onAction = ::handleAction
+    stickyHeaderView.onBindingInvalidated = ::handleBindingInvalidated
     footerView.onRowPress = ::handleRowPress
     footerView.onAction = ::handleAction
     footerView.onBindingInvalidated = ::handleBindingInvalidated
@@ -346,6 +699,11 @@ class NativeListView(
 
     recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
       override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
+        if (newState == RecyclerView.SCROLL_STATE_DRAGGING) {
+          cancelExecutingScrollCommand()
+          readingIntentEpoch++
+          pendingBodyStartEpoch = null
+        }
         when (newState) {
           RecyclerView.SCROLL_STATE_DRAGGING -> {
             sectionIndexProgrammaticScroll = false
@@ -357,11 +715,16 @@ class NativeListView(
               dismissKeyboard()
             }
           }
-          RecyclerView.SCROLL_STATE_IDLE -> sectionIndexProgrammaticScroll = false
+          RecyclerView.SCROLL_STATE_IDLE -> {
+            sectionIndexProgrammaticScroll = false
+            finishScrollCommandIfSettled()
+          }
         }
       }
 
       override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+        logicalScrollDistancePx = (logicalScrollDistancePx + dy).coerceAtLeast(0)
+        emitScrollPositionThresholdIfNeeded(resync = dx == 0 && dy == 0)
         if (dx != 0 || dy != 0) invalidateActionAnchor("scroll")
         syncSectionIndexToVisibleRows()
         scheduleVisibleEvent()
@@ -388,7 +751,7 @@ class NativeListView(
 
   private fun keyboardTapIsHandled(recyclerView: RecyclerView, event: MotionEvent): Boolean {
     val child = recyclerView.findChildViewUnder(event.x, event.y) ?: return false
-    val position = recyclerView.getChildAdapterPosition(child)
+    val position = rowPositionForScroll(recyclerView.getChildAdapterPosition(child))
     val item = adapter.itemAt(position) ?: return false
     val clickable = clickableDescendantAt(child, event.rawX.toInt(), event.rawY.toInt())
     val accessoryHandlesTap = clickable != null && clickable !== child
@@ -409,6 +772,7 @@ class NativeListView(
 
   override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
     super.onLayout(changed, left, top, right, bottom)
+    if (containerSlotRelayoutPending) scheduleContainerSlotRelayout()
     val first = config?.items?.firstOrNull()
     if (recyclerView.isLayoutRequested && (first?.type == "market" || first?.json?.optString("presentation") == "market")) {
       // A retained Market page can keep cached parent measurements after its diff.
@@ -431,6 +795,8 @@ class NativeListView(
   }
 
   private fun updateRefreshIndicatorOffset(offset: Int) {
+    // Let an ancestor render above its shared header without guessing caller offsets.
+    refreshLayout.setTag(R.id.onekey_native_scroll_coordinator_refresh_inset, offset)
     if (refreshIndicatorOffsetPx == offset) return
     refreshIndicatorOffsetPx = offset
     val refreshing = refreshLayout.isRefreshing
@@ -441,6 +807,12 @@ class NativeListView(
 
   override fun onAttachedToWindow() {
     super.onAttachedToWindow()
+    if (containerSlotRelayoutPending) scheduleContainerSlotRelayout()
+    recyclerView.setTag(R.id.onekey_native_scroll_coordinator_offset_listener, coordinatorOffsetListener)
+    val cancelTag = R.id.onekey_native_scroll_coordinator_command_cancel_listener
+    if (recyclerView.getTag(cancelTag) == null) recyclerView.setTag(cancelTag, coordinatorCommandCancelListener)
+    emitScrollPositionThresholdIfNeeded()
+    startStickyHeaderTracking()
     updateSectionIndexAttachment()
     val first = config?.items?.firstOrNull()
     if (recyclerView.isLayoutRequested && (first?.type == "market" || first?.json?.optString("presentation") == "market")) {
@@ -449,6 +821,13 @@ class NativeListView(
   }
 
   override fun onDetachedFromWindow() {
+    val cancelTag = R.id.onekey_native_scroll_coordinator_command_cancel_listener
+    if (recyclerView.getTag(cancelTag) === coordinatorCommandCancelListener) recyclerView.setTag(cancelTag, null)
+    cancelExecutingScrollCommand()
+    if (recyclerView.getTag(R.id.onekey_native_scroll_coordinator_offset_listener) === coordinatorOffsetListener) {
+      recyclerView.setTag(R.id.onekey_native_scroll_coordinator_offset_listener, null)
+    }
+    stopStickyHeaderTracking()
     stopSectionIndexAttachmentTracking()
     scheduleSectionIndexAttachmentToList()
     updateRefreshIndicatorOffset(0)
@@ -462,8 +841,17 @@ class NativeListView(
     } catch (_: Exception) {
       return
     }
+    homeOffsetDiagnostic("snapshot-before-nextCount=${next.items.size}")
     invalidateActionAnchor("snapshot")
     val previous = config
+    if (previous?.items?.isEmpty() == true && next.items.isNotEmpty() && adapter.itemCount == 0 &&
+      pendingScrollRequest == null && recyclerView.scrollState != RecyclerView.SCROLL_STATE_DRAGGING &&
+      !recyclerView.canScrollVertically(-1) && layoutManager.findFirstVisibleItemPosition() == 0) {
+      val first = layoutManager.findViewByPosition(0)
+      if (first != null && kotlin.math.abs(layoutManager.getDecoratedTop(first) - recyclerView.paddingTop) <= 1) {
+        pendingBodyStartEpoch = readingIntentEpoch
+      }
+    }
     if (previous != null && canApplyStableContentUpdate(previous, next)) {
       // OneKey patch: authorize a diff payload only against this exact validated baseline.
       next.items.forEachIndexed { index, item ->
@@ -479,13 +867,19 @@ class NativeListView(
         }
       }.toSet()
       config = next
+    updateContainerSlots()
     usesSelectorSourceScale = next.items.any { it.usesSelectorSourceScale }
     adapter.usesSelectorSourceScale = usesSelectorSourceScale
       adapter.theme = next.theme
+      adapter.listStyle = next.listStyle
       adapter.layout = next.layout
       adapter.orientation = next.orientation
       adapter.selectedKeys = next.selectedKeys
+      // Rows rebind through the adapter's listStyle invalidation; the fixed footer is bound
+      // outside the adapter, so a listStyle-only snapshot must rebind it here.
+      if (previous.listStyle?.toString() != next.listStyle?.toString()) bindFooter(next)
       adapter.submitList(next.items) {
+        homeOffsetDiagnostic("snapshot-stable-submit-commit")
         // OneKey patch: DiffUtil has dispatched its payloads; release the old serialized rows.
         next.items.forEach { it.selectionUpdateFromContent = null }
         recyclerView.post {
@@ -505,26 +899,30 @@ class NativeListView(
       previous?.items?.firstOrNull()?.type == "market" &&
       next.items.firstOrNull()?.type == "market" &&
       previous.items.firstOrNull()?.key != next.items.firstOrNull()?.key &&
-      layoutManager.findFirstVisibleItemPosition() == 0
+      rowPositionForScroll(layoutManager.findFirstVisibleItemPosition()) == 0
     ) {
-      layoutManager.findViewByPosition(0)?.let {
+      layoutManager.findViewByPosition(scrollPositionForRow(0))?.let {
         layoutManager.getDecoratedTop(it) - recyclerView.paddingTop
       }
     } else null
     config = next
+    pruneMeasuredRowExtents(next.items)
+    updateContainerSlots()
     usesSelectorSourceScale = next.items.any { it.usesSelectorSourceScale }
     adapter.usesSelectorSourceScale = usesSelectorSourceScale
     if (previous?.generation != next.generation) endReachedGeneration = null
     pendingReorder = null
     adapter.theme = next.theme
+    adapter.listStyle = next.listStyle
     adapter.layout = next.layout
     adapter.orientation = next.orientation
     adapter.selectedKeys = next.selectedKeys
     configureSectionIndex(next)
     updateLayout(next)
     adapter.submitList(next.items) {
+      homeOffsetDiagnostic("snapshot-submit-commit-marketAnchor=${marketStartOffset != null}")
       if (marketStartOffset != null) {
-        layoutManager.scrollToPositionWithOffset(0, marketStartOffset)
+        layoutManager.scrollToPositionWithOffset(scrollPositionForRow(0), marketStartOffset)
       }
       relayoutContents(preserveMarketPaginationAnchor)
       performPendingScrollIfNeeded()
@@ -533,16 +931,17 @@ class NativeListView(
       if (next.items.isNotEmpty()) checkEndReached()
     }
     refreshLayout.isEnabled = next.pullToRefresh
+    refreshLayout.setDistanceToTriggerSync(next.refreshTriggerDistance?.let { (it * density).roundToInt() } ?: defaultRefreshTriggerDistancePx)
     refreshLayout.isRefreshing = next.refreshing
     bindFooter(next)
     updateReordering(next)
   }
 
   private fun captureVisibleMarketAnchor(): VisibleMarketAnchor? {
-    val position = layoutManager.findFirstVisibleItemPosition()
+    val position = rowPositionForScroll(layoutManager.findFirstVisibleItemPosition()).coerceAtLeast(0)
     if (position == RecyclerView.NO_POSITION) return null
     val item = adapter.itemAt(position) ?: return null
-    val view = layoutManager.findViewByPosition(position) ?: return null
+    val view = layoutManager.findViewByPosition(scrollPositionForRow(position)) ?: return null
     return VisibleMarketAnchor(
       key = item.key,
       offset = layoutManager.getDecoratedTop(view) - recyclerView.paddingTop,
@@ -598,6 +997,7 @@ class NativeListView(
       previous.rowPressToggles != next.rowPressToggles ||
       previous.reorderable != next.reorderable ||
       previous.pullToRefresh != next.pullToRefresh ||
+      previous.refreshTriggerDistance != next.refreshTriggerDistance ||
       previous.refreshing != next.refreshing ||
       previous.loadMore != next.loadMore ||
       previous.endReachedThreshold != next.endReachedThreshold ||
@@ -749,6 +1149,7 @@ class NativeListView(
     if (!marketQuoteOnly) invalidateActionAnchor("snapshot")
     val next = current.copy(items = nextItems, selectedKeys = selected)
     config = next
+    updateContainerSlots()
     usesSelectorSourceScale = next.items.any { it.usesSelectorSourceScale }
     adapter.usesSelectorSourceScale = usesSelectorSourceScale
     adapter.selectedKeys = selected
@@ -804,9 +1205,90 @@ class NativeListView(
     requestScroll(ScrollRequest.End(animated))
   }
 
+  private fun acceptScrollRequest(request: ScrollRequest) {
+    if (acceptedScrollRequest === request) return
+    val current = config ?: return
+    val valid = when (request) {
+      is ScrollRequest.Key -> current.items.any { it.key == request.key } && request.viewPosition.isFinite() && request.viewOffset.isFinite()
+      is ScrollRequest.Index -> request.index in current.items.indices && request.viewPosition.isFinite() && request.viewOffset.isFinite()
+      is ScrollRequest.Offset -> request.offset.isFinite()
+      is ScrollRequest.End -> true
+    }
+    if (!valid) return
+    executingScrollCommand = false
+    dispatchingScrollRequest = null
+    commandLayoutRequest = null
+    commandAlignmentRequest = null
+    acceptedScrollRequest = request
+    commandFinishDiagnosticReason = null
+    readingIntentEpoch++
+    pendingBodyStartEpoch = null
+    val explicitTop = when (request) {
+      is ScrollRequest.Offset -> request.offset <= 0
+      is ScrollRequest.Index -> request.index == 0 && request.alignment == "start" && request.viewOffset == 0.0 && request.viewPosition == 0.0
+      is ScrollRequest.Key -> current.items.firstOrNull()?.key == request.key && request.alignment == "start" && request.viewOffset == 0.0 && request.viewPosition == 0.0
+      is ScrollRequest.End -> false
+    }
+    notifyScrollCommand(explicitTop, 0)
+  }
+
+  private fun notifyScrollCommand(explicitTop: Boolean, phase: Int) {
+    @Suppress("UNCHECKED_CAST")
+    val listeners = recyclerView.getTag(R.id.onekey_native_scroll_coordinator_command_listener) as? Map<Any, BiConsumer<Boolean, Int>>
+    listeners?.values?.toList()?.forEach { it.accept(explicitTop, phase) }
+  }
+
+  private val coordinatorCommandCancelListener = Runnable {
+    if (disposed) return@Runnable
+    pendingScrollRequest = null
+    readingIntentEpoch++
+    pendingBodyStartEpoch = null
+    cancelExecutingScrollCommand()
+    recyclerView.stopScroll()
+  }
+
+  private fun cancelExecutingScrollCommand() {
+    val request = acceptedScrollRequest
+    val wasExecuting = executingScrollCommand
+    executingScrollCommand = false
+    acceptedScrollRequest = null
+    dispatchingScrollRequest = null
+    commandLayoutRequest = null
+    commandAlignmentRequest = null
+    if (request != null && pendingScrollRequest === request) pendingScrollRequest = null
+    if (wasExecuting) notifyScrollCommand(false, 2)
+  }
+
+  private fun finishScrollCommandIfSettled() {
+    val request = acceptedScrollRequest ?: return
+    if (homeOffsetDiagnosticEnabled && executingScrollCommand) {
+      val reason = "pendingOwn=${pendingScrollRequest === request}-dispatchOwn=${dispatchingScrollRequest === request}" +
+        "-layoutOwn=${commandLayoutRequest === request}-alignOwn=${commandAlignmentRequest === request}" +
+        "-computing=${recyclerView.isComputingLayout}-scrollState=${recyclerView.scrollState}-smooth=${layoutManager.isSmoothScrolling}"
+      if (commandFinishDiagnosticReason != reason) {
+        commandFinishDiagnosticReason = reason
+        homeOffsetDiagnostic("command-finish-gates-$reason")
+      }
+    }
+    if (
+      !executingScrollCommand || pendingScrollRequest === request ||
+      dispatchingScrollRequest === request || commandLayoutRequest === request ||
+      commandAlignmentRequest === request || recyclerView.isComputingLayout ||
+      recyclerView.scrollState != RecyclerView.SCROLL_STATE_IDLE || layoutManager.isSmoothScrolling
+    ) return
+    executingScrollCommand = false
+    commandLayoutRequest = null
+    commandAlignmentRequest = null
+    notifyScrollCommand(false, 2)
+  }
+
   private fun requestScroll(request: ScrollRequest) {
+    acceptScrollRequest(request)
+    if (config != null && acceptedScrollRequest !== request) return
+    homeOffsetDiagnostic("command-request-kind=${request.javaClass.simpleName}")
     if (performScroll(request)) {
       pendingScrollRequest = null
+      finishScrollCommandIfSettled()
     } else {
       pendingScrollRequest = request
     }
@@ -814,59 +1296,109 @@ class NativeListView(
 
   private fun performPendingScrollIfNeeded() {
     val request = pendingScrollRequest ?: return
-    if (performScroll(request)) pendingScrollRequest = null
+    acceptScrollRequest(request)
+    if (config != null && acceptedScrollRequest !== request) {
+      if (pendingScrollRequest === request) pendingScrollRequest = null
+      return
+    }
+    homeOffsetDiagnostic("command-pending-kind=${request.javaClass.simpleName}")
+    if (performScroll(request)) {
+      pendingScrollRequest = null
+      finishScrollCommandIfSettled()
+    }
   }
 
   private fun performScroll(request: ScrollRequest): Boolean {
+    homeOffsetDiagnostic("command-perform-kind=${request.javaClass.simpleName}")
     val current = config ?: return false
     if (adapter.itemCount != current.items.size) return false
     if (recyclerView.width <= 0 || recyclerView.height <= 0) return false
-    return when (request) {
-      is ScrollRequest.Key -> {
-        val index = current.items.indexOfFirst { it.key == request.key }
-        if (index >= 0) {
-          performIndexScroll(
-            index,
-            request.animated,
-            request.alignment,
-            request.viewPosition,
-            request.viewOffset,
-          )
+    if (acceptedScrollRequest === request) {
+      dispatchingScrollRequest = request
+      executingScrollCommand = true
+      notifyScrollCommand(false, 1)
+    }
+    try {
+      return when (request) {
+        is ScrollRequest.Key -> {
+          val index = current.items.indexOfFirst { it.key == request.key }
+          if (index >= 0) {
+            performIndexScroll(
+              request,
+              index,
+              request.animated,
+              request.alignment,
+              request.viewPosition,
+              request.viewOffset,
+            )
+          }
+          true
         }
-        true
-      }
-      is ScrollRequest.Index -> {
-        if (request.index in current.items.indices) {
-          performIndexScroll(
-            request.index,
-            request.animated,
-            request.alignment,
-            request.viewPosition,
-            request.viewOffset,
-          )
+        is ScrollRequest.Index -> {
+          if (request.index in current.items.indices) {
+            performIndexScroll(
+              request,
+              request.index,
+              request.animated,
+              request.alignment,
+              request.viewPosition,
+              request.viewOffset,
+            )
+          }
+          true
         }
-        true
-      }
-      is ScrollRequest.Offset -> {
-        performOffsetScroll(request.offset, request.animated)
-        true
-      }
-      is ScrollRequest.End -> {
-        if (current.items.isNotEmpty()) {
-          performIndexScroll(
-            current.items.lastIndex,
-            request.animated,
-            "end",
-            1.0,
-            0.0,
-          )
+        is ScrollRequest.Offset -> {
+          performOffsetScroll(request, request.offset, request.animated)
+          true
         }
-        true
+        is ScrollRequest.End -> {
+          val finalSlotHeight = when {
+            footerSlotAdapter.itemCount > 0 -> slotHeights[2]
+            emptySlotAdapter.itemCount > 0 -> slotHeights[1]
+            adapter.itemCount == 0 && headerSlotAdapter.itemCount > 0 -> slotHeights[0]
+            else -> null
+          }
+          if (finalSlotHeight != null) {
+            val target = scrollContentAdapter.itemCount - 1
+            if (request.animated) {
+              val manager = layoutManager
+              val scroller = object : LinearSmoothScroller(context) {
+                override fun calculateDyToMakeVisible(view: View, snapPreference: Int): Int =
+                  nativeListEndAlignmentOffset(
+                    manager.height - manager.paddingBottom,
+                    manager.getDecoratedBottom(view),
+                  )
+              }
+              scroller.targetPosition = target
+              layoutManager.startSmoothScroll(scroller)
+            } else {
+              if (acceptedScrollRequest === request) commandLayoutRequest = request
+              layoutManager.scrollToPositionWithOffset(
+                target,
+                nativeListEndAlignmentOffset(viewportLength(layoutManager), finalSlotHeight),
+              )
+              relayoutRecyclerView()
+            }
+          } else if (current.items.isNotEmpty()) {
+            performIndexScroll(
+              request,
+              current.items.lastIndex,
+              request.animated,
+              "end",
+              1.0,
+              0.0,
+            )
+          }
+          true
+        }
       }
+    } finally {
+      if (dispatchingScrollRequest === request) dispatchingScrollRequest = null
     }
   }
 
   private fun performIndexScroll(
+    request: ScrollRequest,
     index: Int,
     animated: Boolean,
     alignment: String,
@@ -874,7 +1406,7 @@ class NativeListView(
     viewOffset: Double,
   ) {
     val manager = recyclerView.layoutManager as? LinearLayoutManager ?: return
-    val visibleView = manager.findViewByPosition(index)
+    val visibleView = manager.findViewByPosition(scrollPositionForRow(index))
     val viewPosition = if (alignment == "nearest") {
       val viewportStart = if (manager.orientation == RecyclerView.VERTICAL) {
         manager.paddingTop
@@ -895,16 +1427,17 @@ class NativeListView(
           else -> return
         }
       } else {
-        val firstVisible = manager.findFirstVisibleItemPosition()
+        val firstVisible = rowPositionForScroll(manager.findFirstVisibleItemPosition())
         if (firstVisible != RecyclerView.NO_POSITION && index < firstVisible) 0.0 else 1.0
       }
     } else {
       requestedViewPosition.coerceIn(0.0, 1.0)
     }
     val offsetPx = (viewOffset * density).roundToInt()
+    val nearest = alignment == "nearest"
 
     if (visibleView != null) {
-      alignVisibleView(manager, visibleView, viewPosition, offsetPx, animated)
+      alignVisibleView(manager, visibleView, viewPosition, offsetPx, animated, nearest)
       return
     }
     if (animated) {
@@ -914,35 +1447,57 @@ class NativeListView(
 
         override fun calculateDyToMakeVisible(view: View, snapPreference: Int): Int {
           if (manager.orientation != RecyclerView.VERTICAL) return 0
-          return smoothAlignmentDelta(manager, view, viewPosition, offsetPx)
+          return smoothAlignmentDelta(manager, view, viewPosition, offsetPx, nearest)
         }
 
         override fun calculateDxToMakeVisible(view: View, snapPreference: Int): Int {
           if (manager.orientation != RecyclerView.HORIZONTAL) return 0
-          return smoothAlignmentDelta(manager, view, viewPosition, offsetPx)
+          return smoothAlignmentDelta(manager, view, viewPosition, offsetPx, nearest)
         }
       }
-      smoothScroller.targetPosition = index
+      smoothScroller.targetPosition = scrollPositionForRow(index)
       manager.startSmoothScroll(smoothScroller)
       return
     }
 
-    val provisionalOffset = (viewPosition * viewportLength(manager)).roundToInt() + offsetPx
-    manager.scrollToPositionWithOffset(index, provisionalOffset)
+    val layoutOffset = nativeListProvisionalStart(
+      viewportLength(manager), viewPosition, offsetPx, nearest,
+    )
+    if (acceptedScrollRequest === request) {
+      commandLayoutRequest = request
+      commandAlignmentRequest = request
+    }
+    manager.scrollToPositionWithOffset(scrollPositionForRow(index), layoutOffset)
     relayoutRecyclerView()
-    alignAfterLayout(index, viewPosition, offsetPx)
+    alignAfterLayout(request, index, viewPosition, offsetPx, nearest)
   }
 
-  private fun performOffsetScroll(offset: Double, animated: Boolean) {
+  private fun performOffsetScroll(request: ScrollRequest, offset: Double, animated: Boolean) {
     val manager = recyclerView.layoutManager as? LinearLayoutManager ?: return
     val target = (offset * density).roundToInt().coerceAtLeast(0)
     if (!animated) {
+      logicalScrollDistancePx = target
+    }
+    if (!animated) {
       recyclerView.stopScroll()
+      if (acceptedScrollRequest === request) commandLayoutRequest = request
       manager.scrollToPositionWithOffset(0, -target)
       relayoutRecyclerView()
       return
     }
     if (target == 0) {
+      val startView = manager.findViewByPosition(0)
+      val paddingStart = if (manager.orientation == RecyclerView.VERTICAL) manager.paddingTop else manager.paddingLeft
+      val relativeStart = startView?.let { decoratedStart(manager, it) - paddingStart }
+      homeOffsetDiagnostic("command-top-dispatch-first=${manager.findFirstVisibleItemPosition()}-relativeStart=$relativeStart-smooth=${manager.isSmoothScrolling}")
+      if (
+        startView != null && manager.findFirstVisibleItemPosition() == 0 && relativeStart == 0 &&
+        recyclerView.scrollState == RecyclerView.SCROLL_STATE_IDLE &&
+        !recyclerView.isComputingLayout && !manager.isSmoothScrolling
+      ) {
+        homeOffsetDiagnostic("command-top-noop")
+        return
+      }
       recyclerView.smoothScrollToPosition(0)
       return
     }
@@ -960,21 +1515,34 @@ class NativeListView(
   }
 
   private fun alignAfterLayout(
+    request: ScrollRequest,
     index: Int,
     viewPosition: Double,
     viewOffset: Int,
+    nearest: Boolean,
     attemptsRemaining: Int = 2,
   ) {
     recyclerView.post {
-      val manager = recyclerView.layoutManager as? LinearLayoutManager ?: return@post
-      val view = manager.findViewByPosition(index)
-      if (view == null) {
+      if (acceptedScrollRequest !== request || !executingScrollCommand || disposed || !isAttachedToWindow) return@post
+      val manager = recyclerView.layoutManager as? LinearLayoutManager
+      val view = manager?.findViewByPosition(scrollPositionForRow(index))
+      if (view == null || recyclerView.isComputingLayout) {
         if (attemptsRemaining > 0) {
-          alignAfterLayout(index, viewPosition, viewOffset, attemptsRemaining - 1)
+          alignAfterLayout(request, index, viewPosition, viewOffset, nearest, attemptsRemaining - 1)
+          return@post
         }
-        return@post
+      } else if (manager != null) {
+        dispatchingScrollRequest = request
+        try {
+          alignVisibleView(manager, view, viewPosition, viewOffset, false, nearest)
+        } finally {
+          if (dispatchingScrollRequest === request) dispatchingScrollRequest = null
+        }
       }
-      alignVisibleView(manager, view, viewPosition, viewOffset, false)
+      if (acceptedScrollRequest === request && commandAlignmentRequest === request) {
+        commandAlignmentRequest = null
+        finishScrollCommandIfSettled()
+      }
     }
   }
 
@@ -984,6 +1552,7 @@ class NativeListView(
     viewPosition: Double,
     viewOffset: Int,
     animated: Boolean,
+    nearest: Boolean,
   ) {
     val itemStart = decoratedStart(manager, view)
     val itemLength = decoratedEnd(manager, view) - itemStart
@@ -992,9 +1561,9 @@ class NativeListView(
     } else {
       manager.paddingLeft
     }
-    val targetStart = viewportStart +
-      (viewPosition * (viewportLength(manager) - itemLength).coerceAtLeast(0)).roundToInt() +
-      viewOffset
+    val targetStart = nativeListAlignedStart(
+      viewportStart, viewportLength(manager), itemLength, viewPosition, viewOffset, nearest,
+    )
     val delta = itemStart - targetStart
     if (manager.orientation == RecyclerView.VERTICAL) {
       if (animated) recyclerView.smoothScrollBy(0, delta) else recyclerView.scrollBy(0, delta)
@@ -1008,6 +1577,7 @@ class NativeListView(
     view: View,
     viewPosition: Double,
     viewOffset: Int,
+    nearest: Boolean,
   ): Int {
     val itemStart = decoratedStart(manager, view)
     val itemLength = decoratedEnd(manager, view) - itemStart
@@ -1016,9 +1586,9 @@ class NativeListView(
     } else {
       manager.paddingLeft
     }
-    val targetStart = viewportStart +
-      (viewPosition * (viewportLength(manager) - itemLength).coerceAtLeast(0)).roundToInt() +
-      viewOffset
+    val targetStart = nativeListAlignedStart(
+      viewportStart, viewportLength(manager), itemLength, viewPosition, viewOffset, nearest,
+    )
     return targetStart - itemStart
   }
 
@@ -1078,6 +1648,10 @@ class NativeListView(
   fun dispose() {
     if (disposed) return
     disposed = true
+    val cancelTag = R.id.onekey_native_scroll_coordinator_command_cancel_listener
+    if (recyclerView.getTag(cancelTag) === coordinatorCommandCancelListener) recyclerView.setTag(cancelTag, null)
+    containerSlotRelayoutPending = false
+    onScrollPositionThresholdChange = null
     if (!isAttachedToWindow) disposeResources()
   }
 
@@ -1091,16 +1665,42 @@ class NativeListView(
     actionAnchor = null
     pendingScrollRequest = null
     visibleEventScheduled = false
+    layoutManager.onChildLaidOut = null
+    layoutManager.onLayoutPassCompleted = null
+    layoutManager.onDiagnosticLayout = null
+    layoutManager.onBeforeDataLayout = null
+    pendingBodyStartEpoch = null
+    executingScrollCommand = false
+    acceptedScrollRequest = null
+    dispatchingScrollRequest = null
+    commandLayoutRequest = null
+    commandAlignmentRequest = null
+    measuredRowExtentsPx.clear()
+    measuredRowExtentSumPx = 0L
     reorderTouchHandler?.removeCallbacksAndMessages(null)
     reorderTouchHandler = null
     reorderTouchListener?.let(recyclerView::removeOnItemTouchListener)
     reorderTouchListener = null
     recyclerView.removeOnItemTouchListener(keyboardTapTouchListener)
     recyclerView.removeOnItemTouchListener(pagerGestureTouchListener)
-    itemTouchHelper?.attachToRecyclerView(null)
+    val previousHelper = itemTouchHelper
     itemTouchHelper = null
+    if (previousHelper != null && activeReorderHolder != null) {
+      val now = SystemClock.uptimeMillis()
+      val cancel = MotionEvent.obtain(now, now, MotionEvent.ACTION_CANCEL, 0f, 0f, 0)
+      try {
+        recyclerView.onInterceptTouchEvent(cancel)
+      } finally {
+        cancel.recycle()
+      }
+    }
+    previousHelper?.attachToRecyclerView(null)
+    activeReorderHolder = null
     footerView.recycle()
     footerView.dispose()
+    stopStickyHeaderTracking()
+    stickyHeaderView.dispose()
+    stickyHeaderHost.visibility = GONE
     recyclerView.swapAdapter(null, false)
     adapter.dispose()
   }
@@ -1120,6 +1720,8 @@ class NativeListView(
     // Content/theme snapshots must replace only the padding owned by NativeList.
     val coordinatorTopPadding = (recyclerView.paddingTop - configuredTopPaddingPx).coerceAtLeast(0)
     val coordinatorBottomPadding = (recyclerView.paddingBottom - configuredBottomPaddingPx).coerceAtLeast(0)
+    // Slot roots are laid out by React at the unscaled JS inset, without the index gutter.
+    slotInsetPx = (horizontalPadding * density).roundToInt()
     configuredTopPaddingPx = dp(topPadding)
     configuredBottomPaddingPx = dp(bottomPadding)
     recyclerView.setPaddingRelative(
@@ -1133,10 +1735,63 @@ class NativeListView(
 
     spacingDecoration?.let(recyclerView::removeItemDecoration)
     spacingDecoration = ItemSpacingDecoration(dp(next.itemSpacing), next.itemSpacing, density).also(recyclerView::addItemDecoration)
-    stickyDecoration?.let(recyclerView::removeItemDecoration)
-    stickyDecoration = if (next.stickyHeaders && orientation == RecyclerView.VERTICAL) {
-      StickySectionHeaderDecoration(adapter, context, next.theme, density).also(recyclerView::addItemDecoration)
-    } else null
+    stickyHeaderSignature = null
+    if (!next.stickyHeaders || orientation != RecyclerView.VERTICAL) stickyHeaderHost.visibility = GONE
+  }
+
+  private fun updateStickyHeader() {
+    val current = config
+    if (current == null || !current.stickyHeaders || layoutManager.orientation != RecyclerView.VERTICAL || recyclerView.width <= 0) {
+      stickyHeaderHost.visibility = GONE
+      return
+    }
+    val first = rowPositionForScroll(layoutManager.findFirstVisibleItemPosition())
+    var position = first
+    while (position >= 0 && adapter.itemAt(position)?.let(::isStickySectionHeader) != true) position--
+    val item = adapter.itemAt(position)
+    if (item == null || first == RecyclerView.NO_POSITION || (layoutManager.findViewByPosition(scrollPositionForRow(position))?.top ?: -1) > 0) {
+      stickyHeaderHost.visibility = GONE
+      return
+    }
+    val width = recyclerView.width - recyclerView.paddingLeft - recyclerView.paddingRight
+    if (width <= 0) {
+      stickyHeaderHost.visibility = GONE
+      return
+    }
+    val signature = "${item.content}:$width:${recyclerView.layoutDirection}:$usesSelectorSourceScale"
+    if (stickyHeaderConfig !== current || stickyHeaderSignature != signature) {
+      stickyHeaderConfig = current
+      stickyHeaderSignature = signature
+      stickyHeaderView.listStyle = current.listStyle
+      stickyHeaderView.bind(item, current.theme, current.layout, current.orientation, position,
+        item.json.optBoolean("selected", false) || current.selectedKeys.contains(item.key), ::resolveCheckboxState,
+        useSourceScale = usesSelectorSourceScale)
+      stickyHeaderView.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+      stickyHeaderHost.layoutParams = (stickyHeaderHost.layoutParams as FrameLayout.LayoutParams).apply {
+        this.width = width
+        height = stickyHeaderView.measuredHeight
+        leftMargin = recyclerView.paddingLeft
+        rightMargin = recyclerView.paddingRight
+      }
+    }
+    val height = stickyHeaderView.measuredHeight
+    var nextTop = Int.MAX_VALUE
+    for (index in 0 until recyclerView.childCount) {
+      val child = recyclerView.getChildAt(index)
+      val childPosition = rowPositionForScroll(recyclerView.getChildAdapterPosition(child))
+      if (childPosition > position && adapter.itemAt(childPosition)?.let(::isStickySectionHeader) == true) nextTop = minOf(nextTop, child.top)
+    }
+    stickyHeaderHost.translationY = minOf(0, nextTop - height).toFloat()
+    stickyHeaderHost.visibility = VISIBLE
+    // React Native can retain the measured parent while this overlay becomes
+    // visible in pre-draw. Lay out the container-owned header immediately.
+    if (stickyHeaderHost.isLayoutRequested || stickyHeaderHost.width != width || stickyHeaderHost.height != height) {
+      stickyHeaderHost.measure(
+        View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+        View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY),
+      )
+      stickyHeaderHost.layout(recyclerView.paddingLeft, 0, recyclerView.paddingLeft + width, height)
+    }
   }
 
   private fun configureSectionIndex(next: NativeListConfig) {
@@ -1246,6 +1901,20 @@ class NativeListView(
     }
   }
 
+  private fun startStickyHeaderTracking() {
+    if (resourcesDisposed) return
+    val observer = viewTreeObserver
+    if (stickyObservedTree === observer) return
+    stopStickyHeaderTracking()
+    observer.addOnPreDrawListener(stickyPreDraw)
+    stickyObservedTree = observer
+  }
+
+  private fun stopStickyHeaderTracking() {
+    stickyObservedTree?.takeIf(ViewTreeObserver::isAlive)?.removeOnPreDrawListener(stickyPreDraw)
+    stickyObservedTree = null
+  }
+
   private fun startSectionIndexAttachmentTracking() {
     val observer = viewTreeObserver
     if (sectionIndexObservedTree === observer) return
@@ -1343,7 +2012,7 @@ class NativeListView(
 
   private fun syncSectionIndexToVisibleRows() {
     if (sectionIndexScrubbing || sectionIndexProgrammaticScroll || sectionIndexEntries.isEmpty()) return
-    val firstVisible = layoutManager.findFirstVisibleItemPosition()
+    val firstVisible = rowPositionForScroll(layoutManager.findFirstVisibleItemPosition())
     if (firstVisible == RecyclerView.NO_POSITION) return
     sectionIndexView.setActiveIndex(
       sectionIndexEntries.indexOfLast { it.position <= firstVisible }.takeIf { it >= 0 },
@@ -1362,7 +2031,21 @@ class NativeListView(
       footerView.visibility = GONE
       footerView.recycle()
     } else {
+      if (footer.rendererKey != footerRendererKey) {
+        val previous = footerView
+        val position = indexOfChild(previous)
+        previous.recycle()
+        previous.dispose()
+        footerView = NativeListRendererRegistry.create(reactContext, footer.rendererKey.ordinal, fonts)
+        footerView.onRowPress = ::handleRowPress
+        footerView.onAction = ::handleAction
+        footerView.onBindingInvalidated = ::handleBindingInvalidated
+        removeView(previous)
+        addView(footerView, position, previous.layoutParams)
+        footerRendererKey = footer.rendererKey
+      }
       footerView.visibility = VISIBLE
+      footerView.listStyle = next.listStyle
       footerView.bind(
         footer,
         next.theme,
@@ -1472,7 +2155,7 @@ class NativeListView(
     return false
   }
 
-  private fun handleBindingInvalidated(row: NativeListRowView, epoch: Long) {
+  private fun handleBindingInvalidated(row: NativeListRowHost, epoch: Long) {
     val anchor = actionAnchor ?: return
     if (anchor.ownerRowView.get() === row && anchor.bindingEpoch == epoch) {
       invalidateActionAnchor("rebind")
@@ -1596,15 +2279,44 @@ class NativeListView(
   }
 
   private fun updateReordering(next: NativeListConfig) {
+    dragFrom = RecyclerView.NO_POSITION
+    dragTo = RecyclerView.NO_POSITION
+    pendingReorder = null
+    reorderPlaceholderDecoration.position = RecyclerView.NO_POSITION
     stopReorderRelayoutLoop()
     reorderTouchHandler?.removeCallbacksAndMessages(null)
     reorderTouchHandler = null
     reorderTouchListener?.let(recyclerView::removeOnItemTouchListener)
     reorderTouchListener = null
-    itemTouchHelper?.attachToRecyclerView(null)
+    val previousHelper = itemTouchHelper
     itemTouchHelper = null
+    if (previousHelper != null && activeReorderHolder != null) {
+      // Detach alone leaves ItemTouchHelper's selection/auto-scroll runnable alive.
+      val now = SystemClock.uptimeMillis()
+      val cancel = MotionEvent.obtain(now, now, MotionEvent.ACTION_CANCEL, 0f, 0f, 0)
+      try {
+        recyclerView.onInterceptTouchEvent(cancel)
+      } finally {
+        cancel.recycle()
+      }
+    }
+    previousHelper?.attachToRecyclerView(null)
+    val rows = mutableSetOf<NativeListViewHolder>()
+    activeReorderHolder?.let(rows::add)
+    activeReorderHolder = null
+    for (index in 0 until recyclerView.childCount) {
+      (recyclerView.getChildViewHolder(recyclerView.getChildAt(index)) as? NativeListViewHolder)
+        ?.let(rows::add)
+    }
+    rows.forEach { holder ->
+      holder.itemView.animate().cancel()
+      ItemTouchHelper.Callback.getDefaultUIUtil().clearView(holder.itemView)
+      holder.rowView.setReorderActive(false)
+    }
+    recyclerView.invalidate()
     adapter.cancelReorder()
     if (!next.reorderable) return
+    lateinit var helper: ItemTouchHelper
     val callback = object : ItemTouchHelper.SimpleCallback(
       ItemTouchHelper.UP or ItemTouchHelper.DOWN or ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT,
       0,
@@ -1657,8 +2369,10 @@ class NativeListView(
       override fun isLongPressDragEnabled(): Boolean = false
 
       override fun onSelectedChanged(viewHolder: RecyclerView.ViewHolder?, actionState: Int) {
+        if (itemTouchHelper !== helper) return
         super.onSelectedChanged(viewHolder, actionState)
         if (actionState == ItemTouchHelper.ACTION_STATE_DRAG) {
+          activeReorderHolder = viewHolder as? NativeListViewHolder
           val position = viewHolder?.bindingAdapterPosition ?: RecyclerView.NO_POSITION
           val item = adapter.itemAt(position)
           reorderPlaceholderDecoration.position = position
@@ -1685,7 +2399,7 @@ class NativeListView(
           (viewHolder as? NativeListViewHolder)?.rowView?.setReorderActive(true)
           if (compactWalletGroupDrag && viewHolder != null) {
             recyclerView.postOnAnimation {
-              if (viewHolder.itemView.isAttachedToWindow) {
+              if (itemTouchHelper === helper && viewHolder.itemView.isAttachedToWindow) {
                 relayoutRecyclerViewImmediately()
               }
             }
@@ -1694,6 +2408,8 @@ class NativeListView(
       }
 
       override fun getMovementFlags(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder): Int {
+        if (itemTouchHelper !== helper) return makeMovementFlags(0, 0)
+        if (viewHolder !is NativeListViewHolder) return makeMovementFlags(0, 0)
         val item = adapter.itemAt(viewHolder.bindingAdapterPosition)
         if (item == null || !item.isReorderable) return makeMovementFlags(0, 0)
         val dragFlags = if (next.orientation == "horizontal") ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT else ItemTouchHelper.UP or ItemTouchHelper.DOWN
@@ -1705,6 +2421,8 @@ class NativeListView(
         source: RecyclerView.ViewHolder,
         target: RecyclerView.ViewHolder,
       ): Boolean {
+        if (itemTouchHelper !== helper) return false
+        if (source !is NativeListViewHolder || target !is NativeListViewHolder) return false
         val from = source.bindingAdapterPosition
         val to = target.bindingAdapterPosition
         val base = pendingReorder ?: adapter.currentList
@@ -1745,7 +2463,7 @@ class NativeListView(
           )
         }
         val displacedView = target.itemView
-        prepareDisplacedReorderAnimation(displacedView)
+        prepareDisplacedReorderAnimation(displacedView, helper)
         val reordered = adapter.moveReordered(from, to)
         if (reordered == null) {
           logMoveAttempt(
@@ -1779,6 +2497,7 @@ class NativeListView(
         actionState: Int,
         isCurrentlyActive: Boolean,
       ) {
+        if (itemTouchHelper !== helper) return
         if (actionState == ItemTouchHelper.ACTION_STATE_DRAG) {
           latestDragDx = dX
           latestDragDy = dY
@@ -1823,6 +2542,7 @@ class NativeListView(
         totalSize: Int,
         msSinceStartScroll: Long,
       ): Int {
+        if (itemTouchHelper !== helper) return 0
         val effectiveViewSize: Int
         val effectiveOutOfBounds: Int
         if (compactWalletGroupDrag) {
@@ -1876,6 +2596,9 @@ class NativeListView(
       }
 
       override fun clearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
+        // Cancellation already restored rows before a replacement helper takes ownership.
+        if (itemTouchHelper !== helper) return
+        if (activeReorderHolder === viewHolder) activeReorderHolder = null
         stopReorderRelayoutLoop()
         val rowView = (viewHolder as? NativeListViewHolder)?.rowView
         val draggedGroupKey = (rowView?.tag as? NativeListItem)?.key
@@ -1910,13 +2633,14 @@ class NativeListView(
         val finishCompactWalletGroup = {
           if (wasCompactWalletGroupDrag) {
             recyclerView.postOnAnimation {
+              if (itemTouchHelper !== helper) return@postOnAnimation
               relayoutRecyclerViewImmediately()
               val resolvedPosition = draggedGroupKey
                 ?.let(adapter::positionOfKey)
                 ?.takeIf { it != RecyclerView.NO_POSITION }
                 ?: destinationPosition
               val destinationRow = recyclerView
-                .findViewHolderForAdapterPosition(resolvedPosition)
+                .findViewHolderForAdapterPosition(scrollPositionForRow(resolvedPosition))
                 ?.let { it as? NativeListViewHolder }
                 ?.rowView
               val groupRow = destinationRow?.takeIf {
@@ -1926,7 +2650,9 @@ class NativeListView(
                 REORDER_SPRING_DURATION_MS,
                 reorderSpringInterpolator,
               ) {
-                recyclerView.postOnAnimation(::relayoutRecyclerViewImmediately)
+                recyclerView.postOnAnimation {
+                  if (itemTouchHelper === helper) relayoutRecyclerViewImmediately()
+                }
               }
             }
           }
@@ -1943,9 +2669,12 @@ class NativeListView(
             reordered.getOrNull(to + 1)?.let { payload.put("afterKey", it.key) }
             reorderPayload = payload
             adapter.commitReordered(reordered) {
+              if (itemTouchHelper !== helper) return@commitReordered
               finishCompactWalletGroup()
               if (!wasCompactWalletGroupDrag) {
-                recyclerView.postOnAnimation(::relayoutRecyclerViewImmediately)
+                recyclerView.postOnAnimation {
+                  if (itemTouchHelper === helper) relayoutRecyclerViewImmediately()
+                }
               }
             }
           }
@@ -1961,7 +2690,9 @@ class NativeListView(
         reorderPayload?.let { emit(REORDER, it) }
       }
     }
-    itemTouchHelper = ItemTouchHelper(callback).also { it.attachToRecyclerView(recyclerView) }
+    helper = ItemTouchHelper(callback)
+    itemTouchHelper = helper
+    helper.attachToRecyclerView(recyclerView)
     val handler = Handler(Looper.getMainLooper())
     reorderTouchHandler = handler
     val movementLimit = dp(REORDER_ALLOWABLE_MOVEMENT_DP).toFloat()
@@ -1983,8 +2714,8 @@ class NativeListView(
       }
 
       private fun beginDrag(holder: RecyclerView.ViewHolder) {
-        if (candidate !== holder || !holder.itemView.isAttachedToWindow) return
-        itemTouchHelper?.startDrag(holder)
+        if (itemTouchHelper !== helper || candidate !== holder || !holder.itemView.isAttachedToWindow) return
+        helper.startDrag(holder)
         holder.itemView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
       }
 
@@ -1994,6 +2725,7 @@ class NativeListView(
       }
 
       override fun onInterceptTouchEvent(recyclerView: RecyclerView, event: MotionEvent): Boolean {
+        if (itemTouchHelper !== helper) return false
         when (event.actionMasked) {
           MotionEvent.ACTION_DOWN -> {
             cancelPending()
@@ -2003,6 +2735,8 @@ class NativeListView(
             val child = recyclerView.findChildViewUnder(event.x, event.y)
             candidate = child
               ?.let(recyclerView::getChildViewHolder)
+              // Container-slot holders report binding position 0 in their own adapter.
+              ?.takeIf { holder -> holder is NativeListViewHolder && holder.bindingAdapter === adapter }
               ?.takeIf { holder ->
                 adapter.itemAt(holder.bindingAdapterPosition)?.let { item ->
                   // OneKey patch: any wallet group member can initiate the group drag.
@@ -2033,7 +2767,7 @@ class NativeListView(
     }.also(recyclerView::addOnItemTouchListener)
   }
 
-  private fun prepareDisplacedReorderAnimation(view: View) {
+  private fun prepareDisplacedReorderAnimation(view: View, helper: ItemTouchHelper) {
     val previousX = view.x
     val previousY = view.y
     view.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
@@ -2049,6 +2783,7 @@ class NativeListView(
         oldBottom: Int,
       ) {
         changedView.removeOnLayoutChangeListener(this)
+        if (itemTouchHelper !== helper) return
         val deltaX = previousX - changedView.x
         val deltaY = previousY - changedView.y
         if (deltaX == 0f && deltaY == 0f) return
@@ -2079,8 +2814,20 @@ class NativeListView(
     Choreographer.getInstance().postFrameCallback {
       visibleEventScheduled = false
       val manager = recyclerView.layoutManager as? LinearLayoutManager ?: return@postFrameCallback
-      val first = manager.findFirstVisibleItemPosition()
-      val last = manager.findLastVisibleItemPosition()
+      val visibleRows = (0 until recyclerView.childCount).mapNotNull { index ->
+        val child = recyclerView.getChildAt(index)
+        val holder = recyclerView.getChildViewHolder(child) as? NativeListViewHolder ?: return@mapNotNull null
+        val visible = if (manager.orientation == RecyclerView.VERTICAL) {
+          manager.getDecoratedBottom(child) > recyclerView.paddingTop &&
+            manager.getDecoratedTop(child) < recyclerView.height - recyclerView.paddingBottom
+        } else {
+          manager.getDecoratedRight(child) > recyclerView.paddingLeft &&
+            manager.getDecoratedLeft(child) < recyclerView.width - recyclerView.paddingRight
+        }
+        holder.bindingAdapterPosition.takeIf { visible && it != RecyclerView.NO_POSITION }
+      }
+      val first = visibleRows.minOrNull() ?: RecyclerView.NO_POSITION
+      val last = visibleRows.maxOrNull() ?: RecyclerView.NO_POSITION
       val firstKey = adapter.itemAt(first)?.key
       val lastKey = adapter.itemAt(last)?.key
       val signature = "$first:$last:${firstKey.orEmpty()}:${lastKey.orEmpty()}"
@@ -2099,7 +2846,7 @@ class NativeListView(
     val current = config ?: return
     if (!current.loadMore || current.generation == endReachedGeneration || adapter.itemCount == 0) return
     val manager = recyclerView.layoutManager as? LinearLayoutManager ?: return
-    val lastVisible = manager.findLastVisibleItemPosition()
+    val lastVisible = rowPositionForScroll(manager.findLastVisibleItemPosition())
     val thresholdItems = max(1, ceil(adapter.itemCount * current.endReachedThreshold).toInt())
     if (lastVisible >= adapter.itemCount - thresholdItems) {
       endReachedGeneration = current.generation
@@ -2139,7 +2886,7 @@ class NativeListView(
         adapter.currentList.indexOfFirst { it.key == currentAnchor.key }
       } ?: RecyclerView.NO_POSITION
       if (anchor != null && anchorIndex >= 0) {
-        layoutManager.scrollToPositionWithOffset(anchorIndex, anchor.offset)
+        layoutManager.scrollToPositionWithOffset(scrollPositionForRow(anchorIndex), anchor.offset)
       }
       forceLayout()
       measure(
@@ -2301,7 +3048,11 @@ private class ReorderPlaceholderDecoration(
     val isWalletSidebar =
       item.type == "identity" && item.json.optString("presentation") == "walletSidebar"
     if (!isWalletSidebar && item.type != "walletGroup") return
-    val view = parent.findViewHolderForAdapterPosition(position)?.itemView ?: return
+    val view = (0 until parent.childCount).asSequence().map(parent::getChildAt)
+      .firstOrNull { child ->
+        val holder = parent.getChildViewHolder(child)
+        holder is NativeListViewHolder && holder.bindingAdapterPosition == position
+      } ?: return
     bounds.set(
       (view.left + insetPx).toFloat(),
       view.top.toFloat(),
@@ -2344,6 +3095,7 @@ private data class NativeListSectionIndexEntry(
 
 private class NativeListSectionIndexView(
   context: android.content.Context,
+  private val fonts: NativeListFonts,
 ) : View(context) {
   var onSelect: ((Int, Boolean) -> Unit)? = null
   var onInteractionEnded: (() -> Unit)? = null
@@ -2354,14 +3106,20 @@ private class NativeListSectionIndexView(
   private var activeColor = Color.BLACK
   private var activeTextColor = Color.WHITE
   private var lastTouchIndex: Int? = null
+  fun refreshFonts() {
+    normalPaint.typeface = fonts.regular(context)
+    activePaint.typeface = fonts.medium(context)
+    invalidate()
+  }
+
   private val activeBackgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG)
   private val normalPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
     textAlign = Paint.Align.CENTER
-    typeface = NativeListFonts.regular(context)
+    typeface = fonts.regular(context)
   }
   private val activePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
     textAlign = Paint.Align.CENTER
-    typeface = NativeListFonts.medium(context)
+    typeface = fonts.medium(context)
   }
 
   init {
@@ -2572,112 +3330,40 @@ private class ItemSpacingDecoration(
     parent: RecyclerView,
     state: RecyclerView.State,
   ) {
-    if (spacing <= 0) return
+    if (spacing <= 0 || parent.getChildViewHolder(view) !is NativeListViewHolder) return
     val horizontal = (parent.layoutManager as? LinearLayoutManager)?.orientation == RecyclerView.HORIZONTAL
     val item = view.tag as? NativeListItem
-    val sourceWallet = item?.type == "identity" && item.json.optString("presentation") == "walletSidebar" && item.json.has("height")
+    val sourceWallet = item?.type == "identity" && item.json.optString("presentation") == "walletSidebar" && item.hasExplicitHeight
     // OneKey patch: V1 measures the wallet and its bottom padding as one sortable row.
     val itemSpacing = if (!horizontal && sourceWallet) {
-      val sourceHeight = item!!.json.optInt("height")
+      val sourceHeight = item!!.styledHeight ?: item.json.optDouble("height")
       ((sourceHeight + sourceSpacing) * density).roundToInt() - (sourceHeight * density).roundToInt()
     } else spacing
     if (horizontal) outRect.right = itemSpacing else outRect.bottom = itemSpacing
   }
 }
 
-private class StickySectionHeaderDecoration(
-  private val adapter: NativeListAdapter,
-  private val context: android.content.Context,
-  theme: JSONObject?,
-  private val density: Float,
-) : RecyclerView.ItemDecoration() {
-  private val backgroundPaint = Paint().apply {
-    color = parseColor(theme?.optString("rowBackground"), "#FFFFFF")
-  }
-  private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-    color = parseColor(theme?.optString("secondaryText"), "#0000009B")
-    textSize = NativeListScale.font(context.resources, 14f) * density
-    typeface = NativeListFonts.semibold(context)
-  }
-
-  override fun onDrawOver(canvas: Canvas, parent: RecyclerView, state: RecyclerView.State) {
-    val manager = parent.layoutManager as? LinearLayoutManager ?: return
-    val first = manager.findFirstVisibleItemPosition()
-    if (first == RecyclerView.NO_POSITION) return
-    var header: NativeListItem? = null
-    for (index in first downTo 0) {
-      val candidate = adapter.itemAt(index)
-      if (candidate?.type == "sectionHeader") {
-        if (candidate.json.optString("variant") == "summary" || !candidate.json.optBoolean("sticky", true)) continue
-        header = candidate.takeIf(::isSimpleStickySectionHeader)
-        break
-      }
-    }
-    val item = header ?: return
-    // OneKey patch: a pinned selector heading must use the same text rasterization as its row.
-    textPaint.flags = if (item.usesSelectorSourceScale) Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG or Paint.LINEAR_TEXT_FLAG else Paint.ANTI_ALIAS_FLAG
-    val isHistory = item.json.optString("variant") == "history" ||
-      item.sectionKey?.startsWith("history-") == true
-    val sourceHeight = item.json.optInt("height", 36) * density
-    val height = if (item.usesSelectorSourceScale) {
-      if (item.json.optString("heightRounding") == "nearest") sourceHeight.roundToInt() else sourceHeight.toInt()
-    } else NativeListScale.dp(context.resources, if (isHistory) 16 else 36)
-    val textSize = if (item.usesSelectorSourceScale) 14f else NativeListScale.font(context.resources, if (isHistory) 12f else 14f)
-    textPaint.textSize = if (item.usesSelectorSourceScale) kotlin.math.ceil((textSize * density).toDouble()).toFloat() else textSize * density
-    val horizontalInset = if (item.usesSelectorSourceScale) ((20 * density).toInt() - parent.paddingLeft).toFloat() else NativeListScale.dp(context.resources, if (isHistory) 8 else 20).toFloat()
-    val left = parent.paddingLeft.toFloat()
-    val right = (parent.width - parent.paddingRight).toFloat()
-    canvas.drawRect(left, 0f, right, height.toFloat(), backgroundPaint)
-    val baseline = if (item.usesSelectorSourceScale) {
-      val metrics = textPaint.fontMetricsInt
-      val lineHeight = kotlin.math.ceil(20 * density.toDouble()).toInt()
-      val leading = lineHeight - (metrics.descent - metrics.ascent)
-      (height - lineHeight) / 2 - metrics.ascent + kotlin.math.ceil(leading / 2.0).toFloat()
-    } else height / 2f - (textPaint.descent() + textPaint.ascent()) / 2f
-    val value = item.json.optString("title").let { if (isHistory) it.uppercase() else it }
-    val isRightToLeft = parent.layoutDirection == View.LAYOUT_DIRECTION_RTL
-    val textWidth = if (isHistory) {
-      spacedTextWidth(value, NativeListScale.dp(context.resources, 1).toFloat())
-    } else {
-      textPaint.measureText(value)
-    }
-    val x = if (isRightToLeft) right - horizontalInset - textWidth else left + horizontalInset
-    if (isHistory) {
-      drawSpacedText(canvas, value, x, baseline, NativeListScale.dp(context.resources, 1).toFloat())
-    } else {
-      canvas.drawText(value, x, baseline, textPaint)
-    }
-  }
-
-  private fun drawSpacedText(canvas: Canvas, value: String, x: Float, baseline: Float, spacing: Float) {
-    var cursor = x
-    value.forEachIndexed { index, character ->
-      val glyph = character.toString()
-      canvas.drawText(glyph, cursor, baseline, textPaint)
-      cursor += textPaint.measureText(glyph)
-      if (index < value.lastIndex) cursor += spacing * 0.8f
-    }
-  }
-
-  private fun spacedTextWidth(value: String, spacing: Float): Float =
-    value.sumOf { textPaint.measureText(it.toString()).toDouble() }.toFloat() +
-      max(0, value.length - 1) * spacing * 0.8f
-
-  companion object {
-    private fun parseColor(value: String?, fallback: String): Int = try {
-      parseNativeListColor(if (value.isNullOrEmpty()) fallback else value)
-    } catch (_: IllegalArgumentException) {
-      parseNativeListColor(fallback)
-    }
+/**
+ * React lays out slot content at `contentPaddingHorizontal ?? contentPadding` logical units
+ * from each edge. Row padding may be scaled or widened by the section-index gutter, so slot
+ * holders offset themselves (possibly negatively) back to the JavaScript inset.
+ */
+private class ContainerSlotInsetDecoration(private val insetPx: () -> Int) : RecyclerView.ItemDecoration() {
+  override fun getItemOffsets(
+    outRect: android.graphics.Rect,
+    view: View,
+    parent: RecyclerView,
+    state: RecyclerView.State,
+  ) {
+    if (parent.getChildViewHolder(view) !is NativeListContainerSlotAdapter.Holder) return
+    val inset = insetPx()
+    outRect.left = inset - parent.paddingLeft
+    outRect.right = inset - parent.paddingRight
   }
 }
 
-internal fun isSimpleStickySectionHeader(item: NativeListItem): Boolean =
-  item.type == "sectionHeader" &&
-    item.json.optBoolean("sticky", true) &&
-    item.json.optString("variant") != "summary" &&
-    item.json.optString("value").isEmpty() &&
-    item.json.optJSONObject("checkbox") == null
+internal fun isStickySectionHeader(item: NativeListItem): Boolean =
+  item.type == "sectionHeader" && item.json.optBoolean("sticky", true) && item.json.optString("variant") != "summary"
 
 // OneKey patch: paint only explicitly requested backgrounds into list side padding.
 private class SelectorBackgroundDecoration(private val adapter: NativeListAdapter) : RecyclerView.ItemDecoration() {
@@ -2685,11 +3371,18 @@ private class SelectorBackgroundDecoration(private val adapter: NativeListAdapte
   override fun onDraw(canvas: Canvas, parent: RecyclerView, state: RecyclerView.State) {
     for (index in 0 until parent.childCount) {
       val child = parent.getChildAt(index)
-      val item = adapter.itemAt(parent.getChildAdapterPosition(child)) ?: continue
+      val item = adapter.itemAt(parent.getChildViewHolder(child).takeIf { it is NativeListViewHolder }?.bindingAdapterPosition ?: RecyclerView.NO_POSITION) ?: continue
       if (!item.json.optBoolean("backgroundFullWidth", false)) continue
-      val color = item.json.optString("backgroundColor")
-      if (color.isEmpty()) continue
+      val color = resolveNativeListSelectorBackgroundColor(
+        rowType = item.type,
+        styleBackgroundColor = item.json.optJSONObject("style")
+          ?.optJSONObject("container")
+          ?.optString("backgroundColor"),
+        rowBackgroundColor = item.json.optString("backgroundColor"),
+      ) ?: continue
       paint.color = try { parseNativeListColor(color) } catch (_: IllegalArgumentException) { Color.TRANSPARENT }
+      val opacity = item.json.optJSONObject("style")?.optJSONObject("container")?.optDouble("opacity", item.json.optDouble("opacity", 1.0)) ?: item.json.optDouble("opacity", 1.0)
+      paint.alpha = (Color.alpha(paint.color) * opacity * (if (item.json.optBoolean("disabled", false)) 0.5 else 1.0)).toInt()
       val top = child.y
       canvas.drawRect(0f, top, parent.width.toFloat(), top + child.height, paint)
       if (item.type == "system" && item.json.optString("variant") == "warning") {

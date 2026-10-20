@@ -4,6 +4,214 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+- **image-crop-picker**: Add byte-preserving single-image selection through the system picker without full-library read authorization. Preserve cropping and sanitize native failure messages.
+- **photo-library**: Add a minimal add-only image-saving module. iOS uses addOnly authorization; Android 29+ saves with MediaStore, and legacy write authorization is capped at API 28 by the consuming App.
+- **capture-protection**: Migrate screenshot protection into a OneKey Nitro module with upstream acknowledgements and no broad media-read permission requirement.
+- **native-list**: Add `snapshot.listStyle` for list chrome: `separator.inset`, `separator.color`, and `groupCornerRadius`, applied on all three platforms. The surface carries only what every platform can honour — pull to refresh is a system control on both native platforms, the section index belongs to `capabilities.sectionIndex`, and the reorder preview is drawn with platform-specific primitives — and `validateSnapshot` rejects any other key rather than accepting one that some platform would ignore. Every value is absent by default and each platform keeps its own number as the fallback, so an untouched list renders exactly as before; on Web the inset separator keeps a transparent border for layout and paints the line with a logical-inset overlay, so row heights do not move.
+- **native-list**: Render every row through a closed renderer registry on iOS, Android and Web. Each of the 12 templates (Message, Rail, MediaTile, Action, System, Activity, DataRow, MetricCard, Market, Identity, SectionHeader and WalletGroup) owns its view tree, defaults, style mapping, binding and measurement; a shared host owns container appearance, events and binding invalidation. Renderer reuse is keyed by template family, so a same-key template change replaces an incompatible host, and every bind restores the current template's defaults without a preceding recycle. WalletGroup members are independent Identity renderers. The legacy native row monoliths, the global style-slot maps and the Web legacy pool are removed. See `native-views/react-native-native-list/docs/SPEC.md`.
+- **native-list**: Add a bounded per-template row style. `style` keys name the model field they modify rather than the view that carries it, and each template renderer maps the key to the view that renders that field. Typography can be given as a named step (`{ token: '$bodyLg' }`) which is resolved to numbers in JavaScript before serialization, so no native renderer learns the vocabulary; explicit values still override. Keys a template does not declare are rejected by `validateSnapshot` and `validatePatches` (see Breaking Changes), and styles carried by a patch are resolved the same way. Text slots, template-applicable image/padding/gap parameters and a shared `style.container` (explicit `height`, background, opacity, corner radius, border and content alignment) are implemented on Web, iOS and Android. Height precedence is `style.container.height` → `row.height` → template measurement, and selector presentations use their explicit-height geometry whichever field supplies the height; without an explicit height, measured templates may change height with their styled metrics. Automatic overflow fitting remains the integrator's responsibility.
+- **image**: New `resizeHeight` view prop, the pair of `resizeWidth`, so a non-square image can hand the pre-layout probe the same hints its preload used.
+
+### Breaking Changes
+- **native-list**: Remove implicit row-key styling; callers now choose `variant`, `style` and `separator` explicitly. A `history-` prefix on a section header's row key or section key no longer selects history typography or the 16-unit header height (use `variant: 'history'`). Android no longer gives the `linear-tokens` and `action-tokens` section headers token-manager typography, padding and 30-unit height (declare them with `style`). Android no longer suppresses `separator: true` for `token-*`, `balance-token-*` and `linear-custom-token` rows. The app-monorepo callers audited in the package `docs/MIGRATION_BASELINE.md` already use the explicit fields.
+- **native-list**: Automatic (intrinsic) Message row heights change: measurement now uses the resolved text, spacing and image metrics of the rendered views instead of the old estimator-only defaults. Rows with `row.height` or `style.container.height` are unaffected.
+- **native-list**: Row style validation is strict. `validateSnapshot` and `validatePatches` throw for any `style` key a template does not declare, for unknown nested text/image/container keys, and for unknown Market badge style keys, where extra keys used to be ignored. Colors must be `#RRGGBB` or `#RRGGBBAA`, including `listStyle.separator.color`. Every key sent by the app-monorepo Market list builder (`marketNativeListRows.ts`) still validates.
+
+### Bug Fixes
+- **native-list (iOS)**: Stop accessory buttons cross-fading their title on rebind (OK-64148). `NativeListAccessoryButton` is a `.system` UIButton, which animates every title change on its own, so a section header value such as the network selector's "$15.60" and its "Deselect all" action faded out and back in each time a checkbox toggle reconfigured the row. `setTitle`, `setAttributedTitle` and the button's own `layoutSubviews` (where UIKit applies a changed title) now run inside `UIView.performWithoutAnimation`; Android and Web text views never animated.
+- **native-list**: Review fixes for the renderer migration. Restore the legacy unstyled rendering of every template inside the new renderers (for example native linear DataRow single-label columns, pressed-row corners, Activity/Identity leading slots, and WalletGroup appearance and drag rules), without restoring key-based styling. Fix an Android sticky-header overlay crash and a leaked pre-draw listener on detached lists. On Web, keep loaded MetricCard images visible after rebinding, restore the legacy message-only retry row (no Web retry button for any presentation) and disabled WalletGroup member actions, include WalletGroup vertical padding in its height, and stop container alignment leaking into reused rows. On iOS, make `end` text alignment follow RTL layout and cache Message text measurement to cut its per-bind cost.
+- **native-list**: Second legacy-parity review round. Web: remove the Market retry button, keep hover title actions keyed on the member only, make WalletGroup `verticalPadding` replace the legacy border inset in measurement and rendering, and undo container writes before each renderer rebind. Android: switch DataRow off the legacy layout only for its text-style keys, apply selector source-scale typography to every row text while honouring an explicit `fontSize`/`lineHeight`, let `truncate` override the Market retry/noMatch ellipsis, and restore the legacy wallet leading-overlay metrics. iOS: exact `titleBadgeGap` inside legacy badge pills, type-aware theme/listStyle change detection, start/end alignment re-resolved on layout-direction change (including the footer), and WalletGroup ignores `row.height` as before.
+- **native-list**: Third review round. Keep Market subscripts at the legacy 60% of an explicit `fontSize` on all platforms. Web: lay out automatic-height System warnings at their rendered height again, and make clearing System/MetricCard text styles or a walletSidebar `leadingGap` match a fresh unstyled render. iOS/Android: selector geometry follows `style.container.height` as well as `row.height`; Android rebinds the fixed footer on a `listStyle`-only change; WalletGroup ignores row-level `backgroundColor` in the native full-width fill.
+- **native-list**: Align the configurable row-style contract across Web, iOS and Android. Apply non-Market image/spacing overrides; isolate primary and secondary data-column text in linear/table layouts; preserve styles through selection and summary updates; reuse the ordinary Android row renderer for pinned headers including values and checkboxes. Reject template-inapplicable box keys and nonportable text colors. Keep template structure, local styling and shared list capabilities distinct; overflow fitting remains caller-owned.
+- **native-list**: Apply Web selector styles after presentation defaults, isolate wallet-member styles, and target composite metric-card headings by their semantic role. Restore native text state on reuse while retaining unspecified iOS attributed-string properties. Propagate Android list chrome on initial snapshots and restrict custom group radius to actual grouped rows. Reject malformed nested text/image styles and unknown nested keys; developers integrating the list own overflow prevention.
+- **image (iOS)**: Show a memory-cached image on the mount frame instead of an icon skeleton (OK-63873). The memory probe skipped every image whose JS side left `cachePolicy` unset (Fabric hands Nitro a nil, which the request path already treats as memory-disk), and before layout it keyed the decode thumbnail from the empty bounds, so a freshly mounted image never matched what the prewarm or a previous mount had stored. The probe now coalesces a nil policy to memory-disk and, before layout, tries the decode-thumbnail keys the laid-out request (`resizeWidth`/`resizeHeight` hint + the view's `contentFit`) and a preload (hint + cover) would use. An image already on screen for the same identity is kept as the placeholder while a load for another key runs, instead of being blanked to a skeleton.
+- **image**: Clip the RN overlay container to the same circle as a `round` native image. `round` clips the native view to an oval on Android and to a `min(width, height) / 2` corner radius on iOS, but the wrapper that hosts a custom `placeholder` or `fallback` only ever clipped to the caller's own `borderRadius`, so those overlays were painted square over a round image — against the clipping contract the README states. The container and the drawn border overlay now take a percentage radius when `round` is set, overriding any per-corner radius from the caller's style.
+
+### Documentation
+- **native-list**: Audit the consolidated spec against template definitions, local layout responsibility and common container capabilities. Assign overflow handling to integrators and document existing structural headers, fixed/scrolling footers and pager header composition.
+- **native-list**: Consolidate the row-style spec on current main. Define all 12 row types with structural diagrams, local style/layout boundaries, and shared header/footer, section, scroll and indexed-bar ownership. Record implementation and example-coverage gaps separately from the contract.
+- **native-list**: Add `docs/STYLE_SPEC.md`, the shared style vocabulary for rows, section headers, fixed footers, and empty states. It records the design tokens (aliased to the application's own token names), the per-template style surface keyed by model field, list chrome, the template isolation rules, and a review checklist. Legacy row-height, typography and Android baseline scaling differences are documented separately from the unified configurable style contract.
+
+### Chores
+- Add the "Native List Row Style" example page with plain/styled pairs for all 12 row types, plus list chrome and explicit-height examples. Dated per-stage runtime acceptance of the renderer migration on iOS, Android and Web is recorded in the package `docs/DESIGN.md`; it is not a pixel-parity or scrolling-performance signoff.
+- **native-list (Web)**: Remove dead duplicated rules from `WEB_LIST_CSS`. Four blocks (`.ok-native-list-footer`/`-sticky`/`-index-rail`/`-index-button`, `-refresh`, `-warning`, `-subtitle-segments`) were emitted twice and a `prefers-reduced-motion` block three times; every property of the earlier copies was redeclared by the later ones, so removing them changes no rendering.
+- Stop tracking `nitrogen/generated` for `react-native-image` and `react-native-native-list`. Every other Nitro package already ignores `nitrogen/` and regenerates it from the spec at release time; these two were missing a package `.gitignore`, so 117 generated files rode along in every diff that touched a prop. `react-native-native-list` now runs `yarn nitrogen` in its `release` script like the other view packages, and local builds need `yarn nitrogen` in the package before the first native build.
+- No version bump here; these changes ship with the next release. Note that 3.0.157 was published from this branch before the review fixes landed and should not be used.
+
+## [3.0.156] - 2026-09-21
+
+### Features
+- **image (iOS and Android)**: Add a `round` prop to OneKeyImage and keep rounded clipping stable during Android navigation snapshots and recycled NativeList rows.
+
+### Bug Fixes
+- **native-list (iOS)**: Dispose the native host view tree when Nitro drops a list. Account-selector modals create two NativeLists; the previous drop hook only invalidated action anchors, so every close left both collection views, their visible cells, image hosts, and thousands of constraints reachable until the wrapper was collected. Disposal is now idempotent, detaches delegates and callbacks, releases list data and reusable views, and drops the host view immediately.
+
+### Chores
+- Bump all 41 publishable packages to 3.0.156.
+
+## [3.0.152] - 2026-09-20
+
+### Bug Fixes
+- **native-list (Android)**: Draw the full 38dp pressed circle behind the account selector row menu (OK-63780). The `DotHorOutline` accessory overhangs its 24dp slot with -7dp margins; the trailing column clipped children and the row clipped to padding, so the press state showed as a 24dp-wide pill while iOS and desktop drew the full circle.
+
+### Chores
+- Bump all 41 publishable packages to 3.0.152.
+
+## [3.0.151] - 2026-09-20
+
+### Bug Fixes
+- **native-list (iOS)**: Settle the nested row stacks before centering Market empty-state titles (OK-63717).
+
+### Chores
+- Bump all 41 publishable packages to 3.0.151, including the NativeList 3.0.149 and NativeSheet 3.0.150 fixes.
+
+## [3.0.150] - 2026-09-20
+
+### Bug Fixes
+- **native-sheet (iOS)**: Keep the sheet background transparent while dragging below its detent, and restore the backdrop after a cancelled drag-to-dismiss gesture.
+
+## [3.0.149] - 2026-09-19
+
+### Bug Fixes
+- **native-list (iOS)**: Re-measure rows when the list's width changes after its first layout (OK-63486). `NativeListFlowLayout` sizes rows in `sizeForItemAt` from the collection view's width, but the invalidation context UIKit builds for a bounds change leaves `invalidateFlowLayoutDelegateMetrics` off, so the delegate was not asked again. Rows kept their old width, and the flow layout centered a narrower row in the list. In app-monorepo's iPad account selector, react-native-screens lays the sheet content out at the parent stack's width (494 pt in landscape split view) before the sheet frame (840 pt) arrives, so the account list showed as a narrow centered column; rotating with the selector open did the same. A later data update re-measured the rows, which made the bug look intermittent. The layout now invalidates on every cross-axis size change and asks for delegate metrics in that context. Android rows are `MATCH_PARENT` and were not affected.
+- **pager-view (Android)**: Stop `CollapsiblePagerView` native tabs from truncating their labels at display densities such as 450 dpi (OK-63273). Tabs with the progress indicator reserved a combined `dp(16)` of padding, which rounds to 45 px there, while the `TextView`'s two 8 dp insets round to 23 px each, so a 90 px label got 89 px and was ellipsized. The tab width now adds the button's actual compound padding.
+
+### Chores
+- Bump all 41 publishable packages to 3.0.149.
+
+## [3.0.148] - 2026-09-18
+
+### Features
+- **image-crop-picker (iOS and Android)**: Replace the TOCropViewController and uCrop screens with one cropper screen that looks like an app page and is the same on both platforms. The iOS cropper had TOCropViewController's dark toolbar with plain-text Cancel and Done, whatever the app theme, and Android's uCrop screen had a toolbar with a check mark plus aspect, rotate and scale tabs, so the two looked unrelated. The new screen has a header with the title and a rotate button, the crop area, and a footer with capsule Cancel and Confirm buttons, with the same metrics on both platforms. iOS hosts TOCropView in `ImageCropperViewController`; Android hosts uCrop's `UCropView` in `ImageCropperActivity`.
+  - Add `cropperAppearance`: `colorScheme`, background, title, icon and button colors, title and button fonts, and a size `scale`. Colors are CSS hex strings, and anything left out falls back to OneKey's light or dark palette.
+  - The area outside the crop box shows the page background at 70% opacity instead of TOCropViewController's dark blur or uCrop's black dimming. The crop box border uses the title color, and its corner handles only show when the box can be resized (`freeStyleCropEnabled`).
+  - The rule-of-thirds grid shows while the image is moved, on Android as well. Android no longer rotates with two fingers, as iOS never did, and its rotate button animates the turn.
+  - Android keeps the calling activity's requested orientation and draws edge to edge, with status and navigation bar icons that follow `colorScheme`.
+  - iOS: `TOCropOverlayView` gains `frameColor`, `gridColor` and `cornerHandlesHidden`.
+
+### Bug Fixes
+- **image-crop-picker (iOS)**: Reopen the cropper when the same photo is tapped again after cancelling it. `PHPickerViewController` keeps the photo selected when the cropper is dismissed back to it, so the first tap only deselected it and nothing seemed to happen. On iOS 17 and later the picker's selection is now cleared; the configuration passes the shared photo library to get asset identifiers, which asks for no permission.
+- **native-logger (iOS)**: Keep log files after the first roll. `DDLogFileManagerDefault` defaults `logFilesDiskQuota` to 20 MB, the same as the configured `maximumFileSize`, so a single rolled file filled the quota and cleanup deleted every log file, including the one being written. The logger then wrote nothing for the rest of the session and exported log bundles had no `.log` files. The quota now follows the retention of 7 files × 20 MB, matching Android's `TOTAL_SIZE_CAP`.
+- **lite-card (iOS)**: Stop Lite card callbacks from firing twice when the NFC sheet is cancelled right after a card connects, which crashed the app with SIGABRT in `RCTTurboModule.mm` ("Callback arg cannot be called more than once") in the backup and restore flow on 6.6.0. The user's cancel was reported while the card operation was still running on another thread, and the operation's failed APDUs then reported a connection failure through the same callback. Each completion is now taken out under a lock when delivered, the app's own `invalidateSession` is no longer treated as a user cancel, `connectToTag` failures and non-Lite cards report a connection failure instead of leaving the JS promise pending, and repeated results are logged and dropped instead of aborting.
+
+### Breaking Changes
+- **image-crop-picker**: Remove `cropperChooseColor`, `cropperCancelColor`, `cropperActiveWidgetColor`, `cropperToolbarColor`, `cropperToolbarWidgetColor`, `cropperStatusBarLight`, `cropperNavigationBarLight`, `showCropFrame`, `enableRotationGesture`, `hideBottomControls` and `disableCropperColorSetters`. They styled the TOCropViewController and uCrop screens; use `cropperAppearance` instead.
+
+### Chores
+- Bump all 41 publishable packages to 3.0.148.
+
+## [3.0.147] - 2026-09-18
+
+### Features
+- **image-crop-picker (new)**: Add `@onekeyfe/react-native-image-crop-picker`, a Nitro module that replaces `react-native-image-crop-picker` 0.51.1. app-monorepo installs it under the `react-native-image-crop-picker` npm alias, so imports stay the same. It keeps `openPicker`, `openCropper`, `clean`, `cleanSingle` and the `E_*` rejection codes that OneKey uses, and drops multiple selection, video and the camera.
+  - **iOS**: Pick photos with `PHPickerViewController`, which needs no photo library permission (OK-48227). `react-native-image-crop-picker` requested full library access before showing its picker. After a user tapped "Don't Allow" once, iOS never asked again and every later `openPicker` call rejected with `E_NO_LIBRARY_PERMISSION`. The OneKey ID avatar and hardware wallpaper entries swallowed that rejection, so tapping them did nothing.
+  - **iOS**: Crop with a vendored TOCropViewController 3.2.0, up from 2.8.0, with the OK-51551 fix that keeps the crop box from shrinking on every rotation re-applied. Upstream 3.2.0 still has that bug. The app no longer needs its TOCropViewController pod override.
+  - **Android**: Port the existing flow to Kotlin: the system Photo Picker (no storage or media permission) and uCrop 2.2.11-native, the latest release. Activity results go through the activity's `ActivityResultRegistry` instead of an `ActivityEventListener`.
+  - Decode photos at most 4096 px on the long side, so a 48 MP photo no longer needs about 200 MB of memory before cropping.
+
+### Chores
+- Bump all 41 publishable packages to 3.0.147.
+
+## [3.0.146] - 2026-09-17
+
+### Bug Fixes
+- **auto-size-input (Android)**: Load the input, prefix and suffix font from the app's bundled assets (OK-57825). `makeTypeface()` resolved `fontFamily` with `Typeface.create`, which only knows system font families, so a bundled family such as `Roobert-Medium` silently fell back to the system font on Android while iOS resolved it through `UIAppFonts`. In app-monorepo's send amount input, the digits and the token symbol rendered in Roboto or the OEM system font. The typeface now comes from `ReactFontManager`, the lookup React Native `Text` uses: registered custom fonts, then `assets/fonts/<family>.ttf|otf`, and only then `Typeface.create`. Auto-size measurement uses the same typeface, so the fitted font size follows the real glyph widths. The `fontFamily` and `fontWeight` props are unchanged.
+
+### Chores
+- Bump all 40 publishable packages to 3.0.146.
+
+## [3.0.145] - 2026-09-17
+
+### Bug Fixes
+- **pager-view (iOS)**: Scroll the `CollapsiblePagerView` native tab bar and native sub-header when a drag starts on a tab or category item (regressed in 3.0.142). The items are `UIButton`s in horizontal scroll views that deliver touches immediately, so an item starts tracking on touch-down, and `UIScrollView` does not cancel `UIControl` touches by default: only a drag that began in the gap between two items scrolled. The bug stayed hidden while the page's NativeList collection view, which hosts the shared headers, kept UIKit's default `delaysContentTouches = true` and held touch-down back for about 150 ms, long enough for the drag to be recognized first. NativeList's quick-tap press fix in 3.0.142 turned that delay off. `touchesShouldCancelInContentView:` now returns `YES` for controls, as NativeList's collection view does, so a drag cancels the item's touch and scrolls the bar while a tap still presses the item.
+
+### Chores
+- Bump all 40 publishable packages to 3.0.145.
+
+## [3.0.144] - 2026-09-17
+
+### Features
+- **pager-view (iOS and Android)**: Add `nativeTabPressAnimationEnabled` to `CollapsiblePagerView`, default `true`. Set it to `false` to jump straight to the pressed page (OK-63487). A native tab press always dispatched an animated `setPage`, so pressing a distant tab scrolled through every page in between. Pages outside `pageRetentionDistance` are unmounted, so they showed blank while neighboring lists slid past, and app-monorepo's Market home had to send a second, non-animated command from `onNativeTabPress` to override the animation. The pressed page is still retained before the command is dispatched, so it is mounted when the pager moves.
+
+### Chores
+- Bump all 40 publishable packages to 3.0.144.
+
+## [3.0.142] - 2026-09-17
+
+### Bug Fixes
+- **native-list (iOS)**: Show the pressed row background on quick taps. The list's `UICollectionView` kept UIScrollView's default `delaysContentTouches = true`, so a row received touch-down only after about 150 ms. A tap released inside that window highlighted, unhighlighted and selected the row in one run loop turn, and the pressed color never rendered; Android rows set it on `ACTION_DOWN`. A private `NativeListCollectionView` now delivers touches immediately, and `touchesShouldCancel(in:)` returns `true` for in-row controls so a drag that starts on a tag badge, accessory or checkbox still scrolls the list. `didHighlightItemAt`, and with it `pressInActionKey`, now runs on touch-down, as it does on Android.
+
+### Chores
+- Bump all 40 publishable packages to 3.0.142.
+
+## [3.0.141] - 2026-09-16
+
+### Bug Fixes
+- **pager-view (Android)**: Load the native tab bar, category item and column label fonts from the app's bundled assets (OK-63273). They resolved `fontFamily` with `Typeface.create`, which only knows system font families, so a bundled family such as `Roobert-Medium` silently fell back to the system font on Android while iOS resolved it through `UIAppFonts`. The typeface now comes from `ReactFontManager`, the lookup React Native `Text` uses: registered custom fonts, then `assets/fonts/<family>.ttf|otf`, and only then `Typeface.create`. The `fontFamily` prop is unchanged. This upstreams the patch-package patch app-monorepo carried for `react-native-pager-view`.
+
+### Chores
+- Bump all 40 publishable packages to 3.0.141.
+
+## [3.0.140] - 2026-09-16
+
+### Features
+- **tab-view (Android)**: Add `ignoreKeyboardInsets`, default `true`. Set it to `false` to pad the tab bar by the keyboard height so it rises above the soft keyboard. The IME inset is read explicitly instead of through the compat system-window inset, and combined with the navigation bar inset so the prop stays independent of `ignoreBottomInsets`. The value lives in JS, so apps can switch the behavior without a native release.
+
+### Bug Fixes
+- **tab-view (Android)**: Keep the bottom tab bar under the soft keyboard (OK-63557). Material's `BottomNavigationView` padded itself with `getSystemWindowInsetBottom()`, which carries the IME height while the window uses `adjustResize`, and react-native-keyboard-controller switches the window to `adjustResize` whenever a `KeyboardAwareScrollView`, `KeyboardStickyView` or keyboard animation hook is mounted. On those screens the bar grew by the keyboard height, its items sat directly on top of the keyboard, and `onTabBarMeasured` reported the inflated height to JS. The bar now pads for system bars and display cutouts only unless `ignoreKeyboardInsets` is turned off.
+- **tab-view (Android)**: `setIgnoreBottomInsets(false)` no longer clears the inset listener, which also dropped the navigation bar padding. Both inset flags are re-applied when a uiMode change recreates the bottom navigation view.
+
+### Chores
+- Bump all 40 publishable packages to 3.0.140.
+
+## [3.0.139] - 2026-09-16
+
+### Chores
+- **release tooling**: The publish workflow trusted npm's exit code, so a package that npm accepted but never made available still turned the run green — exactly how `@onekeyfe/react-native-bundle-crypto@3.0.137` shipped as a silent partial release. Added `scripts/verify-published.mjs`, which reads each published version back from the registry origin (`?write=true`, since the read-through CDN can serve hours-stale documents and would otherwise fail healthy releases) and requires both that the version is listed and that the dist-tag points at it, polling for up to 10 minutes before failing the run.
+- **release tooling**: Added an `only_workspace` input to the publish workflow. Retrying one failed package previously meant re-running the whole release, where the packages that already published reject with E403 and turn the run red before proving anything about the one that mattered.
+- Bump all 40 publishable packages to 3.0.139. Package contents are unchanged from 3.0.138 — this release exercises the new post-publish verification on a real run.
+
+## [3.0.138] - 2026-09-16
+
+### Bug Fixes
+- **bundle-crypto (iOS)**: Drop the x86_64 simulator architecture from the vendored `Gopenpgp.xcframework`. The package was 14.9 MB packed / 42.5 MB unpacked — 9x the next largest package here and ~100x the median — because the framework carries three ~10 MB gomobile static archives, one of them a fat simulator slice holding both arm64 and x86_64. Now 10.7 MB packed / 30.7 MB unpacked. The slice directory is renamed to match its contents and the xcframework manifest updated; the podspec vendors the whole xcframework, so nothing else referenced the old name. **Intel Mac simulator builds are no longer supported by this module**; Apple Silicon simulator, device, and Mac Catalyst are unchanged. Symbol stripping is not an alternative — `strip -S` rejects the gomobile archives with "string table not at the end of the file".
+
+### Chores
+- Bump all 40 publishable packages to 3.0.138. 3.0.137 shipped for 39 of them, but npm left `@onekeyfe/react-native-bundle-crypto@3.0.137` in a staged-but-never-committed state — undownloadable, and permanently rejecting republishing with `409 Cannot publish over previously staged version`. The version number is unrecoverable, so the whole set moves to 3.0.138 to stay in lockstep.
+
+## [3.0.137] - 2026-09-16
+
+### Bug Fixes
+- **split-bundle-loader (Android)**: Stop the builtin segment extractor from racing itself. The main and background runtimes resolve the same segment independently, and `extractSemaphore` throttles I/O rather than excluding concurrent work on one path, so both could extract the same segment at once into a shared `<name>.tmp` — two `O_TRUNC` writers on one inode, with `renameTo` failing for whichever thread lost. That loser reported `SPLIT_BUNDLE_NOT_FOUND` for a file that was already on disk and complete, and the JS loader caches that code as a permanent failure, so a millisecond-wide race blanked a route for the rest of the process. Seen on the first launch after an APK replace, where the install-stamp wipe forces every segment to re-extract at once. Extraction is now serialized per path, each attempt writes a uniquely named temp file (so no two writers can publish a partially zeroed HBC, across processes too), and a failed rename re-checks the destination before reporting the segment missing.
+
+### Chores
+- Bump all 40 publishable packages to 3.0.137. Published for 39 of them; `@onekeyfe/react-native-bundle-crypto@3.0.137` never became available (see 3.0.138).
+
+## [3.0.136] - 2026-09-15
+
+### Bug Fixes
+- **native-list (Android)**: Keep token icons visible after a theme change by showing `hideUntilLoaded` images again when they already display the requested source (OK-50498).
+- **native-list (iOS and Android)**: Remember recently failed image sources so recycled or rebound rows restore their fallback text or icon immediately instead of flashing an empty slot, and size fallback icons to the image slot, drawing the `GlobusOutline` fallback at 1.2x.
+- **native-list (Android)**: Keep the source fallback icon measured while an image loads so an asynchronous failure can reveal it without another layout pass, call the image error handler on every failed load while retries continue, and detach the exact child view before recycling it during rapid nested scrolling.
+- **native-list (iOS)**: Call the image error handler on every failed load while retries continue, so a row rebound during the retry delay still records its failed source and restores the fallback instead of rendering an empty slot.
+- **native-list (Web)**: Keep the default cursor on the wallet sidebar, hardware wallet group member, account, and Add account row surfaces while icon buttons, checkboxes, and action buttons inside those rows keep their own pointer cursor, and round the Add account row's hover and pressed backgrounds with the 12px account row radius.
+- **image**: Use the border overlay and borderless container for every image with rounded corners, not only rounded images that also set a border width.
+- **pager-view (iOS)**: Fix the Release archive build failure "no matching function for call to 'RNCPruneReleasedPageStates'" by letting Objective-C++ callers pass typed released-state dictionaries.
+
+### Chores
+- Compile the pager-view released-state policy tests as Objective-C++ so the typed-dictionary call site is covered.
+- Bump all 40 publishable packages to 3.0.136.
+
+## [3.0.135] - 2026-09-15
+
+### Bug Fixes
+- **native-list (iOS)**: Keep row heights in sync while a wallet group is dragged in the wallet sidebar. UIKit interactive movement lays rows out in the in-flight order, but sizes were still resolved from the pre-drag snapshot, which stretched the neighboring row and clipped the passed group's name (OK-62492).
+
+### Chores
+- Add the "Native List Wallet Sidebar Reorder" example page that replays the OK-62492 wallet sidebar recording.
+- Bump all 40 publishable packages to 3.0.135.
+
 ## [3.0.134] - 2026-09-15
 
 ### Bug Fixes

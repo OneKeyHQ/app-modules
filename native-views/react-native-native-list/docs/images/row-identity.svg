@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="292" viewBox="0 0 900 292" role="img" aria-labelledby="title desc">
+<title id="title">identity · fixed leading / text / trailing regions</title>
+<desc id="desc">Structural schematic. Blue is content; green is controls; dashed slots are optional. Not a device screenshot or a pixel specification.</desc>
+<rect width="900" height="100%" rx="16" fill="#f5f7fa"/>
+<g font-family="Arial, Helvetica, sans-serif">
+<text x="24" y="36" font-size="22" fill="#172a3a" font-weight="600">identity · fixed leading / text / trailing regions</text>
+<rect x="24" y="66" width="852" height="178" rx="8" fill="#fff" stroke="#bfcbd5"/>
+<rect x="40" y="92" width="106" height="114" rx="8" fill="#eaf1fb" stroke="#91add0"/>
+<text x="52" y="143.0" font-size="15" fill="#294766" font-weight="400">leading</text>
+<text x="52" y="165.0" font-size="15" fill="#294766" font-weight="400">visual</text>
+<rect x="162" y="82" width="358" height="40" rx="8" fill="#eaf1fb" stroke="#91add0"/>
+<text x="174" y="107.0" font-size="15" fill="#294766" font-weight="400">title</text>
+<rect x="532" y="82" width="112" height="40" rx="8" fill="#eaf1fb" stroke="#91add0" stroke-dasharray="5 4"/>
+<text x="544" y="107.0" font-size="15" fill="#294766" font-weight="400">badges</text>
+<rect x="162" y="134" width="358" height="40" rx="8" fill="#eaf1fb" stroke="#91add0" stroke-dasharray="5 4"/>
+<text x="174" y="159.0" font-size="15" fill="#294766" font-weight="400">subtitle</text>
+<rect x="162" y="186" width="358" height="40" rx="8" fill="#eaf1fb" stroke="#91add0" stroke-dasharray="5 4"/>
+<text x="174" y="211.0" font-size="15" fill="#294766" font-weight="400">tertiary</text>
+<rect x="662" y="90" width="194" height="126" rx="8" fill="#e9f5ee" stroke="#72a38a" stroke-dasharray="5 4"/>
+<text x="674" y="136.0" font-size="15" fill="#2c6245" font-weight="400">trailing</text>
+<text x="674" y="158.0" font-size="15" fill="#2c6245" font-weight="400">value / valuePair</text>
+<text x="674" y="180.0" font-size="15" fill="#2c6245" font-weight="400">checkbox / menu</text>
+<text x="24" y="272" font-size="13" fill="#64798b" font-weight="400">Variants: default, accountSelector, networkSelector, walletSidebar. Styles preserve each variant’s structure.</text>
+</g>
+</svg>

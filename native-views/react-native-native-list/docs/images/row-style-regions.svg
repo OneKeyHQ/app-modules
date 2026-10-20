@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="430" viewBox="0 0 1040 430">
+<rect width="1040" height="430" fill="#f8fafc"/>
+<g font-family="Arial, sans-serif" fill="#172b4d">
+<text x="36" y="42" font-size="24" font-weight="700">Row style: shared surface and semantic regions</text>
+<text x="36" y="70" font-size="15" fill="#53657d">Template owns order and grouping. container.height can define the row height.</text>
+<rect x="40" y="122" width="960" height="194" rx="18" fill="#eaf3ff" stroke="#3878ba" stroke-width="3"/>
+<rect x="70" y="152" width="900" height="134" rx="6" fill="none" stroke="#8298b5" stroke-dasharray="6 4"/>
+<rect x="90" y="178" width="80" height="80" rx="12" fill="#b2cdeb"/>
+<text x="108" y="224" font-size="17">image</text>
+<path d="M178 220H228" stroke="#3878ba" stroke-width="2"/>
+<text x="174" y="172" font-size="12">leadingGap</text>
+<rect x="240" y="164" width="490" height="112" rx="5" fill="#fff" stroke="#b2cdeb"/>
+<text x="256" y="190" font-size="17" font-weight="700">Title text</text>
+<rect x="376" y="172" width="66" height="24" rx="4" fill="#dcf0db"/>
+<text x="386" y="189" font-size="13">badge</text>
+<text x="463" y="188" font-size="13" fill="#53657d">titleBadgeGap</text>
+<path d="M254 199V211" stroke="#3878ba" stroke-width="2"/>
+<text x="270" y="208" font-size="12" fill="#53657d">lineGap</text>
+<text x="256" y="229" font-size="15">Body: lines 1 / 2 / 3, tail or clip</text>
+<text x="256" y="253" font-size="15">lineHeight separates lines inside this field</text>
+<rect x="760" y="187" width="110" height="58" rx="6" fill="#fff" stroke="#b2cdeb"/>
+<text x="785" y="221" font-size="15">value</text>
+<path d="M879 217H902" stroke="#3878ba" stroke-width="2"/>
+<circle cx="931" cy="217" r="18" fill="#b2cdeb"/>
+<text x="796" y="269" font-size="13" fill="#53657d">trailingGap</text>
+<text x="40" y="107" font-size="15" fill="#3878ba">container: height / background / opacity / cornerRadius / borderWidth / borderColor</text>
+<text x="42" y="347" font-size="15">Dashed area = content after horizontalPadding / verticalPadding.</text>
+<text x="42" y="374" font-size="15">contentVerticalAlignment: top / center / bottom in the padded row.</text>
+<text x="42" y="401" font-size="15">Text alignment stays inside its region; offsetY shifts only glyphs, without changing spacing.</text>
+</g></svg>

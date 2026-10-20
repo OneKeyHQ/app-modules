@@ -12,6 +12,6 @@ class PagerViewPackage : ReactPackage {
     }
 
     override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> {
-        return listOf(PagerViewViewManager(), CollapsiblePagerViewManager())
+        return listOf(PagerViewViewManager(), CollapsiblePagerViewManager(), NativeScrollerViewManager())
     }
 }

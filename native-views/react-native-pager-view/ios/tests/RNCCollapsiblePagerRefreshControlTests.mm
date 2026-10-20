@@ -1,0 +1,308 @@
+#import <XCTest/XCTest.h>
+#import <React/RCTViewComponentView.h>
+#import "RNCCollapsiblePagerViewComponentView.h"
+#import "RNCNativeScrollerComponentView.h"
+
+@interface RNCCollapsiblePagerViewComponentView (RefreshControlTesting)
+- (void)updateRefreshControlForScrollView:(UIScrollView *)scrollView;
+- (void)releaseRefreshControlForScrollView:(UIScrollView *)scrollView;
+- (void)attachScrollObserverForCurrentPage;
+@end
+
+@interface RNCNativeScrollerComponentView (RefreshControlScrollCommandTesting)
+- (void)scrollTo:(double)x y:(double)y animated:(BOOL)animated;
+@end
+
+@interface RNCCollapsiblePagerRefreshControlTests : XCTestCase
+@end
+
+@implementation RNCCollapsiblePagerRefreshControlTests
+
+- (RNCCollapsiblePagerViewComponentView *)pagerWithHeader:(CGFloat)height
+{
+  RNCCollapsiblePagerViewComponentView *pager = [RNCCollapsiblePagerViewComponentView new];
+  [pager setValue:@YES forKey:@"nativeSmoothHeaderScrollEnabled"];
+  [pager setValue:@(height) forKey:@"headerHeight"];
+  [pager setValue:@44 forKey:@"stickyHeaderHeight"];
+  return pager;
+}
+
+- (void)testLateControlAndCallerOffsetUpdatesPreserveBaseline
+{
+  RNCCollapsiblePagerViewComponentView *pager = [self pagerWithHeader:64];
+  UIScrollView *scroll = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 0, 320, 600)];
+  [pager updateRefreshControlForScrollView:scroll];
+  UIRefreshControl *control = [UIRefreshControl new];
+  control.bounds = CGRectMake(3, -12, 320, 60);
+  scroll.refreshControl = control;
+  XCTAssertEqualWithAccuracy(control.layer.sublayerTransform.m42, -108, 0.001);
+  XCTAssertEqualWithAccuracy(control.bounds.origin.y, -12, 0.001);
+  [pager updateRefreshControlForScrollView:scroll];
+  XCTAssertEqualWithAccuracy(control.layer.sublayerTransform.m42, -108, 0.001);
+  XCTAssertEqualWithAccuracy(control.bounds.origin.y, -12, 0.001);
+  control.layer.sublayerTransform = control.layer.sublayerTransform;
+  // Also cover an explicit no-op KVO notification, even if CALayer's setter
+  // suppresses notifications for equal transforms on the current OS.
+  [control.layer willChangeValueForKey:@"sublayerTransform"];
+  [control.layer didChangeValueForKey:@"sublayerTransform"];
+  XCTAssertEqualWithAccuracy(control.layer.sublayerTransform.m42, -108, 0.001);
+
+  // Fabric's progressViewOffset setter replaces bounds.origin.y directly.
+  control.bounds = CGRectMake(3, -20, 320, 60);
+  XCTAssertEqualWithAccuracy(control.layer.sublayerTransform.m42, -108, 0.001);
+  XCTAssertEqualWithAccuracy(control.bounds.origin.y, -20, 0.001);
+  [pager setValue:@100 forKey:@"headerHeight"];
+  [pager updateRefreshControlForScrollView:scroll];
+  XCTAssertEqualWithAccuracy(control.layer.sublayerTransform.m42, -144, 0.001);
+  XCTAssertEqualWithAccuracy(control.bounds.origin.y, -20, 0.001);
+  [pager releaseRefreshControlForScrollView:scroll];
+  XCTAssertEqualWithAccuracy(control.bounds.origin.y, -20, 0.001);
+  XCTAssertEqualWithAccuracy(control.bounds.origin.x, 3, 0.001);
+}
+
+- (void)testRefreshLayerWindowGeometryStartsBelowFixedOverlay
+{
+  for (NSNumber *overlayHeight in @[@0, @162]) {
+    CGFloat fixedHeight = overlayHeight.doubleValue;
+    CGFloat baseInset = fixedHeight + 180 + 44;
+    UIWindow *window = [[UIWindow alloc] initWithFrame:CGRectMake(0, 0, 390, 844)];
+    UIViewController *root = [UIViewController new];
+    window.rootViewController = root;
+    UIScrollView *scroll = [[UIScrollView alloc] initWithFrame:window.bounds];
+    scroll.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
+    scroll.contentSize = CGSizeMake(390, 1500);
+    scroll.contentInset = UIEdgeInsetsMake(baseInset + 60, 0, 0, 0);
+    scroll.contentOffset = CGPointMake(0, -baseInset - 102);
+    [root.view addSubview:scroll];
+    UIView *overlay = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 390, fixedHeight)];
+    [root.view addSubview:overlay];
+    UIRefreshControl *control = [UIRefreshControl new];
+    scroll.refreshControl = control;
+    window.hidden = NO;
+    [root.view layoutIfNeeded];
+    [control layoutIfNeeded];
+    // Match the control's window position recorded during a real refresh drag.
+    control.frame = [scroll convertRect:CGRectMake(0, baseInset, 390, 60)
+                                fromView:window];
+
+    RNCCollapsiblePagerViewComponentView *pager = [self pagerWithHeader:180];
+    [pager setValue:@(fixedHeight) forKey:@"topOverlayHeight"];
+    if (fixedHeight > 0) [pager setValue:overlay forKey:@"topOverlayView"];
+    [pager updateRefreshControlForScrollView:scroll];
+    [CATransaction flush];
+    CALayer *firstChild = control.layer.sublayers.firstObject;
+    XCTAssertNotNil(firstChild);
+    XCTAssertEqual(control.window, window);
+    CGRect overlayWindow = [overlay convertRect:overlay.bounds toView:window];
+    CGRect controlWindow = [control convertRect:control.bounds toView:window];
+    CGRect childWindow = [firstChild convertRect:firstChild.bounds toLayer:window.layer];
+    XCTAssertEqualWithAccuracy(CGRectGetMinY(controlWindow), baseInset, 0.01);
+    XCTAssertEqualWithAccuracy(CGRectGetMinY(childWindow),
+      CGRectGetMaxY(overlayWindow), 0.01);
+    XCTAssertEqualWithAccuracy(scroll.contentInset.top, baseInset + 60, 0.01);
+    [pager updateRefreshControlForScrollView:scroll];
+    XCTAssertEqualWithAccuracy(CGRectGetMinY(
+      [firstChild convertRect:firstChild.bounds toLayer:window.layer]),
+      CGRectGetMaxY(overlayWindow), 0.01);
+    [pager releaseRefreshControlForScrollView:scroll];
+    XCTAssertTrue(CATransform3DIsIdentity(control.layer.sublayerTransform));
+    window.hidden = YES;
+  }
+}
+
+- (void)testUIKitSizeChangesAndRefreshCycleDoNotAccumulateOffset
+{
+  RNCCollapsiblePagerViewComponentView *pager = [self pagerWithHeader:64];
+  UIScrollView *scroll = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 0, 320, 600)];
+  // UIKit ignores offscreen beginRefreshing calls. Exercise the actual refresh
+  // lifecycle in a visible window rather than weakening the state assertion.
+  UIWindow *window = [[UIWindow alloc] initWithFrame:scroll.frame];
+  UIViewController *controller = [UIViewController new];
+  window.rootViewController = controller;
+  scroll.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
+  [controller.view addSubview:scroll];
+  window.hidden = NO;
+  [self addTeardownBlock:^{ window.hidden = YES; }];
+  UIRefreshControl *control = [UIRefreshControl new];
+  scroll.refreshControl = control;
+  [window layoutIfNeeded];
+  [scroll layoutIfNeeded];
+  XCTAssertEqual(control.window, window);
+  [pager updateRefreshControlForScrollView:scroll];
+  CGRect bounds = control.bounds;
+  bounds.size = CGSizeMake(320, 60);
+  control.bounds = bounds;
+  XCTAssertEqualWithAccuracy(control.layer.sublayerTransform.m42, -108, 0.001);
+  XCTAssertEqualWithAccuracy(control.bounds.origin.y, 0, 0.001);
+  [control beginRefreshing];
+  [control layoutIfNeeded];
+  [pager updateRefreshControlForScrollView:scroll];
+  XCTAssertTrue(control.isRefreshing);
+  XCTAssertEqualWithAccuracy(control.layer.sublayerTransform.m42, -108, 0.001);
+  XCTAssertEqualWithAccuracy(control.bounds.origin.y, 0, 0.001);
+  [control endRefreshing];
+  [control layoutIfNeeded];
+  XCTAssertFalse(control.isRefreshing);
+  XCTAssertEqualWithAccuracy(control.layer.sublayerTransform.m42, -108, 0.001);
+  XCTAssertEqualWithAccuracy(control.bounds.origin.y, 0, 0.001);
+  [pager releaseRefreshControlForScrollView:scroll];
+  XCTAssertEqualWithAccuracy(control.bounds.origin.y, 0, 0.001);
+  XCTAssertTrue(CATransform3DIsIdentity(control.layer.sublayerTransform));
+}
+
+- (void)testReplacementAndNestedOwnerReleaseRestoreOnlyTheirContributions
+{
+  RNCCollapsiblePagerViewComponentView *first = [self pagerWithHeader:64];
+  RNCCollapsiblePagerViewComponentView *second = [self pagerWithHeader:20];
+  UICollectionView *scroll = [[UICollectionView alloc] initWithFrame:CGRectMake(0, 0, 320, 600)
+                                                        collectionViewLayout:[UICollectionViewFlowLayout new]];
+  UIRefreshControl *original = [UIRefreshControl new];
+  scroll.refreshControl = original;
+  [first updateRefreshControlForScrollView:scroll];
+  [second updateRefreshControlForScrollView:scroll];
+  XCTAssertEqualWithAccuracy(original.layer.sublayerTransform.m42, -172, 0.001);
+  [first releaseRefreshControlForScrollView:scroll];
+  XCTAssertEqualWithAccuracy(original.layer.sublayerTransform.m42, -64, 0.001);
+
+  UIRefreshControl *replacement = [UIRefreshControl new];
+  replacement.bounds = CGRectMake(0, -8, 320, 60);
+  scroll.refreshControl = replacement;
+  XCTAssertTrue(CATransform3DIsIdentity(original.layer.sublayerTransform));
+  XCTAssertEqualWithAccuracy(replacement.layer.sublayerTransform.m42, -64, 0.001);
+  XCTAssertEqualWithAccuracy(replacement.bounds.origin.y, -8, 0.001);
+  [second prepareForRecycle];
+  XCTAssertEqualWithAccuracy(replacement.bounds.origin.y, -8, 0.001);
+  XCTAssertTrue(CATransform3DIsIdentity(replacement.layer.sublayerTransform));
+  scroll.refreshControl = nil;
+}
+
+- (void)testPagerDestructionRestoresControl
+{
+  UIScrollView *scroll = [UIScrollView new];
+  UIRefreshControl *control = [UIRefreshControl new];
+  scroll.refreshControl = control;
+  @autoreleasepool {
+    RNCCollapsiblePagerViewComponentView *pager = [self pagerWithHeader:64];
+    [pager updateRefreshControlForScrollView:scroll];
+    XCTAssertEqualWithAccuracy(control.layer.sublayerTransform.m42, -108, 0.001);
+    XCTAssertEqualWithAccuracy(control.bounds.origin.y, 0, 0.001);
+  }
+  XCTAssertEqualWithAccuracy(control.bounds.origin.y, 0, 0.001);
+  XCTAssertTrue(CATransform3DIsIdentity(control.layer.sublayerTransform));
+}
+
+- (void)testCallerOffsetCollisionDoesNotAffectVisualContribution
+{
+  RNCCollapsiblePagerViewComponentView *pager = [self pagerWithHeader:56];
+  UIScrollView *scroll = [UIScrollView new];
+  UIRefreshControl *control = [UIRefreshControl new];
+  scroll.refreshControl = control;
+  control.bounds = CGRectMake(0, -200, 320, 60);
+  [pager updateRefreshControlForScrollView:scroll];
+  control.bounds = CGRectMake(0, -100, 320, 60);
+  XCTAssertEqualWithAccuracy(control.bounds.origin.y, -100, 0.001);
+  XCTAssertEqualWithAccuracy(control.layer.sublayerTransform.m42, -100, 0.001);
+  [pager releaseRefreshControlForScrollView:scroll];
+  XCTAssertEqualWithAccuracy(control.bounds.origin.y, -100, 0.001);
+  XCTAssertTrue(CATransform3DIsIdentity(control.layer.sublayerTransform));
+}
+
+- (void)testNestedOwnerDestructionPreservesBaselineAndRestoresClipping
+{
+  RNCCollapsiblePagerViewComponentView *second = [self pagerWithHeader:20];
+  UIScrollView *scroll = [UIScrollView new];
+  UIRefreshControl *control = [UIRefreshControl new];
+  scroll.refreshControl = control;
+  CATransform3D baseline = CATransform3DMakeTranslation(7, 13, 0);
+  control.layer.sublayerTransform = baseline;
+  control.layer.masksToBounds = YES;
+  @autoreleasepool {
+    RNCCollapsiblePagerViewComponentView *first = [self pagerWithHeader:64];
+    [first updateRefreshControlForScrollView:scroll];
+    [second updateRefreshControlForScrollView:scroll];
+    XCTAssertEqualWithAccuracy(control.layer.sublayerTransform.m42, 13 - 172, 0.001);
+    XCTAssertFalse(control.layer.masksToBounds);
+  }
+  XCTAssertEqualWithAccuracy(control.layer.sublayerTransform.m42, 13 - 64, 0.001);
+  // A UIKit layer reset must not discard the remaining visual contribution.
+  control.layer.sublayerTransform = baseline;
+  control.layer.masksToBounds = YES;
+  XCTAssertEqualWithAccuracy(control.layer.sublayerTransform.m42, 13 - 64, 0.001);
+  XCTAssertFalse(control.layer.masksToBounds);
+  [second releaseRefreshControlForScrollView:scroll];
+  XCTAssertTrue(CATransform3DEqualToTransform(control.layer.sublayerTransform, baseline));
+  XCTAssertTrue(control.layer.masksToBounds);
+}
+
+- (void)testRefreshTopInsetDoesNotDisplaceAttachedSharedHeader
+{
+  RNCCollapsiblePagerViewComponentView *pager = [self pagerWithHeader:64];
+  [pager mountChildComponentView:[RCTViewComponentView new] index:0];
+  [pager mountChildComponentView:[RCTViewComponentView new] index:1];
+  RNCNativeScrollerComponentView *scroller = [RNCNativeScrollerComponentView new];
+  scroller.frame = CGRectMake(0, 0, 320, 600);
+  scroller.scrollView.frame = scroller.bounds;
+  UIScrollView *scroll = scroller.scrollView;
+  scroll.refreshControl = [UIRefreshControl new];
+  scroll.contentSize = CGSizeMake(320, 2000);
+  scroll.contentInset = UIEdgeInsetsMake(232, 0, 0, 0);
+  UIView *content = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 320, 2000)];
+  [scroll addSubview:content];
+  UIViewController *page = [UIViewController new];
+  [page.view addSubview:scroller];
+  [pager addSubview:page.view];
+  NSMutableArray<UIViewController *> *pages = [pager valueForKey:@"pageControllers"];
+  [pages addObject:page];
+  [pager attachScrollObserverForCurrentPage];
+  UIView *headerHost = [pager valueForKey:@"sharedHeaderHostView"];
+  UIView *stickyHeader = [pager valueForKey:@"stickyHeaderView"];
+  UIView *tabBar = [pager valueForKey:@"nativeTabBarView"];
+  XCTAssertNotNil(stickyHeader);
+  XCTAssertEqual(stickyHeader.superview, headerHost);
+  XCTAssertEqual(headerHost.superview, scroll);
+  XCTAssertEqualWithAccuracy(scroll.contentInset.top, 340, 0.001);
+  XCTAssertEqualWithAccuracy(headerHost.transform.ty, 0, 0.001);
+
+  [scroller scrollTo:0 y:500 animated:NO];
+  CGFloat baselineStickyTranslation = stickyHeader.transform.ty;
+  CGFloat baselineTabBarTranslation = tabBar.transform.ty;
+  XCTAssertEqualWithAccuracy(baselineStickyTranslation, 776, 0.001);
+  XCTAssertEqualWithAccuracy(baselineTabBarTranslation, 776, 0.001);
+  CGPoint offset = scroll.contentOffset;
+  scroll.contentInset = UIEdgeInsetsMake(400, 0, 0, 0);
+  XCTAssertTrue(CGPointEqualToPoint(scroll.contentOffset, offset));
+  XCTAssertEqualWithAccuracy(headerHost.transform.ty, 0, 0.001);
+  XCTAssertEqualWithAccuracy(stickyHeader.transform.ty, baselineStickyTranslation, 0.001);
+  XCTAssertEqualWithAccuracy(tabBar.transform.ty, baselineTabBarTranslation, 0.001);
+  XCTAssertEqualWithAccuracy(CGRectGetMaxY(headerHost.frame), CGRectGetMinY(content.frame), 0.001);
+
+  // Exercise accepted native commands while the temporary refresh inset is
+  // present, including direction reversals and the sticky/unpinned boundary.
+  // The pre-fix formula adds the extra 60 points on these scroll updates.
+  for (NSNumber *nextOffset in @[@620, @450, @-300, @-340, @500]) {
+    [scroller scrollTo:0 y:nextOffset.doubleValue animated:NO];
+    CGFloat expectedTranslation = MAX(0, nextOffset.doubleValue + 340 - 64);
+    XCTAssertEqualWithAccuracy(headerHost.transform.ty, 0, 0.001);
+    XCTAssertEqualWithAccuracy(stickyHeader.transform.ty, expectedTranslation, 0.001);
+    XCTAssertEqualWithAccuracy(tabBar.transform.ty, expectedTranslation, 0.001);
+    XCTAssertEqualWithAccuracy(CGRectGetMaxY(headerHost.frame), CGRectGetMinY(content.frame), 0.001);
+  }
+
+  offset = scroll.contentOffset;
+  scroll.contentInset = UIEdgeInsetsMake(340, 0, 0, 0);
+  XCTAssertTrue(CGPointEqualToPoint(scroll.contentOffset, offset));
+  XCTAssertEqualWithAccuracy(headerHost.transform.ty, 0, 0.001);
+  XCTAssertEqualWithAccuracy(stickyHeader.transform.ty, baselineStickyTranslation, 0.001);
+  XCTAssertEqualWithAccuracy(tabBar.transform.ty, baselineTabBarTranslation, 0.001);
+
+  scroll.contentInset = UIEdgeInsetsMake(400, 0, 0, 0);
+  XCTAssertEqualWithAccuracy(headerHost.transform.ty, 0, 0.001);
+  XCTAssertEqualWithAccuracy(stickyHeader.transform.ty, baselineStickyTranslation, 0.001);
+  XCTAssertEqualWithAccuracy(tabBar.transform.ty, baselineTabBarTranslation, 0.001);
+  XCTAssertEqualWithAccuracy(CGRectGetMaxY(headerHost.frame), CGRectGetMinY(content.frame), 0.001);
+  scroll.refreshControl = nil;
+  XCTAssertEqualWithAccuracy(headerHost.transform.ty, 0, 0.001);
+  [pager prepareForRecycle];
+}
+
+@end

@@ -100,6 +100,10 @@ android {
       }
     }
   }
+
+  testOptions {
+    unitTests.includeAndroidResources = true
+  }
 }
 
 repositories {
@@ -115,6 +119,8 @@ dependencies {
   //noinspection GradleDynamicVersion
   implementation "com.facebook.react:react-android"
   implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+  testImplementation "junit:junit:4.13.2"
+  testImplementation "org.robolectric:robolectric:4.17"
 }
 
 if (isNewArchitectureEnabled()) {

@@ -29,12 +29,15 @@ import { NativeListAccountSelectorPage } from './pages/NativeListAccountSelector
 import type { AccountSelectorInitialTargetInput } from './pages/nativeListAccountSelectorData';
 import { NativeListNetworkSelectorPage } from './pages/NativeListNetworkSelectorPage';
 import { NativeListTokenSelectorPage } from './pages/NativeListTokenSelectorPage';
+import { NativeListWalletSidebarReorderPage } from './pages/NativeListWalletSidebarReorderPage';
+import { NativeListRowStylePage } from './pages/NativeListRowStylePage';
 import type { MarketSearchParams } from './pages/MarketNativePagerExamplePage';
 import {
   NativeListExamplePage,
   type NativeListExampleKey,
 } from './pages/NativeListExamplePage';
 import { PagerViewTestPage } from './pages/PagerViewTestPage';
+import { ScrollEdgeTestPage } from './pages/ScrollEdgeTestPage';
 import { ScrollGuardTestPage } from './pages/ScrollGuardTestPage';
 import { SegmentSliderTestPage } from './pages/SegmentSliderTestPage';
 import { PerfMemoryTestPage } from './pages/PerfMemoryTestPage';
@@ -44,6 +47,7 @@ import { AppUpdateTestPage } from './pages/AppUpdateTestPage';
 import { RangeDownloaderTestPage } from './pages/RangeDownloaderTestPage';
 import { BundleCryptoTestPage } from './pages/BundleCryptoTestPage';
 import { ZipArchiveTestPage } from './pages/ZipArchiveTestPage';
+import { ImageCropPickerTestPage } from './pages/ImageCropPickerTestPage';
 import { OtaPipelineTestPage } from './pages/OtaPipelineTestPage';
 import { ApkOtaPipelineTestPage } from './pages/ApkOtaPipelineTestPage';
 import { ChartWebViewTestPage } from './pages/ChartWebViewTestPage';
@@ -85,6 +89,8 @@ export type RootStackParamList = {
   NativeListAccountSelector: AccountSelectorInitialTargetInput | undefined;
   NativeListNetworkSelector: undefined;
   NativeListTokenSelector: undefined;
+  NativeListWalletSidebarReorder: undefined;
+  NativeListRowStyle: undefined;
   MarketNativePager: undefined;
   MarketSearch: MarketSearchParams;
   OtaPipeline: undefined;
@@ -92,11 +98,13 @@ export type RootStackParamList = {
   ChartWebView: undefined;
   ChartSingleton: undefined;
   PagerView: undefined;
+  ScrollEdge: undefined;
   PerfMemory: undefined;
   PerpDepthBar: undefined;
   RangeDownloader: undefined;
   BundleCrypto: undefined;
   ZipArchive: undefined;
+  ImageCropPicker: undefined;
   ScrollGuard: undefined;
   SegmentSlider: undefined;
   Skeleton: undefined;
@@ -204,6 +212,13 @@ const modules: {
     icon: '🗜️',
   },
   {
+    screen: 'ImageCropPicker',
+    name: 'Image Crop Picker',
+    description:
+      'Permission-free photo picker with cropping for avatars and wallpapers',
+    icon: '🖼️',
+  },
+  {
     screen: 'CloudKit',
     name: 'CloudKit Module',
     description: 'Test iCloud storage operations and sync',
@@ -281,11 +296,31 @@ const modules: {
     icon: '🌐',
   },
   {
+    screen: 'NativeListWalletSidebarReorder',
+    name: 'Native List Wallet Sidebar Reorder',
+    description:
+      'OK-62492 recorded wallet sidebar for iOS wallet group drag reorder',
+    icon: '🗂️',
+  },
+  {
+    screen: 'NativeListRowStyle',
+    name: 'Native List Row Style',
+    description:
+      'Every template plain and styled, with a toggle for the unstyled regression check',
+    icon: '🎚️',
+  },
+  {
     screen: 'PagerView',
     name: 'Pager View',
     description:
       'Native page container with swipe navigation and imperative controls',
     icon: '📄',
+  },
+  {
+    screen: 'ScrollEdge',
+    name: 'iOS Scroll Edge',
+    description: 'Fixed toolbar over NativeList, NativeScroller, and CollapsiblePagerView',
+    icon: '⬆️',
   },
   {
     screen: 'PerfMemory',
@@ -570,6 +605,11 @@ export function AppNavigator() {
         options={{ title: 'Zip Archive' }}
       />
       <Stack.Screen
+        name="ImageCropPicker"
+        component={ImageCropPickerTestPage}
+        options={{ title: 'Image Crop Picker' }}
+      />
+      <Stack.Screen
         name="OtaPipeline"
         component={OtaPipelineTestPage}
         options={{ title: 'JS Bundle OTA Pipeline' }}
@@ -672,9 +712,25 @@ export function AppNavigator() {
         options={{ headerShown: false }}
       />
       <Stack.Screen
+        name="NativeListWalletSidebarReorder"
+        component={NativeListWalletSidebarReorderPage}
+        // The sidebar sits on the left edge; edge-swipe back would steal slow drags.
+        options={{ headerShown: false, gestureEnabled: false }}
+      />
+      <Stack.Screen
+        name="NativeListRowStyle"
+        component={NativeListRowStylePage}
+        options={{ title: 'Native List Row Style' }}
+      />
+      <Stack.Screen
         name="PagerView"
         component={PagerViewTestPage}
         options={{ title: 'Pager View' }}
+      />
+      <Stack.Screen
+        name="ScrollEdge"
+        component={ScrollEdgeTestPage}
+        options={{ title: 'iOS Scroll Edge' }}
       />
       <Stack.Screen
         name="PerfMemory"

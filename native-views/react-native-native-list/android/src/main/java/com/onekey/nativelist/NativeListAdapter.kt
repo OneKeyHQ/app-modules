@@ -13,8 +13,12 @@ import java.util.WeakHashMap
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 
+internal class NativeListViewHolder(val rowView: NativeListRowHost) :
+  androidx.recyclerview.widget.RecyclerView.ViewHolder(rowView)
+
 internal class NativeListAdapter(
   private val context: ThemedReactContext,
+  private val fonts: NativeListFonts,
 ) : RecyclerView.Adapter<NativeListViewHolder>() {
   private var suppressDifferUpdates = false
   private var needsThemeRebind = false
@@ -44,10 +48,17 @@ internal class NativeListAdapter(
   private var marketSourceItems: List<NativeListItem>? = null
   private var marketSourceEdges = DoubleArray(0)
   private val createdRows = Collections.newSetFromMap(
-    WeakHashMap<NativeListRowView, Boolean>(),
+    WeakHashMap<NativeListRowHost, Boolean>(),
   )
   var usesSelectorSourceScale = false
   var theme: JSONObject? = null
+    set(value) {
+      if (field?.toString() != value?.toString()) needsThemeRebind = true
+      field = value
+    }
+  // Reuses the theme rebind path: chrome lives outside the row payload, so a
+  // changed list style would otherwise not reach rows DiffUtil considers equal.
+  var listStyle: JSONObject? = null
     set(value) {
       if (field?.toString() != value?.toString()) needsThemeRebind = true
       field = value
@@ -58,12 +69,15 @@ internal class NativeListAdapter(
   var checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String = { _, _, fallback -> fallback }
   var onRowPress: ((NativeListItem, NativeListActionOrigin) -> Unit)? = null
   var onAction: ((NativeListItem, String, NativeSelectionTarget?, NativeListActionOrigin?) -> Unit)? = null
-  var onBindingInvalidated: ((NativeListRowView, Long) -> Unit)? = null
+  var onBindingInvalidated: ((NativeListRowHost, Long) -> Unit)? = null
 
   override fun getItemCount(): Int = reorderItems?.size ?: differ.currentList.size
 
+  override fun getItemViewType(position: Int): Int =
+    requireNotNull(itemAt(position)).rendererKey.ordinal
+
   override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): NativeListViewHolder {
-    val view = NativeListRowView(context)
+    val view = NativeListRendererRegistry.create(context, viewType, fonts)
     view.layoutParams = ViewGroup.LayoutParams(
       ViewGroup.LayoutParams.MATCH_PARENT,
       ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -79,6 +93,7 @@ internal class NativeListAdapter(
 
   override fun onBindViewHolder(holder: NativeListViewHolder, position: Int) {
     val item = itemAt(position) ?: return
+    holder.rowView.listStyle = listStyle
     holder.rowView.bind(
       item,
       theme,
@@ -123,6 +138,10 @@ internal class NativeListAdapter(
     super.onViewRecycled(holder)
   }
 
+  fun rebindFonts() {
+    notifyItemRangeChanged(0, itemCount)
+  }
+
   fun itemAt(position: Int): NativeListItem? =
     reorderItems?.getOrNull(position) ?: differ.currentList.getOrNull(position)
 
@@ -135,7 +154,7 @@ internal class NativeListAdapter(
       items.forEachIndexed { index, item ->
         val style = item.json.optJSONObject("style")
         val height = item.json.optDouble("height", 0.0)
-        val sourceHeight = if (item.type == "market" && style != null) {
+        val sourceHeight = item.styledHeight ?: if (item.type == "market" && style != null) {
           val titleHeight = ceil((style.optJSONObject("title")?.optDouble("lineHeight", 24.0) ?: 24.0) * density) / density
           val subtitleHeight = if (item.json.optString("subtitle").isNotEmpty() || item.json.optJSONObject("subtitlePrefix") != null) {
             ceil((style.optJSONObject("subtitle")?.optDouble("lineHeight", 20.0) ?: 20.0) * density) / density + style.optDouble("lineGap", 0.0)
@@ -201,14 +220,14 @@ internal class NativeListAdapter(
     marketSourceEdges = DoubleArray(0)
     reorderItems = null
     suppressDifferUpdates = false
-    createdRows.forEach(NativeListRowView::dispose)
+    createdRows.forEach(NativeListRowHost::dispose)
     createdRows.clear()
   }
 
   companion object {
     private val DIFF = object : DiffUtil.ItemCallback<NativeListItem>() {
       override fun areItemsTheSame(oldItem: NativeListItem, newItem: NativeListItem): Boolean =
-        oldItem.key == newItem.key && oldItem.type == newItem.type
+        oldItem.key == newItem.key
 
       override fun areContentsTheSame(oldItem: NativeListItem, newItem: NativeListItem): Boolean =
         oldItem.revision == newItem.revision && oldItem.content == newItem.content

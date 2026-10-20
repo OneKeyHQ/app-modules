@@ -1,5 +1,55 @@
 # @onekeyfe/react-native-network-info
 
+Native network information queries for OneKey on iOS and Android. The
+TurboModule exposes device network addresses and Wi-Fi-related values; it does
+not initiate a connection or monitor reachability continuously.
+
+## Installation and usage
+
+```sh
+yarn add @onekeyfe/react-native-network-info
+```
+
+Install the application's iOS pods and rebuild the native application. Configure
+any platform permissions needed for the network information your consumer uses.
+
+```ts
+import { NetworkInfo } from '@onekeyfe/react-native-network-info';
+
+const address = await NetworkInfo.getIPAddress();
+const ssid = await NetworkInfo.getSSID();
+```
+
+## API and results
+
+Address methods include `getIPAddress`, `getIPV4Address`, `getIPV6Address`,
+`getWIFIIPV4Address`, `getGatewayIPAddress` and `getSubnet`.
+`getSSID`, `getBSSID` and `getBroadcast` return nullable strings;
+`getFrequency` returns a nullable number.
+
+Availability depends on the platform, network and permission state. Handle
+missing values and promise failures rather than assuming Wi-Fi data is always
+present. An address or SSID is not evidence that Internet access is available.
+The application owns refresh frequency and interpretation of returned values.
+
+See [src/NativeNetworkInfo.ts](src/NativeNetworkInfo.ts) for the full interface.
+The package exports the native object as `NetworkInfo` and its type as
+`NetworkInfoSpec`.
+
+## Nullable and platform-specific readings
+
+`getSSID`, `getBSSID` and `getBroadcast` return nullable strings;
+`getFrequency` returns a nullable number. A `null` result must remain distinct
+from a known network value. IP, gateway and subnet getters return strings and
+may reject through the native operation.
+
+`getIPAddress`, `getIPV4Address`, `getWIFIIPV4Address` and `getIPV6Address` are
+separate methods; use the reading appropriate to the connection being inspected.
+The exported `NetworkInfoSpec` provides their exact signatures. There is no
+network-change event API or continuous reachability monitor in this wrapper.
+
+## Upstream attribution
+
 First, a sincere thank-you to the
 `react-native-network-info` maintainers for their excellent work 🙏
 

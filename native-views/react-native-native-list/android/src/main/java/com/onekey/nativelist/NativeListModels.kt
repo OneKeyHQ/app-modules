@@ -2,6 +2,11 @@ package com.margelo.nitro.nativelist
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.nio.ByteBuffer
+import java.security.MessageDigest
+import java.util.Locale
+
+internal data class NativeSelectionTarget(val scope: String, val key: String?)
 
 internal fun isNativeListRowPressEnabled(
   type: String,
@@ -22,6 +27,38 @@ internal fun isNativeListWholeRowInteractive(
   pressDisabled = pressDisabled,
 )
 
+internal fun resolveNativeListSelectorBackgroundColor(
+  rowType: String,
+  styleBackgroundColor: String?,
+  rowBackgroundColor: String?,
+): String? = styleBackgroundColor?.takeIf(String::isNotEmpty)
+  ?: rowBackgroundColor?.takeIf { rowType != "walletGroup" && it.isNotEmpty() }
+
+// The image fallback-state cache is process-wide, so it is keyed by a digest of the request
+// identity instead of the raw headers, which can carry credentials such as Authorization.
+internal fun nativeListSourceFallbackStateKey(uri: String, headers: Map<String, String>): String? {
+  val trimmedUri = uri.trim().takeIf(String::isNotEmpty) ?: return null
+  val digest = MessageDigest.getInstance("SHA-256")
+  updateLengthPrefixed(digest, trimmedUri)
+  headers.entries
+    .map { it.key.lowercase(Locale.ROOT) to it.value }
+    .sortedWith(compareBy<Pair<String, String>>({ it.first }, { it.second }))
+    .forEach { (name, value) ->
+      updateLengthPrefixed(digest, name)
+      updateLengthPrefixed(digest, value)
+    }
+  return digest.digest().joinToString("") { "%02x".format(Locale.ROOT, it.toInt() and 0xff) }
+}
+
+private fun updateLengthPrefixed(digest: MessageDigest, value: String) {
+  val bytes = value.toByteArray(Charsets.UTF_8)
+  digest.update(ByteBuffer.allocate(Int.SIZE_BYTES).putInt(bytes.size).array())
+  digest.update(bytes)
+}
+
+// Template type alone partitions reuse; data keys and styles never select a renderer.
+internal enum class NativeListRendererKey { MESSAGE, RAIL, MEDIA_TILE, ACTION, SYSTEM, ACTIVITY, DATA_ROW, METRIC_CARD, MARKET, IDENTITY, SECTION_HEADER, WALLET_GROUP }
+
 internal data class NativeListItem(
   val key: String,
   val type: String,
@@ -30,6 +67,15 @@ internal data class NativeListItem(
   val json: JSONObject,
 ) {
   val content: String = json.toString()
+  val rendererKey: NativeListRendererKey
+    get() = NativeListRendererRegistry.key(type)
+  val styledHeight: Double?
+    get() = json.optJSONObject("style")?.optJSONObject("container")
+      ?.takeIf { it.has("height") }?.optDouble("height")
+  // Selector presentations use their explicit-height geometry when either explicit height field
+  // is set (Web `hasExplicitRowHeight`). Row-local only; list-wide source scale stays row.height.
+  val hasExplicitHeight: Boolean
+    get() = styledHeight != null || json.has("height")
   // OneKey patch: only a host-validated stable snapshot can request a lightweight diff payload.
   var selectionUpdateFromContent: String? = null
 
@@ -82,6 +128,7 @@ internal data class NativeListItem(
     fun parse(json: JSONObject): NativeListItem {
       val key = json.getString("key")
       val type = json.getString("type")
+      NativeListRendererRegistry.key(type) // Reject unsupported templates at the model boundary.
       return NativeListItem(
         key = key,
         type = type,
@@ -109,6 +156,7 @@ internal data class NativeListConfig(
   val selectedKeys: LinkedHashSet<String>,
   val reorderable: Boolean,
   val pullToRefresh: Boolean,
+  val refreshTriggerDistance: Double? = null,
   val refreshing: Boolean,
   val loadMore: Boolean,
   val endReachedThreshold: Double,
@@ -116,6 +164,7 @@ internal data class NativeListConfig(
   val sectionIndexHapticsEnabled: Boolean,
   val sectionIndexCenteredInWindow: Boolean,
   val theme: JSONObject?,
+  val listStyle: JSONObject?,
   val fixedFooter: NativeListItem?,
   val items: List<NativeListItem>,
 ) {
@@ -146,7 +195,7 @@ internal data class NativeListConfig(
         generation = root.getInt("generation"),
         layout = layout.getString("kind"),
         orientation = layout.optString("orientation", "vertical"),
-        gridColumns = layout.optInt("gridColumns", 1).coerceIn(1, 4),
+        gridColumns = layout.optInt("gridColumns", 1).coerceIn(1, 7),
         stickyHeaders = layout.optBoolean("stickyHeaders", false),
         contentPadding = layout.optInt("contentPadding", 0).coerceAtLeast(0),
         contentPaddingHorizontal = layout.optionalNonNegativeInt("contentPaddingHorizontal"),
@@ -158,6 +207,7 @@ internal data class NativeListConfig(
         selectedKeys = selectedKeys,
         reorderable = capabilities?.optBoolean("reorderable", false) ?: false,
         pullToRefresh = capabilities?.optBoolean("pullToRefresh", false) ?: false,
+        refreshTriggerDistance = capabilities?.optDouble("refreshTriggerDistance")?.takeIf { it.isFinite() && it > 0 },
         refreshing = capabilities?.optBoolean("refreshing", false) ?: false,
         loadMore = capabilities?.optBoolean("loadMore", false) ?: false,
         endReachedThreshold = capabilities?.optDouble("endReachedThreshold", 0.2) ?: 0.2,
@@ -165,6 +215,7 @@ internal data class NativeListConfig(
         sectionIndexHapticsEnabled = sectionIndex?.optBoolean("hapticsEnabled", true) ?: true,
         sectionIndexCenteredInWindow = sectionIndex?.optBoolean("centeredInWindow", false) ?: false,
         theme = root.optJSONObject("theme"),
+        listStyle = root.optJSONObject("listStyle"),
         fixedFooter = fixedFooter,
         items = items,
       )

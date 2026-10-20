@@ -42,6 +42,7 @@ describe('OneKeyImage wrapper', () => {
             cachePolicy: OneKeyImageCachePolicy.DISK,
           }}
           variant={OneKeyImageVariant.AVATAR}
+          round
           resizeWidth={64}
           style={{ width: 40, height: 40 }}
         />
@@ -53,6 +54,7 @@ describe('OneKeyImage wrapper', () => {
     );
     expect(native.props.sourceUri).toBe('https://example.com/avatar.png');
     expect(native.props.resizeWidth).toBe(64);
+    expect(native.props.round).toBe(true);
     expect(native.props).not.toHaveProperty('sourceCacheKey');
     expect(native.props.cachePolicy).toBe(OneKeyImageCachePolicy.DISK);
     expect(native.props.loadingStrategy).toBe(
@@ -106,6 +108,21 @@ describe('OneKeyImage wrapper', () => {
     const clearResult = OneKeyImageCache.clearMemory();
     expect(clearResult).toBeInstanceOf(Promise);
     await expect(clearResult).resolves.toBeUndefined();
+  });
+
+  it('sends an explicit false round prop for non-round images', async () => {
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    await act(() => {
+      renderer = ReactTestRenderer.create(
+        <OneKeyImage
+          source={{ uri: 'https://example.com/token.png' }}
+          style={{ width: 40, height: 40 }}
+        />
+      );
+    });
+
+    const native = renderer!.root.findByType('NativeOneKeyImage' as never);
+    expect(native.props.round).toBe(false);
   });
 
   it('returns false for blank preload sources without hiding valid work', async () => {
@@ -279,8 +296,10 @@ describe('OneKeyImage wrapper', () => {
     });
     expect(onDisplay).toHaveBeenCalledTimes(1);
     expect(
-      renderer!.root.findAllByProps({ pointerEvents: 'none' })
-    ).toHaveLength(0);
+      renderer!.root
+        .findAllByProps({ pointerEvents: 'none' })
+        .every((node) => StyleSheet.flatten(node.props.style)?.zIndex === 1)
+    ).toBe(true);
 
     const container = renderer!.root.findByProps({ collapsable: false });
     expect(StyleSheet.flatten(container.props.style)).toMatchObject({
@@ -307,6 +326,57 @@ describe('OneKeyImage wrapper', () => {
     expect(StyleSheet.flatten(container.props.style)).toMatchObject({
       borderRadius: 20,
       overflow: 'hidden',
+    });
+  });
+
+  it('clips overlays to the same circle as a round native image', async () => {
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    await act(() => {
+      renderer = ReactTestRenderer.create(
+        <OneKeyImage
+          source={{ uri: 'https://example.com/avatar.png' }}
+          round
+          placeholder="loading"
+          style={{ width: 40, height: 40, borderTopLeftRadius: 8 }}
+        />
+      );
+    });
+
+    const native = renderer!.root.findByType('NativeOneKeyImage' as never);
+    expect(native.props.round).toBe(true);
+
+    const container = renderer!.root.findByProps({ collapsable: false });
+    expect(StyleSheet.flatten(container.props.style)).toMatchObject({
+      overflow: 'hidden',
+      borderRadius: '50%',
+      // the caller's own corner radius must not survive the round clip
+      borderTopLeftRadius: '50%',
+    });
+  });
+
+  it('draws the border overlay round for a round image', async () => {
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    await act(() => {
+      renderer = ReactTestRenderer.create(
+        <OneKeyImage
+          source={{ uri: 'https://example.com/avatar.png' }}
+          round
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: 20,
+            borderWidth: 1,
+            borderColor: '#ffffff09',
+          }}
+        />
+      );
+    });
+
+    const overlay = renderer!.root.findByProps({ pointerEvents: 'none' });
+    expect(StyleSheet.flatten(overlay.props.style)).toMatchObject({
+      borderRadius: '50%',
+      borderWidth: 1,
+      borderColor: '#ffffff09',
     });
   });
 
@@ -416,6 +486,49 @@ describe('OneKeyImage wrapper', () => {
       });
     }
   );
+
+  it('keeps the rounded border overlay mounted when the border is removed', async () => {
+    const source = { uri: 'https://example.com/token.png' };
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    await act(() => {
+      renderer = ReactTestRenderer.create(
+        <OneKeyImage
+          source={source}
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: 20,
+            borderWidth: 1,
+            borderColor: '#ffffff09',
+          }}
+        />
+      );
+    });
+    const borderOverlay = renderer!.root
+      .findAllByProps({ pointerEvents: 'none' })
+      .find((node) => StyleSheet.flatten(node.props.style)?.zIndex === 1);
+    expect(borderOverlay).toBeDefined();
+
+    await act(() => {
+      renderer!.update(
+        <OneKeyImage
+          source={source}
+          style={{ width: 40, height: 40, borderRadius: 20 }}
+        />
+      );
+    });
+
+    const container = renderer!.root.findByProps({ collapsable: false });
+    expect(StyleSheet.flatten(container.props.style)).toMatchObject({
+      borderRadius: 20,
+      borderWidth: 0,
+      overflow: 'hidden',
+    });
+    const updatedBorderOverlay = renderer!.root
+      .findAllByProps({ pointerEvents: 'none' })
+      .find((node) => StyleSheet.flatten(node.props.style)?.zIndex === 1);
+    expect(updatedBorderOverlay).toBe(borderOverlay);
+  });
 
   it('uses the documented Android autoplay default', async () => {
     const originalOS = Platform.OS;

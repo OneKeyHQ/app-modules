@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-ping",
-  "version": "3.0.134",
+  "version": "6.7.0-7",
   "description": "react-native-ping TurboModule for OneKey",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -23,7 +23,8 @@
     "!**/__mocks__",
     "!**/.*",
     "android",
-    "!**/*.map"
+    "!**/*.map",
+    "LICENSE.GBPing"
   ],
   "scripts": {
     "prepare": "bob build",
@@ -37,14 +38,15 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OneKeyHQ/app-modules/react-native-ping.git"
+    "url": "git+https://github.com/OneKeyHQ/app-modules.git",
+    "directory": "native-modules/react-native-ping"
   },
   "author": "@onekeyhq <huanming@onekey.so> (https://github.com/OneKeyHQ/app-modules)",
-  "license": "MIT",
+  "license": "MIT AND Apache-2.0",
   "bugs": {
-    "url": "https://github.com/OneKeyHQ/app-modules/react-native-ping/issues"
+    "url": "https://github.com/OneKeyHQ/app-modules/issues"
   },
-  "homepage": "https://github.com/OneKeyHQ/app-modules/react-native-ping#readme",
+  "homepage": "https://github.com/OneKeyHQ/app-modules/tree/main/native-modules/react-native-ping#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },

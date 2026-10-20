@@ -868,6 +868,17 @@ describe('NativeList model validation', () => {
     );
   });
 
+  it('rejects an unknown row type before renderer lookup', () => {
+    const unknown = {
+      type: 'unknown',
+      key: 'unknown-row',
+    } as unknown as RowModel;
+
+    expect(() => validateSnapshot(snapshot([unknown]))).toThrow(
+      'rows[0].type: is not supported'
+    );
+  });
+
   it('rejects accessory and badge counts above their hard caps', () => {
     const invalid = row('btc') as unknown as {
       trailing: unknown[];
@@ -1227,5 +1238,551 @@ describe('NativeList patches', () => {
         } as unknown as RowPatch,
       ])
     ).toThrow('bodyLines');
+  });
+});
+
+describe('NativeList style contract', () => {
+  const styled = (style: unknown): NativeListSnapshot =>
+    snapshot([{ ...row('btc'), style } as RowModel]);
+
+  it('resolves a typography token to numbers before serialization', () => {
+    const [first] = validateSnapshot(
+      styled({ title: { token: '$bodyLg' }, horizontalPadding: 16 })
+    ).rows;
+    expect((first as IdentityRow).style).toEqual({
+      title: { fontSize: 16, lineHeight: 24, fontWeight: 'regular' },
+      horizontalPadding: 16,
+    });
+    expect(
+      serializeSnapshot(styled({ title: { token: '$bodyLg' } }))
+    ).not.toContain('$bodyLg');
+  });
+
+  it('lets an explicit value override the token it resolves', () => {
+    const [first] = validateSnapshot(
+      styled({ title: { token: '$bodyLg', fontSize: 15 } })
+    ).rows;
+    expect((first as IdentityRow).style?.title).toEqual({
+      fontSize: 15,
+      lineHeight: 24,
+      fontWeight: 'regular',
+    });
+  });
+
+  it('keeps snapshot identity when nothing needs resolving', () => {
+    const input = snapshot();
+    expect(validateSnapshot(input)).toBe(input);
+  });
+
+  it('rejects a style key the template does not declare', () => {
+    expect(() => validateSnapshot(styled({ price: { fontSize: 12 } }))).toThrow(
+      'is not a style key of the "identity" template'
+    );
+  });
+
+  it.each([
+    ['title', null],
+    ['title', 'large'],
+    ['title', []],
+    ['image', null],
+    ['image', 32],
+    ['image', []],
+  ])('rejects malformed nested %s styles', (field, value) => {
+    expect(() => validateSnapshot(styled({ [field]: value }))).toThrow(
+      `style.${field}: must be an object`
+    );
+  });
+
+  it('rejects arbitrary nested layout styles in snapshots and patches', () => {
+    for (const style of [
+      { title: { position: 'absolute' } },
+      { image: { transform: 'scale(2)' } },
+      { subtitle: { color: 123 } },
+    ]) {
+      expect(() => validateSnapshot(styled(style))).toThrow('style.');
+      expect(() =>
+        validatePatches([
+          { type: 'identity', key: 'btc', changes: { style } },
+        ] as unknown as RowPatch[])
+      ).toThrow('style.');
+    }
+  });
+
+  it('rejects an unknown token and out-of-range metrics', () => {
+    expect(() =>
+      validateSnapshot(styled({ title: { token: '$displayXl' } }))
+    ).toThrow('token');
+    expect(() => validateSnapshot(styled({ title: { fontSize: 72 } }))).toThrow(
+      'fontSize'
+    );
+    expect(() => validateSnapshot(styled({ lineGap: 17 }))).toThrow('lineGap');
+  });
+
+  it.each(['red', '#abc', 'rgb(1, 2, 3)', '$text', '#123456789'])(
+    'rejects nonportable style color %s',
+    (color) => {
+      expect(() => validateSnapshot(styled({ title: { color } }))).toThrow(
+        'must be #RRGGBB or #RRGGBBAA'
+      );
+    }
+  );
+
+  it.each(['#123456', '#aAbBcC80'])(
+    'accepts shared style color %s',
+    (color) => {
+      expect(() =>
+        validateSnapshot(styled({ title: { color } }))
+      ).not.toThrow();
+    }
+  );
+
+  it('rejects box parameters for template parts that do not exist, including patches', () => {
+    expect(() =>
+      validateSnapshot(
+        snapshot([
+          {
+            type: 'rail',
+            key: 'r',
+            title: 'Rail',
+            style: { lineGap: 3 },
+          } as unknown as RowModel,
+        ])
+      )
+    ).toThrow('style.lineGap');
+    expect(() =>
+      validatePatches([
+        {
+          type: 'sectionHeader',
+          key: 'h',
+          changes: { style: { image: { width: 20 } } },
+        } as unknown as RowPatch,
+      ])
+    ).toThrow('style.image');
+    expect(() =>
+      validatePatches([
+        {
+          type: 'dataRow',
+          key: 'd',
+          changes: { style: { trailingGap: 4 } },
+        } as unknown as RowPatch,
+      ])
+    ).toThrow('style.trailingGap');
+  });
+
+  it('validates and resolves a style carried by a patch', () => {
+    const patches = validatePatches([
+      {
+        type: 'identity',
+        key: 'btc',
+        changes: { style: { subtitle: { token: '$bodySm' } } },
+      } as unknown as RowPatch,
+    ]);
+    expect(
+      (patches[0] as unknown as { changes: { style: { subtitle: unknown } } })
+        .changes.style.subtitle
+    ).toEqual({ fontSize: 12, lineHeight: 16, fontWeight: 'regular' });
+    expect(() =>
+      validatePatches([
+        {
+          type: 'identity',
+          key: 'btc',
+          changes: { style: { change: {} } },
+        } as unknown as RowPatch,
+      ])
+    ).toThrow('is not a style key of the "identity" template');
+  });
+
+  it('accepts list chrome and rejects anything outside it', () => {
+    const withChrome = (listStyle: unknown): NativeListSnapshot =>
+      ({ ...snapshot(), listStyle } as NativeListSnapshot);
+    expect(
+      validateSnapshot(
+        withChrome({
+          separator: { inset: 16, color: '#E0E0E0' },
+          groupCornerRadius: 8,
+        })
+      ).listStyle
+    ).toEqual({
+      separator: { inset: 16, color: '#E0E0E0' },
+      groupCornerRadius: 8,
+    });
+    expect(() =>
+      validateSnapshot(withChrome({ separator: { inset: 65 } }))
+    ).toThrow('separator.inset');
+    expect(() =>
+      validateSnapshot(withChrome({ groupCornerRadius: 41 }))
+    ).toThrow('groupCornerRadius');
+    // Chrome the platforms cannot all honour is rejected rather than ignored.
+    expect(() => validateSnapshot(withChrome({ pullToRefresh: {} }))).toThrow(
+      'is not a list style key'
+    );
+    expect(() =>
+      validateSnapshot(withChrome({ separator: { thickness: 2 } }))
+    ).toThrow('is not a separator style key');
+  });
+
+  it('validates the separator color with the shared row color format', () => {
+    const withChrome = (listStyle: unknown): NativeListSnapshot =>
+      ({ ...snapshot(), listStyle } as NativeListSnapshot);
+    expect(
+      validateSnapshot(withChrome({ separator: { color: '#11223344' } }))
+        .listStyle
+    ).toEqual({ separator: { color: '#11223344' } });
+    for (const color of ['red', '#fff', 'rgba(0,0,0,0.1)', '#1122334', 42]) {
+      expect(() =>
+        validateSnapshot(withChrome({ separator: { color } }))
+      ).toThrow('listStyle.separator.color: must be #RRGGBB or #RRGGBBAA');
+    }
+  });
+
+  it('accepts every style key sent by the app Market list builder', () => {
+    // Mirrors TOKEN_ROW_STYLE, rowStyleForChange, subtitle prefixes and the
+    // token/perps badge styles in app-monorepo marketNativeListRows.ts.
+    const style = {
+      horizontalPadding: 20,
+      verticalPadding: 12,
+      leadingGap: 14,
+      lineGap: 4,
+      titleBadgeGap: 4,
+      titleBadgeLayout: 'inline',
+      trailingGap: 8,
+      image: {
+        width: 32,
+        height: 32,
+        shape: 'circle',
+        cornerRadius: 16,
+        contentFit: 'cover',
+      },
+      title: {
+        fontSize: 16,
+        fontWeight: 'medium',
+        lineHeight: 24,
+        lines: 1,
+        alignment: 'start',
+      },
+      subtitle: {
+        fontSize: 12,
+        fontWeight: 'regular',
+        lineHeight: 16,
+        lines: 1,
+        alignment: 'start',
+      },
+      price: {
+        fontSize: 16,
+        fontWeight: 'medium',
+        lineHeight: 24,
+        lines: 1,
+        alignment: 'end',
+      },
+      change: {
+        fontSize: 13,
+        fontWeight: 'medium',
+        lineHeight: 20,
+        lines: 1,
+        alignment: 'center',
+      },
+      changeWidth: 80,
+      changeHeight: 32,
+      changeCornerRadius: 8,
+    } as const;
+    expect(() =>
+      validateSnapshot(
+        snapshot([
+          {
+            ...marketRow(),
+            style,
+            badges: [
+              {
+                key: 'stock-source',
+                icon: {
+                  uri: 'https://example.com/s.png',
+                  width: 14,
+                  height: 14,
+                },
+                style: { height: 14 },
+                tone: 'neutral',
+              },
+              {
+                key: 'leverage',
+                text: '10x',
+                tone: 'info',
+                style: {
+                  fontSize: 10,
+                  fontWeight: 'regular',
+                  lineHeight: 16,
+                  height: 16,
+                  horizontalPadding: 6,
+                },
+              },
+            ],
+          } as MarketRow,
+        ])
+      )
+    ).not.toThrow();
+  });
+
+  it('keeps the Market style surface intact', () => {
+    const [first] = validateSnapshot(
+      snapshot([
+        {
+          ...marketRow(),
+          style: { title: { token: '$headingSm' }, changeWidth: 80 },
+        } as MarketRow,
+      ])
+    ).rows;
+    expect((first as MarketRow).style?.title).toEqual({
+      fontSize: 16,
+      lineHeight: 24,
+      fontWeight: 'medium',
+    });
+    expect((first as MarketRow).style?.changeWidth).toBe(80);
+  });
+});
+
+describe('row container and text layout contract', () => {
+  const style = {
+    container: {
+      height: 120.5,
+      backgroundColor: '#12345678',
+      opacity: 0.8,
+      cornerRadius: 9,
+      borderWidth: 1.5,
+      borderColor: '#654321',
+      contentVerticalAlignment: 'top' as const,
+    },
+    title: {
+      lines: 3 as const,
+      truncate: 'clip' as const,
+      alignment: 'end' as const,
+      verticalAlignment: 'bottom' as const,
+      offsetY: -2,
+    },
+  };
+
+  it('round-trips the same nested surface through snapshots and whole-style replacement patches', () => {
+    const base = {
+      ...row('text-layout'),
+      height: 80,
+      backgroundColor: '#FFFFFF',
+      opacity: 0.4,
+      style,
+    };
+    expect(
+      JSON.parse(serializeSnapshot(snapshot([base]))).rows[0].style
+    ).toEqual(style);
+    expect(
+      validatePatches([{ key: base.key, type: 'identity', changes: { style } }])
+    ).toHaveLength(1);
+    const cleared = applyRowPatches(snapshot([base]), [
+      { key: base.key, type: 'identity', changes: { style: {} } },
+    ]);
+    expect(cleared.rows[0]).toMatchObject({
+      style: {},
+      height: 80,
+      backgroundColor: '#FFFFFF',
+      opacity: 0.4,
+    });
+  });
+
+  it.each([
+    ['container', { width: 120 }],
+    ['container', { height: -1 }],
+    ['container', { height: 4097 }],
+    ['container', { height: NaN }],
+    ['container', { height: Infinity }],
+    ['container', { opacity: 1.1 }],
+    ['container', { borderWidth: -1 }],
+    ['container', { backgroundColor: 'red' }],
+    ['container', { contentVerticalAlignment: 'stretch' }],
+    ['title', { lines: 4 }],
+    ['title', { lines: 1.5 }],
+    ['title', { truncate: 'middle' }],
+    ['title', { verticalAlignment: 'baseline' }],
+    ['title', { offsetY: 9 }],
+  ])('rejects invalid %s on snapshot and patch paths', (field, value) => {
+    const invalid = { [field as string]: value };
+    expect(() =>
+      validateSnapshot(
+        snapshot([{ ...row('invalid'), style: invalid } as IdentityRow])
+      )
+    ).toThrow('style');
+    expect(() =>
+      validatePatches([
+        {
+          key: 'invalid',
+          type: 'identity',
+          changes: { style: invalid },
+        } as RowPatch,
+      ])
+    ).toThrow('style');
+  });
+});
+
+describe('declared nested style and line-limit boundaries', () => {
+  it.each([
+    'color',
+    'lines',
+    'truncate',
+    'alignment',
+    'verticalAlignment',
+    'offsetY',
+    'token',
+  ])(
+    'rejects undeclared Market badge property %s in snapshots and patches',
+    (key) => {
+      const values: Record<string, unknown> = {
+        color: '#123456',
+        lines: 2,
+        truncate: 'clip',
+        alignment: 'end',
+        verticalAlignment: 'top',
+        offsetY: 1,
+        token: '$bodySm',
+      };
+      const badges = [
+        { key: 'badge', text: 'Badge', style: { [key]: values[key] } },
+      ];
+      expect(() =>
+        validateSnapshot(snapshot([{ ...marketRow(), badges } as MarketRow]))
+      ).toThrow('Market badge style key');
+      expect(() =>
+        validatePatches([
+          { key: 'market', type: 'market', changes: { badges } } as RowPatch,
+        ])
+      ).toThrow('Market badge style key');
+    }
+  );
+  it.each([1.5, NaN, Infinity])(
+    'rejects non-integral message bodyLines %s on both update paths',
+    (bodyLines) => {
+      const message = {
+        type: 'message',
+        key: 'message',
+        title: 'Title',
+        body: 'Body',
+        time: 'Now',
+        bodyLines,
+      } as RowModel;
+      expect(() => validateSnapshot(snapshot([message]))).toThrow('bodyLines');
+      expect(() =>
+        validatePatches([
+          {
+            key: 'message',
+            type: 'message',
+            changes: { bodyLines },
+          } as RowPatch,
+        ])
+      ).toThrow('bodyLines');
+    }
+  );
+});
+
+describe('Web Market table presentation contract', () => {
+  const tableRow = (key = 'table'): MarketRow => ({
+    ...marketRow(key),
+    webTable: {
+      columns: [{ key: 'price', width: 120 }],
+      cells: [{ key: 'price', kind: 'text', primary: [{ text: '$42' }] }],
+    },
+  });
+
+  it('accepts complete Web tables without adding fields to ordinary Market rows', () => {
+    const ordinary = marketRow();
+    expect(ordinary.webTable).toBeUndefined();
+    expect(() =>
+      validateSnapshot(snapshot([ordinary, tableRow()]))
+    ).not.toThrow();
+    expect(serializeSnapshot(snapshot([ordinary]))).not.toContain('webTable');
+  });
+
+  it('rejects mismatched columns, non-finite widths, and undeclared cell fields', () => {
+    const base = tableRow();
+    const invalid = [
+      { columns: [{ key: 'other' }], cells: base.webTable!.cells },
+      {
+        columns: [{ key: 'price', width: Infinity }],
+        cells: base.webTable!.cells,
+      },
+      {
+        columns: base.webTable!.columns,
+        cells: [
+          {
+            key: 'price',
+            kind: 'text',
+            primary: [{ text: '$42' }],
+            renderItem: 'unsupported',
+          },
+        ],
+      },
+    ];
+    for (const webTable of invalid) {
+      expect(() =>
+        validateSnapshot({
+          ...snapshot(),
+          rows: [{ ...base, webTable }],
+        } as NativeListSnapshot)
+      ).toThrow();
+    }
+  });
+
+  it('rejects the entire late-invalid table patch batch', () => {
+    const initial = snapshot([tableRow('a'), tableRow('b')]);
+    const before = serializeSnapshot(initial);
+    expect(() =>
+      applyRowPatches(initial, [
+        {
+          type: 'market',
+          key: 'a',
+          changes: {
+            price: '$43',
+            webTable: {
+              columns: [{ key: 'price', width: 120 }],
+              cells: [
+                { key: 'price', kind: 'text', primary: [{ text: '$43' }] },
+              ],
+            },
+          },
+        },
+        { type: 'market', key: 'b', changes: { price: '$44' } },
+      ])
+    ).toThrow();
+    expect(serializeSnapshot(initial)).toBe(before);
+  });
+
+  it('validates every ordered fallback URI without truncating the chain', () => {
+    const base = marketRow();
+    const leading = {
+      kind: 'token' as const,
+      image: {
+        uri: 'https://example.com/first.png',
+        width: 32,
+        height: 32,
+        fallbackUris: [
+          'https://example.com/second.png',
+          'https://example.com/third.png',
+        ],
+      },
+    };
+    const serialized = serializeSnapshot(snapshot([{ ...base, leading }]));
+    const decoded = JSON.parse(serialized) as { rows: readonly MarketRow[] };
+    const decodedLeading = decoded.rows[0]!.leading;
+    if (decodedLeading.kind !== 'token')
+      throw new Error('Expected token leading');
+    expect(decodedLeading.image?.fallbackUris).toEqual(
+      leading.image.fallbackUris
+    );
+    expect(() =>
+      validateSnapshot(
+        snapshot([
+          {
+            ...base,
+            leading: {
+              ...leading,
+              image: { ...leading.image, fallbackUris: ['valid', 3] },
+            },
+          },
+        ] as unknown as readonly RowModel[])
+      )
+    ).toThrow();
   });
 });

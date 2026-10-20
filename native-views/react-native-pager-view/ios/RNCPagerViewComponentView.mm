@@ -12,6 +12,7 @@
 
 using namespace facebook::react;
 
+
 @interface RNCPagerViewComponentView () <RCTRNCViewPagerViewProtocol, UIPageViewControllerDataSource, UIPageViewControllerDelegate, UIScrollViewDelegate, UIGestureRecognizerDelegate>
 
 @property(nonatomic, strong) UIPageViewController *nativePageViewController;
@@ -39,8 +40,30 @@ using namespace facebook::react;
     NSInteger _pendingGoToIndex;
     // _nestedScrollEnabled: when YES, this inner PagerView coordinates gestures with an outer PagerView
     BOOL _nestedScrollEnabled;
+    NSHashTable<id<RNCPagerViewNestedOverlayObserver>> *_nestedOverlayObservers;
     // _blockerGesture: gate gesture that blocks inner scroll at page boundaries when nested
     UIPanGestureRecognizer *_blockerGesture;
+}
+
+- (void)notifyNestedOverlayObservers {
+    UIView *activePage = _currentIndex >= 0 &&
+        _currentIndex < _nativeChildrenViewControllers.count
+        ? _nativeChildrenViewControllers[_currentIndex].view : nil;
+    for (id<RNCPagerViewNestedOverlayObserver> observer in _nestedOverlayObservers) {
+        BOOL active = activePage != nil &&
+            [(UIView *)observer isDescendantOfView:activePage];
+        [observer outerPagerDidUpdateOverlayOwner:active transitioning:transitioning || scrollView.dragging || scrollView.decelerating];
+    }
+}
+
+- (void)addNestedOverlayObserver:(id<RNCPagerViewNestedOverlayObserver>)observer {
+    if (_nestedOverlayObservers == nil) _nestedOverlayObservers = [NSHashTable weakObjectsHashTable];
+    [_nestedOverlayObservers addObject:observer];
+    [self notifyNestedOverlayObservers];
+}
+
+- (void)removeNestedOverlayObserver:(id<RNCPagerViewNestedOverlayObserver>)observer {
+    [_nestedOverlayObservers removeObject:observer];
 }
 
 // Needed because of this: https://github.com/facebook/react-native/pull/37274
@@ -158,6 +181,7 @@ using namespace facebook::react;
 -(void)prepareForRecycle {
     _isBeingRecycled = YES;
     _generation++;
+    [_nestedOverlayObservers removeAllObjects];
 
     // Cancel any ongoing transitions
     if (_nativePageViewController != nil && transitioning) {
@@ -339,6 +363,7 @@ using namespace facebook::react;
     _pendingGoToIndex = -1;
 
     transitioning = YES;
+    [self notifyNestedOverlayObservers];
 
     __weak RNCPagerViewComponentView *weakSelf = self;
     NSUInteger capturedGeneration = _generation;
@@ -370,6 +395,7 @@ using namespace facebook::react;
 
         [strongSelf enableSwipe];
         strongSelf->_currentIndex = index;
+        [strongSelf notifyNestedOverlayObservers];
         if (strongSelf->_eventEmitter != nullptr ) {
             const auto eventEmitter = [strongSelf pagerEventEmitter];
             if (eventEmitter) {
@@ -422,6 +448,7 @@ using namespace facebook::react;
     if (_isBeingRecycled) {
         return;
     }
+    [self notifyNestedOverlayObservers];
     const auto eventEmitter = [self pagerEventEmitter];
     if (!eventEmitter) {
         return;
@@ -455,7 +482,12 @@ using namespace facebook::react;
     }
 }
 
+- (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate {
+    if (!decelerate) [self notifyNestedOverlayObservers];
+}
+
 - (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView {
+    [self notifyNestedOverlayObservers];
     if (_isBeingRecycled) {
         return;
     }
@@ -529,12 +561,14 @@ using namespace facebook::react;
         UIViewController* currentVC = [self currentlyDisplayed];
         NSUInteger currentIndex = [_nativeChildrenViewControllers indexOfObject:currentVC];
         _currentIndex = currentIndex;
+        [self notifyNestedOverlayObservers];
         int position = (int) currentIndex;
         const auto eventEmitter = [self pagerEventEmitter];
         if (eventEmitter) {
             eventEmitter->onPageSelected(RNCViewPagerEventEmitter::OnPageSelected{.position =  static_cast<double>(position)});
         }
     }
+    if (!completed) [self notifyNestedOverlayObservers];
 }
 
 #pragma mark - UIPageViewControllerDataSource

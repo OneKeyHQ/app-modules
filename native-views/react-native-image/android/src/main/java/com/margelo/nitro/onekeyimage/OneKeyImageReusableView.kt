@@ -29,6 +29,7 @@ class OneKeyImageReusableView(context: ThemedReactContext) : FrameLayout(context
     overscan: Double,
     loadingStrategy: String,
     placeholderColor: String,
+    round: Boolean = false,
     onLoad: (() -> Unit)? = null,
     onError: (() -> Unit)? = null,
   ) {
@@ -57,6 +58,7 @@ class OneKeyImageReusableView(context: ThemedReactContext) : FrameLayout(context
     image.autoplay = autoplay
     image.recyclingKey = recyclingKey
     image.optimizeTos = optimizeTos
+    image.round = round
     image.overscan = overscan
     image.loadingStrategy = when (loadingStrategy) {
       "skeleton" -> OneKeyImageLoadingStrategy.SKELETON

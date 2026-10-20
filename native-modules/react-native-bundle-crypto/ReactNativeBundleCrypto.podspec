@@ -18,6 +18,7 @@ Pod::Spec.new do |s|
     "ios/**/*.{m,mm}",
     "cpp/**/*.{hpp,cpp}",
   ]
+  s.exclude_files = "ios/tests/**/*"
 
   # Vendored Gopenpgp framework: GPG cleartext/detached signature verification.
   # This is the single in-tree copy used by bundle-crypto and by modules that
@@ -32,4 +33,8 @@ Pod::Spec.new do |s|
   add_nitrogen_files(s)
 
   install_modules_dependencies(s)
+
+  s.test_spec "Tests" do |test_spec|
+    test_spec.source_files = "ios/tests/**/*.swift"
+  end
 end

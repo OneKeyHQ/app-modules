@@ -44,6 +44,10 @@ extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
 rootProject.name = 'example'
 include ':app'
 
+// This package is not an example app dependency, but its unit tests use the same Gradle host.
+include ':onekeyfe_react-native-network-throttle'
+project(':onekeyfe_react-native-network-throttle').projectDir = file('../../../native-modules/react-native-network-throttle/android')
+
 def reactNativeGradlePlugin = new File(
 providers.exec {
     workingDir(rootDir)

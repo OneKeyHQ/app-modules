@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-native-list",
-  "version": "3.0.134",
+  "version": "6.7.0-7",
   "description": "Template-driven native RecyclerView and UICollectionView for React Native",
   "source": "./src/index.ts",
   "main": "./lib/module/index.js",
@@ -19,7 +19,6 @@
     "lib",
     "android",
     "ios",
-    "common",
     "cpp",
     "nitrogen",
     "nitro.json",
@@ -30,16 +29,17 @@
     "!android/build",
     "!android/app/build",
     "!**/__tests__",
-    "!**/*.map"
+    "!**/*.map",
+    "scripts"
   ],
   "scripts": {
     "clean": "del-cli lib",
     "prepare": "del-cli lib && bob build && cp -r nitrogen lib/nitrogen",
-    "nitrogen": "nitrogen",
+    "nitrogen": "nitrogen && node scripts/enable-container-slots.mjs",
     "typecheck": "tsc -b",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
     "test": "jest --runInBand",
-    "release": "yarn prepare && npm whoami && npm publish --access public"
+    "release": "yarn nitrogen && yarn prepare && npm whoami && npm publish --access public"
   },
   "keywords": [
     "react-native",
@@ -54,8 +54,11 @@
     "directory": "native-views/react-native-native-list"
   },
   "author": "OneKey",
-  "homepage": "https://github.com/OneKeyHQ/app-modules",
-  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/OneKeyHQ/app-modules/issues"
+  },
+  "homepage": "https://github.com/OneKeyHQ/app-modules/tree/main/native-views/react-native-native-list#readme",
+  "license": "SEE LICENSE IN LICENSE",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
     "access": "public"
@@ -83,8 +86,8 @@
     "typescript": "^5.9.2"
   },
   "peerDependencies": {
-    "@onekeyfe/react-native-image": "3.0.134",
-    "@onekeyfe/react-native-native-logger": "3.0.134",
+    "@onekeyfe/react-native-image": "6.7.0-7",
+    "@onekeyfe/react-native-native-logger": "6.7.0-7",
     "react": "*",
     "react-native": "*",
     "react-native-nitro-modules": "0.37.0"

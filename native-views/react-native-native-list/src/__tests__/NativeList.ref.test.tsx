@@ -2,6 +2,8 @@ import React, { createRef } from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
 import type { NativeListRef } from '../NativeList.types';
 import type { NativeListSnapshot } from '../models';
+import { configureNativeListFonts } from '../fonts';
+import { ScrollEdgeEffect } from '../ScrollEdgeEffect';
 
 const mockNativeMethods = {
   applySnapshot: jest.fn(),
@@ -16,7 +18,13 @@ const mockNativeMethods = {
 };
 let mockOnSelectionDelta: (payloadJson: string) => void;
 let mockOnReorder: (payloadJson: string) => void;
+let mockOnRowAction: (payloadJson: string) => void;
+const mockFontRenders = jest.fn();
 const mockWebEngine = {
+  setStickyInset: jest.fn(),
+  currentSnapshot: jest.fn(() => snapshot),
+  currentContentHeight: jest.fn(() => 0),
+  setFontFamiliesJson: jest.fn(),
   applySnapshot: jest.fn(),
   setVirtualizationEnabled: jest.fn(),
   updateCallbacks: jest.fn(),
@@ -28,6 +36,7 @@ const mockWebEngine = {
 jest.mock('react-native', () => {
   const ReactForMock = require('react') as typeof React;
   return {
+    Platform: { OS: 'ios', Version: 26 },
     View: ReactForMock.forwardRef((props, ref) =>
       ReactForMock.createElement('div', { ...props, ref })
     ),
@@ -57,11 +66,17 @@ jest.mock('react-native-nitro-modules', () => ({
   getHostComponent: () =>
     function MockNativeListHost(props: {
       hybridRef: (ref: typeof mockNativeMethods) => void;
+      testID?: string;
+      fontFamiliesJson: string;
+      snapshotJson: string;
       onSelectionDelta: (payloadJson: string) => void;
       onReorder: (payloadJson: string) => void;
+      onRowAction: (payloadJson: string) => void;
     }) {
+      mockFontRenders(props);
       mockOnSelectionDelta = props.onSelectionDelta;
       mockOnReorder = props.onReorder;
+      mockOnRowAction = props.onRowAction;
       const ReactForMock = require('react') as typeof React;
       ReactForMock.useEffect(() => props.hybridRef(mockNativeMethods), [props]);
       return null;
@@ -113,6 +128,107 @@ const snapshot: NativeListSnapshot = {
 
 describe('NativeList imperative ref', () => {
   beforeEach(() => jest.clearAllMocks());
+
+  it('forwards either edge style and disables it when cleared', async () => {
+    const { NativeList } = jest.requireActual(
+      '../NativeList'
+    ) as typeof import('../NativeList');
+    let renderer: TestRenderer.ReactTestRenderer;
+    const renderList = (effect?: ScrollEdgeEffect) => (
+      <NativeList
+        snapshot={snapshot}
+        topOverlay={<React.Fragment />}
+        topScrollEdgeEffect={effect}
+      />
+    );
+    await act(async () => {
+      renderer = TestRenderer.create(renderList(ScrollEdgeEffect.Hard));
+    });
+    expect(mockFontRenders.mock.calls.at(-1)?.[0].topScrollEdgeEffect).toBe(
+      'hard'
+    );
+    await act(async () => renderer.update(renderList(ScrollEdgeEffect.Soft)));
+    expect(mockFontRenders.mock.calls.at(-1)?.[0].topScrollEdgeEffect).toBe(
+      'soft'
+    );
+    await act(async () => renderer.update(renderList()));
+    expect(mockFontRenders.mock.calls.at(-1)?.[0].topScrollEdgeEffect).toBe(
+      'none'
+    );
+    await act(async () => renderer.unmount());
+  });
+
+  it('updates both mounted lists from the runtime store without replaying snapshots', async () => {
+    const { NativeList } = jest.requireActual(
+      '../NativeList'
+    ) as typeof import('../NativeList');
+    const first = createRef<NativeListRef>();
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      configureNativeListFonts({ regular: 'First' });
+      renderer = TestRenderer.create(
+        <>
+          <NativeList ref={first} testID="font-first" snapshot={snapshot} />
+          <NativeList testID="font-second" snapshot={snapshot} />
+        </>
+      );
+    });
+    const latest = (id: string) =>
+      mockFontRenders.mock.calls
+        .map(([props]) => props)
+        .filter((props) => props.testID === id)
+        .at(-1);
+    const originalSnapshot = latest('font-first').snapshotJson;
+    expect(latest('font-first').fontFamiliesJson).toBe('{"regular":"First"}');
+    expect(latest('font-second').fontFamiliesJson).toBe('{"regular":"First"}');
+    act(() =>
+      first.current?.applyPatches([
+        { key: 'a-0', type: 'system', changes: { message: 'Patched' } },
+      ])
+    );
+    mockNativeMethods.applySnapshot.mockClear();
+    await act(async () => configureNativeListFonts({ bold: 'Changed' }));
+    expect(latest('font-first').fontFamiliesJson).toBe('{"bold":"Changed"}');
+    expect(latest('font-second').fontFamiliesJson).toBe('{"bold":"Changed"}');
+    expect(latest('font-first').snapshotJson).toBe(originalSnapshot);
+    expect(mockNativeMethods.applySnapshot).not.toHaveBeenCalled();
+    expect(mockNativeMethods.applyPatches).toHaveBeenCalledTimes(1);
+    const renders = mockFontRenders.mock.calls.length;
+    await act(async () => configureNativeListFonts({ bold: 'Changed' }));
+    expect(mockFontRenders).toHaveBeenCalledTimes(renders);
+    await act(async () => renderer!.unmount());
+    const unmountedRenders = mockFontRenders.mock.calls.length;
+    await act(async () => configureNativeListFonts({}));
+    expect(mockFontRenders).toHaveBeenCalledTimes(unmountedRenders);
+  });
+
+  it.each([true, false])(
+    'consumes native container refresh separately from row actions (refresh callback: %s)',
+    async (hasRefreshCallback) => {
+      const { NativeList } = jest.requireActual(
+        '../NativeList'
+      ) as typeof import('../NativeList');
+      const onRefresh = jest.fn();
+      const onRowAction = jest.fn();
+      await act(async () => {
+        TestRenderer.create(
+          <NativeList
+            snapshot={snapshot}
+            onRefresh={hasRefreshCallback ? onRefresh : undefined}
+            onRowAction={onRowAction}
+          />
+        );
+      });
+      act(() => mockOnRowAction('{"actionKey":"nativeList.refresh"}'));
+      expect(onRefresh).toHaveBeenCalledTimes(hasRefreshCallback ? 1 : 0);
+      expect(onRowAction).not.toHaveBeenCalled();
+
+      const rowAction = { rowKey: 'a-0', actionKey: 'nativeList.refresh' };
+      act(() => mockOnRowAction(JSON.stringify(rowAction)));
+      expect(onRowAction).toHaveBeenCalledWith(rowAction);
+      expect(onRefresh).toHaveBeenCalledTimes(hasRefreshCallback ? 1 : 0);
+    }
+  );
 
   it('dispatches initial position and every RN-compatible scroll API', async () => {
     const { NativeList } = jest.requireActual(
@@ -303,7 +419,7 @@ describe('NativeList imperative ref', () => {
             }}
             onReorder={onReorder}
           />,
-          { createNodeMock: () => ({}) }
+          { createNodeMock: () => ({ style: {} }) }
         );
       });
       const event = { key: 'a', fromIndex: 0, toIndex: 2 };

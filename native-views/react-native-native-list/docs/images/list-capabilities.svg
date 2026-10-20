@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="532" viewBox="0 0 900 532" role="img" aria-labelledby="title desc">
+<title id="title">NativeList · container capability boundaries</title>
+<desc id="desc">Structural schematic. Blue is content; green is controls; dashed slots are optional. Not a device screenshot or a pixel specification.</desc>
+<rect width="900" height="100%" rx="16" fill="#f5f7fa"/>
+<g font-family="Arial, Helvetica, sans-serif">
+<text x="24" y="36" font-size="22" fill="#172a3a" font-weight="600">NativeList · container capability boundaries</text>
+<rect x="24" y="62" width="458" height="418" rx="8" fill="#fff" stroke="#bfcbd5"/>
+<rect x="42" y="80" width="422" height="44" rx="8" fill="#eaf1fb" stroke="#91add0"/>
+<text x="54" y="107.0" font-size="15" fill="#294766" font-weight="400">Header placement · container responsibility</text>
+<rect x="42" y="140" width="356" height="254" rx="8" fill="#ffffff" stroke="#93a8ba"/>
+<text x="56" y="164" font-size="14" fill="#64798b" font-weight="600">Scrolling viewport</text>
+<rect x="56" y="180" width="328" height="40" rx="8" fill="#eaf1fb" stroke="#91add0"/>
+<text x="68" y="205.0" font-size="15" fill="#294766" font-weight="400">Section heading · structural row</text>
+<rect x="56" y="232" width="328" height="44" rx="8" fill="#eaf1fb" stroke="#91add0"/>
+<text x="68" y="259.0" font-size="15" fill="#294766" font-weight="400">identity · internal slots only</text>
+<rect x="56" y="286" width="328" height="44" rx="8" fill="#eaf1fb" stroke="#91add0"/>
+<text x="68" y="313.0" font-size="15" fill="#294766" font-weight="400">market / dataRow · internal slots only</text>
+<rect x="56" y="342" width="328" height="36" rx="8" fill="#eaf1fb" stroke="#91add0" stroke-dasharray="5 4"/>
+<text x="68" y="365.0" font-size="15" fill="#294766" font-weight="400">Next section …</text>
+<rect x="412" y="140" width="52" height="254" rx="8" fill="#e9f5ee" stroke="#72a38a"/>
+<text x="424" y="250.0" font-size="15" fill="#2c6245" font-weight="400">A</text>
+<text x="424" y="272.0" font-size="15" fill="#2c6245" font-weight="400">B</text>
+<text x="424" y="294.0" font-size="15" fill="#2c6245" font-weight="400">C</text>
+<rect x="42" y="412" width="422" height="48" rx="8" fill="#eaf1fb" stroke="#91add0"/>
+<text x="54" y="441.0" font-size="15" fill="#294766" font-weight="400">Footer placement · fixed or scrolling</text>
+<text x="518" y="96" font-size="20" fill="#172a3a" font-weight="600">Common container capabilities</text>
+<text x="518" y="138" font-size="16" fill="#243f55" font-weight="400">Header / footer positioning</text>
+<text x="518" y="176" font-size="16" fill="#243f55" font-weight="400">Section membership and sticky headers</text>
+<text x="518" y="214" font-size="16" fill="#243f55" font-weight="400">Scroll, restoration, refresh, pagination</text>
+<text x="518" y="252" font-size="16" fill="#243f55" font-weight="400">Indexed bar and its host / hit area</text>
+<text x="518" y="290" font-size="16" fill="#243f55" font-weight="400">Padding, separators and grouped cards</text>
+<path d="M512 312 L866 312" stroke="#9bb0c0" stroke-width="1.5"/>
+<text x="518" y="348" font-size="18" fill="#294766" font-weight="600">Row template</text>
+<text x="518" y="378" font-size="16" fill="#243f55" font-weight="400">Owns slot structure and local style only.</text>
+<text x="518" y="410" font-size="16" fill="#243f55" font-weight="400">Changing content templates preserves</text>
+<text x="518" y="435" font-size="16" fill="#243f55" font-weight="400">the container’s public capabilities.</text>
+<text x="24" y="512" font-size="13" fill="#64798b" font-weight="400">Ownership diagram, not new API: generic header slot is still absent; fixedFooter currently accepts action/system.</text>
+</g>
+</svg>

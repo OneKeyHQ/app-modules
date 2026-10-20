@@ -76,6 +76,7 @@ final class HybridOneKeyImageCache: HybridOneKeyImageCacheSpec {
       SDImageCache.shared.clearMemory()
       // OneKey patch: Clear the dedicated local-avatar cache with public cache operations.
       OneKeyAvatarImageLoader.cache.clearMemory()
+      OneKeyImageMemoryVariantRegistry.shared.clear()
     }
   }
 
@@ -94,6 +95,7 @@ final class HybridOneKeyImageCache: HybridOneKeyImageCacheSpec {
     SDImageCache.shared.clearMemory()
     // OneKey patch: The avatar cache is shared by render and preload requests.
     OneKeyAvatarImageLoader.cache.clearMemory()
+    OneKeyImageMemoryVariantRegistry.shared.clear()
     return try clearDisk()
   }
 
@@ -136,14 +138,49 @@ final class HybridOneKeyImageCache: HybridOneKeyImageCacheSpec {
       source: source,
       thumbnailPixelSize: thumbnailPixelSize
     )
+    if result == .success {
+      recordMemoryVariant(
+        rawURL: rawURL,
+        requestURL: requestURL,
+        source: source,
+        thumbnailPixelSize: thumbnailPixelSize
+      )
+      return true
+    }
     if case .failure = result, requestURL != rawURL {
-      return await loadAttempt(
+      let fallbackResult = await loadAttempt(
         url: rawURL,
         source: source,
         thumbnailPixelSize: thumbnailPixelSize
-      ) == .success
+      )
+      if fallbackResult == .success {
+        recordMemoryVariant(
+          rawURL: rawURL,
+          requestURL: rawURL,
+          source: source,
+          thumbnailPixelSize: thumbnailPixelSize
+        )
+        return true
+      }
     }
-    return result == .success
+    return false
+  }
+
+  private static func recordMemoryVariant(
+    rawURL: URL,
+    requestURL: URL,
+    source: OneKeyImagePreloadSource,
+    thumbnailPixelSize: CGSize
+  ) {
+    let policy = source.cachePolicy ?? .memoryDisk
+    guard policy == .memory || policy == .memoryDisk else { return }
+    OneKeyImageMemoryVariantRegistry.shared.record(
+      OneKeyImageMemoryVariant(
+        requestURL: requestURL,
+        thumbnailPixelSize: thumbnailPixelSize
+      ),
+      for: OneKeyImageMemoryFamilyKey(rawURL: rawURL, headersJson: source.headersJson)
+    )
   }
 
   private static func loadAttempt(

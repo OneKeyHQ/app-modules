@@ -195,6 +195,12 @@ interface Props<Route extends BaseRoute> {
    */
   androidTabBarStyle?: 'default' | 'floating';
   /**
+   * Whether the tab bar ignores the soft keyboard. Defaults to true, so the
+   * keyboard covers the tab bar as on iOS. Set to false to pad the tab bar by
+   * the keyboard height so it rises above the keyboard. Android only.
+   */
+  ignoreKeyboardInsets?: boolean;
+  /**
    * Whether to delay freeze/unfreeze by 200ms on tab switch.
    * Defaults to false (immediate freeze). Set to true to restore the
    * original delayed behavior.

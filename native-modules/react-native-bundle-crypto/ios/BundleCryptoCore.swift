@@ -128,7 +128,83 @@ public enum BundleCryptoCore {
   // MARK: - GPG cleartext (bundle form): body JSON -> sha256
   // Ported verbatim from ReactNativeBundleUpdate.verifyGPGAndExtractSha256.
 
-  public static func verifyGpgCleartext(_ signedMessage: String) -> (valid: Bool, sha256: String?, reason: String?) {
+  private static func isHex64(_ token: String) -> Bool {
+    return token.count == 64 && token.unicodeScalars.allSatisfy {
+      ($0 >= "0" && $0 <= "9") || ($0 >= "a" && $0 <= "f")
+    }
+  }
+
+  public static func extractDetachedAscSha256(_ cleartextBody: String, expectedFileName: String?) -> String? {
+    let trimmed = cleartextBody.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let expectedFileName = expectedFileName, !expectedFileName.isEmpty else {
+      return trimmed
+        .split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\n" || $0 == "\r" })
+        .first
+        .map { String($0).lowercased() } ?? ""
+    }
+    let lines = trimmed
+      .components(separatedBy: .newlines)
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+    if lines.isEmpty {
+      return ""
+    }
+    var matchedHashes = Set<String>()
+    for line in lines {
+      let tokens = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
+      if tokens.count >= 2 {
+        let rawToken = String(tokens[1])
+        let stripped = rawToken.hasPrefix("*") ? String(rawToken.dropFirst()) : rawToken
+        let fileName = (stripped as NSString).lastPathComponent
+        if fileName == expectedFileName {
+          let candidate = String(tokens[0]).lowercased()
+          if !isHex64(candidate) {
+            return ""
+          }
+          matchedHashes.insert(candidate)
+        }
+      }
+    }
+    if matchedHashes.count == 1, let single = matchedHashes.first {
+      return single
+    }
+    return ""
+  }
+
+  private static func hasValidSha256LineWithoutMatchingFile(_ cleartextBody: String, expectedFileName: String?) -> Bool {
+    guard let expectedFileName = expectedFileName, !expectedFileName.isEmpty else { return false }
+    let lines = cleartextBody
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .components(separatedBy: .newlines)
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+    var sawValidHashLine = false
+    for line in lines {
+      let tokens = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
+      if !tokens.isEmpty {
+        let candidate = String(tokens[0]).lowercased()
+        if isHex64(candidate) {
+          sawValidHashLine = true
+        }
+        if tokens.count >= 2 {
+          let rawToken = String(tokens[1])
+          let stripped = rawToken.hasPrefix("*") ? String(rawToken.dropFirst()) : rawToken
+          let fileName = (stripped as NSString).lastPathComponent
+          if fileName == expectedFileName {
+            return false
+          }
+        }
+      }
+    }
+    return sawValidHashLine
+  }
+
+  public static func verifyGpgCleartext(
+    _ signedMessage: String,
+    expectedAppVersion: String? = nil,
+    expectedBundleVersion: String? = nil,
+    expectedAppType: String? = nil
+  ) -> (valid: Bool, sha256: String?, reason: String?) {
     // Check if this looks like a PGP signed message
     guard signedMessage.contains("-----BEGIN PGP SIGNED MESSAGE-----") else {
       return (false, nil, "NOT_PGP_SIGNED_MESSAGE")
@@ -198,9 +274,33 @@ public enum BundleCryptoCore {
     // 7. Parse JSON and extract sha256
     guard let jsonData = text.data(using: .utf8),
           let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-          let sha256 = json["sha256"] as? String else {
+          let sha256 = json["sha256"] as? String,
+          !sha256.isEmpty else {
       OneKeyLog.error("BundleCrypto", "Failed to parse cleartext JSON")
       return (false, nil, "JSON_PARSE_FAILED")
+    }
+
+    if json["fileName"] as? String != "metadata.json" {
+      OneKeyLog.error("BundleCrypto", "Invalid signed metadata fileName")
+      return (false, nil, "INVALID_METADATA_FILENAME")
+    }
+
+    if let expectedAppType = expectedAppType, !expectedAppType.isEmpty,
+       json["appType"] as? String != expectedAppType {
+      OneKeyLog.error("BundleCrypto", "Signed metadata appType mismatch")
+      return (false, nil, "METADATA_APPTYPE_MISMATCH")
+    }
+
+    if let expectedAppVersion = expectedAppVersion, !expectedAppVersion.isEmpty,
+       json["appVersion"] as? String != expectedAppVersion {
+      OneKeyLog.error("BundleCrypto", "Signed metadata appVersion mismatch")
+      return (false, nil, "METADATA_APPVERSION_MISMATCH")
+    }
+
+    if let expectedBundleVersion = expectedBundleVersion, !expectedBundleVersion.isEmpty,
+       json["bundleVersion"] as? String != expectedBundleVersion {
+      OneKeyLog.error("BundleCrypto", "Signed metadata bundleVersion mismatch")
+      return (false, nil, "METADATA_BUNDLEVERSION_MISMATCH")
     }
 
     OneKeyLog.info("BundleCrypto", "GPG cleartext verification succeeded")
@@ -213,7 +313,10 @@ public enum BundleCryptoCore {
   // (no JSON — the verified body's first whitespace token must be a 64-char
   // lowercase hex sha256).
 
-  public static func verifyDetachedAsc(_ ascContent: String) -> (valid: Bool, sha256: String?, reason: String?) {
+  public static func verifyDetachedAsc(
+    _ ascContent: String,
+    expectedFileName: String? = nil
+  ) -> (valid: Bool, sha256: String?, reason: String?) {
     guard ascContent.contains("-----BEGIN PGP SIGNED MESSAGE-----") else {
       return (false, nil, "NOT_PGP_SIGNED_MESSAGE")
     }
@@ -262,17 +365,15 @@ public enum BundleCryptoCore {
       return (false, nil, "CLEARTEXT_EXTRACT_FAILED")
     }
 
-    // Mirror Android: first whitespace token of the verified SHA256SUMS body,
-    // lowercased, must be exactly 64 hex chars.
-    let sha256 = text
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-      .split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\n" || $0 == "\r" })
-      .first
-      .map { String($0).lowercased() } ?? ""
-    let isHex = sha256.count == 64 && sha256.unicodeScalars.allSatisfy {
-      ($0 >= "0" && $0 <= "9") || ($0 >= "a" && $0 <= "f")
+    guard let sha256 = extractDetachedAscSha256(text, expectedFileName: expectedFileName) else {
+      OneKeyLog.error("BundleCrypto", "ASC signed filename mismatch for expected: \(expectedFileName ?? "")")
+      return (false, nil, "FILENAME_MISMATCH")
     }
-    guard isHex else {
+    guard isHex64(sha256) else {
+      if hasValidSha256LineWithoutMatchingFile(text, expectedFileName: expectedFileName) {
+        OneKeyLog.error("BundleCrypto", "ASC signed filename mismatch for expected: \(expectedFileName ?? "")")
+        return (false, nil, "FILENAME_MISMATCH")
+      }
       OneKeyLog.error("BundleCrypto", "ASC body sha256 token invalid")
       return (false, nil, "SHA256_TOKEN_INVALID")
     }
@@ -411,9 +512,17 @@ public enum BundleCryptoCore {
     }
     // Normalize the directory prefix so relative paths match.
     let normalizedDir = (dirPath as NSString).hasSuffix("/") ? dirPath : dirPath + "/"
+    let resolvedDir = (dirPath as NSString).resolvingSymlinksInPath
+    let resolvedPrefix = resolvedDir == "/" ? "/" : resolvedDir + "/"
 
     var expected: [String: String] = [:]
-    for entry in entries { expected[entry.relativePath] = entry.sha256 }
+    for entry in entries {
+      guard !entry.relativePath.isEmpty,
+            !(entry.relativePath as NSString).isAbsolutePath else { return false }
+      let resolvedFile = ((normalizedDir + entry.relativePath) as NSString).resolvingSymlinksInPath
+      guard resolvedFile.hasPrefix(resolvedPrefix) else { return false }
+      expected[entry.relativePath] = entry.sha256
+    }
 
     guard let enumerator = fm.enumerator(atPath: dirPath) else { return false }
     while let file = enumerator.nextObject() as? String {

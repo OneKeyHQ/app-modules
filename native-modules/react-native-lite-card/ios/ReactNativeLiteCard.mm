@@ -5,6 +5,9 @@
 #import "OKLiteV1.h"
 #import "LCLogger.h"
 
+#include <atomic>
+#include <memory>
+
 typedef NS_ENUM(NSInteger, NFCLiteExceptions) {
   NFCLiteExceptionsInitChannel = 1000,// 初始化异常
   NFCLiteExceptionsNotExistsNFC = 1001,// 没有 NFC 设备
@@ -24,6 +27,20 @@ typedef NS_ENUM(NSInteger, NFCLiteExceptions) {
   NFCLiteExceptionsInitialized = 4001,// 已经备份过内容
   NFCLiteExceptionsNotInitialized = 4002,// 没有备份过内容
 };
+
+// React Native aborts the app when a callback runs twice, and NFC results can
+// arrive from more than one CoreNFC thread, so only the first result is sent.
+static RCTResponseSenderBlock OKLiteCallbackOnce(RCTResponseSenderBlock callback)
+{
+  auto invoked = std::make_shared<std::atomic<bool>>(false);
+  return ^(NSArray *response) {
+    if (invoked->exchange(true)) {
+      [LCLogger warn:@"Dropped a repeated Lite card callback"];
+      return;
+    }
+    callback(response);
+  };
+}
 
 @implementation ReactNativeLiteCard
 - (NSNumber *)multiply:(double)a b:(double)b {
@@ -57,6 +74,7 @@ typedef NS_ENUM(NSInteger, NFCLiteExceptions) {
 
 - (void)getLiteInfo:(RCTResponseSenderBlock)callBack
 {
+  callBack = OKLiteCallbackOnce(callBack);
   if ([ReactNativeLiteCard checkSDKVaild:callBack]) {
     __block OKNFCManager *liteManager = [[OKNFCManager alloc] init];
     [liteManager getLiteInfo:^(OKLiteV1 *lite, OKNFCLiteStatus status) {
@@ -74,6 +92,7 @@ typedef NS_ENUM(NSInteger, NFCLiteExceptions) {
 
 - (void)setMnemonic:(NSString *)mnemonic pwd:(NSString *)pwd overwrite:(BOOL)overwrite callback:(RCTResponseSenderBlock)callBack
 {
+  callBack = OKLiteCallbackOnce(callBack);
   if ([ReactNativeLiteCard checkSDKVaild:callBack]) {
     __block OKNFCManager *liteManager = [[OKNFCManager alloc] init];
     [liteManager setMnemonic:mnemonic withPin:pwd overwrite:overwrite complete:^(OKLiteV1 *lite, OKNFCLiteSetMncStatus status) {
@@ -111,6 +130,7 @@ typedef NS_ENUM(NSInteger, NFCLiteExceptions) {
 
 - (void)getMnemonicWithPin:(NSString *)pwd callback:(RCTResponseSenderBlock)callBack
 {
+  callBack = OKLiteCallbackOnce(callBack);
   if ([ReactNativeLiteCard checkSDKVaild:callBack]) {
     __block OKNFCManager *liteManager = [[OKNFCManager alloc] init];
     [liteManager getMnemonicWithPin:pwd complete:^(OKLiteV1 *lite, NSString *mnemonic, OKNFCLiteGetMncStatus status) {
@@ -150,6 +170,7 @@ typedef NS_ENUM(NSInteger, NFCLiteExceptions) {
 
 - (void)changePin:(NSString *)oldPin newPin:(NSString *)newPin callback:(RCTResponseSenderBlock)callBack
 {
+  callBack = OKLiteCallbackOnce(callBack);
   if ([ReactNativeLiteCard checkSDKVaild:callBack]) {
     __block OKNFCManager *liteManager = [[OKNFCManager alloc] init];
     [liteManager changePin:oldPin to:newPin complete:^(OKLiteV1 *lite, OKNFCLiteChangePinStatus status) {
@@ -183,6 +204,7 @@ typedef NS_ENUM(NSInteger, NFCLiteExceptions) {
 
 - (void)reset:(RCTResponseSenderBlock)callBack
 {
+  callBack = OKLiteCallbackOnce(callBack);
   if ([ReactNativeLiteCard checkSDKVaild:callBack]) {
     __block OKNFCManager *liteManager = [[OKNFCManager alloc] init];
     [liteManager reset:^(OKLiteV1 *lite, BOOL isSuccess, NSError *error) {

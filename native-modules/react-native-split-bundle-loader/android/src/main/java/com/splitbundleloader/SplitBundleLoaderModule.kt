@@ -13,6 +13,7 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Semaphore
 import java.util.concurrent.atomic.AtomicBoolean
 import android.os.Handler
@@ -94,6 +95,18 @@ class SplitBundleLoaderModule(reactContext: ReactApplicationContext) :
         private const val MAX_CONCURRENT_EXTRACTS = 2
         private val extractSemaphore = Semaphore(MAX_CONCURRENT_EXTRACTS)
 
+        // Per-path extraction locks. The semaphore above is an I/O THROTTLE,
+        // not mutual exclusion: with N permits, N threads can extract the SAME
+        // relativePath at once. Main and background runtimes resolve segments
+        // independently, so two concurrent extractions of one segment is the
+        // normal case on the first launch after an APK replace (the
+        // install-stamp wipe empties the whole tree, so every segment misses).
+        // Serializing per path means exactly one thread extracts and the rest
+        // wake up on the exists() fast path. Entries are never removed:
+        // dropping one would let a waiter lock an Object another thread has
+        // already replaced, and the map is bounded by the segment count.
+        private val extractPathLocks = ConcurrentHashMap<String, Any>()
+
         // Wipe-on-APK-replace: avoids stale extracted HBC after overwrite install.
         // `lastUpdateTime` changes on every APK replacement (adb install -r,
         // Play Store upgrade, sideload, TestFlight-equivalent). If it differs
@@ -101,11 +114,25 @@ class SplitBundleLoaderModule(reactContext: ReactApplicationContext) :
         // assets get extracted fresh on first load.
         private const val PREFS_NAME = "split_bundle_loader"
         private const val KEY_LAST_INSTALL_STAMP = "last_install_stamp"
+        private const val BUILTIN_BUNDLE_SENTINEL = "__BUILTIN__"
         // Double-checked locking: loser threads must BLOCK until the wipe
         // finishes, not just skip. AtomicBoolean.compareAndSet would let
         // losers race ahead and read half-nuked state.
         @Volatile private var wipeCheckDone: Boolean = false
         private val wipeLock = Any()
+    }
+
+    // Pin the OTA bundle path that this React runtime instance booted with so
+    // mid-session SharedPreferences mutations (installBundle / switchBundle /
+    // resetToBuiltInBundle during the 2500ms pre-restart window) cannot cause
+    // subsequent lazy segment loads to jump to a different bundle root.
+    @Volatile
+    private var pinnedOtaBundlePath: String? = null
+    private val pinnedOtaBundleLock = Any()
+
+    override fun initialize() {
+        super.initialize()
+        getOtaBundlePath()
     }
 
     override fun getName(): String = NAME
@@ -445,6 +472,8 @@ class SplitBundleLoaderModule(reactContext: ReactApplicationContext) :
             } else {
                 SBLLogger.info("[resolveSeg] rel=$relativePath otaBundlePath=$otaBundlePath parentFile=null")
             }
+            SBLLogger.warn("[resolveSeg] rel=$relativePath missing in active OTA bundle root — refusing builtin fallback")
+            return null
         } else {
             SBLLogger.info("[resolveSeg] rel=$relativePath otaBundlePath=(empty) — skipping OTA")
         }
@@ -479,56 +508,101 @@ class SplitBundleLoaderModule(reactContext: ReactApplicationContext) :
         val extractDir = File(context.filesDir, "$BUILTIN_EXTRACT_DIR/$nativeVersion")
         val extractedFile = File(extractDir, relativePath)
 
-        // #16: If file exists, verify it's not truncated by checking size against asset
+        // #16: A complete extraction is reusable with no locking at all. Only
+        // the happy case short-circuits here — a size mismatch deliberately
+        // falls through to the lock rather than deleting, because deleting
+        // outside the per-path lock can destroy a file another thread has just
+        // published (its writer would then hand out a path we unlinked).
         if (extractedFile.exists()) {
             val assetSize = getAssetSize(context.assets, relativePath)
             if (assetSize >= 0 && extractedFile.length() == assetSize) {
                 return extractedFile.absolutePath
             }
-            // Truncated or size mismatch — delete and re-extract
-            SBLLogger.warn("Extracted file size mismatch for $relativePath, re-extracting")
-            extractedFile.delete()
         }
 
-        // #18: Limit concurrent extractions
-        extractSemaphore.acquire()
-        try {
-            // Double-check after acquiring semaphore (another thread may have extracted)
+        // Serialize every extraction of THIS path (see extractPathLocks). The
+        // lock is taken OUTSIDE the semaphore so a thread waiting here never
+        // sits on a permit it isn't using, and so the re-check below can hand
+        // back an already-extracted file without spending one.
+        synchronized(extractPathLocks.computeIfAbsent(relativePath) { Any() }) {
+            // Re-check under the lock: another thread may have extracted while
+            // we waited. Nothing in this process can be mid-publish for this
+            // path now, so a stale file is safe to delete and re-extract.
             if (extractedFile.exists()) {
-                return extractedFile.absolutePath
+                val assetSize = getAssetSize(context.assets, relativePath)
+                if (assetSize >= 0 && extractedFile.length() == assetSize) {
+                    return extractedFile.absolutePath
+                }
+                SBLLogger.warn("Extracted file size mismatch for $relativePath, re-extracting")
+                extractedFile.delete()
             }
 
-            val assets: AssetManager = context.assets
-            return try {
-                // Extract to temp file first, then atomically rename
-                val tempFile = File(extractedFile.parentFile, "${extractedFile.name}.tmp")
-                assets.open(relativePath).use { input ->
-                    extractedFile.parentFile?.let { parent ->
-                        if (!parent.exists()) parent.mkdirs()
-                    }
-                    FileOutputStream(tempFile).use { output ->
-                        val buffer = ByteArray(8192)
-                        var len: Int
-                        while (input.read(buffer).also { len = it } != -1) {
-                            output.write(buffer, 0, len)
+            // #18: Limit concurrent extractions
+            extractSemaphore.acquire()
+            // Extract to a temp file first, then atomically rename. The temp
+            // name must be UNIQUE per attempt: a shared "<name>.tmp" lets two
+            // writers open the same file with O_TRUNC and interleave into each
+            // other's stream, so the winner can publish a partially zeroed HBC
+            // while the loser's renameTo fails on a source that was already
+            // moved away. extractPathLocks covers this process; the unique name
+            // keeps it safe across processes too. Because a unique temp file is
+            // never reused by a later attempt, it MUST be cleaned up on every
+            // failure path or partial writes accumulate until the next APK
+            // replace — hence the finally below.
+            val tempFile = File(
+                extractedFile.parentFile,
+                "${extractedFile.name}.${android.os.Process.myTid()}-${System.nanoTime()}.tmp"
+            )
+            try {
+                val assets: AssetManager = context.assets
+                return try {
+                    var written = 0L
+                    assets.open(relativePath).use { input ->
+                        extractedFile.parentFile?.let { parent ->
+                            if (!parent.exists()) parent.mkdirs()
+                        }
+                        FileOutputStream(tempFile).use { output ->
+                            val buffer = ByteArray(8192)
+                            var len: Int
+                            while (input.read(buffer).also { len = it } != -1) {
+                                output.write(buffer, 0, len)
+                                written += len
+                            }
                         }
                     }
-                }
-                // Atomic rename prevents partial file observation
-                if (tempFile.renameTo(extractedFile)) {
-                    SBLLogger.info("[extractBuiltin] extracted $relativePath → ${extractedFile.absolutePath} (${extractedFile.length()} bytes)")
-                    extractedFile.absolutePath
-                } else {
-                    SBLLogger.warn("[extractBuiltin] rename failed for $relativePath: ${tempFile.absolutePath} → ${extractedFile.absolutePath}")
-                    tempFile.delete()
+                    // Atomic rename prevents partial file observation
+                    if (tempFile.renameTo(extractedFile)) {
+                        SBLLogger.info("[extractBuiltin] extracted $relativePath → ${extractedFile.absolutePath} (${extractedFile.length()} bytes)")
+                        extractedFile.absolutePath
+                    } else {
+                        // A failed rename is NOT proof the segment is missing:
+                        // another process may have published the same bytes at
+                        // the destination. Returning null here would turn a
+                        // transient race into SPLIT_BUNDLE_NOT_FOUND, which the
+                        // JS loader caches as a permanent failure. Compare
+                        // against what we just wrote rather than re-reading the
+                        // asset, and require an exact match — accepting an
+                        // unknown size would be laxer than the checks above.
+                        if (extractedFile.exists() && extractedFile.length() == written) {
+                            SBLLogger.warn("[extractBuiltin] rename lost the race for $relativePath, using file published by another writer: ${extractedFile.absolutePath} ($written bytes)")
+                            extractedFile.absolutePath
+                        } else {
+                            SBLLogger.warn("[extractBuiltin] rename failed for $relativePath: ${tempFile.absolutePath} → ${extractedFile.absolutePath}")
+                            null
+                        }
+                    }
+                } catch (e: IOException) {
+                    SBLLogger.warn("[extractBuiltin] IOException for $relativePath: ${e.javaClass.simpleName}: ${e.message}")
                     null
                 }
-            } catch (e: IOException) {
-                SBLLogger.warn("[extractBuiltin] IOException for $relativePath: ${e.javaClass.simpleName}: ${e.message}")
-                null
+            } finally {
+                // No-op after a successful rename (the temp file is gone);
+                // reclaims the partial write on every other path.
+                if (tempFile.exists()) {
+                    tempFile.delete()
+                }
+                extractSemaphore.release()
             }
-        } finally {
-            extractSemaphore.release()
         }
     }
 
@@ -578,6 +652,22 @@ class SplitBundleLoaderModule(reactContext: ReactApplicationContext) :
     }
 
     private fun getOtaBundlePath(): String? {
+        val existing = pinnedOtaBundlePath
+        if (existing != null) {
+            return if (existing == BUILTIN_BUNDLE_SENTINEL) null else existing
+        }
+        synchronized(pinnedOtaBundleLock) {
+            val rechecked = pinnedOtaBundlePath
+            if (rechecked != null) {
+                return if (rechecked == BUILTIN_BUNDLE_SENTINEL) null else rechecked
+            }
+            val resolved = queryCurrentOtaBundlePath()
+            pinnedOtaBundlePath = if (resolved.isNullOrEmpty()) BUILTIN_BUNDLE_SENTINEL else resolved
+            return resolved
+        }
+    }
+
+    private fun queryCurrentOtaBundlePath(): String? {
         return try {
             val bundleUpdateStore = Class.forName(
                 "com.margelo.nitro.reactnativebundleupdate.BundleUpdateStoreAndroid"
@@ -639,7 +729,9 @@ class SplitBundleLoaderModule(reactContext: ReactApplicationContext) :
      */
     private fun verifySha256(path: String, expected: String): Boolean {
         if (expected.isEmpty()) {
-            return !currentBundleRequiresPerSegmentHash()
+            val otaPath = getOtaBundlePath()
+            val otaActive = !otaPath.isNullOrEmpty() && pinnedOtaBundlePath != BUILTIN_BUNDLE_SENTINEL
+            return otaActive && !currentBundleRequiresPerSegmentHash()
         }
         return try {
             val md = MessageDigest.getInstance("SHA-256")

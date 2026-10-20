@@ -1,4 +1,6 @@
-import type { ViewProps } from 'react-native';
+import type { ScrollEdgeEffect } from './ScrollEdgeEffect';
+import type { ReactNode, RefObject } from 'react';
+import type { View, ViewProps } from 'react-native';
 import type {
   ActionAnchorInvalidatedEvent,
   EndReachedEvent,
@@ -69,6 +71,13 @@ export type ScrollToIndexFailedInfo = Readonly<{
     | 'item-not-found';
 }>;
 
+/** Minimal DOM-free structural surface for an explicit Web scroll element. */
+export type NativeListWebScrollHost = Readonly<{
+  clientWidth: number;
+  clientHeight: number;
+  scrollTop: number;
+}>;
+
 type InitialScrollProps =
   | Readonly<{
       initialScrollIndex?: never;
@@ -118,8 +127,22 @@ export type NativeListRef = Readonly<{
 export type NativeListProps = Omit<ViewProps, 'children'> &
   Readonly<{
     snapshot: NativeListSnapshot;
+    /** Container-owned scroll content. Never rendered as a data row. */
+    listHeader?: ReactNode;
+    listFooter?: ReactNode;
+    listEmpty?: ReactNode;
+    /** Fixed overlay above scrolling rows on iOS 26 and newer. */
+    topOverlay?: ReactNode;
+    /** Selects UIKit's top scroll-edge effect on iOS 26 and newer. */
+    topScrollEdgeEffect?: `${ScrollEdgeEffect}`;
     /** Web only. Defaults to true and is ignored by the native host. */
     webVirtualizationEnabled?: boolean;
+    /** Web only: undefined owns scrolling, null waits for a host element. */
+    webScrollHost?: NativeListWebScrollHost | null;
+    /** Web only: visible sticky chrome above the parent's list viewport. */
+    webStickyInset?: number;
+    /** Web only. Hosts the section index inside this container. */
+    webSectionIndexContainerRef?: RefObject<View | null>;
     /** Defaults to `none`. `interactive` behaves as `none` on Android. */
     keyboardDismissMode?: NativeListKeyboardDismissMode;
     /**
@@ -133,6 +156,15 @@ export type NativeListProps = Omit<ViewProps, 'children'> &
     onReorder?: (event: ReorderEvent) => void;
     onEndReached?: (event: EndReachedEvent) => void;
     onVisibleRangeChanged?: (event: VisibleRangeChangedEvent) => void;
+    /** Native only. Emits initial state and hysteresis transitions, not scroll frames. */
+    scrollPositionThresholds?: Readonly<{
+      start: number;
+      end: number;
+      enabled?: boolean;
+    }>;
+    onScrollPositionThresholdChange?: (
+      event: Readonly<{ isBeyondThreshold: boolean }>
+    ) => void;
     onRefresh?: () => void;
     onScrollToIndexFailed?: (info: ScrollToIndexFailedInfo) => void;
   }> &

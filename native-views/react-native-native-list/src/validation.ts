@@ -1,3 +1,4 @@
+import { ROW_BOX_STYLE_KEYS_BY_TYPE } from './models';
 import type {
   ActivityRow,
   IdentityRow,
@@ -5,11 +6,17 @@ import type {
   LeadingVisual,
   MarketRow,
   MarketRowStyle,
-  MarketTextStyle,
+  NativeListListStyle,
   NativeListSnapshot,
+  NativeListTextStyle,
+  NativeListTypographyToken,
+  RowBoxStyle,
   RowModel,
   RowPatch,
   WalletGroupRow,
+  WebMarketTableCell,
+  WebMarketTablePresentation,
+  WebMarketTableText,
 } from './models';
 
 const MAX_KEY_LENGTH = 256;
@@ -127,11 +134,119 @@ function assertBoundedStyleNumber(
   }
 }
 
-function assertMarketTextStyle(
-  style: MarketTextStyle | undefined,
-  path: string
+/**
+ * The named typography scale from docs/STYLE_SPEC.md §3.2. Tokens are resolved
+ * to numbers here, before serialization, so the iOS, Android, and Web renderers
+ * never learn the vocabulary and cannot drift from it.
+ */
+const TYPOGRAPHY_TOKENS: Readonly<
+  Record<
+    NativeListTypographyToken,
+    Readonly<{
+      fontSize: number;
+      lineHeight: number;
+      fontWeight: NonNullable<NativeListTextStyle['fontWeight']>;
+    }>
+  >
+> = {
+  $headingXl: { fontSize: 24, lineHeight: 32, fontWeight: 'semibold' },
+  $headingLg: { fontSize: 20, lineHeight: 28, fontWeight: 'semibold' },
+  $headingMd: { fontSize: 18, lineHeight: 24, fontWeight: 'semibold' },
+  $headingSm: { fontSize: 16, lineHeight: 24, fontWeight: 'medium' },
+  $headingXs: { fontSize: 14, lineHeight: 20, fontWeight: 'semibold' },
+  $bodyLg: { fontSize: 16, lineHeight: 24, fontWeight: 'regular' },
+  $bodyMd: { fontSize: 14, lineHeight: 20, fontWeight: 'regular' },
+  $bodySm: { fontSize: 12, lineHeight: 16, fontWeight: 'regular' },
+  $bodyXs: { fontSize: 11, lineHeight: 16, fontWeight: 'regular' },
+};
+
+/** Style keys name model fields, never views. See docs/STYLE_SPEC.md §4. */
+const TEXT_STYLE_KEYS_BY_ROW_TYPE: Readonly<
+  Record<RowModel['type'], readonly string[]>
+> = {
+  identity: [
+    'title',
+    'subtitle',
+    'tertiary',
+    'badge',
+    'value',
+    'valueSecondary',
+  ],
+  walletGroup: [],
+  rail: ['title', 'badge', 'status'],
+  activity: [
+    'title',
+    'description',
+    'status',
+    'primaryAmount',
+    'secondaryAmount',
+  ],
+  message: ['title', 'body', 'time'],
+  dataRow: ['columns', 'columnSecondary', 'index'],
+  market: ['title', 'subtitle', 'price', 'change'],
+  mediaTile: ['title', 'subtitle', 'badge'],
+  metricCard: ['title', 'value', 'subtitle', 'trend'],
+  sectionHeader: ['title', 'subtitle', 'value'],
+  action: ['title', 'value'],
+  system: ['title', 'message', 'actionText'],
+};
+
+const EXTRA_STYLE_KEYS_BY_ROW_TYPE: Readonly<
+  Partial<Record<RowModel['type'], readonly string[]>>
+> = {
+  market: [
+    'titleBadgeLayout',
+    'contentTrailingGap',
+    'subtitleTrailingPadding',
+    'changeWidth',
+    'changeHeight',
+    'changeCornerRadius',
+  ],
+};
+
+function assertTextStyle(
+  style: NativeListTextStyle | undefined,
+  path: string,
+  additionalKeys: readonly string[] = []
 ): void {
-  if (!style) return;
+  if (style === undefined) return;
+  if (typeof style !== 'object' || style === null || Array.isArray(style)) {
+    fail(path, 'must be an object');
+  }
+  assertUnknownKeys(
+    style as Record<string, unknown>,
+    [
+      'token',
+      'fontSize',
+      'fontWeight',
+      'color',
+      'lineHeight',
+      'lines',
+      'truncate',
+      'alignment',
+      'verticalAlignment',
+      'offsetY',
+      ...additionalKeys,
+    ],
+    path,
+    'text style key'
+  );
+  if (
+    style.color !== undefined &&
+    (typeof style.color !== 'string' ||
+      !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(style.color))
+  ) {
+    fail(`${path}.color`, 'must be #RRGGBB or #RRGGBBAA');
+  }
+  if (
+    style.token !== undefined &&
+    !Object.prototype.hasOwnProperty.call(TYPOGRAPHY_TOKENS, style.token)
+  ) {
+    fail(
+      `${path}.token`,
+      `must be one of ${Object.keys(TYPOGRAPHY_TOKENS).join(', ')}`
+    );
+  }
   assertBoundedStyleNumber(style.fontSize, `${path}.fontSize`, 8, 48);
   assertBoundedStyleNumber(style.lineHeight, `${path}.lineHeight`, 8, 64);
   if (
@@ -146,44 +261,117 @@ function assertMarketTextStyle(
   ) {
     fail(`${path}.alignment`, 'must be start, center, or end');
   }
-  if (style.lines !== undefined && ![1, 2].includes(style.lines)) {
-    fail(`${path}.lines`, 'must be 1 or 2');
+  if (style.lines !== undefined && ![1, 2, 3].includes(style.lines)) {
+    fail(`${path}.lines`, 'must be 1, 2, or 3');
   }
+  if (
+    style.truncate !== undefined &&
+    !['tail', 'clip'].includes(style.truncate)
+  ) {
+    fail(`${path}.truncate`, 'must be tail or clip');
+  }
+  if (
+    style.verticalAlignment !== undefined &&
+    !['top', 'center', 'bottom'].includes(style.verticalAlignment)
+  ) {
+    fail(`${path}.verticalAlignment`, 'must be top, center, or bottom');
+  }
+  assertBoundedStyleNumber(style.offsetY, `${path}.offsetY`, -8, 8);
 }
 
-function assertMarketStyle(
-  style: MarketRowStyle | undefined,
-  path: string
-): void {
-  if (!style) return;
+function assertBoxStyle(style: RowBoxStyle, path: string): void {
+  const container = style.container;
+  if (container !== undefined) {
+    const containerPath = `${path}.container`;
+    if (
+      typeof container !== 'object' ||
+      container === null ||
+      Array.isArray(container)
+    ) {
+      fail(containerPath, 'must be an object');
+    }
+    assertUnknownKeys(
+      container as Record<string, unknown>,
+      [
+        'height',
+        'backgroundColor',
+        'opacity',
+        'cornerRadius',
+        'borderWidth',
+        'borderColor',
+        'contentVerticalAlignment',
+      ],
+      containerPath,
+      'row container style key'
+    );
+    for (const key of ['backgroundColor', 'borderColor'] as const) {
+      const value = container[key];
+      if (
+        value !== undefined &&
+        (typeof value !== 'string' ||
+          !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(value))
+      ) {
+        fail(`${containerPath}.${key}`, 'must be #RRGGBB or #RRGGBBAA');
+      }
+    }
+    assertBoundedStyleNumber(
+      container.height,
+      `${containerPath}.height`,
+      0,
+      4096
+    );
+    assertBoundedStyleNumber(
+      container.opacity,
+      `${containerPath}.opacity`,
+      0,
+      1
+    );
+    assertBoundedStyleNumber(
+      container.cornerRadius,
+      `${containerPath}.cornerRadius`,
+      0,
+      80
+    );
+    assertBoundedStyleNumber(
+      container.borderWidth,
+      `${containerPath}.borderWidth`,
+      0,
+      8
+    );
+    if (
+      container.contentVerticalAlignment !== undefined &&
+      !['top', 'center', 'bottom'].includes(container.contentVerticalAlignment)
+    ) {
+      fail(
+        `${containerPath}.contentVerticalAlignment`,
+        'must be top, center, or bottom'
+      );
+    }
+  }
   for (const field of [
     'horizontalPadding',
     'verticalPadding',
     'leadingGap',
     'titleBadgeGap',
     'trailingGap',
-    'contentTrailingGap',
-    'subtitleTrailingPadding',
   ] as const) {
     assertBoundedStyleNumber(style[field], `${path}.${field}`, 0, 64);
   }
-  // OneKey patch: validate the opt-in Market badge layout.
-  if (
-    style.titleBadgeLayout !== undefined &&
-    style.titleBadgeLayout !== 'inline'
-  ) {
-    fail(`${path}.titleBadgeLayout`, 'must be inline when provided');
-  }
   assertBoundedStyleNumber(style.lineGap, `${path}.lineGap`, 0, 16);
-  assertBoundedStyleNumber(style.changeWidth, `${path}.changeWidth`, 1, 160);
-  assertBoundedStyleNumber(style.changeHeight, `${path}.changeHeight`, 1, 160);
-  assertBoundedStyleNumber(
-    style.changeCornerRadius,
-    `${path}.changeCornerRadius`,
-    0,
-    80
-  );
-  if (style.image) {
+  if (style.image !== undefined) {
+    if (
+      typeof style.image !== 'object' ||
+      style.image === null ||
+      Array.isArray(style.image)
+    ) {
+      fail(`${path}.image`, 'must be an object');
+    }
+    assertUnknownKeys(
+      style.image as Record<string, unknown>,
+      ['width', 'height', 'shape', 'cornerRadius', 'contentFit'],
+      `${path}.image`,
+      'image style key'
+    );
     assertBoundedStyleNumber(style.image.width, `${path}.image.width`, 1, 160);
     assertBoundedStyleNumber(
       style.image.height,
@@ -208,76 +396,213 @@ function assertMarketStyle(
       );
     }
   }
-  assertMarketTextStyle(style.title, `${path}.title`);
-  assertMarketTextStyle(style.subtitle, `${path}.subtitle`);
-  assertMarketTextStyle(style.price, `${path}.price`);
-  assertMarketTextStyle(style.change, `${path}.change`);
 }
 
-function assertMarketRow(row: MarketRow, path: string): void {
-  if (!['token', 'stock', 'perp'].includes(row.variant)) {
-    fail(`${path}.variant`, 'must be token, stock, or perp');
+function assertMarketStyle(
+  style: MarketRowStyle | undefined,
+  path: string
+): void {
+  if (!style) return;
+  assertBoxStyle(style, path);
+  for (const field of [
+    'contentTrailingGap',
+    'subtitleTrailingPadding',
+  ] as const) {
+    assertBoundedStyleNumber(style[field], `${path}.${field}`, 0, 64);
   }
-  assertText(row.title, `${path}.title`);
-  assertText(row.subtitle, `${path}.subtitle`);
-  // OneKey patch: validate the independently laid out Market name.
-  if (row.subtitlePrefix) {
-    assertText(row.subtitlePrefix.text, `${path}.subtitlePrefix.text`);
-    assertBoundedStyleNumber(
-      row.subtitlePrefix.gap,
-      `${path}.subtitlePrefix.gap`,
-      0,
-      64
-    );
-    assertBoundedStyleNumber(
-      row.subtitlePrefix.maxWidth,
-      `${path}.subtitlePrefix.maxWidth`,
-      1,
-      320
-    );
-    assertMarketTextStyle(
-      row.subtitlePrefix.style,
-      `${path}.subtitlePrefix.style`
-    );
+  // OneKey patch: validate the opt-in Market badge layout.
+  if (
+    style.titleBadgeLayout !== undefined &&
+    style.titleBadgeLayout !== 'inline'
+  ) {
+    fail(`${path}.titleBadgeLayout`, 'must be inline when provided');
   }
-  assertText(row.price, `${path}.price`);
-  assertText(row.change.text, `${path}.change.text`);
-  assertTrailingAccessories(
-    row.leadingAction ? [row.leadingAction] : undefined,
-    `${path}.leadingAction`
+  assertBoundedStyleNumber(style.changeWidth, `${path}.changeWidth`, 1, 160);
+  assertBoundedStyleNumber(style.changeHeight, `${path}.changeHeight`, 1, 160);
+  assertBoundedStyleNumber(
+    style.changeCornerRadius,
+    `${path}.changeCornerRadius`,
+    0,
+    80
   );
-  if (row.leadingAction) {
-    assertText(row.leadingAction.name, `${path}.leadingAction.name`);
-    if (row.leadingAction.actionKey !== undefined) {
-      assertKey(row.leadingAction.actionKey, `${path}.leadingAction.actionKey`);
+  assertTextStyle(style.title, `${path}.title`);
+  assertTextStyle(style.subtitle, `${path}.subtitle`);
+  assertTextStyle(style.price, `${path}.price`);
+  assertTextStyle(style.change, `${path}.change`);
+}
+
+/**
+ * Rejects keys the template does not declare, so a style written for one
+ * template cannot reach a shared view through another. See docs/STYLE_SPEC.md
+ * §7 rule 1.
+ */
+function assertRowStyle(row: RowModel, path: string): void {
+  const style = (row as { style?: unknown }).style;
+  if (style === undefined) return;
+  if (typeof style !== 'object' || style === null || Array.isArray(style)) {
+    fail(`${path}.style`, 'must be an object');
+  }
+  const textKeys = TEXT_STYLE_KEYS_BY_ROW_TYPE[row.type] ?? [];
+  const allowed = new Set([
+    'container',
+    ...ROW_BOX_STYLE_KEYS_BY_TYPE[row.type],
+    ...textKeys,
+    ...(EXTRA_STYLE_KEYS_BY_ROW_TYPE[row.type] ?? []),
+  ]);
+  Object.keys(style as Record<string, unknown>).forEach((key) => {
+    if (!allowed.has(key)) {
+      fail(
+        `${path}.style.${key}`,
+        `is not a style key of the "${row.type}" template`
+      );
+    }
+  });
+  // Market keeps its own richer assertions, driven from assertMarketRow.
+  if (row.type === 'market') return;
+  assertBoxStyle(style as RowBoxStyle, `${path}.style`);
+  const slots = style as Record<string, NativeListTextStyle | undefined>;
+  textKeys.forEach((key) =>
+    assertTextStyle(slots[key], `${path}.style.${key}`)
+  );
+}
+
+const LIST_STYLE_KEYS: readonly string[] = ['separator', 'groupCornerRadius'];
+const SEPARATOR_STYLE_KEYS: readonly string[] = ['inset', 'color'];
+
+function assertUnknownKeys(
+  value: Record<string, unknown>,
+  allowed: readonly string[],
+  path: string,
+  subject: string
+): void {
+  Object.keys(value).forEach((key) => {
+    if (!allowed.includes(key)) fail(`${path}.${key}`, `is not a ${subject}`);
+  });
+}
+
+function assertListStyle(
+  listStyle: NativeListListStyle | undefined,
+  path: string
+): void {
+  if (listStyle === undefined) return;
+  if (
+    typeof listStyle !== 'object' ||
+    listStyle === null ||
+    Array.isArray(listStyle)
+  ) {
+    fail(path, 'must be an object');
+  }
+  assertUnknownKeys(
+    listStyle as Record<string, unknown>,
+    LIST_STYLE_KEYS,
+    path,
+    'list style key'
+  );
+  assertBoundedStyleNumber(
+    listStyle.groupCornerRadius,
+    `${path}.groupCornerRadius`,
+    0,
+    40
+  );
+  const separator = listStyle.separator;
+  if (separator === undefined) return;
+  if (
+    typeof separator !== 'object' ||
+    separator === null ||
+    Array.isArray(separator)
+  ) {
+    fail(`${path}.separator`, 'must be an object');
+  }
+  assertUnknownKeys(
+    separator as Record<string, unknown>,
+    SEPARATOR_STYLE_KEYS,
+    `${path}.separator`,
+    'separator style key'
+  );
+  assertBoundedStyleNumber(separator.inset, `${path}.separator.inset`, 0, 64);
+  // Same format as every row style color; renderers parse it directly.
+  if (
+    separator.color !== undefined &&
+    (typeof separator.color !== 'string' ||
+      !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(separator.color))
+  ) {
+    fail(`${path}.separator.color`, 'must be #RRGGBB or #RRGGBBAA');
+  }
+}
+
+/** Token resolution is idempotent: a resolved style carries no token. */
+function resolveTextStyle(
+  style: NativeListTextStyle | undefined
+): NativeListTextStyle | undefined {
+  if (!style?.token) return style;
+  const { token, ...overrides } = style;
+  return { ...TYPOGRAPHY_TOKENS[token], ...overrides };
+}
+
+function resolveStyleTokens(
+  style: Record<string, unknown>,
+  rowType: RowModel['type']
+): Record<string, unknown> {
+  const textKeys = TEXT_STYLE_KEYS_BY_ROW_TYPE[rowType] ?? [];
+  let changed = false;
+  const next: Record<string, unknown> = { ...style };
+  textKeys.forEach((key) => {
+    const slot = style[key] as NativeListTextStyle | undefined;
+    const resolved = resolveTextStyle(slot);
+    if (resolved !== slot) {
+      next[key] = resolved;
+      changed = true;
+    }
+  });
+  return changed ? next : style;
+}
+
+function normalizeRowStyles<T extends RowModel>(row: T): T {
+  // Narrowing a generic does not reach the walletGroup members; go through the
+  // union type instead.
+  const model: RowModel = row;
+  const style = (row as { style?: Record<string, unknown> }).style;
+  const nextStyle = style ? resolveStyleTokens(style, row.type) : style;
+  const prefix = model.type === 'market' ? model.subtitlePrefix : undefined;
+  const nextPrefixStyle = resolveTextStyle(prefix?.style);
+  let nextParent: IdentityRow | undefined;
+  let nextChildren: readonly IdentityRow[] | undefined;
+  if (model.type === 'walletGroup') {
+    const parent = normalizeRowStyles(model.parent);
+    const children = model.children.map(normalizeRowStyles);
+    if (
+      parent !== model.parent ||
+      children.some((child, index) => child !== model.children[index])
+    ) {
+      nextParent = parent;
+      nextChildren = children;
     }
   }
-  assertLeadingVisual(row.leading, `${path}.leading`);
-  const assertSegments = (
-    segments: MarketRow['priceSegments'],
-    segmentPath: string
-  ) => {
-    segments?.forEach((segment, index) => {
-      assertText(segment.text, `${segmentPath}[${index}].text`);
-      if (segment.style !== undefined && segment.style !== 'subscript') {
-        fail(
-          `${segmentPath}[${index}].style`,
-          'must be subscript when provided'
-        );
-      }
-    });
-  };
-  assertSegments(row.subtitleSegments, `${path}.subtitleSegments`);
-  assertSegments(row.priceSegments, `${path}.priceSegments`);
-  assertSegments(row.change.textSegments, `${path}.change.textSegments`);
-  if (!['positive', 'negative', 'neutral'].includes(row.change.tone)) {
-    fail(`${path}.change.tone`, 'must be positive, negative, or neutral');
+  if (
+    nextStyle === style &&
+    nextPrefixStyle === prefix?.style &&
+    nextParent === undefined
+  ) {
+    return row;
   }
-  if ((row.badges?.length ?? 0) > MAX_MARKET_BADGES) {
+  const next: Record<string, unknown> = { ...row };
+  if (nextStyle !== style) next.style = nextStyle;
+  if (prefix && nextPrefixStyle !== prefix.style) {
+    next.subtitlePrefix = { ...prefix, style: nextPrefixStyle };
+  }
+  if (nextParent !== undefined) {
+    next.parent = nextParent;
+    next.children = nextChildren;
+  }
+  return next as T;
+}
+
+function assertMarketBadges(badges: MarketRow['badges'], path: string): void {
+  if ((badges?.length ?? 0) > MAX_MARKET_BADGES) {
     fail(`${path}.badges`, `supports at most ${MAX_MARKET_BADGES} badges`);
   }
   const badgeKeys = new Set<string>();
-  row.badges?.forEach((badge, index) => {
+  badges?.forEach((badge, index) => {
     const badgePath = `${path}.badges[${index}]`;
     assertKey(badge.key, `${badgePath}.key`);
     if (badgeKeys.has(badge.key)) {
@@ -286,7 +611,17 @@ function assertMarketRow(row: MarketRow, path: string): void {
     badgeKeys.add(badge.key);
     assertText(badge.text, `${badgePath}.text`);
     // OneKey patch: share typography bounds with Market text styles.
-    assertMarketTextStyle(badge.style, `${badgePath}.style`);
+    assertTextStyle(badge.style, `${badgePath}.style`, [
+      'height',
+      'horizontalPadding',
+    ]);
+    if (badge.style)
+      assertUnknownKeys(
+        badge.style,
+        ['fontSize', 'fontWeight', 'lineHeight', 'height', 'horizontalPadding'],
+        `${badgePath}.style`,
+        'Market badge style key'
+      );
     assertBoundedStyleNumber(
       badge.style?.height,
       `${badgePath}.style.height`,
@@ -322,6 +657,322 @@ function assertMarketRow(row: MarketRow, path: string): void {
       assertKey(badge.actionKey, `${badgePath}.actionKey`);
     }
   });
+}
+
+function assertWebMarketTable(
+  table: WebMarketTablePresentation | undefined,
+  path: string
+): void {
+  if (!table) return;
+  assertUnknownKeys(
+    table,
+    ['columns', 'cells', 'testID', 'draggable', 'contextMenuActionKey'],
+    path,
+    'Web table key'
+  );
+  if (table.draggable !== undefined && typeof table.draggable !== 'boolean')
+    fail(`${path}.draggable`, 'must be boolean');
+  if (table.contextMenuActionKey !== undefined)
+    assertKey(table.contextMenuActionKey, `${path}.contextMenuActionKey`);
+  assertText(table.testID, `${path}.testID`);
+  if (
+    !Array.isArray(table.columns) ||
+    table.columns.length < 1 ||
+    table.columns.length > 12
+  )
+    fail(`${path}.columns`, 'must contain 1...12 columns');
+  if (
+    !Array.isArray(table.cells) ||
+    table.cells.length !== table.columns.length
+  )
+    fail(`${path}.cells`, 'must match the column count');
+  const keys = new Set<string>();
+  table.columns.forEach((column, index) => {
+    const field = `${path}.columns[${index}]`;
+    assertUnknownKeys(
+      column,
+      [
+        'key',
+        'width',
+        'minWidth',
+        'flex',
+        'alignment',
+        'paddingStart',
+        'paddingEnd',
+      ],
+      field,
+      'Web column key'
+    );
+    assertKey(column.key, `${field}.key`);
+    if (keys.has(column.key)) fail(field, 'column keys must be unique');
+    keys.add(column.key);
+    assertBoundedStyleNumber(column.width, `${field}.width`, 0, 4096);
+    assertBoundedStyleNumber(column.minWidth, `${field}.minWidth`, 0, 4096);
+    assertBoundedStyleNumber(column.flex, `${field}.flex`, 0, 16);
+    assertBoundedStyleNumber(
+      column.paddingStart,
+      `${field}.paddingStart`,
+      0,
+      64
+    );
+    assertBoundedStyleNumber(column.paddingEnd, `${field}.paddingEnd`, 0, 64);
+    if (
+      column.alignment !== undefined &&
+      !['start', 'center', 'end'].includes(column.alignment)
+    )
+      fail(`${field}.alignment`, 'must be start, center, or end');
+  });
+  const text = (value: WebMarketTableText, field: string) => {
+    assertUnknownKeys(
+      value,
+      ['text', 'segments', 'tone', 'style'],
+      field,
+      'Web text key'
+    );
+    assertText(value.text, `${field}.text`);
+    assertTextTone(value.tone, `${field}.tone`);
+    assertTextStyle(value.style, `${field}.style`);
+    if (value.style)
+      assertUnknownKeys(
+        value.style,
+        ['fontSize', 'fontWeight', 'lineHeight', 'color'],
+        `${field}.style`,
+        'Web table text style'
+      );
+    if ((value.segments?.length ?? 0) > 64)
+      fail(`${field}.segments`, 'supports at most 64 segments');
+    value.segments?.forEach((segment, index) => {
+      assertUnknownKeys(
+        segment,
+        ['text', 'style'],
+        `${field}.segments[${index}]`,
+        'Web text segment'
+      );
+      assertText(segment.text, `${field}.segments[${index}].text`);
+      if (segment.style !== undefined && segment.style !== 'subscript')
+        fail(field, 'segment style must be subscript');
+    });
+  };
+  const line = (
+    parts: readonly WebMarketTableText[] | undefined,
+    field: string
+  ) => {
+    if (!parts) return;
+    if (!Array.isArray(parts) || parts.length > 8)
+      fail(field, 'supports at most 8 text parts');
+    parts.forEach((value, index) => text(value, `${field}[${index}]`));
+  };
+  table.cells.forEach((cell: WebMarketTableCell, index) => {
+    const field = `${path}.cells[${index}]`;
+    assertKey(cell.key, `${field}.key`);
+    if (cell.key !== table.columns[index].key)
+      fail(field, 'cell key/order must match its column');
+    switch (cell.kind) {
+      case 'favorite':
+        assertUnknownKeys(
+          cell,
+          [
+            'key',
+            'kind',
+            'active',
+            'disabled',
+            'testID',
+            'hoverActionKey',
+            'actionKey',
+            'accessibilityLabel',
+          ],
+          field,
+          'Web favorite key'
+        );
+        if (typeof cell.active !== 'boolean')
+          fail(field, 'active must be boolean');
+        if (cell.disabled !== undefined && typeof cell.disabled !== 'boolean')
+          fail(field, 'disabled must be boolean');
+        if (cell.hoverActionKey !== undefined)
+          assertKey(cell.hoverActionKey, `${field}.hoverActionKey`);
+        assertText(cell.testID, `${field}.testID`);
+        assertKey(cell.actionKey, `${field}.actionKey`);
+        assertText(cell.accessibilityLabel, `${field}.accessibilityLabel`);
+        break;
+      case 'asset':
+        assertUnknownKeys(
+          cell,
+          [
+            'key',
+            'kind',
+            'leading',
+            'title',
+            'secondary',
+            'hoverSecondary',
+            'hoverActionKey',
+            'hoverActionLabel',
+            'badges',
+            'lineGap',
+            'secondaryBadges',
+            'hoverImages',
+          ],
+          field,
+          'Web asset key'
+        );
+        assertBoundedStyleNumber(cell.lineGap, `${field}.lineGap`, 0, 8);
+        assertMarketBadges(cell.secondaryBadges, `${field}.secondary`);
+        cell.secondaryBadges?.forEach((badge, i) => {
+          assertUnknownKeys(
+            badge,
+            ['key', 'text', 'style'],
+            `${field}.secondaryBadges[${i}]`,
+            'Web secondary badge key'
+          );
+          if (!badge.text) fail(field, 'secondary badges require text');
+        });
+        if (
+          cell.hoverImages !== undefined &&
+          (!Array.isArray(cell.hoverImages) || cell.hoverImages.length > 4)
+        )
+          fail(field, 'supports at most 4 hover images');
+        cell.hoverImages?.forEach((image, i) => {
+          if (image !== null) assertImage(image, `${field}.hoverImages[${i}]`);
+        });
+        assertLeadingVisual(cell.leading, `${field}.leading`);
+        text(cell.title, `${field}.title`);
+        line(cell.secondary, `${field}.secondary`);
+        line(cell.hoverSecondary, `${field}.hoverSecondary`);
+        assertText(cell.hoverActionLabel, `${field}.hoverActionLabel`);
+        if (cell.hoverActionKey !== undefined)
+          assertKey(cell.hoverActionKey, `${field}.hoverActionKey`);
+        assertMarketBadges(cell.badges, field);
+        cell.badges?.forEach((badge, i) =>
+          assertUnknownKeys(
+            badge,
+            [
+              'key',
+              'text',
+              'iconName',
+              'icon',
+              'textColor',
+              'backgroundColor',
+              'actionKey',
+              'accessibilityLabel',
+              'style',
+            ],
+            `${field}.badges[${i}]`,
+            'Web title badge key'
+          )
+        );
+        break;
+      case 'text':
+        assertUnknownKeys(
+          cell,
+          ['key', 'kind', 'primary', 'secondary', 'partGap'],
+          field,
+          'Web text cell key'
+        );
+        assertBoundedStyleNumber(cell.partGap, `${field}.partGap`, 0, 8);
+        if (!Array.isArray(cell.primary) || !cell.primary.length)
+          fail(field, 'requires primary text');
+        line(cell.primary, `${field}.primary`);
+        line(cell.secondary, `${field}.secondary`);
+        break;
+      case 'sparkline':
+        assertUnknownKeys(
+          cell,
+          [
+            'key',
+            'kind',
+            'points',
+            'width',
+            'height',
+            'strokeColor',
+            'fillColor',
+          ],
+          field,
+          'Web sparkline key'
+        );
+        if (
+          !Array.isArray(cell.points) ||
+          cell.points.length > 256 ||
+          cell.points.some((value: number) => !Number.isFinite(value))
+        )
+          fail(field, 'supports at most 256 finite samples');
+        if (typeof cell.width !== 'number' || typeof cell.height !== 'number')
+          fail(field, 'sparkline dimensions are required');
+        assertBoundedStyleNumber(cell.width, `${field}.width`, 1, 512);
+        assertBoundedStyleNumber(cell.height, `${field}.height`, 1, 512);
+        for (const color of [cell.strokeColor, cell.fillColor])
+          if (
+            typeof color !== 'string' ||
+            !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(color)
+          )
+            fail(field, 'colors must be #RRGGBB or #RRGGBBAA');
+        break;
+      default:
+        fail(field, 'unsupported Web table cell kind');
+    }
+  });
+}
+
+function assertMarketRow(row: MarketRow, path: string): void {
+  assertWebMarketTable(row.webTable, `${path}.webTable`);
+  if (!['token', 'stock', 'perp'].includes(row.variant)) {
+    fail(`${path}.variant`, 'must be token, stock, or perp');
+  }
+  assertText(row.title, `${path}.title`);
+  assertText(row.subtitle, `${path}.subtitle`);
+  // OneKey patch: validate the independently laid out Market name.
+  if (row.subtitlePrefix) {
+    assertText(row.subtitlePrefix.text, `${path}.subtitlePrefix.text`);
+    assertText(
+      row.subtitlePrefix.hoverActionKey,
+      `${path}.subtitlePrefix.hoverActionKey`
+    );
+    assertBoundedStyleNumber(
+      row.subtitlePrefix.gap,
+      `${path}.subtitlePrefix.gap`,
+      0,
+      64
+    );
+    assertBoundedStyleNumber(
+      row.subtitlePrefix.maxWidth,
+      `${path}.subtitlePrefix.maxWidth`,
+      1,
+      320
+    );
+    assertTextStyle(row.subtitlePrefix.style, `${path}.subtitlePrefix.style`);
+  }
+  assertText(row.price, `${path}.price`);
+  assertText(row.change.text, `${path}.change.text`);
+  assertTrailingAccessories(
+    row.leadingAction ? [row.leadingAction] : undefined,
+    `${path}.leadingAction`
+  );
+  if (row.leadingAction) {
+    assertText(row.leadingAction.name, `${path}.leadingAction.name`);
+    if (row.leadingAction.actionKey !== undefined) {
+      assertKey(row.leadingAction.actionKey, `${path}.leadingAction.actionKey`);
+    }
+  }
+  assertLeadingVisual(row.leading, `${path}.leading`);
+  const assertSegments = (
+    segments: MarketRow['priceSegments'],
+    segmentPath: string
+  ) => {
+    segments?.forEach((segment, index) => {
+      assertText(segment.text, `${segmentPath}[${index}].text`);
+      if (segment.style !== undefined && segment.style !== 'subscript') {
+        fail(
+          `${segmentPath}[${index}].style`,
+          'must be subscript when provided'
+        );
+      }
+    });
+  };
+  assertSegments(row.subtitleSegments, `${path}.subtitleSegments`);
+  assertSegments(row.priceSegments, `${path}.priceSegments`);
+  assertSegments(row.change.textSegments, `${path}.change.textSegments`);
+  if (!['positive', 'negative', 'neutral'].includes(row.change.tone)) {
+    fail(`${path}.change.tone`, 'must be positive, negative, or neutral');
+  }
+  assertMarketBadges(row.badges, path);
   for (const [key, value] of [
     ['pressActionKey', row.pressActionKey],
     ['pressInActionKey', row.pressInActionKey],
@@ -382,6 +1033,15 @@ function assertTrailingAccessories(
 function assertImage(image: ImageSource | undefined, path: string): void {
   if (!image) return;
   if (!image.uri.trim()) fail(`${path}.uri`, 'must not be empty');
+  if (image.fallbackUris !== undefined) {
+    if (!Array.isArray(image.fallbackUris))
+      fail(`${path}.fallbackUris`, 'must be an array');
+    image.fallbackUris.forEach((uri, index) => {
+      if (typeof uri !== 'string')
+        fail(`${path}.fallbackUris[${index}]`, 'must be a string');
+      assertText(uri, `${path}.fallbackUris[${index}]`);
+    });
+  }
   if (
     !Number.isFinite(image.width) ||
     !Number.isFinite(image.height) ||
@@ -530,7 +1190,84 @@ function assertVisual(row: RowModel, path: string): void {
   });
 }
 
-function assertActivity(row: ActivityRow, path: string): void {
+function assertActivity(row: Partial<ActivityRow>, path: string): void {
+  assertText(row.title, `${path}.title`);
+  assertText(row.description, `${path}.description`);
+  if (
+    row.presentation !== undefined &&
+    !['stacked', 'table'].includes(row.presentation)
+  )
+    fail(`${path}.presentation`, 'must be stacked or table');
+  if (row.descriptionActionKey !== undefined)
+    assertKey(row.descriptionActionKey, `${path}.descriptionActionKey`);
+  if ((row.amounts?.length ?? 0) > 32)
+    fail(`${path}.amounts`, 'supports at most 32 amount lines');
+  const amountKeys = new Set<string>();
+  row.amounts?.forEach((amount, index) => {
+    const amountPath = `${path}.amounts[${index}]`;
+    assertKey(amount.key, `${amountPath}.key`);
+    if (amountKeys.has(amount.key)) fail(amountPath, 'duplicate amount key');
+    amountKeys.add(amount.key);
+    assertText(amount.text, `${amountPath}.text`);
+    assertLeadingVisual(amount.leading, `${amountPath}.leading`);
+    assertText(amount.secondaryText, `${amountPath}.secondaryText`);
+    if (
+      amount.tone !== undefined &&
+      !['primary', 'secondary', 'positive', 'negative'].includes(amount.tone)
+    )
+      fail(`${amountPath}.tone`, 'invalid text tone');
+    amount.textSegments?.forEach((segment, segmentIndex) => {
+      assertText(
+        segment.text,
+        `${amountPath}.textSegments[${segmentIndex}].text`
+      );
+      if (segment.style !== undefined && segment.style !== 'subscript')
+        fail(amountPath, 'invalid text segment style');
+    });
+  });
+  const assertActivitySegments = (
+    segments: readonly { text: string; style?: string }[] | undefined,
+    segmentPath: string
+  ) =>
+    segments?.forEach((segment, index) => {
+      assertText(segment.text, `${segmentPath}[${index}].text`);
+      if (segment.style !== undefined && segment.style !== 'subscript')
+        fail(segmentPath, 'invalid text segment style');
+    });
+  row.amounts?.forEach((amount, index) =>
+    assertActivitySegments(
+      amount.secondaryTextSegments,
+      `${path}.amounts[${index}].secondaryTextSegments`
+    )
+  );
+  assertActivitySegments(
+    row.fee?.primaryTextSegments,
+    `${path}.fee.primaryTextSegments`
+  );
+  assertActivitySegments(
+    row.fee?.secondaryTextSegments,
+    `${path}.fee.secondaryTextSegments`
+  );
+  assertText(row.fee?.label, `${path}.fee.label`);
+  assertText(row.fee?.primary, `${path}.fee.primary`);
+  assertText(row.fee?.secondary, `${path}.fee.secondary`);
+  if ((row.badges?.length ?? 0) > 4)
+    fail(`${path}.badges`, 'supports at most 4 activity badges');
+  const badgeKeys = new Set<string>();
+  row.badges?.forEach((badge, index) => {
+    assertKey(badge.key, `${path}.badges[${index}].key`);
+    if (badgeKeys.has(badge.key)) fail(`${path}.badges`, 'duplicate badge key');
+    badgeKeys.add(badge.key);
+    assertText(badge.text, `${path}.badges[${index}].text`);
+    if (
+      badge.tone !== undefined &&
+      !['neutral', 'info', 'success', 'warning', 'danger'].includes(badge.tone)
+    )
+      fail(`${path}.badges`, 'invalid badge tone');
+  });
+  if (row.fee?.hidden !== undefined && typeof row.fee.hidden !== 'boolean')
+    fail(`${path}.fee.hidden`, 'must be boolean');
+
   if ((row.footerActions?.length ?? 0) > MAX_FOOTER_ACTIONS) {
     fail(
       `${path}.footerActions`,
@@ -571,18 +1308,31 @@ function assertWalletGroup(row: WalletGroupRow, path: string): void {
   });
 }
 
+function assertRowType(
+  type: unknown,
+  path: string
+): asserts type is RowModel['type'] {
+  if (
+    typeof type !== 'string' ||
+    !Object.prototype.hasOwnProperty.call(ROW_BOX_STYLE_KEYS_BY_TYPE, type)
+  ) {
+    fail(`${path}.type`, 'is not supported');
+  }
+}
+
 function assertRow(
   row: RowModel,
   index: number,
   path = `rows[${index}]`
 ): void {
+  assertRowType(row.type, path);
   assertKey(row.key, `${path}.key`);
   // OneKey patch: explicit dimensions and opacity cannot corrupt list layout.
   if (row.height !== undefined && (row.height < 0 || row.height > 4096))
     fail(`${path}.height`, 'must be within 0...4096');
   if (
     row.heightRounding !== undefined &&
-    (row.height === undefined ||
+    ((row.height === undefined && row.style?.container?.height === undefined) ||
       !['floor', 'nearest'].includes(row.heightRounding))
   )
     fail(
@@ -597,6 +1347,7 @@ function assertRow(
   if (!row.groupId && row.groupPosition) {
     fail(`${path}.groupId`, 'is required when groupPosition is present');
   }
+  assertRowStyle(row, path);
   assertVisual(row, path);
 
   switch (row.type) {
@@ -685,8 +1436,8 @@ function assertRow(
     case 'message':
       assertText(row.title, `${path}.title`);
       assertText(row.body, `${path}.body`);
-      if ((row.bodyLines ?? 3) < 1 || (row.bodyLines ?? 3) > 3) {
-        fail(`${path}.bodyLines`, 'must be within 1...3');
+      if (![1, 2, 3].includes(row.bodyLines ?? 3)) {
+        fail(`${path}.bodyLines`, 'must be 1, 2, or 3');
       }
       assertImage(row.thumbnail, `${path}.thumbnail`);
       break;
@@ -718,6 +1469,7 @@ function assertRow(
       assertMarketRow(row, path);
       break;
     case 'mediaTile':
+      assertMediaPreview(row.media, `${path}.media`);
       assertImage(row.image, `${path}.image`);
       if (
         row.imageState !== undefined &&
@@ -725,10 +1477,14 @@ function assertRow(
       ) {
         fail(`${path}.imageState`, 'must be empty or error when provided');
       }
-      if (row.imageState === undefined && row.image === undefined) {
+      if (
+        row.imageState === undefined &&
+        row.image === undefined &&
+        row.media === undefined
+      ) {
         fail(
           `${path}.image`,
-          'is required unless imageState is empty or error'
+          'is required unless media is provided or imageState is empty or error'
         );
       }
       assertImage(row.networkImage, `${path}.networkImage`);
@@ -767,6 +1523,11 @@ function assertRow(
       }
       break;
     case 'sectionHeader':
+      if (
+        row.titleLoading !== undefined &&
+        typeof row.titleLoading !== 'boolean'
+      )
+        fail(`${path}.titleLoading`, 'must be boolean');
       assertKey(row.sectionKey, `${path}.sectionKey`);
       if (
         row.presentation !== undefined &&
@@ -891,13 +1652,60 @@ function assertGroups(rows: readonly RowModel[]): void {
   }
 }
 
+function assertMediaPreview(value: unknown, path: string) {
+  if (value === undefined) return;
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    fail(path, 'must be a media descriptor');
+  const media = value as {
+    source?: import('./models').ImageSource;
+    probeOrder?: unknown;
+  };
+  assertImage(media.source, `${path}.source`);
+  if (!media.source) fail(`${path}.source`, 'is required');
+  const order = media.probeOrder;
+  if (
+    !Array.isArray(order) ||
+    order.length < 1 ||
+    order.length > 2 ||
+    order.some((kind) => kind !== 'image' && kind !== 'video') ||
+    new Set(order).size !== order.length
+  ) {
+    fail(
+      `${path}.probeOrder`,
+      'must contain one or two distinct image/video candidates'
+    );
+  }
+}
+
 export function validateSnapshot(
   snapshot: NativeListSnapshot
 ): NativeListSnapshot {
+  if (
+    snapshot.capabilities?.refreshTriggerDistance !== undefined &&
+    (!Number.isFinite(snapshot.capabilities.refreshTriggerDistance) ||
+      snapshot.capabilities.refreshTriggerDistance <= 0)
+  )
+    fail(
+      'capabilities.refreshTriggerDistance',
+      'must be a positive finite number'
+    );
+
   assertPlainSerializable(snapshot, 'snapshot', new Set<object>());
+  assertText(
+    snapshot.theme?.imageFallbackBackground,
+    'theme.imageFallbackBackground'
+  );
   if (snapshot.schemaVersion !== 1) fail('snapshot.schemaVersion', 'must be 1');
   if (!Number.isSafeInteger(snapshot.generation) || snapshot.generation < 0) {
     fail('snapshot.generation', 'must be a non-negative safe integer');
+  }
+  if (
+    snapshot.layout.gridColumns !== undefined &&
+    (!Number.isInteger(snapshot.layout.gridColumns) ||
+      snapshot.layout.gridColumns < 2 ||
+      snapshot.layout.gridColumns > 7)
+  ) {
+    fail('snapshot.layout.gridColumns', 'must be an integer from 2 to 7');
   }
   if (snapshot.layout.kind === 'grid' && !snapshot.layout.gridColumns) {
     fail('snapshot.layout.gridColumns', 'is required for grid layout');
@@ -964,6 +1772,8 @@ export function validateSnapshot(
     }
   }
 
+  assertListStyle(snapshot.listStyle, 'snapshot.listStyle');
+
   const rowKeys = new Set<string>();
   const sectionIndexTitles = new Set<string>();
   snapshot.rows.forEach((row, index) => {
@@ -1016,11 +1826,44 @@ export function validateSnapshot(
       'supports at most one key in single mode'
     );
   }
-  return snapshot;
+  return normalizeSnapshotStyles(snapshot);
+}
+
+/**
+ * Resolves typography tokens to numbers. Returns the original snapshot when
+ * nothing needs resolving, so the common no-style path keeps object identity.
+ */
+function normalizeSnapshotStyles(
+  snapshot: NativeListSnapshot
+): NativeListSnapshot {
+  let changed = false;
+  const rows = snapshot.rows.map((row) => {
+    const next = normalizeRowStyles(row);
+    if (next !== row) changed = true;
+    return next;
+  });
+  const emptyState = snapshot.emptyState
+    ? normalizeRowStyles(snapshot.emptyState)
+    : snapshot.emptyState;
+  const fixedFooter = snapshot.fixedFooter
+    ? normalizeRowStyles(snapshot.fixedFooter)
+    : snapshot.fixedFooter;
+  if (
+    !changed &&
+    emptyState === snapshot.emptyState &&
+    fixedFooter === snapshot.fixedFooter
+  ) {
+    return snapshot;
+  }
+  return { ...snapshot, rows, emptyState, fixedFooter };
 }
 
 function assertPatchChanges(patch: RowPatch, index: number): void {
   const path = `patches[${index}].changes`;
+  const patchedStyle = (patch.changes as { style?: unknown }).style;
+  if (patchedStyle !== undefined) {
+    assertRowStyle({ type: patch.type, style: patchedStyle } as RowModel, path);
+  }
   // OneKey patch: partial balance updates retain a valid, current accessibility label.
   if ('accessibilityLabel' in patch.changes) {
     assertText(patch.changes.accessibilityLabel, `${path}.accessibilityLabel`);
@@ -1072,6 +1915,7 @@ function assertPatchChanges(patch: RowPatch, index: number): void {
       assertLeadingVisual(patch.changes.visual, `${path}.visual`);
       break;
     case 'activity':
+      assertActivity(patch.changes, path);
       assertText(patch.changes.title, `${path}.title`);
       assertText(patch.changes.description, `${path}.description`);
       assertText(patch.changes.status, `${path}.status`);
@@ -1095,9 +1939,9 @@ function assertPatchChanges(patch: RowPatch, index: number): void {
       assertText(patch.changes.time, `${path}.time`);
       if (
         patch.changes.bodyLines !== undefined &&
-        (patch.changes.bodyLines < 1 || patch.changes.bodyLines > 3)
+        ![1, 2, 3].includes(patch.changes.bodyLines)
       ) {
-        fail(`${path}.bodyLines`, 'must be within 1...3');
+        fail(`${path}.bodyLines`, 'must be 1, 2, or 3');
       }
       assertImage(patch.changes.thumbnail, `${path}.thumbnail`);
       break;
@@ -1140,6 +1984,7 @@ function assertPatchChanges(patch: RowPatch, index: number): void {
       );
       break;
     case 'mediaTile':
+      assertMediaPreview(patch.changes.media, `${path}.media`);
       assertImage(patch.changes.image, `${path}.image`);
       if (
         patch.changes.imageState !== undefined &&
@@ -1187,6 +2032,11 @@ function assertPatchChanges(patch: RowPatch, index: number): void {
       }
       break;
     case 'sectionHeader':
+      if (
+        patch.changes.titleLoading !== undefined &&
+        typeof patch.changes.titleLoading !== 'boolean'
+      )
+        fail(`${path}.titleLoading`, 'must be boolean');
       assertSectionHeaderVariant(patch.changes.variant, `${path}.variant`);
       assertText(patch.changes.title, `${path}.title`);
       assertText(patch.changes.subtitle, `${path}.subtitle`);
@@ -1236,7 +2086,26 @@ export function validatePatches(
     }
     assertPatchChanges(patch, index);
   });
-  return patches;
+  return normalizePatchStyles(patches);
+}
+
+/** Patches reach the native side without passing through a snapshot. */
+function normalizePatchStyles(
+  patches: readonly RowPatch[]
+): readonly RowPatch[] {
+  let changed = false;
+  const next = patches.map((patch) => {
+    const style = (patch.changes as { style?: Record<string, unknown> }).style;
+    if (!style) return patch;
+    const resolved = resolveStyleTokens(style, patch.type);
+    if (resolved === style) return patch;
+    changed = true;
+    return {
+      ...patch,
+      changes: { ...patch.changes, style: resolved },
+    } as RowPatch;
+  });
+  return changed ? next : patches;
 }
 
 export function applyRowPatches(
@@ -1256,6 +2125,19 @@ export function applyRowPatches(
     if (patch.type !== row.type) {
       fail('patches', `row "${row.key}" is ${row.type}, not ${patch.type}`);
     }
+    if (
+      row.type === 'market' &&
+      row.webTable &&
+      patch.type === 'market' &&
+      (patch.changes.price !== undefined ||
+        patch.changes.priceSegments !== undefined ||
+        patch.changes.change !== undefined) &&
+      patch.changes.webTable === undefined
+    )
+      fail(
+        'patches',
+        'table quote changes must include the visible table cells'
+      );
     return {
       ...row,
       ...patch.changes,

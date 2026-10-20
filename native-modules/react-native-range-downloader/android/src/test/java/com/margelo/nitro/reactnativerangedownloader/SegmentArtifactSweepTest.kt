@@ -286,8 +286,8 @@ class SegmentArtifactSweepTest {
     assertEquals(listOf(10, 25, 50, 100), emitted)
   }
 
-  // Under genuine concurrency the CAS gate still never emits a value below the
-  // running max, and emits each percentage at most once. Many threads race the
+  // Under genuine concurrency the CAS gate never decreases the published max
+  // and accepts each percentage at most once. Many threads race the
   // same gate driven by the REAL progressPercent + AtomicInteger CAS.
   @Test
   fun progressGateNeverGoesBackwardUnderConcurrency() {
@@ -328,11 +328,10 @@ class SegmentArtifactSweepTest {
     // The published max ends at exactly 100 and never regressed.
     assertEquals("gate must settle at 100%", 100, last.get())
     assertEquals("published max must never regress", 0, regress.get())
-    // Each emitted percentage is unique (CAS de-dup) and the stream is sorted
-    // ascending (monotone): emissions are appended only on a successful advance.
+    // Each successful CAS is unique. Queue insertion happens after CAS, so
+    // concurrent threads can append those values in a different order.
     val list = emissions.toList()
     assertEquals("every emission must be unique (no re-emit of an equal value)", list.toSet().size, list.size)
-    assertEquals("emissions must be monotone non-decreasing", list.sorted(), list)
     assertTrue("the terminal 100% must be emitted exactly once", list.count { it == 100 } == 1)
   }
 
