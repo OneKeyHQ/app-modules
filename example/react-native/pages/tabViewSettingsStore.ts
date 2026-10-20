@@ -9,6 +9,7 @@ let state: TabViewSettingsState = {
   tabBarHidden: false,
   sidebarAdaptable: false,
   hapticFeedback: false,
+  androidFloating: true,
 };
 
 const listeners = new Set<Listener>();

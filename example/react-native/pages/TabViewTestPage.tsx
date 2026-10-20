@@ -86,32 +86,32 @@ type Route = BaseRoute & {
 export function TabViewTestPage() {
   const navigation = useNavigation<RootStackNavigationProp>();
   const settings = useSyncExternalStore(subscribeTabViewSettings, getTabViewSettings);
-  const { showBadge, labeled, translucent, tabBarHidden, sidebarAdaptable, hapticFeedback } = settings;
+  const { showBadge, labeled, translucent, tabBarHidden, sidebarAdaptable, hapticFeedback, androidFloating } = settings;
   const [index, setIndex] = useState(0);
   const [routes] = useState<Route[]>([
     {
       key: 'home',
       title: 'Home',
-      focusedIcon: Platform.OS === 'ios' ? { sfSymbol: 'house.fill' } : undefined,
+      focusedIcon: Platform.OS === 'ios' ? { sfSymbol: 'house.fill' } : require('./tabViewAssets/home.png'),
       unfocusedIcon: Platform.OS === 'ios' ? { sfSymbol: 'house' } : undefined,
     },
     {
       key: 'search',
       title: 'Search',
-      focusedIcon: Platform.OS === 'ios' ? { sfSymbol: 'magnifyingglass' } : undefined,
+      focusedIcon: Platform.OS === 'ios' ? { sfSymbol: 'magnifyingglass' } : require('./tabViewAssets/search.png'),
       role: 'search' as const,
     },
     {
       key: 'settings',
       title: 'Settings',
-      focusedIcon: Platform.OS === 'ios' ? { sfSymbol: 'gearshape.fill' } : undefined,
+      focusedIcon: Platform.OS === 'ios' ? { sfSymbol: 'gearshape.fill' } : require('./tabViewAssets/settings.png'),
       unfocusedIcon: Platform.OS === 'ios' ? { sfSymbol: 'gearshape' } : undefined,
       badge: '3',
     },
     {
       key: 'profile',
       title: 'Profile',
-      focusedIcon: Platform.OS === 'ios' ? { sfSymbol: 'person.fill' } : undefined,
+      focusedIcon: Platform.OS === 'ios' ? { sfSymbol: 'person.fill' } : require('./tabViewAssets/profile.png'),
       unfocusedIcon: Platform.OS === 'ios' ? { sfSymbol: 'person' } : undefined,
     },
   ]);
@@ -164,10 +164,11 @@ export function TabViewTestPage() {
         navigationState={navigationState}
         renderScene={renderScene}
         onIndexChange={setIndex}
-        onTabLongPress={(tabIndex) => {
-          console.log('Long pressed tab:', tabIndex);
+        onTabDoublePress={(tabIndex) => {
+          console.log('Double pressed tab:', tabIndex);
         }}
         labeled={labeled}
+        androidTabBarStyle={androidFloating ? 'floating' : 'default'}
         translucent={translucent}
         tabBarHidden={tabBarHidden}
         sidebarAdaptable={sidebarAdaptable}

@@ -1,15 +1,18 @@
 package com.rcttabview
 
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.res.ColorStateList
 import android.content.res.Configuration
 import androidx.appcompat.view.ContextThemeWrapper
 import android.graphics.Color
+import android.graphics.Outline
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.os.SystemClock
 import android.transition.TransitionManager
 import android.util.Log
 import android.util.Size
@@ -22,11 +25,13 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
+import android.view.ViewOutlineProvider
 import android.view.animation.DecelerateInterpolator
-import android.view.animation.OvershootInterpolator
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.animation.doOnEnd
+import androidx.core.graphics.ColorUtils
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.forEachIndexed
@@ -44,6 +49,7 @@ import com.facebook.react.uimanager.PointerEvents
 import com.facebook.react.uimanager.ReactPointerEventsView
 import com.facebook.react.views.text.ReactTypefaceUtils
 import com.google.android.material.bottomnavigation.BottomNavigationView
+import com.google.android.material.navigation.NavigationBarView
 import com.google.android.material.navigation.NavigationBarView.LABEL_VISIBILITY_AUTO
 import com.google.android.material.navigation.NavigationBarView.LABEL_VISIBILITY_LABELED
 import com.google.android.material.navigation.NavigationBarView.LABEL_VISIBILITY_UNLABELED
@@ -62,6 +68,9 @@ class ExtendedBottomNavigationView(context: Context) : BottomNavigationView(getM
   private val basePaddingBottom = paddingBottom
   private var ignoreBottomInsets = false
   private var ignoreKeyboardInsets = true
+  // Floating mode lays the bar out inside an inset container that already
+  // accounts for system bars and the keyboard, so the menu keeps fixed padding.
+  private var floatingHorizontalPadding: Int? = null
 
   init {
     // OneKey patch: Material pads the bar with getSystemWindowInsetBottom(), which
@@ -70,6 +79,10 @@ class ExtendedBottomNavigationView(context: Context) : BottomNavigationView(getM
     // keyboard depended on the screen. Pad for system bars, and add the IME only when
     // ignoreKeyboardInsets is turned off.
     ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
+      floatingHorizontalPadding?.let { padding ->
+        view.setPaddingRelative(padding, 0, padding, 0)
+        return@setOnApplyWindowInsetsListener insets
+      }
       val barInsets = insets.getInsets(
         WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
       )
@@ -106,6 +119,19 @@ class ExtendedBottomNavigationView(context: Context) : BottomNavigationView(getM
     requestApplyInsets()
   }
 
+  fun setFloatingHorizontalPadding(padding: Int?) {
+    if (floatingHorizontalPadding == padding) {
+      return
+    }
+    floatingHorizontalPadding = padding
+    if (padding != null) {
+      setPaddingRelative(padding, 0, padding, 0)
+    } else {
+      setPaddingRelative(basePaddingStart, basePaddingTop, basePaddingEnd, basePaddingBottom)
+    }
+    requestApplyInsets()
+  }
+
   override fun getMaxItemCount(): Int {
     return 100
   }
@@ -126,11 +152,12 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
   val layoutHolder = FrameLayout(context)
   private val floatingRoot = FrameLayout(context)
   private val floatingBar = FrameLayout(context)
-  private val floatingDragHalo = View(context)
+  private val floatingBarBackground = View(context)
   private val floatingIndicator = View(context)
+  private val floatingIndicatorDrawable = GradientDrawable()
 
   var onTabSelectedListener: ((key: String) -> Unit)? = null
-  var onTabLongPressedListener: ((key: String) -> Unit)? = null
+  var onTabDoublePressedListener: ((key: String) -> Unit)? = null
   var onNativeLayoutListener: ((width: Double, height: Double) -> Unit)? = null
   var onTabBarMeasuredListener: ((height: Int) -> Unit)? = null
   var disablePageAnimations = false
@@ -173,16 +200,27 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
   private var floatingLeftInset = 0
   private var floatingRightInset = 0
   private var floatingIndicatorPositioned = false
-  private var floatingDragActive = false
-  private var floatingIndicatorSettling = false
-  private var floatingDragOriginalItemId = View.NO_ID
-  private var floatingDragCandidateItemId = View.NO_ID
+  // Lens state: 0 is the resting selection pill, 1 is the lifted glass lens.
+  private var floatingLift = 0f
+  private var floatingStretch = 0f
+  private var floatingLiftAnimator: ValueAnimator? = null
+  private var floatingSlideAnimator: ValueAnimator? = null
   private var floatingTouchView: View? = null
+  private var floatingTouchItemId = View.NO_ID
+  private var floatingCandidateItemId = View.NO_ID
+  private var floatingDragging = false
   private var floatingTouchStartRawX = 0f
   private var floatingTouchStartRawY = 0f
-  private var floatingTouchMovedBeyondSlop = false
+  private var floatingLastMoveRawX = 0f
+  private var floatingLastMoveTime = 0L
+  private var floatingRestingFillColor = Color.TRANSPARENT
+  private var floatingLensFillColor = Color.TRANSPARENT
+  private var floatingLensStrokeColor = Color.TRANSPARENT
   private val floatingTouchSlop = ViewConfiguration.get(context).scaledTouchSlop
   private val floatingBarLocationOnScreen = IntArray(2)
+  private var lastPressedItemId = View.NO_ID
+  private var lastPressedTime = 0L
+  private var defaultLabelTextSizes: Pair<Float, Float>? = null
   private var barTintColor: Int? = null
   private var activeIndicatorColor: ColorStateList? = null
   private var rippleColor: ColorStateList? = null
@@ -196,6 +234,11 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
   private var defaultPaddingTop = bottomNavigation.paddingTop
   private var defaultPaddingRight = bottomNavigation.paddingRight
   private var defaultPaddingBottom = bottomNavigation.paddingBottom
+  private var defaultItemGravity = bottomNavigation.itemGravity
+  private var defaultItemPaddingTop = bottomNavigation.itemPaddingTop
+  private var defaultItemPaddingBottom = bottomNavigation.itemPaddingBottom
+  private var defaultItemIconSize = bottomNavigation.itemIconSize
+  private var defaultItemRippleColor = bottomNavigation.itemRippleColor
 
   private val imageLoader = ImageLoader.Builder(context)
     .components {
@@ -208,11 +251,20 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
     layoutHolder.isSaveEnabled = false
     floatingRoot.clipChildren = false
     floatingRoot.clipToPadding = false
-    floatingBar.clipChildren = true
+    // The pressed lens grows past the bar edges, so the bar does not clip; its
+    // shadow comes from a capsule outline instead.
+    floatingBar.clipChildren = false
     floatingBar.clipToPadding = false
-    floatingBar.clipToOutline = true
-    floatingBar.addOnLayoutChangeListener { _, left, _, right, _, oldLeft, _, oldRight, _ ->
-      if (right - left != oldRight - oldLeft) {
+    floatingBar.outlineProvider = object : ViewOutlineProvider() {
+      override fun getOutline(view: View, outline: Outline) {
+        outline.setRoundRect(0, 0, view.width, view.height, view.height / 2f)
+      }
+    }
+    floatingIndicatorDrawable.shape = GradientDrawable.RECTANGLE
+    floatingIndicator.background = floatingIndicatorDrawable
+    floatingBar.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+      if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
+        floatingBar.invalidateOutline()
         updateFloatingIndicator(animate = false)
       }
     }
@@ -222,7 +274,12 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
 
     ViewCompat.setOnApplyWindowInsetsListener(this) { _, insets ->
       val navigationBars = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
-      floatingBottomInset = navigationBars.bottom
+      val keyboardBottom = if (ignoreKeyboardInsets) {
+        0
+      } else {
+        insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+      }
+      floatingBottomInset = maxOf(if (ignoreBottomInsets) 0 else navigationBars.bottom, keyboardBottom)
       floatingLeftInset = navigationBars.left
       floatingRightInset = navigationBars.right
       if (androidTabBarStyle == AndroidTabBarStyle.FLOATING) {
@@ -260,15 +317,21 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
     (view.parent as? ViewGroup)?.removeView(view)
   }
 
-  private fun attachDefaultLayout() {
-    resetFloatingGesture()
+  private fun detachTabBarViews() {
     removeFromParent(layoutHolder)
     removeFromParent(bottomNavigation)
     removeFromParent(floatingRoot)
     removeFromParent(floatingBar)
-    removeFromParent(floatingDragHalo)
+    removeFromParent(floatingBarBackground)
     removeFromParent(floatingIndicator)
     super.removeAllViews()
+    floatingRoot.removeAllViews()
+    floatingBar.removeAllViews()
+  }
+
+  private fun attachDefaultLayout() {
+    resetFloatingGesture()
+    detachTabBarViews()
 
     super.addView(
       layoutHolder,
@@ -279,6 +342,7 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
       LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT),
     )
 
+    bottomNavigation.setFloatingHorizontalPadding(null)
     bottomNavigation.minimumHeight = defaultMinimumHeight
     bottomNavigation.setPadding(
       defaultPaddingLeft,
@@ -292,27 +356,28 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
     bottomNavigation.isItemActiveIndicatorEnabled = defaultActiveIndicatorEnabled
     bottomNavigation.itemActiveIndicatorColor =
       activeIndicatorColor ?: defaultActiveIndicatorColor
+    bottomNavigation.itemGravity = defaultItemGravity
+    bottomNavigation.itemPaddingTop = defaultItemPaddingTop
+    bottomNavigation.itemPaddingBottom = defaultItemPaddingBottom
+    (bottomNavigation.getChildAt(0) as? ViewGroup)?.isMotionEventSplittingEnabled = true
+    setNavigationIconSize(defaultItemIconSize)
     if (barTintColor != null) {
       applyDefaultBarBackground()
     } else {
       bottomNavigation.itemBackground = defaultItemBackground
       bottomNavigation.backgroundTintList = defaultBackgroundTintList
     }
+    bottomNavigation.itemRippleColor = rippleColor ?: defaultItemRippleColor
     bottomNavigation.visibility = if (isTabBarHidden) GONE else VISIBLE
+    ViewCompat.requestApplyInsets(this)
   }
 
   private fun attachFloatingLayout() {
     resetFloatingGesture()
-    removeFromParent(layoutHolder)
-    removeFromParent(bottomNavigation)
-    removeFromParent(floatingRoot)
-    removeFromParent(floatingBar)
-    removeFromParent(floatingDragHalo)
-    removeFromParent(floatingIndicator)
-    super.removeAllViews()
-    floatingRoot.removeAllViews()
-    floatingBar.removeAllViews()
+    detachTabBarViews()
 
+    val barHeight = dp(FloatingTabBarMetrics.BAR_HEIGHT)
+    val indicatorInset = dp(FloatingTabBarMetrics.INDICATOR_INSET)
     floatingRoot.addView(
       layoutHolder,
       FrameLayout.LayoutParams(
@@ -321,50 +386,57 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
       ),
     )
     floatingBar.addView(
-      floatingDragHalo,
-      FrameLayout.LayoutParams(0, dp(56f), Gravity.TOP or Gravity.START).apply {
-        topMargin = dp(4f)
-      },
+      floatingBarBackground,
+      FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams.MATCH_PARENT,
+        FrameLayout.LayoutParams.MATCH_PARENT,
+      ),
     )
     floatingBar.addView(
       floatingIndicator,
-      FrameLayout.LayoutParams(0, dp(56f), Gravity.TOP or Gravity.START).apply {
-        topMargin = dp(4f)
+      FrameLayout.LayoutParams(0, barHeight - indicatorInset * 2, Gravity.TOP or Gravity.START).apply {
+        topMargin = indicatorInset
       },
     )
     floatingBar.addView(
       bottomNavigation,
       FrameLayout.LayoutParams(
         FrameLayout.LayoutParams.MATCH_PARENT,
-        dp(64f),
+        FrameLayout.LayoutParams.MATCH_PARENT,
       ),
     )
     floatingRoot.addView(
       floatingBar,
-      FrameLayout.LayoutParams(
-        FrameLayout.LayoutParams.MATCH_PARENT,
-        dp(64f),
-        Gravity.BOTTOM,
-      ),
+      FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, barHeight, Gravity.BOTTOM),
     )
     super.addView(
       floatingRoot,
       LayoutParams(LayoutParams.MATCH_PARENT, 0).apply { weight = 1f },
     )
 
+    bottomNavigation.setFloatingHorizontalPadding(dp(FloatingTabBarMetrics.BAR_CONTENT_PADDING))
     bottomNavigation.minimumHeight = 0
-    bottomNavigation.setPadding(0, 0, 0, 0)
     bottomNavigation.setIgnoreBottomInsets(true)
+    bottomNavigation.setIgnoreKeyboardInsets(true)
     bottomNavigation.isItemActiveIndicatorEnabled = false
     bottomNavigation.itemActiveIndicatorColor = ColorStateList.valueOf(Color.TRANSPARENT)
     bottomNavigation.itemBackground = ColorDrawable(Color.TRANSPARENT)
     bottomNavigation.backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT)
+    bottomNavigation.itemRippleColor = ColorStateList.valueOf(Color.TRANSPARENT)
+    bottomNavigation.itemGravity = NavigationBarView.ITEM_GRAVITY_CENTER
+    bottomNavigation.itemPaddingTop = 0
+    bottomNavigation.itemPaddingBottom = 0
     bottomNavigation.elevation = 0f
     bottomNavigation.visibility = VISIBLE
-    floatingBar.elevation = dp(8f).toFloat()
+    // One finger owns the lens; a second finger must not retarget it mid-drag.
+    (bottomNavigation.getChildAt(0) as? ViewGroup)?.isMotionEventSplittingEnabled = false
+    setNavigationIconSize(dp(FloatingTabBarMetrics.ICON_SIZE))
+    floatingBar.elevation = dp(FloatingTabBarMetrics.SHADOW_ELEVATION).toFloat()
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+      floatingBar.outlineAmbientShadowColor = Color.argb(38, 0, 0, 0)
+      floatingBar.outlineSpotShadowColor = Color.argb(64, 0, 0, 0)
+    }
     floatingBar.visibility = if (isTabBarHidden) GONE else VISIBLE
-    floatingDragHalo.visibility = INVISIBLE
-    floatingDragHalo.alpha = 0f
     floatingIndicatorPositioned = false
     updateFloatingAppearance()
     updateFloatingBarLayout()
@@ -372,15 +444,30 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
     ViewCompat.requestApplyInsets(this)
   }
 
+  private fun setNavigationIconSize(size: Int) {
+    if (bottomNavigation.itemIconSize == size) {
+      return
+    }
+    bottomNavigation.itemIconSize = size
+    // Icons are rasterized at the icon size, so reload them for the new size.
+    drawableCache.clear()
+    iconSources.forEach { (index, source) ->
+      bottomNavigation.menu.findItem(index)?.let { menuItem ->
+        getDrawable(source) { menuItem.icon = it }
+      }
+    }
+  }
+
   private fun updateFloatingBarLayout() {
     if (androidTabBarStyle != AndroidTabBarStyle.FLOATING) {
       return
     }
-    val sideMargin = dp(16f)
+    val sideMargin = dp(FloatingTabBarMetrics.BAR_SIDE_MARGIN)
     val params = floatingBar.layoutParams as? FrameLayout.LayoutParams ?: return
     params.leftMargin = sideMargin + floatingLeftInset
     params.rightMargin = sideMargin + floatingRightInset
-    params.bottomMargin = dp(8f) + floatingBottomInset
+    params.bottomMargin = maxOf(floatingBottomInset, dp(FloatingTabBarMetrics.BAR_MIN_BOTTOM_GAP)) +
+      dp(FloatingTabBarMetrics.BAR_BOTTOM_EXTRA)
     floatingBar.layoutParams = params
     floatingRoot.requestLayout()
   }
@@ -406,6 +493,9 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
     )
   }
 
+  private fun withAlpha(color: Int, alpha: Float): Int =
+    Color.argb((alpha * 255f).roundToInt(), Color.red(color), Color.green(color), Color.blue(color))
+
   private fun isDarkColor(color: Int): Boolean {
     val luminance =
       (Color.red(color) * 0.299f) +
@@ -413,21 +503,6 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
         (Color.blue(color) * 0.114f)
     return luminance < 128f
   }
-
-  private fun roundedBackground(color: Int, radius: Float): Drawable =
-    GradientDrawable().apply {
-      shape = GradientDrawable.RECTANGLE
-      cornerRadius = dp(radius).toFloat()
-      setColor(color)
-    }
-
-  private fun outlinedBackground(color: Int, radius: Float): Drawable =
-    GradientDrawable().apply {
-      shape = GradientDrawable.RECTANGLE
-      cornerRadius = dp(radius).toFloat()
-      setColor(Color.TRANSPARENT)
-      setStroke(dp(1f), color)
-    }
 
   private fun resolvedBarTintColor(): Int =
     barTintColor
@@ -444,23 +519,105 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
     if (androidTabBarStyle != AndroidTabBarStyle.FLOATING) {
       return
     }
+    // Android has no system backdrop material, so the glass is approximated with
+    // a near-opaque tinted surface, a hairline rim, and a soft outline shadow.
     val baseColor = resolvedBarTintColor()
-    val contrastColor = if (isDarkColor(baseColor)) Color.WHITE else Color.BLACK
-    val surfaceColor = blendColor(baseColor, contrastColor, 0.10f)
-    val indicatorColor = activeIndicatorColor?.defaultColor
-      ?: blendColor(surfaceColor, contrastColor, 0.12f)
-    val haloColor = blendColor(surfaceColor, contrastColor, 0.36f)
-    floatingBar.background = roundedBackground(surfaceColor, 32f)
-    floatingDragHalo.background = outlinedBackground(haloColor, 29f)
-    floatingIndicator.background = roundedBackground(indicatorColor, 28f)
+    val isDark = isDarkColor(baseColor)
+    val contrastColor = if (isDark) Color.WHITE else Color.BLACK
+    val surfaceColor = if (isDark) blendColor(baseColor, Color.WHITE, 0.08f) else baseColor
+    floatingBarBackground.background = GradientDrawable().apply {
+      shape = GradientDrawable.RECTANGLE
+      cornerRadius = dp(FloatingTabBarMetrics.BAR_HEIGHT / 2f).toFloat()
+      setColor(withAlpha(surfaceColor, 0.95f))
+      setStroke(maxOf(1, dp(0.5f)), withAlpha(contrastColor, if (isDark) 0.14f else 0.07f))
+    }
+    floatingRestingFillColor = activeIndicatorColor?.defaultColor
+      ?: withAlpha(contrastColor, if (isDark) 0.14f else 0.07f)
+    // The lens reads as clear glass: a light fill that brightens what it covers,
+    // outlined by a rim where it extends past the bar.
+    floatingLensFillColor = withAlpha(Color.WHITE, if (isDark) 0.18f else 0.55f)
+    floatingLensStrokeColor = withAlpha(contrastColor, if (isDark) 0.3f else 0.1f)
+    applyFloatingIndicatorState()
+  }
+
+  private fun applyFloatingIndicatorState() {
+    val colorFraction = floatingLift.coerceIn(0f, 1f)
+    floatingIndicatorDrawable.cornerRadius = dp(
+      (FloatingTabBarMetrics.BAR_HEIGHT - FloatingTabBarMetrics.INDICATOR_INSET * 2) / 2f
+    ).toFloat()
+    floatingIndicatorDrawable.setColor(
+      ColorUtils.blendARGB(floatingRestingFillColor, floatingLensFillColor, colorFraction)
+    )
+    floatingIndicatorDrawable.setStroke(
+      dp(1f),
+      ColorUtils.blendARGB(
+        withAlpha(floatingLensStrokeColor, 0f),
+        floatingLensStrokeColor,
+        colorFraction,
+      ),
+    )
+    floatingIndicator.scaleX =
+      1f + (FloatingTabBarMetrics.LENS_SCALE_X - 1f) * floatingLift + floatingStretch
+    floatingIndicator.scaleY =
+      1f + (FloatingTabBarMetrics.LENS_SCALE_Y - 1f) * floatingLift - floatingStretch * 0.4f
+  }
+
+  private fun animateFloatingLift(target: Float) {
+    floatingLiftAnimator?.cancel()
+    val start = floatingLift
+    if (start == target) {
+      applyFloatingIndicatorState()
+      return
+    }
+    val lifting = target > start
+    floatingLiftAnimator = ValueAnimator.ofFloat(start, target).apply {
+      duration = if (lifting) 320L else 460L
+      interpolator = SpringInterpolator(dampingRatio = if (lifting) 0.6f else 0.72f)
+      addUpdateListener {
+        floatingLift = it.animatedValue as Float
+        applyFloatingIndicatorState()
+      }
+      start()
+    }
+  }
+
+  private fun animateFloatingIndicatorTo(targetX: Float, durationMs: Long = 440L) {
+    floatingSlideAnimator?.cancel()
+    val startX = floatingIndicator.x
+    if (abs(targetX - startX) < 0.5f) {
+      floatingIndicator.x = targetX
+      floatingStretch = 0f
+      applyFloatingIndicatorState()
+      return
+    }
+    var previousX = startX
+    floatingSlideAnimator = ValueAnimator.ofFloat(startX, targetX).apply {
+      duration = durationMs
+      interpolator = SpringInterpolator(dampingRatio = 0.74f)
+      addUpdateListener {
+        val x = it.animatedValue as Float
+        val frameDelta = abs(x - previousX)
+        previousX = x
+        floatingIndicator.x = x
+        // The capsule stretches along the travel direction, like a liquid drop.
+        val rawStretch = (frameDelta / floatingIndicator.width.coerceAtLeast(1) * 1.6f)
+          .coerceAtMost(FloatingTabBarMetrics.LENS_MAX_STRETCH)
+        floatingStretch = floatingStretch * 0.5f + rawStretch * 0.5f
+        applyFloatingIndicatorState()
+      }
+      doOnEnd {
+        floatingStretch = 0f
+        applyFloatingIndicatorState()
+      }
+      start()
+    }
   }
 
   private fun updateFloatingIndicator(animate: Boolean) {
     if (
       androidTabBarStyle != AndroidTabBarStyle.FLOATING ||
       isTabBarHidden ||
-      floatingDragActive ||
-      floatingIndicatorSettling
+      floatingTouchItemId != View.NO_ID
     ) {
       return
     }
@@ -475,61 +632,36 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
       return
     }
 
-    val horizontalInset = dp(4f)
-    val targetX = getFloatingIndicatorTargetX(selectedIndex) ?: return
-    val targetWidth = (itemView.width - horizontalInset * 2).coerceAtLeast(dp(48f))
-    updateFloatingIndicatorWidth(targetWidth)
+    updateFloatingIndicatorWidth(itemView.width)
+    val targetX = getFloatingItemX(selectedIndex) ?: return
     floatingIndicator.visibility = VISIBLE
 
     if (!animate || !floatingIndicatorPositioned) {
-      floatingIndicator.animate().cancel()
+      floatingSlideAnimator?.cancel()
       floatingIndicator.x = targetX
-      floatingIndicator.scaleX = 1f
-      floatingIndicator.scaleY = 1f
-      floatingDragHalo.x = targetX
+      floatingStretch = 0f
       floatingIndicatorPositioned = true
+      applyFloatingIndicatorState()
       return
     }
-
-    val movingRight = targetX >= floatingIndicator.x
-    floatingIndicator.animate().cancel()
-    floatingIndicator.pivotX = if (movingRight) 0f else floatingIndicator.width.toFloat()
-    floatingIndicator.pivotY = floatingIndicator.height / 2f
-    floatingIndicator.animate()
-      .x(targetX)
-      .scaleX(1.16f)
-      .scaleY(0.94f)
-      .setDuration(220L)
-      .setInterpolator(DecelerateInterpolator())
-      .withEndAction {
-        floatingIndicator.pivotX = floatingIndicator.width / 2f
-        floatingIndicator.animate()
-          .scaleX(1f)
-          .scaleY(1f)
-          .setDuration(180L)
-          .setInterpolator(OvershootInterpolator(0.8f))
-          .start()
-      }
-      .start()
+    animateFloatingIndicatorTo(targetX)
   }
 
   private fun updateFloatingIndicatorWidth(width: Int) {
-    listOf(floatingIndicator, floatingDragHalo).forEach { view ->
-      val params = view.layoutParams as? FrameLayout.LayoutParams ?: return@forEach
-      if (params.width != width) {
-        params.width = width
-        view.layoutParams = params
-      }
+    val params = floatingIndicator.layoutParams as? FrameLayout.LayoutParams ?: return
+    if (params.width != width) {
+      params.width = width
+      floatingIndicator.layoutParams = params
     }
   }
 
-  private fun getFloatingIndicatorTargetX(itemId: Int): Float? {
+  private fun getFloatingItemX(itemId: Int): Float? {
     val menuView = bottomNavigation.getChildAt(0) as? ViewGroup ?: return null
     val itemView = bottomNavigation.findViewById<View>(itemId) ?: return null
     if (itemView.width == 0 || itemView.visibility != VISIBLE) {
       return null
     }
-    return bottomNavigation.x + menuView.x + itemView.x + dp(4f)
+    return bottomNavigation.x + menuView.x + itemView.x
   }
 
   private fun getNearestVisibleItemId(centerX: Float): Int? {
@@ -551,6 +683,28 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
     return nearestItemId
   }
 
+  private fun setFloatingItemMagnified(magnifiedItemId: Int) {
+    items.indices.forEach { itemId ->
+      val itemView = bottomNavigation.findViewById<View>(itemId) ?: return@forEach
+      val targetScale = if (itemId == magnifiedItemId) {
+        FloatingTabBarMetrics.ITEM_PRESSED_SCALE
+      } else {
+        1f
+      }
+      if (itemView.scaleX == targetScale && itemView.scaleY == targetScale) {
+        return@forEach
+      }
+      itemView.animate()
+        .scaleX(targetScale)
+        .scaleY(targetScale)
+        .setDuration(260L)
+        .setInterpolator(SpringInterpolator(dampingRatio = 0.64f))
+        .start()
+    }
+  }
+
+  // Mirrors the iOS 26 tab bar: touching any tab lifts a glass lens onto it,
+  // dragging scrubs the lens across tabs, and release selects the tab under it.
   @SuppressLint("ClickableViewAccessibility")
   private fun handleFloatingTabTouch(view: View, item: MenuItem, event: MotionEvent): Boolean {
     if (androidTabBarStyle != AndroidTabBarStyle.FLOATING) {
@@ -559,214 +713,175 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
 
     when (event.actionMasked) {
       MotionEvent.ACTION_DOWN -> {
-        if (item.itemId != bottomNavigation.selectedItemId) {
+        if (isTabBarHidden || floatingBar.width == 0) {
           return false
         }
-        resetFloatingGesture()
+        clearFloatingTouchTracking()
         floatingTouchView = view
+        floatingTouchItemId = item.itemId
+        floatingCandidateItemId = item.itemId
         floatingTouchStartRawX = event.rawX
         floatingTouchStartRawY = event.rawY
-        floatingTouchMovedBeyondSlop = false
-        floatingDragOriginalItemId = item.itemId
-        floatingDragCandidateItemId = item.itemId
-        view.isPressed = true
-        beginFloatingDrag(item.itemId)
+        floatingLastMoveRawX = event.rawX
+        floatingLastMoveTime = event.eventTime
+        view.parent?.requestDisallowInterceptTouchEvent(true)
+        beginFloatingPress(item.itemId)
         return true
       }
       MotionEvent.ACTION_MOVE -> {
         if (floatingTouchView !== view) {
           return true
         }
-        if (!floatingTouchMovedBeyondSlop) {
+        if (!floatingDragging) {
           val deltaX = event.rawX - floatingTouchStartRawX
           val deltaY = event.rawY - floatingTouchStartRawY
-          if (deltaX * deltaX + deltaY * deltaY > floatingTouchSlop * floatingTouchSlop) {
-            floatingTouchMovedBeyondSlop = true
-            view.isPressed = false
-            emitHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-          } else {
+          if (deltaX * deltaX + deltaY * deltaY <= floatingTouchSlop * floatingTouchSlop) {
             return true
           }
+          floatingDragging = true
         }
-        updateFloatingDrag(event.rawX)
+        updateFloatingDrag(event.rawX, event.eventTime)
         return true
       }
       MotionEvent.ACTION_UP -> {
-        view.isPressed = false
-        if (floatingDragActive) {
-          if (floatingTouchMovedBeyondSlop) {
-            updateFloatingDrag(event.rawX)
-            finishFloatingDrag(cancelled = false)
-          } else {
-            finishFloatingDrag(cancelled = true)
-          }
+        if (floatingTouchView !== view) {
+          return true
         }
-        if (!floatingTouchMovedBeyondSlop) {
-          view.performClick()
+        if (floatingDragging) {
+          updateFloatingDrag(event.rawX, event.eventTime)
         }
-        clearFloatingTouchTracking()
+        finishFloatingPress(view, cancelled = false)
         return true
       }
       MotionEvent.ACTION_CANCEL -> {
-        view.isPressed = false
-        if (floatingDragActive) {
-          finishFloatingDrag(cancelled = true)
+        if (floatingTouchView === view) {
+          finishFloatingPress(view, cancelled = true)
         }
-        clearFloatingTouchTracking()
         return true
       }
     }
     return true
   }
 
-  private fun beginFloatingDrag(itemId: Int) {
-    if (
-      itemId != bottomNavigation.selectedItemId ||
-      androidTabBarStyle != AndroidTabBarStyle.FLOATING
-    ) {
-      return
+  private fun beginFloatingPress(itemId: Int) {
+    val itemView = bottomNavigation.findViewById<View>(itemId) ?: return
+    val targetX = getFloatingItemX(itemId) ?: return
+    updateFloatingIndicatorWidth(itemView.width)
+    floatingIndicator.visibility = VISIBLE
+    if (floatingIndicatorPositioned) {
+      animateFloatingIndicatorTo(targetX, durationMs = 320L)
+    } else {
+      floatingIndicator.x = targetX
+      floatingIndicatorPositioned = true
     }
-    updateFloatingIndicator(animate = false)
-    if (!floatingIndicatorPositioned || floatingIndicator.visibility != VISIBLE) {
-      return
-    }
-
-    floatingDragActive = true
-    floatingIndicatorSettling = false
-    floatingDragOriginalItemId = itemId
-    floatingDragCandidateItemId = itemId
-    floatingTouchView?.isPressed = false
-    floatingIndicator.animate().cancel()
-    floatingDragHalo.animate().cancel()
-    floatingIndicator.pivotX = floatingIndicator.width / 2f
-    floatingIndicator.pivotY = floatingIndicator.height / 2f
-    floatingDragHalo.x = floatingIndicator.x
-    floatingDragHalo.pivotX = floatingDragHalo.width / 2f
-    floatingDragHalo.pivotY = floatingDragHalo.height / 2f
-    floatingDragHalo.alpha = 0f
-    floatingDragHalo.scaleX = 0.94f
-    floatingDragHalo.scaleY = 0.94f
-    floatingDragHalo.visibility = VISIBLE
-    floatingIndicator.animate()
-      .scaleX(1.08f)
-      .scaleY(1.08f)
-      .setDuration(160L)
-      .setInterpolator(OvershootInterpolator(0.7f))
-      .start()
-    floatingDragHalo.animate()
-      .alpha(0.72f)
-      .scaleX(1.16f)
-      .scaleY(1.14f)
-      .setDuration(180L)
-      .setInterpolator(OvershootInterpolator(0.55f))
-      .start()
+    animateFloatingLift(1f)
+    setFloatingItemMagnified(itemId)
   }
 
-  private fun updateFloatingDrag(rawX: Float) {
-    if (!floatingDragActive || floatingBar.width == 0 || floatingIndicator.width == 0) {
+  private fun updateFloatingDrag(rawX: Float, eventTime: Long) {
+    if (floatingBar.width == 0 || floatingIndicator.width == 0) {
       return
     }
 
     floatingBar.getLocationOnScreen(floatingBarLocationOnScreen)
     val halfWidth = floatingIndicator.width / 2f
-    val edgeInset = dp(4f).toFloat()
-    val centerX = (rawX - floatingBarLocationOnScreen[0])
-      .coerceIn(halfWidth + edgeInset, floatingBar.width - halfWidth - edgeInset)
-    val targetX = centerX - halfWidth
-    val deltaX = targetX - floatingIndicator.x
-    val nextX = floatingIndicator.x + deltaX * 0.62f
-    val stretch = (abs(deltaX) / floatingIndicator.width).coerceAtMost(1f) * 0.18f
+    val contentPadding = dp(FloatingTabBarMetrics.BAR_CONTENT_PADDING).toFloat()
+    val minCenter = contentPadding + halfWidth
+    val maxCenter = floatingBar.width - contentPadding - halfWidth
+    val fingerCenter = rawX - floatingBarLocationOnScreen[0]
+    // Past either end the lens follows with resistance instead of stopping hard.
+    val centerX = when {
+      fingerCenter < minCenter ->
+        minCenter - (minCenter - fingerCenter) * FloatingTabBarMetrics.DRAG_EDGE_RESISTANCE
+      fingerCenter > maxCenter ->
+        maxCenter + (fingerCenter - maxCenter) * FloatingTabBarMetrics.DRAG_EDGE_RESISTANCE
+      else -> fingerCenter
+    }
 
-    floatingIndicator.animate().cancel()
-    floatingDragHalo.animate().cancel()
-    floatingIndicator.x = nextX
-    floatingIndicator.scaleX = 1.08f + stretch
-    floatingIndicator.scaleY = 1.08f - stretch * 0.35f
-    floatingDragHalo.x = nextX
-    floatingDragHalo.alpha = 0.72f
-    floatingDragHalo.scaleX = 1.16f + stretch
-    floatingDragHalo.scaleY = 1.14f - stretch * 0.25f
+    val elapsed = (eventTime - floatingLastMoveTime).coerceAtLeast(1L)
+    val velocityDpPerMs = abs(rawX - floatingLastMoveRawX) / elapsed / resources.displayMetrics.density
+    floatingLastMoveRawX = rawX
+    floatingLastMoveTime = eventTime
+    val targetStretch = (velocityDpPerMs * 0.06f).coerceAtMost(FloatingTabBarMetrics.LENS_MAX_STRETCH)
+    floatingStretch = floatingStretch * 0.6f + targetStretch * 0.4f
+
+    floatingSlideAnimator?.cancel()
+    floatingIndicator.x = centerX - halfWidth
+    applyFloatingIndicatorState()
+    floatingBar.removeCallbacks(floatingStretchDecay)
+    floatingBar.postDelayed(floatingStretchDecay, 64L)
 
     getNearestVisibleItemId(centerX)?.let { itemId ->
-      if (itemId != floatingDragCandidateItemId) {
-        floatingDragCandidateItemId = itemId
+      if (itemId != floatingCandidateItemId) {
+        floatingCandidateItemId = itemId
+        setFloatingItemMagnified(itemId)
+        emitHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
       }
     }
-    floatingBar.postInvalidateOnAnimation()
   }
 
-  private fun finishFloatingDrag(cancelled: Boolean) {
-    if (!floatingDragActive) {
-      return
+  private val floatingStretchDecay = Runnable {
+    if (floatingTouchItemId == View.NO_ID || floatingStretch == 0f) {
+      return@Runnable
     }
-    val originalItemId = floatingDragOriginalItemId
-    val requestedItemId = floatingDragCandidateItemId.takeIf { it != View.NO_ID }
-      ?: originalItemId
-    val requestedItem = items.getOrNull(requestedItemId)
-    val targetItemId = if (cancelled || requestedItem?.preventsDefault == true) {
-      originalItemId
-    } else {
-      requestedItemId
+    ValueAnimator.ofFloat(floatingStretch, 0f).apply {
+      duration = 180L
+      interpolator = DecelerateInterpolator()
+      addUpdateListener {
+        if (floatingTouchItemId != View.NO_ID) {
+          floatingStretch = it.animatedValue as Float
+          applyFloatingIndicatorState()
+        }
+      }
+      start()
     }
+  }
 
-    floatingDragActive = false
-    floatingIndicatorSettling = true
-    if (!cancelled && requestedItemId != originalItemId) {
-      bottomNavigation.menu.findItem(requestedItemId)?.let { menuItem ->
-        onTabSelected(menuItem, emitHaptic = false)
+  private fun finishFloatingPress(view: View, cancelled: Boolean) {
+    val requestedItemId = if (floatingDragging) floatingCandidateItemId else floatingTouchItemId
+    val wasDragging = floatingDragging
+    clearFloatingTouchTracking()
+    setFloatingItemMagnified(View.NO_ID)
+    animateFloatingLift(0f)
+
+    if (!cancelled && requestedItemId != View.NO_ID) {
+      if (!wasDragging) {
+        view.performClick()
+      } else if (requestedItemId != bottomNavigation.selectedItemId) {
+        bottomNavigation.menu.findItem(requestedItemId)?.let { menuItem ->
+          onTabSelected(menuItem)
+        }
       }
     }
-
-    val targetX = getFloatingIndicatorTargetX(targetItemId) ?: floatingIndicator.x
-    floatingIndicator.animate().cancel()
-    floatingDragHalo.animate().cancel()
-    floatingDragHalo.animate()
-      .x(targetX)
-      .alpha(0f)
-      .scaleX(1f)
-      .scaleY(1f)
-      .setDuration(160L)
-      .setInterpolator(DecelerateInterpolator())
-      .start()
-    floatingIndicator.animate()
-      .x(targetX)
-      .scaleX(1f)
-      .scaleY(1f)
-      .setDuration(220L)
-      .setInterpolator(OvershootInterpolator(0.72f))
-      .withEndAction {
-        floatingDragHalo.visibility = INVISIBLE
-        floatingDragHalo.alpha = 0f
-        floatingDragOriginalItemId = View.NO_ID
-        floatingDragCandidateItemId = View.NO_ID
-        floatingIndicatorSettling = false
-        updateFloatingIndicator(animate = false)
-      }
-      .start()
+    // Settles on the selected tab, which is the old one for cancelled or
+    // preventsDefault presses.
+    updateFloatingIndicator(animate = true)
   }
 
   private fun clearFloatingTouchTracking() {
+    floatingBar.removeCallbacks(floatingStretchDecay)
     floatingTouchView = null
-    floatingTouchMovedBeyondSlop = false
+    floatingTouchItemId = View.NO_ID
+    floatingCandidateItemId = View.NO_ID
+    floatingDragging = false
     floatingTouchStartRawX = 0f
     floatingTouchStartRawY = 0f
   }
 
   private fun resetFloatingGesture() {
-    floatingTouchView?.isPressed = false
     clearFloatingTouchTracking()
-    floatingIndicator.animate().cancel()
-    floatingDragHalo.animate().cancel()
-    floatingIndicator.scaleX = 1f
-    floatingIndicator.scaleY = 1f
-    floatingDragHalo.alpha = 0f
-    floatingDragHalo.scaleX = 1f
-    floatingDragHalo.scaleY = 1f
-    floatingDragHalo.visibility = INVISIBLE
-    floatingDragActive = false
-    floatingIndicatorSettling = false
-    floatingDragOriginalItemId = View.NO_ID
-    floatingDragCandidateItemId = View.NO_ID
+    floatingLiftAnimator?.cancel()
+    floatingSlideAnimator?.cancel()
+    floatingLift = 0f
+    floatingStretch = 0f
+    items.indices.forEach { itemId ->
+      bottomNavigation.findViewById<View>(itemId)?.apply {
+        animate().cancel()
+        scaleX = 1f
+        scaleY = 1f
+      }
+    }
+    applyFloatingIndicatorState()
   }
 
   private val layoutCallback = Choreographer.FrameCallback {
@@ -902,15 +1017,22 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
       if (emitHaptic) {
         emitHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
       }
+      emitDoublePressIfNeeded(item.itemId, selectedItem.key)
     }
   }
 
-  private fun onTabLongPressed(item: MenuItem) {
-    val longPressedItem = items[item.itemId]
-    longPressedItem.let {
-      onTabLongPressedListener?.invoke(longPressedItem.key)
-      emitHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+  private fun emitDoublePressIfNeeded(itemId: Int, key: String) {
+    val now = SystemClock.uptimeMillis()
+    if (
+      lastPressedItemId == itemId &&
+      now - lastPressedTime <= ViewConfiguration.getDoubleTapTimeout()
+    ) {
+      lastPressedItemId = View.NO_ID
+      onTabDoublePressedListener?.invoke(key)
+      return
     }
+    lastPressedItemId = itemId
+    lastPressedTime = now
   }
 
   fun setIgnoreBottomInsets(ignore: Boolean) {
@@ -918,6 +1040,7 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
     bottomNavigation.setIgnoreBottomInsets(
       if (androidTabBarStyle == AndroidTabBarStyle.FLOATING) true else ignore
     )
+    ViewCompat.requestApplyInsets(this)
   }
 
   fun setAndroidTabBarStyle(value: String?) {
@@ -935,12 +1058,16 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
     } else {
       attachDefaultLayout()
     }
+    updateTextAppearance()
     requestLayout()
   }
 
   fun setIgnoreKeyboardInsets(ignore: Boolean) {
     ignoreKeyboardInsets = ignore
-    bottomNavigation.setIgnoreKeyboardInsets(ignore)
+    bottomNavigation.setIgnoreKeyboardInsets(
+      if (androidTabBarStyle == AndroidTabBarStyle.FLOATING) true else ignore
+    )
+    ViewCompat.requestApplyInsets(this)
   }
 
   fun setTabBarHidden(isHidden: Boolean) {
@@ -1006,10 +1133,6 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
       post {
         val itemView = bottomNavigation.findViewById<View>(menuItem.itemId)
         itemView?.let { view ->
-          view.setOnLongClickListener {
-            onTabLongPressed(menuItem)
-            true
-          }
           view.setOnClickListener {
             onTabSelected(menuItem)
           }
@@ -1082,7 +1205,10 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
 
   fun setRippleColor(color: ColorStateList) {
     rippleColor = color
-    bottomNavigation.itemRippleColor = color
+    // Floating mode replaces the ripple with the pressed lens.
+    if (androidTabBarStyle != AndroidTabBarStyle.FLOATING) {
+      bottomNavigation.itemRippleColor = color
+    }
   }
 
   @SuppressLint("CheckResult")
@@ -1170,8 +1296,18 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
   }
 
   private fun updateTextAppearance() {
-    // Early return if there is no custom text appearance
-    if (fontSize == null && fontFamily == null && fontWeight == null) {
+    val isFloating = androidTabBarStyle == AndroidTabBarStyle.FLOATING
+    val customSize = fontSize?.toFloat()?.takeIf { it > 0 }
+    // Floating labels use one compact size for both states, as on iOS. Material's
+    // own sizes are remembered so leaving floating mode can restore them.
+    val restoreLabelSizes = if (!isFloating && customSize == null) defaultLabelTextSizes else null
+    if (
+      !isFloating &&
+      restoreLabelSizes == null &&
+      fontSize == null &&
+      fontFamily == null &&
+      fontWeight == null
+    ) {
       return
     }
 
@@ -1182,7 +1318,7 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
         context.assets
       )
     } else null
-    val size = fontSize?.toFloat()?.takeIf { it > 0 }
+    val size = customSize ?: if (isFloating) FloatingTabBarMetrics.LABEL_SIZE_SP else null
 
     val menuView = bottomNavigation.getChildAt(0) as? ViewGroup ?: return
     for (i in 0 until menuView.childCount) {
@@ -1191,6 +1327,13 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
         item.findViewById<TextView>(com.google.android.material.R.id.navigation_bar_item_large_label_view)
       val smallLabel =
         item.findViewById<TextView>(com.google.android.material.R.id.navigation_bar_item_small_label_view)
+      if (isFloating && defaultLabelTextSizes == null && largeLabel != null && smallLabel != null) {
+        defaultLabelTextSizes = largeLabel.textSize to smallLabel.textSize
+      }
+      if (restoreLabelSizes != null) {
+        largeLabel?.setTextSize(TypedValue.COMPLEX_UNIT_PX, restoreLabelSizes.first)
+        smallLabel?.setTextSize(TypedValue.COMPLEX_UNIT_PX, restoreLabelSizes.second)
+      }
 
       listOf(largeLabel, smallLabel).forEach { label ->
         label?.apply {
@@ -1258,6 +1401,11 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
     defaultPaddingTop = bottomNavigation.paddingTop
     defaultPaddingRight = bottomNavigation.paddingRight
     defaultPaddingBottom = bottomNavigation.paddingBottom
+    defaultItemGravity = bottomNavigation.itemGravity
+    defaultItemPaddingTop = bottomNavigation.itemPaddingTop
+    defaultItemPaddingBottom = bottomNavigation.itemPaddingBottom
+    defaultItemIconSize = bottomNavigation.itemIconSize
+    defaultItemRippleColor = bottomNavigation.itemRippleColor
     if (androidTabBarStyle == AndroidTabBarStyle.FLOATING) {
       attachFloatingLayout()
     } else {
@@ -1265,7 +1413,6 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
     }
     updateItems(items)
     setLabeled(this.labeled)
-    rippleColor?.let { bottomNavigation.itemRippleColor = it }
     this.selectedItem?.let { setSelectedItem(it) }
     uiModeConfiguration = newConfig?.uiMode ?: uiModeConfiguration
   }

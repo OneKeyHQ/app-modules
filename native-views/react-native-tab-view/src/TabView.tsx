@@ -90,9 +90,11 @@ interface Props<Route extends BaseRoute> {
    */
   onIndexChange: (index: number) => boolean | void;
   /**
-   * Callback which is called on long press on tab, receives the index of the tab as argument.
+   * Callback which is called when the same tab is pressed twice within the
+   * platform double-tap timeout, receives the index of the tab as argument.
+   * Each press still goes through `onIndexChange` / reselection first.
    */
-  onTabLongPress?: (index: number) => void;
+  onTabDoublePress?: (index: number) => void;
   /**
    * Get lazy for the current screen. Uses true by default.
    */
@@ -215,7 +217,7 @@ const TabView = <Route extends BaseRoute>({
   renderScene,
   renderLazyPlaceholder,
   onIndexChange,
-  onTabLongPress,
+  onTabDoublePress,
   rippleColor,
   tabBarActiveTintColor: activeTintColor,
   tabBarInactiveTintColor: inactiveTintColor,
@@ -400,15 +402,15 @@ const TabView = <Route extends BaseRoute>({
     return onIndexChange(index);
   });
 
-  const handleTabLongPress = React.useCallback(
+  const handleTabDoublePress = React.useCallback(
     (event: NativeSyntheticEvent<{ key: string }>) => {
       const { key } = event.nativeEvent;
       const index = trimmedRoutes.findIndex((route) => route.key === key);
       if (index !== -1) {
-        onTabLongPress?.(index);
+        onTabDoublePress?.(index);
       }
     },
-    [trimmedRoutes, onTabLongPress]
+    [trimmedRoutes, onTabDoublePress]
   );
 
   const handlePageSelected = React.useCallback(
@@ -459,7 +461,7 @@ const TabView = <Route extends BaseRoute>({
         }
         selectedPage={focusedKey}
         tabBarHidden={props.tabBarHidden ?? !!renderCustomTabBar}
-        onTabLongPress={handleTabLongPress}
+        onTabDoublePress={handleTabDoublePress}
         onPageSelected={handlePageSelected}
         onTabBarMeasured={handleTabBarMeasured}
         onNativeLayout={handleNativeLayout}

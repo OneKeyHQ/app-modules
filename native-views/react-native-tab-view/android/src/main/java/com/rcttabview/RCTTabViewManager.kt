@@ -15,7 +15,7 @@ import com.facebook.react.viewmanagers.RNCTabViewManagerInterface
 import com.rcttabview.events.OnNativeLayoutEvent
 import com.rcttabview.events.OnTabBarMeasuredEvent
 import com.rcttabview.events.PageSelectedEvent
-import com.rcttabview.events.TabLongPressEvent
+import com.rcttabview.events.TabDoublePressEvent
 
 @ReactModule(name = RCTTabViewManager.NAME)
 class RCTTabViewManager(context: ReactApplicationContext) :
@@ -34,8 +34,8 @@ class RCTTabViewManager(context: ReactApplicationContext) :
       eventDispatcher?.dispatchEvent(PageSelectedEvent(surfaceId, view.id, key))
     }
 
-    view.onTabLongPressedListener = { key ->
-      eventDispatcher?.dispatchEvent(TabLongPressEvent(surfaceId, view.id, key))
+    view.onTabDoublePressedListener = { key ->
+      eventDispatcher?.dispatchEvent(TabDoublePressEvent(surfaceId, view.id, key))
     }
 
     view.onNativeLayoutListener = { width, height ->

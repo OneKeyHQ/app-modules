@@ -65,6 +65,7 @@ export type TabViewSettingsState = {
   tabBarHidden: boolean;
   sidebarAdaptable: boolean;
   hapticFeedback: boolean;
+  androidFloating: boolean;
 };
 
 export type RootStackParamList = {

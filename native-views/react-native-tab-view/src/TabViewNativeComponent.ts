@@ -40,7 +40,7 @@ export interface TabViewProps extends ViewProps {
   items: TabViewItems;
   selectedPage: string;
   onPageSelected?: DirectEventHandler<OnPageSelectedEventData>;
-  onTabLongPress?: DirectEventHandler<OnPageSelectedEventData>;
+  onTabDoublePress?: DirectEventHandler<OnPageSelectedEventData>;
   onTabBarMeasured?: DirectEventHandler<OnTabBarMeasured>;
   onNativeLayout?: DirectEventHandler<OnNativeLayout>;
   icons?: ReadonlyArray<ImageSource>;

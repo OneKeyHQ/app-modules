@@ -17,6 +17,7 @@ export function TabViewSettingsPage() {
     { label: 'Tab Bar Hidden', key: 'tabBarHidden' },
     { label: 'Sidebar Adaptable', key: 'sidebarAdaptable' },
     { label: 'Haptic Feedback', key: 'hapticFeedback' },
+    { label: 'Android Floating Tab Bar', key: 'androidFloating' },
   ];
 
   return (

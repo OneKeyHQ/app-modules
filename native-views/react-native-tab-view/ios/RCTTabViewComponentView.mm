@@ -139,15 +139,15 @@ static NSArray<NSDictionary *>* convertItemsToArray(const std::vector<RNCTabView
     };
     [_containerView setValue:onPageSelected forKey:@"onPageSelected"];
 
-    EventBlock onTabLongPress = ^(NSDictionary *body) {
+    EventBlock onTabDoublePress = ^(NSDictionary *body) {
       auto strongSelf = weakSelf;
       if (!strongSelf) return;
       auto emitter = std::static_pointer_cast<const RNCTabViewEventEmitter>(strongSelf->_eventEmitter);
       if (emitter) {
-        emitter->onTabLongPress({.key = std::string([[body objectForKey:@"key"] UTF8String] ?: "")});
+        emitter->onTabDoublePress({.key = std::string([[body objectForKey:@"key"] UTF8String] ?: "")});
       }
     };
-    [_containerView setValue:onTabLongPress forKey:@"onTabLongPress"];
+    [_containerView setValue:onTabDoublePress forKey:@"onTabDoublePress"];
 
     EventBlock onTabBarMeasured = ^(NSDictionary *body) {
       auto strongSelf = weakSelf;
