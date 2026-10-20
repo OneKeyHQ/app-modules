@@ -25,6 +25,8 @@ export type ImageSource = Readonly<{
   loadingStrategy?: ImageLoadingStrategy;
   // OneKey patch: fallbackUri is Web-only; retryTimes opts all platforms into terminal retries.
   fallbackUri?: string;
+  /** Web-only ordered continuation; retries each source before advancing. */
+  fallbackUris?: readonly string[];
   retryTimes?: number;
 }>;
 
@@ -592,11 +594,95 @@ export type DataRow = RowBase &
     style?: DataRowStyle;
   }>;
 
+export type WebMarketTableColumn = Readonly<{
+  key: string;
+  width?: number;
+  minWidth?: number;
+  flex?: number;
+  alignment?: 'start' | 'center' | 'end';
+  paddingStart?: number;
+  paddingEnd?: number;
+}>;
+
+export type WebMarketTableText = Readonly<{
+  text: string;
+  segments?: readonly ValueTextSegment[];
+  tone?: TextTone;
+  style?: Pick<
+    NativeListTextStyle,
+    'fontSize' | 'fontWeight' | 'lineHeight' | 'color'
+  >;
+}>;
+
+export type WebMarketTableCell = Readonly<{ key: string }> &
+  (
+    | Readonly<{
+        kind: 'favorite';
+        active: boolean;
+        disabled?: boolean;
+        testID?: string;
+        hoverActionKey?: string;
+        actionKey: string;
+        accessibilityLabel: string;
+      }>
+    | Readonly<{
+        kind: 'asset';
+        leading: LeadingVisual;
+        title: WebMarketTableText;
+        secondary?: readonly WebMarketTableText[];
+        lineGap?: number;
+        secondaryBadges?: readonly Pick<
+          MarketBadgeModel,
+          'key' | 'text' | 'style'
+        >[];
+        hoverImages?: readonly (ImageSource | null)[];
+        hoverSecondary?: readonly WebMarketTableText[];
+        hoverActionKey?: string;
+        hoverActionLabel?: string;
+        badges?: readonly Pick<
+          MarketBadgeModel,
+          | 'key'
+          | 'text'
+          | 'iconName'
+          | 'icon'
+          | 'textColor'
+          | 'backgroundColor'
+          | 'actionKey'
+          | 'accessibilityLabel'
+          | 'style'
+        >[];
+      }>
+    | Readonly<{
+        kind: 'text';
+        primary: readonly WebMarketTableText[];
+        partGap?: number;
+        secondary?: readonly WebMarketTableText[];
+      }>
+    | Readonly<{
+        kind: 'sparkline';
+        points: readonly number[];
+        width: number;
+        height: number;
+        strokeColor: string;
+        fillColor: string;
+      }>
+  );
+
+export type WebMarketTablePresentation = Readonly<{
+  draggable?: boolean;
+  contextMenuActionKey?: string;
+  testID?: string;
+  columns: readonly WebMarketTableColumn[];
+  cells: readonly WebMarketTableCell[];
+}>;
+
 /** Native Market quote row. All values are already localized/formatted strings. */
 export type MarketRow = RowBase &
   Readonly<{
     type: 'market';
     variant: 'token' | 'stock' | 'perp';
+    /** Web-only bounded table presentation; native reads the ordinary Market fields. */
+    webTable?: WebMarketTablePresentation;
     leadingAction?: Extract<TrailingAccessory, { kind: 'icon' }>;
     leading: LeadingVisual;
     title: string;
@@ -604,6 +690,8 @@ export type MarketRow = RowBase &
     /** OneKey patch: localized name shrinks independently of the volume. */
     subtitlePrefix?: Readonly<{
       text: string;
+      /** Web-only anchored help for a truncated name. */
+      hoverActionKey?: string;
       gap?: number;
       maxWidth?: number;
       style?: MarketTextStyle;
@@ -767,6 +855,8 @@ export type NativeListTheme = Readonly<{
   rowPressedBackground?: string;
   subduedBackground?: string;
   strongBackground?: string;
+  /** Web-only background for a displayed declared image fallback. */
+  imageFallbackBackground?: string;
   primaryText: string;
   secondaryText: string;
   disabledText?: string;
@@ -979,6 +1069,7 @@ export type RowPatch =
           | 'pressInActionKey'
           | 'longPressActionKey'
           | 'diagnostics'
+          | 'webTable'
           | 'style'
         >
       >;
@@ -1097,6 +1188,8 @@ export type NativeListActionAnchor = Readonly<{
 }>;
 
 export type RowActionEvent = Readonly<{
+  /** Web-only client/window CSS pixel pointer location. */
+  windowPoint?: Readonly<{ x: number; y: number }>;
   rowKey?: string;
   actionKey: string;
   sectionKey?: string;

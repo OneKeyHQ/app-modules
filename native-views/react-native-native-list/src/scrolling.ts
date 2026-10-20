@@ -178,9 +178,12 @@ export function calculateAlignedScrollOffset({
       resolvedPosition = 1;
     else return currentOffset;
   }
+  const alignmentSpace = viewportLength - itemLength;
+  // Explicit positions align oversized rows too; preserve legacy nearest calls.
   const target =
     itemOffset -
-    resolvedPosition * Math.max(0, viewportLength - itemLength) -
+    resolvedPosition *
+      (alignment === 'nearest' ? Math.max(0, alignmentSpace) : alignmentSpace) -
     viewOffset;
   return Math.min(
     Math.max(0, target),

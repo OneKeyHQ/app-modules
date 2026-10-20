@@ -11,7 +11,10 @@ import type {
  */
 export interface NativeListNativeProps extends HybridViewProps {
   snapshotJson: string;
+  fontFamiliesJson: string;
   containerSlotHeightsJson: string;
+  topScrollEdgeEffect: NativeListScrollEdgeEffect;
+  topOverlayHeight: number;
   scrollPositionThresholdsJson: string;
   onScrollPositionThresholdChange?: (isBeyondThreshold: boolean) => void;
   keyboardDismissMode: NativeListKeyboardDismissMode;
@@ -58,3 +61,5 @@ export interface NativeListMethods extends HybridViewMethods {
 }
 
 export type NativeList = HybridView<NativeListNativeProps, NativeListMethods>;
+
+export type NativeListScrollEdgeEffect = 'none' | 'hard' | 'soft';

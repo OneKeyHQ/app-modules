@@ -49,6 +49,10 @@ class NativeScrollerViewManager : ViewGroupManager<NativeScrollerView>(),
   override fun setContentWidth(view: NativeScrollerView, value: Double) = view.setContentSize(width = view.dip(value))
   @ReactProp(name = "contentHeight")
   override fun setContentHeight(view: NativeScrollerView, value: Double) = view.setContentSize(height = view.dip(value))
+  @ReactProp(name = "topScrollEdgeEffect")
+  override fun setTopScrollEdgeEffect(view: NativeScrollerView, value: String?) = Unit
+  @ReactProp(name = "topOverlayHeight", defaultDouble = 0.0)
+  override fun setTopOverlayHeight(view: NativeScrollerView, value: Double) = Unit
   @ReactProp(name = "scrollEnabled", defaultBoolean = true)
   override fun setScrollEnabled(view: NativeScrollerView, value: Boolean) = view.setScrollEnabled(value)
   @ReactProp(name = "nestedScrollEnabled", defaultBoolean = true)

@@ -7,15 +7,15 @@ import android.widget.LinearLayout
 import com.facebook.react.uimanager.ThemedReactContext
 import org.json.JSONObject
 
-internal class NativeListActivityRowView(context: ThemedReactContext) :
-  NativeListRendererRowView(context) {
-  private val details = NativeListActivityDetailsView(context)
+internal class NativeListActivityRowView(context: ThemedReactContext, fonts: NativeListFonts) :
+  NativeListRendererRowView(context, fonts) {
+  private val details = NativeListActivityDetailsView(context, fonts)
   private val content =
     LinearLayout(context).apply {
       orientation = HORIZONTAL
       gravity = Gravity.CENTER_VERTICAL
     }
-  private val visual = NativeListLeadingVisual(context)
+  private val visual = NativeListLeadingVisual(context, fonts)
   private val column = LinearLayout(context).apply { orientation = VERTICAL }
   private val titleLine =
     LinearLayout(context).apply {
@@ -104,7 +104,7 @@ internal class NativeListActivityRowView(context: ThemedReactContext) :
           if (!has("alignment")) put("alignment", align)
         }
       NativeListResolvedText.resolve(
-          context,
+          context, fonts,
           value,
           textStyle,
           size,
@@ -222,7 +222,7 @@ internal class NativeListActivityRowView(context: ThemedReactContext) :
       if (index >= count) continue
       val action = descriptors!!.getJSONObject(index)
       NativeListResolvedText.resolve(
-          context,
+          context, fonts,
           action.optString("label"),
           null,
           // Legacy footer action: 14sp semibold on a 20dp line.

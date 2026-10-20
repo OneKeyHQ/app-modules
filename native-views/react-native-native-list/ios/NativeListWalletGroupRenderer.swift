@@ -55,7 +55,8 @@ final class NativeListWalletGroupCell: NativeListRendererCell, UIGestureRecogniz
   }
   override class func appliesSizePreset(_ item: NativeListItem) -> Bool { false }
   override class func measure(
-    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String
+    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String,
+    fonts: NativeListFontFamilies
   ) -> CGFloat? {
     let members = memberItems(item)
     return members.reduce(
@@ -76,7 +77,7 @@ final class NativeListWalletGroupCell: NativeListRendererCell, UIGestureRecogniz
     dragBadge.translatesAutoresizingMaskIntoConstraints = false
     dragBadge.horizontalInset = 6
     dragBadge.textAlignment = .center
-    dragBadge.font = nativeListTabularFont(ofSize: 12, weight: .semibold)
+    dragBadge.font = nativeListTabularFont(ofSize: 12, weight: .semibold, fonts: fonts)
     dragBadge.layer.cornerRadius = 12
     dragBadge.layer.masksToBounds = true
     dragBadge.layer.borderWidth = 1
@@ -101,6 +102,7 @@ final class NativeListWalletGroupCell: NativeListRendererCell, UIGestureRecogniz
     _ item: NativeListItem, theme: [String: Any]?, layout: String,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
   ) {
+    dragBadge.font = nativeListTabularFont(ofSize: 12, weight: .semibold, fonts: fonts)
     members = Self.memberItems(item)
     let keys = Set(members.map(\.key))
     for key in Array(memberViews.keys) where !keys.contains(key) {
@@ -134,7 +136,7 @@ final class NativeListWalletGroupCell: NativeListRendererCell, UIGestureRecogniz
       view.cell.listStyle = listStyle
       view.cell.bind(
         item: member, theme: theme, layout: layout, selected: member.data.bool("selected"),
-        checkboxState: checkboxState)
+        checkboxState: checkboxState, fonts: fonts)
       root.insertArrangedSubview(view.cell, at: index)
     }
     if let parent = members.first {
@@ -153,7 +155,7 @@ final class NativeListWalletGroupCell: NativeListRendererCell, UIGestureRecogniz
       compactCell?.listStyle = listStyle
       compactCell?.bind(
         item: parent, theme: theme, layout: layout, selected: parent.data.bool("selected"),
-        checkboxState: checkboxState)
+        checkboxState: checkboxState, fonts: fonts)
     }
     let count = members.dropFirst().filter { ($0.data["draggable"] as? Bool) != false }.count
     dragBadge.text = count > 0 ? "+\(count)" : nil

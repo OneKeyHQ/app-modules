@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-tab-view",
-  "version": "3.0.162-alpha.272",
+  "version": "6.7.0-7",
   "description": "Native Bottom Tabs for React Native (UIKit implementation)",
   "source": "./src/index.tsx",
   "main": "./lib/module/index.js",
@@ -19,6 +19,7 @@
     "lib",
     "android",
     "ios",
+    "docs",
     "common",
     "react-native.config.js",
     "*.podspec",
@@ -49,11 +50,14 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nicholasxuu/app-modules.git",
+    "url": "git+https://github.com/OneKeyHQ/app-modules.git",
     "directory": "native-views/react-native-tab-view"
   },
   "author": "OneKey",
-  "homepage": "https://github.com/nicholasxuu/app-modules#readme",
+  "bugs": {
+    "url": "https://github.com/OneKeyHQ/app-modules/issues"
+  },
+  "homepage": "https://github.com/OneKeyHQ/app-modules/tree/main/native-views/react-native-tab-view#readme",
   "license": "MIT",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",

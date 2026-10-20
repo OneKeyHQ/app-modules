@@ -38,6 +38,38 @@ jobs:
           test -f "$RUNNER_TEMP/native-overlay/package/android/src/main/jni/CMakeLists.txt"
           test -f "$RUNNER_TEMP/native-overlay/package/ios/RCTNativeOverlayComponentView.mm"
 
+  device-utils-store:
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.x'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install verified Kotlin 2.3.21 compiler
+        run: |
+          curl -fsSLo "$RUNNER_TEMP/kotlin-compiler.zip" https://github.com/JetBrains/kotlin/releases/download/v2.3.21/kotlin-compiler-2.3.21.zip
+          curl -fsSLo "$RUNNER_TEMP/kotlin-compiler.sha256" https://github.com/JetBrains/kotlin/releases/download/v2.3.21/kotlin-compiler-2.3.21.zip.sha256
+          echo "$(cat "$RUNNER_TEMP/kotlin-compiler.sha256")  $RUNNER_TEMP/kotlin-compiler.zip" | shasum -a 256 --check
+          unzip -q "$RUNNER_TEMP/kotlin-compiler.zip" -d "$RUNNER_TEMP"
+          "$RUNNER_TEMP/kotlinc/bin/kotlinc" -version 2>&1 | grep -F '2.3.21'
+          echo "$RUNNER_TEMP/kotlinc/bin" >> "$GITHUB_PATH"
+          swift --version
+      - name: Install dependencies and generate DeviceUtils bindings
+        run: |
+          corepack enable
+          yarn install --immutable
+          yarn workspace @onekeyfe/react-native-device-utils nitrogen
+      - name: Run production Swift and Kotlin store regressions
+        working-directory: native-modules/react-native-device-utils
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: node tests/in-memory-store.cjs
+
   android-unit:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -45,11 +77,11 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: "24.x"
+          node-version: '24.x'
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
       - name: Install and generate native bindings
         run: |
@@ -58,7 +90,7 @@ jobs:
           # shellcheck disable=SC2016
           find native-modules native-views -mindepth 2 -maxdepth 2 -name nitro.json -print0 |
             xargs -0 -n1 -P4 bash -c 'cd "$(dirname "$0")" && yarn nitrogen > /dev/null'
-      - name: Run ten Android unit test suites
+      - name: Run ten Android unit test suites and build capture protection and photo saving
         working-directory: example/react-native/android
         run: |
           ./gradlew --continue --no-daemon --max-workers=2 --console=plain \
@@ -71,7 +103,9 @@ jobs:
             :onekeyfe_react-native-image:testDebugUnitTest \
             :onekeyfe_react-native-native-list:testDebugUnitTest \
             :onekeyfe_react-native-native-overlay:testDebugUnitTest \
-            :onekeyfe_react-native-text-input:testDebugUnitTest
+            :onekeyfe_react-native-text-input:testDebugUnitTest \
+            :onekeyfe_react-native-capture-protection:assembleDebug \
+            :onekeyfe_react-native-photo-library:assembleDebug
       - name: Verify every Android suite executed tests
         if: always()
         run: |
@@ -120,7 +154,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: '17'
       - name: Install verified Kotlin 2.3.21 compiler
         run: |
           curl -fsSLo kotlin-compiler.zip https://github.com/JetBrains/kotlin/releases/download/v2.3.21/kotlin-compiler-2.3.21.zip
@@ -137,6 +171,25 @@ jobs:
             -include-runtime -d "$RUNNER_TEMP/bundle-storage-schema-tests.jar"
           java -jar "$RUNNER_TEMP/bundle-storage-schema-tests.jar" | tee "$RUNNER_TEMP/kotlin-tests.log"
           grep -Eq 'BundleStorageSchemaPolicy: [1-9][0-9]* assertions passed' "$RUNNER_TEMP/kotlin-tests.log"
+      - name: Run pager weak-padding snapshot regression
+        working-directory: native-views/react-native-pager-view
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/kotlinc/bin/kotlinc" \
+            tests/kotlin/WeakPaddingSnapshotTest.kt \
+            -include-runtime -d "$RUNNER_TEMP/weak-padding-snapshot-tests.jar"
+          java -jar "$RUNNER_TEMP/weak-padding-snapshot-tests.jar" | tee "$RUNNER_TEMP/weak-padding-snapshot-tests.log"
+          grep -Eq '^WeakPaddingSnapshot: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/weak-padding-snapshot-tests.log"
+      - name: Run picker error privacy regression
+        working-directory: native-modules/react-native-image-crop-picker
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/kotlinc/bin/kotlinc" \
+            android/src/main/java/com/margelo/nitro/reactnativeimagecroppicker/ImageCropPickerException.kt \
+            tests/kotlin/ImageCropPickerExceptionTest.kt \
+            -include-runtime -d "$RUNNER_TEMP/picker-error-privacy-tests.jar"
+          java -jar "$RUNNER_TEMP/picker-error-privacy-tests.jar" | tee "$RUNNER_TEMP/picker-error-privacy-tests.log"
+          grep -Eq '^ImageCropPickerException: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/picker-error-privacy-tests.log"
 
   swiftpm:
     runs-on: macos-26
@@ -148,7 +201,7 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
           xcodebuild -version
           xcodebuild -version | grep -F 'Xcode 26.6'
-      - name: Run three SwiftPM suites and verify execution
+      - name: Run four SwiftPM suites and verify execution
         shell: bash
         run: |
           set -euo pipefail
@@ -157,10 +210,12 @@ jobs:
             native-modules/react-native-sni-connect
             native-modules/react-native-bundle-update
             native-modules/react-native-range-downloader/tests/swiftpm
+            native-views/react-native-native-list/tests/swiftpm
           )
           for package in "${packages[@]}"; do
             name=$(basename "$package")
             if [[ "$package" == *range-downloader* ]]; then name=range-downloader; fi
+            if [[ "$package" == *native-list* ]]; then name=native-list; fi
             swift test --package-path "$package" --scratch-path "$RUNNER_TEMP/swift-$name" \
               2>&1 | tee "artifacts/swiftpm/$name.log"
             if ! grep -Eq 'Executed [1-9][0-9]* tests?|Test run with [1-9][0-9]* tests?' "artifacts/swiftpm/$name.log"; then
@@ -183,11 +238,11 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: "24.x"
+          node-version: '24.x'
       - uses: ruby/setup-ruby@v1
         with:
           working-directory: example/react-native
-          ruby-version: "3.4.4"
+          ruby-version: '3.4.4'
           bundler-cache: true
       - name: Select and verify Xcode and simulator
         run: |
@@ -231,22 +286,7 @@ jobs:
             ['git', 'show', 'HEAD:example/react-native/ios/Podfile.lock'], &:read
           )
           installed = File.read('Podfile.lock')
-          expected = normalized_lockfile(committed)
-          actual = normalized_lockfile(installed)
-          unless expected == actual
-            (expected.keys | actual.keys).sort.each do |section|
-              next if expected[section] == actual[section]
-              warn "Changed lockfile section: #{section}"
-              if expected[section].is_a?(Hash) && actual[section].is_a?(Hash)
-                (expected[section].keys | actual[section].keys).sort.each do |name|
-                  next if expected[section][name] == actual[section][name]
-                  warn "  #{name}: #{expected[section][name].inspect} -> #{actual[section][name].inspect}"
-                end
-              else
-                warn "  expected: #{expected[section].inspect}"
-                warn "  installed: #{actual[section].inspect}"
-              end
-            end
+          unless normalized_lockfile(committed) == normalized_lockfile(installed)
             abort 'CocoaPods changed the locked dependencies or checksums'
           end
           puts 'Podfile.lock matches: only the Hermes checksum and Specs CDN URL may differ'
@@ -262,37 +302,77 @@ jobs:
             -jobs 2 CODE_SIGNING_ALLOWED=NO IPHONEOS_DEPLOYMENT_TARGET=16.4 \
             'OTHER_LDFLAGS=$(inherited) -lc++' \
             2>&1 | tee artifacts/ios/NativeOverlay-build.log
-      - name: Run six pod XCTest suites on iOS Simulator
+      - name: Run nine pod XCTest suites on iOS Simulator
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p artifacts/ios
           workspace=example/react-native/ios/example.xcworkspace
-          schemes=(NativeSheet-Unit-Tests react-native-pager-view-Unit-Tests OneKeyTextInput-Unit-Tests OneKeyImage-Unit-Tests react-native-native-list-Unit-Tests ReactNativeBundleCrypto-Unit-Tests)
+          schemes=(NativeSheet-Unit-Tests react-native-pager-view-Unit-Tests OneKeyTextInput-Unit-Tests OneKeyImage-Unit-Tests react-native-native-list-Unit-Tests ReactNativeBundleCrypto-Unit-Tests ReactNativeImageCropPicker-Unit-Tests ReactNativeCaptureProtection-Unit-Tests ReactNativePhotoLibrary-Unit-Tests)
+          # Plan and build the shared pod dependencies once for all nine bundles.
+          BUNDLE_GEMFILE="$PWD/example/react-native/Gemfile" bundle exec ruby - "${schemes[@]}" <<'RUBY'
+          require 'xcodeproj'
+
+          project_path = 'example/react-native/ios/Pods/Pods.xcodeproj'
+          project = Xcodeproj::Project.open(project_path)
+          scheme = Xcodeproj::XCScheme.new
+          ARGV.each do |name|
+            target = project.targets.find { |candidate| candidate.name == name }
+            abort "Missing unit test target: #{name}" unless target && target.product_type == 'com.apple.product-type.bundle.unit-test'
+            scheme.add_build_target(target, false)
+            scheme.add_test_target(target)
+          end
+          scheme.save_as(project_path, 'AppModulesNativeTests', true)
+          RUBY
           xcodebuild -list -workspace "$workspace" > artifacts/ios/schemes.log
-          for scheme in "${schemes[@]}"; do
-            grep -Fxq "        $scheme" artifacts/ios/schemes.log
-            # shellcheck disable=SC2016
-            xcodebuild test -workspace "$workspace" -scheme "$scheme" \
-              -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5' \
-              -derivedDataPath "$RUNNER_TEMP/native-tests-derived-data" \
-              -resultBundlePath "$PWD/artifacts/ios/$scheme.xcresult" \
-              -parallel-testing-enabled NO -jobs 2 CODE_SIGNING_ALLOWED=NO \
-              IPHONEOS_DEPLOYMENT_TARGET=16.4 \
-              'OTHER_LDFLAGS=$(inherited) -lc++' \
-              2>&1 | tee "artifacts/ios/$scheme.log"
-            xcrun xcresulttool get test-results summary \
-              --path "artifacts/ios/$scheme.xcresult" \
-              > "artifacts/ios/$scheme-summary.json"
-            jq -e '.totalTestCount > 0' "artifacts/ios/$scheme-summary.json"
-          done
+          grep -Fxq '        AppModulesNativeTests' artifacts/ios/schemes.log
+          # shellcheck disable=SC2016
+          xcodebuild test -workspace "$workspace" -scheme AppModulesNativeTests \
+            -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5' \
+            -derivedDataPath "$RUNNER_TEMP/native-tests-derived-data" \
+            -resultBundlePath "$PWD/artifacts/ios/AppModulesNativeTests.xcresult" \
+            -parallel-testing-enabled NO -jobs 2 CODE_SIGNING_ALLOWED=NO \
+            IPHONEOS_DEPLOYMENT_TARGET=16.4 \
+            'OTHER_LDFLAGS=$(inherited) -lc++' \
+            2>&1 | tee artifacts/ios/AppModulesNativeTests.log
+          xcrun xcresulttool get test-results summary \
+            --path artifacts/ios/AppModulesNativeTests.xcresult \
+            > artifacts/ios/summary.json
+          jq -e '.totalTestCount > 0' artifacts/ios/summary.json
+          xcrun xcresulttool get test-results tests \
+            --path artifacts/ios/AppModulesNativeTests.xcresult \
+            > artifacts/ios/tests.json
+          python3 - "${schemes[@]}" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          def walk(nodes):
+              for node in nodes:
+                  yield node
+                  yield from walk(node.get('children', []))
+
+          report = json.loads(Path('artifacts/ios/tests.json').read_text())
+          counts = {name: 0 for name in sys.argv[1:]}
+          for node in walk(report['testNodes']):
+              if node['nodeType'] != 'Unit test bundle':
+                  continue
+              name = node['name'].removesuffix('.xctest')
+              if name in counts:
+                  counts[name] += sum(
+                      test['nodeType'] == 'Test Case' and test.get('result') in {'Passed', 'Failed', 'Expected Failure'}
+                      for test in walk(node.get('children', []))
+                  )
+          for name, count in counts.items():
+              print(f'{name}: {count} executed tests')
+              if count == 0:
+                  raise SystemExit(f'No executed tests for {name}')
+          PY
           df -h .
       - name: Upload iOS result bundles and logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: ios-native-test-results
-          path: |
-            artifacts/ios/
-            example/react-native/ios/Podfile.lock
+          path: artifacts/ios/
           if-no-files-found: warn

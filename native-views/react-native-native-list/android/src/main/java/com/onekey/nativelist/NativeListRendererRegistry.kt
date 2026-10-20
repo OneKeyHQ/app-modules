@@ -3,7 +3,7 @@ package com.margelo.nitro.nativelist
 import com.facebook.react.uimanager.ThemedReactContext
 
 internal object NativeListRendererRegistry {
-  private val factories: Map<NativeListRendererKey, (ThemedReactContext) -> NativeListRowHost> =
+  private val factories: Map<NativeListRendererKey, (ThemedReactContext, NativeListFonts) -> NativeListRowHost> =
     mapOf(
       NativeListRendererKey.SECTION_HEADER to ::NativeListSectionHeaderRowView,
       NativeListRendererKey.WALLET_GROUP to ::NativeListWalletGroupRowView,
@@ -37,6 +37,6 @@ internal object NativeListRendererRegistry {
 
   fun key(type: String) = keys.getValue(type)
 
-  fun create(context: ThemedReactContext, viewType: Int): NativeListRowHost =
-    factories.getValue(NativeListRendererKey.entries[viewType])(context)
+  fun create(context: ThemedReactContext, viewType: Int, fonts: NativeListFonts): NativeListRowHost =
+    factories.getValue(NativeListRendererKey.entries[viewType])(context, fonts)
 }

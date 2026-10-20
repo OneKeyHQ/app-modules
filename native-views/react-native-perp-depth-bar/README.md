@@ -2,10 +2,14 @@
 
 PerpDepthBar view for React Native
 
+Native iOS and Android views for an order-book depth column and a bid/ask ratio
+track. Each view owns native drawing and animation; the application provides
+formatted prices, sizes and percentages.
+
 ## Installation
 
 ```sh
-yarn add @onekeyfe/react-native-perp-depth-bar
+yarn add @onekeyfe/react-native-perp-depth-bar react-native-nitro-modules
 ```
 
 ## Usage
@@ -34,7 +38,7 @@ import { PerpDepthBarsView, PerpSideRatioView } from '@onekeyfe/react-native-per
   textInset={8}
   placeholderText="--"
   placeholderRows={3}
-/>
+/>;
 
 <PerpSideRatioView
   style={{ width: 220, height: 4 }}
@@ -46,12 +50,33 @@ import { PerpDepthBarsView, PerpSideRatioView } from '@onekeyfe/react-native-per
   cornerRadius={2}
   gap={2}
   reducedMotion={false}
-/>
+/>;
 ```
+
+## Updates and interaction
+
+Install the application's iOS pods and rebuild the native application after
+adding these Nitro views. Keep price/size arrays aligned with the depth rows,
+and provide enough height for `rowHeight` and `rowMarginTop`.
+
+For frequent updates, use `setDepth(ArrayBuffer)` with packed Float32 percentages
+and `setText(prices, sizes)` on the depth view's Nitro reference. The first
+imperative call switches that data channel into imperative mode; subsequent
+updates to its initial props are ignored. Likewise, the ratio view exposes
+`setRatio(bidPercentage, askPercentage)` instead of high-frequency ratio props.
+
+`onRowPress` returns the zero-based depth row index. `epoch` lets callers snap
+to a new depth dataset rather than animate across a coin or tick-size change.
+`reducedMotion` disables animation. Empty depth/text data can use the configured
+placeholder text and row count.
+
+The interfaces are defined in [src/PerpDepthBars.nitro.ts](src/PerpDepthBars.nitro.ts)
+and [src/PerpSideRatio.nitro.ts](src/PerpSideRatio.nitro.ts).
 
 ## Contributing
 
-See the [contributing guide](CONTRIBUTING.md) to learn how to contribute to the repository and the development workflow.
+Follow the repository's
+[native development workflow](https://github.com/OneKeyHQ/app-modules/blob/main/docs/NATIVE_MODULE_DEVELOPMENT.md).
 
 ## License
 

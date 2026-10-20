@@ -35,12 +35,13 @@ retains its original implementation attribution in source comments.
 
 ### Release boundary
 
-This branch aligns all 42 publishable workspaces to `3.0.162-alpha.272`.
-Publish with the existing `package-publish` workflow dispatch, `npm_dist_tag=next`
-and an empty `only_workspace`, which publishes and registry-verifies all 42.
-Do not merge either repository PR or change the `latest` tag. The app-monorepo
-workspace copy is removed only after this release succeeds and every target
-version and tarball is available. Versions already published on npm are immutable.
+The earlier `3.0.162-alpha.272` release remains immutable. This branch now
+includes the current main SDK baseline, with all publishable workspaces aligned
+before release. Use `package-publish` with `npm_dist_tag=next` and an empty
+`only_workspace` to generate a fresh `6.7.0-alpha.N` preview, publish every
+workspace, and verify every registry version. Preserve `latest` and keep both
+repository PRs open. App consumers pin the verified exact preview version and
+refresh dependency and native locks before installed-version acceptance.
 
 ## 5.1 Purpose, scope, and non-goals
 

@@ -6,8 +6,11 @@ import java.io.File
 import java.io.FileInputStream
 import java.nio.file.Files
 import java.security.MessageDigest
+import org.bouncycastle.bcpg.HashAlgorithmTags
 import org.bouncycastle.jce.provider.BouncyCastleProvider
+import org.bouncycastle.openpgp.PGPPublicKey
 import org.bouncycastle.openpgp.PGPPublicKeyRingCollection
+import org.bouncycastle.openpgp.PGPSignature
 import org.bouncycastle.openpgp.PGPSignatureList
 import org.bouncycastle.openpgp.PGPUtil
 import org.bouncycastle.openpgp.jcajce.JcaPGPObjectFactory
@@ -139,7 +142,102 @@ object BundleCryptoCore {
   // MARK: - GPG cleartext (bundle form): body JSON -> sha256
   // Ported verbatim from ReactNativeBundleUpdate.verifyGPGAndExtractSha256.
 
-  fun verifyGpgCleartext(signedMessage: String): VerifyResult {
+  private fun parseMetadataJsonFields(jsonText: String): Map<String, String> {
+    val json = JSONObject(jsonText)
+    val result = mutableMapOf<String, String>()
+    val keys = json.keys()
+    while (keys.hasNext()) {
+      val key = keys.next()
+      val value = json.optString(key, "")
+      if (value.isNotEmpty()) {
+        result[key] = value
+      }
+    }
+    return result
+  }
+
+  private fun isHex64(token: String): Boolean {
+    return token.length == 64 && token.all { it in '0'..'9' || it in 'a'..'f' }
+  }
+
+  internal fun extractDetachedAscSha256(cleartextBody: String, expectedFileName: String?): String? {
+    val trimmed = cleartextBody.trim()
+    if (expectedFileName.isNullOrEmpty()) {
+      return trimmed.split("\\s+".toRegex()).firstOrNull()?.lowercase() ?: ""
+    }
+    val nonEmptyLines = trimmed.lines().map { it.trim() }.filter { it.isNotEmpty() }
+    if (nonEmptyLines.isEmpty()) {
+      return ""
+    }
+    val matchedHashes = mutableSetOf<String>()
+    for (line in nonEmptyLines) {
+      val tokens = line.split("\\s+".toRegex())
+      if (tokens.size >= 2) {
+        val rawName = tokens[1].removePrefix("*")
+        val fileName = File(rawName).name
+        if (fileName == expectedFileName) {
+          val candidate = tokens[0].lowercase()
+          if (!isHex64(candidate)) {
+            return ""
+          }
+          matchedHashes.add(candidate)
+        }
+      }
+    }
+    if (matchedHashes.size == 1) {
+      return matchedHashes.single()
+    }
+    return ""
+  }
+
+  private fun hasValidSha256LineWithoutMatchingFile(cleartextBody: String, expectedFileName: String?): Boolean {
+    if (expectedFileName.isNullOrEmpty()) return false
+    val nonEmptyLines = cleartextBody.trim().lines().map { it.trim() }.filter { it.isNotEmpty() }
+    var sawValidHashLine = false
+    for (line in nonEmptyLines) {
+      val tokens = line.split("\\s+".toRegex())
+      if (tokens.isNotEmpty()) {
+        val candidate = tokens[0].lowercase()
+        if (isHex64(candidate)) {
+          sawValidHashLine = true
+        }
+        if (tokens.size >= 2) {
+          val fileName = File(tokens[1].removePrefix("*")).name
+          if (fileName == expectedFileName) {
+            return false
+          }
+        }
+      }
+    }
+    return sawValidHashLine
+  }
+
+  private fun verifyCleartextSignature(
+    sig: PGPSignature,
+    publicKey: PGPPublicKey,
+    cleartextBody: String,
+  ): Boolean {
+    if (sig.signatureType != PGPSignature.CANONICAL_TEXT_DOCUMENT) return false
+    if (sig.hashAlgorithm != HashAlgorithmTags.SHA256 &&
+        sig.hashAlgorithm != HashAlgorithmTags.SHA384 &&
+        sig.hashAlgorithm != HashAlgorithmTags.SHA512) return false
+
+    sig.init(JcaPGPContentVerifierBuilderProvider().setProvider(bcProvider), publicKey)
+
+    // Canonicalize the cleartext per RFC 4880 Section 7.1 (dash-unescape +
+    // per-line trailing-whitespace strip), matching iOS Gopenpgp.
+    val dataToVerify = canonicalizeCleartext(cleartextBody).toByteArray(Charsets.UTF_8)
+    sig.update(dataToVerify)
+    return sig.verify()
+  }
+
+  @JvmOverloads
+  fun verifyGpgCleartext(
+    signedMessage: String,
+    expectedAppVersion: String? = null,
+    expectedBundleVersion: String? = null,
+    expectedAppType: String? = null,
+  ): VerifyResult {
     if (!signedMessage.contains("-----BEGIN PGP SIGNED MESSAGE-----")) {
       return VerifyResult(false, null, "NOT_PGP_SIGNED_MESSAGE")
     }
@@ -180,25 +278,42 @@ object BundleCryptoCore {
         return VerifyResult(false, null, "PUBKEY_NOT_FOUND")
       }
 
-      // Verify the signature.
-      pgpSignature.init(JcaPGPContentVerifierBuilderProvider().setProvider(bcProvider), publicKey)
-
-      // Canonicalize the cleartext per RFC 4880 Section 7.1 (dash-unescape +
-      // per-line trailing-whitespace strip), matching iOS Gopenpgp.
-      val dataToVerify = canonicalizeCleartext(cleartextBody).toByteArray(Charsets.UTF_8)
-      pgpSignature.update(dataToVerify)
-
-      if (!pgpSignature.verify()) {
+      // Verify the signature (enforcing CANONICAL_TEXT_DOCUMENT and SHA256/384/512).
+      if (!verifyCleartextSignature(pgpSignature, publicKey, cleartextBody)) {
         OneKeyLog.error("BundleCrypto", "GPG signature verification failed")
         return VerifyResult(false, null, "SIGNATURE_INVALID")
       }
 
       // Signature verified, parse the cleartext JSON.
-      val json = JSONObject(cleartextBody.trim())
-      val sha256 = json.optString("sha256", "")
+      val fields = parseMetadataJsonFields(cleartextBody.trim())
+      val sha256 = fields["sha256"].orEmpty()
       if (sha256.isEmpty()) {
         OneKeyLog.error("BundleCrypto", "No sha256 field in signed cleartext JSON")
         return VerifyResult(false, null, "NO_SHA256_FIELD")
+      }
+
+      val signedFileName = fields["fileName"].orEmpty()
+      if (signedFileName != "metadata.json") {
+        OneKeyLog.error("BundleCrypto", "Invalid signed metadata fileName: $signedFileName")
+        return VerifyResult(false, null, "INVALID_METADATA_FILENAME")
+      }
+
+      val signedAppType = fields["appType"].orEmpty()
+      if (!expectedAppType.isNullOrEmpty() && signedAppType != expectedAppType) {
+        OneKeyLog.error("BundleCrypto", "Signed metadata appType mismatch: expected=$expectedAppType, actual=$signedAppType")
+        return VerifyResult(false, null, "METADATA_APPTYPE_MISMATCH")
+      }
+
+      val signedAppVersion = fields["appVersion"].orEmpty()
+      if (!expectedAppVersion.isNullOrEmpty() && signedAppVersion != expectedAppVersion) {
+        OneKeyLog.error("BundleCrypto", "Signed metadata appVersion mismatch: expected=$expectedAppVersion, actual=$signedAppVersion")
+        return VerifyResult(false, null, "METADATA_APPVERSION_MISMATCH")
+      }
+
+      val signedBundleVersion = fields["bundleVersion"].orEmpty()
+      if (!expectedBundleVersion.isNullOrEmpty() && signedBundleVersion != expectedBundleVersion) {
+        OneKeyLog.error("BundleCrypto", "Signed metadata bundleVersion mismatch: expected=$expectedBundleVersion, actual=$signedBundleVersion")
+        return VerifyResult(false, null, "METADATA_BUNDLEVERSION_MISMATCH")
       }
 
       OneKeyLog.info("BundleCrypto", "GPG cleartext verification succeeded")
@@ -215,7 +330,11 @@ object BundleCryptoCore {
   // only difference from verifyGpgCleartext is the body parsing (no JSON — first
   // whitespace token must be a 64-char lowercase hex sha256).
 
-  fun verifyDetachedAsc(ascContent: String): VerifyResult {
+  @JvmOverloads
+  fun verifyDetachedAsc(
+    ascContent: String,
+    expectedFileName: String? = null,
+  ): VerifyResult {
     if (!ascContent.contains("-----BEGIN PGP SIGNED MESSAGE-----")) {
       return VerifyResult(false, null, "NOT_PGP_SIGNED_MESSAGE")
     }
@@ -241,18 +360,17 @@ object BundleCryptoCore {
       val publicKey = pgpPubKeyRingCollection.getPublicKey(pgpSignature.keyID)
         ?: return VerifyResult(false, null, "PUBKEY_NOT_FOUND")
 
-      pgpSignature.init(JcaPGPContentVerifierBuilderProvider().setProvider(bcProvider), publicKey)
-      // Canonicalize per RFC 4880 Section 7.1 (dash-unescape + per-line
-      // trailing-whitespace strip), matching iOS Gopenpgp.
-      val dataToVerify = canonicalizeCleartext(cleartextBody).toByteArray(Charsets.UTF_8)
-      pgpSignature.update(dataToVerify)
-      if (!pgpSignature.verify()) {
+      if (!verifyCleartextSignature(pgpSignature, publicKey, cleartextBody)) {
         return VerifyResult(false, null, "SIGNATURE_INVALID")
       }
 
       // Extract SHA256 from verified cleartext.
-      val sha256 = cleartextBody.trim().split("\\s+".toRegex())[0].lowercase()
-      if (sha256.length != 64 || !sha256.all { it in '0'..'9' || it in 'a'..'f' }) {
+      val sha256 = extractDetachedAscSha256(cleartextBody, expectedFileName)
+        ?: return VerifyResult(false, null, "FILENAME_MISMATCH")
+      if (!isHex64(sha256)) {
+        if (hasValidSha256LineWithoutMatchingFile(cleartextBody, expectedFileName)) {
+          return VerifyResult(false, null, "FILENAME_MISMATCH")
+        }
         return VerifyResult(false, null, "SHA256_TOKEN_INVALID")
       }
 
@@ -293,8 +411,7 @@ object BundleCryptoCore {
 
     val bodyStartIdx = blankIdx + 1
     val bodyLines = lines.subList(bodyStartIdx, sigStartIdx)
-    // Remove the trailing empty line that PGP adds before the signature block.
-    val body = bodyLines.joinToString("\r\n").trimEnd()
+    val body = bodyLines.joinToString("\r\n")
     val signatureBlock = lines.subList(sigStartIdx, sigEndIdx + 1).joinToString("\n")
     return FramedCleartext(body, signatureBlock)
   }

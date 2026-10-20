@@ -416,7 +416,33 @@ typedef NS_ENUM(NSInteger, ESegmentEvalError) {
     ESegmentEvalErrorTimeout = 6,
 };
 
-@implementation SplitBundleLoader
+static NSString *const kSBLBuiltinBundleSentinel = @"__BUILTIN__";
+
+@implementation SplitBundleLoader {
+    os_unfair_lock _pinnedOtaLock;
+    NSString *_Nullable _pinnedOtaBundlePath;
+}
+
+- (instancetype)init
+{
+    if (self = [super init]) {
+        _pinnedOtaLock = OS_UNFAIR_LOCK_INIT;
+    }
+    return self;
+}
+
+- (nullable NSString *)pinnedOtaBundlePath
+{
+    os_unfair_lock_lock(&_pinnedOtaLock);
+    NSString *cached = _pinnedOtaBundlePath;
+    if (!cached) {
+        NSString *resolved = [SplitBundleLoader otaBundlePath];
+        cached = (resolved.length > 0) ? [resolved copy] : kSBLBuiltinBundleSentinel;
+        _pinnedOtaBundlePath = cached;
+    }
+    os_unfair_lock_unlock(&_pinnedOtaLock);
+    return [cached isEqualToString:kSBLBuiltinBundleSentinel] ? nil : cached;
+}
 
 // Reflectively asks bundle-update whether the current bundle's manifest is
 // required to ship per-segment SHA-256s (three-bundle / split-thread format).
@@ -452,10 +478,20 @@ typedef NS_ENUM(NSInteger, ESegmentEvalError) {
 // large segment doesn't pull the whole bundle into memory just to hash it.
 + (BOOL)verifySha256OfFile:(NSString *)path expected:(NSString *)expected
 {
+    return [self verifySha256OfFile:path expected:expected otaBundlePath:[self otaBundlePath]];
+}
+
++ (BOOL)verifySha256OfFile:(NSString *)path
+                  expected:(NSString *)expected
+             otaBundlePath:(nullable NSString *)otaPath
+{
     if (expected.length == 0) {
-        // Defer to bundle-update: three-bundle format manifests must ship
-        // per-segment hashes (fail closed); older formats are allowed to omit
-        // them (back-compat).
+        // Only allow skipping SHA-256 verification when an OTA bundle IS active
+        // AND its manifest is an older format that does not require per-segment hashes.
+        // Built-in bundles and three-bundle manifests must always supply a non-empty hash.
+        if (otaPath.length == 0 || [otaPath isEqualToString:kSBLBuiltinBundleSentinel]) {
+            return NO;
+        }
         return ![SplitBundleLoader currentBundleRequiresPerSegmentHash];
     }
     NSFileHandle *handle = [NSFileHandle fileHandleForReadingAtPath:path];
@@ -486,6 +522,7 @@ typedef NS_ENUM(NSInteger, ESegmentEvalError) {
 - (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:
     (const facebook::react::ObjCTurboModule::InitParams &)params
 {
+    [self pinnedOtaBundlePath];
     [SBLLogger info:@"SplitBundleLoader module initialized"];
     return std::make_shared<facebook::react::NativeSplitBundleLoaderSpecJSI>(params);
 }
@@ -761,7 +798,7 @@ typedef NS_ENUM(NSInteger, ESegmentEvalError) {
         NSString *nativeVersion = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"";
         NSString *bundleVersion = @"";
 
-        NSString *otaPath = [SplitBundleLoader otaBundlePath];
+        NSString *otaPath = [self pinnedOtaBundlePath];
         if (otaPath && [[NSFileManager defaultManager] fileExistsAtPath:otaPath]) {
             sourceKind = @"ota";
             bundleRoot = [otaPath stringByDeletingLastPathComponent];
@@ -789,27 +826,37 @@ typedef NS_ENUM(NSInteger, ESegmentEvalError) {
 /// Returns nil if the segment file is not found.
 + (nullable NSString *)resolveAbsolutePath:(NSString *)relativePath
 {
+    return [self resolveAbsolutePath:relativePath
+                       otaBundlePath:[self otaBundlePath]];
+}
+
++ (nullable NSString *)resolveAbsolutePath:(NSString *)relativePath
+                             otaBundlePath:(nullable NSString *)otaPath
+{
     // 1. Try OTA bundle root first
-    NSString *otaPath = [SplitBundleLoader otaBundlePath];
     if (otaPath) {
-        // Standardize root so hasPrefix matches candidate (iOS resolves /private/var → /var).
-        NSString *otaRoot = [[otaPath stringByDeletingLastPathComponent] stringByStandardizingPath];
-        NSString *candidate = [[otaRoot stringByAppendingPathComponent:relativePath] stringByStandardizingPath];
-        BOOL otaPrefixOk = [candidate hasPrefix:otaRoot];
+        // Resolve symlinks and enforce trailing slash boundary so sibling-prefix directories cannot match.
+        NSString *otaRoot = [[[otaPath stringByDeletingLastPathComponent] stringByResolvingSymlinksInPath] stringByStandardizingPath];
+        NSString *otaRootWithSlash = [otaRoot hasSuffix:@"/"] ? otaRoot : [otaRoot stringByAppendingString:@"/"];
+        NSString *candidate = [[[otaRoot stringByAppendingPathComponent:relativePath] stringByResolvingSymlinksInPath] stringByStandardizingPath];
+        BOOL otaPrefixOk = [candidate hasPrefix:otaRootWithSlash];
         BOOL otaExists = [[NSFileManager defaultManager] fileExistsAtPath:candidate];
         [SBLLogger info:[NSString stringWithFormat:@"[resolveAbs] rel=%@ ota root=%@ cand=%@ prefixOk=%d exists=%d",
                          relativePath, otaRoot, candidate, otaPrefixOk, otaExists]];
         if (otaPrefixOk && otaExists) {
             return candidate;
         }
+        [SBLLogger warn:[NSString stringWithFormat:@"[resolveAbs] rel=%@ missing in active OTA bundle root — refusing builtin fallback", relativePath]];
+        return nil;
     } else {
         [SBLLogger info:[NSString stringWithFormat:@"[resolveAbs] rel=%@ otaPath=(nil) — skipping OTA", relativePath]];
     }
 
     // 2. Fallback to builtin resource path
-    NSString *builtinRoot = [[[NSBundle mainBundle] resourcePath] stringByStandardizingPath];
-    NSString *candidate = [[builtinRoot stringByAppendingPathComponent:relativePath] stringByStandardizingPath];
-    BOOL builtinPrefixOk = [candidate hasPrefix:builtinRoot];
+    NSString *builtinRoot = [[[[NSBundle mainBundle] resourcePath] stringByResolvingSymlinksInPath] stringByStandardizingPath];
+    NSString *builtinRootWithSlash = [builtinRoot hasSuffix:@"/"] ? builtinRoot : [builtinRoot stringByAppendingString:@"/"];
+    NSString *candidate = [[[builtinRoot stringByAppendingPathComponent:relativePath] stringByResolvingSymlinksInPath] stringByStandardizingPath];
+    BOOL builtinPrefixOk = [candidate hasPrefix:builtinRootWithSlash];
     BOOL builtinExists = [[NSFileManager defaultManager] fileExistsAtPath:candidate];
     [SBLLogger info:[NSString stringWithFormat:@"[resolveAbs] rel=%@ builtin root=%@ cand=%@ prefixOk=%d exists=%d",
                      relativePath, builtinRoot, candidate, builtinPrefixOk, builtinExists]];
@@ -836,14 +883,16 @@ typedef NS_ENUM(NSInteger, ESegmentEvalError) {
             return;
         }
 
-        NSString *absolutePath = [SplitBundleLoader resolveAbsolutePath:relativePath];
+        NSString *otaPath = [self pinnedOtaBundlePath];
+        NSString *absolutePath = [SplitBundleLoader resolveAbsolutePath:relativePath
+                                                          otaBundlePath:otaPath];
         if (!absolutePath) {
             reject(@"SPLIT_BUNDLE_NOT_FOUND",
                    [NSString stringWithFormat:@"Segment file not found: %@", relativePath],
                    nil);
             return;
         }
-        if (![SplitBundleLoader verifySha256OfFile:absolutePath expected:sha256]) {
+        if (![SplitBundleLoader verifySha256OfFile:absolutePath expected:sha256 otaBundlePath:otaPath]) {
             reject(@"SPLIT_BUNDLE_SHA256_MISMATCH",
                    [NSString stringWithFormat:@"Segment SHA-256 mismatch: %@", relativePath],
                    nil);
@@ -1068,7 +1117,9 @@ typedef NS_ENUM(NSInteger, ESegmentEvalError) {
             return;
         }
 
-        NSString *absolutePath = [SplitBundleLoader resolveAbsolutePath:relativePath];
+        NSString *otaPath = [self pinnedOtaBundlePath];
+        NSString *absolutePath = [SplitBundleLoader resolveAbsolutePath:relativePath
+                                                          otaBundlePath:otaPath];
 
         if (!absolutePath) {
             reject(@"SPLIT_BUNDLE_NOT_FOUND",
@@ -1077,7 +1128,7 @@ typedef NS_ENUM(NSInteger, ESegmentEvalError) {
             return;
         }
 
-        if (![SplitBundleLoader verifySha256OfFile:absolutePath expected:sha256]) {
+        if (![SplitBundleLoader verifySha256OfFile:absolutePath expected:sha256 otaBundlePath:otaPath]) {
             reject(@"SPLIT_BUNDLE_SHA256_MISMATCH",
                    [NSString stringWithFormat:@"Segment SHA-256 mismatch: %@ (key=%@)", relativePath, segmentKey],
                    nil);

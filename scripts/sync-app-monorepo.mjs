@@ -2,43 +2,22 @@ import { readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { loadReleaseWorkspaces } from "./validate-npm-dist-tag.mjs";
+import {
+  loadReleaseWorkspaces,
+  compareReleaseVersions,
+  parseReleaseVersion,
+} from "./validate-npm-dist-tag.mjs";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
 export const appMonorepoManifests = [
   ["apps/mobile/package.json", ["dependencies"]],
   ["packages/components/package.json", ["dependencies"]],
+  ["packages/core/package.json", ["dependencies"]],
   ["packages/kit/package.json", ["dependencies"]],
   ["apps/playground/package.json", ["dependencies"]],
   ["package.json", ["dependencies", "resolutions"]],
 ];
-
-function compareVersions(left, right) {
-  const parse = (version) => {
-    const match = /^(\d+)\.(\d+)\.(\d+)(?:-alpha\.(\d+))?$/.exec(version);
-    if (!match) {
-      throw new Error(
-        `Expected an exact stable or alpha version, got ${version}`
-      );
-    }
-    return {
-      core: match.slice(1, 4).map(Number),
-      preview: match[4] === undefined ? undefined : Number(match[4]),
-    };
-  };
-  const a = parse(left);
-  const b = parse(right);
-  for (let index = 0; index < 3; index += 1) {
-    if (a.core[index] !== b.core[index]) {
-      return a.core[index] - b.core[index];
-    }
-  }
-  if (a.preview === undefined || b.preview === undefined) {
-    return a.preview === b.preview ? 0 : a.preview === undefined ? 1 : -1;
-  }
-  return a.preview - b.preview;
-}
 
 export function updateMobileManifest(
   manifestText,
@@ -50,12 +29,10 @@ export function updateMobileManifest(
   if (workspaces.length === 0 || versions.size !== 1) {
     throw new Error("Publishable workspace versions must match");
   }
+  parseReleaseVersion(workspaces[0].version);
   const byName = new Map(
     workspaces.map(({ name, version }) => [name, version])
   );
-  for (const version of versions) {
-    compareVersions(version, version);
-  }
   const updated = [];
   for (const section of sections) {
     for (const [name, current] of Object.entries(manifest[section] ?? {})) {
@@ -69,7 +46,10 @@ export function updateMobileManifest(
       const migratingOverlay =
         workspaceName === "@onekeyfe/react-native-native-overlay" &&
         currentVersion === "workspace:*";
-      if (!migratingOverlay && compareVersions(currentVersion, target) > 0) {
+      if (
+        !migratingOverlay &&
+        compareReleaseVersions(currentVersion, target) > 0
+      ) {
         throw new Error(
           `Refusing to downgrade ${name} from ${currentVersion} to ${target}`
         );
@@ -89,6 +69,19 @@ export function updateMobileManifest(
   };
 }
 
+async function main() {
+  const [appMonorepoArg, releaseVersion] = process.argv.slice(2);
+  if (!appMonorepoArg || !releaseVersion) {
+    throw new Error(
+      "Usage: node scripts/sync-app-monorepo.mjs <app-monorepo-path> <release-version>"
+    );
+  }
+  const workspaces = (await loadReleaseWorkspaces(repoRoot)).map(
+    (workspace) => ({ ...workspace, version: releaseVersion })
+  );
+  await syncAppMonorepo(appMonorepoArg, workspaces);
+}
+
 export async function syncAppMonorepo(appMonorepoArg, workspaces) {
   for (const [relativePath, sections] of appMonorepoManifests) {
     const manifestPath = join(resolve(appMonorepoArg), relativePath);
@@ -103,19 +96,6 @@ export async function syncAppMonorepo(appMonorepoArg, workspaces) {
     }
     console.log(`Updated ${updated.length} dependencies in ${relativePath}`);
   }
-}
-
-async function main() {
-  const [appMonorepoArg, releaseVersion] = process.argv.slice(2);
-  if (!appMonorepoArg || !releaseVersion) {
-    throw new Error(
-      "Usage: node scripts/sync-app-monorepo.mjs <app-monorepo-path> <release-version>"
-    );
-  }
-  const workspaces = (await loadReleaseWorkspaces(repoRoot)).map(
-    (workspace) => ({ ...workspace, version: releaseVersion })
-  );
-  await syncAppMonorepo(appMonorepoArg, workspaces);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

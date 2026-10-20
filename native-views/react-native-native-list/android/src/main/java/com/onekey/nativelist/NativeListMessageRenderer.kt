@@ -32,6 +32,7 @@ internal object NativeListMessageRenderer {
 
   fun resolve(
     context: ThemedReactContext,
+    fonts: NativeListFonts,
     item: NativeListItem,
     theme: JSONObject?,
     sourceScale: Boolean,
@@ -47,7 +48,7 @@ internal object NativeListMessageRenderer {
       parseNativeListColor(theme?.optString(name, fallback) ?: fallback)
     fun text(name: String, size: Float, weight: String, color: Int, height: Int, lines: Int) =
       NativeListResolvedText.resolve(
-        context,
+        context, fonts,
         item.json.optString(name),
         style.optJSONObject(name),
         size,
@@ -88,7 +89,7 @@ internal object NativeListMessageRenderer {
     )
   }
 
-  class Views(private val context: ThemedReactContext) {
+  class Views(private val context: ThemedReactContext, private val fonts: NativeListFonts) {
     val column = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
     val title = NativeListTextView(context)
     val body = NativeListTextView(context)
@@ -128,7 +129,7 @@ internal object NativeListMessageRenderer {
         resolved.verticalPadding,
       )
       resolved.leading?.let { visual ->
-        val host = leading ?: NativeListLeadingVisual(context).also { leading = it }
+        val host = leading ?: NativeListLeadingVisual(context, fonts).also { leading = it }
         host.bind(visual, resolved.imageStyle, item.key, theme, resolved.unread, sourceScale)
         val params =
           LinearLayout.LayoutParams(resolved.imageWidth, resolved.imageHeight).apply {
@@ -206,10 +207,10 @@ internal object NativeListMessageRenderer {
   }
 }
 
-internal class NativeListMessageRowView(context: ThemedReactContext) :
-  NativeListRendererRowView(context) {
+internal class NativeListMessageRowView(context: ThemedReactContext, fonts: NativeListFonts) :
+  NativeListRendererRowView(context, fonts) {
   override val assetFields = listOf("leading", "thumbnail")
-  private val views = NativeListMessageRenderer.Views(context)
+  private val views = NativeListMessageRenderer.Views(context, fonts)
 
   override fun bindContent(
     item: NativeListItem,
@@ -219,7 +220,7 @@ internal class NativeListMessageRowView(context: ThemedReactContext) :
   ) {
     views.bind(
       this,
-      NativeListMessageRenderer.resolve(reactContext, item, theme, sourceScale),
+      NativeListMessageRenderer.resolve(reactContext, fonts, item, theme, sourceScale),
       item,
       theme,
       sourceScale,

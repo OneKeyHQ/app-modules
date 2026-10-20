@@ -12,6 +12,26 @@ final class NativeListAccessoryButton: UIButton {
     }
   }
 
+  // A `.system` button cross-fades its title on every change. Rebinding a row
+  // or section header sets the title again, so a selector header value such as
+  // "$15.60" faded out and back in on each checkbox toggle (OK-64148). Data
+  // binding is not an animation: commit title changes immediately. UIKit
+  // applies a changed title in a later layout pass of the button, so
+  // layoutSubviews below runs without animation as well.
+  override func setTitle(_ title: String?, for state: UIControl.State) {
+    UIView.performWithoutAnimation {
+      super.setTitle(title, for: state)
+      layoutIfNeeded()
+    }
+  }
+
+  override func setAttributedTitle(_ title: NSAttributedString?, for state: UIControl.State) {
+    UIView.performWithoutAnimation {
+      super.setAttributedTitle(title, for: state)
+      layoutIfNeeded()
+    }
+  }
+
   var selectorSummaryLineHeight: CGFloat? {
     didSet {
       invalidateIntrinsicContentSize()
@@ -45,7 +65,9 @@ final class NativeListAccessoryButton: UIButton {
   }
 
   override func layoutSubviews() {
-    super.layoutSubviews()
+    UIView.performWithoutAnimation {
+      super.layoutSubviews()
+    }
     defer {
       if let titleLabel {
         var frame = titleLabel.frame
@@ -96,6 +118,7 @@ final class NativeListAccessoryButton: UIButton {
 // Bounded trailing controls shared by migrated templates. The owning host supplies
 // action epochs; selection-only updates touch only the existing checkbox.
 final class NativeListAccessoryStack: UIStackView {
+  var fonts = NativeListFontFamilies()
   private let accessoryButtons = (0..<2).map { _ in NativeListAccessoryButton(type: .system) }
   private let checkboxButton = UIButton(type: .system)
   private let spinner = UIActivityIndicatorView(style: .medium)
@@ -145,8 +168,10 @@ final class NativeListAccessoryStack: UIStackView {
   func bind(
     _ item: NativeListItem, descriptors: [[String: Any]], theme: [String: Any]?,
     style: [String: Any], defaultSpacing: CGFloat = 2,
-    checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
+    checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
+    fonts: NativeListFontFamilies
   ) {
+    self.fonts = fonts
     reset()
     currentItem = item
     currentTheme = theme
@@ -205,7 +230,7 @@ final class NativeListAccessoryStack: UIStackView {
       button.setImage(nil, for: .normal)
       button.setImage(nil, for: .disabled)
       button.titleLabel?.font = nativeListFont(
-        ofSize: index == 0 ? 16 : 14, weight: index == 0 ? .medium : .regular)
+        ofSize: index == 0 ? 16 : 14, weight: index == 0 ? .medium : .regular, fonts: fonts)
       button.titleLabel?.numberOfLines = 1
       button.titleLabel?.lineBreakMode = .byTruncatingTail
       button.contentHorizontalAlignment = .center
@@ -393,7 +418,7 @@ final class NativeListAccessoryStack: UIStackView {
       NSAttributedString(
         string: primary,
         attributes: [
-          .font: nativeListFont(ofSize: 16, weight: .medium),
+          .font: nativeListFont(ofSize: 16, weight: .medium, fonts: fonts),
           .foregroundColor: accessoryTextColor(
             accessory.string("primaryTone"),
             defaultTone: "primary",
@@ -411,7 +436,7 @@ final class NativeListAccessoryStack: UIStackView {
       NSAttributedString(
         string: secondary,
         attributes: [
-          .font: nativeListFont(ofSize: 14),
+          .font: nativeListFont(ofSize: 14, fonts: fonts),
           .foregroundColor: accessoryTextColor(
             accessory.string("secondaryTone"),
             defaultTone: "secondary",
@@ -437,7 +462,7 @@ final class NativeListAccessoryStack: UIStackView {
     showAccessory(index, "⋮", action: action)
     guard accessoryButtons.indices.contains(index) else { return }
     let button = accessoryButtons[index]
-    button.titleLabel?.font = nativeListFont(ofSize: 20, weight: .medium)
+    button.titleLabel?.font = nativeListFont(ofSize: 20, weight: .medium, fonts: fonts)
     accessorySizeConstraints.append(contentsOf: [
       button.widthAnchor.constraint(equalToConstant: 24),
       button.heightAnchor.constraint(equalToConstant: 24),
@@ -542,7 +567,7 @@ final class NativeListAccessoryStack: UIStackView {
     }
     for segment in segments {
       attributes[.font] = nativeListTabularFont(
-        ofSize: segment.string("style") == "subscript" ? 10 : 16, weight: .medium)
+        ofSize: segment.string("style") == "subscript" ? 10 : 16, weight: .medium, fonts: fonts)
       value.append(NSAttributedString(string: segment.string("text"), attributes: attributes))
     }
     button.setAttributedTitle(value, for: .normal)
@@ -558,14 +583,14 @@ final class NativeListAccessoryStack: UIStackView {
     let accessory = button as? NativeListAccessoryButton
     let baseFont =
       (originalText?.attribute(.font, at: 0, effectiveRange: nil) as? UIFont) ?? button.titleLabel?
-      .font ?? nativeListFont(ofSize: 14)
+      .font ?? nativeListFont(ofSize: 14, fonts: fonts)
     let size = CGFloat(style.double("fontSize", default: Double(baseFont.pointSize)))
     let font: UIFont
     if let weightName = style["fontWeight"] as? String {
       font = nativeListFont(
         ofSize: size,
-        weight: marketFontWeight(weightName, fallback: .regular)
-      )
+        weight: marketFontWeight(weightName, fallback: .regular),
+        fonts: fonts)
     } else {
       font = baseFont.withSize(size)
     }
@@ -637,7 +662,8 @@ final class NativeListAccessoryStack: UIStackView {
         style["fontWeight"] == nil
         ? original.withSize(size)
         : nativeListFont(
-          ofSize: size, weight: marketFontWeight(style.string("fontWeight"), fallback: .regular))
+          ofSize: size, weight: marketFontWeight(style.string("fontWeight"), fallback: .regular),
+          fonts: fonts)
       text.addAttribute(.font, value: font, range: range)
     }
   }

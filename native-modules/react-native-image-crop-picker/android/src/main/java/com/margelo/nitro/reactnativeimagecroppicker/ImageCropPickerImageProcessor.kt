@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.net.Uri
 import android.util.Base64
+import android.webkit.MimeTypeMap
 import androidx.exifinterface.media.ExifInterface
 import java.io.File
 import java.io.FileOutputStream
@@ -22,6 +23,7 @@ internal data class ImageCropPickerConfig(
   val height: Int?,
   val cropping: Boolean,
   val includeBase64: Boolean,
+  val preserveOriginal: Boolean,
   val compressImageQuality: Double?,
   val compressImageMaxWidth: Double?,
   val compressImageMaxHeight: Double?,
@@ -40,6 +42,7 @@ internal data class ImageCropPickerConfig(
       height = options.height?.takeIf { it.isFinite() }?.roundToInt()?.takeIf { it > 0 },
       cropping = forceCropping || options.cropping == true,
       includeBase64 = options.includeBase64 == true,
+      preserveOriginal = options.preserveOriginal == true,
       compressImageQuality = options.compressImageQuality,
       compressImageMaxWidth = options.compressImageMaxWidth,
       compressImageMaxHeight = options.compressImageMaxHeight,
@@ -62,6 +65,54 @@ internal object ImageCropPickerImageProcessor {
   // Matches react-native-image-crop-picker on Android.
   private const val DEFAULT_COMPRESS_QUALITY = 1.0
   private const val TEMPORARY_DIRECTORY_NAME = "react-native-image-crop-picker"
+  const val MAX_ORIGINAL_BYTES = 64L * 1024 * 1024
+
+  fun imageBounds(file: File): BitmapFactory.Options {
+    if (!file.isFile || file.length() <= 0 || file.length() > MAX_ORIGINAL_BYTES) {
+      throw ImageCropPickerException.noImageData()
+    }
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(file.absolutePath, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0 || bounds.outMimeType?.startsWith("image/") != true) {
+      throw ImageCropPickerException.noImageData()
+    }
+    return bounds
+  }
+
+  fun copyOriginal(context: Context, uri: Uri, config: ImageCropPickerConfig, filename: String?): PickedImage {
+    val mime = context.contentResolver.getType(uri)
+    val extension = mime?.let { MimeTypeMap.getSingleton().getExtensionFromMimeType(it) } ?: "img"
+    val file = createTemporaryFile(context, extension)
+    try {
+      openStream(context, uri).use { input ->
+        FileOutputStream(file).use { output ->
+          val buffer = ByteArray(8192)
+          var total = 0L
+          while (true) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            total += count
+            if (total > MAX_ORIGINAL_BYTES) throw ImageCropPickerException.noImageData()
+            output.write(buffer, 0, count)
+          }
+        }
+      }
+      val bounds = imageBounds(file)
+      return PickedImage(
+        path = Uri.fromFile(file).toString(),
+        size = file.length().toDouble(),
+        width = bounds.outWidth.toDouble(),
+        height = bounds.outHeight.toDouble(),
+        mime = bounds.outMimeType,
+        data = if (config.includeBase64) Base64.encodeToString(file.readBytes(), Base64.NO_WRAP) else null,
+        cropRect = null,
+        filename = filename,
+      )
+    } catch (error: Throwable) {
+      file.delete()
+      throw error
+    }
+  }
 
   fun temporaryDirectory(context: Context): File {
     val directory = File(context.cacheDir, TEMPORARY_DIRECTORY_NAME)
@@ -135,7 +186,7 @@ internal object ImageCropPickerImageProcessor {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     openStream(context, uri).use { BitmapFactory.decodeStream(it, null, bounds) }
     if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
-      throw ImageCropPickerException.noImageData("Invalid image selected")
+      throw ImageCropPickerException.noImageData()
     }
 
     var sampleSize = 1
@@ -147,7 +198,7 @@ internal object ImageCropPickerImageProcessor {
       openStream(context, uri).use { BitmapFactory.decodeStream(it, null, options) }
     } catch (error: OutOfMemoryError) {
       throw ImageCropPickerException.lowMemory(error)
-    } ?: throw ImageCropPickerException.noImageData("Invalid image selected")
+    } ?: throw ImageCropPickerException.noImageData()
 
     val orientation = try {
       openStream(context, uri).use {

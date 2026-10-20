@@ -25,11 +25,12 @@ Pod::Spec.new do |s|
   # use it. It replaces the standalone TOCropViewController pod, which must not
   # be installed alongside.
   s.public_header_files = ["ios/TOCropViewController/**/*.h"]
+  s.exclude_files = "ios/tests/**/*"
   # TOCropViewController looks up its strings in a bundle with exactly this name.
   s.resource_bundles = {
     "TOCropViewControllerBundle" => ["ios/TOCropViewController/Resources/**/*.{lproj,xcprivacy}"],
   }
-  s.frameworks = "PhotosUI", "UniformTypeIdentifiers"
+  s.frameworks = "Photos", "PhotosUI", "UniformTypeIdentifiers"
 
   s.dependency 'React-jsi'
   s.dependency 'React-callinvoker'
@@ -39,4 +40,8 @@ Pod::Spec.new do |s|
   add_nitrogen_files(s)
 
   install_modules_dependencies(s)
+
+  s.test_spec "Tests" do |test_spec|
+    test_spec.source_files = "ios/tests/**/*.swift"
+  end
 end

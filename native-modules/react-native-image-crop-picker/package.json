@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-image-crop-picker",
-  "version": "3.0.162-alpha.272",
+  "version": "6.7.0-7",
   "description": "Single photo picker and cropper Nitro module for OneKey, replacing react-native-image-crop-picker",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -53,14 +53,15 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OneKeyHQ/app-modules/react-native-image-crop-picker.git"
+    "url": "git+https://github.com/OneKeyHQ/app-modules.git",
+    "directory": "native-modules/react-native-image-crop-picker"
   },
   "author": "onekeyfe <huanming@onekey.so> (https://github.com/OneKeyHQ/app-modules)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/OneKeyHQ/app-modules/react-native-image-crop-picker/issues"
+    "url": "https://github.com/OneKeyHQ/app-modules/issues"
   },
-  "homepage": "https://github.com/OneKeyHQ/app-modules/react-native-image-crop-picker#readme",
+  "homepage": "https://github.com/OneKeyHQ/app-modules/tree/main/native-modules/react-native-image-crop-picker#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },
@@ -133,7 +134,19 @@
     "modulePathIgnorePatterns": [
       "<rootDir>/example/node_modules",
       "<rootDir>/lib/"
-    ]
+    ],
+    "transform": {
+      "^.+\\.[jt]sx?$": [
+        "babel-jest",
+        {
+          "presets": [
+            "module:@react-native/babel-preset"
+          ],
+          "babelrc": false,
+          "configFile": false
+        }
+      ]
+    }
   },
   "commitlint": {
     "extends": [

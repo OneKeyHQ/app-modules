@@ -1,3 +1,4 @@
+import type { ScrollEdgeEffect } from "./ScrollEdgeEffect";
 import React from "react";
 import { I18nManager, Platform, StyleSheet, View } from "react-native";
 import type * as ReactNative from "react-native";
@@ -86,6 +87,9 @@ export interface CollapsiblePagerViewProps
     | "children"
     | "headerHeight"
     | "stickyHeaderHeight"
+    | "topScrollEdgeEffect"
+    | "topOverlayHeight"
+    | "externalTopOverlayTag"
     | "pageKeys"
     | "retainedPages"
     | "nativeTabBarItems"
@@ -114,6 +118,16 @@ export interface CollapsiblePagerViewProps
   headerHeight: number;
   /** Measured sticky bar height. */
   stickyHeaderHeight: number;
+  /** Fixed content above the collapsible header on iOS 26 and newer. */
+  topOverlay?: React.ReactNode;
+  /** Known overlay height to reserve until its first layout measurement. */
+  topOverlayHeightHint?: number;
+  /** Existing fixed header shared with a parent pager on iOS 26 and newer. */
+  externalTopOverlayTag?: number;
+  /** Selects UIKit's top scroll-edge effect on iOS 26 and newer. */
+  topScrollEdgeEffect?: `${ScrollEdgeEffect}`;
+  /** Effective appearance of the fixed overlay or pinned sticky bar. */
+  topOverlayColorScheme?: "light" | "dark";
   /**
    * Lets the active native list own vertical gestures that begin on pager headers.
    * Defaults to false and has no effect on Web.
@@ -146,6 +160,7 @@ export interface CollapsiblePagerViewProps
 type State = {
   selectedPage: number;
   transientRetainedPages: readonly number[];
+  topOverlayHeight: number | null;
 };
 
 const pageIndex = (value: number) => {
@@ -173,6 +188,7 @@ export class CollapsiblePagerView extends React.PureComponent<
   State
 > {
   state: State = {
+    topOverlayHeight: null,
     selectedPage: clampedPageIndex(
       this.props.initialPage ?? 0,
       React.Children.toArray(this.props.children).length
@@ -205,7 +221,22 @@ export class CollapsiblePagerView extends React.PureComponent<
     this.notifyMountedPagesChanged();
   }
 
-  componentDidUpdate() {
+  componentDidUpdate(previousProps: CollapsiblePagerViewProps) {
+    const previousOverlayEnabled =
+      previousProps.topOverlay != null &&
+      (previousProps.topScrollEdgeEffect === "hard" ||
+        previousProps.topScrollEdgeEffect === "soft");
+    const overlayEnabled =
+      this.props.topOverlay != null &&
+      (this.props.topScrollEdgeEffect === "hard" ||
+        this.props.topScrollEdgeEffect === "soft");
+    if (
+      previousOverlayEnabled &&
+      !overlayEnabled &&
+      this.state.topOverlayHeight !== null
+    ) {
+      this.setState({ topOverlayHeight: null });
+    }
     const pageCount = this.pages().length;
     const selectedPage = clampedPageIndex(this.state.selectedPage, pageCount);
     if (selectedPage !== this.state.selectedPage) {
@@ -248,6 +279,24 @@ export class CollapsiblePagerView extends React.PureComponent<
         );
       }
     }
+  };
+
+  public scrollToPageTop = (options?: Readonly<{ animated?: boolean }>) => {
+    if (this.nativeRef)
+      CollapsiblePagerViewNativeCommands.scrollToTop(
+        this.nativeRef,
+        0,
+        options?.animated ?? true
+      );
+  };
+
+  public scrollToStickyTop = (options?: Readonly<{ animated?: boolean }>) => {
+    if (this.nativeRef)
+      CollapsiblePagerViewNativeCommands.scrollToTop(
+        this.nativeRef,
+        1,
+        options?.animated ?? true
+      );
   };
 
   public setScrollEnabled = (scrollEnabled: boolean) => {
@@ -440,6 +489,11 @@ export class CollapsiblePagerView extends React.PureComponent<
       stickyHeader,
       headerHeight,
       stickyHeaderHeight,
+      topOverlay,
+      topOverlayHeightHint,
+      externalTopOverlayTag,
+      topScrollEdgeEffect,
+      topOverlayColorScheme,
       nativeSmoothHeaderScrollEnabled,
       pageRetentionDistance: _pageRetentionDistance,
       onMountedPagesChanged: _onMountedPagesChanged,
@@ -456,6 +510,17 @@ export class CollapsiblePagerView extends React.PureComponent<
       ...nativeProps
     } = this.props;
     const pages = this.pages();
+    const supportsTopScrollEdge =
+      Platform.OS === "ios" && parseInt(String(Platform.Version), 10) >= 26;
+    const scrollEdgeEnabled =
+      supportsTopScrollEdge &&
+      (topScrollEdgeEffect === "hard" || topScrollEdgeEffect === "soft");
+    const hasTopOverlay = scrollEdgeEnabled && topOverlay != null;
+    const initialTopOverlayHeight =
+      typeof topOverlayHeightHint === "number" &&
+      Number.isFinite(topOverlayHeightHint)
+        ? Math.max(0, Math.ceil(topOverlayHeightHint))
+        : 0;
     const pageKeys = pages.map(pageKey);
     const retained = new Set(this.mountedPages(pages.length));
     const deducedLayoutDirection =
@@ -496,6 +561,20 @@ export class CollapsiblePagerView extends React.PureComponent<
         offscreenPageLimit={Math.max(1, offscreenPageLimit ?? 1)}
         headerHeight={Math.max(0, Math.round(headerHeight))}
         stickyHeaderHeight={Math.max(0, Math.round(stickyHeaderHeight))}
+        topScrollEdgeEffect={scrollEdgeEnabled ? topScrollEdgeEffect : "none"}
+        topOverlayColorScheme={
+          scrollEdgeEnabled ? topOverlayColorScheme : undefined
+        }
+        topOverlayHeight={
+          hasTopOverlay
+            ? this.state.topOverlayHeight ?? initialTopOverlayHeight
+            : 0
+        }
+        externalTopOverlayTag={
+          supportsTopScrollEdge && !hasTopOverlay
+            ? externalTopOverlayTag ?? 0
+            : 0
+        }
         nativeSmoothHeaderScrollEnabled={nativeSmoothHeaderScrollEnabled}
         pageKeys={JSON.stringify(pageKeys)}
         retainedPages={JSON.stringify([...retained])}
@@ -585,6 +664,21 @@ export class CollapsiblePagerView extends React.PureComponent<
         >
           {stickyHeader}
         </View>
+        {hasTopOverlay ? (
+          <View
+            key="top-overlay"
+            collapsable={false}
+            style={[styles.slot, { bottom: undefined }]}
+            onLayout={(event) => {
+              const height = Math.ceil(event.nativeEvent.layout.height);
+              if (this.state.topOverlayHeight !== height) {
+                this.setState({ topOverlayHeight: height });
+              }
+            }}
+          >
+            {topOverlay}
+          </View>
+        ) : null}
         {pages.map((page, index) => (
           <View
             key={pageKeys[index]}

@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-pager-view",
-  "version": "3.0.162-alpha.272",
+  "version": "6.7.0-7",
   "description": "React Native wrapper for Android and iOS ViewPager",
   "source": "./src/index.tsx",
   "main": "./lib/module/index.js",
@@ -9,8 +9,9 @@
   "sideEffects": false,
   "exports": {
     ".": {
-      "source": "./src/index.tsx",
       "types": "./lib/typescript/src/index.d.ts",
+      "react-native": "./lib/module/index.native.js",
+      "source": "./src/index.tsx",
       "browser": "./lib/module/index.web.js",
       "default": "./lib/module/index.js"
     },
@@ -51,11 +52,14 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nicholasxuu/app-modules.git",
+    "url": "git+https://github.com/OneKeyHQ/app-modules.git",
     "directory": "native-views/react-native-pager-view"
   },
   "author": "OneKey",
-  "homepage": "https://github.com/nicholasxuu/app-modules#readme",
+  "bugs": {
+    "url": "https://github.com/OneKeyHQ/app-modules/issues"
+  },
+  "homepage": "https://github.com/OneKeyHQ/app-modules/tree/main/native-views/react-native-pager-view#readme",
   "license": "MIT",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
@@ -69,7 +73,7 @@
     "typescript": "^5.9.2"
   },
   "peerDependencies": {
-    "@onekeyfe/react-native-native-logger": "3.0.162-alpha.272",
+    "@onekeyfe/react-native-native-logger": "6.7.0-7",
     "react": "*",
     "react-native": "*"
   },
@@ -105,5 +109,6 @@
         "RNCNativeScroller": "RNCNativeScrollerComponentView"
       }
     }
-  }
+  },
+  "react-native": "./lib/module/index.native.js"
 }

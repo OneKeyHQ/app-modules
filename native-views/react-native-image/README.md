@@ -6,7 +6,7 @@ cache controls,
 and conservative OneKey TOS URL resizing without depending on Expo Image.
 
 The authoritative lifecycle, cache identity, cross-size memory-preview, safety,
-and platform contract is defined in [docs/SPEC.md](docs/SPEC.md).
+and platform contract is defined in [docs/SPEC.md](https://github.com/OneKeyHQ/app-modules/blob/main/native-views/react-native-image/docs/SPEC.md).
 
 ```tsx
 <OneKeyImage
