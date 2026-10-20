@@ -481,6 +481,80 @@ mod tests {
         (tx.serialize(), review, spend_bytes)
     }
 
+    /// Signing from the BIP-32 key produces the same transaction, byte for
+    /// byte under a fixed RNG, as signing from the spend key did. The txids were
+    /// recorded from the spend-key path before it left the wasm interface.
+    #[test]
+    fn signing_from_the_bip32_key_matches_the_spend_key_path() {
+        use crate::spend::test_support::{plus_group_order, SeededRng};
+        let change = |pair| Change::new(pair, None);
+        for (txid, (bytes, review, spend)) in [
+            (
+                "2d468af49a6d7fe0f591e6813a3b751e379dcd35f341ebf1258202c00a755c57",
+                fixture(vec![]),
+            ),
+            (
+                "47cf01a87459ab9ff041d29ff843bae47f7b4808b6743cf429bd4f0607238a8b",
+                fixture_with_inputs(vec![], change, 3),
+            ),
+            (
+                "c8ff2c3a62fd2552e49748c6fe8d749a50720da8632c7e0cc72fddd3f460d9e1",
+                fixture_with_options(vec![], change, 3, true, false),
+            ),
+            (
+                "e88d2717232572d5419be5ee7482b3986bc1fbf2b03a3f24f5c657b0c2bf6ea2",
+                fixture_with_options(vec![], change, 3, false, true),
+            ),
+            (
+                "c08e858375049f3c51d0290fc2fa7763a38d3ffd4882c678e5f918641dbf86cb",
+                fixture_with_options(vec![], change, 3, true, true),
+            ),
+        ] {
+            let encoded = hex::encode(bytes);
+            let json = review_json(&review);
+            let old = crate::spend::sign_for_host_with_rng(
+                &encoded,
+                &spend,
+                &json,
+                &mut SeededRng::new(42),
+            )
+            .unwrap();
+            assert_eq!(old["txid"], txid);
+            // A canonical key reduces to itself; `key + l` reduces to the key.
+            for bip32 in [spend, plus_group_order(&spend)] {
+                let new = crate::spend::sign_with_bip32_key_and_rng(
+                    &encoded,
+                    &bip32,
+                    &json,
+                    &mut SeededRng::new(42),
+                )
+                .unwrap();
+                assert_eq!(new, old);
+                verify_signed(&encoded, &review, new["rawHex"].as_str().unwrap()).unwrap();
+            }
+            let signed =
+                crate::spend::sign_for_host_with_bip32_key(&encoded, &spend, &json).unwrap();
+            verify_signed(&encoded, &review, signed["rawHex"].as_str().unwrap()).unwrap();
+        }
+    }
+
+    /// Another account's BIP-32 key cannot sign: the change check rejects it.
+    #[test]
+    fn signing_from_another_bip32_key_is_rejected() {
+        let (bytes, review, _) = fixture(vec![]);
+        let e = crate::spend::sign_for_host_with_bip32_key(
+            &hex::encode(bytes),
+            &[2u8; 32],
+            &review_json(&review),
+        )
+        .unwrap_err();
+        assert_eq!(e.code, crate::ErrorCode::InvalidRequest);
+        let e = crate::spend::sign_for_host_with_bip32_key("00", &[2u8; 31], &review_json(&review))
+            .unwrap_err();
+        assert_eq!(e.code, crate::ErrorCode::InvalidKeyMaterial);
+        assert_eq!(e.params["field"], "bip32PrivateKey");
+    }
+
     #[test]
     fn approved_transaction_is_verified_and_signed() {
         let (bytes, review, spend) = fixture(vec![]);

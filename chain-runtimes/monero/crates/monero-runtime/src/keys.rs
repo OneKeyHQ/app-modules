@@ -269,10 +269,28 @@ pub struct DerivedKeys {
 }
 
 /// Spend key scalar for signing; same reduction as [`derive_from_bip32_key`].
-pub fn spend_scalar_from_bip32_key(bip32_private_key: &[u8]) -> Result<[u8; 32]> {
-    let raw = expect_32(bip32_private_key, "bip32PrivateKey")?;
-    let spend = Scalar::from(curve25519_dalek::Scalar::from_bytes_mod_order(raw));
-    Ok(<[u8; 32]>::from(spend))
+///
+/// Stays inside the runtime: signing and key-image import take the BIP-32 key
+/// and call this, so the spend key never crosses the wasm boundary.
+pub fn spend_scalar_from_bip32_key(bip32_private_key: &[u8]) -> Result<Zeroizing<[u8; 32]>> {
+    let raw = secret_32(bip32_private_key, "bip32PrivateKey")?;
+    let spend = Zeroizing::new(Scalar::from(
+        curve25519_dalek::Scalar::from_bytes_mod_order(*raw),
+    ));
+    Ok(Zeroizing::new(<[u8; 32]>::from(*spend)))
+}
+
+/// [`expect_32`] into a buffer that is wiped on drop.
+fn secret_32(bytes: &[u8], field: &str) -> Result<Zeroizing<[u8; 32]>> {
+    if bytes.len() != 32 {
+        return Err(RuntimeError::with(
+            ErrorCode::InvalidKeyMaterial,
+            json!({ "field": field, "byteLen": bytes.len(), "expected": 32 }),
+        ));
+    }
+    let mut out = Zeroizing::new([0u8; 32]);
+    out.copy_from_slice(bytes);
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -326,8 +344,75 @@ mod derive_tests {
         let key = [7u8; 32];
         let derived = derive_from_bip32_key(Network::Mainnet, &key).unwrap();
         let spend = spend_scalar_from_bip32_key(&key).unwrap();
-        let expected = <[u8; 32]>::from(Scalar::hash(spend));
+        let expected = <[u8; 32]>::from(Scalar::hash(*spend));
         assert_eq!(derived.view_private_key, expected);
+    }
+
+    /// Pinned reduction outputs (`sc_reduce32`, little-endian mod l), checked
+    /// against an independent big-integer reference. Signing and key-image
+    /// import must reduce exactly as address derivation does.
+    #[test]
+    fn spend_scalar_reduction_is_pinned() {
+        for (input, expected) in [
+            // V4 vector (`m/44'/128'/0'`)
+            (
+                "8b28f5749ec99464d5a9d6527125aa8778ea017dd9e5cffaa567d2f62f2c8cbc",
+                "5c0d65767c87ca9b9fec3252e06815a277ea017dd9e5cffaa567d2f62f2c8c0c",
+            ),
+            (
+                "0000000000000000000000000000000000000000000000000000000000000000",
+                "0000000000000000000000000000000000000000000000000000000000000000",
+            ),
+            (
+                "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                "1c95988d7431ecd670cf7d73f45befc6feffffffffffffffffffffffffffff0f",
+            ),
+            // l - 1
+            (
+                "ecd3f55c1a631258d69cf7a2def9de1400000000000000000000000000000010",
+                "ecd3f55c1a631258d69cf7a2def9de1400000000000000000000000000000010",
+            ),
+            // l
+            (
+                "edd3f55c1a631258d69cf7a2def9de1400000000000000000000000000000010",
+                "0000000000000000000000000000000000000000000000000000000000000000",
+            ),
+            // l + 1
+            (
+                "eed3f55c1a631258d69cf7a2def9de1400000000000000000000000000000010",
+                "0100000000000000000000000000000000000000000000000000000000000000",
+            ),
+        ] {
+            let scalar = spend_scalar_from_bip32_key(&hex::decode(input).unwrap()).unwrap();
+            assert_eq!(hex::encode(&scalar[..]), expected, "input {input}");
+        }
+    }
+
+    /// Signing and key-image import reduce exactly as the shipped reduction and
+    /// as address derivation: the reduced key's public point is the address's
+    /// spend key.
+    #[test]
+    fn spend_scalar_matches_the_reference_and_the_derived_address_for_random_keys() {
+        use rand_core::RngCore;
+        let mut rng = crate::spend::test_support::SeededRng::new(0x5eed);
+        for _ in 0..1000 {
+            let mut key = [0u8; 32];
+            rng.fill_bytes(&mut key);
+            let scalar = spend_scalar_from_bip32_key(&key).unwrap();
+            assert_eq!(
+                *scalar,
+                crate::spend::test_support::reference_spend_scalar(&key)
+            );
+            let dalek: curve25519_dalek::Scalar =
+                Scalar::read(&mut scalar.as_slice()).unwrap().into();
+            let public = dalek * curve25519_dalek::constants::ED25519_BASEPOINT_POINT;
+            assert_eq!(
+                public.compress().to_bytes(),
+                derive_from_bip32_key(Network::Mainnet, &key)
+                    .unwrap()
+                    .spend_public_key
+            );
+        }
     }
 
     #[test]

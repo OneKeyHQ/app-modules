@@ -2,7 +2,8 @@
 //!
 //! ## The private spend key appears only here
 //!
-//! The host passes it per call; it is zeroized after use, never persisted, and
+//! The host passes the account's BIP-32 key per call and the spend key is
+//! reduced from it here; both are zeroized after use, never persisted, and
 //! never returned across the wasm boundary.
 //!
 //! ## Why key images are imported
@@ -696,6 +697,7 @@ pub fn selection_to_json(selection: &Selection) -> Value {
 
 #[cfg(test)]
 mod tests {
+    use super::test_support::{plus_group_order, reference_spend_scalar};
     use super::*;
     use crate::wallet::testing::db_with_identity;
     use monero_wallet::address::Network;
@@ -797,6 +799,128 @@ mod tests {
             .query_row("SELECT count(*) FROM possible_spends", [], |r| r.get(0))
             .unwrap();
         assert_eq!(left, 0, "key-imaged outputs need no possible spends");
+    }
+
+    /// A serialized `WalletOutput` owned by `spend` with the given offset.
+    fn owned_output_blob(spend: &[u8; 32], offset: u8, txid: [u8; 32]) -> (Vec<u8>, [u8; 32]) {
+        use monero_wallet::ed25519::Commitment;
+        let mut offset_bytes = [0u8; 32];
+        offset_bytes[0] = offset;
+        let offset = Scalar::read(&mut offset_bytes.as_slice()).unwrap();
+        let secret: curve25519_dalek::Scalar =
+            curve25519_dalek::Scalar::from_bytes_mod_order(*spend) + offset.into();
+        let key = Point::from(secret * curve25519_dalek::constants::ED25519_BASEPOINT_POINT);
+        let generator: curve25519_dalek::EdwardsPoint =
+            Point::biased_hash(key.compress().to_bytes()).into();
+        let image = Point::from(secret * generator);
+
+        let mut blob = Vec::new();
+        blob.extend_from_slice(&txid);
+        blob.extend_from_slice(&0u64.to_le_bytes()); // index in transaction
+        blob.extend_from_slice(&7u64.to_le_bytes()); // index on chain
+        key.compress().write(&mut blob).unwrap();
+        offset.write(&mut blob).unwrap();
+        Commitment::new(offset, 1_000).write(&mut blob).unwrap();
+        blob.extend_from_slice(&[0, 0, 0, 0]); // no timelock, subaddress, payment id, data
+        WalletOutput::read(&mut blob.as_slice()).expect("fixture must deserialize");
+        (blob, image.compress().to_bytes())
+    }
+
+    /// Outputs owned by `spend`; the first has a possible spend with its real key image.
+    fn db_with_owned_outputs(spend: &[u8; 32]) -> (Db, i64) {
+        let (db, id) = db_with_identity();
+        for n in 1..=3u8 {
+            let txid = [n; 32];
+            let (blob, image) = owned_output_blob(spend, n, txid);
+            db.conn()
+                .execute(
+                    "INSERT INTO outputs (identity_id, blob, txid, global_index, index_in_tx,
+                                          amount_atomic, height)
+                     VALUES (?1, ?2, ?3, ?4, 0, 1000, ?4)",
+                    params![id, blob, txid.to_vec(), i64::from(n) * 10],
+                )
+                .unwrap();
+            if n == 1 {
+                db.conn()
+                    .execute(
+                        "INSERT INTO possible_spends
+                           (identity_id, out_txid, out_index, key_image, spend_txid, height, timestamp)
+                         VALUES (?1, ?2, 0, ?3, ?4, 40, 1700000000)",
+                        params![id, txid.to_vec(), image.to_vec(), vec![0x51u8; 32]],
+                    )
+                    .unwrap();
+            }
+        }
+        (db, id)
+    }
+
+    type OutputRow = (i64, Option<Vec<u8>>, Option<i64>, Option<Vec<u8>>);
+
+    fn output_rows(db: &Db) -> Vec<OutputRow> {
+        let mut stmt = db
+            .conn()
+            .prepare(
+                "SELECT id, key_image, spent_at_height, spent_in_txid FROM outputs ORDER BY id",
+            )
+            .unwrap();
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap()
+    }
+
+    /// Importing from the BIP-32 key stores exactly what the old spend-key path
+    /// stored, for canonical, reducible and non-canonical BIP-32 keys alike.
+    #[test]
+    fn key_image_import_from_the_bip32_key_matches_the_spend_key_path() {
+        let v4: [u8; 32] =
+            hex::decode("8b28f5749ec99464d5a9d6527125aa8778ea017dd9e5cffaa567d2f62f2c8cbc")
+                .unwrap()
+                .try_into()
+                .unwrap();
+        let mut rng = test_support::SeededRng::new(7);
+        let mut keys = vec![v4, [0xff; 32], [1; 32], plus_group_order(&[5; 32])];
+        for _ in 0..8 {
+            let mut key = [0u8; 32];
+            rng.fill_bytes(&mut key);
+            keys.push(key);
+        }
+        for bip32 in keys {
+            let spend = reference_spend_scalar(&bip32);
+
+            let (mut old_db, old_id) = db_with_owned_outputs(&spend);
+            let old = import_key_images(&mut old_db, old_id, &spend).unwrap();
+            let (mut new_db, new_id) = db_with_owned_outputs(&spend);
+            let new = import_key_images_with_bip32_key(&mut new_db, new_id, &bip32).unwrap();
+
+            assert_eq!((old.imported, old.spends_found), (3, 1));
+            assert_eq!(
+                (new.imported, new.spends_found),
+                (old.imported, old.spends_found)
+            );
+            let rows = output_rows(&new_db);
+            assert_eq!(rows, output_rows(&old_db));
+            assert!(rows.iter().all(|row| row.1.is_some()));
+            assert_eq!(rows[0].2, Some(40), "the real possible spend is confirmed");
+        }
+    }
+
+    /// A different account's key is still refused, not stored as a useless key image.
+    #[test]
+    fn key_image_import_from_another_bip32_key_is_refused() {
+        let (mut db, id) = db_with_owned_outputs(&reference_spend_scalar(&[3; 32]));
+        let e = match import_key_images_with_bip32_key(&mut db, id, &[4; 32]) {
+            Ok(_) => panic!("another key must not import"),
+            Err(e) => e,
+        };
+        assert_eq!(e.params["reason"], "doesNotMatchOutput");
+        assert!(output_rows(&db).iter().all(|row| row.1.is_none()));
+        let e = match import_key_images_with_bip32_key(&mut db, id, &[4; 31]) {
+            Ok(_) => panic!("short key must be refused"),
+            Err(e) => e,
+        };
+        assert_eq!(e.code, ErrorCode::InvalidKeyMaterial);
+        assert_eq!(e.params["field"], "bip32PrivateKey");
     }
 
     // Invalid transaction bytes must fail before signing, even with a review attached.
@@ -1363,10 +1487,59 @@ pub async fn prepare_for_host(
 
 /// Signs a constructed transaction. No network or database access.
 pub fn sign_for_host(signable_hex: &str, spend_private: &[u8], review_json: &str) -> Result<Value> {
+    sign_for_host_with_rng(
+        signable_hex,
+        spend_private,
+        review_json,
+        &mut rand_core::OsRng,
+    )
+}
+
+/// [`sign_for_host`] from the BIP-32 key the account was derived from. The spend
+/// key is reduced here, with the same reduction as address derivation, so it
+/// never crosses the wasm boundary.
+pub fn sign_for_host_with_bip32_key(
+    signable_hex: &str,
+    bip32_private_key: &[u8],
+    review_json: &str,
+) -> Result<Value> {
+    sign_with_bip32_key_and_rng(
+        signable_hex,
+        bip32_private_key,
+        review_json,
+        &mut rand_core::OsRng,
+    )
+}
+
+/// [`import_key_images`] from the BIP-32 key; see [`sign_for_host_with_bip32_key`].
+pub fn import_key_images_with_bip32_key(
+    db: &mut Db,
+    identity_id: i64,
+    bip32_private_key: &[u8],
+) -> Result<KeyImageImport> {
+    let spend = keys::spend_scalar_from_bip32_key(bip32_private_key)?;
+    import_key_images(db, identity_id, spend.as_slice())
+}
+
+pub(crate) fn sign_with_bip32_key_and_rng<R: RngCore + CryptoRng>(
+    signable_hex: &str,
+    bip32_private_key: &[u8],
+    review_json: &str,
+    rng: &mut R,
+) -> Result<Value> {
+    let spend = keys::spend_scalar_from_bip32_key(bip32_private_key)?;
+    sign_for_host_with_rng(signable_hex, spend.as_slice(), review_json, rng)
+}
+
+pub(crate) fn sign_for_host_with_rng<R: RngCore + CryptoRng>(
+    signable_hex: &str,
+    spend_private: &[u8],
+    review_json: &str,
+    rng: &mut R,
+) -> Result<Value> {
     let request = crate::review::parse_request(review_json)?;
     let signable = crate::review::verify(signable_hex, &request, Some(spend_private))?;
-    let mut rng = rand_core::OsRng;
-    let (raw, txid) = sign_prepared(signable, &mut rng, spend_private)?;
+    let (raw, txid) = sign_prepared(signable, rng, spend_private)?;
     Ok(json!({
         "txid": hex::encode(txid),
         "rawHex": hex::encode(&raw),
@@ -1722,4 +1895,72 @@ mod double_spend_tests {
         assert!(is_double_spend(&spent));
         assert!(!is_double_spend(&other));
     }
+}
+
+/// Shared test fixtures for comparing the BIP-32-key paths with the old ones.
+#[cfg(test)]
+pub(crate) mod test_support {
+    use monero_wallet::ed25519::Scalar;
+    use rand_core::{CryptoRng, RngCore};
+
+    /// The scalar reduction as shipped before signing took the BIP-32 key,
+    /// frozen here as the reference for the old host-side path.
+    pub fn reference_spend_scalar(bip32: &[u8; 32]) -> [u8; 32] {
+        <[u8; 32]>::from(Scalar::from(
+            curve25519_dalek::Scalar::from_bytes_mod_order(*bip32),
+        ))
+    }
+
+    /// `bytes + l` (little-endian), a non-canonical encoding of the same scalar.
+    pub fn plus_group_order(bytes: &[u8; 32]) -> [u8; 32] {
+        let l = hex::decode("edd3f55c1a631258d69cf7a2def9de1400000000000000000000000000000010")
+            .unwrap();
+        let mut out = [0u8; 32];
+        let mut carry = 0u16;
+        for i in 0..32 {
+            let sum = u16::from(bytes[i]) + u16::from(l[i]) + carry;
+            out[i] = sum as u8;
+            carry = sum >> 8;
+        }
+        assert_eq!(carry, 0, "test key too large to add l");
+        out
+    }
+
+    /// Deterministic RNG so tests can compare signatures byte for byte.
+    /// SplitMix64. Not secure; tests only.
+    pub struct SeededRng(u64);
+
+    impl SeededRng {
+        pub fn new(seed: u64) -> Self {
+            Self(seed)
+        }
+    }
+
+    impl RngCore for SeededRng {
+        fn next_u32(&mut self) -> u32 {
+            self.next_u64() as u32
+        }
+
+        fn next_u64(&mut self) -> u64 {
+            self.0 = self.0.wrapping_add(0x9e37_79b9_7f4a_7c15);
+            let mut z = self.0;
+            z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+            z ^ (z >> 31)
+        }
+
+        fn fill_bytes(&mut self, dest: &mut [u8]) {
+            for chunk in dest.chunks_mut(8) {
+                let bytes = self.next_u64().to_le_bytes();
+                chunk.copy_from_slice(&bytes[..chunk.len()]);
+            }
+        }
+
+        fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand_core::Error> {
+            self.fill_bytes(dest);
+            Ok(())
+        }
+    }
+
+    impl CryptoRng for SeededRng {}
 }

@@ -60,6 +60,14 @@ const diag = JSON.parse(rt.diagDatabase());
 check('identity stored', diag.counts.identities, 1);
 check('subaddress stored', diag.counts.subaddresses, 1);
 
+// Spend keys never cross the boundary: signing and key-image import take the
+// BIP-32 key and reduce it inside.
+for (const name of ['spendScalar', 'signTransaction', 'importKeyImages']) {
+  check(`${name} is not exported`, typeof rt[name], 'undefined');
+}
+const imported = JSON.parse(rt.importKeyImagesWithBip32Key(id, key));
+check('key-image import from the BIP-32 key on an empty wallet', imported.imported, 0);
+
 // Signing is pure computation. Bad input must be rejected, never passed on to broadcast.
 const review = JSON.stringify({
   network: 'mainnet',
@@ -76,7 +84,7 @@ for (const [label, hex, req, field] of [
   ['a malformed review', '00010203', '{}', 'reviewRequest'],
 ]) {
   try {
-    rt.signTransaction(hex, '00'.repeat(32), req);
+    rt.signTransactionWithBip32Key(hex, key, req);
     check(`signing rejects ${label}`, 'succeeded', 'failed');
   } catch (e) {
     const err = JSON.parse(e.message ?? e);
