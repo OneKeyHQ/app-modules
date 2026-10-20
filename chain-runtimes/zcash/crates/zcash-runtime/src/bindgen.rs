@@ -590,8 +590,9 @@ async fn barrier_after_irreversible(params: serde_json::Value) -> Result<(), cra
 /// Returns `{ txid, broadcast: "accepted" | "rejected" | "unknown", error? }`.
 /// - `rejected`: the node definitively judged it consensus-invalid or expired; it can never be
 ///   mined. The transaction stays stored and its notes return only at expiry height.
-/// - `unknown`: delivery to the node is uncertain. The transaction stays pending and is
-///   rebroadcast on sync; the host must not treat it as a failed send.
+/// - `unknown`: delivery to the node is uncertain. The transaction stays pending until mined
+///   or expired and the host does not resubmit it; the host must not treat it as a failed
+///   send.
 #[wasm_bindgen(js_name = pcztSubmit)]
 pub async fn pczt_submit(account_uuid: String, pczt_bytes: Vec<u8>) -> Result<String, JsValue> {
     let outcome = runtime::with_db_and_client(move |mut db, mut client| async move {
@@ -619,8 +620,8 @@ pub async fn pczt_submit(account_uuid: String, pczt_bytes: Vec<u8>) -> Result<St
 }
 
 /// Stored outgoing transactions of this account that are unmined, unexpired, and not
-/// rejected by the node. The host refuses to build another payment while any exist and
-/// rebroadcasts them on sync.
+/// rejected by the node. Each stays pending until mined or expired; the host does not
+/// resubmit them on sync.
 #[wasm_bindgen(js_name = pendingBroadcastTxids)]
 pub fn pending_broadcast_txids(account_uuid: String) -> Result<String, JsValue> {
     let txids = runtime::with_read_conn(|conn| tx_state::pending_txids(conn, &account_uuid))?;
@@ -633,12 +634,13 @@ pub fn pending_broadcast_txids(account_uuid: String) -> Result<String, JsValue> 
     })?)
 }
 
-/// Rebroadcasts a stored pending transaction (called during sync). Irreversible.
+/// Resends a stored pending transaction. Irreversible. For an explicit user request only:
+/// sync does not call it, and an unmined send otherwise stays pending until mined or expired.
 ///
 /// Throws `BROADCAST_REJECTED` when the node definitively rejects it (do not retry);
 /// `BROADCAST_OUTCOME_UNKNOWN` when the node errored without proving it can never be mined;
 /// `NETWORK_ERROR` on transport failure. In the latter two cases the transaction stays pending
-/// and is rebroadcast on the next sync.
+/// until mined or expired.
 #[wasm_bindgen(js_name = broadcastTransaction)]
 pub async fn broadcast_transaction(txid: String) -> Result<(), JsValue> {
     let result = runtime::with_db_and_client(move |mut db, mut client| async move {

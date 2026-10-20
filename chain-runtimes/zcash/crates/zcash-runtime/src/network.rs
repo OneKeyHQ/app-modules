@@ -244,7 +244,7 @@ fn broadcast_outcome_ambiguous(message: &str) -> bool {
 /// actually propagated, both would be mined. So this is an allowlist:
 /// consensus-invalid (proof, signature, value, branch) or expired. Transient or
 /// policy replies (busy, mempool full, lagging, non-standard) are an unknown
-/// outcome, rebroadcast during sync until mined or expired.
+/// outcome: the tx stays pending until mined or expired.
 fn broadcast_definitely_invalid(message: &str) -> bool {
     if broadcast_outcome_ambiguous(message) {
         return false;
@@ -401,7 +401,7 @@ mod tests {
     }
 
     // Rejection is an allowlist: any uncertain reply is an unknown outcome and
-    // the tx stays pending for rebroadcast.
+    // the tx stays pending until mined or expired.
     #[test]
     fn only_consensus_invalid_or_expired_replies_count_as_a_rejection() {
         for message in [
