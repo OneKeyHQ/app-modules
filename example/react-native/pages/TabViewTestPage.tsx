@@ -23,6 +23,7 @@ function ColorfulScene({ title, colorIndex }: { title: string; colorIndex: numbe
         <Text style={sceneStyles.title}>{title}</Text>
         <Text style={sceneStyles.body}>Scroll down to see colors behind the tab bar</Text>
         <TabBarHeightDisplay />
+        <PressStatsDisplay />
       </View>
       {/* Colorful blocks that extend to the bottom, behind the translucent tab bar */}
       {colors.map((color, i) => (
@@ -59,6 +60,34 @@ function SettingsScene() {
 
 function ProfileScene() {
   return <ColorfulScene title="Profile Tab" colorIndex={3} />;
+}
+
+// Press stats shown in every scene so double press can be checked without logs.
+type PressStats = { doublePresses: number; lastDoublePressTab: number | null; lastGapMs: number | null };
+let pressStats: PressStats = { doublePresses: 0, lastDoublePressTab: null, lastGapMs: null };
+let lastPressTime = 0;
+const pressListeners = new Set<() => void>();
+function updatePressStats(partial: Partial<PressStats>) {
+  pressStats = { ...pressStats, ...partial };
+  pressListeners.forEach(l => l());
+}
+function subscribePressStats(listener: () => void) {
+  pressListeners.add(listener);
+  return () => { pressListeners.delete(listener); };
+}
+function recordTabPress() {
+  const now = Date.now();
+  updatePressStats({ lastGapMs: lastPressTime ? now - lastPressTime : null });
+  lastPressTime = now;
+}
+
+function PressStatsDisplay() {
+  const stats = useSyncExternalStore(subscribePressStats, () => pressStats);
+  return (
+    <Text style={sceneStyles.info} testID="tab-press-stats">
+      Double presses: {stats.doublePresses} (last tab: {stats.lastDoublePressTab ?? '-'}) · last press gap: {stats.lastGapMs ?? '-'} ms
+    </Text>
+  );
 }
 
 function TabBarHeightDisplay() {
@@ -163,9 +192,16 @@ export function TabViewTestPage() {
       <TabView
         navigationState={navigationState}
         renderScene={renderScene}
-        onIndexChange={setIndex}
+        onIndexChange={(nextIndex) => {
+          recordTabPress();
+          setIndex(nextIndex);
+        }}
         onTabDoublePress={(tabIndex) => {
           console.log('Double pressed tab:', tabIndex);
+          updatePressStats({
+            doublePresses: pressStats.doublePresses + 1,
+            lastDoublePressTab: tabIndex,
+          });
         }}
         labeled={labeled}
         androidTabBarStyle={androidFloating ? 'floating' : 'default'}
