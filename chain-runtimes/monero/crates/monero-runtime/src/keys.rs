@@ -12,7 +12,7 @@ use monero_wallet::{
     ViewPair,
 };
 use serde_json::json;
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::error::{ErrorCode, Result, RuntimeError};
 
@@ -235,19 +235,30 @@ mod tests {
 /// Returns view material and the primary address. **The spend key is not
 /// returned**: the host already holds the BIP-32 key it passed in.
 pub fn derive_from_bip32_key(network: Network, bip32_private_key: &[u8]) -> Result<DerivedKeys> {
+    let derived = derive_keys_in_frame(network, bip32_private_key);
+    scrub_stack();
+    derived
+}
+
+// Separate frame so `scrub_stack` can overwrite it, including the by-value
+// key copies passed to the reductions.
+#[inline(never)]
+fn derive_keys_in_frame(network: Network, bip32_private_key: &[u8]) -> Result<DerivedKeys> {
     use monero_wallet::ed25519::Point;
 
-    let raw = expect_32(bip32_private_key, "bip32PrivateKey")?;
+    let raw = secret_32(bip32_private_key, "bip32PrivateKey")?;
 
     // sc_reduce32: reduce 32 bytes into the scalar field.
-    let spend = Scalar::from(curve25519_dalek::Scalar::from_bytes_mod_order(raw));
+    let spend = Zeroizing::new(Scalar::from(
+        curve25519_dalek::Scalar::from_bytes_mod_order(*raw),
+    ));
     // hash_to_scalar: keccak256 then reduce; upstream `Scalar::hash`.
-    let view = Scalar::hash(<[u8; 32]>::from(spend));
+    let view = Zeroizing::new(Scalar::hash(<[u8; 32]>::from(*spend)));
 
     let spend_public =
-        Point::from(spend.into() * curve25519_dalek::constants::ED25519_BASEPOINT_POINT);
+        Point::from((*spend).into() * curve25519_dalek::constants::ED25519_BASEPOINT_POINT);
 
-    let pair = ViewPair::new(spend_public, Zeroizing::new(view)).map_err(|e| {
+    let pair = ViewPair::new(spend_public, Zeroizing::new(*view)).map_err(|e| {
         RuntimeError::with(
             ErrorCode::InvalidKeyMaterial,
             json!({ "field": "bip32PrivateKey" }),
@@ -257,7 +268,7 @@ pub fn derive_from_bip32_key(network: Network, bip32_private_key: &[u8]) -> Resu
 
     Ok(DerivedKeys {
         spend_public_key: spend_public.compress().to_bytes(),
-        view_private_key: <[u8; 32]>::from(view),
+        view_private_key: <[u8; 32]>::from(*view),
         primary_address: primary_address(&pair, network),
     })
 }
@@ -273,11 +284,22 @@ pub struct DerivedKeys {
 /// Stays inside the runtime: signing and key-image import take the BIP-32 key
 /// and call this, so the spend key never crosses the wasm boundary.
 pub fn spend_scalar_from_bip32_key(bip32_private_key: &[u8]) -> Result<Zeroizing<[u8; 32]>> {
+    let spend = reduce_spend_key_in_frame(bip32_private_key);
+    scrub_stack();
+    spend
+}
+
+#[inline(never)]
+fn reduce_spend_key_in_frame(bip32_private_key: &[u8]) -> Result<Zeroizing<[u8; 32]>> {
     let raw = secret_32(bip32_private_key, "bip32PrivateKey")?;
     let spend = Zeroizing::new(Scalar::from(
         curve25519_dalek::Scalar::from_bytes_mod_order(*raw),
     ));
-    Ok(Zeroizing::new(<[u8; 32]>::from(*spend)))
+    let mut out = Zeroizing::new([0u8; 32]);
+    spend
+        .write(&mut out.as_mut_slice())
+        .expect("a scalar is 32 bytes");
+    Ok(out)
 }
 
 /// [`expect_32`] into a buffer that is wiped on drop.
@@ -291,6 +313,21 @@ fn secret_32(bytes: &[u8], field: &str) -> Result<Zeroizing<[u8; 32]>> {
     let mut out = Zeroizing::new([0u8; 32]);
     out.copy_from_slice(bytes);
     Ok(out)
+}
+
+/// Stack overwritten by [`scrub_stack`]; more than the key derivation, key-image
+/// and signing call chains use below their entry frames.
+const STACK_SCRUB_BYTES: usize = 64 * 1024;
+
+/// Overwrites the stack just below the caller's frame, where the functions it
+/// just returned from kept their secret temporaries (by-value key copies,
+/// reduction intermediates) that `Zeroizing` cannot reach. Best effort: frames
+/// deeper than [`STACK_SCRUB_BYTES`] are not covered.
+#[inline(never)]
+pub(crate) fn scrub_stack() {
+    let mut area = [0u8; STACK_SCRUB_BYTES];
+    area.zeroize();
+    core::hint::black_box(&area);
 }
 
 #[cfg(test)]
@@ -412,6 +449,47 @@ mod derive_tests {
                     .unwrap()
                     .spend_public_key
             );
+        }
+    }
+
+    /// The derivation as shipped before its secrets were wiped, frozen as the
+    /// reference: wiping must not change a single derived byte.
+    fn reference_derive(raw: [u8; 32]) -> ([u8; 32], [u8; 32], String) {
+        use monero_wallet::ed25519::Point;
+        let spend = Scalar::from(curve25519_dalek::Scalar::from_bytes_mod_order(raw));
+        let view = Scalar::hash(<[u8; 32]>::from(spend));
+        let spend_public =
+            Point::from(spend.into() * curve25519_dalek::constants::ED25519_BASEPOINT_POINT);
+        let pair = ViewPair::new(spend_public, Zeroizing::new(view)).unwrap();
+        (
+            spend_public.compress().to_bytes(),
+            <[u8; 32]>::from(view),
+            primary_address(&pair, Network::Mainnet),
+        )
+    }
+
+    #[test]
+    fn derivation_matches_the_reference_for_random_and_edge_keys() {
+        use rand_core::RngCore;
+        let mut rng = crate::spend::test_support::SeededRng::new(0xd3e1);
+        let mut inputs = vec![[0xffu8; 32], [1u8; 32]];
+        inputs.push(
+            hex::decode("8b28f5749ec99464d5a9d6527125aa8778ea017dd9e5cffaa567d2f62f2c8cbc")
+                .unwrap()
+                .try_into()
+                .unwrap(),
+        );
+        for _ in 0..300 {
+            let mut key = [0u8; 32];
+            rng.fill_bytes(&mut key);
+            inputs.push(key);
+        }
+        for key in inputs {
+            let derived = derive_from_bip32_key(Network::Mainnet, &key).unwrap();
+            let (spend_public, view, address) = reference_derive(key);
+            assert_eq!(derived.spend_public_key, spend_public);
+            assert_eq!(derived.view_private_key, view);
+            assert_eq!(derived.primary_address, address);
         }
     }
 

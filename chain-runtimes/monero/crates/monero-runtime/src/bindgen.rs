@@ -106,7 +106,7 @@ pub fn add_account(
 ) -> std::result::Result<String, JsValue> {
     let view_private_key_hex = Zeroizing::new(view_private_key_hex);
     let spend = decode_hex(spend_public_key_hex, "spendPublicKeyHex")?;
-    let view = Zeroizing::new(decode_hex(&view_private_key_hex, "viewPrivateKeyHex")?);
+    let view = decode_secret_hex(&view_private_key_hex, "viewPrivateKeyHex")?;
     let result = runtime::with_db(|db| {
         let identity = db.add_identity(uuid, &spend, &view, birthday_height)?;
         Ok(serde_json::json!({
@@ -246,7 +246,8 @@ pub fn import_key_images_with_bip32_key(
     account_id: i64,
     bip32_private_key_hex: String,
 ) -> std::result::Result<String, JsValue> {
-    let raw = decode_secret_hex(bip32_private_key_hex, "bip32PrivateKeyHex")?;
+    let bip32_private_key_hex = Zeroizing::new(bip32_private_key_hex);
+    let raw = decode_secret_hex(&bip32_private_key_hex, "bip32PrivateKeyHex")?;
     let result =
         runtime::with_db(|db| spend::import_key_images_with_bip32_key(db, account_id, &raw))?;
     json(serde_json::json!({
@@ -270,7 +271,7 @@ pub fn derive_account(
 ) -> std::result::Result<String, JsValue> {
     let bip32_private_key_hex = Zeroizing::new(bip32_private_key_hex);
     let net = keys::parse_network(network)?;
-    let raw = Zeroizing::new(decode_hex(&bip32_private_key_hex, "bip32PrivateKeyHex")?);
+    let raw = decode_secret_hex(&bip32_private_key_hex, "bip32PrivateKeyHex")?;
     let derived = keys::derive_from_bip32_key(net, &raw)?;
     json(serde_json::json!({
         "primaryAddress": derived.primary_address,
@@ -291,7 +292,7 @@ pub fn derive_subaddress(
     let view_private_key_hex = Zeroizing::new(view_private_key_hex);
     let net = keys::parse_network(network)?;
     let spend = decode_hex(spend_public_key_hex, "spendPublicKeyHex")?;
-    let view = Zeroizing::new(decode_hex(&view_private_key_hex, "viewPrivateKeyHex")?);
+    let view = decode_secret_hex(&view_private_key_hex, "viewPrivateKeyHex")?;
     let pair = keys::view_pair_from_bytes(&spend, &view)?;
     let address = keys::subaddress(&pair, net, major, minor)?;
     json(serde_json::json!({ "address": address, "major": major, "minor": minor }))
@@ -368,11 +369,17 @@ fn decode_hex(value: &str, field: &str) -> Result<Vec<u8>> {
     })
 }
 
-/// Takes ownership of a secret hex parameter so both it and the decoded bytes
-/// are wiped, including on errors.
-fn decode_secret_hex(value: String, field: &str) -> Result<Zeroizing<Vec<u8>>> {
-    let value = Zeroizing::new(value);
-    Ok(Zeroizing::new(decode_hex(&value, field)?))
+/// [`decode_hex`] into a buffer that is wiped on drop, including the bytes
+/// already decoded when the input turns out to be malformed.
+fn decode_secret_hex(value: &str, field: &str) -> Result<Zeroizing<Vec<u8>>> {
+    let mut out = Zeroizing::new(vec![0u8; value.len() / 2]);
+    hex::decode_to_slice(value, out.as_mut_slice()).map_err(|_| {
+        RuntimeError::with(
+            ErrorCode::InvalidKeyMaterial,
+            serde_json::json!({ "field": field, "reason": "notHex" }),
+        )
+    })?;
+    Ok(out)
 }
 
 // ── Spend path ─────────────────────────────────────────────────────────────
@@ -451,7 +458,8 @@ pub fn sign_transaction_with_bip32_key(
     bip32_private_key_hex: String,
     review_json: &str,
 ) -> std::result::Result<String, JsValue> {
-    let raw = decode_secret_hex(bip32_private_key_hex, "bip32PrivateKeyHex")?;
+    let bip32_private_key_hex = Zeroizing::new(bip32_private_key_hex);
+    let raw = decode_secret_hex(&bip32_private_key_hex, "bip32PrivateKeyHex")?;
     json(spend::sign_for_host_with_bip32_key(
         signable_hex,
         &raw,

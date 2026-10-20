@@ -78,6 +78,23 @@ const review = JSON.stringify({
   changeAtomic: '0',
   isMaxSend: false,
 });
+// Malformed secret hex is refused as notHex, never decoded partially.
+for (const [label, call] of [
+  ['deriveAccount', (bad) => rt.deriveAccount('mainnet', bad)],
+  ['signTransactionWithBip32Key', (bad) => rt.signTransactionWithBip32Key('00', bad, review)],
+  ['importKeyImagesWithBip32Key', (bad) => rt.importKeyImagesWithBip32Key(id, bad)],
+]) {
+  for (const bad of [`${key.slice(0, 62)}zz`, key.slice(1)]) {
+    try {
+      call(bad);
+      check(`${label} rejects malformed key hex`, 'succeeded', 'failed');
+    } catch (e) {
+      const err = JSON.parse(e.message ?? e);
+      check(`${label} rejects malformed key hex`, err.params.reason, 'notHex');
+    }
+  }
+}
+
 for (const [label, hex, req, field] of [
   ['non-hex input', 'zz', review, 'signableHex'],
   ['an unsignable transaction', '00010203', review, 'signableHex'],
