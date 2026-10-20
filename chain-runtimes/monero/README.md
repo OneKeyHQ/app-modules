@@ -35,9 +35,9 @@ releases to `latest`. Branches other than `main` can publish alpha versions only
 ## Host contract
 
 1. **Import key images on unlock.** A view-only wallet cannot detect spends, so the
-   balance stays too high until `importKeyImages` is called. It covers only blocks
-   scanned afterwards; earlier spends need a rewind and rescan. `balance` reports the
-   unverified part as `unverifiableAtomic`.
+   balance stays too high until `importKeyImagesWithBip32Key` is called. It covers
+   only blocks scanned afterwards; earlier spends need a rewind and rescan. `balance`
+   reports the unverified part as `unverifiableAtomic`.
 2. **The node must be on the wallet's network.** It is identified by its genesis
    block; a mismatch fails with `NODE_NETWORK_MISMATCH`. `chainTip` works without an
    open wallet and returns `network`; check it before picking a birthday.
@@ -68,12 +68,12 @@ openWallet(dbName, network) / closeWallet() / deleteWallet(dbName)
 setNodeUrl(url) / setRequestHandler(handler)    no default node
 chainTip()                                      { height, network }
 
-deriveAccount(network, bip32PrivateKeyHex) / spendScalar(bip32PrivateKeyHex)
+deriveAccount(network, bip32PrivateKeyHex)
 deriveSubaddress(network, spendPub, viewPriv, major, minor)
 validateAddress(network, address)
 addAccount(uuid, spendPub, viewPriv, birthday) / listAccounts() / removeAccount(uuid)
 registerSubaddress(accountId, major, minor, label?)
-importKeyImages(accountId, spendPrivateKeyHex)
+importKeyImagesWithBip32Key(accountId, bip32PrivateKeyHex)
 
 updateChainTip(accountId, tip) / syncStep(accountId, maxBlocks) / syncPeek(accountId)
 rewindTo(accountId, height, tip)                destructive
@@ -83,7 +83,7 @@ transactionDetails(accountId, txid)
 prepareTransaction(accountId, recipientsJson, maxSend, chainTip, priority)
 verifyTransaction(signableHex, reviewJson)
 verifySignedTransaction(signableHex, reviewJson, rawHex)
-signTransaction(signableHex, spendPrivateKeyHex, reviewJson)
+signTransactionWithBip32Key(signableHex, bip32PrivateKeyHex, reviewJson)
 broadcastTransaction(accountId, rawHex, chainTip, outgoingAtomic?, changeAtomic?, signableHex, reviewJson)
 diagDatabase()
 ```
@@ -91,10 +91,10 @@ diagDatabase()
 ### Sending
 
 ```
-prepareTransaction      select inputs, build; no spend key
-verifyTransaction       check recipient, amount, fee and change against the review
-signTransaction         verify again, then sign; no network, no DB
-broadcastTransaction    record, then broadcast → { txid, broadcast: accepted | unknown }
+prepareTransaction           select inputs, build; no spend key
+verifyTransaction            check recipient, amount, fee and change against the review
+signTransactionWithBip32Key  verify again, then sign; no network, no DB
+broadcastTransaction         record, then broadcast → { txid, broadcast: accepted | unknown }
 ```
 
 - `prepareTransaction` takes exactly one recipient.

@@ -6,8 +6,11 @@
 //!   JSON too (`{ code, params, detail }`), so the host needs no separate Error path.
 //! - Amounts are always strings: piconero values exceed JS `Number.MAX_SAFE_INTEGER`,
 //!   and numbers would silently lose precision.
-//! - Key material goes in, never out: seeds and spend keys may be passed in but are
-//!   never returned.
+//! - Key material goes in, never out: the BIP-32 key and the view key may be
+//!   passed in but are never returned. The spend key is reduced from the BIP-32
+//!   key inside each export that needs it, so it never crosses this boundary.
+//! - Secret parameters are owned `String`s wrapped in `Zeroizing`, wiping the
+//!   bindgen allocation itself; a `&str` would leave the input in freed memory.
 //!
 //! ## No scheduling here
 //!
@@ -92,17 +95,18 @@ pub async fn chain_tip() -> std::result::Result<String, JsValue> {
 
 /// Register an identity (view key pair).
 ///
-/// `spendPublicKeyHex` and `viewPrivateKeyHex` are 32-byte hex. The spend private
-/// key is not taken here; it is passed only for signing (see `signTransaction`).
+/// `spendPublicKeyHex` and `viewPrivateKeyHex` are 32-byte hex. No spend secret
+/// is taken here; see `signTransactionWithBip32Key`.
 #[wasm_bindgen(js_name = addAccount)]
 pub fn add_account(
     uuid: &str,
     spend_public_key_hex: &str,
-    view_private_key_hex: &str,
+    view_private_key_hex: String,
     birthday_height: u64,
 ) -> std::result::Result<String, JsValue> {
+    let view_private_key_hex = Zeroizing::new(view_private_key_hex);
     let spend = decode_hex(spend_public_key_hex, "spendPublicKeyHex")?;
-    let view = Zeroizing::new(decode_hex(view_private_key_hex, "viewPrivateKeyHex")?);
+    let view = Zeroizing::new(decode_hex(&view_private_key_hex, "viewPrivateKeyHex")?);
     let result = runtime::with_db(|db| {
         let identity = db.add_identity(uuid, &spend, &view, birthday_height)?;
         Ok(serde_json::json!({
@@ -234,13 +238,17 @@ pub fn transaction_details(
 /// Call as early as possible after unlock. Until then the balance is too high: a
 /// view-only wallet cannot detect spends, so spent outputs still look unspent. This
 /// only affects blocks scanned afterwards; earlier spends need a rewind and rescan.
-#[wasm_bindgen(js_name = importKeyImages)]
-pub fn import_key_images(
+///
+/// Takes the account's BIP-32 key (as `deriveAccount`); the spend key is reduced
+/// here and wiped after use.
+#[wasm_bindgen(js_name = importKeyImagesWithBip32Key)]
+pub fn import_key_images_with_bip32_key(
     account_id: i64,
-    spend_private_key_hex: &str,
+    bip32_private_key_hex: String,
 ) -> std::result::Result<String, JsValue> {
-    let spend = Zeroizing::new(decode_hex(spend_private_key_hex, "spendPrivateKeyHex")?);
-    let result = runtime::with_db(|db| spend::import_key_images(db, account_id, &spend))?;
+    let raw = decode_secret_hex(bip32_private_key_hex, "bip32PrivateKeyHex")?;
+    let result =
+        runtime::with_db(|db| spend::import_key_images_with_bip32_key(db, account_id, &raw))?;
     json(serde_json::json!({
         "imported": result.imported,
         "spendsFound": result.spends_found,
@@ -254,14 +262,15 @@ pub fn import_key_images(
 /// Matches OneKey V4 (`spend = sc_reduce32(key)`, `view = keccak(spend)`). Changing
 /// it would show existing users an empty wallet after importing the same mnemonic.
 ///
-/// Does not return the spend private key; the caller already has it.
+/// Does not return the spend private key.
 #[wasm_bindgen(js_name = deriveAccount)]
 pub fn derive_account(
     network: &str,
-    bip32_private_key_hex: &str,
+    bip32_private_key_hex: String,
 ) -> std::result::Result<String, JsValue> {
+    let bip32_private_key_hex = Zeroizing::new(bip32_private_key_hex);
     let net = keys::parse_network(network)?;
-    let raw = Zeroizing::new(decode_hex(bip32_private_key_hex, "bip32PrivateKeyHex")?);
+    let raw = Zeroizing::new(decode_hex(&bip32_private_key_hex, "bip32PrivateKeyHex")?);
     let derived = keys::derive_from_bip32_key(net, &raw)?;
     json(serde_json::json!({
         "primaryAddress": derived.primary_address,
@@ -270,26 +279,19 @@ pub fn derive_account(
     }))
 }
 
-/// Spend scalar for signing, from a BIP-32 private key. Same reduction as `deriveAccount`.
-#[wasm_bindgen(js_name = spendScalar)]
-pub fn spend_scalar(bip32_private_key_hex: &str) -> std::result::Result<String, JsValue> {
-    let raw = Zeroizing::new(decode_hex(bip32_private_key_hex, "bip32PrivateKeyHex")?);
-    let scalar = Zeroizing::new(keys::spend_scalar_from_bip32_key(&raw)?);
-    Ok(hex::encode(*scalar))
-}
-
 /// Derive a subaddress. Pure derivation; no DB.
 #[wasm_bindgen(js_name = deriveSubaddress)]
 pub fn derive_subaddress(
     network: &str,
     spend_public_key_hex: &str,
-    view_private_key_hex: &str,
+    view_private_key_hex: String,
     major: u32,
     minor: u32,
 ) -> std::result::Result<String, JsValue> {
+    let view_private_key_hex = Zeroizing::new(view_private_key_hex);
     let net = keys::parse_network(network)?;
     let spend = decode_hex(spend_public_key_hex, "spendPublicKeyHex")?;
-    let view = Zeroizing::new(decode_hex(view_private_key_hex, "viewPrivateKeyHex")?);
+    let view = Zeroizing::new(decode_hex(&view_private_key_hex, "viewPrivateKeyHex")?);
     let pair = keys::view_pair_from_bytes(&spend, &view)?;
     let address = keys::subaddress(&pair, net, major, minor)?;
     json(serde_json::json!({ "address": address, "major": major, "minor": minor }))
@@ -366,6 +368,13 @@ fn decode_hex(value: &str, field: &str) -> Result<Vec<u8>> {
     })
 }
 
+/// Takes ownership of a secret hex parameter so both it and the decoded bytes
+/// are wiped, including on errors.
+fn decode_secret_hex(value: String, field: &str) -> Result<Zeroizing<Vec<u8>>> {
+    let value = Zeroizing::new(value);
+    Ok(Zeroizing::new(decode_hex(&value, field)?))
+}
+
 // ── Spend path ─────────────────────────────────────────────────────────────
 
 /// Select inputs and build. Needs no spend private key; does not broadcast.
@@ -432,17 +441,22 @@ pub async fn prepare_transaction(
 
 /// Sign a prepared transaction. No network, no DB, no broadcast.
 ///
-/// `spendPrivateKeyHex` is wiped after use, never stored or returned.
+/// Takes the account's BIP-32 key (as `deriveAccount`); the spend key is reduced
+/// here, and both are wiped after use, never stored or returned.
 /// Returns `{ txid, rawHex, sizeBytes }`; the txid is fixed at signing, so the host
 /// can record the pending transaction before broadcasting.
-#[wasm_bindgen(js_name = signTransaction)]
-pub fn sign_transaction(
+#[wasm_bindgen(js_name = signTransactionWithBip32Key)]
+pub fn sign_transaction_with_bip32_key(
     signable_hex: &str,
-    spend_private_key_hex: &str,
+    bip32_private_key_hex: String,
     review_json: &str,
 ) -> std::result::Result<String, JsValue> {
-    let spend = Zeroizing::new(decode_hex(spend_private_key_hex, "spendPrivateKeyHex")?);
-    json(spend::sign_for_host(signable_hex, &spend, review_json)?)
+    let raw = decode_secret_hex(bip32_private_key_hex, "bip32PrivateKeyHex")?;
+    json(spend::sign_for_host_with_bip32_key(
+        signable_hex,
+        &raw,
+        review_json,
+    )?)
 }
 
 /// Validate actual payment effects before the host presents its confirmation.
