@@ -74,7 +74,7 @@ zatoshi value.
   "sendMax": false,
   "change": {
     "address": "t1...",
-    "derivationPath": "m/44'/133'/0'/1/0"
+    "derivationPath": "m/44'/133'/0'/0/0"
   }
 }
 ```
@@ -86,8 +86,10 @@ zatoshi value.
   Unified Address with an Orchard receiver (paid as an Ironwood note). A Unified
   Address without one is rejected rather than paid at a public receiver.
   Sapling/Sprout destinations are unsupported.
-- Change must be an owned P2PKH address on internal scope `1` with an address index
-  below 40.
+- Change must be an owned P2PKH address. The App reuses the account's default
+  receive address at `0/0`; internal scope `1` with an address index below 40
+  remains supported for previously prepared transactions. Both signing paths
+  verify that the address matches the declared path in the signing account.
 - Send-max: exactly one recipient, no `amountZat` and no `change`; the recipient gets
   the selected total minus the ZIP-317 fee.
 - Fixed amount: a surplus too small to fund a change output (below the 5,000 zatoshi

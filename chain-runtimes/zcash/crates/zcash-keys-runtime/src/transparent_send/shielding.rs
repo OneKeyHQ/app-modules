@@ -787,6 +787,52 @@ mod tests {
     }
 
     #[test]
+    fn hardware_can_return_change_to_the_receive_address() {
+        let receive = transparent_address(0, 0)
+            .to_zcash_address(NetworkType::Main)
+            .to_string();
+        for (destination, change_zat) in [(recipient(0), 35_000), (receive.clone(), 40_000)] {
+            let mut request = request(false);
+            request["recipients"][0]["address"] = destination.into();
+            request["change"] = json!({
+                "address": receive,
+                "derivationPath": "m/44'/133'/0'/0/0",
+            });
+            let request_json = request.to_string();
+            let original =
+                create_with_account_xpub(&request_json, &account_xpub(), &"01".repeat(32)).unwrap();
+            let signed = simulated_device_signature(&original);
+            let finalized =
+                combine_hardware_signed(&request_json, &account_xpub(), &original, &signed)
+                    .unwrap();
+            Verifier::new(pczt::Pczt::parse(&finalized).unwrap())
+                .with_transparent::<KeysError, _>(|bundle| {
+                    let change = bundle.outputs().last().unwrap();
+                    assert_eq!(u64::from(*change.value()), change_zat);
+                    assert_eq!(
+                        change.script_pubkey().to_bytes(),
+                        transparent_address(0, 0).script().to_bytes()
+                    );
+                    assert_eq!(change.bip32_derivation().len(), 1);
+                    assert!(bundle.inputs()[0].script_sig().is_some());
+                    Ok(())
+                })
+                .unwrap();
+
+            request["change"]["address"] = transparent_address(1, 0)
+                .to_zcash_address(NetworkType::Main)
+                .to_string()
+                .into();
+            assert!(create_with_account_xpub(
+                &request.to_string(),
+                &account_xpub(),
+                &"01".repeat(32)
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
     fn hardware_public_construction_and_signature_validation_cover_both_destinations() {
         for transparent_destination in [false, true] {
             for send_max in [false, true] {
