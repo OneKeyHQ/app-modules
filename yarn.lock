@@ -2947,6 +2947,7 @@ __metadata:
     "@onekeyfe/react-native-async-storage": "workspace:*"
     "@onekeyfe/react-native-auto-size-input": "workspace:*"
     "@onekeyfe/react-native-background-thread": "workspace:*"
+    "@onekeyfe/react-native-bottom-tabs": "workspace:*"
     "@onekeyfe/react-native-bundle-crypto": "workspace:*"
     "@onekeyfe/react-native-bundle-update": "workspace:*"
     "@onekeyfe/react-native-capture-protection": "workspace:*"
@@ -2979,7 +2980,6 @@ __metadata:
     "@onekeyfe/react-native-sni-connect": "workspace:*"
     "@onekeyfe/react-native-splash-screen": "workspace:*"
     "@onekeyfe/react-native-split-bundle-loader": "workspace:*"
-    "@onekeyfe/react-native-tab-view": "workspace:*"
     "@onekeyfe/react-native-tcp-socket": "workspace:*"
     "@onekeyfe/react-native-text": "workspace:*"
     "@onekeyfe/react-native-text-input": "workspace:*"
@@ -3225,6 +3225,24 @@ __metadata:
     typescript: "npm:^5.9.2"
   peerDependencies:
     "@onekeyfe/react-native-bundle-update": "*"
+    react: "*"
+    react-native: "*"
+  languageName: unknown
+  linkType: soft
+
+"@onekeyfe/react-native-bottom-tabs@workspace:*, @onekeyfe/react-native-bottom-tabs@workspace:native-views/react-native-bottom-tabs":
+  version: 0.0.0-use.local
+  resolution: "@onekeyfe/react-native-bottom-tabs@workspace:native-views/react-native-bottom-tabs"
+  dependencies:
+    "@types/react": "npm:^19.2.0"
+    react: "npm:19.2.3"
+    react-freeze: "npm:^1.0.0"
+    react-native: "patch:react-native@npm%3A0.86.2#~/.yarn/patches/react-native-npm-0.86.2-c9d546616f.patch"
+    react-native-builder-bob: "npm:^0.40.13"
+    sf-symbols-typescript: "npm:^2.0.0"
+    typescript: "npm:^5.9.2"
+    use-latest-callback: "npm:^0.2.1"
+  peerDependencies:
     react: "*"
     react-native: "*"
   languageName: unknown
@@ -4308,24 +4326,6 @@ __metadata:
     typescript: "npm:^5.9.2"
   peerDependencies:
     "@onekeyfe/react-native-bundle-update": "*"
-    react: "*"
-    react-native: "*"
-  languageName: unknown
-  linkType: soft
-
-"@onekeyfe/react-native-tab-view@workspace:*, @onekeyfe/react-native-tab-view@workspace:native-views/react-native-tab-view":
-  version: 0.0.0-use.local
-  resolution: "@onekeyfe/react-native-tab-view@workspace:native-views/react-native-tab-view"
-  dependencies:
-    "@types/react": "npm:^19.2.0"
-    react: "npm:19.2.3"
-    react-freeze: "npm:^1.0.0"
-    react-native: "patch:react-native@npm%3A0.86.2#~/.yarn/patches/react-native-npm-0.86.2-c9d546616f.patch"
-    react-native-builder-bob: "npm:^0.40.13"
-    sf-symbols-typescript: "npm:^2.0.0"
-    typescript: "npm:^5.9.2"
-    use-latest-callback: "npm:^0.2.1"
-  peerDependencies:
     react: "*"
     react-native: "*"
   languageName: unknown

@@ -1,0 +1,119 @@
+{
+  "name": "@onekeyfe/react-native-bottom-tabs",
+  "version": "6.7.0-7",
+  "description": "Native bottom tabs (tab bar + scene container) for React Native on iOS and Android",
+  "source": "./src/index.tsx",
+  "main": "./lib/module/index.js",
+  "types": "./lib/typescript/src/index.d.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "source": "./src/index.tsx",
+      "types": "./lib/typescript/src/index.d.ts",
+      "default": "./lib/module/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "lib",
+    "android",
+    "ios",
+    "docs",
+    "common",
+    "react-native.config.js",
+    "*.podspec",
+    "!ios/build",
+    "!android/build",
+    "!android/gradle",
+    "!android/gradlew",
+    "!android/gradlew.bat",
+    "!android/local.properties",
+    "!**/__tests__",
+    "!**/__fixtures__",
+    "!**/__mocks__",
+    "!**/.*",
+    "!**/*.map"
+  ],
+  "scripts": {
+    "clean": "del-cli lib",
+    "prepare": "rm -rf lib && bob build",
+    "typecheck": "tsc -b",
+    "lint": "eslint \"**/*.{js,ts,tsx}\"",
+    "test": "jest",
+    "release": "yarn prepare && npm whoami && npm publish --access public"
+  },
+  "keywords": [
+    "react-native",
+    "ios",
+    "android"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OneKeyHQ/app-modules.git",
+    "directory": "native-views/react-native-bottom-tabs"
+  },
+  "author": "OneKey",
+  "bugs": {
+    "url": "https://github.com/OneKeyHQ/app-modules/issues"
+  },
+  "homepage": "https://github.com/OneKeyHQ/app-modules/tree/main/native-views/react-native-bottom-tabs#readme",
+  "license": "MIT",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "react": "19.2.3",
+    "react-native": "patch:react-native@npm%3A0.86.2#~/.yarn/patches/react-native-npm-0.86.2-c9d546616f.patch",
+    "react-native-builder-bob": "^0.40.13",
+    "typescript": "^5.9.2"
+  },
+  "peerDependencies": {
+    "react": "*",
+    "react-native": "*"
+  },
+  "react-native-builder-bob": {
+    "source": "src",
+    "output": "lib",
+    "targets": [
+      [
+        "module",
+        {
+          "esm": true
+        }
+      ],
+      [
+        "typescript",
+        {
+          "project": "tsconfig.build.json"
+        }
+      ]
+    ]
+  },
+  "dependencies": {
+    "react-freeze": "^1.0.0",
+    "sf-symbols-typescript": "^2.0.0",
+    "use-latest-callback": "^0.2.1"
+  },
+  "codegenConfig": {
+    "name": "RNBottomTabs",
+    "type": "all",
+    "jsSrcsDir": "./src",
+    "android": {
+      "javaPackageName": "com.onekey.bottomtabs"
+    },
+    "ios": {
+      "componentProvider": {
+        "RNBottomTabsView": "RCTBottomTabsComponentView",
+        "RNBottomTabsAccessoryView": "RCTBottomAccessoryComponentView"
+      },
+      "modulesConformingToProtocol": {
+        "RCTImageDataDecoder": [
+          "SvgDecoder"
+        ]
+      }
+    }
+  }
+}

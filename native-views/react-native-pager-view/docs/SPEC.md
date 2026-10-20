@@ -378,7 +378,7 @@ content, the shared header, and touches beginning on an inner horizontal banner.
 Normal taps MUST remain functional. Press-retention behavior in application
 controls belongs to the consuming responder implementation; the Pager package
 does not contain or publish Tamagui helpers. The native application tab bar has
-a separate contract in react-native-tab-view/docs/SPEC.md.
+a separate contract in react-native-bottom-tabs/docs/SPEC.md.
 
 The current native implementation confirms horizontal intent after at least
 32 points on iOS or 32 dp on Android, with horizontal displacement exceeding
