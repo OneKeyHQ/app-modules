@@ -559,8 +559,11 @@ P5b web popover notes:
     Floating UI (`@floating-ui/dom`) places the panel: offset, flip, shift,
     and a max height from the available space. `autoUpdate` follows scroll
     and resize.
-- The enter animation scales an ancestor of the panel, so the panel measures
-  smaller while it runs. The panel is positioned again on `onPresented`.
+- For a single positioned child, Web anchored scale/fade runs on that content,
+  with a local transform origin. Its full-window positioning ancestors remain
+  untransformed, so Floating UI uses the same coordinate space during and after
+  the animation. Completion positioning must not correct coordinates distorted
+  by the enter scale. Multi-child roots retain their shared full-window motion.
 - Anchored panels close on an outside press. Presses on the trigger, on the
   panel, or inside an overlay ranked above it do not close it, so a nested
   Select or a Dialog opened from the panel keeps it open. They also close on

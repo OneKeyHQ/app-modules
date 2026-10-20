@@ -95,6 +95,7 @@ function WebOverlayEntry({
   const keyboardLayerRef = useRef<HTMLDivElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
   const directionRef = useRef<'in' | 'out' | undefined>(undefined);
+  const runningAnimationsRef = useRef<Animation[]>([]);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   const callbacksRef = useRef({ onPresented, onDismissed });
   callbacksRef.current = { onPresented, onDismissed };
@@ -130,8 +131,7 @@ function WebOverlayEntry({
       restoreFocusRef.current = document.activeElement as HTMLElement | null;
       entryRef.current?.focus({ preventScroll: true });
     }
-    content.getAnimations().forEach((running) => running.cancel());
-    backdropRef.current?.getAnimations().forEach((running) => running.cancel());
+    runningAnimationsRef.current.forEach((running) => running.cancel());
     // A sheet is measured as a whole; other presentations by the children
     // of the full-window React root.
     const contentRoot = isSheet
@@ -148,6 +148,7 @@ function WebOverlayEntry({
           )
         : undefined,
     ].filter((item): item is Animation => !!item);
+    runningAnimationsRef.current = running;
     void Promise.all(running.map((item) => item.finished))
       .then(() => {
         if (directionRef.current !== direction) {

@@ -109,16 +109,26 @@ export function animateTransition(
     ? { ...transition, type: 'fade', fade: true }
     : transition;
   const extent = measureContentExtent(contentRoot);
-  element.style.transformOrigin = `${(extent.left + extent.right) / 2}px ${
-    (extent.top + extent.bottom) / 2
-  }px`;
+  // The React Native root wraps the positioned panel. Animate that panel so its
+  // offset parent stays unscaled; multi-child roots retain their shared motion.
+  const anchoredContent =
+    effective.origin === 'anchor' && contentRoot.childElementCount === 1
+      ? contentRoot.firstElementChild
+      : undefined;
+  const target =
+    anchoredContent instanceof HTMLElement ? anchoredContent : element;
+  const targetRect =
+    target === element ? undefined : target.getBoundingClientRect();
+  target.style.transformOrigin = `${
+    (extent.left + extent.right) / 2 - (targetRect?.left ?? 0)
+  }px ${(extent.top + extent.bottom) / 2 - (targetRect?.top ?? 0)}px`;
   const hidden = hiddenKeyframe(effective, extent);
   const visible: Keyframe = {};
   Object.keys(hidden).forEach((key) => {
     visible[key] = VISIBLE_KEYFRAME[key];
   });
   const keyframes = direction === 'in' ? [hidden, visible] : [visible, hidden];
-  return element.animate(keyframes, {
+  return target.animate(keyframes, {
     ...toTiming(effective.motion),
     fill: 'forwards',
   });

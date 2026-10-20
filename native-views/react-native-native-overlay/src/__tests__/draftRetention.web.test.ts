@@ -249,6 +249,73 @@ it('measures the centered card for enter and exit animation origins', async () =
   expect(document.querySelector('[data-testid="card"]')).toBeNull();
 });
 
+it('keeps anchored positioning ancestors unscaled while preserving enter and exit motion', async () => {
+  jest
+    .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+    .mockImplementation(function boundsMock(this: HTMLElement) {
+      const [left, top, width, height] =
+        this.dataset.testid === 'anchored-panel' ||
+        this.dataset.testid === 'anchored-surface'
+          ? [608, 331, 224, 104]
+          : [0, 0, 1024, 768];
+      return {
+        left: left!,
+        top: top!,
+        right: left! + width!,
+        bottom: top! + height!,
+        width: width!,
+        height: height!,
+        x: left!,
+        y: top!,
+        toJSON: () => ({}),
+      };
+    });
+  const cancel = jest.fn();
+  const animate = jest.fn(function animateMock(
+    this: HTMLElement,
+    _keyframes: Keyframe[],
+    _options: KeyframeAnimationOptions
+  ) {
+    return { finished: Promise.resolve(), cancel };
+  });
+  Element.prototype.animate =
+    animate as unknown as typeof Element.prototype.animate;
+  const content = createElement(
+    'div',
+    {
+      'data-testid': 'anchored-panel',
+      'style': { position: 'absolute', left: 608, top: 331 },
+    },
+    createElement('div', { 'data-testid': 'anchored-surface' }, 'Alpha')
+  );
+  const props = { presentation: 'anchored' as const, blocking: false };
+  await render(
+    createElement(OverlayView, { ...props, visible: true }, content)
+  );
+  const panel = document.querySelector<HTMLElement>(
+    '[data-testid="anchored-panel"]'
+  )!;
+  expect(animate.mock.contexts).toEqual([panel]);
+  expect(panel.style.transformOrigin).toBe('112px 52px');
+  const enter = animate.mock.calls[0]!;
+  expect(enter[0]).toEqual([
+    { opacity: 0, transform: 'translate3d(0, 0px, 0) scale(0.95)' },
+    { opacity: 1, transform: 'translate3d(0, 0, 0) scale(1)' },
+  ]);
+  expect(enter[1]).toMatchObject({
+    duration: 150,
+    easing: 'cubic-bezier(0.215, 0.61, 0.355, 1)',
+  });
+  await render(
+    createElement(OverlayView, { ...props, visible: false }, content)
+  );
+  expect(animate.mock.contexts).toEqual([panel, panel]);
+  expect(cancel).toHaveBeenCalledTimes(1);
+  const exit = animate.mock.calls[1]!;
+  expect(exit[0]).toEqual([...enter[0]].reverse());
+  expect(exit[1]).toEqual(enter[1]);
+});
+
 it('lifts the centered card after switching from a sheet with the keyboard open', async () => {
   const previousViewport = Object.getOwnPropertyDescriptor(
     globalThis,
