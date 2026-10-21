@@ -53,18 +53,19 @@ import { ApkOtaPipelineTestPage } from './pages/ApkOtaPipelineTestPage';
 import { ChartWebViewTestPage } from './pages/ChartWebViewTestPage';
 import { ChartSingletonTestPage } from './pages/ChartSingletonTestPage';
 import { SplashScreenTestPage } from './pages/SplashScreenTestPage';
-import { TabViewTestPage } from './pages/TabViewTestPage';
-import { TabViewSettingsPage } from './pages/TabViewSettingsPage';
+import { BottomTabsTestPage } from './pages/BottomTabsTestPage';
+import { BottomTabsSettingsPage } from './pages/BottomTabsSettingsPage';
 import { TextInputTestPage } from './pages/TextInputTestPage';
 import { TextTestPage } from './pages/TextTestPage';
 
-export type TabViewSettingsState = {
+export type BottomTabsSettingsState = {
   showBadge: boolean;
   labeled: boolean;
   translucent: boolean;
   tabBarHidden: boolean;
   sidebarAdaptable: boolean;
   hapticFeedback: boolean;
+  androidFloating: boolean;
 };
 
 export type RootStackParamList = {
@@ -109,8 +110,8 @@ export type RootStackParamList = {
   SegmentSlider: undefined;
   Skeleton: undefined;
   SplashScreen: undefined;
-  TabView: undefined;
-  TabViewSettings: undefined;
+  BottomTabs: undefined;
+  BottomTabsSettings: undefined;
   TextInput: undefined;
   Text: undefined;
 };
@@ -362,8 +363,8 @@ const modules: {
     icon: '🚀',
   },
   {
-    screen: 'TabView',
-    name: 'Tab View',
+    screen: 'BottomTabs',
+    name: 'Bottom Tabs',
     description:
       'Native tab bar with UIKit (iOS) / Material (Android), badges, icons, liquid glass',
     icon: '📑',
@@ -763,14 +764,14 @@ export function AppNavigator() {
         options={{ title: 'Splash Screen' }}
       />
       <Stack.Screen
-        name="TabView"
-        component={TabViewTestPage}
-        options={{ title: 'Tab View' }}
+        name="BottomTabs"
+        component={BottomTabsTestPage}
+        options={{ title: 'Bottom Tabs' }}
       />
       <Stack.Screen
-        name="TabViewSettings"
-        component={TabViewSettingsPage}
-        options={{ title: 'Tab View Settings' }}
+        name="BottomTabsSettings"
+        component={BottomTabsSettingsPage}
+        options={{ title: 'Bottom Tabs Settings' }}
       />
       <Stack.Screen
         name="Text"
