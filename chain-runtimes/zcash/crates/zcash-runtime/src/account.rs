@@ -67,6 +67,21 @@ pub async fn import_ufvk(
     Ok(account.id().expose_uuid().to_string())
 }
 
+/// Pairs the spending derivation fields; half a pair is refused, not imported view-only.
+pub fn derivation_pair(
+    seed_fingerprint_hex: Option<&str>,
+    account_index: Option<u32>,
+) -> Result<Option<(&str, u32)>> {
+    match (seed_fingerprint_hex, account_index) {
+        (Some(fingerprint), Some(index)) => Ok(Some((fingerprint, index))),
+        (None, None) => Ok(None),
+        _ => Err(RuntimeError::with(
+            ErrorCode::InvalidAccountId,
+            json!({ "field": "derivation", "reason": "incomplete" }),
+        )),
+    }
+}
+
 fn parse_zip32_derivation(fingerprint_hex: &str, account_index: u32) -> Result<Zip32Derivation> {
     let bytes = hex::decode(fingerprint_hex).map_err(|e| {
         RuntimeError::with(
@@ -440,6 +455,26 @@ mod balance_tests {
             );
             assert_eq!(after["ironwood"]["spendable"], 0);
             assert_eq!(after["ironwood"]["uneconomic"], change);
+        }
+    }
+}
+
+#[cfg(test)]
+mod derivation_tests {
+    use super::derivation_pair;
+    use crate::ErrorCode;
+
+    #[test]
+    fn half_a_derivation_pair_is_refused() {
+        assert_eq!(derivation_pair(None, None).unwrap(), None);
+        assert_eq!(
+            derivation_pair(Some("ab"), Some(0)).unwrap(),
+            Some(("ab", 0))
+        );
+        for (fingerprint, index) in [(Some("ab"), None), (None, Some(0))] {
+            let err = derivation_pair(fingerprint, index).unwrap_err();
+            assert_eq!(err.code, ErrorCode::InvalidAccountId);
+            assert_eq!(err.params["reason"], "incomplete");
         }
     }
 }

@@ -200,15 +200,19 @@ pub async fn import_account_ufvk(
 ) -> Result<String, JsValue> {
     Ok(
         runtime::with_db_and_client(move |mut db, mut client| async move {
-            let derivation = seed_fingerprint_hex.as_deref().zip(account_index);
-            let r = account::import_ufvk(
-                &mut db,
-                &mut client,
-                &account_name,
-                &ufvk,
-                birthday_height,
-                derivation,
-            )
+            let r = async {
+                let derivation =
+                    account::derivation_pair(seed_fingerprint_hex.as_deref(), account_index)?;
+                account::import_ufvk(
+                    &mut db,
+                    &mut client,
+                    &account_name,
+                    &ufvk,
+                    birthday_height,
+                    derivation,
+                )
+                .await
+            }
             .await;
             (db, client, r)
         })
