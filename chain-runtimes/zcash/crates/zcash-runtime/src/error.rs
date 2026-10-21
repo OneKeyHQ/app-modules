@@ -81,6 +81,9 @@ pub enum ErrorCode {
     NetworkError,
     /// Wallet database error (including schema migration failure). Params: `{ operation }`
     DatabaseError,
+    /// The database was migrated by a newer runtime; no migration was applied.
+    /// Not corruption: do not delete it, update the runtime. Params: `{ unknownMigrations }`
+    DatabaseTooNew,
     /// Chain reorg detected. Params: `{ atHeight, suggestedRewindHeight }`
     ///
     /// A normal event, not a failure: blocks near the tip were replaced. The host
@@ -150,6 +153,7 @@ impl ErrorCode {
             InsufficientFunds => "INSUFFICIENT_FUNDS",
             NetworkError => "NETWORK_ERROR",
             DatabaseError => "DATABASE_ERROR",
+            DatabaseTooNew => "DATABASE_TOO_NEW",
             ReorgDetected => "REORG_DETECTED",
             WalletBusy => "WALLET_BUSY",
             InvalidScanPriority => "INVALID_SCAN_PRIORITY",
@@ -303,6 +307,7 @@ mod tests {
             InsufficientFunds,
             NetworkError,
             DatabaseError,
+            DatabaseTooNew,
             InvalidTxid,
             PcztError,
             TransactionBuildError,

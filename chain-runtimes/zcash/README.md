@@ -172,11 +172,15 @@ use the stateless API in
   changes. The precompiled wasm SQLite is linked by `crates/zcash-runtime/build.rs`.
 - **Storage is OPFS** (SAH pool in `.onekey-zcash-opfs`, `zcash-main.db` /
   `zcash-test.db`), with `journal_mode=DELETE`, `synchronous=FULL` and
-  `secure_delete=ON`. One Worker
+  `secure_delete=ON`. Deleting a database or journal truncates its pool file to
+  the 4 KiB header once the header clear is flushed; opening the pool truncates
+  any free file that still holds data. One Worker
   owns each origin's pool. OPFS is per-origin and subject to quota and eviction, so
   the embedding page's origin must be stable. When `storageRequiresWorkerRestart()`
   is true after an I/O failure, keep the failed call's result and restart the
   Worker. No SharedArrayBuffer or COOP/COEP is needed.
+- `openWallet()` fails with `DATABASE_TOO_NEW` when a newer runtime migrated the
+  database. It is not corruption: keep the database and update the runtime.
 - `syncPrepare()` downloads every pool's subtree roots (many on mainnet); give it its
   own "preparing" state.
 - Sapling is out of scope: not a receiver, scan identity or send source.
