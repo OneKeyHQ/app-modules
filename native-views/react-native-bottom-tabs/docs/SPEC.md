@@ -19,45 +19,22 @@ starts a new pair. Double press is derived from accepted selections only: no
 extra gesture recognizer is attached and single-press latency is unchanged.
 JS-driven `selectedPage` changes do not count as presses.
 
-On iPhone, UIKit's More item opens its own navigation controller when more
-than five tabs are present. More is not a route: opening its list must not emit
-`onPageSelected` or `onTabDoublePress`. Selecting a route from that list must
-still select the corresponding business page and keep JS navigation in sync.
+On iPhone, the supported native tab bar configuration has at most five effective
+rendered entries: non-hidden items plus any hidden item retained because it is
+currently selected. Consumers must keep additional destinations outside the
+native tab bar.
+The module has no custom interception or route synchronization for UIKit's
+More overflow navigation. Ordinary tab presses, reselection, static
+`preventsDefault`, double press, and UIKit's Liquid Glass lens interaction keep
+the contracts above and below unchanged.
 
-The current iOS candidate intercepts `pushViewController(_:animated:)` only on
-this container's More navigation controller, using an instance subclass cached
-per original class. A mounted owner's user push from the root list to a cached
-business controller follows the same selection event and static
-`preventsDefault` decision as a normal tab. A rejected row is deselected and is
-not pushed. Nested pushes, existing stack entries, detached owners, and all
-programmatic rebuild/selection/pop mutations pass through without press events.
-There is no global method replacement, navigation delegate replacement, gesture
-recognizer, or animation override on the More navigation controller.
-
-Reopening More from another tab can restore UIKit's saved business stack. If its
-top route differs from JS selection, emit one `onPageSelected` attempt without
-double press. Static `preventsDefault` blocks this restore, clears the saved
-business stack to the root without animation, and leaves the current tab active.
-Tapping More while already in More lets UIKit return to its root without route
-events. Route mapping uses cached controller identity, including after More Edit
-reorders the tab bar. Hook owners and delegate mappings are weak; detach removes
-the hook context and restores the original class only when the instance still
-has exactly the installed subclass. Shared registered subclasses are retained.
-
-This candidate depends on UIKit's internal More list using the public push
-method. On an iPhone 17 Pro running iOS 27.0.1, the instrumented candidate passed
-More root opening without route events, Discovery and Developer rendering with
-matching JS focus, saved-stack restore with one route event, repeated More
-returning to its root, and reentering the same Developer route. Static
-`preventsDefault` rejected both a root-list row and a saved-stack restore; the
-restore cleared the old stack while keeping Home active, and removing the veto
-allowed Developer again. Programmatic Home/Developer selection emitted no press
-events. A Home double tap emitted two tab presses and one double press. The
-instrumented build also passed detach/reattach selection and retained UIKit's
-horizontal push animation. The final build without temporary diagnostics passed
-a physical-device More/Developer selection recheck with matching JS focus and
-the Developer Gallery fully rendered.
-Other iOS versions, iPad layouts, and More Edit runtime behavior are unverified.
+Runtime verified on iPhone 17 Pro / iOS 27.0.1 with a signed iOS 27.1 SDK build
+after local recovery of a generated Expo interface. All five business tabs
+rendered with matching JS focus. Home double tap emitted two presses and one
+double press; UIKit press-and-drag selected Discovery from Home. The consumer's
+Developer modal passed gallery/detail/local-home navigation, close/reopen, and
+ordinary Market selection after closing. Other iOS versions, iPad layouts, and
+fresh veto/detach scenarios were not reverified.
 
 Tab long press is not supported. The former `onTabLongPress` prop/event and the
 native long-press recognizers were removed.
@@ -124,6 +101,11 @@ All gesture handling, animations, and timers run on the platform UI thread in
 the main-runtime native view. The view owns no background-runtime or shared JS
 objects. Retained state is bounded to the current touch sequence, the last
 pressed tab and timestamp, and at most two running animators.
+
+The tab-controller delegate mapping is weak-to-weak. Detach and deinitialization
+unregister the container, and reattachment registers it again. Business-route
+mapping uses cached view-controller identity rather than UIKit's array order;
+programmatic selection finds the cached target in the current controller array.
 
 ## Conformance and acceptance
 
