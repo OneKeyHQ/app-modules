@@ -37,9 +37,8 @@ fn db_err(e: impl std::fmt::Display) -> RuntimeError {
     RuntimeError::with(ErrorCode::DatabaseError, json!({ "operation": "history" })).detail(e)
 }
 
-// Keep the list and detail endpoints on the exact same projection. `row_to_json`
-// intentionally has one shape; adding a field to only one query would otherwise
-// compile and then fail when the other endpoint reads a missing column at runtime.
+// List and detail share one projection: `row_to_json` has one shape, so a column
+// added to only one query would fail at runtime in the other.
 const HISTORY_ROW_SELECT: &str = "SELECT
          tx_summary.txid,
          tx_summary.mined_height,
@@ -231,9 +230,7 @@ fn row_to_json(row: &rusqlite::Row<'_>) -> rusqlite::Result<serde_json::Value> {
         // shielding transaction as just its fee.
         "totalSpentZat": row.get::<_, Option<i64>>(12)?,
         "totalReceivedZat": row.get::<_, Option<i64>>(13)?,
-        // Preserve exact upstream pool identifiers. The host may aggregate
-        // them for today's UI, but a future multi-pool UI must not need a
-        // rescan to recover information discarded here.
+        // Exact upstream pool identifiers; the host aggregates as it needs.
         "poolIds": pool_ids,
         // Signed account-owned value change for each exact pool. This cannot be
         // recovered from the aggregate row after an Orchard-to-Ironwood move.

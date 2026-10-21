@@ -150,7 +150,7 @@ async function online() {
   check('chain tip is a positive integer', Number.isInteger(tip.height) && tip.height > 0, true);
   console.log(`  chain tip ${tip.height}`);
 
-  // Scan a real range over the binary route (get_blocks_by_height.bin), which
+  // Scan a real range over the binary route (get_blocks.bin), which
   // uses a different Content-Type from the JSON routes.
   rt.updateChainTip(id, BigInt(tip.height));
   rt.rewindTo(id, BigInt(tip.height - 20), BigInt(tip.height));

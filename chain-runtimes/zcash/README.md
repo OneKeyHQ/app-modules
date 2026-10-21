@@ -141,8 +141,9 @@ reviews opened at once). Sync does not rebroadcast it. Broadcast outcomes:
   its notes return after its expiry height.
 - `unknown`: anything else. It stays pending until mined or expired; the host does
   not resubmit it.
-  Pending transactions do not block another payment or user-requested local-data
-  deletion, reset or rescan.
+
+Pending transactions do not block another payment or user-requested local-data
+deletion, reset or rescan.
 
 Submission always extracts and stores the current signed transaction, including
 on retry. A shared nullifier identifies an input conflict; it never authorizes
@@ -170,7 +171,8 @@ use the stateless API in
   are recorded in `patches/manifest.json`; `--offline` rejects unrecorded vendor
   changes. The precompiled wasm SQLite is linked by `crates/zcash-runtime/build.rs`.
 - **Storage is OPFS** (SAH pool in `.onekey-zcash-opfs`, `zcash-main.db` /
-  `zcash-test.db`), with `journal_mode=DELETE` and `synchronous=FULL`. One Worker
+  `zcash-test.db`), with `journal_mode=DELETE`, `synchronous=FULL` and
+  `secure_delete=ON`. One Worker
   owns each origin's pool. OPFS is per-origin and subject to quota and eviction, so
   the embedding page's origin must be stable. When `storageRequiresWorkerRestart()`
   is true after an I/O failure, keep the failed call's result and restart the

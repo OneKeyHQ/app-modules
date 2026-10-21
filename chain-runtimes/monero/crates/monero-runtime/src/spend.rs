@@ -886,8 +886,8 @@ mod tests {
             .unwrap()
     }
 
-    /// Importing from the BIP-32 key stores exactly what the old spend-key path
-    /// stored, for canonical, reducible and non-canonical BIP-32 keys alike.
+    /// Importing from the BIP-32 key stores exactly what importing with the reduced
+    /// spend key stores, for canonical, reducible and non-canonical BIP-32 keys alike.
     #[test]
     fn key_image_import_from_the_bip32_key_matches_the_spend_key_path() {
         let v4: [u8; 32] =
@@ -1903,7 +1903,7 @@ mod double_spend_tests {
         }
     }
 
-    /// Current mainnet rates (2026-10) fit every tier with at least 5x headroom.
+    /// Current mainnet rates fit every tier with at least 5x headroom.
 
     #[test]
     fn current_mainnet_fee_rates_fit_every_priority() {
@@ -1927,14 +1927,14 @@ mod double_spend_tests {
     }
 }
 
-/// Shared test fixtures for comparing the BIP-32-key paths with the old ones.
+/// Shared test fixtures for checking the BIP-32-key paths against the spend-key paths.
 #[cfg(test)]
 pub(crate) mod test_support {
     use monero_wallet::ed25519::Scalar;
     use rand_core::{CryptoRng, RngCore};
 
-    /// The scalar reduction as shipped before signing took the BIP-32 key,
-    /// frozen here as the reference for the old host-side path.
+    /// Reference BIP-32 key to spend scalar reduction (mod l), independent of
+    /// `keys::spend_scalar_from_bip32_key`.
     pub fn reference_spend_scalar(bip32: &[u8; 32]) -> [u8; 32] {
         <[u8; 32]>::from(Scalar::from(
             curve25519_dalek::Scalar::from_bytes_mod_order(*bip32),

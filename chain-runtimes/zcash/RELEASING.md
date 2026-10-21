@@ -45,9 +45,8 @@ consume the version until both exist: re-run that same run, which skips the
 package already published. Do not dispatch a new run from another commit for the
 same version, or runtime and keys would come from different sources.
 
-## App cutover
+## App update
 
-Until the pair exists on npm, keep the App's local `portal:` dependencies. Once
-both packages have been published, replace both entries in
-`packages/core/package.json` with the same exact version and update `yarn.lock`
+After both packages are on npm, set both entries in the App's
+`packages/core/package.json` to the same exact version and update `yarn.lock`
 through the App repository's dependency workflow. Do not use a version range.

@@ -647,9 +647,8 @@ mod tests {
             .unwrap()
     }
 
-    // Regression: 100000 in, 83000/88000 out leaves change under the dust
-    // threshold, which the quote folds into the fee. Building used to redo the
-    // fee by ZIP-317 and fail with ChangeRequired after the user approved it.
+    // 100000 in, 83000/88000 out leaves sub-dust change that the quote folds into
+    // the fee; building must keep that fee instead of failing with ChangeRequired.
     #[test]
     fn a_quote_with_sub_dust_change_folded_into_the_fee_still_builds() {
         let fingerprint = "00".repeat(32);

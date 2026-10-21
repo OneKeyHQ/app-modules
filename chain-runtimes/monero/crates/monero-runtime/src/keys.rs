@@ -3,8 +3,8 @@
 //! Holds the public spend key and private view key (monero-oxide `ViewPair`),
 //! everything scanning needs; the Zcash UFVK equivalent.
 //!
-//! The private spend key is never stored here or persisted. Signing takes the
-//! seed from the host per call and drops it afterwards.
+//! The private spend key is never stored or persisted. Signing takes the
+//! account BIP-32 key per call and reduces the spend key internally.
 
 use monero_wallet::{
     address::{MoneroAddress, Network, SubaddressIndex},
@@ -452,8 +452,8 @@ mod derive_tests {
         }
     }
 
-    /// The derivation as shipped before its secrets were wiped, frozen as the
-    /// reference: wiping must not change a single derived byte.
+    /// Reference derivation without stack wiping: wiping must not change a
+    /// single derived byte.
     fn reference_derive(raw: [u8; 32]) -> ([u8; 32], [u8; 32], String) {
         use monero_wallet::ed25519::Point;
         let spend = Scalar::from(curve25519_dalek::Scalar::from_bytes_mod_order(raw));

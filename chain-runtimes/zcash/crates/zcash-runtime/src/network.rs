@@ -189,10 +189,8 @@ pub async fn broadcast(client: &mut LightClient, tx_bytes: Vec<u8>) -> Result<()
     .await?;
 
     if resp.error_code != 0 {
-        // `SendTransaction` is used as an idempotent retry primitive after an
-        // unknown network outcome. zcashd reports a duplicate through the
-        // same business-error channel as a real rejection, even though the
-        // desired postcondition (the node already has the tx) is satisfied.
+        // Nodes report a transaction they already hold as an error; the node
+        // having the tx is the outcome we want.
         if broadcast_already_known(&resp.error_message) {
             return Ok(());
         }

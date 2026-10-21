@@ -1,7 +1,6 @@
 //! PCZT signing with host-supplied account keys.
 //!
 //! This crate also handles spending keys in `account_keys` and `transparent_send`.
-//! See the crate documentation for the limits of derived-key zeroization.
 
 use pczt::roles::signer::Signer;
 use pczt::roles::verifier::{TransparentError, Verifier};
@@ -49,7 +48,7 @@ fn sign_transparent_inputs(
 
     for index in 0..input_count {
         let mut done = false;
-        // Receiving uses the external scope and change the internal one; try both.
+        // Inputs may belong to the external or the internal scope; try both.
         for scope in [TransparentKeyScope::EXTERNAL, TransparentKeyScope::INTERNAL] {
             for i in 0..TRANSPARENT_SCAN_GAP {
                 let Some(child) = NonHardenedChildIndex::from_index(i) else {

@@ -310,10 +310,8 @@ pub fn validate_address(network: &str, address: &str) -> std::result::Result<boo
 /// `handler` is `(url, contentType, body: Uint8Array) => Promise<Uint8Array>`;
 /// `undefined` uninstalls it.
 ///
-/// In-wasm fetch is bound by browser mixed-content and CORS rules, and monerod sends
-/// no CORS headers by default, so few public nodes are reachable. The extension
-/// background, desktop main process and mobile native code are not bound by those
-/// rules, so any node is reachable through them.
+/// Lets nodes that in-wasm fetch cannot reach (mixed content, no CORS headers) be
+/// used through the extension background, desktop main process or mobile native code.
 #[wasm_bindgen(js_name = setRequestHandler)]
 pub fn set_request_handler(handler: Option<js_sys::Function>) {
     crate::network::set_host_handler(handler);
@@ -339,9 +337,8 @@ pub fn diag_database() -> std::result::Result<String, JsValue> {
                 .map_err(|e| crate::error::db_err("diagCount", e))?;
             counts.insert(table.to_owned(), serde_json::json!(n));
         }
-        // Logical size (pages x page size), as the Zcash runtime reports it.
-        // Works through any VFS; the backing store's physical footprint can
-        // differ (free pages, storage-layer overhead).
+        // Logical size (pages x page size); the backing store's physical footprint
+        // can differ (free pages, storage-layer overhead).
         let pragma = |name: &str| -> Result<i64> {
             db.conn()
                 .query_row(&format!("PRAGMA {name}"), [], |r| r.get(0))

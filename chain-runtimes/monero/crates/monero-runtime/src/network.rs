@@ -88,18 +88,10 @@ fn cap_response(
 
 // Request handler supplied by the host.
 //
-// ## Why the host sends requests
-//
-// In-wasm `fetch` runs in the browser context, so it is subject to mixed-content
-// blocking (plain-HTTP nodes) and CORS (monerod sends no
-// `Access-Control-Allow-Origin` by default). Few public nodes pass both, and
-// routing every user through one third-party node hands that operator everyone's
-// IP, scan ranges and broadcast timing.
-//
-// This is about reachability, not speed (scanning is 0.4% of total time). The
-// extension background (with `host_permissions`), the Electron main process and
-// React Native native code are not bound by those rules.
-//
+// In-wasm `fetch` is subject to mixed-content blocking (plain-HTTP nodes) and CORS
+// (monerod sends no `Access-Control-Allow-Origin` by default), so few public nodes
+// are reachable from it. The extension background (with `host_permissions`), the
+// Electron main process and React Native native code are not bound by those rules.
 // Without a host handler, requests fall back to in-wasm fetch.
 #[cfg(target_arch = "wasm32")]
 thread_local! {
@@ -237,8 +229,7 @@ impl FetchTransport {
         let url = format!("{base_url}/{}", route.trim_start_matches('/'));
         let content_type = content_type_for(&route);
 
-        // Prefer the host handler: it is not bound by mixed-content or CORS rules, so any
-        // node is usable. Otherwise fall back to in-wasm fetch below.
+        // Prefer the host handler; otherwise fall back to in-wasm fetch below.
         if let Some(handler) = host_handler() {
             let bytes = post_via_host(handler, &url, content_type, &body).await?;
             return cap_response(bytes, limit);

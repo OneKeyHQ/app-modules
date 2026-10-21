@@ -408,7 +408,8 @@ fn plan_transaction(request: TransparentTxRequest) -> Result<TransactionPlan> {
         }
         let change_path =
             parse_derivation_path(&change_request.derivation_path, request.account_index)?;
-        // Reuse the default receive address, while accepting legacy internal change.
+        // External-scope change must be the default receive address (/0/0);
+        // internal-scope change is still accepted.
         if change_path.scope == 0 && change_path.index != 0 {
             return Err(KeysError::with(
                 ErrorCode::InvalidDerivationPath,
