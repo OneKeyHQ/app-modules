@@ -113,14 +113,10 @@ fn next_range(db: &Db, identity_id: i64) -> Result<Option<(u64, u64)>> {
 
 /// Remove the scanned span `[start, scanned_through]` from the pending ranges.
 ///
-/// Pending ranges can overlap: `rewind_and_requeue` queues a span from the rewind
-/// height while the old tail range is still queued. Consuming only the range that
-/// starts at `start` and re-inserting the remainder with a plain INSERT collides on
-/// the primary key when the remainder starts where another range does; the step
-/// rolls back and scanning never advances.
-///
-/// So the scanned span is subtracted from every overlapping range and remainders
-/// are upserted (same start keeps the farther end). Ranges need not be disjoint.
+/// Pending ranges can overlap (`rewind_and_requeue` queues from the rewind height
+/// while the old tail range is still queued), so the span is subtracted from every
+/// overlapping range and remainders are upserted (same start keeps the farther end);
+/// a plain INSERT would collide on the primary key and stall scanning.
 fn consume_range(db: &mut Db, identity_id: i64, start: u64, scanned_through: u64) -> Result<()> {
     let tx = db
         .conn_mut()
@@ -492,9 +488,8 @@ mod tests {
         assert_eq!(before, peek(&db, id).unwrap());
     }
 
-    /// Regression: a requeued range overlaps the old tail range and the remainder
-    /// starts exactly at another range's start. This used to collide on the primary
-    /// key and roll back the step, stalling the scan.
+    /// A requeued range overlaps the old tail range and the remainder starts exactly
+    /// at another range's start; consuming it must not collide on the primary key.
     #[test]
     fn consuming_across_overlapping_ranges_merges_instead_of_colliding() {
         let (mut db, id) = db_with_identity();
@@ -568,9 +563,8 @@ mod tests {
         assert!(MAX_BLOCKS_PER_CALL > 0);
     }
 
-    /// Regression: progress used to be `max(height)` over the shared `blocks` table,
-    /// so a caught-up identity pushed a backfilling identity's progress to the tip
-    /// and that history was never scanned.
+    /// A caught-up identity must not push a backfilling identity's progress to the
+    /// tip, or that history is never scanned.
     #[test]
     fn two_identities_keep_independent_progress() {
         use crate::wallet::testing::key_bytes;

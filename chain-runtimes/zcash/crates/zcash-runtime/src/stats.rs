@@ -77,8 +77,7 @@ pub fn storage_stats(conn: &Connection) -> Result<String> {
             "pageSize": page_size,
             "pageCount": page_count,
             "freePages": free_pages,
-            // Logical size only; IndexedDB physical usage differs (write
-            // amplification, stale pages, async flushes).
+            // Logical size only; physical storage usage can differ.
             "logicalBytes": page_size * page_count,
         },
         "scan": {

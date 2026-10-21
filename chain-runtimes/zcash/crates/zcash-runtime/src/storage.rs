@@ -1,9 +1,8 @@
 //! Shared SQLite storage for every App carrier.
 //!
 //! WASM runs in a dedicated Worker and uses the same OPFS synchronous-access
-//! VFS on desktop, web, extension, and mobile WebEmbed. SQLite accesses pages
-//! directly instead of preloading a complete IndexedDB mirror into WASM memory.
-//! Native builds remain available for Rust tests and diagnostics.
+//! VFS on desktop, web, extension, and mobile WebEmbed, so SQLite reads pages
+//! on demand. Native builds are for Rust tests and diagnostics.
 
 use crate::error::{ErrorCode, Result, RuntimeError};
 use serde_json::json;
@@ -141,10 +140,9 @@ pub async fn install_persistent_vfs() -> Result<()> {
     Ok(())
 }
 
-/// SQLite COMMIT synchronously calls this VFS's xSync under synchronous=FULL.
-/// There is no asynchronous write queue to drain. Retain the explicit boundary
-/// used by transaction finalization and broadcasting; commit errors propagate
-/// from the SQLite operation before this point.
+/// COMMIT already syncs through the VFS under synchronous=FULL, so there is no
+/// write queue to drain; this only checks the storage is still usable before
+/// finalization and broadcast.
 pub async fn durability_barrier() -> Result<()> {
     if requires_worker_restart() {
         return Err(RuntimeError::with(
@@ -277,8 +275,7 @@ pub async fn database_exists(db_name: &str) -> Result<bool> {
     Ok(std::path::Path::new(db_name).exists())
 }
 
-/// Delete a closed database. Callers must first resolve active transactions;
-/// pending broadcast state must not be discarded as rebuildable scan cache.
+/// Delete a closed database.
 #[cfg(target_arch = "wasm32")]
 pub async fn delete_database(db_name: &str) -> Result<bool> {
     if memory_mode() {

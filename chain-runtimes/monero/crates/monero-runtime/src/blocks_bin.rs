@@ -11,14 +11,10 @@
 //! it as all zeros (monero-project/monero#10120; fix #10652 is master-only), so it
 //! always drops the batch and falls back to per-block JSON.
 //!
-//! ## Trust model (same as wallet2, Cake, Feather)
+//! ## Trust model (same as wallet2)
 //!
 //! The header's transaction hash list is trusted; content is not re-hashed against
-//! it. Cost: a malicious node can serve fake transaction content under real hashes
-//! and distort the displayed balance (inflate or hide an incoming payment). It
-//! cannot steal funds: spending needs the private key, and the network rejects
-//! spends of fake outputs. See `wallet2::process_new_blockchain_entry`, which uses
-//! `b.tx_hashes[idx]`.
+//! it, as in `wallet2::process_new_blockchain_entry` (`b.tx_hashes[idx]`).
 //!
 //! Still checked: transaction count matches the header list, each block's output
 //! index lists match its transaction outputs, and heights are contiguous from the
@@ -572,9 +568,8 @@ mod tests {
         assert!(matches!(e, BlocksBinError::Protocol(_)));
     }
 
-    /// A real node response (xmr-node.cakewallet.com, 2026-09-23, start_height=3768621,
-    /// max_block_count=2), captured via the desktop main process. Covers the full parse:
-    /// blocks, pruned transactions, output indices, first RingCT index.
+    /// A real mainnet node response (start_height=3768621, max_block_count=2). Covers
+    /// the full parse: blocks, pruned transactions, output indices, first RingCT index.
     #[test]
     fn parses_a_real_node_response() {
         let bytes = include_bytes!("../tests/fixtures/get_blocks_bin_3768621.bin");

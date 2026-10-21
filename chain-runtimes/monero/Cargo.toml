@@ -9,13 +9,9 @@ edition = "2021"
 license = "Apache-2.0"
 rust-version = "1.85"
 
-# ── monero-oxide: independent Rust implementation, MIT, no_std ───────────
-#
-# Chosen over wallet2 (see development/research): one wasm build for all
-# platforms, ~226 KB output, no cross-origin isolation, no C++ cross toolchain.
-#
-# It has no storage layer: `Scanner` is pure (register_subaddress +
-# scan(block) -> outputs). This workspace persists wallet state to SQLite.
+# monero-oxide over wallet2: one small wasm build for all platforms, no
+# cross-origin isolation, no C++ cross toolchain. It has no storage layer;
+# this workspace persists wallet state to SQLite.
 [workspace.dependencies]
 monero-wallet = { version = "0.2", default-features = false, features = ["std"] }
 monero-address = { version = "0.1", default-features = false, features = ["std"] }

@@ -1,4 +1,4 @@
-//! Temporary perf tracing: when enabled by the host, logs each export's duration
+//! Perf tracing: when enabled by the host, logs each export's duration
 //! to the console. Shares the host's `[PRIV-PERF]` prefix so one filter covers both.
 
 use std::sync::atomic::{AtomicBool, Ordering};

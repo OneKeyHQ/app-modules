@@ -250,7 +250,7 @@ pub(crate) mod test_keys {
         bs58::encode(payload).with_check().into_string()
     }
 
-    /// Oracle: the upstream seed-based USK this crate no longer accepts.
+    /// Oracle: the upstream seed-based USK, which this crate does not accept.
     pub(crate) fn usk(seed: &[u8], account: u32) -> UnifiedSpendingKey {
         UnifiedSpendingKey::from_seed(&MAIN_NETWORK, seed, AccountId::try_from(account).unwrap())
             .unwrap()

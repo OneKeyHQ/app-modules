@@ -13,10 +13,7 @@
 //!   and signed transactions.
 //! - Secret inputs, including the bindgen copies, are wrapped in `Zeroizing` and wiped after use.
 //! - The xprv is parsed without heap copies, and the parsed account keys are wiped on
-//!   drop (`account_keys::Wiped`). Known limit: upstream `SpendingKey`, `AccountPrivKey`,
-//!   and `secp256k1::SecretKey` lack `ZeroizeOnDrop`, so keys derived from them inside
-//!   upstream code (child secret keys, spend authorizing keys) and moved-from stack
-//!   copies are not wiped here; the host wipes the wasm stack after each call.
+//!   drop (`account_keys::Wiped`). The host wipes the wasm stack after each call.
 
 pub mod account_keys;
 pub mod error;

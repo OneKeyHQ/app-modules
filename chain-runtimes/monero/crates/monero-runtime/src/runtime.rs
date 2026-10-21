@@ -18,16 +18,9 @@ thread_local! {
     static DAEMON_NETWORK: Cell<Option<Network>> = const { Cell::new(None) };
     static DB_NAME: RefCell<Option<String>> = const { RefCell::new(None) };
 
-    // ── Concurrency guards ──────────────────────────────────────────────
-    //
-    // Async operations take DB out of here across awaits and put it back
-    // after. wasm is single-threaded, but awaits allow re-entrant host calls.
-    //
-    // Race without guards:
-    //   1. A is scanning with DB(A) taken
-    //   2. B calls openWallet(B); DB_NAME becomes B
-    //   3. A finishes and puts DB(A) back, while DB_NAME says B
-    // Every later operation then silently hits the wrong database.
+    // Async operations take DB out across awaits, and awaits allow re-entrant
+    // host calls: without these guards an openWallet(B) during A's scan would
+    // let A put DB(A) back under DB_NAME B.
     static BUSY: Cell<bool> = const { Cell::new(false) };
     static GENERATION: Cell<u64> = const { Cell::new(0) };
 

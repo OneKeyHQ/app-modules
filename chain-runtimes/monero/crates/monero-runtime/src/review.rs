@@ -482,8 +482,7 @@ mod tests {
     }
 
     /// Signing from the BIP-32 key produces the same transaction, byte for
-    /// byte under a fixed RNG, as signing from the spend key did. The txids were
-    /// recorded from the spend-key path before it left the wasm interface.
+    /// byte under a fixed RNG, as signing from its reduced spend key (pinned txids).
     #[test]
     fn signing_from_the_bip32_key_matches_the_spend_key_path() {
         use crate::spend::test_support::{plus_group_order, SeededRng};

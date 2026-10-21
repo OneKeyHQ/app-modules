@@ -9,21 +9,12 @@
 //!   runtime.pcztSubmit()          extract, store, broadcast once (sync does not rebroadcast)
 //! ```
 //!
-//! Proving precedes signing: the upstream Signer role needs enough information
-//! to verify the proofs cover the right data, so proofs must already be in the PCZT.
-//!
 //! Key separation: build and broadcast need the wallet database, signing needs
 //! the spending keys; the two never live in the same crate.
 //!
-//! ## Why this stays in Rust
-//!
-//! Note selection, ZIP-317 fees, anchor choice and witnesses are consensus-relevant:
-//! a wrong anchor gets the transaction rejected, a wrong fee can lose funds. The
-//! mechanism stays in the upstream implementation.
-//!
-//! Policy knobs (change pool, dust policy, OVK policy, confirmations, bundle
-//! padding) all come from the host; this crate makes no product decisions and
-//! hides no defaults.
+//! Note selection, ZIP-317 fees, anchors and witnesses stay in the upstream
+//! implementation; policy knobs (change pool, confirmations, bundle padding)
+//! come from the host.
 
 use zcash_client_backend::data_api::wallet::{
     create_pczt_from_proposal, extract_and_store_transaction_from_pczt,
@@ -48,10 +39,7 @@ fn build_err(stage: &str, e: impl std::fmt::Display) -> RuntimeError {
 
 /// Maps proposal failures to error codes the host can branch on.
 ///
-/// `INSUFFICIENT_FUNDS` (with the shortfall) and `NOT_SYNCED` must not collapse
-/// into a generic `TRANSACTION_BUILD_ERROR`.
-///
-/// Upstream reports insufficient funds from two places; both are handled:
+/// Upstream reports insufficient funds from two places:
 ///
 /// - `Error::InsufficientFunds`: selection cannot cover the amount (transfers)
 /// - `Error::Change(ChangeError::InsufficientFunds)`: selection succeeded but
@@ -115,11 +103,10 @@ pub fn parse_change_pool(name: &str) -> Result<ShieldedPool> {
     }
 }
 
-/// Parses the host's spend-source pool. Build and quote both require it;
-/// `None` is rejected in `build_proposal`.
+/// Parses the host's spend-source pool; `None` is rejected in `build_proposal`.
 ///
-/// Orchard remains a valid spend source, but cannot receive new change.
-/// Sapling spending is unsupported because this runtime does not ship its prover.
+/// Orchard remains a valid spend source but cannot receive new change. Sapling
+/// is unsupported because this runtime does not ship its prover.
 pub fn parse_spend_source(name: Option<&str>) -> Result<Option<ShieldedPool>> {
     match name {
         None => Ok(None),
@@ -151,15 +138,9 @@ pub struct SendPolicy {
     pub allow_zero_conf_shielding: bool,
     /// Select notes only from this shielded pool. Required: `None` is rejected at build.
     ///
-    /// 1. Excludes Sapling. Upstream `SpendPolicy::default()` allows it and
-    ///    selection prefers the oldest eligible note, so an account with pre-2022
-    ///    history would pick Sapling notes and fail at proving (`PROVE_SAPLING = false`),
-    ///    blocking every send.
-    /// 2. Enables per-pool withdrawal, e.g. moving old Orchard funds to a
-    ///    transparent address without spending Ironwood funds the user wants kept private.
-    ///
-    /// If the pool cannot cover the amount the result is `InsufficientFunds`;
-    /// upstream never crosses pools.
+    /// Excludes Sapling, which upstream `SpendPolicy::default()` would select
+    /// first for old accounts and then fail to prove. If the pool cannot cover the
+    /// amount the result is `InsufficientFunds`; pools are never crossed.
     pub spend_source: Option<ShieldedPool>,
 }
 
@@ -179,9 +160,8 @@ impl SendPolicy {
 
 /// Builds a send policy from the host's raw arguments.
 ///
-/// Quote and build must both use this entry point. Fields such as
-/// `pad_orchard_bundle` change the bundle size and therefore the ZIP-317 fee;
-/// wiring them separately lets the quoted fee silently drift from the paid fee.
+/// Quote and build must both use this entry point: fields such as
+/// `pad_orchard_bundle` change the ZIP-317 fee.
 #[allow(clippy::too_many_arguments)]
 pub fn parse_send_policy(
     trusted: u32,
@@ -206,8 +186,7 @@ pub fn parse_send_policy(
 type TransferProposal =
     zcash_client_backend::proposal::Proposal<Zip317FeeRule, zcash_client_sqlite::ReceivedNoteId>;
 
-/// Recipient can only receive into Sapling. Sapling proving parameters are not
-/// shipped, so such a transaction would fail at proving after the user confirmed;
+/// Recipient can only receive into Sapling, which this runtime cannot prove;
 /// refuse before building.
 fn recipient_needs_sapling_output(
     params: &zcash_protocol::consensus::Network,
@@ -232,7 +211,7 @@ fn recipient_is_tex(
     )
 }
 
-// Keep the legacy text argument compatible; new hosts pass the exact ZIP 302 field.
+// `text` is UTF-8; `hex` is the exact 512-byte ZIP 302 memo field.
 pub fn parse_memo(text: Option<&str>, hex: Option<&str>) -> Result<Option<MemoBytes>> {
     let invalid = || RuntimeError::new(ErrorCode::InvalidMemo);
     match (text, hex) {
@@ -310,12 +289,10 @@ fn build_proposal(
         policy.allow_zero_conf_shielding,
     )?;
 
-    // Spend only the selected shielded pool, never transparent UTXOs (as upstream's default).
+    // Spend only the selected shielded pool, never transparent UTXOs.
     let spend_policy = {
         use zcash_client_backend::data_api::wallet::input_selection::SpendPolicy;
         // Not SpendPolicy::default(): it allows Sapling. See SendPolicy::spend_source.
-        // Shielded pools are never combined, and the current pool is defined
-        // only by the host (ZCASH_CURRENT_SHIELDED_POOL): no default here, missing is rejected.
         let pool = policy.spend_source.ok_or_else(|| {
             RuntimeError::with(
                 ErrorCode::TransactionBuildError,
@@ -352,8 +329,6 @@ fn build_proposal(
 }
 
 /// Returns the fee only; builds no PCZT and locks no notes.
-///
-/// Must use the same proposal path as `create_pczt` so the quote matches the fee paid.
 pub fn quote(
     db: &mut Db,
     account_uuid: &str,
@@ -378,10 +353,9 @@ pub fn quote(
 
 /// Builds an unsigned transfer PCZT for review. Returns `(pcztBytes, feeZat)`.
 ///
-/// Locks nothing: a review the user abandons, or an app killed on the review
-/// page, must leave the notes spendable. Notes are held from the moment
-/// `submit_signed_pczt` stores the signed transaction, until it is mined or
-/// expires.
+/// Locks nothing, so an abandoned review leaves the notes spendable. Notes are
+/// held once `submit_signed_pczt` stores the signed transaction, until it is
+/// mined or expires.
 pub fn create_pczt(
     db: &mut Db,
     account_uuid: &str,
@@ -463,12 +437,10 @@ fn mark_wallet_outputs(
 }
 
 /// Sets `zip32_derivation` on each output whose recipient `fvk` owns (either
-/// scope) and whose note decrypts under that scope's IVK. Outputs that already
-/// name a `user_address` (real recipients) are left alone, as are outputs we do
-/// not own (padding). Undecryptable owned outputs are the zero-valued outputs
-/// the post-NU6.3 Orchard builder pairs with external-scope spends, with a
-/// randomized ciphertext: no one can decrypt them, so like padding they get no
-/// path claiming them as wallet outputs.
+/// scope) and whose note decrypts under that scope's IVK. Real recipients
+/// (`user_address` set) and padding are left alone. Undecryptable owned outputs
+/// are the zero-valued outputs the post-NU6.3 Orchard builder pairs with
+/// external-scope spends; like padding they get no path.
 fn mark_owned_outputs(
     pczt: pczt::Pczt,
     fvk: &orchard::keys::FullViewingKey,
@@ -565,17 +537,10 @@ fn circuit_version_for_branch(
 /// Merges the signed copy returned by an external signer (hardware) into the
 /// local original PCZT. It may add signatures only, never change the transaction.
 ///
-/// `TransactionExtractor` cannot catch this later: it recomputes the sighash of
-/// the merged transaction, so it only checks self-consistency, not what the user approved.
-///
-/// The bare `Combiner` currently blocks substitution only as a side effect of
-/// upstream behaviour (our PCZTs have `tx_modifiable == 0`, and all effect fields
-/// are set so conflicts are detected), which an upgrade could change.
-///
-/// Invariant enforced here: sighashes must be byte-identical before and after,
-/// and `scriptSig` must stay empty (it is outside the sighash, `None` in the
-/// original, and adopted as-is by `merge_optional`). Fails before proving;
-/// errors carry `field`.
+/// `TransactionExtractor` only checks self-consistency, not what the user
+/// approved, and the bare `Combiner` blocks substitution only as a side effect of
+/// upstream behaviour. So sighashes must be byte-identical before and after, and
+/// `scriptSig` must stay empty (it is outside the sighash). Errors carry `field`.
 pub fn combine_pczt(original: &[u8], signed: &[u8]) -> Result<Vec<u8>> {
     use pczt::roles::signer::Signer;
     use pczt::roles::verifier::{TransparentError, Verifier};
@@ -647,9 +612,7 @@ pub fn combine_pczt(original: &[u8], signed: &[u8]) -> Result<Vec<u8>> {
             return Err(mismatch("transparentSighash"));
         }
     }
-    // scriptSig is outside the sighash and is the one field the other side can
-    // inject (always None in our original; merge_optional adopts it). We never set
-    // it; SpendFinalizer builds it from partial_signatures at extraction.
+    // scriptSig is built by SpendFinalizer at extraction, never by a signer.
     // Check a clone: Verifier reparses and reserializes the bundle.
     if transparent_inputs > 0 {
         Verifier::new(combined.clone())
@@ -787,9 +750,7 @@ const SPEND_TABLES: [(&str, &str); 4] = [
 
 /// Refuses a just-stored transaction that does not spend from `account_uuid`,
 /// or that spends an output another stored transaction still holds (mined, or
-/// unmined and unexpired). Reviews lock nothing, so two open at once can select
-/// the same notes; storing both would leave the second pending until expiry
-/// for a spend the node can never accept.
+/// unmined and unexpired). Reviews lock nothing, so two can select the same notes.
 fn assert_sole_spend(
     ext: &zcash_client_sqlite::ExtensionTransaction<'_>,
     txid: &str,
@@ -887,7 +848,8 @@ pub enum SubmitOutcome {
     },
 }
 
-// A spent-input/duplicate-nullifier reply can refer to this transaction itself.
+// Only a definitive rejection is recorded; a spent-input reply can refer to this
+// transaction itself.
 fn first_submit_rejection(error: RuntimeError) -> std::result::Result<RuntimeError, RuntimeError> {
     if error.code == ErrorCode::BroadcastRejected {
         Ok(error)
@@ -914,11 +876,9 @@ fn record_submit_outcome(
     }
 }
 
-/// Persist the exact authorized transaction before any external broadcast.
+/// Persists the exact authorized transaction before broadcasting it.
 ///
-/// Submitting the same signed PCZT again stores the same txid again (upstream
-/// upserts it) and rebroadcasts; a transaction the node already rejected is
-/// not sent again.
+/// A transaction the node already rejected is not sent again.
 pub async fn submit_signed_pczt(
     db: &mut Db,
     client: &mut crate::network::LightClient,
@@ -1228,7 +1188,7 @@ mod policy_tests {
             zcash_protocol::consensus::NetworkType::Main,
             [9; 20],
         );
-        // Pinned: the app decodes this same pair in JS (sdkZcash/index.test.ts).
+        // Pinned: the app decodes the same pair in JS.
         assert_eq!(tex.encode(), "tex1pyysjzgfpyysjzgfpyysjzgfpyysjzgfl7c006");
         assert_eq!(t1.encode(), "t1JhNuqypTPZu5vdcjsvGHzbTCrTd9Xwtru");
         assert!(recipient_is_tex(&params, &tex));
@@ -1255,12 +1215,6 @@ mod combine_tests {
     /// A transparent-only PCZT, io-finalized. `extra` appends a second
     /// input/output pair; the first pair stays byte-identical so the two PCZTs
     /// still merge.
-    ///
-    /// Transparent-only is deliberate. `IoFinalizer` clears the three
-    /// `tx_modifiable` flags ONLY when the transaction has shielded spends or
-    /// outputs (io_finalizer/mod.rs:70), so a transparent-only PCZT stays
-    /// modifiable and the bare Combiner will happily append the other side's
-    /// extra inputs, outputs and Orchard actions.
     fn transparent_pczt(send_zat: u64, recipient: u8, extra: bool) -> Vec<u8> {
         let secp = secp256k1::Secp256k1::new();
         let pubkey = secp256k1::PublicKey::from_secret_key(&secp, &secret_key());
@@ -1355,8 +1309,7 @@ mod combine_tests {
         assert_ne!(first.txid(), other.txid());
     }
 
-    // Conflicting values on a field both sides carry: the bare Combiner already
-    // refuses this one. Pinned so a future upstream bump cannot quietly relax it.
+    // The bare Combiner already refuses this; pinned against upstream changes.
     #[test]
     fn combine_rejects_a_conflicting_recipient() {
         let approved = transparent_pczt(90_000, 0xaa, false);
@@ -1369,11 +1322,8 @@ mod combine_tests {
         );
     }
 
-    // What actually stops a counterparty from appending an input, output or
-    // Orchard action: `tx_modifiable` is already 0 on anything our pipeline
-    // builds, and the Combiner refuses to grow a non-modifiable bundle. That is
-    // upstream's behaviour, not ours, so pin it -- the sighash comparison in
-    // `combine_pczt` is what still covers us if a future bump relaxes it.
+    // Upstream behaviour, pinned: the Combiner refuses to grow a non-modifiable
+    // PCZT. The sighash check in `combine_pczt` covers a future relaxation.
     #[test]
     fn our_pczts_are_not_modifiable_so_the_combiner_refuses_to_grow_them() {
         let approved = transparent_pczt(90_000, 0xaa, false);
@@ -1393,8 +1343,7 @@ mod combine_tests {
 
     #[test]
     fn combine_rejects_a_copy_that_already_carries_a_script_sig() {
-        // script_sig is absent from the sighash and absent from our original, so
-        // the bare Combiner would adopt whatever the other side put there.
+        // script_sig is outside the sighash, so the bare Combiner would adopt it.
         let original = transparent_pczt(90_000, 0xaa, false);
         let finalized = SpendFinalizer::new(pczt::Pczt::parse(&signed_copy(&original)).unwrap())
             .finalize_spends()

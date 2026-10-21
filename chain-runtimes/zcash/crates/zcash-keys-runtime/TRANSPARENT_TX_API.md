@@ -86,15 +86,16 @@ zatoshi value.
   Unified Address with an Orchard receiver (paid as an Ironwood note). A Unified
   Address without one is rejected rather than paid at a public receiver.
   Sapling/Sprout destinations are unsupported.
-- Change must be an owned P2PKH address. The App reuses the account's default
-  receive address at `0/0`; internal scope `1` with an address index below 40
-  remains supported for previously prepared transactions. Both signing paths
-  verify that the address matches the declared path in the signing account.
+- Change must be an owned P2PKH address: the account's receive address at
+  `m/44'/133'/account'/0/0`. Internal scope `1` with an address index below 40 is
+  also accepted. Both signing paths verify that the address matches the declared
+  path in the signing account.
 - Send-max: exactly one recipient, no `amountZat` and no `change`; the recipient gets
   the selected total minus the ZIP-317 fee.
 - Fixed amount: a surplus too small to fund a change output (below the 5,000 zatoshi
-  marginal fee, or not enough to pay for the extra output) is added to the fee and shown in the quote, so the overpayment stays
-  below about 0.0001 ZEC. A larger surplus requires `change`.
+  marginal fee, or not enough to pay for the extra output) is added to the fee and
+  shown in the quote, so the overpayment stays below about 0.0001 ZEC. A larger
+  surplus requires `change`.
 - `targetHeight` must be on the mainnet NU6.3 branch. `expiryHeight` is mandatory,
   comes from the host's policy, and must be after the target height and at most 100
   blocks later. The result is a V6 transaction.
@@ -128,4 +129,4 @@ Build:
 
 Build entry points recompute the quote and fail closed if any input script or change
 address does not match the derived key. Reserve every returned outpoint before
-broadcast and keep the exact raw transaction for ambiguous broadcast recovery.
+broadcast.

@@ -15,13 +15,10 @@ rust-version = "1.85"
 
 # ── Zcash dependencies: official stable releases ─────────────────────────
 #
-# Hard rule: the storage layer comes from unmodified crates.io releases; no
-# vendored or forked zcash storage code.
-#
-# The only change is one Cargo.toml edit to zcash_client_sqlite (see
-# scripts/vendor-deps.sh and patches/) that drops rusqlite's "bundled" feature,
-# which compiles SQLite's C sources and needs a libc sysroot wasm32 lacks.
-# No Zcash Rust source is modified. VFS persistence patches: patches/manifest.json.
+# The storage layer uses unmodified crates.io releases. The only change is a
+# Cargo.toml edit to zcash_client_sqlite (scripts/vendor-deps.sh, patches/) that
+# drops rusqlite's "bundled" feature, which needs a libc sysroot wasm32 lacks.
+# No Zcash Rust source is modified. All patches: patches/manifest.json.
 [workspace.dependencies]
 blake2b_simd = "1"
 zcash_client_backend = { version = "0.24.0", default-features = false, features = ["orchard", "transparent-inputs", "lightwalletd-tonic", "sync", "pczt"] }
@@ -73,15 +70,14 @@ tonic = { version = "0.14", default-features = false, features = ["codegen"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
 tonic-web-wasm-client = "0.9.1"
 
-# Official zcash_client_sqlite release plus the one-line no-bundled patch.
+# Upstream releases plus the patches in patches/manifest.json.
 # Run `bash scripts/vendor-deps.sh` first to create vendor/.
 [patch.crates-io]
 zcash_client_sqlite = { path = "vendor/zcash_client_sqlite-0.22.0" }
 tonic-web-wasm-client = { path = "vendor/tonic-web-wasm-client-0.9.1" }
 
 [profile.release]
-# Measured: opt-level = 3 is no faster on mainnet scans (msScan 7350-8805 vs
-# 8064-8218 per 1000 blocks) but makes the wasm 31% larger (6.8 -> 8.9 MB).
+# opt-level = 3 is no faster on mainnet scans but makes the wasm ~30% larger.
 opt-level = "s"
 lto = true
 codegen-units = 1

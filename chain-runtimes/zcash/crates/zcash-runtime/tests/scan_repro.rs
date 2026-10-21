@@ -60,8 +60,8 @@ async fn scan_batch_10() {
     scan_with_batch(10).await;
 }
 
-/// Hung in the browser. A native hang points at upstream scanning; a pass
-/// points at wasm or the storage layer.
+/// A native hang points at upstream scanning; a pass points at wasm or the
+/// storage layer.
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "requires network"]
 async fn scan_batch_25() {
@@ -158,7 +158,7 @@ async fn scan_batch_curve() {
     }
 }
 
-/// Mirrors the browser `bisect.html`: advances one block at a time, 40 times.
+/// Advances one block at a time, 40 times.
 /// A native stall points at block content; a full run points at wasm.
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "requires network"]

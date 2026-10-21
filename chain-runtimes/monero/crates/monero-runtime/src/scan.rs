@@ -742,15 +742,13 @@ fn timelock_to_i64(timelock: monero_wallet::transaction::Timelock) -> i64 {
     }
 }
 
-/// Rewinds to `height`, dropping all scan results above it.
+/// Rewinds to `height`, dropping all scan results above it. Destructive; used for
+/// reorg recovery and user rescans.
 ///
-/// Destructive; used for reorg recovery and user rescans. Our own broadcasts
-/// within the reorg window of `tip` are kept: a reorged-out send usually
-/// returns to the pool and is mined again, and releasing its inputs could let
-/// a second send with other inputs also confirm. They revert to pending
-/// (height cleared) with inputs still spent, left to the pending check and
-/// scanning. Deeper sends cannot be reorged out; they are dropped and found
-/// again by the rescan, so a rescan does not turn old history pending.
+/// Our own broadcasts within the reorg window of `tip` revert to pending with
+/// inputs still spent: a reorged-out send usually returns to the pool and is mined
+/// again, and releasing its inputs could let a second send also confirm. Deeper
+/// sends cannot be reorged out; they are dropped and found again by the rescan.
 pub fn rewind_to(db: &mut Db, identity_id: i64, height: u64, tip: u64) -> Result<()> {
     let tx = db
         .conn_mut()

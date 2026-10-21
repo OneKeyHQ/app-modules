@@ -17,20 +17,10 @@ thread_local! {
     // v_transactions open a separate read connection by name (same VFS, same data).
     static DB_NAME: RefCell<Option<String>> = const { RefCell::new(None) };
 
-    // ── Reentrancy guard ────────────────────────────────────────────────
-    //
-    // Async operations take DB out, hold it across awaits and put it back; the
-    // host can call in meanwhile. Unguarded race:
-    //   1. A is in syncStep with DB(A) taken
-    //   2. B calls openWallet(B); DB_NAME becomes B
-    //   3. A finishes and puts DB(A) back while DB_NAME says B
-    // Every later call then silently hits the wrong wallet, possibly spending
-    // A's notes in B's transactions.
-    //
-    // BUSY is the real guard: it refuses wallet switches meanwhile. GENERATION is
-    // a fallback that is currently unreachable (it is sampled after BUSY is set
-    // and set_db/close are blocked by BUSY); it covers future paths that await
-    // without holding BUSY. It is not a second independent guard today.
+    // Async operations hold DB across awaits. If another wallet were opened
+    // meanwhile, putting the old DB back would make later calls hit the wrong
+    // wallet. BUSY refuses wallet switches during an operation; GENERATION
+    // catches any path that awaits without holding BUSY.
     static BUSY: Cell<bool> = const { Cell::new(false) };
     static GENERATION: Cell<u64> = const { Cell::new(0) };
 
@@ -65,17 +55,11 @@ fn assert_idle(operation: &str) -> Result<()> {
 /// Sets BUSY while held and always clears it on drop, including early returns
 /// and panic unwinds.
 ///
-/// A wasm-bindgen `async fn` body starts only after the current synchronous
-/// block, so there are two windows:
-///
-/// - **After the call, before the body runs**: nothing is taken yet, so
-///   `openWallet` succeeds and the operation runs on the new wallet. The host's
-///   `withWalletLease` serializes this; the runtime cannot without making exports
-///   return Promises synchronously (typing every result as `any`).
-/// - **During awaits in the body**: DB is taken; BUSY blocks switching or closing.
-///
-/// Generation ensures that in either window a stale wallet never overwrites the
-/// current one.
+/// A wasm-bindgen `async fn` body starts after the current synchronous block,
+/// so an `openWallet` before it runs is not refused and the operation runs on
+/// the new wallet; the host serializes that window. During awaits BUSY blocks
+/// switching or closing, and the generation check keeps a stale wallet from
+/// overwriting the current one.
 struct BusyGuard {
     generation: u64,
 }

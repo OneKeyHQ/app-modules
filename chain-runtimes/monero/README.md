@@ -93,21 +93,19 @@ diagDatabase()
 ```
 prepareTransaction           select inputs, build; no spend key
 verifyTransaction            check recipient, amount, fee and change against the review
-signTransactionWithBip32Key  verify again, then sign; no network, no DB
+signTransactionWithBip32Key  verify again, reduce the spend key from the account BIP-32 key, sign; no network, no DB
 broadcastTransaction         record, then broadcast → { txid, broadcast: accepted | unknown }
 ```
 
 - `prepareTransaction` takes exactly one recipient.
-- Before broadcasting, the host verifies the signed transaction
-  against the same prepared transaction and review before broadcasting. The
-  broadcast boundary repeats that verification before touching the database or
-  node. Missing review evidence is rejected, including calls from older hosts.
-  The reviewed sender and network must match the local account before recording
-  a send, so another account's change cannot be credited to this account.
+- Before broadcasting, the host verifies the signed transaction against the same
+  prepared transaction and review. `broadcastTransaction` repeats that check
+  before touching the database or node, and rejects calls without review
+  evidence. The reviewed sender and network must match the local account, so
+  another account's change cannot be credited to this account.
 - Pending outgoing and change amounts come from that verified review. Optional
   host amount strings must be canonical unsigned integers equal to those values;
-  missing strings do not discard the amounts derived from the review. A retry
-  retains previously recorded amounts and fills only missing values.
+  missing strings do not discard the amounts derived from the review.
 - `verifySignedTransaction` returns the signed transaction id. It uses the pinned
   wallet library's output matching and the transaction's fee; it performs no
   network request and persists no data. This matches outputs and the fee; it

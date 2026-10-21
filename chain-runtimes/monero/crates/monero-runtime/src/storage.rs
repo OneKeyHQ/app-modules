@@ -2,8 +2,7 @@
 //!
 //! The wasm side runs in a dedicated Worker; desktop, web, extension and mobile
 //! WebEmbed all use the same OPFS sync-access VFS, so SQLite reads and writes
-//! pages directly instead of preloading the database into wasm memory. This is
-//! why monero-oxide was chosen over monero-ts, which serializes the whole wallet.
+//! pages directly instead of preloading the database into wasm memory.
 //!
 //! The native build is kept for Rust tests and local diagnostics.
 

@@ -84,9 +84,7 @@ pub fn init_memory_storage() {
 
 /// The capabilities of this version-locked wallet and keys package set.
 ///
-/// Lets the host hide unsupported actions up front instead of failing at proving time,
-/// after the user has reviewed the send and entered a password.
-///
+/// Lets the host hide unsupported actions up front instead of failing at proving time.
 #[wasm_bindgen(js_name = capabilities)]
 pub fn capabilities() -> String {
     serde_json::json!({
@@ -98,11 +96,9 @@ pub fn capabilities() -> String {
         "scan": true,
         "balance": true,
         "history": true,
-        // The wallet creates proposals and proofs; the keys package signs inputs.
-        // The host must combine both packages' capabilities.
+        // Proposals and proofs only; the keys package signs the inputs.
         "proveShielding": true,
         "notes": {
-            // Why a capability is unavailable, so the host can show different hints.
             "sapling": "Sapling is out of scope: not scanned, shown, received or spent; \
     its ~50MB proving parameters are not shipped",
             "transparent": "Transparent inputs are signed by the keys package; this package \
@@ -118,9 +114,7 @@ pub fn dependency_versions() -> String {
     crate::dependency_versions().to_string()
 }
 
-/// Diagnostic: structural summary of a single block. No scanning, no writes, no state change.
-///
-/// Confirms whether browser (gRPC-web proxy) and native (gRPC) clients receive the same data.
+/// Diagnostic: structural summary of a single block. No scanning, no writes.
 #[wasm_bindgen(js_name = diagBlockSummary)]
 pub async fn block_summary(height: u32) -> Result<String, JsValue> {
     Ok(
@@ -132,20 +126,18 @@ pub async fn block_summary(height: u32) -> Result<String, JsValue> {
     )
 }
 
-/// Open a page-backed database and apply the official SQLite migrations.
-/// No whole-database preload is required by the shared OPFS VFS.
+/// Opens a page-backed database and applies the official SQLite migrations.
 #[wasm_bindgen(js_name = openWallet)]
 pub async fn open_wallet(network_name: String, db_name: String) -> Result<String, JsValue> {
     let _perf = perf::span("openWallet");
     let (network_name, db_name) = (network_name.as_str(), db_name.as_str());
     let db = wallet::open_and_migrate(network_name, db_name)?;
-    // Rejected with WALLET_BUSY while an async operation runs; must propagate,
-    // otherwise the caller assumes the database was swapped.
+    // WALLET_BUSY must propagate, or the caller assumes the database was swapped.
     runtime::set_db(db, db_name)?;
     Ok(serde_json::json!({ "dbName": db_name, "network": network_name }).to_string())
 }
 
-/// Temporary perf tracing switch: logs per-step timings to the console (`[PRIV-PERF] rt`).
+/// Perf tracing switch: logs per-step timings to the console (`[PRIV-PERF] rt`).
 #[wasm_bindgen(js_name = setPerfTrace)]
 pub fn set_perf_trace(enabled: bool) {
     perf::set_enabled(enabled);
@@ -173,8 +165,7 @@ pub fn set_lightwalletd_url(base_url: &str) -> Result<(), JsValue> {
 
 /// Current chain tip height. Requires only `setLightwalletdUrl`, not an open wallet.
 ///
-/// The host uses it to pick a new account's birthday before the database exists;
-/// otherwise the birthday falls back to Sapling activation and a full scan.
+/// Lets the host pick a new account's birthday before the database exists.
 #[wasm_bindgen(js_name = chainTip)]
 pub async fn chain_tip() -> Result<u32, JsValue> {
     Ok(runtime::with_client(|mut client| async move {
@@ -186,8 +177,7 @@ pub async fn chain_tip() -> Result<u32, JsValue> {
 
 /// Fetches the current chain tip with an isolated client.
 ///
-/// Host-side birthday and scheduler probes must not replace the wallet's
-/// global client while a sync operation has borrowed it across an await.
+/// Probes must not replace the wallet's global client while a sync has borrowed it.
 #[wasm_bindgen(js_name = chainTipAt)]
 pub async fn chain_tip_at(base_url: String) -> Result<u32, JsValue> {
     let mut client = network::connect(&base_url)?;
@@ -198,8 +188,8 @@ pub async fn chain_tip_at(base_url: String) -> Result<u32, JsValue> {
 
 /// Imports a view-only account (UFVK) and returns its UUID.
 ///
-/// `birthdayHeight` is the scan start. New accounts pass the current tip; restores must pass
-/// a height early enough not to miss historical funds. This decision belongs to the host.
+/// `birthdayHeight` is the scan start: the current tip for new accounts, an early enough
+/// height for restores.
 #[wasm_bindgen(js_name = importAccountUfvk)]
 pub async fn import_account_ufvk(
     account_name: String,
@@ -226,7 +216,7 @@ pub async fn import_account_ufvk(
     )
 }
 
-/// Removes one account from the shared database. Does not delete the database, which holds other wallets' accounts.
+/// Removes one account from the shared database; other accounts and the database remain.
 #[wasm_bindgen(js_name = removeAccount)]
 pub async fn remove_account(account_uuid: String) -> Result<(), JsValue> {
     runtime::with_db(|db| account::remove_account(db, &account_uuid))?;
@@ -243,8 +233,7 @@ pub async fn remove_deleted_account(account_uuid: String) -> Result<(), JsValue>
 
 /// Finds the account for a UFVK, returning `{ uuid }` or `"null"` if absent.
 ///
-/// The only correct lookup in the shared per-network database: the first account is not
-/// necessarily the one wanted, and UUIDs change after a purge.
+/// The only correct lookup in the shared per-network database: UUIDs change after a purge.
 #[wasm_bindgen(js_name = accountByUfvk)]
 pub fn account_by_ufvk(ufvk: String) -> Result<String, JsValue> {
     let _perf = perf::span("accountByUfvk");
@@ -254,7 +243,6 @@ pub fn account_by_ufvk(ufvk: String) -> Result<String, JsValue> {
 /// Per-account sync status, derived from the account birthday and the database's remaining scan ranges.
 ///
 /// Global progress misleads in a shared database: adding an account makes all accounts look unsynced.
-/// The official schema has no per-account cursor and is not changed for this; this is read-only.
 ///
 /// Returns block heights, not a percentage: the upstream progress ratio is over notes in a moving
 /// window and never reaches 100%.
@@ -273,8 +261,7 @@ pub fn list_accounts() -> Result<String, JsValue> {
 
 /// Account balance as JSON.
 ///
-/// `trusted` / `untrusted` are confirmation thresholds (both >= 1, trusted <= untrusted):
-/// own change can be looser, external notes stricter. Values are a product decision passed by the host.
+/// `trusted` / `untrusted` are confirmation thresholds (both >= 1, trusted <= untrusted).
 /// Throws `NOT_SYNCED` before any block has been synced.
 #[wasm_bindgen(js_name = accountBalance)]
 pub fn account_balance(
@@ -294,11 +281,9 @@ pub fn account_balance(
 
 /// One-time sync preparation: downloads subtree roots for all three pools and updates the chain tip.
 ///
-/// The slowest step of a first sync, independent of batchSize; exposed separately so the host
-/// can show a distinct "preparing" state.
+/// The slowest step of a first sync; exposed separately so the host can show a "preparing" state.
 ///
 /// Returns `{ chainTip, saplingSubtrees, orchardSubtrees, ironwoodSubtrees }`.
-/// Call once at the start of a sync round.
 #[wasm_bindgen(js_name = syncPrepare)]
 pub async fn sync_prepare() -> Result<String, JsValue> {
     let _perf = perf::span("syncPrepare");
@@ -311,10 +296,10 @@ pub async fn sync_prepare() -> Result<String, JsValue> {
     )
 }
 
-/// Updates only the chain tip (one unary call, ~270ms on mainnet). Returns `{ chainTip }`.
+/// Updates only the chain tip (one unary call). Returns `{ chainTip }`.
 ///
-/// Use every sync round; subtree roots go through `syncPrepare` once per open, since
-/// re-downloading the ~1900 immutable roots costs ~7s per round on mainnet.
+/// Use every sync round; call `syncPrepare` once per open, since re-downloading the
+/// ~1900 subtree roots costs several seconds on mainnet.
 #[wasm_bindgen(js_name = syncTip)]
 pub async fn sync_tip() -> Result<String, JsValue> {
     Ok(
@@ -328,8 +313,6 @@ pub async fn sync_tip() -> Result<String, JsValue> {
 
 /// Read-only view of pending scan ranges; no network requests. Returns
 /// `{ ranges: [{ start, end, len, priority }], totalBlocks }`.
-///
-/// For host progress bars and for checking which range the wallet wants to scan.
 #[wasm_bindgen(js_name = syncPeek)]
 pub fn sync_peek() -> Result<String, JsValue> {
     Ok(runtime::with_db(|db| sync::peek(db))?)
@@ -367,8 +350,6 @@ pub fn pczt_quote(
     spend_source: Option<String>,
     memo_hex: Option<String>,
 ) -> Result<String, JsValue> {
-    // Same constructor and parameter order as `pcztCreate`: any differing selection
-    // field would make the quoted fee differ from the fee paid.
     let policy = send::parse_send_policy(
         trusted,
         untrusted,
@@ -401,8 +382,8 @@ pub fn transaction_details(account_uuid: String, txid: String) -> Result<String,
 
 /// Per-output breakdown of one transaction: `{ txid, spent[], received[], external[] }`.
 ///
-/// `transactionDetails` gives aggregates (value delta, counts) for lists; this gives each
-/// output (value, pool, change flag, memo, address) for the details page.
+/// `transactionDetails` gives aggregates; this gives each output (value, pool, change flag,
+/// memo, address).
 #[wasm_bindgen(js_name = transactionOutputs)]
 pub fn transaction_outputs(account_uuid: String, txid: String) -> Result<String, JsValue> {
     Ok(runtime::with_read_conn(|conn| {
@@ -414,18 +395,15 @@ pub fn transaction_outputs(account_uuid: String, txid: String) -> Result<String,
 ///
 /// `priority` selects the lane: `"chainTip"` follows new blocks, `"historic"` backfills,
 /// absent or `"any"` follows upstream order. Candidate ranges come only from upstream
-/// suggestions; the host cannot pick arbitrary heights. Scheduling belongs to the host,
-/// range safety to the protocol implementation.
+/// suggestions; the host cannot pick arbitrary heights.
 ///
 /// `activeUfvksJson` is a required JSON string array. Only those identities are used for
 /// Orchard/Ironwood trial decryption. An empty array fails with `NO_ACTIVE_ACCOUNTS`; it never
 /// falls back to every account stored in the runtime database.
 ///
-/// The result includes `scannedFrom/scannedTo/scannedPriority` so the host can attribute progress to a lane.
-///
-/// Never loops to completion on its own. Returns
-/// `{ done, batchesDone, blocksScanned, remainingBlocks, remainingRanges }`;
-/// the host decides whether to call again.
+/// Never loops to completion. Returns
+/// `{ done, batchesDone, blocksScanned, remainingBlocks, remainingRanges, scannedFrom,
+/// scannedTo, scannedPriority }`; the host decides whether to call again.
 #[wasm_bindgen(js_name = syncStep)]
 pub async fn sync_step(
     batch_size: u32,
@@ -460,7 +438,7 @@ pub async fn sync_step(
 /// Paged transaction history as a JSON array. Unmined first, then by height descending.
 ///
 /// Returns neutral facts (value delta, change flag, note counts, timestamps), no
-/// incoming/outgoing classification and no text; the display model belongs to the host.
+/// incoming/outgoing classification.
 ///
 /// `limit` is capped at 500; above that throws `INVALID_BATCH_SIZE`.
 #[wasm_bindgen(js_name = transactionHistory)]
@@ -475,7 +453,7 @@ pub fn transaction_history(
     })?)
 }
 
-// ── Send ────────────────────────────────────────────────────────────────
+// ── Rescan ──────────────────────────────────────────────────────────────
 
 /// Rewinds the wallet to a height so later syncs rescan that range.
 ///
@@ -483,10 +461,8 @@ pub fn transaction_history(
 /// rewound to (upstream may go further back to a commitment tree checkpoint).
 #[wasm_bindgen(js_name = rewindTo)]
 pub fn rewind_to(height: u32) -> Result<u32, JsValue> {
-    // Deliberately no idle gate: this is how the wallet follows a reorg (sole caller is
-    // syncWallet's reorg branch). Refusing because a transaction is unmined would pin the
-    // account to an abandoned chain.
-    //
+    // No idle gate: this is how the wallet follows a reorg, and refusing because a
+    // transaction is unmined would pin the account to an abandoned chain.
     // User-triggered rescans use `queueRescanFrom`, which only requeues ranges.
     let rewound = runtime::with_db(|db| sync::rewind_to(db, height))?;
     runtime::reclaim_storage(storage::RECLAIM_PAGES_AFTER_DELETE);
@@ -495,9 +471,8 @@ pub fn rewind_to(height: u32) -> Result<u32, JsValue> {
 
 /// Re-queue `[fromHeight, chainTip]` as historic work without deleting cached notes or history.
 ///
-/// This is the resume companion to `syncStep(activeUfvksJson)`: the host persists each privacy
-/// identity's pause cursor, applies its reorg margin, queues the missing range, and only then adds
-/// the identity back to the active UFVK set.
+/// Resume companion to `syncStep(activeUfvksJson)`: the host queues the range missed while an
+/// identity was paused (with a reorg margin) before adding it back to the active UFVK set.
 #[wasm_bindgen(js_name = queueRescanFrom)]
 pub fn queue_rescan_from(from_height: u32) -> Result<String, JsValue> {
     Ok(runtime::with_db(|db| {
@@ -514,7 +489,7 @@ pub fn queue_rescan_from(from_height: u32) -> Result<String, JsValue> {
 
 /// Builds an unproven, unsigned PCZT for a transfer and returns its bytes.
 ///
-/// `fallbackChangePool`: the product currently always passes `"ironwood"`, so change goes to the newest shielded pool.
+/// `fallbackChangePool`: must be `"ironwood"`; Orchard is spend-only after NU6.3.
 /// `padOrchardBundle`: pads the Orchard bundle to hide the real action count (larger, higher fee).
 #[wasm_bindgen(js_name = pcztCreate)]
 pub fn pczt_create(
@@ -563,9 +538,8 @@ pub fn pczt_prove(pczt_bytes: Vec<u8>) -> Result<Vec<u8>, JsValue> {
 
 /// Merges a redacted PCZT returned by an external (hardware) signer back into the full local PCZT.
 ///
-/// Hardware returns only public fields such as signatures; private fields (rseed, witness, etc.)
-/// come back as None. The Combiner takes whichever side has a value, so local + signed copies
-/// yield a provable, extractable PCZT. Needs no wallet database.
+/// Hardware returns only public fields such as signatures; the Combiner takes whichever side
+/// has a value. Needs no wallet database.
 #[wasm_bindgen(js_name = pcztCombine)]
 pub fn pczt_combine(original: Vec<u8>, signed: Vec<u8>) -> Result<Vec<u8>, JsValue> {
     Ok(send::combine_pczt(&original, &signed)?)
@@ -573,12 +547,9 @@ pub fn pczt_combine(original: Vec<u8>, signed: Vec<u8>) -> Result<Vec<u8>, JsVal
 
 /// Durability barrier after an irreversible step.
 ///
-/// A barrier failure means "unknown whether persistence reached durable storage", not that
-/// the step failed. Both callers are past the point of no return (`pcztSubmit` committed the
-/// transaction, `broadcastTransaction` sent it), so the real outcome must not be replaced by a
-/// generic storage error that would make the host retry or show an on-chain tx as failed.
-///
-/// Callers supply `params` (outcome shapes differ); the error code and detail are set here.
+/// A barrier failure means persistence is unconfirmed, not that the step failed. Both callers
+/// are past the point of no return, so the outcome travels in `params` instead of being replaced
+/// by a generic storage error that would make the host retry or show an on-chain tx as failed.
 async fn barrier_after_irreversible(params: serde_json::Value) -> Result<(), crate::RuntimeError> {
     storage::durability_barrier().await.map_err(|error| {
         crate::RuntimeError::with(crate::ErrorCode::FinalizeOutcomeUnknown, params).detail(error)
@@ -591,8 +562,7 @@ async fn barrier_after_irreversible(params: serde_json::Value) -> Result<(), cra
 /// - `rejected`: the node definitively judged it consensus-invalid or expired; it can never be
 ///   mined. The transaction stays stored and its notes return only at expiry height.
 /// - `unknown`: delivery to the node is uncertain. The transaction stays pending until mined
-///   or expired and the host does not resubmit it; the host must not treat it as a failed
-///   send.
+///   or expired; the host does not resubmit it and must not treat it as failed.
 #[wasm_bindgen(js_name = pcztSubmit)]
 pub async fn pczt_submit(account_uuid: String, pczt_bytes: Vec<u8>) -> Result<String, JsValue> {
     let outcome = runtime::with_db_and_client(move |mut db, mut client| async move {
@@ -652,8 +622,7 @@ pub async fn broadcast_transaction(txid: String) -> Result<(), JsValue> {
         };
         let r = match r {
             Err(e) if e.code == crate::ErrorCode::BroadcastRejected => {
-                // Even if persisting fails, return the node's rejection reason: it is what the
-                // user can act on. The persistence failure is attached as detail.
+                // Return the node's rejection even if persisting it fails.
                 let recorded =
                     tx_state::account_uuid_for_txid(&mut db, &txid).and_then(|account_uuid| {
                         tx_state::record_rejection(&mut db, &txid, &account_uuid, &e)
@@ -683,18 +652,15 @@ pub async fn broadcast_transaction(txid: String) -> Result<(), JsValue> {
     Ok(result?)
 }
 
-// ── Self-check ──────────────────────────────────────────────────────────
+// ── Storage and diagnostics ─────────────────────────────────────────────
 
-/// Deletes a wallet database (including its bytes in IndexedDB). Irreversible.
+/// Deletes a wallet database file. Irreversible.
 ///
 /// The database is a derived cache: UFVKs and birthdays are kept by the host, so deleting
-/// only forces a rescan. Used after the last account is removed and on app reset.
+/// only forces a rescan. Pending transactions do not block deletion.
 ///
-/// Does not check in-flight transactions: both uses must succeed, and transactions are already
-/// on chain or will expire. Operations that must wait for settlement are gated by the host.
-///
-/// Closes the database first if it is the one currently open (required before deletion).
-/// Returns `true` if deleted, `false` if it did not exist (not an error).
+/// Closes the database first if it is the one currently open.
+/// Returns `true` if deleted, `false` if it did not exist.
 #[wasm_bindgen(js_name = deleteWallet)]
 pub async fn delete_wallet(db_name: String) -> Result<bool, JsValue> {
     if !storage::database_exists(&db_name).await? {
@@ -708,13 +674,9 @@ pub async fn delete_wallet(db_name: String) -> Result<bool, JsValue> {
 
 /// Usage of the open wallet database, grouped by data meaning. Read-only.
 ///
-/// A stable contract, not `diag*`: the host uses it for capacity guards (e.g. stopping
-/// birthday backfill above a soft threshold).
+/// A stable contract, not `diag*`: the host uses it for capacity guards.
 ///
-/// `logicalBytes` is page count × page size, not IndexedDB physical usage (which includes
-/// write amplification, stale pages and async flushes). Do not extrapolate one from the other.
-///
-/// Arbitrary SQL is deliberately not offered: one bad statement could delete an anchor still needed for proving.
+/// `logicalBytes` is page count × page size, not physical storage usage.
 #[wasm_bindgen(js_name = storageStats)]
 pub fn storage_stats() -> Result<String, JsValue> {
     let db_name = runtime::open_db_name()
@@ -737,7 +699,7 @@ pub fn database_health() -> Result<String, JsValue> {
 
 /// Diagnostic: counts inputs per bundle in a PCZT.
 ///
-/// Input counts are direct evidence of which pool funds left from; fee differences are only indirect.
+/// Input counts show which pool funds left from.
 #[wasm_bindgen(js_name = diagPcztInputCounts)]
 pub fn pczt_input_counts(pczt_bytes: Vec<u8>) -> Result<String, JsValue> {
     let pczt = pczt::Pczt::parse(&pczt_bytes).map_err(|e| {
@@ -745,19 +707,13 @@ pub fn pczt_input_counts(pczt_bytes: Vec<u8>) -> Result<String, JsValue> {
             crate::RuntimeError::new(crate::ErrorCode::PcztError).detail(format!("{e:?}")),
         )
     })?;
-    // Action counts alone mislead: Orchard/Ironwood actions pair a spend with an output, and
-    // bundles are padded with dummies to at least 2. Two actions may be a real shielded spend
-    // or just a change output plus a dummy.
-    //
-    // `valueSum` = the pool's spends minus outputs (sign given separately). Negative means net
-    // inflow (change only); positive means notes from this pool were actually spent.
+    // Action counts alone mislead (actions pair a spend with an output and are padded to 2).
+    // `valueSum` = the pool's spends minus outputs; positive means notes from it were spent.
     let sum = |b: &pczt::orchard::Bundle| {
         let (magnitude, negative) = *b.value_sum();
         serde_json::json!({ "magnitude": magnitude, "negative": negative })
     };
-    // The transparent input value is the reliable mixing indicator:
-    // shielded spend = payment + fee − transparent input. `valueSum` gives only net flow, and a
-    // net inflow does not imply zero shielded spend.
+    // shielded spend = payment + fee − transparent input; `valueSum` gives only net flow.
     let transparent_value: u64 = pczt.transparent().inputs().iter().map(|i| *i.value()).sum();
 
     Ok(serde_json::json!({
