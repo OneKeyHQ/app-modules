@@ -7,6 +7,7 @@ import android.content.res.ColorStateList
 import android.content.res.Configuration
 import androidx.appcompat.view.ContextThemeWrapper
 import android.graphics.Color
+import android.graphics.Canvas
 import android.graphics.Outline
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
@@ -150,7 +151,16 @@ private enum class AndroidTabBarStyle {
 class BottomTabsView(context: Context) : LinearLayout(context) {
   private var bottomNavigation = ExtendedBottomNavigationView(context)
   val layoutHolder = FrameLayout(context)
-  private val floatingRoot = FrameLayout(context)
+  private val floatingRoot = object : FrameLayout(context) {
+    override fun drawChild(canvas: Canvas, child: View, drawingTime: Long): Boolean {
+      if (child === floatingBar && usesBottomBlur) {
+        drawBlurBackdrop(canvas, width, floatingBar.top, height) { recording ->
+          super.drawChild(recording, layoutHolder, drawingTime)
+        }
+      }
+      return super.drawChild(canvas, child, drawingTime)
+    }
+  }
   private val floatingBar = FrameLayout(context)
   private val floatingBarBackground = View(context)
   private val floatingIndicator = View(context)
@@ -190,6 +200,7 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
   private var fontWeight: Int? = null
   private var labeled: Boolean? = null
   private var lastReportedSize: Size? = null
+  private var lastReportedTabBarHeight = -1
   private var hasCustomAppearance = false
   private var uiModeConfiguration: Int = Configuration.UI_MODE_NIGHT_UNDEFINED
   private var androidTabBarStyle = AndroidTabBarStyle.DEFAULT
@@ -246,6 +257,19 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
     }
     .build()
 
+  private var androidBottomBlurEnabled = false
+  private var bottomBarBlur: BottomBarBlurRenderer? = null
+  private var blurAppearanceApplied = false
+  private var floatingBlurAppearanceApplied = false
+  private var blurSurfaceColor = Color.WHITE
+  private var savedBarTint: ColorStateList? = null
+  private var savedItemBackground: Drawable? = null
+  private var savedBarElevation = 0f
+
+  private val usesBottomBlur: Boolean
+    get() = androidBottomBlurEnabled && Build.VERSION.SDK_INT >= 31 &&
+      isHardwareAccelerated && !isTabBarHidden
+
   init {
     orientation = VERTICAL
     layoutHolder.isSaveEnabled = false
@@ -288,26 +312,7 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
       insets
     }
 
-    post {
-      addOnLayoutChangeListener { _, left, top, right, bottom,
-                                  _, _, _, _ ->
-        val newWidth = right - left
-        val newHeight = bottom - top
 
-        // Notify about tab bar height.
-        onTabBarMeasuredListener?.invoke(
-          Utils.convertPixelsToDp(context, getTabBarMeasuredHeight()).toInt()
-        )
-
-        if (newWidth != lastReportedSize?.width || newHeight != lastReportedSize?.height) {
-          val dpWidth = Utils.convertPixelsToDp(context, layoutHolder.width)
-          val dpHeight = Utils.convertPixelsToDp(context, layoutHolder.height)
-
-          onNativeLayoutListener?.invoke(dpWidth, dpHeight)
-          lastReportedSize = Size(newWidth, newHeight)
-        }
-      }
-    }
   }
 
   private fun dp(value: Float): Int =
@@ -318,6 +323,7 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
   }
 
   private fun detachTabBarViews() {
+    releaseBottomBlur()
     removeFromParent(layoutHolder)
     removeFromParent(bottomNavigation)
     removeFromParent(floatingRoot)
@@ -519,8 +525,8 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
     if (androidTabBarStyle != AndroidTabBarStyle.FLOATING) {
       return
     }
-    // Android has no system backdrop material, so the glass is approximated with
-    // a near-opaque tinted surface, a hairline rim, and a soft outline shadow.
+    // With a live backdrop, keep only a light surface tint over the blur.
+    // The existing rim, shadow, and pressed lens keep their own sharp layers.
     val baseColor = resolvedBarTintColor()
     val isDark = isDarkColor(baseColor)
     val contrastColor = if (isDark) Color.WHITE else Color.BLACK
@@ -528,7 +534,7 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
     floatingBarBackground.background = GradientDrawable().apply {
       shape = GradientDrawable.RECTANGLE
       cornerRadius = dp(FloatingTabBarMetrics.BAR_HEIGHT / 2f).toFloat()
-      setColor(withAlpha(surfaceColor, 0.95f))
+      setColor(withAlpha(surfaceColor, if (usesBottomBlur) 0.12f else 0.95f))
       setStroke(maxOf(1, dp(0.5f)), withAlpha(contrastColor, if (isDark) 0.14f else 0.07f))
     }
     floatingRestingFillColor = activeIndicatorColor?.defaultColor
@@ -902,6 +908,120 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
     layout(left, top, right, bottom)
   }
 
+  fun setAndroidBottomBlurEnabled(enabled: Boolean) {
+    if (androidBottomBlurEnabled == enabled) return
+    androidBottomBlurEnabled = enabled
+    updateBlurAppearance()
+    requestLayout()
+    floatingRoot.invalidate()
+    invalidate()
+  }
+
+  private fun updateBlurAppearance() {
+    if (!usesBottomBlur) releaseBottomBlur()
+    val enabled = usesBottomBlur && androidTabBarStyle == AndroidTabBarStyle.DEFAULT
+    if (androidTabBarStyle == AndroidTabBarStyle.FLOATING) {
+      blurSurfaceColor = resolvedBarTintColor()
+      if (floatingBlurAppearanceApplied != usesBottomBlur) {
+        floatingBlurAppearanceApplied = usesBottomBlur
+        updateFloatingAppearance()
+      }
+    } else if (enabled) {
+      blurSurfaceColor = barTintColor ?: Utils.getDefaultColorFor(
+        bottomNavigation.context, com.google.android.material.R.attr.colorSurface,
+      ) ?: if (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES) {
+        Color.BLACK
+      } else Color.WHITE
+    }
+    if (enabled == blurAppearanceApplied) return
+    if (enabled) {
+      savedBarTint = bottomNavigation.backgroundTintList
+      savedItemBackground = bottomNavigation.itemBackground
+      savedBarElevation = bottomNavigation.elevation
+      val ripple = bottomNavigation.itemRippleColor
+      bottomNavigation.backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT)
+      bottomNavigation.itemBackground = null
+      bottomNavigation.itemRippleColor = ripple
+      bottomNavigation.elevation = 0f
+    } else {
+      bottomNavigation.backgroundTintList = savedBarTint
+      bottomNavigation.itemBackground = savedItemBackground
+      bottomNavigation.elevation = savedBarElevation
+      releaseBottomBlur()
+    }
+    blurAppearanceApplied = enabled
+  }
+
+  private fun releaseBottomBlur() {
+    if (Build.VERSION.SDK_INT >= 31) bottomBarBlur?.release()
+    bottomBarBlur = null
+  }
+
+  override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+    updateBlurAppearance()
+    super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+    if (usesBottomBlur && androidTabBarStyle == AndroidTabBarStyle.DEFAULT) {
+      layoutHolder.measure(
+        MeasureSpec.makeMeasureSpec(maxOf(0, measuredWidth - paddingLeft - paddingRight), MeasureSpec.EXACTLY),
+        MeasureSpec.makeMeasureSpec(maxOf(0, measuredHeight - paddingTop - paddingBottom), MeasureSpec.EXACTLY),
+      )
+    }
+  }
+
+  override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+    super.onLayout(changed, left, top, right, bottom)
+    if (usesBottomBlur && androidTabBarStyle == AndroidTabBarStyle.DEFAULT) {
+      layoutHolder.layout(paddingLeft, paddingTop, width - paddingRight, height - paddingBottom)
+      bottomNavigation.layout(
+        paddingLeft, height - paddingBottom - bottomNavigation.measuredHeight,
+        width - paddingRight, height - paddingBottom,
+      )
+    }
+    val barHeight = Utils.convertPixelsToDp(context, getTabBarMeasuredHeight()).toInt()
+    if (barHeight != lastReportedTabBarHeight) {
+      onTabBarMeasuredListener?.invoke(barHeight)
+      lastReportedTabBarHeight = barHeight
+    }
+    // Scene bounds change when blur toggles even if the host bounds stay fixed.
+    val sceneSize = Size(layoutHolder.width, layoutHolder.height)
+    if (sceneSize != lastReportedSize) {
+      onNativeLayoutListener?.invoke(
+        Utils.convertPixelsToDp(context, sceneSize.width),
+        Utils.convertPixelsToDp(context, sceneSize.height),
+      )
+      lastReportedSize = sceneSize
+    }
+  }
+
+  private fun drawBlurBackdrop(
+    canvas: Canvas, width: Int, barTop: Int, bottom: Int, drawScenes: (Canvas) -> Unit,
+  ) {
+    if (!usesBottomBlur || !canvas.isHardwareAccelerated || Build.VERSION.SDK_INT < 31) return
+    val blur = bottomBarBlur ?: BottomBarBlurRenderer(resources.displayMetrics.density).also {
+      bottomBarBlur = it
+    }
+    blur.draw(canvas, width, barTop, bottom, blurSurfaceColor, drawScenes)
+  }
+
+  override fun drawChild(canvas: Canvas, child: View, drawingTime: Long): Boolean {
+    if (child === bottomNavigation && androidTabBarStyle == AndroidTabBarStyle.DEFAULT) {
+      drawBlurBackdrop(canvas, width, bottomNavigation.top, bottomNavigation.bottom) { recording ->
+        super.drawChild(recording, layoutHolder, drawingTime)
+      }
+    }
+    return super.drawChild(canvas, child, drawingTime)
+  }
+
+  override fun onAttachedToWindow() {
+    super.onAttachedToWindow()
+    requestLayout()
+  }
+
+  override fun onDetachedFromWindow() {
+    releaseBottomBlur()
+    super.onDetachedFromWindow()
+  }
+
   override fun requestLayout() {
     super.requestLayout()
     @Suppress("SENSELESS_COMPARISON") // layoutCallback can be null here since this method can be called in init
@@ -1058,11 +1178,15 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
       return
     }
     androidTabBarStyle = nextStyle
+    // Restore the docked appearance before reparenting, then capture the new
+    // style only after its normal appearance has been installed.
+    if (blurAppearanceApplied) updateBlurAppearance()
     if (nextStyle == AndroidTabBarStyle.FLOATING) {
       attachFloatingLayout()
     } else {
       attachDefaultLayout()
     }
+    updateBlurAppearance()
     updateTextAppearance()
     requestLayout()
   }
@@ -1087,19 +1211,12 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
       bottomNavigation.visibility = if (isHidden) GONE else VISIBLE
     }
 
-    // Force re-measure and notify JS about the new layout dimensions
-    post {
-      val dpWidth = Utils.convertPixelsToDp(context, layoutHolder.width)
-      val dpHeight = Utils.convertPixelsToDp(context, layoutHolder.height)
-      onNativeLayoutListener?.invoke(dpWidth, dpHeight)
+    updateBlurAppearance()
+    requestLayout()
+    floatingRoot.invalidate()
+    invalidate()
+    if (!isHidden) post { updateFloatingIndicator(animate = false) }
 
-      // Update tab bar height measurement (0 when hidden)
-      val tabBarHeight = Utils.convertPixelsToDp(context, getTabBarMeasuredHeight()).toInt()
-      onTabBarMeasuredListener?.invoke(tabBarHeight)
-      if (!isHidden) {
-        updateFloatingIndicator(animate = false)
-      }
-    }
   }
 
   fun updateItems(items: MutableList<TabInfo>) {
@@ -1213,6 +1330,7 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
     // Floating mode replaces the ripple with the pressed lens.
     if (androidTabBarStyle != AndroidTabBarStyle.FLOATING) {
       bottomNavigation.itemRippleColor = color
+      if (blurAppearanceApplied) savedItemBackground = bottomNavigation.itemBackground
     }
   }
 
@@ -1250,14 +1368,20 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
     val backgroundColor =
       color ?: Utils.getDefaultColorFor(context, android.R.attr.colorPrimary) ?: return
     barTintColor = backgroundColor
+    blurSurfaceColor = backgroundColor
 
     if (androidTabBarStyle == AndroidTabBarStyle.FLOATING) {
       updateFloatingAppearance()
+    } else if (blurAppearanceApplied) {
+      savedItemBackground = ColorDrawable(backgroundColor)
+      savedBarTint = ColorStateList.valueOf(backgroundColor)
     } else {
       bottomNavigation.itemBackground = ColorDrawable(backgroundColor)
       bottomNavigation.backgroundTintList = ColorStateList.valueOf(backgroundColor)
     }
     hasCustomAppearance = true
+    floatingRoot.invalidate()
+    invalidate()
   }
 
   fun setActiveTintColor(color: Int?) {
@@ -1296,6 +1420,9 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
   }
 
   fun onDropViewInstance() {
+    androidBottomBlurEnabled = false
+    updateBlurAppearance()
+    releaseBottomBlur()
     resetFloatingGesture()
     imageLoader.shutdown()
   }
@@ -1382,6 +1509,12 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
 
   override fun onConfigurationChanged(newConfig: Configuration?) {
     super.onConfigurationChanged(newConfig)
+    releaseBottomBlur()
+    if (androidBottomBlurEnabled) {
+      requestLayout()
+      floatingRoot.invalidate()
+      invalidate()
+    }
     if (uiModeConfiguration == newConfig?.uiMode || hasCustomAppearance) {
       return
     }
@@ -1394,6 +1527,7 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
     // If appearance wasn't changed re-create the bottom navigation view when configuration changes.
     // React Native opts out ouf Activity re-creation when configuration changes, this workarounds that.
     // We also opt-out of this recreation when custom styles are used.
+    blurAppearanceApplied = false
     removeFromParent(bottomNavigation)
     bottomNavigation = ExtendedBottomNavigationView(context)
     defaultItemBackground = bottomNavigation.itemBackground

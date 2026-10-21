@@ -169,6 +169,13 @@ interface Props<Route extends BaseRoute> {
    * A Boolean value that indicates whether the tab bar is translucent. (iOS only)
    */
   translucent?: boolean;
+  /**
+   * Live background blur, translucent tint, and a fade above the native Android
+   * tab bar. Defaults to true on Android 16+ (API 36). Explicit true supports
+   * Android 12+; older versions retain the standard bar. Ignored on iOS.
+   * Pad scroll content with useBottomTabBarHeight when enabled.
+   */
+  androidBottomBlurEnabled?: boolean;
   rippleColor?: ColorValue;
   /**
    * Color of tab indicator. (Android only)
@@ -247,6 +254,8 @@ const BottomTabs = <Route extends BaseRoute>({
   tabLabelStyle,
   renderBottomAccessoryView,
   activeIndicatorColor,
+  androidBottomBlurEnabled = Platform.OS === 'android' &&
+    Number(Platform.Version) >= 36,
   delayedFreeze = false,
   ...props
 }: Props<Route>) => {
@@ -471,6 +480,11 @@ const BottomTabs = <Route extends BaseRoute>({
         barTintColor={tabBarStyle?.backgroundColor}
         rippleColor={rippleColor}
         activeIndicatorColor={activeIndicatorColor}
+        androidBottomBlurEnabled={
+          Platform.OS === 'android' &&
+          !renderCustomTabBar &&
+          androidBottomBlurEnabled
+        }
         labeled={labeled}
       >
         {trimmedRoutes.map((route) => {

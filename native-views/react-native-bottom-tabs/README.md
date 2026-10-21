@@ -48,6 +48,14 @@ Some appearance and interaction options are platform-specific, including Apple
 symbols and newer iOS tab-bar presentation. Check those options against the
 consumer's supported OS versions rather than assuming identical native layouts.
 
+On Android, `androidBottomBlurEnabled` controls live background blur, translucent
+tint, and a gradient above the native bar. It defaults to enabled on Android 16+
+(API 36); pass `false` to disable it or `true` to enable it on Android 12–15.
+Earlier Android versions retain the standard bar. It is ignored on iOS and with
+a custom `tabBar`. When enabled, scenes extend behind the bar: use
+`useBottomTabBarHeight()` as scroll-content bottom padding so the last row can
+scroll above it. `tabBarStyle.backgroundColor` sets the surface tint.
+
 See [src/BottomTabs.tsx](src/BottomTabs.tsx) for component props and
 [src/types.ts](src/types.ts) for route definitions.
 

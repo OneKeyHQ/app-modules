@@ -201,6 +201,10 @@ class BottomTabsViewManager(context: ReactApplicationContext) :
     view?.setIgnoreKeyboardInsets(value)
   }
 
+  override fun setAndroidBottomBlurEnabled(view: BottomTabsView?, value: Boolean) {
+    view?.setAndroidBottomBlurEnabled(value)
+  }
+
   // iOS-only props (no-ops on Android)
   // selectedIcons feeds UITabBarItem.selectedImage on iOS; Android keeps
   // swapping the icon in JS via the focusedKey-driven `icons` array.

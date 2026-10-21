@@ -38,7 +38,7 @@ moved more than 10 points) was removed because it disabled drag-to-switch.
 `androidTabBarStyle` selects the Android presentation; iOS ignores it.
 
 - `default` (default): Material `BottomNavigationView` docked at the bottom,
-  unchanged behavior.
+  with the blur-controlled scene underlap described below.
 - `floating`: a capsule bar modeled on the iOS 26 tab bar. Scene content extends
   underneath it.
 
@@ -50,10 +50,13 @@ are 26, labels 10 sp in both states unless `fontSize` is set, and item content i
 vertically centered. The reported tab bar height is the bar height plus its
 bottom gap, or 0 while hidden.
 
-Floating appearance: the bar surface is `barTintColor` (or the theme background)
+Floating appearance with background blur disabled: the bar surface is `barTintColor` (or the theme background)
 at 95% opacity (lightened slightly for dark colors), with
-a hairline rim and an outline shadow. Android has no system backdrop material,
-so no blur is applied. The selected tab sits on a capsule pill inset 4 dp
+a hairline rim and an outline shadow. When background blur is enabled (see below), the bottom strip extends from
+24 dp above the capsule to the bottom of the scene, including the gap beneath
+the capsule. The existing capsule keeps its rim/shadow and uses a 12 percent
+surface fill over the blurred strip; its lens and navigation controls remain
+sharp. The selected tab sits on a capsule pill inset 4 dp
 (`activeIndicatorColor` when provided). The Material ripple is disabled; the
 lens provides press feedback.
 
@@ -77,6 +80,67 @@ Floating interaction (single finger; motion splitting is disabled):
 JS-driven selection changes slide the pill with a spring and velocity stretch.
 Switching style at runtime rebuilds the bar and restores Material's label sizes,
 icon size, ripple, padding, and gravity when returning to `default`.
+
+## Android bottom background blur
+
+Status: implemented in module source. The renamed package passed TypeScript
+checking, Android compilation with regenerated Fabric bindings, eight React
+wrapper tests, and ten direct-native API 36 tests (five each for docked and
+floating styles). Style switching with blur active received focused regression
+coverage. Complete consumer-app and physical-device acceptance remain pending;
+API 31-35 and visual dark-mode acceptance have not been reverified for this port.
+
+`androidBottomBlurEnabled?: boolean` controls the native Android tab bar's live
+background blur, translucent surface tint, and 24 dp fade into the page above it.
+Omitting it (including `undefined`) MUST enable the effect only on Android 16
+(API 36) and newer. `false` MUST restore the existing appearance and layout for the current
+`androidTabBarStyle`: docked scenes reserve bar height; floating scenes retain
+their existing underlap and lens gestures. `true` MAY enable it on Android 12 (API 31) and newer; older
+Android versions and software-rendered windows MUST retain the existing layout
+and appearance. iOS and custom JS tab bars MUST ignore this option.
+
+When active, the selected scene MUST fill the native container behind the tab
+bar; icons, labels, badges, and the style's press feedback MUST stay sharp and interactive.
+The reported scene dimensions MUST include this underlap, while tab-bar height
+MUST retain its existing meaning (including system/IME padding unless ignored).
+Callers MUST use `useBottomTabBarHeight` to pad scrollable content when its final
+row must scroll clear of the bar. Hiding the bar MUST remove the effect and
+report zero bar height. Toggling, resizing, theme changes, and system/keyboard
+insets MUST refresh geometry and appearance without remounting scenes.
+
+The module owns the GPU resources on the UI thread. It MUST sample only the
+scene layer, excluding the tab bar and its own output. It MUST use hardware
+RenderNode/RenderEffect rendering of a bottom strip at one-quarter resolution
+in each dimension, with a 20 dp blur radius and 40 dp sampling margin above the
+fade. It MUST NOT capture bitmaps, read pixels back to the CPU, emit scroll
+events to JS, or run a recurring frame callback for this effect. Rendering MUST
+follow the normal view invalidation cycle, using the scene's existing display
+lists. The translucent tint MUST follow `tabBarStyle.backgroundColor` when set,
+otherwise the docked Material surface color or floating theme background,
+with opacity capped at 78 percent.
+
+Only one blur RenderNode and cached paints/shaders MAY be retained per mounted
+tab view. Its offscreen dimensions MUST be bounded by one-quarter of the view
+width and the smaller of the view height or reported bar footprint plus 64 dp (rounded up).
+Disabling, hiding, detaching, and dropping the native view MUST discard the
+display list; no scene snapshots, disk cache, timers, or background workers are
+owned. SurfaceView content is outside the normal View display list and is not
+supported as a blur source. Liquid Glass refraction and shape morphing are out
+of scope.
+
+Acceptance MUST cover API 35/36 default behavior and explicit overrides, live
+scrolling under the bar with sharp controls, on/off restoration, hidden bars,
+tab changes, resize, dark/light themes, ignored bottom insets, and both keyboard
+inset modes. A representative scroll comparison MUST distinguish UI/RenderThread
+timings and missed frames from visual correctness. Source/type checks and
+emulator measurements MUST NOT be reported as physical-device performance.
+
+Implementation: `src/BottomTabs.tsx` owns the public default and custom-bar guard;
+`src/BottomTabsNativeComponent.ts` and `BottomTabsViewManager.kt` define the Fabric
+boundary; `BottomTabsView.kt` owns scene geometry, appearance, and disposal;
+`BottomBarBlurRenderer.kt` owns the bounded GPU pipeline. Focused native tests
+and runner instructions are in `native-tests/android`. The example's settings
+page exposes the switch and its scrolling scene reserves the reported bar height.
 
 ## Threading and ownership
 

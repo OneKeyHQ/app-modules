@@ -66,6 +66,7 @@ export type BottomTabsSettingsState = {
   sidebarAdaptable: boolean;
   hapticFeedback: boolean;
   androidFloating: boolean;
+  androidBottomBlurEnabled: boolean;
 };
 
 export type RootStackParamList = {

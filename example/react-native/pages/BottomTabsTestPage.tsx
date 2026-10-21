@@ -17,8 +17,12 @@ const COLOR_STRIPS = [
 
 function ColorfulScene({ title, colorIndex }: { title: string; colorIndex: number }) {
   const colors = COLOR_STRIPS[colorIndex % COLOR_STRIPS.length]!;
+  const height = useBottomTabBarHeight();
+  const { androidBottomBlurEnabled } = useSyncExternalStore(subscribeBottomTabsSettings, getBottomTabsSettings);
+  const bottomPadding = Platform.OS === 'android' && Number(Platform.Version) >= 31 && androidBottomBlurEnabled
+    ? height ?? 0 : 0;
   return (
-    <ScrollView style={sceneStyles.scrollContainer} contentContainerStyle={sceneStyles.scrollContent}>
+    <ScrollView style={sceneStyles.scrollContainer} contentContainerStyle={[sceneStyles.scrollContent, { paddingBottom: bottomPadding }]}>
       <View style={sceneStyles.topSection}>
         <Text style={sceneStyles.title}>{title}</Text>
         <Text style={sceneStyles.body}>Scroll down to see colors behind the tab bar</Text>
@@ -209,6 +213,7 @@ export function BottomTabsTestPage() {
         tabBarHidden={tabBarHidden}
         sidebarAdaptable={sidebarAdaptable}
         hapticFeedbackEnabled={hapticFeedback}
+        androidBottomBlurEnabled={settings.androidBottomBlurEnabled}
         tabBarActiveTintColor="#007AFF"
         tabBarInactiveTintColor="#8E8E93"
         getBadge={({ route }) => {
