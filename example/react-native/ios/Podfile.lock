@@ -1899,7 +1899,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - react-native-bottom-tabs (6.7.0-7):
+  - react-native-bottom-tabs (6.7.0-alpha.344):
     - hermes-engine
     - RCTRequired
     - RCTTypeSafety
@@ -1911,7 +1911,7 @@ PODS:
     - React-graphics
     - React-ImageManager
     - React-jsi
-    - react-native-bottom-tabs/common (= 6.7.0-7)
+    - react-native-bottom-tabs/common (= 6.7.0-alpha.344)
     - React-NativeModulesApple
     - React-RCTFabric
     - React-renderercss
@@ -1922,7 +1922,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - react-native-bottom-tabs/common (6.7.0-7):
+  - react-native-bottom-tabs/common (6.7.0-alpha.344):
     - hermes-engine
     - RCTRequired
     - RCTTypeSafety
@@ -3660,7 +3660,7 @@ SPEC CHECKSUMS:
   React-Mapbuffer: 44dd007f917e2396afa0e70bbd70273237d93fde
   React-microtasksnativemodule: f413ee411341fb3c34d20e85e9f6f524921fab15
   React-mutationobservernativemodule: 58f6d2adf7d98e72b241608dfa2ddce414d2a4e7
-  react-native-bottom-tabs: 884eafa97d97e50b4de5698c217d7eb4882e814c
+  react-native-bottom-tabs: 5d017d48f894866cff665c3cdbdd9508669dc631
   react-native-native-list: a35aca20c7e05548e517cab302179b8ae48d98f8
   react-native-pager-view: c289ac285d3b1a6bcd9ff37a2190be0116379d96
   react-native-safe-area-context: 91a90d98c310adcc90a511e5aeb6046d7c19d885

@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import React
+import ObjectiveC
 
 // MARK: - Data types for props from JS
 
@@ -70,6 +71,7 @@ class RCTBottomTabsContainerView: UIView {
   private var lastPressedTabTime: CFTimeInterval = 0
   /// Cached view controllers keyed by tab key to avoid unnecessary reparenting
   private var cachedViewControllers: [String: UIViewController] = [:]
+  private var moreProgrammaticDepth = 0
 
   // MARK: - Props (set by Fabric ComponentView via KVC)
 
@@ -164,6 +166,25 @@ class RCTBottomTabsContainerView: UIView {
     fatalError("init(coder:) has not been implemented")
   }
 
+  deinit {
+    if let tbc = tabBarController {
+      BottomTabsDelegateProxy.shared.unregister(for: tbc)
+      MoreNavigationPushHook.uninstall(from: tbc.moreNavigationController, owner: self)
+    }
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    guard let tbc = tabBarController else { return }
+    if window == nil {
+      BottomTabsDelegateProxy.shared.unregister(for: tbc)
+      MoreNavigationPushHook.uninstall(from: tbc.moreNavigationController, owner: self)
+    } else {
+      BottomTabsDelegateProxy.shared.register(self, for: tbc)
+      installMoreHookIfNeeded()
+    }
+  }
+
   override func didAddSubview(_ subview: UIView) {
     super.didAddSubview(subview)
     if let tbcView = tabBarController?.view, subview !== tbcView {
@@ -243,6 +264,8 @@ class RCTBottomTabsContainerView: UIView {
 
   private func rebuildViewControllers() {
     guard let tbc = tabBarController else { return }
+    moreProgrammaticDepth += 1
+    defer { moreProgrammaticDepth -= 1 }
 
     let filtered = filteredItems
     let allItems = parsedItems
@@ -357,7 +380,65 @@ class RCTBottomTabsContainerView: UIView {
       }
     }
 
+    installMoreHookIfNeeded()
     updateSelectedTab()
+  }
+
+  private func installMoreHookIfNeeded() {
+    guard window != nil, let tbc = tabBarController, tbc.parent != nil else { return }
+    if filteredItems.count > 5 {
+      MoreNavigationPushHook.install(on: tbc.moreNavigationController, owner: self)
+    } else {
+      MoreNavigationPushHook.uninstall(from: tbc.moreNavigationController, owner: self)
+    }
+  }
+
+  func businessIndex(for viewController: UIViewController) -> Int? {
+    filteredItems.firstIndex { cachedViewControllers[$0.key] === viewController }
+  }
+
+  func shouldPushMore(_ navigationController: UINavigationController, target: UIViewController) -> Bool {
+    guard window != nil, let tbc = tabBarController, tbc.parent != nil,
+          navigationController === tbc.moreNavigationController,
+          moreProgrammaticDepth == 0,
+          navigationController.viewControllers.count == 1,
+          !navigationController.viewControllers.contains(where: { $0 === target }),
+          let index = businessIndex(for: target) else { return true }
+    let accepted = shouldSelectTab(at: index, isReselection: false)
+    if !accepted { clearMoreRowSelection(navigationController) }
+    return accepted
+  }
+
+  func shouldSelectMore(_ tbc: UITabBarController) -> Bool {
+    let more = tbc.moreNavigationController
+    guard tbc === tabBarController, let top = more.topViewController,
+          more.viewControllers.count > 1 else { return true }
+    let alreadyInMore = tbc.selectedViewController === more || tbc.selectedViewController === top
+    guard !alreadyInMore, let index = businessIndex(for: top),
+          let tabData = filteredItems[safe: index], tabData.key != selectedPage else { return true }
+    return restoreMoreSelection(tbc, tabData: tabData)
+  }
+
+  private func restoreMoreSelection(_ tbc: UITabBarController, tabData: TabItem) -> Bool {
+    // Restoring UIKit's saved More stack is a route selection, not a second press.
+    onPageSelected?(["key": tabData.key])
+    guard tabData.preventsDefault else { return true }
+    moreProgrammaticDepth += 1
+    defer { moreProgrammaticDepth -= 1 }
+    tbc.moreNavigationController.popToRootViewController(animated: false)
+    clearMoreRowSelection(tbc.moreNavigationController)
+    return false
+  }
+
+  private func clearMoreRowSelection(_ more: UINavigationController) {
+    guard let rootView = more.viewControllers.first?.viewIfLoaded else { return }
+    var views = [rootView]
+    while let view = views.popLast() {
+      if let table = view as? UITableView, let selected = table.indexPathForSelectedRow {
+        table.deselectRow(at: selected, animated: false)
+      }
+      views.append(contentsOf: view.subviews)
+    }
   }
 
   // MARK: - Selection
@@ -366,8 +447,10 @@ class RCTBottomTabsContainerView: UIView {
     guard let tbc = tabBarController,
           let selectedPage else { return }
 
-    let filtered = filteredItems
-    guard let index = filtered.firstIndex(where: { $0.key == selectedPage }) else { return }
+    moreProgrammaticDepth += 1
+    defer { moreProgrammaticDepth -= 1 }
+    guard let target = cachedViewControllers[selectedPage],
+          let index = tbc.viewControllers?.firstIndex(where: { $0 === target }) else { return }
 
     // Common case: the user tapped the tab. UIKit's delegate already selected
     // it optimistically and started the iOS 26 Liquid Glass capsule animation.
@@ -737,25 +820,136 @@ private final class ImmediateTabTransitionAnimator: NSObject, UIViewControllerAn
 
 // MARK: - UITabBarControllerDelegate proxy
 
+private final class MoreNavigationPushContext: NSObject {
+  weak var owner: RCTBottomTabsContainerView?
+  let originalClass: AnyClass
+  let hookedClass: AnyClass
+  var isPushing = false
+
+  init(owner: RCTBottomTabsContainerView, originalClass: AnyClass, hookedClass: AnyClass) {
+    self.owner = owner
+    self.originalClass = originalClass
+    self.hookedClass = hookedClass
+  }
+}
+
+private enum MoreNavigationPushHook {
+  private typealias PushImplementation = @convention(c) (AnyObject, Selector, UIViewController, Bool) -> Void
+  private struct HookClass {
+    let original: AnyClass
+    let hooked: AnyClass
+  }
+  private static var contextKey: UInt8 = 0
+  private static var classes: [ObjectIdentifier: HookClass] = [:]
+  private static let pushSelector = #selector(UINavigationController.pushViewController(_:animated:))
+
+  static func install(on navigationController: UINavigationController, owner: RCTBottomTabsContainerView) {
+    if let context = objc_getAssociatedObject(navigationController, &contextKey) as? MoreNavigationPushContext,
+       context.owner === owner {
+      var current: AnyClass? = object_getClass(navigationController)
+      while let candidate = current {
+        if candidate === context.hookedClass { return }
+        current = class_getSuperclass(candidate)
+      }
+      // UIKit or another owner replaced the class. Reinstall from that class.
+      context.owner = nil
+      objc_setAssociatedObject(navigationController, &contextKey, nil, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    }
+    guard let originalClass = object_getClass(navigationController) else {
+      return
+    }
+    // An external subclass may already inherit our implementation. Never stack it.
+    var ancestor: AnyClass? = originalClass
+    var existing: HookClass?
+    while let current = ancestor {
+      existing = classes.values.first { $0.hooked === current }
+      if existing != nil { break }
+      ancestor = class_getSuperclass(current)
+    }
+    guard let hook = existing ?? makeHookClass(for: originalClass) else { return }
+    let context = MoreNavigationPushContext(owner: owner, originalClass: hook.original, hookedClass: hook.hooked)
+    objc_setAssociatedObject(navigationController, &contextKey, context, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    if existing == nil { object_setClass(navigationController, hook.hooked) }
+    if existing == nil && object_getClass(navigationController) !== hook.hooked {
+      objc_setAssociatedObject(navigationController, &contextKey, nil, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+      return
+    }
+  }
+
+  static func uninstall(from navigationController: UINavigationController, owner: RCTBottomTabsContainerView) {
+    guard let context = objc_getAssociatedObject(navigationController, &contextKey) as? MoreNavigationPushContext,
+          context.owner == nil || context.owner === owner else { return }
+    context.owner = nil
+    if object_getClass(navigationController) === context.hookedClass {
+      object_setClass(navigationController, context.originalClass)
+    }
+    objc_setAssociatedObject(navigationController, &contextKey, nil, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+  }
+
+  private static func makeHookClass(for originalClass: AnyClass) -> HookClass? {
+    let identifier = ObjectIdentifier(originalClass)
+    if let cached = classes[identifier] { return cached }
+    guard let method = class_getInstanceMethod(originalClass, pushSelector),
+          let encoding = method_getTypeEncoding(method) else {
+      return nil
+    }
+    let original = unsafeBitCast(method_getImplementation(method), to: PushImplementation.self)
+    let name = "OneKeyMoreNavigationPush_\(UInt(bitPattern: identifier))"
+    guard let subclass = objc_allocateClassPair(originalClass, name, 0) else {
+      return nil
+    }
+    let block: @convention(block) (UINavigationController, UIViewController, Bool) -> Void = { navigationController, target, animated in
+      guard let context = objc_getAssociatedObject(navigationController, &contextKey) as? MoreNavigationPushContext,
+            let owner = context.owner else {
+        original(navigationController, pushSelector, target, animated)
+        return
+      }
+      if context.isPushing {
+        original(navigationController, pushSelector, target, animated)
+        return
+      }
+      context.isPushing = true
+      defer { context.isPushing = false }
+      guard owner.shouldPushMore(navigationController, target: target) else { return }
+      original(navigationController, pushSelector, target, animated)
+    }
+    let implementation = imp_implementationWithBlock(block)
+    guard class_addMethod(subclass, pushSelector, implementation, encoding) else {
+      imp_removeBlock(implementation)
+      objc_disposeClassPair(subclass)
+      return nil
+    }
+    objc_registerClassPair(subclass)
+    let hook = HookClass(original: originalClass, hooked: subclass)
+    classes[identifier] = hook
+    return hook
+  }
+}
+
 class BottomTabsDelegateProxy: NSObject, UITabBarControllerDelegate {
   static let shared = BottomTabsDelegateProxy()
-  private var mapping: [ObjectIdentifier: RCTBottomTabsContainerView] = [:]
+  private let mapping = NSMapTable<UITabBarController, RCTBottomTabsContainerView>.weakToWeakObjects()
 
   func register(_ view: RCTBottomTabsContainerView, for controller: UITabBarController) {
-    mapping[ObjectIdentifier(controller)] = view
+    mapping.setObject(view, forKey: controller)
   }
 
   func unregister(for controller: UITabBarController) {
-    mapping.removeValue(forKey: ObjectIdentifier(controller))
+    mapping.removeObject(forKey: controller)
   }
 
   func tabBarController(_ tabBarController: UITabBarController, shouldSelect viewController: UIViewController) -> Bool {
-    guard let containerView = mapping[ObjectIdentifier(tabBarController)] else {
+    guard let containerView = mapping.object(forKey: tabBarController) else {
       return false
     }
+    // UIKit owns the More controller; it is not a business tab in viewControllers.
+    if viewController === tabBarController.moreNavigationController {
+      return containerView.shouldSelectMore(tabBarController)
+    }
+
     let isReselection = tabBarController.selectedViewController == viewController
 
-    if let index = tabBarController.viewControllers?.firstIndex(of: viewController) {
+    if let index = containerView.businessIndex(for: viewController) {
       return containerView.shouldSelectTab(at: index, isReselection: isReselection)
     }
 
@@ -767,7 +961,7 @@ class BottomTabsDelegateProxy: NSObject, UITabBarControllerDelegate {
     animationControllerForTransitionFrom fromViewController: UIViewController,
     to toViewController: UIViewController
   ) -> UIViewControllerAnimatedTransitioning? {
-    guard let containerView = mapping[ObjectIdentifier(tabBarController)],
+    guard let containerView = mapping.object(forKey: tabBarController),
           containerView.disablePageAnimations else {
       return nil
     }
