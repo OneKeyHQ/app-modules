@@ -1,0 +1,52 @@
+name: runtime-checks
+
+# Runs each runtime's scripts/ci.sh on pull requests. Checks only; publishing
+# stays manual in publish-runtime-packages.yml, whose build tools this mirrors.
+on:
+  pull_request:
+    paths:
+      - 'chain-runtimes/**'
+      - '.github/workflows/runtime-checks.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runtime-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [zcash, monero]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: chain-runtimes/${{ matrix.runtime }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24.21.0
+      - name: Install build tools
+        run: |
+          curl -sSfL -o /tmp/binaryen.tgz https://github.com/WebAssembly/binaryen/releases/download/version_133/binaryen-version_133-x86_64-linux.tar.gz
+          echo "2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489  /tmp/binaryen.tgz" | sha256sum -c -
+          sudo tar xzf /tmp/binaryen.tgz -C /opt
+          echo /opt/binaryen-version_133/bin >> "$GITHUB_PATH"
+          sudo apt-get update
+          sudo apt-get install -y clang llvm libsqlite3-dev libssl-dev pkg-config
+          rustup toolchain install
+          cargo install wasm-pack --version 0.15.0 --locked
+          # Must match wasm-bindgen in both runtimes' Cargo.lock.
+          cargo install wasm-bindgen-cli --version 0.2.127 --locked
+      - name: Test, build and pack
+        env:
+          CC_wasm32_unknown_unknown: /usr/bin/clang
+          AR_wasm32_unknown_unknown: /usr/bin/llvm-ar
+        run: bash scripts/ci.sh
