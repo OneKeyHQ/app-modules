@@ -3,7 +3,8 @@
 
 use zcash_client_backend::data_api::wallet::ConfirmationsPolicy;
 use zcash_client_backend::data_api::{
-    Account as _, AccountBirthday, AccountPurpose, WalletRead, WalletWrite, Zip32Derivation,
+    Account as _, AccountBalance, AccountBirthday, AccountPurpose, Balance, WalletRead,
+    WalletWrite, Zip32Derivation,
 };
 use zcash_keys::keys::UnifiedFullViewingKey;
 
@@ -117,10 +118,27 @@ pub fn balance_json(db: &Db, account_uuid: &str, policy: ConfirmationsPolicy) ->
         )
     })?;
 
-    // Each pool reports all five values with no cross-pool merging: which pools
+    Ok(balance_value(
+        u32::from(summary.chain_tip_height()),
+        u32::from(summary.fully_scanned_height()),
+        balances,
+    )
+    .to_string())
+}
+
+/// `total` (per pool and overall) is upstream's `Balance::total`, which leaves
+/// out notes worth at most the ZIP-317 marginal fee. That value is reported
+/// beside it as `uneconomic`, so a host can show it without changing what
+/// `total` or `spendable` mean.
+fn balance_value(
+    chain_tip: u32,
+    fully_scanned_height: u32,
+    balances: &AccountBalance,
+) -> serde_json::Value {
+    // Each pool reports its values with no cross-pool merging: which pools
     // count as spendable is wallet policy, not chain fact, and per-pool detail is
     // shown in the UI. The host computes any totals it needs.
-    let pool = |b: &zcash_client_backend::data_api::Balance| {
+    let pool = |b: &Balance| {
         serde_json::json!({
             "spendable": u64::from(b.spendable_value()),
             "pendingChange": u64::from(b.change_pending_confirmation()),
@@ -128,23 +146,31 @@ pub fn balance_json(db: &Db, account_uuid: &str, policy: ConfirmationsPolicy) ->
             // Held by an unexpired upstream output lock; this runtime's sends take none.
             "locked": u64::from(b.locked_value()),
             "total": u64::from(b.total()),
+            // Unspent notes worth <= the marginal fee, confirmed or not. Upstream
+            // note selection skips them, so they are never part of `spendable`.
+            "uneconomic": u64::from(b.uneconomic_value()),
         })
     };
 
-    let supported_total = [
+    let supported = [
         balances.orchard_balance(),
         balances.ironwood_balance(),
         balances.unshielded_regular_balance(),
         balances.unshielded_coinbase_balance(),
-    ]
-    .into_iter()
-    .map(|balance| u64::from(balance.total()))
-    .sum::<u64>();
+    ];
+    let supported_total = supported
+        .iter()
+        .map(|balance| u64::from(balance.total()))
+        .sum::<u64>();
+    let supported_uneconomic = supported
+        .iter()
+        .map(|balance| u64::from(balance.uneconomic_value()))
+        .sum::<u64>();
 
-    Ok(serde_json::json!({
+    serde_json::json!({
         "ready": true,
-        "chainTip": u32::from(summary.chain_tip_height()),
-        "fullyScannedHeight": u32::from(summary.fully_scanned_height()),
+        "chainTip": chain_tip,
+        "fullyScannedHeight": fully_scanned_height,
 
         "orchard": pool(balances.orchard_balance()),
         "ironwood": pool(balances.ironwood_balance()),
@@ -156,8 +182,8 @@ pub fn balance_json(db: &Db, account_uuid: &str, policy: ConfirmationsPolicy) ->
 
         // Sapling is intentionally excluded from both the pool list and the product total.
         "total": supported_total,
+        "uneconomic": supported_uneconomic,
     })
-    .to_string())
 }
 
 /// Removes one account from the shared database. Deleting the database would
@@ -323,5 +349,97 @@ mod birthday_tests {
             assert!(check_birthday_tree_state(&bad, 3_000_000, &main).is_err());
         }
         check_birthday_tree_state(&state("test", 10), 10, &Network::TestNetwork).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod balance_tests {
+    use super::balance_value;
+    use zcash_client_backend::data_api::{AccountBalance, Balance};
+    use zcash_protocol::value::{BalanceError, Zatoshis};
+
+    fn zat(value: u64) -> Zatoshis {
+        Zatoshis::const_from_u64(value)
+    }
+
+    #[test]
+    fn dust_change_is_reported_beside_total_not_inside_it() {
+        let mut balances = AccountBalance::ZERO;
+        balances
+            .with_ironwood_balance_mut::<_, BalanceError>(|b: &mut Balance| {
+                b.add_spendable_value(zat(100_000))?;
+                b.add_uneconomic_value(zat(5_000))
+            })
+            .unwrap();
+        balances
+            .with_orchard_balance_mut::<_, BalanceError>(|b: &mut Balance| {
+                b.add_pending_change_value(zat(20_000))?;
+                b.add_uneconomic_value(zat(1_000))
+            })
+            .unwrap();
+        // Sapling is out of the product, dust included.
+        balances
+            .with_sapling_balance_mut::<_, BalanceError>(|b: &mut Balance| {
+                b.add_uneconomic_value(zat(3_000))
+            })
+            .unwrap();
+
+        let v = balance_value(10, 9, &balances);
+
+        assert_eq!(v["ironwood"]["spendable"], 100_000);
+        assert_eq!(v["ironwood"]["total"], 100_000);
+        assert_eq!(v["ironwood"]["uneconomic"], 5_000);
+        assert_eq!(v["orchard"]["pendingChange"], 20_000);
+        assert_eq!(v["orchard"]["total"], 20_000);
+        assert_eq!(v["orchard"]["uneconomic"], 1_000);
+        assert_eq!(v["transparentRegular"]["uneconomic"], 0);
+        assert_eq!(v["total"], 120_000);
+        assert_eq!(v["uneconomic"], 6_000);
+    }
+
+    #[test]
+    fn no_dust_reports_zero() {
+        let v = balance_value(1, 1, &AccountBalance::ZERO);
+        for pool in [
+            "orchard",
+            "ironwood",
+            "transparentRegular",
+            "transparentCoinbase",
+        ] {
+            assert_eq!(v[pool]["uneconomic"], 0);
+        }
+        assert_eq!(v["uneconomic"], 0);
+    }
+
+    #[test]
+    fn small_change_preserves_value_after_payment_and_fee() {
+        let payment = 10_000;
+        let fee = 10_000;
+        for change in [1, 4_999, 5_000] {
+            let mut before = AccountBalance::ZERO;
+            before
+                .with_ironwood_balance_mut::<_, BalanceError>(|balance| {
+                    balance.add_spendable_value(zat(payment + fee + change))
+                })
+                .unwrap();
+            let mut after = AccountBalance::ZERO;
+            after
+                .with_ironwood_balance_mut::<_, BalanceError>(|balance| {
+                    balance.add_uneconomic_value(zat(change))
+                })
+                .unwrap();
+
+            let before = balance_value(10, 10, &before);
+            let after = balance_value(11, 11, &after);
+            assert_eq!(
+                before["total"].as_u64().unwrap(),
+                payment
+                    + fee
+                    + after["total"].as_u64().unwrap()
+                    + after["uneconomic"].as_u64().unwrap()
+            );
+            assert_eq!(after["ironwood"]["spendable"], 0);
+            assert_eq!(after["ironwood"]["uneconomic"], change);
+        }
     }
 }

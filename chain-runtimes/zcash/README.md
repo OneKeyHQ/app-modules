@@ -67,6 +67,11 @@ removeAccount(uuid)                     pending transactions do not block remova
 removeDeletedAccount(uuid)              compatibility alias for removeAccount
 accountByUfvk(ufvk) / listAccounts() / accountSyncStatus(uuid)
 accountBalance(uuid, trusted, untrusted, allowZeroConfShielding)
+                                         per pool: spendable, pendingChange,
+                                         pendingSpendable, locked, total,
+                                         uneconomic; total leaves out notes
+                                         worth <= the ZIP-317 marginal fee,
+                                         which are uneconomic instead
 
 syncPrepare() / syncTip() / syncPeek()   prepare (subtree roots + tip), read-only progress
 syncStep(batchSize, maxBatches, priority, activeUfvksJson)
