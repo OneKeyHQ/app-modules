@@ -60,7 +60,13 @@ import {
   validateOffset,
   type NormalizedPositionScroll,
 } from '../scrolling';
-import { applyRowPatches, validateSnapshot } from '../validation';
+import {
+  applyRowPatches,
+  containNativeListInput,
+  emptyNativeListSnapshot,
+  validatePatches,
+  validateSnapshot,
+} from '../validation';
 import { avatarPrefetchWindow } from '../avatarPrefetch';
 import {
   acquireNativeListAvatar,
@@ -2160,7 +2166,9 @@ export class NativeListWebEngine {
       scrollOptions.stickyInset
     );
     this.document = host.ownerDocument;
-    this.snapshot = validateSnapshot(snapshot);
+    this.snapshot =
+      containNativeListInput(() => validateSnapshot(snapshot)) ??
+      emptyNativeListSnapshot();
     this.callbacks = callbacks;
     this.virtualizationEnabled = virtualizationEnabled;
     this.sectionIndexContainer = sectionIndexContainer ?? undefined;
@@ -2442,12 +2450,13 @@ export class NativeListWebEngine {
   }
 
   applySnapshot(snapshot: NativeListSnapshot) {
-    const validated = validateSnapshot(snapshot);
-    if (
-      this.externalScrollHost &&
-      validated.layout.orientation === 'horizontal'
-    )
-      throw new Error('External scrolling supports vertical lists only');
+    const validated = containNativeListInput(() => {
+      const next = validateSnapshot(snapshot);
+      if (this.externalScrollHost && next.layout.orientation === 'horizontal')
+        throw new Error('External scrolling supports vertical lists only');
+      return next;
+    });
+    if (!validated) return;
     this.invalidateActionAnchor('snapshot');
     this.setSnapshot(validated);
   }
@@ -2461,8 +2470,16 @@ export class NativeListWebEngine {
   }
 
   applyPatches(patches: readonly RowPatch[]) {
-    if (patches.length === 0) return;
-    const next = applyRowPatches(this.snapshot, patches);
+    const accepted = containNativeListInput(() => {
+      const normalized = validatePatches(patches);
+      return {
+        patches: normalized,
+        snapshot: applyRowPatches(this.snapshot, normalized),
+      };
+    });
+    if (!accepted || accepted.patches.length === 0) return;
+    patches = accepted.patches;
+    const next = accepted.snapshot;
     const selection = new Set(this.selectedKeys);
     patches.forEach((patch) => {
       const selected =

@@ -31,8 +31,42 @@ const MAX_SPACER_HEIGHT = 512;
 const MAX_SECTION_INDEX_TITLE_LENGTH = 8;
 const MAX_MARKET_BADGES = 3;
 
+function isDevelopment(): boolean {
+  return typeof __DEV__ !== 'undefined' && __DEV__;
+}
+
+class NativeListInputError extends Error {
+  constructor(readonly path: string, readonly reason: string) {
+    super(`NativeList ${path}: ${reason}`);
+  }
+}
+
 function fail(path: string, message: string): never {
-  throw new Error(`NativeList ${path}: ${message}`);
+  throw new NativeListInputError(path, message);
+}
+
+/** Component boundaries report locations, never caller-controlled payload values. */
+export function containNativeListInput<T>(operation: () => T): T | undefined {
+  try {
+    return operation();
+  } catch (error) {
+    const path = error instanceof NativeListInputError ? error.path : 'input';
+    const reason =
+      isDevelopment() && error instanceof NativeListInputError
+        ? `: ${error.reason.split('"')[0].trim()}`
+        : '';
+    console.warn(`NativeList rejected invalid input at ${path}${reason}`);
+    return undefined;
+  }
+}
+
+export function emptyNativeListSnapshot(): NativeListSnapshot {
+  return {
+    schemaVersion: 1,
+    generation: 0,
+    layout: { kind: 'linear' },
+    rows: [],
+  };
 }
 
 function assertPlainSerializable(
@@ -72,16 +106,14 @@ function assertPlainSerializable(
 function assertKey(key: string, path: string): void {
   if (
     typeof key !== 'string' ||
-    key.length === 0 ||
+    key.trim().length === 0 ||
     key.length > MAX_KEY_LENGTH
   ) {
     fail(
       path,
-      `must be a non-empty string no longer than ${MAX_KEY_LENGTH} characters`
+      `must be a non-blank string no longer than ${MAX_KEY_LENGTH} characters`
     );
   }
-  if (key.trim() !== key)
-    fail(path, 'must not have leading or trailing whitespace');
 }
 
 function assertText(text: string | undefined, path: string): void {
@@ -1677,7 +1709,7 @@ function assertMediaPreview(value: unknown, path: string) {
   }
 }
 
-export function validateSnapshot(
+function assertSnapshotContract(
   snapshot: NativeListSnapshot
 ): NativeListSnapshot {
   if (
@@ -1826,7 +1858,380 @@ export function validateSnapshot(
       'supports at most one key in single mode'
     );
   }
-  return normalizeSnapshotStyles(snapshot);
+  return snapshot;
+}
+
+function protocolObject(value: unknown, path: string): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    fail(path, 'must be an object');
+  return value as Record<string, unknown>;
+}
+
+function protocolKey(value: unknown, path: string): void {
+  if (typeof value !== 'string' || value.trim().length === 0)
+    fail(path, 'must be a non-blank string');
+}
+
+const PROTOCOL_ARRAY_FIELDS = new Set([
+  'columns',
+  'cells',
+  'points',
+  'images',
+  'overlays',
+  'badges',
+  'trailing',
+  'footerActions',
+  'amounts',
+  'metrics',
+  'children',
+  'subtitleSegments',
+  'titleMatch',
+  'selectedKeys',
+  'segments',
+  'hoverSecondary',
+  'hoverImages',
+  'secondaryBadges',
+  'fallbackUris',
+  'probeOrder',
+  'priceSegments',
+  'textSegments',
+  'secondaryTextSegments',
+  'primaryTextSegments',
+]);
+const PROTOCOL_NUMBER_FIELDS = new Set([
+  'height',
+  'width',
+  'fontSize',
+  'lineHeight',
+  'opacity',
+  'offsetY',
+  'offsetX',
+  'cornerRadius',
+  'borderWidth',
+  'horizontalPadding',
+  'verticalPadding',
+  'leadingGap',
+  'lineGap',
+  'titleBadgeGap',
+  'trailingGap',
+  'start',
+  'end',
+  'padding',
+  'offset',
+  'overscan',
+  'minWidth',
+  'flex',
+  'paddingStart',
+  'paddingEnd',
+  'changeWidth',
+  'changeHeight',
+  'changeCornerRadius',
+  'contentTrailingGap',
+  'subtitleTrailingPadding',
+  'partGap',
+  'contentPadding',
+  'contentPaddingHorizontal',
+  'contentPaddingTop',
+  'contentPaddingBottom',
+  'itemSpacing',
+  'gridColumns',
+]);
+
+/** Validate only shapes that renderers dereference, not display budgets. */
+function assertProtocolFields(
+  value: unknown,
+  path: string,
+  parentField = ''
+): void {
+  if (value === undefined || value === null || typeof value !== 'object')
+    return;
+  if (Array.isArray(value)) {
+    for (const [index, item] of value.entries()) {
+      const itemPath = `${path}[${index}]`;
+      if (
+        ['selectedKeys', 'fallbackUris', 'probeOrder'].includes(parentField)
+      ) {
+        if (typeof item !== 'string') fail(itemPath, 'must be a string');
+      } else if (parentField === 'points') {
+        if (typeof item !== 'number') fail(itemPath, 'must be a finite number');
+      } else if (parentField === 'hoverImages' && item === null) continue;
+      else protocolObject(item, itemPath);
+      assertProtocolFields(item, itemPath, parentField);
+    }
+    return;
+  }
+  const object = value as Record<string, unknown>;
+  if (
+    !path.includes('.style.') &&
+    ['image', 'networkImage', 'thumbnail', 'images', 'hoverImages'].includes(
+      parentField
+    ) &&
+    typeof object.uri !== 'string'
+  )
+    fail(`${path}.uri`, 'must be a string');
+  Object.entries(value).forEach(([field, item]) => {
+    if (item === undefined) return;
+    const fieldPath = `${path}.${field}`;
+    if (
+      !path.endsWith('.style') &&
+      PROTOCOL_ARRAY_FIELDS.has(field) &&
+      !Array.isArray(item)
+    )
+      fail(fieldPath, 'must be an array');
+    if (PROTOCOL_NUMBER_FIELDS.has(field) && typeof item !== 'number')
+      fail(fieldPath, 'must be a finite number');
+    if (
+      PROTOCOL_NUMBER_FIELDS.has(field) &&
+      typeof item === 'number' &&
+      item < 0 &&
+      !['offsetX', 'offsetY'].includes(field)
+    )
+      fail(fieldPath, 'must be non-negative');
+    if (
+      field === 'key' ||
+      field === 'sectionKey' ||
+      field === 'actionKey' ||
+      field.endsWith('ActionKey')
+    )
+      protocolKey(item, fieldPath);
+    if (
+      (field === 'uri' || field === 'fallbackUri') &&
+      typeof item !== 'string'
+    )
+      fail(fieldPath, 'must be a string');
+    if (
+      (field === 'style' &&
+        !(item === 'subscript' && /[Ss]egments\[/.test(path))) ||
+      field === 'container'
+    )
+      protocolObject(item, fieldPath);
+    if (
+      path.endsWith('.style') &&
+      [
+        'title',
+        'subtitle',
+        'tertiary',
+        'body',
+        'time',
+        'price',
+        'change',
+        'columns',
+        'columnSecondary',
+        'value',
+        'valueSecondary',
+        'badge',
+        'description',
+        'status',
+        'primaryAmount',
+        'secondaryAmount',
+        'trend',
+        'message',
+        'actionText',
+      ].includes(field)
+    )
+      protocolObject(item, fieldPath);
+    assertProtocolFields(item, fieldPath, field);
+  });
+}
+
+function assertRowProtocol(row: RowModel, path: string): void {
+  protocolObject(row, path);
+  assertRowType(row.type, path);
+  protocolKey(row.key, `${path}.key`);
+  assertProtocolFields(row, path);
+  for (const field of ['leading', 'visual', 'secondaryLeading'] as const) {
+    const visual = (row as unknown as Record<string, unknown>)[field];
+    if (visual !== undefined) {
+      const object = protocolObject(visual, `${path}.${field}`);
+      if (object.kind === 'stackedImages' && !Array.isArray(object.images))
+        fail(`${path}.${field}.images`, 'must be an array');
+    }
+  }
+  for (const field of [
+    'title',
+    'subtitle',
+    'tertiary',
+    'body',
+    'time',
+    'price',
+    'indexTitle',
+  ] as const) {
+    const value = (row as unknown as Record<string, unknown>)[field];
+    if (value !== undefined && typeof value !== 'string')
+      fail(`${path}.${field}`, 'must be a string');
+  }
+  if (row.height !== undefined && row.height < 0)
+    fail(`${path}.height`, 'must be non-negative');
+  if (row.type === 'identity') {
+    let end = 0;
+    row.titleMatch?.forEach((match) => {
+      if (
+        !Number.isInteger(match.start) ||
+        !Number.isInteger(match.end) ||
+        match.start < end ||
+        match.end <= match.start ||
+        match.end > row.title.length
+      )
+        fail(`${path}.titleMatch`, 'invalid text range');
+      end = match.end;
+    });
+  }
+  if (row.type === 'mediaTile' && row.media) {
+    protocolObject(row.media.source, `${path}.media.source`);
+    if (!Array.isArray(row.media.probeOrder))
+      fail(`${path}.media.probeOrder`, 'must be an array');
+  }
+  if (row.type === 'walletGroup') {
+    protocolObject(row.parent, `${path}.parent`);
+    if (!Array.isArray(row.children))
+      fail(`${path}.children`, 'must be an array');
+    const members = [row.parent, ...row.children];
+    const keys = new Set<string>();
+    if (row.parent.key !== row.key)
+      fail(`${path}.parent.key`, 'must match its group');
+    members.forEach((member, index) => {
+      assertRowProtocol(member, `${path}.members[${index}]`);
+      if (member.type !== 'identity' || keys.has(member.key))
+        fail(path, 'invalid wallet member identity');
+      keys.add(member.key);
+    });
+  }
+  if (row.type === 'dataRow' && !Array.isArray(row.columns))
+    fail(`${path}.columns`, 'must be an array');
+  if (row.type === 'market') {
+    protocolObject(row.change, `${path}.change`);
+    if (row.webTable) {
+      const { columns, cells } = row.webTable;
+      if (
+        !Array.isArray(columns) ||
+        !Array.isArray(cells) ||
+        columns.length !== cells.length
+      )
+        fail(`${path}.webTable`, 'columns and cells must match');
+      const keys = new Set<string>();
+      columns.forEach((column, index) => {
+        protocolKey(column.key, `${path}.webTable.columns[${index}].key`);
+        if (keys.has(column.key) || cells[index]?.key !== column.key)
+          fail(`${path}.webTable`, 'invalid column identity');
+        keys.add(column.key);
+        const cell = cells[index];
+        if (!['favorite', 'asset', 'text', 'sparkline'].includes(cell.kind))
+          fail(`${path}.webTable.cells[${index}]`, 'unsupported cell kind');
+        if (cell.kind === 'asset')
+          protocolObject(cell.title, `${path}.webTable.cells[${index}].title`);
+        if (
+          (cell.kind === 'asset' || cell.kind === 'text') &&
+          cell.secondary !== undefined &&
+          !Array.isArray(cell.secondary)
+        )
+          fail(
+            `${path}.webTable.cells[${index}].secondary`,
+            'must be an array'
+          );
+        if (cell.kind === 'text' && !Array.isArray(cell.primary))
+          fail(`${path}.webTable.cells[${index}].primary`, 'must be an array');
+        // The Web renderer spreads samples into Math.min/Math.max.
+        if (
+          cell.kind === 'sparkline' &&
+          (!Array.isArray(cell.points) || cell.points.length > 256)
+        )
+          fail(
+            `${path}.webTable.cells[${index}].points`,
+            'must be an array of at most 256 samples'
+          );
+      });
+    }
+  }
+}
+
+function assertSnapshotProtocol(snapshot: NativeListSnapshot): void {
+  protocolObject(snapshot, 'snapshot');
+  if (snapshot.schemaVersion !== 1) fail('snapshot.schemaVersion', 'must be 1');
+  if (!Number.isSafeInteger(snapshot.generation) || snapshot.generation < 0)
+    fail('snapshot.generation', 'must be a non-negative safe integer');
+  protocolObject(snapshot.layout, 'snapshot.layout');
+  assertProtocolFields(snapshot.layout, 'snapshot.layout');
+  if (
+    snapshot.layout.orientation !== undefined &&
+    !['vertical', 'horizontal'].includes(snapshot.layout.orientation)
+  )
+    fail('snapshot.layout.orientation', 'is not supported');
+  if (!['linear', 'sectioned', 'grid', 'table'].includes(snapshot.layout.kind))
+    fail('snapshot.layout.kind', 'is not supported');
+  if (!Array.isArray(snapshot.rows)) fail('snapshot.rows', 'must be an array');
+  if (
+    snapshot.layout.kind === 'grid' &&
+    (!Number.isInteger(snapshot.layout.gridColumns) ||
+      (snapshot.layout.gridColumns ?? 0) < 1 ||
+      (snapshot.layout.gridColumns ?? 0) > 7)
+  )
+    fail('snapshot.layout.gridColumns', 'must be an integer from 1 to 7');
+  const keys = new Set<string>();
+  for (const [index, row] of snapshot.rows.entries()) {
+    assertRowProtocol(row, `rows[${index}]`);
+    if (keys.has(row.key)) fail(`rows[${index}].key`, 'duplicate row identity');
+    keys.add(row.key);
+  }
+  if (snapshot.emptyState) assertRowProtocol(snapshot.emptyState, 'emptyState');
+  if (snapshot.fixedFooter)
+    assertRowProtocol(snapshot.fixedFooter, 'fixedFooter');
+  if (snapshot.selection) {
+    if (!Array.isArray(snapshot.selection.selectedKeys))
+      fail('snapshot.selection.selectedKeys', 'must be an array');
+    snapshot.selection.selectedKeys.forEach((key) => {
+      if (!keys.has(key))
+        fail('snapshot.selection.selectedKeys', 'unknown row identity');
+    });
+  }
+}
+
+/** Empty optional image descriptors must take the same path as absent images. */
+function normalizeEmptyImages(value: unknown, field = ''): unknown {
+  if (!value || typeof value !== 'object') return value;
+  if (Array.isArray(value)) {
+    const next = value.map((item) => normalizeEmptyImages(item));
+    const filtered =
+      field === 'images'
+        ? next.filter((item) => item !== undefined)
+        : next.map((item) => (item === undefined ? null : item));
+    return filtered.length === value.length &&
+      filtered.every((item, index) => item === value[index])
+      ? value
+      : filtered;
+  }
+  const object = value as Record<string, unknown>;
+  if (
+    typeof object.uri === 'string' &&
+    !object.uri.trim() &&
+    'width' in object &&
+    'height' in object
+  )
+    return undefined;
+  let changed = false;
+  const next = { ...object };
+  Object.entries(object).forEach(([key, item]) => {
+    const normalized = normalizeEmptyImages(item, key);
+    if (normalized !== item) {
+      // Omitted JSON patch fields must also be absent from the JS merge.
+      if (field === 'changes' && normalized === undefined) delete next[key];
+      else next[key] = normalized;
+      changed = true;
+    }
+  });
+  if (field === 'media' && next.source === undefined) return undefined;
+  return changed ? next : value;
+}
+
+export function validateSnapshot(
+  snapshot: NativeListSnapshot
+): NativeListSnapshot {
+  assertPlainSerializable(snapshot, 'snapshot', new Set<object>());
+  if (isDevelopment()) assertSnapshotContract(snapshot);
+  const normalized = isDevelopment()
+    ? snapshot
+    : (normalizeEmptyImages(snapshot) as NativeListSnapshot);
+  assertSnapshotProtocol(normalized);
+  return normalizeSnapshotStyles(normalized);
 }
 
 /**
@@ -2075,18 +2480,30 @@ export function validatePatches(
   patches: readonly RowPatch[]
 ): readonly RowPatch[] {
   assertPlainSerializable(patches, 'patches', new Set<object>());
+  if (!Array.isArray(patches)) fail('patches', 'must be an array');
   const keys = new Set<string>();
-  patches.forEach((patch, index) => {
-    assertKey(patch.key, `patches[${index}].key`);
+  for (const [index, patch] of patches.entries()) {
+    protocolObject(patch, `patches[${index}]`);
+    protocolKey(patch.key, `patches[${index}].key`);
     if (keys.has(patch.key))
       fail(`patches[${index}].key`, `duplicate key "${patch.key}"`);
     keys.add(patch.key);
+    protocolObject(patch.changes, `patches[${index}].changes`);
+    assertRowType(patch.type, `patches[${index}]`);
+    assertProtocolFields(patch.changes, `patches[${index}].changes`);
+    if (!isDevelopment()) continue;
+    assertKey(patch.key, `patches[${index}].key`);
     if (Object.keys(patch.changes).length === 0) {
       fail(`patches[${index}].changes`, 'must contain at least one field');
     }
     assertPatchChanges(patch, index);
-  });
-  return normalizePatchStyles(patches);
+  }
+  const normalized = isDevelopment()
+    ? patches
+    : (normalizeEmptyImages(patches) as readonly RowPatch[]);
+  return normalizePatchStyles(
+    normalized.filter((patch) => Object.keys(patch.changes).length > 0)
+  );
 }
 
 /** Patches reach the native side without passing through a snapshot. */
@@ -2112,10 +2529,12 @@ export function applyRowPatches(
   snapshot: NativeListSnapshot,
   patches: readonly RowPatch[]
 ): NativeListSnapshot {
-  validatePatches(patches);
-  const patchByKey = new Map(patches.map((patch) => [patch.key, patch]));
+  const normalizedPatches = validatePatches(patches);
+  const patchByKey = new Map(
+    normalizedPatches.map((patch) => [patch.key, patch])
+  );
   const knownKeys = new Set(snapshot.rows.map((row) => row.key));
-  patches.forEach((patch) => {
+  normalizedPatches.forEach((patch) => {
     if (!knownKeys.has(patch.key))
       fail('patches', `unknown row key "${patch.key}"`);
   });

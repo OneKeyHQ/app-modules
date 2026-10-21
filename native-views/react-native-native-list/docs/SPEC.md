@@ -182,6 +182,45 @@ All twelve templates have their own renderer family: Message, Rail, MediaTile,
 Action, System, Activity, DataRow, MetricCard, Market, Identity, SectionHeader and
 WalletGroup. Same-key family changes must replace the incompatible host. OneKeyImage owns image caches; NativeList owns row/slot binding identity.
 
+Keys are opaque strings and MUST contain at least one non-whitespace character.
+Leading and trailing whitespace is valid and MUST be preserved in snapshots,
+patches, selection and emitted events on
+iOS, Android and Web. The SDK MUST NOT trim or otherwise normalize keys;
+`token` and `token ` identify different rows. Duplicate checks use the exact
+string. This rule applies to all key fields validated by the shared protocol;
+section index titles retain their separate development-only
+no-surrounding-whitespace assertion.
+The 256-code-unit key limit is a development assertion, not a production limit.
+
+### Validation environments and rejected input
+
+Development builds (`__DEV__ === true`) run the complete snapshot and patch
+contract assertions. Production builds run only serialization, required data
+shape, supported renderer, finite geometry, identity and patch consistency
+guards. Display budgets and style allowlists are development assertions.
+Typography token resolution runs in both environments. Production treats empty
+optional image URIs as missing images, preserving the existing visual fallback.
+An empty optional image field omitted from a patch is a no-op, matching its
+serialized native payload. Sparkline sample arrays retain their existing
+256-sample resource bound because the Web renderer passes samples as function
+arguments; this protects the runtime's argument limit.
+
+The component and Web engine contain input validation failures in both modes:
+initial invalid input renders an empty list; rejected later snapshots or patch
+batches preserve the last accepted state and are not dispatched to native.
+Rejection emits a diagnostic without including row keys, text or image URLs.
+Explicit calls to the exported validation functions still throw on rejected
+input, so development tooling can inspect the full contract failure. Rejection
+does not imply that the requested update succeeded. No row identity is trimmed,
+truncated or regenerated, and no invalid row is silently dropped from a batch.
+
+Status: implemented. Development/production JS regressions pass, including
+native wrappers for iOS/Android and the Web DOM engine. Real Swift XCTest on an
+iOS 27 simulator and Android instrumentation on API 35 verify production
+serialization, normalized typography, opaque identities and duplicate-key
+protection against the shipping native parsers. Full app/device rendering and
+gesture acceptance remain separate from these input-boundary checks.
+
 ## Platform contract
 
 All platforms expose the same bounded style properties and public semantics.
@@ -238,13 +277,15 @@ state, all templates and container text, and retained selection/scroll behavior.
 ## Failures, fallback and limits
 
 Snapshot validation rejects malformed/duplicate-key input without partial
-application. Template field/array bounds and image fallback behavior are defined
+application, through the contained failure behavior above. Development-only
+template field/array bounds and image fallback behavior are defined
 in [ROW_TEMPLATES.md](ROW_TEMPLATES.md), [README.md](../README.md) and
 [DESIGN.md](DESIGN.md). This change adds the style surface's limits, defined in
 [STYLE_SPEC.md](STYLE_SPEC.md) §3.3/§4/§5: numeric bounds, `#RRGGBB`/`#RRGGBBAA`
 colors (including `listStyle.separator.color`), `groupCornerRadius` `0…40`, and
-rejection of any undeclared or unknown nested style key by `validateSnapshot`
-and `validatePatches`, where extra keys used to be ignored. It adds no retry
+development-time rejection of undeclared or unknown nested style keys by
+`validateSnapshot` and `validatePatches`. Production renderers ignore unsupported
+style properties while minimum protocol guards remain active. It adds no retry
 policy or automatic layout correction.
 
 ## Performance and resources

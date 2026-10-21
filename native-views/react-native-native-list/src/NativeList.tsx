@@ -1,6 +1,7 @@
 import { useNativeListFontFamiliesJson } from './fonts';
 import React, {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -24,6 +25,7 @@ import type {
 import type {
   ActionAnchorInvalidatedEvent,
   ImageSource,
+  NativeListSnapshot,
   RowActionEvent,
   SelectionDeltaEvent,
   ReorderEvent,
@@ -43,8 +45,11 @@ import {
 } from './scrolling';
 import {
   applyRowPatches,
+  containNativeListInput,
+  emptyNativeListSnapshot,
   serializePatches,
-  serializeSnapshot,
+  validatePatches,
+  validateSnapshot,
 } from './validation';
 
 export type { NativeListProps, NativeListRef } from './NativeList.types';
@@ -98,7 +103,7 @@ function parsePayload<T>(payloadJson: string): T {
 export const NativeList = forwardRef<NativeListRef, NativeListProps>(
   function NativeList(
     {
-      snapshot,
+      snapshot: inputSnapshot,
       listHeader,
       listFooter,
       listEmpty,
@@ -128,6 +133,26 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     },
     forwardedRef
   ) {
+    const snapshotRef = useRef<NativeListSnapshot>(emptyNativeListSnapshot());
+    const initializedSnapshot = useRef(false);
+    const hasContainerSlots = Boolean(listHeader || listEmpty || listFooter);
+    const prepareSnapshot = useCallback(
+      (next: NativeListSnapshot) => {
+        const accepted = validateSnapshot(next);
+        if (hasContainerSlots && accepted.layout.orientation === 'horizontal')
+          throw new Error(
+            'NativeList container slots require vertical orientation'
+          );
+        return accepted;
+      },
+      [hasContainerSlots]
+    );
+    const snapshot = useMemo(
+      () =>
+        containNativeListInput(() => prepareSnapshot(inputSnapshot)) ??
+        snapshotRef.current,
+      [inputSnapshot, prepareSnapshot]
+    );
     const fontFamiliesJson = useNativeListFontFamiliesJson();
     const [slotHeights, setSlotHeights] = useState([0, 0, 0]);
     const [topOverlayHeight, setTopOverlayHeight] = useState(0);
@@ -141,14 +166,6 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       snapshot.layout.contentPaddingHorizontal ??
       snapshot.layout.contentPadding ??
       0;
-    if (
-      snapshot.layout.orientation === 'horizontal' &&
-      (listHeader || listEmpty || listFooter)
-    ) {
-      throw new Error(
-        'NativeList container slots require vertical orientation'
-      );
-    }
     const slotContents = [listHeader, listEmpty, listFooter];
     const normalizedKeyboardShouldPersistTaps =
       keyboardShouldPersistTaps === true
@@ -179,32 +196,39 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       onRefresh,
       onScrollToIndexFailed,
     };
-    const scrollPositionThresholdsJson = useMemo(() => {
-      if (
-        !scrollPositionThresholds ||
-        scrollPositionThresholds.enabled === false
-      )
-        return '';
-      const { start, end } = scrollPositionThresholds;
-      if (
-        !Number.isFinite(start) ||
-        !Number.isFinite(end) ||
-        start < 0 ||
-        end <= start
-      ) {
-        throw new Error(
-          'scrollPositionThresholds requires 0 <= start < end and finite values'
-        );
-      }
-      return JSON.stringify({ start, end });
-    }, [scrollPositionThresholds]);
-    const snapshotJson = useMemo(() => serializeSnapshot(snapshot), [snapshot]);
-    const snapshotRef = useRef(snapshot);
+    const scrollPositionThresholdsJson = useMemo(
+      () =>
+        containNativeListInput(() => {
+          if (
+            !scrollPositionThresholds ||
+            scrollPositionThresholds.enabled === false
+          )
+            return '';
+          const { start, end } = scrollPositionThresholds;
+          if (
+            !Number.isFinite(start) ||
+            !Number.isFinite(end) ||
+            start < 0 ||
+            end <= start
+          ) {
+            throw new Error(
+              'scrollPositionThresholds requires 0 <= start < end and finite values'
+            );
+          }
+          return JSON.stringify({ start, end });
+        }) ?? '',
+      [scrollPositionThresholds]
+    );
+    const snapshotJson = useMemo(() => JSON.stringify(snapshot), [snapshot]);
     const previousSnapshotJsonRef = useRef(snapshotJson);
     const snapshotChanged = previousSnapshotJsonRef.current !== snapshotJson;
     if (snapshotChanged) {
       snapshotRef.current = snapshot;
       previousSnapshotJsonRef.current = snapshotJson;
+    }
+    if (!initializedSnapshot.current) {
+      snapshotRef.current = snapshot;
+      initializedSnapshot.current = true;
     }
     // OneKey patch: range events already cross the bridge only when row indices
     // change. Prefetch is optional work; scrolling and visible loads stay native.
@@ -260,26 +284,28 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
         }>
       | undefined
     >(
-      initialScrollIndex === undefined && initialScrollKey === undefined
-        ? undefined
-        : initialScrollIndex !== undefined
-        ? normalizeIndexScroll({
-            index: initialScrollIndex,
-            animated: false,
-            viewPosition: initialScrollViewPosition,
-            viewOffset: initialScrollViewOffset,
-          })
-        : {
-            key: initialScrollKey,
-            scroll: normalizePositionScroll(
-              {
-                animated: false,
-                viewPosition: initialScrollViewPosition,
-                viewOffset: initialScrollViewOffset,
-              },
-              'start'
-            ),
-          }
+      containNativeListInput(() =>
+        initialScrollIndex === undefined && initialScrollKey === undefined
+          ? undefined
+          : initialScrollIndex !== undefined
+          ? normalizeIndexScroll({
+              index: initialScrollIndex,
+              animated: false,
+              viewPosition: initialScrollViewPosition,
+              viewOffset: initialScrollViewOffset,
+            })
+          : {
+              key: initialScrollKey,
+              scroll: normalizePositionScroll(
+                {
+                  animated: false,
+                  viewPosition: initialScrollViewPosition,
+                  viewOffset: initialScrollViewOffset,
+                },
+                'start'
+              ),
+            }
+      )
     );
     const didApplyInitialScroll = useRef(false);
 
@@ -337,21 +363,33 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
 
     useImperativeHandle(forwardedRef, () => ({
       applySnapshot(nextSnapshot) {
-        const nextSnapshotJson = serializeSnapshot(nextSnapshot);
+        const accepted = containNativeListInput(() =>
+          prepareSnapshot(nextSnapshot)
+        );
+        if (!accepted) return;
+        const nextSnapshotJson = JSON.stringify(accepted);
         nativeRef.current?.applySnapshot(nextSnapshotJson);
-        snapshotRef.current = nextSnapshot;
+        snapshotRef.current = accepted;
         if (nativeRef.current && avatarLifecycle.current !== 'unmounted') {
-          avatarModelRef.current?.replaceSnapshot(nextSnapshot.rows);
+          avatarModelRef.current?.replaceSnapshot(accepted.rows);
           updateAvatarPrefetchRef.current();
         }
       },
       applyPatches(patches) {
-        if (patches.length === 0) return;
-        const nextSnapshot = applyRowPatches(snapshotRef.current, patches);
+        const accepted = containNativeListInput(() => {
+          const normalized = validatePatches(patches);
+          return {
+            patches: normalized,
+            snapshot: applyRowPatches(snapshotRef.current, normalized),
+            json: serializePatches(normalized),
+          };
+        });
+        if (!accepted || accepted.patches.length === 0) return;
+        const nextSnapshot = accepted.snapshot;
         const native = nativeRef.current;
         const dispatch = native
           ? () => {
-              native.applyPatches(serializePatches(patches));
+              native.applyPatches(accepted.json);
               snapshotRef.current = nextSnapshot;
             }
           : undefined;
@@ -359,7 +397,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
           dispatch?.();
           return;
         }
-        if (avatarModelRef.current?.applyPatches(patches, dispatch))
+        if (avatarModelRef.current?.applyPatches(accepted.patches, dispatch))
           updateAvatarPrefetchRef.current();
       },
       reconcileSelection(selectedKeys) {

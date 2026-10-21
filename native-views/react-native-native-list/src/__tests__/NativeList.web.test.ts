@@ -613,6 +613,173 @@ describe('web row style', () => {
     JSDOM: new (html: string) => { window: { document: Document } };
   };
 
+  test.each([true, false])(
+    'contains rejected snapshots and patch batches (development=%s)',
+    (development) => {
+      const environment = globalThis as typeof globalThis & {
+        __DEV__: boolean;
+      };
+      const previous = environment.__DEV__;
+      environment.__DEV__ = development;
+      const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const { document } = new JSDOM('<!doctype html><body></body>').window;
+      const host = document.createElement('div');
+      document.body.appendChild(host);
+      const row: IdentityRow = {
+        type: 'identity',
+        key: development ? 'sensitive-key' : ` ${'k'.repeat(257)} `,
+        title: development ? 'Accepted' : `Accepted${'T'.repeat(4097)}`,
+        leading: {
+          kind: 'token',
+          fallbackText: 'A',
+          ...(!development
+            ? { image: { uri: '', width: 32, height: 32 } }
+            : {}),
+        },
+        style: { title: { token: '$bodySm' } },
+      };
+      const valid = snapshot({ kind: 'sectioned' }, [row]);
+      const invalid = { ...valid, rows: [row, row] };
+      const engine = new NativeListWebEngine(host, invalid, {}, false);
+      try {
+        expect(engine.currentSnapshot().rows).toEqual([]);
+        engine.applySnapshot(valid);
+        const accepted = engine.currentSnapshot();
+        expect(accepted.rows[0]).toMatchObject({
+          key: row.key,
+          style: { title: { fontSize: 12 } },
+        });
+        expect(host.textContent).toContain('Accepted');
+        expect(() => engine.applySnapshot(invalid)).not.toThrow();
+        expect(engine.currentSnapshot()).toBe(accepted);
+        expect(() =>
+          engine.applyPatches([
+            {
+              type: 'identity',
+              key: 'unknown-sensitive-key',
+              changes: { title: 'Rejected' },
+            },
+          ])
+        ).not.toThrow();
+        expect(engine.currentSnapshot()).toBe(accepted);
+        engine.applyPatches([
+          {
+            type: 'identity',
+            key: row.key,
+            changes: {
+              title: 'Updated',
+              style: { title: { token: '$bodyLg' } },
+            },
+          },
+        ]);
+        expect(host.textContent).toContain('Updated');
+        expect(engine.currentSnapshot().rows[0]).toMatchObject({
+          style: { title: { fontSize: 16, lineHeight: 24 } },
+        });
+        expect(JSON.stringify(warning.mock.calls)).not.toContain(
+          'sensitive-key'
+        );
+      } finally {
+        engine.destroy();
+        environment.__DEV__ = previous;
+        warning.mockRestore();
+      }
+    }
+  );
+
+  test.each([undefined, Array(257).fill(1)])(
+    'contains unsafe production sparkline samples before changing the rendered snapshot (%j)',
+    (points) => {
+      const environment = globalThis as typeof globalThis & {
+        __DEV__: boolean;
+      };
+      const previous = environment.__DEV__;
+      environment.__DEV__ = false;
+      const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const { document } = new JSDOM('<!doctype html><body></body>').window;
+      const host = document.createElement('div');
+      document.body.appendChild(host);
+      const valid = snapshot({ kind: 'linear' }, [rows[2]]);
+      const engine = new NativeListWebEngine(host, valid, {}, false);
+      const malformed: RowModel = {
+        type: 'market',
+        key: 'chart',
+        variant: 'token',
+        title: 'Chart',
+        price: '$1',
+        change: { text: '0%', tone: 'neutral' },
+        leading: { kind: 'token', fallbackText: 'C' },
+        webTable: {
+          columns: [{ key: 'chart', width: 100 }],
+          cells: [
+            { key: 'chart', kind: 'sparkline', points, width: 100, height: 40 },
+          ],
+        },
+      } as unknown as RowModel;
+      try {
+        expect(() =>
+          engine.applySnapshot(snapshot({ kind: 'linear' }, [malformed]))
+        ).not.toThrow();
+        expect(engine.currentSnapshot()).toBe(valid);
+        expect(host.textContent).toContain('Identity');
+      } finally {
+        engine.destroy();
+        environment.__DEV__ = previous;
+        warning.mockRestore();
+      }
+    }
+  );
+
+  test('renders and updates whitespace keys without changing action identity', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const key = '\tmarket-token \u00a0';
+    const market: Extract<RowModel, { type: 'market' }> = {
+      type: 'market',
+      key,
+      variant: 'token',
+      leading: { kind: 'token', fallbackText: 'T' },
+      title: 'TOKEN ',
+      price: '$1',
+      change: { text: '0%', tone: 'neutral' },
+      pressActionKey: 'open',
+    };
+    const onRowAction = jest.fn();
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [market, { ...market, key: key.trim() }]),
+      { onRowAction },
+      false
+    );
+    const previousElement = global.Element;
+    global.Element = document.defaultView!.Element;
+    try {
+      const elements = Array.from(
+        host.querySelectorAll<HTMLElement>('[data-native-list-row-key]')
+      );
+      expect(
+        elements.map((element) => element.dataset.nativeListRowKey)
+      ).toEqual([key, key.trim()]);
+      engine.applyPatches([
+        { type: 'market', key, changes: { price: '$2', revision: 2 } },
+      ]);
+      expect(elements[0]!.textContent).toContain('$2');
+      expect(elements[1]!.textContent).toContain('$1');
+      elements[0]!.click();
+      expect(onRowAction).toHaveBeenLastCalledWith(
+        expect.objectContaining({ rowKey: key, actionKey: 'open' })
+      );
+      elements[1]!.click();
+      expect(onRowAction).toHaveBeenLastCalledWith(
+        expect.objectContaining({ rowKey: key.trim(), actionKey: 'open' })
+      );
+    } finally {
+      engine.destroy();
+      global.Element = previousElement;
+    }
+  });
+
   test('font configuration is instance-local, literal, and preserves patched rows', () => {
     const { document } = new JSDOM('<!doctype html><body></body>').window;
     const firstHost = document.createElement('div');
