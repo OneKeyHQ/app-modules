@@ -15,6 +15,7 @@ const APP_ROOT_ID = 'root';
 
 const layerRoots = new Map<IOverlayLevel, HTMLDivElement>();
 const pageHosts = new Map<string, HTMLDivElement>();
+const pageHostListeners = new Map<string, Set<() => void>>();
 const dismissRequesters = new Map<
   string,
   (reason: IOverlayRequestDismissReason) => void
@@ -186,10 +187,29 @@ export function registerOverlayPageHost(
 ): () => void {
   installOverlayWebManager();
   pageHosts.set(hostKey, element);
+  pageHostListeners.get(hostKey)?.forEach((listener) => listener());
   return () => {
     if (pageHosts.get(hostKey) === element) {
       pageHosts.delete(hostKey);
+      pageHostListeners.get(hostKey)?.forEach((listener) => listener());
     }
+  };
+}
+
+export function subscribeOverlayPageHost(
+  hostKey: string | undefined,
+  listener: () => void
+): () => void {
+  if (!hostKey) return () => {};
+  let listeners = pageHostListeners.get(hostKey);
+  if (!listeners) {
+    listeners = new Set();
+    pageHostListeners.set(hostKey, listeners);
+  }
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) pageHostListeners.delete(hostKey);
   };
 }
 

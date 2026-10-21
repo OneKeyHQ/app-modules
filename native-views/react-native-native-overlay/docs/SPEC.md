@@ -90,6 +90,9 @@ Ownership:
   queues, page visibility, and back/Escape resolution.
 - **Native hosts** own drawing, hit testing, animation, keyboard, and back-key
   capture, and report lifecycle back to the store.
+- Android's static host lookup holds weak Activity keys and weak host values;
+  an active overlay or installed back callback owns its host. The lookup does
+  not itself extend the lifetime of an Activity.
 - **Content** is the caller's React subtree. The overlay view stays where the
   caller rendered it. Native code reparents its content into the host, so React
   context is preserved; there is no root-siblings portal.
@@ -363,7 +366,8 @@ Automated (P0):
 - `NativeOverlayBackTest` exercises the Android host's key interceptor and
   Back dispatcher with actual entry/page views: dismissible non-blockers,
   blockers, input readiness, canceled key-up, global/page precedence,
-  suspension and blocking-only accessibility isolation.
+  suspension and blocking-only accessibility isolation. It also checks live
+  host reuse, Activity isolation and rebuilding after a cleared weak value.
 - `src/__tests__/pageIsolation.web.test.ts` mounts a real React portal in a
   DOM host and verifies late suspension, level ordering and restoration after
   the blocking entry is removed.
@@ -435,6 +439,10 @@ P3 page scope notes:
   topmost visible page overlay.
 - A declarative page overlay waits for a resolvable host and owner; it never
   falls back to global scope. Direct store requests require both keys.
+- On Web, a page overlay also waits for its registered DOM host while closed
+  with `keepContentMounted`. Registration mounts parked content in that host;
+  close/reopen retains the same DOM and state. Unregistration never moves page
+  content into a global layer.
 
 P2 sheet notes:
 
@@ -449,7 +457,9 @@ P2 sheet notes:
   overlay motion; dragging fades the backdrop; a drag to hidden reports
   `pan`.
 - Web renders a bottom surface with pointer drag (40% distance or 0.5 px/ms
-  flick dismisses, never from scrolled content).
+  flick dismisses, never from scrolled content). Reopening kept content after
+  a pan dismissal clears the sheet transform, transition and backdrop opacity;
+  the next dismissal follows the normal exit path and restores focus.
 - A fitted sheet measures its content with `onLayout` before presenting.
   Hidden content stays mounted inside the zero-width host (clipped on iOS,
   INVISIBLE on Android), and the host height stays auto: a fixed 0 height

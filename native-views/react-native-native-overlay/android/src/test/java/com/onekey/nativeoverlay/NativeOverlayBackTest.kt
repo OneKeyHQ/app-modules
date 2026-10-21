@@ -6,8 +6,12 @@ import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import com.facebook.react.bridge.BridgeReactContext
 import com.facebook.react.uimanager.ThemedReactContext
+import java.lang.ref.WeakReference
+import java.util.WeakHashMap
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -117,6 +121,37 @@ class NativeOverlayBackTest {
     host.detach(global)
     assertTrue(back())
     assertEquals(listOf("global:back", "page:back"), dismissals)
+    pageHost.invalidateHost()
+  }
+
+  @Test
+  fun hostCacheReusesLiveHostAndSeparatesActivities() {
+    assertSame(host, NativeOverlayHost.of(activity))
+    val otherActivity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
+    assertNotSame(host, NativeOverlayHost.of(otherActivity))
+  }
+
+  @Test
+  fun hostCacheRebuildsAfterWeakValueIsCleared() {
+    val field = NativeOverlayHost::class.java.getDeclaredField("hosts").apply {
+      isAccessible = true
+    }
+    val cache = field.get(null) as WeakHashMap<*, *>
+    (cache[activity] as WeakReference<*>).clear()
+    val replacement = NativeOverlayHost.of(activity)
+    assertNotSame(host, replacement)
+    assertSame(replacement, NativeOverlayHost.of(activity))
+  }
+
+  @Test
+  fun pageOnlyBackInterceptorRetainsItsHost() {
+    val pageHost = NativeOverlayPageHostView(context).apply { hostKey = "page-only" }
+    activity.setContentView(pageHost)
+    pageHost.attach(entry("page", false, true))
+    host.installBackInterceptor()
+    assertTrue(activity.window.callback.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BACK)))
+    assertEquals(listOf("page:back"), dismissals)
+    assertSame(host, NativeOverlayHost.of(activity))
     pageHost.invalidateHost()
   }
 }

@@ -1,4 +1,11 @@
-import { useEffect, useId, useLayoutEffect, useRef } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useSyncExternalStore,
+} from 'react';
 import type { KeyboardEvent, ReactNode, SyntheticEvent } from 'react';
 
 import { createPortal } from 'react-dom';
@@ -16,6 +23,7 @@ import {
   getOverlayPageHost,
   registerOverlayDismissRequester,
   scheduleOverlayInertSync,
+  subscribeOverlayPageHost,
 } from './web/overlayLayers';
 import { useKeyboardShift } from './web/useKeyboardShift';
 import { useSheetDrag } from './web/useSheetDrag';
@@ -123,14 +131,6 @@ function WebOverlayEntry({
     const neverEntered = directionRef.current === undefined;
     directionRef.current = direction;
     scheduleOverlayInertSync();
-    if (direction === 'out' && (neverEntered || pannedAwayRef.current)) {
-      callbacksRef.current.onDismissed();
-      return;
-    }
-    if (direction === 'in' && blocking) {
-      restoreFocusRef.current = document.activeElement as HTMLElement | null;
-      entryRef.current?.focus({ preventScroll: true });
-    }
     const interruptedFrames = new Map<HTMLElement, Keyframe>();
     for (const running of runningAnimationsRef.current) {
       const target = (running.effect as KeyframeEffect | null)?.target;
@@ -142,6 +142,25 @@ function WebOverlayEntry({
         });
       }
       running.cancel();
+    }
+    runningAnimationsRef.current = [];
+    if (direction === 'out' && (neverEntered || pannedAwayRef.current)) {
+      restoreFocusRef.current?.focus?.({ preventScroll: true });
+      restoreFocusRef.current = null;
+      callbacksRef.current.onDismissed();
+      return;
+    }
+    if (direction === 'in') {
+      pannedAwayRef.current = false;
+      sheetRef.current?.style.removeProperty('transform');
+      sheetRef.current?.style.removeProperty('transition');
+      if (backdropRef.current) {
+        backdropRef.current.style.opacity = '1';
+      }
+      if (blocking) {
+        restoreFocusRef.current = document.activeElement as HTMLElement | null;
+        entryRef.current?.focus({ preventScroll: true });
+      }
     }
     // A sheet is measured as a whole; other presentations by the children
     // of the full-window React root.
@@ -428,12 +447,22 @@ export function OverlayView(props: IOverlayViewProps) {
   // Closed with `keepContentMounted`: the same entry stays in the layer,
   // hidden and inert, so the content keeps its state and can be measured.
   const parked = !mounted || !entry;
+  const subscribePageHost = useCallback(
+    (listener: () => void) => subscribeOverlayPageHost(hostKey, listener),
+    [hostKey]
+  );
+  const getPageHost = useCallback(() => getOverlayPageHost(hostKey), [hostKey]);
+  const pageHost = useSyncExternalStore(
+    subscribePageHost,
+    getPageHost,
+    () => undefined
+  );
   if (parked && !keepContentMounted) {
     return null;
   }
-
-  const pageHost =
-    !parked && scope === 'page' ? getOverlayPageHost(hostKey) : undefined;
+  if (scope === 'page' && !pageHost) {
+    return null;
+  }
   return createPortal(
     <WebOverlayEntry
       key="entry"
@@ -454,15 +483,15 @@ export function OverlayView(props: IOverlayViewProps) {
       sheet={presentation === 'sheet' ? sheet ?? {} : undefined}
       // Inside a page host all levels share one stacking context.
       zIndex={
-        pageHost
+        scope === 'page'
           ? OVERLAY_LEVEL_ORDER[level] * 1000 + (entry?.seq ?? 0)
           : entry?.seq ?? 0
       }
-      ownerKey={pageHost ? ownerKey : undefined}
+      ownerKey={scope === 'page' ? ownerKey : undefined}
       testID={testID}
     >
       <OverlayLevelProvider value={level}>{children}</OverlayLevelProvider>
     </WebOverlayEntry>,
-    pageHost ?? getOverlayLayerRoot(level)
+    scope === 'page' ? pageHost! : getOverlayLayerRoot(level)
   );
 }

@@ -8,6 +8,7 @@ import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import java.util.WeakHashMap
+import java.lang.ref.WeakReference
 
 /** Mirrors `OVERLAY_LEVEL_ORDER`. */
 internal enum class NativeOverlayLevel(val order: Int) {
@@ -160,9 +161,11 @@ internal class NativeOverlayHost private constructor(
   }
 
   companion object {
-    private val hosts = WeakHashMap<Activity, NativeOverlayHost>()
+    private val hosts = WeakHashMap<Activity, WeakReference<NativeOverlayHost>>()
 
     fun of(activity: Activity): NativeOverlayHost =
-      hosts.getOrPut(activity) { NativeOverlayHost(activity) }
+      hosts[activity]?.get() ?: NativeOverlayHost(activity).also {
+        hosts[activity] = WeakReference(it)
+      }
   }
 }

@@ -14,6 +14,7 @@ import { createRoot } from 'react-dom/client';
 import type { Root } from 'react-dom/client';
 
 import { OverlayView } from '../OverlayView.web';
+import { OverlayPageHost } from '../OverlayPageHost.web';
 import { overlayStore } from '../OverlayStore';
 
 jest.mock('react-native', () => {
@@ -477,6 +478,121 @@ it('clears an interrupted sheet pan and pointer capture when switching to center
   await pointer('pointerup', 200);
   expect(dismiss).not.toHaveBeenCalled();
   expect(inputFor('pan')).toBe(input);
+});
+
+it('resets a panned sheet when kept content reopens and restores focus on close', async () => {
+  const finishes: Array<() => void> = [];
+  const cancel = jest.fn();
+  Element.prototype.animate = jest.fn(function animateMock(this: HTMLElement) {
+    let finish!: () => void;
+    const finished = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    finishes.push(finish);
+    return {
+      finished,
+      cancel,
+      playState: 'running',
+      effect: { target: this },
+    };
+  }) as unknown as typeof Element.prototype.animate;
+  const outside = document.createElement('button');
+  document.body.append(outside);
+  outside.focus();
+  const onRequestDismiss = jest.fn();
+  const onClose = jest.fn();
+  const onPresented = jest.fn();
+  const content = createElement('input', { 'aria-label': 'panned draft' });
+  const show = (visible: boolean) =>
+    createElement(
+      OverlayView,
+      {
+        visible,
+        keepContentMounted: true,
+        presentation: 'sheet',
+        backdrop: { color: 'black' },
+        onRequestDismiss,
+        onClose,
+        onPresented,
+      },
+      content
+    );
+  await render(show(true));
+  const input = inputFor('panned draft');
+  await edit(input, 'saved draft');
+  const sheet = input.parentElement!.parentElement!;
+  const backdrop = input.closest('[data-onekey-overlay-entry]')!
+    .firstElementChild as HTMLElement;
+  Object.defineProperty(sheet, 'offsetHeight', { value: 200 });
+  sheet.setPointerCapture = jest.fn();
+  sheet.hasPointerCapture = jest.fn(() => true);
+  sheet.releasePointerCapture = jest.fn();
+  const pointer = async (type: string, clientY: number) =>
+    act(async () => {
+      const event = new Event(type, { bubbles: true });
+      Object.assign(event, { button: 0, pointerId: 1, clientY });
+      input.dispatchEvent(event);
+    });
+  await pointer('pointerdown', 100);
+  await pointer('pointermove', 120);
+  await pointer('pointerup', 200);
+  expect(onRequestDismiss).toHaveBeenCalledWith('pan');
+  expect(sheet.style.transform).toBe('translate3d(0, 200px, 0)');
+  await render(show(false));
+  expect(cancel).toHaveBeenCalled();
+  expect(document.activeElement).toBe(outside);
+  expect(onClose).toHaveBeenCalledTimes(1);
+  await act(async () => finishes.splice(0).forEach((finish) => finish()));
+  expect(onPresented).not.toHaveBeenCalled();
+  await render(show(true));
+  expect(inputFor('panned draft')).toBe(input);
+  expect(input.value).toBe('saved draft');
+  expect(sheet.style.transform).toBe('');
+  expect(sheet.style.transition).toBe('');
+  expect(backdrop.style.opacity).toBe('1');
+  await render(show(false));
+  await act(async () => finishes.splice(0).forEach((finish) => finish()));
+  expect(onClose).toHaveBeenCalledTimes(2);
+  expect(document.activeElement).toBe(outside);
+});
+
+it('keeps a closed page overlay in its host and never falls back to a global layer', async () => {
+  const content = createElement('input', { 'aria-label': 'page draft' });
+  const view = (visible: boolean, withHost: boolean) =>
+    createElement(
+      'div',
+      null,
+      withHost && createElement(OverlayPageHost, { hostKey: 'draft-host' }),
+      createElement(
+        OverlayView,
+        {
+          visible,
+          keepContentMounted: true,
+          scope: 'page',
+          hostKey: 'draft-host',
+          ownerKey: 'draft-owner',
+        },
+        content
+      )
+    );
+  await render(view(false, false));
+  expect(inputFor('page draft')).toBeNull();
+  await render(view(false, true));
+  const input = inputFor('page draft');
+  expect(input.closest('[data-onekey-overlay-layer]')).toBeNull();
+  await render(view(true, true));
+  await edit(input, 'page value');
+  await render(view(false, true));
+  await render(view(true, true));
+  expect(inputFor('page draft')).toBe(input);
+  expect(input.value).toBe('page value');
+  await render(view(true, false));
+  expect(inputFor('page draft')).toBeNull();
+  expect(
+    document.querySelector(
+      '[data-onekey-overlay-layer] input[aria-label="page draft"]'
+    )
+  ).toBeNull();
 });
 
 it('retargets an unfinished web exit without unmounting content or reporting close', async () => {
