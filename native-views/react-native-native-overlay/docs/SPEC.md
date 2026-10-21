@@ -460,6 +460,8 @@ P2 sheet notes:
   flick dismisses, never from scrolled content). Reopening kept content after
   a pan dismissal clears the sheet transform, transition and backdrop opacity;
   the next dismissal follows the normal exit path and restores focus.
+  Cancelling a tracked pointer resets its drag offset, transition and backdrop
+  without dismissing the sheet or swallowing a later click.
 - A fitted sheet measures its content with `onLayout` before presenting.
   Hidden content stays mounted inside the zero-width host (clipped on iOS,
   INVISIBLE on Android), and the host height stays auto: a fixed 0 height

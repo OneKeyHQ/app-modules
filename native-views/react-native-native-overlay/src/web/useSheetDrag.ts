@@ -129,10 +129,28 @@ export function useSheetDrag({
       );
     };
 
+    const onPointerCancel = (event: PointerEvent) => {
+      if (!tracking || event.pointerId !== pointerId) {
+        return;
+      }
+      tracking = false;
+      dragging = false;
+      velocity = 0;
+      if (sheet.hasPointerCapture?.(pointerId)) {
+        sheet.releasePointerCapture(pointerId);
+      }
+      pointerId = -1;
+      sheet.style.transform = '';
+      sheet.style.transition = '';
+      if (backdropRef.current) {
+        backdropRef.current.style.opacity = '1';
+      }
+    };
+
     sheet.addEventListener('pointerdown', onPointerDown);
     sheet.addEventListener('pointermove', onPointerMove);
     sheet.addEventListener('pointerup', onPointerUp);
-    sheet.addEventListener('pointercancel', onPointerUp);
+    sheet.addEventListener('pointercancel', onPointerCancel);
     return () => {
       if (sheet.hasPointerCapture?.(pointerId)) {
         sheet.releasePointerCapture(pointerId);
@@ -140,7 +158,7 @@ export function useSheetDrag({
       sheet.removeEventListener('pointerdown', onPointerDown);
       sheet.removeEventListener('pointermove', onPointerMove);
       sheet.removeEventListener('pointerup', onPointerUp);
-      sheet.removeEventListener('pointercancel', onPointerUp);
+      sheet.removeEventListener('pointercancel', onPointerCancel);
     };
   }, [sheetRef, backdropRef, enabled]);
 }

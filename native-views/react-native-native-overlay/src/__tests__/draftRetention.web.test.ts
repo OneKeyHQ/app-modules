@@ -480,6 +480,63 @@ it('clears an interrupted sheet pan and pointer capture when switching to center
   expect(inputFor('pan')).toBe(input);
 });
 
+it('cancels a sheet drag without dismissing or swallowing the next click', async () => {
+  const dismiss = jest.fn();
+  const click = jest.fn();
+  await render(
+    createElement(
+      OverlayView,
+      {
+        visible: true,
+        presentation: 'sheet',
+        backdrop: { color: 'black' },
+        onRequestDismiss: dismiss,
+      },
+      createElement('button', { type: 'button', onClick: click }, 'Tap')
+    )
+  );
+  const button = document.querySelector<HTMLButtonElement>('button')!;
+  const sheet = button.parentElement!.parentElement!;
+  const backdrop = button.closest('[data-onekey-overlay-entry]')!
+    .firstElementChild as HTMLElement;
+  Object.defineProperty(sheet, 'offsetHeight', { value: 200 });
+  sheet.setPointerCapture = jest.fn();
+  sheet.hasPointerCapture = jest.fn(() => true);
+  sheet.releasePointerCapture = jest.fn();
+  const pointer = async (type: string, clientY: number, pointerId = 1) =>
+    act(async () => {
+      const event = new Event(type, { bubbles: true });
+      Object.assign(event, { button: 0, pointerId, clientY });
+      button.dispatchEvent(event);
+    });
+
+  await pointer('pointerdown', 100);
+  await pointer('pointermove', 200);
+  expect(sheet.style.transform).toBe('translate3d(0, 100px, 0)');
+  await pointer('pointercancel', 200, 2);
+  expect(sheet.style.transform).toBe('translate3d(0, 100px, 0)');
+  await pointer('pointercancel', 200);
+  expect(sheet.style.transform).toBe('');
+  expect(sheet.style.transition).toBe('');
+  expect(backdrop.style.opacity).toBe('1');
+  expect(sheet.releasePointerCapture).toHaveBeenCalledWith(1);
+  expect(dismiss).not.toHaveBeenCalled();
+  await act(async () => button.click());
+  expect(click).toHaveBeenCalledTimes(1);
+
+  await pointer('pointerdown', 100);
+  await pointer('pointercancel', 100);
+  await pointer('pointerup', 200);
+  expect(dismiss).not.toHaveBeenCalled();
+  await act(async () => button.click());
+  expect(click).toHaveBeenCalledTimes(2);
+
+  await pointer('pointerdown', 100);
+  await pointer('pointermove', 200);
+  await pointer('pointerup', 200);
+  expect(dismiss).toHaveBeenCalledWith('pan');
+});
+
 it('resets a panned sheet when kept content reopens and restores focus on close', async () => {
   const finishes: Array<() => void> = [];
   const cancel = jest.fn();
