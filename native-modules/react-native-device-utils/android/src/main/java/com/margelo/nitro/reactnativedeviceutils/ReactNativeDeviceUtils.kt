@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.graphics.Rect
 import android.os.Build
 import android.view.Gravity
@@ -916,9 +917,13 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
           window.isNavigationBarContrastEnforced = false
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
-          // Android 15 enforces edge-to-edge. Keep the platform bar transparent
-          // and draw the requested color only behind three-button navigation.
+        if (
+          Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM ||
+          com.facebook.react.views.view.isEdgeToEdgeFeatureFlagOn
+        ) {
+          // Edge-to-edge windows (enforced on Android 15, opted in below it) keep
+          // the platform bar transparent and draw the requested color only
+          // behind three-button navigation.
           window.navigationBarColor = Color.TRANSPARENT
           installNavigationBarProtection(decorView, appearance.color)
         } else {
@@ -953,7 +958,6 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
       )
     }
 
-    protectionView.setBackgroundColor(color)
     protectionView.visibility = View.VISIBLE
     protectionView.bringToFront()
     ViewCompat.setOnApplyWindowInsetsListener(protectionView) { view, windowInsets ->
@@ -985,6 +989,17 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
         )
         else -> Triple(0, 0, Gravity.BOTTOM)
       }
+      // Fade in from the content edge so the protection never draws a hard line
+      // against the page; the solid half keeps the buttons legible.
+      val fadeOrientation = when (gravity) {
+        Gravity.LEFT -> GradientDrawable.Orientation.RIGHT_LEFT
+        Gravity.RIGHT -> GradientDrawable.Orientation.LEFT_RIGHT
+        else -> GradientDrawable.Orientation.TOP_BOTTOM
+      }
+      view.background = GradientDrawable(
+        fadeOrientation,
+        intArrayOf(color and 0x00FFFFFF, color, color),
+      )
       if (
         layoutParams.width != width ||
         layoutParams.height != height ||
