@@ -318,7 +318,7 @@
          self.header_buffer_view
              .set_uint32(HEADER_OFFSET_FLAGS, flags as u32);
  
-@@ -285,19 +485,57 @@
+@@ -285,19 +485,55 @@
          } else {
              self.header_buffer
                  .fill(0, 0, HEADER_MAX_FILENAME_SIZE as u32);
@@ -359,16 +359,14 @@
 +    }
 +
 +    /// Best-effort truncate of a free file's old payload (a dropped database
-+    /// or journal). Call only after its association clear is durable. On
-+    /// failure the payload stays until the next pool open retries.
++    /// or journal). Call only after its association clear is durable. Not
++    /// flushed: the next pool open retries a failed or lost truncate.
 +    fn discard_payload(sah: &FileSystemSyncAccessHandle) {
 +        let Ok(size) = sah.get_size() else {
 +            return;
 +        };
-+        if size > HEADER_OFFSET_DATA as f64
-+            && sah.truncate_with_u32(HEADER_OFFSET_DATA as u32).is_ok()
-+        {
-+            let _ = sah.flush();
++        if size > HEADER_OFFSET_DATA as f64 {
++            let _ = sah.truncate_with_u32(HEADER_OFFSET_DATA as u32);
 +        }
      }
  
@@ -385,7 +383,7 @@
              let next: IteratorNext = JsFuture::from(future)
                  .await
                  .map_err(OpfsSAHError::IterHandle)?
-@@ -324,45 +562,47 @@
+@@ -324,45 +560,47 @@
                      handle: sah,
                      opaque,
                  };
@@ -451,7 +449,7 @@
              Ok(true)
          } else {
              Ok(false)
-@@ -398,6 +638,7 @@
+@@ -398,6 +636,7 @@
          flags: i32,
          f: F,
      ) -> Result<Result<(), E>> {
@@ -459,7 +457,7 @@
          let mut map_filename_to_file = self.map_filename_to_file.borrow_mut();
          let mut available_files = self.available_files.borrow_mut();
          if map_filename_to_file.contains_key(filename) {
-@@ -408,13 +649,10 @@
+@@ -408,13 +647,10 @@
          let file = available_files
              .pop()
              .ok_or_else(|| OpfsSAHError::Generic("No files available in the pool".into()))?;
@@ -476,7 +474,7 @@
      }
  
      fn pause_vfs(&self) -> Result<()> {
-@@ -442,11 +680,10 @@
+@@ -442,11 +678,10 @@
      }
  
      async fn unpause_vfs(&self) -> Result<()> {
@@ -489,7 +487,7 @@
  
          let (vfs, make_default) = self.vfs.get();
          if vfs.is_null() {
-@@ -455,18 +692,24 @@
+@@ -455,18 +690,24 @@
              ));
          }
  
@@ -517,7 +515,7 @@
          let files = self.map_filename_to_file.borrow();
          let file = files
              .get(filename)
-@@ -603,6 +846,8 @@
+@@ -603,6 +844,8 @@
  
      fn contains_file(vfs: *mut sqlite3_vfs, file: &str) -> VfsResult<bool> {
          let pool = unsafe { Self::app_data(vfs) };
@@ -526,7 +524,7 @@
          Ok(pool.has_filename(file))
      }
  
-@@ -619,6 +864,8 @@
+@@ -619,6 +862,8 @@
      ) -> VfsResult<i32> {
          let name = unsafe { vfs_file.name() };
          let pool = unsafe { Self::app_data(vfs_file.vfs) };
@@ -535,7 +533,7 @@
          pool.with_file(name, f)
              .ok_or_else(|| VfsError::new(SQLITE_IOERR, format!("{name} not found")))?
      }
-@@ -629,6 +876,8 @@
+@@ -629,6 +874,8 @@
      ) -> VfsResult<i32> {
          let name = unsafe { vfs_file.name() };
          let pool = unsafe { Self::app_data(vfs_file.vfs) };
@@ -544,7 +542,7 @@
          pool.with_file_mut(name, f)
              .ok_or_else(|| VfsError::new(SQLITE_IOERR, format!("{name} not found")))?
      }
-@@ -648,11 +897,66 @@
+@@ -648,11 +895,66 @@
      }
  
      unsafe extern "C" fn xCheckReservedLock(
@@ -614,7 +612,7 @@
      }
  
      unsafe extern "C" fn xDeviceCharacteristics(
-@@ -663,14 +967,18 @@
+@@ -663,14 +965,18 @@
  
      unsafe extern "C" fn xClose(pFile: *mut sqlite3_file) -> ::std::os::raw::c_int {
          let vfs_file = SQLiteVfsFile::from_file(pFile);
@@ -640,7 +638,7 @@
          ret
      }
  }
-@@ -691,6 +999,10 @@
+@@ -691,6 +997,10 @@
          flags: ::std::os::raw::c_int,
          pOutFlags: *mut ::std::os::raw::c_int,
      ) -> ::std::os::raw::c_int {
@@ -651,7 +649,7 @@
          let ret = Self::xOpenImpl(pVfs, zName, pFile, flags, pOutFlags);
          if ret == SQLITE_OK {
              let app_data = SyncAccessHandleStore::app_data(pVfs);
-@@ -700,7 +1012,7 @@
+@@ -700,7 +1010,7 @@
              app_data
                  .open_files
                  .borrow_mut()
@@ -660,7 +658,7 @@
          }
          ret
      }
-@@ -841,6 +1153,11 @@
+@@ -841,6 +1151,11 @@
  }
  
  impl OpfsSAHPoolUtil {
@@ -672,7 +670,7 @@
      /// Returns the number of files currently contained in the SAH pool.
      pub fn get_capacity(&self) -> u32 {
          self.pool.get_capacity()
-@@ -894,6 +1211,7 @@
+@@ -894,6 +1209,7 @@
  
      /// Delete all database, make sure that all database is closed.
      pub async fn clear_all(&self) -> Result<()> {
@@ -680,7 +678,7 @@
          self.pool.release_access_handles();
          self.pool.acquire_access_handles(true).await?;
          Ok(())
-@@ -901,6 +1219,7 @@
+@@ -901,6 +1217,7 @@
  
      /// Does the database exists.
      pub fn exists(&self, filename: &str) -> Result<bool> {
@@ -688,7 +686,7 @@
          Ok(self.pool.has_filename(filename))
      }
  
-@@ -971,6 +1290,7 @@
+@@ -971,6 +1288,7 @@
      };
  
      let pool = unsafe { SyncAccessHandleStore::app_data(vfs) };
