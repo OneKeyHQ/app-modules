@@ -220,6 +220,9 @@ pub fn open_connection(db_name: &str) -> Result<rusqlite::Connection> {
     // Only takes effect before the first table exists, so every database
     // created from here on can hand freed pages back; see reclaim_free_pages.
     conn.execute_batch("PRAGMA auto_vacuum = INCREMENTAL;")?;
+    // Zero deleted rows (viewing keys, notes, memos) instead of leaving them
+    // in free pages; per connection, so every open needs it.
+    conn.execute_batch("PRAGMA secure_delete = ON;")?;
     #[cfg(target_arch = "wasm32")]
     if !memory_mode() {
         // SAH-pool uses rollback journals, not cross-context WAL coordination.
@@ -310,7 +313,13 @@ fn db_storage_err(operation: &str, db_name: &str, error: impl std::fmt::Debug) -
 
 #[cfg(test)]
 mod tests {
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha20Rng;
+    use zcash_client_sqlite::{wallet::init::WalletMigrator, WalletDb};
+    use zcash_protocol::consensus::Network;
+
     use super::*;
+    use crate::clock::HostClock;
 
     fn page_counts(conn: &rusqlite::Connection) -> (i64, i64) {
         let pages = conn
@@ -365,6 +374,85 @@ mod tests {
         assert!(page_counts(&conn).1 > 0);
         assert_eq!(reclaim_free_pages(&conn, u32::MAX).unwrap(), 0);
         let _ = std::fs::remove_file(&path);
+    }
+
+    fn secure_delete(conn: &rusqlite::Connection) -> i64 {
+        conn.query_row("PRAGMA secure_delete", [], |r| r.get(0))
+            .unwrap()
+    }
+
+    /// The pragma is per connection: the wallet's own, the separate read and
+    /// reclaim connections, and every reopen after a migration.
+    #[test]
+    fn every_connection_turns_on_secure_delete() {
+        let path = std::env::temp_dir().join("zr-secure-delete-connections.sqlite");
+        let _ = std::fs::remove_file(&path);
+        let name = path.to_str().unwrap();
+
+        // Same steps as wallet::open_and_migrate, keeping the connection so it
+        // can be asked afterwards: migrations must not turn the pragma off.
+        for _ in 0..2 {
+            let mut conn = open_connection(name).expect("open");
+            {
+                let rng = ChaCha20Rng::from_seed([7; 32]);
+                let mut db =
+                    WalletDb::from_connection(&mut conn, Network::TestNetwork, HostClock, rng);
+                WalletMigrator::new()
+                    .with_external_migrations(crate::tx_state::migrations())
+                    .init_or_migrate(&mut db)
+                    .unwrap();
+            }
+            assert_eq!(secure_delete(&conn), 1);
+        }
+
+        let db = crate::wallet::open_and_migrate("test", name).expect("reopen");
+        let read_conn = open_connection(name).expect("open");
+        assert_eq!(secure_delete(&read_conn), 1);
+        drop(read_conn);
+        drop(db);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// Deleting a row must not leave its bytes readable in the file.
+    #[test]
+    fn deleted_rows_leave_no_plaintext_in_the_file() {
+        const MARKER: &str = "zr-secure-delete-marker-viewing-key";
+        // Larger than a page: the overflow pages it frees are zeroed only by
+        // a full secure_delete, not by the FAST mode some hosts default to.
+        let secret = MARKER.repeat(400);
+        let write_and_delete = |path: &std::path::Path, secure_delete: bool| {
+            let _ = std::fs::remove_file(path);
+            let conn = open_connection(path.to_str().unwrap()).expect("open");
+            if !secure_delete {
+                conn.execute_batch("PRAGMA secure_delete = OFF;").unwrap();
+            }
+            conn.execute_batch(
+                "CREATE TABLE secret (id INTEGER PRIMARY KEY, value TEXT NOT NULL);
+                 INSERT INTO secret (value) VALUES ('kept');",
+            )
+            .unwrap();
+            conn.execute("INSERT INTO secret (value) VALUES (?1)", [&secret])
+                .unwrap();
+            conn.execute("DELETE FROM secret WHERE value = ?1", [&secret])
+                .unwrap();
+        };
+        let contains_marker = |path: &std::path::Path| {
+            let bytes = std::fs::read(path).unwrap();
+            let _ = std::fs::remove_file(path);
+            bytes
+                .windows(MARKER.len())
+                .any(|window| window == MARKER.as_bytes())
+        };
+
+        // Control: the same steps with the pragma off keep the bytes, so the
+        // check below can tell the two apart.
+        let plain = std::env::temp_dir().join("zr-secure-delete-plain.sqlite");
+        write_and_delete(&plain, false);
+        assert!(contains_marker(&plain));
+
+        let zeroed = std::env::temp_dir().join("zr-secure-delete-zeroed.sqlite");
+        write_and_delete(&zeroed, true);
+        assert!(!contains_marker(&zeroed));
     }
 
     /// auto_vacuum is fixed when the first table is created; an older file
