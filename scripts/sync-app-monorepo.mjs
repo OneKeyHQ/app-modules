@@ -10,6 +10,15 @@ import {
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
+export const appMonorepoManifests = [
+  ["apps/mobile/package.json", ["dependencies"]],
+  ["packages/components/package.json", ["dependencies"]],
+  ["packages/core/package.json", ["dependencies"]],
+  ["packages/kit/package.json", ["dependencies"]],
+  ["apps/playground/package.json", ["dependencies"]],
+  ["package.json", ["dependencies", "resolutions"]],
+];
+
 export function updateMobileManifest(
   manifestText,
   workspaces,
@@ -34,7 +43,13 @@ export function updateMobileManifest(
       if (!target || currentVersion === target) {
         continue;
       }
-      if (compareReleaseVersions(currentVersion, target) > 0) {
+      const migratingOverlay =
+        workspaceName === "@onekeyfe/react-native-native-overlay" &&
+        currentVersion === "workspace:*";
+      if (
+        !migratingOverlay &&
+        compareReleaseVersions(currentVersion, target) > 0
+      ) {
         throw new Error(
           `Refusing to downgrade ${name} from ${currentVersion} to ${target}`
         );
@@ -64,14 +79,11 @@ async function main() {
   const workspaces = (await loadReleaseWorkspaces(repoRoot)).map(
     (workspace) => ({ ...workspace, version: releaseVersion })
   );
-  const manifests = [
-    ["apps/mobile/package.json", ["dependencies"]],
-    ["packages/components/package.json", ["dependencies"]],
-    ["packages/core/package.json", ["dependencies"]],
-    ["packages/kit/package.json", ["dependencies"]],
-    ["package.json", ["dependencies", "resolutions"]],
-  ];
-  for (const [relativePath, sections] of manifests) {
+  await syncAppMonorepo(appMonorepoArg, workspaces);
+}
+
+export async function syncAppMonorepo(appMonorepoArg, workspaces) {
+  for (const [relativePath, sections] of appMonorepoManifests) {
     const manifestPath = join(resolve(appMonorepoArg), relativePath);
     const original = await readFile(manifestPath, "utf8");
     const { text, updated } = updateMobileManifest(

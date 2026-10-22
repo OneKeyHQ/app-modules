@@ -234,29 +234,7 @@ PODS:
   - MMKV (2.4.0):
     - MMKVCore (~> 2.4.0)
   - MMKVCore (2.4.0)
-  - NativeSheet (6.7.0-7):
-    - hermes-engine
-    - RCTRequired
-    - RCTTypeSafety
-    - React-Core
-    - React-Core-prebuilt
-    - React-debug
-    - React-Fabric
-    - React-featureflags
-    - React-graphics
-    - React-ImageManager
-    - React-jsi
-    - React-NativeModulesApple
-    - React-RCTFabric
-    - React-renderercss
-    - React-rendererdebug
-    - React-utils
-    - ReactCodegen
-    - ReactCommon/turbomodule/bridging
-    - ReactCommon/turbomodule/core
-    - ReactNativeDependencies
-    - Yoga
-  - NativeSheet/Tests (6.7.0-7):
+  - NativeOverlay (6.7.0):
     - hermes-engine
     - RCTRequired
     - RCTTypeSafety
@@ -3218,8 +3196,7 @@ DEPENDENCIES:
   - FBLazyVector (from `../../../node_modules/react-native/Libraries/FBLazyVector`)
   - hermes-engine (from `../../../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec`)
   - "KeychainModule (from `../../../node_modules/@onekeyfe/react-native-keychain-module`)"
-  - "NativeSheet (from `../../../node_modules/@onekeyfe/react-native-native-sheet`)"
-  - "NativeSheet/Tests (from `../../../node_modules/@onekeyfe/react-native-native-sheet`)"
+  - "NativeOverlay (from `../../../node_modules/@onekeyfe/react-native-native-overlay`)"
   - "NetworkInfo (from `../../../node_modules/@onekeyfe/react-native-network-info`)"
   - NitroMmkv (from `../../../node_modules/react-native-mmkv`)
   - NitroModules (from `../../../node_modules/react-native-nitro-modules`)
@@ -3378,8 +3355,8 @@ EXTERNAL SOURCES:
     :tag: hermes-v250829098.0.16
   KeychainModule:
     :path: "../../../node_modules/@onekeyfe/react-native-keychain-module"
-  NativeSheet:
-    :path: "../../../node_modules/@onekeyfe/react-native-native-sheet"
+  NativeOverlay:
+    :path: "../../../node_modules/@onekeyfe/react-native-native-overlay"
   NetworkInfo:
     :path: "../../../node_modules/@onekeyfe/react-native-network-info"
   NitroMmkv:
@@ -3609,12 +3586,12 @@ SPEC CHECKSUMS:
   DnsLookup: 1be2bd3696482472bf239987d32d848a8656b311
   EMASCurl: d75387e1ce9dec1a75cd25cb33c7a7e7bf21997f
   FBLazyVector: 3c3be9a019176b5699455f7f66c5444b78a411c6
-  hermes-engine: 987b22c620899900a5da1b8429a982c7b1b2b57e
+  hermes-engine: 55900aaf53bda9d2e5514ebf184af369fbf329bf
   KeychainModule: ca5a92fd3e4599618042d866cfd0921dce306eff
   libwebp: af5937a13536ef73f3784d69cc342b98961acf33
   MMKV: 86859fdfa2b0b21db1fd6e48788474a6416a2c77
   MMKVCore: 3d16ce9f7d411e135020915fde98a056859a1efa
-  NativeSheet: af5e4784496a6ff8c4682d7a5f68feb6d0cd8503
+  NativeOverlay: 7a9964355b17fbdc4fdd845198142cbc1a95296e
   NetworkInfo: 1662ee2e52b36fcad6837d9285f4f36c524fcefc
   NitroMmkv: 85a251e15c39d7c95fe58cf40786fa126b8d143c
   NitroModules: cda827b31eb05c1bfcc0e2bbd9b647a69c6c314f
@@ -3728,6 +3705,6 @@ SPEC CHECKSUMS:
   TcpSocket: 1ac199ecf6098fa4a36d4147e44b8f2aa7ff450f
   Yoga: 9891cfb1c680f64de9c41b09e7453dea33454d2b
 
-PODFILE CHECKSUM: 3225b9e440a4f78064b5bd72c7daec02cc8f6d70
+PODFILE CHECKSUM: 2ee7ca5bd30522c916a386fd5a3b3edf858c5076
 
 COCOAPODS: 1.16.2

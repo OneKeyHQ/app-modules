@@ -59,7 +59,7 @@ missing packages (HTTP 404) have no published counter.
 Manual all-package `next` runs also generate previews. Single-workspace recovery
 publishes the checked-out version exactly, so it must already match the requested
 channel. After registry verification, both preview and latest releases open an
-app-monorepo PR against `x` for the mobile, components, root dependency pins, and
+app-monorepo PR against `x` for the mobile, components, core, kit, playground, root dependency pins, and
 lockfile updates. Source PR approval is therefore also release approval.
 
 Both formats are prereleases to npm/SemVer, even though numeric revisions are
