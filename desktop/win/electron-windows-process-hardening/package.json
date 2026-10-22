@@ -1,0 +1,49 @@
+{
+  "name": "@onekeyfe/electron-windows-process-hardening",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Current-process Windows DACL and extension-point hardening for Electron main processes",
+  "main": "index.cjs",
+  "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.cjs",
+    "index.d.ts",
+    "electron-windows-process-hardening.win32-x64-msvc.node",
+    "electron-windows-process-hardening.win32-arm64-msvc.node",
+    "onekey-crash-prototype.win32-x64-msvc.exe",
+    "onekey-crash-prototype.win32-arm64-msvc.exe",
+    "onekey-crashpad-capture.win32-x64.dll",
+    "third-party-licenses"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test test/*.test.cjs",
+    "test:electron": "electron test/electron.cjs",
+    "test:types": "tsc --noEmit --strict --skipLibCheck --module node16 --moduleResolution node16 test/types.ts",
+    "prepack": "node scripts/check-package.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OneKeyHQ/app-modules.git",
+    "directory": "desktop/win/electron-windows-process-hardening"
+  },
+  "bugs": "https://github.com/OneKeyHQ/app-modules/issues",
+  "homepage": "https://github.com/OneKeyHQ/app-modules/tree/main/desktop/win/electron-windows-process-hardening",
+  "keywords": ["electron", "windows", "process-hardening", "arm64"],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "electron": "44.5.1",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=20.17.0"
+  }
+}

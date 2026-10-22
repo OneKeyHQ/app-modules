@@ -1,0 +1,39 @@
+[package]
+name = "electron-windows-process-hardening"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[[bin]]
+name = "onekey-crash-prototype"
+path = "src/bin/onekey-crash-prototype.rs"
+
+[dependencies]
+napi = { version = "=3.14.2", default-features = false, features = ["napi8", "dyn-symbols"] }
+napi-derive = "=3.6.12"
+windows = { version = "=0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_IO",
+    "Win32_System_Kernel",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+    "Win32_System_Pipes",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+] }
+
+[build-dependencies]
+napi-build = "=2.6.0"
+
+[profile.release]
+lto = true
+strip = "symbols"
