@@ -6,6 +6,8 @@ Native iOS and Android views for an order-book depth column and a bid/ask ratio
 track. Each view owns native drawing and animation; the application provides
 formatted prices, sizes and percentages.
 
+The native ownership and update contract is in [docs/SPEC.md](docs/SPEC.md).
+
 ## Installation
 
 ```sh

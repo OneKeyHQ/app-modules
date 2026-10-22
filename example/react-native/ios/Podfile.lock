@@ -432,6 +432,30 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - PerpDepthBar/Tests (6.7.0-9):
+    - hermes-engine
+    - NitroModules
+    - RCTRequired
+    - RCTTypeSafety
+    - React-callinvoker
+    - React-Core
+    - React-Core-prebuilt
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
   - Ping (6.7.0-9):
     - hermes-engine
     - RCTRequired
@@ -3206,6 +3230,7 @@ DEPENDENCIES:
   - "OneKeyTextInput/Tests (from `../../../node_modules/@onekeyfe/react-native-text-input`)"
   - "Pbkdf2 (from `../../../node_modules/@onekeyfe/react-native-pbkdf2`)"
   - "PerpDepthBar (from `../../../node_modules/@onekeyfe/react-native-perp-depth-bar`)"
+  - "PerpDepthBar/Tests (from `../../../node_modules/@onekeyfe/react-native-perp-depth-bar`)"
   - "Ping (from `../../../node_modules/@onekeyfe/react-native-ping`)"
   - RCTDeprecation (from `../../../node_modules/react-native/ReactApple/Libraries/RCTFoundation/RCTDeprecation`)
   - RCTRequired (from `../../../node_modules/react-native/Libraries/Required`)
@@ -3598,7 +3623,7 @@ SPEC CHECKSUMS:
   OneKeyImage: 79db7b59c840c6b25d005dd7bcf411c94729fdf7
   OneKeyTextInput: 7e2cda96b9be25d302fb3cbe740cf12b47ea5ca5
   Pbkdf2: 9ea5c8a4e8c879135ff86e2702b818c32142fb87
-  PerpDepthBar: 30b6df889a3ca26353bc7780b81f5144e9ddfb83
+  PerpDepthBar: 28b62d95b6528a993ea3ffe4c78c41e4e2f4a5c6
   Ping: 27adf32f353ae483f51391521a88afc60a6efba0
   RCTDeprecation: bccb6545c26db881ecddfd83a3f9ea82aba1605f
   RCTRequired: b2f74764d596fc0051f00fee94b49bf41a6f7f5a
@@ -3705,6 +3730,6 @@ SPEC CHECKSUMS:
   TcpSocket: 6c5ab797cca5741aae7f797de5fe9c464f98b196
   Yoga: 9891cfb1c680f64de9c41b09e7453dea33454d2b
 
-PODFILE CHECKSUM: 2ee7ca5bd30522c916a386fd5a3b3edf858c5076
+PODFILE CHECKSUM: 2291c9cbfdd3616620c2d361c007ed1b2cf60a1e
 
 COCOAPODS: 1.16.2
