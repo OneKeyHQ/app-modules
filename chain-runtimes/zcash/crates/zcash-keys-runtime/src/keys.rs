@@ -115,14 +115,13 @@ pub(crate) fn without_sapling(params: Network, ufvk: &UnifiedFullViewingKey) -> 
 /// The runtime only checks that the combination is valid.
 ///
 /// No policy includes a Sapling receiver: this runtime cannot spend Sapling, so
-/// Sapling-only senders would pay into an unspendable pool. `"shielded"` is
-/// therefore an alias of `"orchard"`, kept for existing callers.
+/// Sapling-only senders would pay into an unspendable pool.
 fn receiver_policy(name: &str) -> Result<zcash_keys::keys::UnifiedAddressRequest> {
     use zcash_keys::keys::{ReceiverRequirement::*, UnifiedAddressRequest as R};
     match name {
         // No default: an empty policy must not silently select the least private option.
         "all" => Ok(R::unsafe_custom(Require, Omit, Allow)),
-        "shielded" | "orchard" => Ok(R::ORCHARD),
+        "orchard" => Ok(R::ORCHARD),
         other => Err(KeysError::with(
             ErrorCode::InvalidUfvk,
             json!({ "stage": "receiverPolicy", "value": other }),
@@ -132,7 +131,7 @@ fn receiver_policy(name: &str) -> Result<zcash_keys::keys::UnifiedAddressRequest
 
 /// Derive the Unified Address from a UFVK. No spending key involved.
 ///
-/// `policy` selects the receivers: `"all"` / `"shielded"` / `"orchard"`.
+/// `policy` selects the receivers: `"all"` / `"orchard"`.
 pub fn unified_address_with(network: &str, ufvk_str: &str, policy: &str) -> Result<String> {
     let params = parse_network(network)?;
     let ufvk = UnifiedFullViewingKey::decode(&params, ufvk_str)
@@ -238,7 +237,7 @@ mod tests {
 
         for network in ["main", "test"] {
             let ufvk = ufvk_from_mnemonic(network, TEST_MNEMONIC, 0).unwrap();
-            for policy in ["all", "shielded", "orchard"] {
+            for policy in ["all", "orchard"] {
                 let ua = unified_address_with(network, &ufvk, policy).unwrap();
                 let (_, address) = Address::decode(&ua).unwrap();
                 let receivers = address.items();
@@ -324,8 +323,8 @@ mod tests {
     #[test]
     fn receiver_policy_has_no_default() {
         assert!(receiver_policy("all").is_ok());
-        assert!(receiver_policy("shielded").is_ok());
         assert!(receiver_policy("orchard").is_ok());
+        assert!(receiver_policy("shielded").is_err());
         assert!(receiver_policy("").is_err());
         assert!(receiver_policy("transparent").is_err());
     }
@@ -359,108 +358,5 @@ mod tests {
         let a = ufvk_from_mnemonic("test", TEST_MNEMONIC, 0).unwrap();
         let b = ufvk_from_mnemonic("test", TEST_MNEMONIC, 1).unwrap();
         assert_ne!(a, b, "different accounts must derive different UFVKs");
-    }
-}
-
-#[cfg(test)]
-mod ua_inspect {
-    fn receivers(ua: &str) -> Vec<String> {
-        use zcash_address::unified::{Container, Encoding};
-        let (_, parsed) = zcash_address::unified::Address::decode(ua).expect("decode UA");
-        parsed
-            .items()
-            .iter()
-            .map(|item| match item {
-                zcash_address::unified::Receiver::Orchard(_) => "orchard".to_owned(),
-                zcash_address::unified::Receiver::Sapling(_) => "sapling".to_owned(),
-                zcash_address::unified::Receiver::P2pkh(_) => "transparent-p2pkh".to_owned(),
-                zcash_address::unified::Receiver::P2sh(_) => "transparent-p2sh".to_owned(),
-                other => format!("{other:?}"),
-            })
-            .collect()
-    }
-
-    /// Print receiving addresses for a mnemonic, for manual testing (e.g. faucet
-    /// funds). Skipped unless `ZR_MNEMONIC` is set.
-    ///
-    /// Also prints each policy's receivers, since an unspendable receiver in a
-    /// receiving address would strand incoming funds.
-    #[test]
-    fn print_receiving_addresses() {
-        let mnemonic = std::env::var("ZR_MNEMONIC").unwrap_or_default();
-        if mnemonic.trim().is_empty() {
-            return;
-        }
-        let network = std::env::var("ZR_NETWORK").unwrap_or_else(|_| "test".to_owned());
-        let account: u32 = std::env::var("ZR_ACCOUNT")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0);
-        let ufvk =
-            super::ufvk_from_mnemonic(&network, mnemonic.trim(), account).expect("derive UFVK");
-
-        println!("network      {network}");
-        println!(
-            "t-addr       {}",
-            super::transparent_address(&network, &ufvk).expect("t-address")
-        );
-        for policy in ["all", "shielded", "orchard"] {
-            let ua = super::unified_address_with(&network, &ufvk, policy).expect("UA");
-            println!("UA[{policy}]  {ua}");
-            println!("             receivers = {:?}", receivers(&ua));
-        }
-    }
-
-    /// Decode a UFVK (uview...) and list its key items. Differing item sets mean
-    /// an encoding difference; same items with different bytes mean a derivation
-    /// difference.
-    #[test]
-    fn inspect_external_ufvk() {
-        let s = std::env::var("ZR_UFVK").unwrap_or_default();
-        if s.is_empty() {
-            return;
-        }
-        use zcash_address::unified::{Container, Encoding, Fvk, Ufvk};
-        let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
-        let (net, parsed) = Ufvk::decode(&s).expect("decode UFVK");
-        println!("network: {net:?}");
-        for item in parsed.items() {
-            match &item {
-                Fvk::Orchard(d) => println!("  orchard          {}", hex(d)),
-                Fvk::Sapling(d) => println!("  sapling          {}", hex(d)),
-                Fvk::P2pkh(d) => println!("  transparent-p2pkh {}", hex(d)),
-                other => println!("  other key item: {other:?}"),
-            }
-        }
-    }
-
-    /// Decode a UA and list its receivers, e.g. to inspect other wallets' addresses.
-    #[test]
-    fn inspect_external_ua() {
-        let ua = std::env::var("ZR_UA").unwrap_or_default();
-        if ua.is_empty() {
-            return;
-        }
-        use zcash_address::unified::{Container, Encoding};
-        let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
-        let (net, parsed) = zcash_address::unified::Address::decode(&ua).expect("decode UA");
-        println!("network: {net:?}");
-        for item in parsed.items() {
-            match &item {
-                zcash_address::unified::Receiver::Orchard(d) => {
-                    println!("  orchard          {}", hex(d));
-                }
-                zcash_address::unified::Receiver::Sapling(d) => {
-                    println!("  sapling          {}", hex(d));
-                }
-                zcash_address::unified::Receiver::P2pkh(d) => {
-                    println!("  transparent-p2pkh {}", hex(d));
-                }
-                zcash_address::unified::Receiver::P2sh(d) => {
-                    println!("  transparent-p2sh {}", hex(d));
-                }
-                other => println!("  other receiver: {other:?}"),
-            }
-        }
     }
 }

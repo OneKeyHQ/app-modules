@@ -3,7 +3,6 @@ resolver = "2"
 members = [
   "crates/zcash-runtime",
   "crates/zcash-keys-runtime",
-  "crates/zcash-storage-benchmark",
 ]
 exclude = ["vendor/sqlite-wasm-vfs-0.2.0"]
 
@@ -45,8 +44,6 @@ wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 gloo-timers = { version = "0.3", features = ["futures"] }
 tracing = "0.1"
-tracing-wasm = "0.2"
-tracing-subscriber = { version = "0.3", default-features = false, features = ["registry", "std"] }
 
 # Must match zcash_client_sqlite's rand_core major (0.6), or RngCore does not
 # unify and init_wallet_db's bounds fail.

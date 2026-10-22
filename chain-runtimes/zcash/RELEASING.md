@@ -5,15 +5,13 @@ run the repository-wide `version:patch` or `version:publish` for a Zcash release
 
 ## Version source
 
-Edit only `[workspace.package].version` in `Cargo.toml`. All three crates inherit
-it, and wasm-pack generates the npm versions from those crates. Update the three
+Edit only `[workspace.package].version` in `Cargo.toml`. Both crates inherit it,
+and wasm-pack generates the npm versions from those crates. Update the two
 workspace entries in `Cargo.lock` with `cargo check --workspace --offline` and
 review the lockfile diff; dependency upgrades are a separate change.
 
 Prerelease versions (`X.Y.Z-alpha.N`, `X.Y.Z-rc.N`) go to the npm `next` tag,
-release versions to `latest`. Runtime and keys always share a version and source commit. The
-benchmark ships as a runtime subdirectory to keep the App developer tools' import
-path; it is not a third package, and production App bundles exclude it.
+release versions to `latest`. Runtime and keys always share a version and source commit.
 
 ## Prepare and verify
 
@@ -22,7 +20,7 @@ Use Python 3.11+ and the pinned Rust/WASM tools described in README.md.
 1. Run `python3 -m unittest discover -s scripts -p 'test_*.py'` and
    `cargo test --workspace --locked --offline` with already prepared dependencies.
 2. Commit the release changes. A release build must come from a clean checkout.
-3. Run `bash scripts/build-wasm.sh --offline`. This builds all three WASM
+3. Run `bash scripts/build-wasm.sh --offline`. This builds both WASM
    artifacts, prepares npm metadata and LICENSE, and writes the source manifest.
 4. Run `python3 scripts/package-release.py pack --version 0.1.0-rc.1 --tag next
    --revision <full-commit-sha>` (as one command). It checks clean-source

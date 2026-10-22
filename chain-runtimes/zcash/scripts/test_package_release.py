@@ -13,7 +13,7 @@ spec.loader.exec_module(release)
 
 
 class PackageReleaseTests(unittest.TestCase):
-    def test_prepare_preserves_benchmark_and_rejects_mixed_versions(self):
+    def test_prepare_writes_metadata_and_rejects_mixed_versions(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "Cargo.toml").write_text('[workspace.package]\nversion = "0.1.0-rc.1"\n')
@@ -22,17 +22,15 @@ class PackageReleaseTests(unittest.TestCase):
                 target = root / package
                 target.mkdir()
                 (target / "package.json").write_text(json.dumps({"name": name, "version": "0.1.0-rc.1"}))
-            benchmark = root / "pkg/storage-benchmark"
-            benchmark.mkdir()
-            (benchmark / ".gitignore").write_text("*\n")
-            (benchmark / "package.json").write_text(json.dumps({"version": "0.1.0-rc.1"}))
             release.prepare(root)
-            self.assertFalse((benchmark / ".gitignore").exists())
             package = json.loads((root / "pkg/package.json").read_text())
-            self.assertIn("storage-benchmark", package["files"])
+            self.assertEqual(package["files"], [
+                "onekey_zcash_runtime.js", "onekey_zcash_runtime.d.ts", "onekey_zcash_runtime_bg.wasm", "LICENSE",
+            ])
             self.assertEqual((root / "pkg-keys/LICENSE").read_text(), "license")
-            (benchmark / "package.json").write_text(json.dumps({"version": "0.0.1"}))
-            with self.assertRaisesRegex(ValueError, "same version"):
+            (root / "pkg-keys/package.json").write_text(
+                json.dumps({"name": "onekey-zcash-keys", "version": "0.0.1"}))
+            with self.assertRaisesRegex(ValueError, "version mismatch"):
                 release.prepare(root)
 
     def test_prereleases_cannot_update_latest(self):
@@ -45,7 +43,7 @@ class PackageReleaseTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             release.check_version("0.1.0-rc.1", "0.1.0-rc.2", "next")
 
-    def test_missing_benchmark_and_changed_bytes_are_rejected(self):
+    def test_missing_snippets_and_changed_bytes_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             name = "onekey-zcash-runtime"
@@ -56,7 +54,7 @@ class PackageReleaseTests(unittest.TestCase):
                 f"{module}.js": b"javascript",
                 f"{module}.d.ts": b"types",
                 f"{module}_bg.wasm": b"wasm",
-                "storage-benchmark/benchmark.js": b"benchmark",
+                "snippets/helper.js": b"snippet",
             }
             for path, data in files.items():
                 target = root / path
@@ -73,7 +71,7 @@ class PackageReleaseTests(unittest.TestCase):
 
             pack(files)
             release.verify_tarball(archive, root, name, "0.1.0-rc.1")
-            pack({k: v for k, v in files.items() if not k.startswith("storage-benchmark/")})
+            pack({k: v for k, v in files.items() if not k.startswith("snippets/")})
             with self.assertRaisesRegex(ValueError, "incomplete"):
                 release.verify_tarball(archive, root, name, "0.1.0-rc.1")
             pack({**files, f"{module}.js": b"changed"})

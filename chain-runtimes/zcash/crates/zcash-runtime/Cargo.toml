@@ -64,8 +64,6 @@ js-sys.workspace = true
 gloo-timers.workspace = true
 console_error_panic_hook = "0.1"
 tracing.workspace = true
-tracing-wasm = { workspace = true, optional = true }
-tracing-subscriber = { workspace = true, optional = true }
 getrandom = { workspace = true, features = ["wasm_js"] }
 tonic-web-wasm-client.workspace = true
 # Not used directly; only enables the feature. zcash_client_backend records
@@ -88,8 +86,3 @@ wasm-opt = ["-Oz", "--enable-bulk-memory", "--enable-nontrapping-float-to-int"]
 # them) but skip wasm-opt, which strips the name section panic stacks need.
 [package.metadata.wasm-pack.profile.profiling]
 wasm-opt = false
-
-[features]
-# Forward zcash_client_backend tracing events to the browser console.
-# Debugging only: very verbose and slows scanning noticeably.
-debug-tracing = ["dep:tracing-wasm", "dep:tracing-subscriber"]

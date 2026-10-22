@@ -25,7 +25,7 @@ class ArtifactManifestTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "Cargo.lock checksum"):
                     artifact.verify(root, "revision")
 
-    def test_all_three_packages_and_exact_inventory_are_required(self):
+    def test_both_packages_and_exact_inventory_are_required(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for package, module in artifact.PACKAGES.items():
@@ -34,8 +34,8 @@ class ArtifactManifestTests(unittest.TestCase):
                 for name in ("package.json", f"{module}.js", f"{module}.d.ts", f"{module}_bg.wasm"):
                     (target / name).write_text("synthetic artifact")
             files = artifact.artifact_files(root)
-            self.assertEqual(len(files), 12)
-            path = root / "pkg/storage-benchmark/onekey_zcash_storage_benchmark_bg.wasm"
+            self.assertEqual(len(files), 8)
+            path = root / "pkg-keys/onekey_zcash_keys_bg.wasm"
             path.unlink()
             with self.assertRaisesRegex(ValueError, "Incomplete artifact"):
                 artifact.artifact_files(root)

@@ -39,13 +39,6 @@ def prepare(root):
             raise ValueError(f"Rebuild both WASM packages: {directory} version mismatch")
         module = name.replace("-", "_")
         package["files"] = [f"{module}.js", f"{module}.d.ts", f"{module}_bg.wasm", "LICENSE"]
-        if directory == "pkg":
-            benchmark = json.loads((target / "storage-benchmark/package.json").read_text())
-            if benchmark["version"] != release_version:
-                raise ValueError("Rebuild the storage benchmark with the same version")
-            # wasm-pack's nested ignore-all file otherwise excludes these npm files.
-            (target / "storage-benchmark/.gitignore").unlink(missing_ok=True)
-            package["files"].append("storage-benchmark")
         if (target / "snippets").exists():
             package["files"].append("snippets")
         package["repository"] = {
@@ -73,9 +66,8 @@ def verify_tarball(archive, source, name, release_version):
         required = {"package.json", "LICENSE"}
         module = name.replace("-", "_")
         required.update({f"{module}.js", f"{module}.d.ts", f"{module}_bg.wasm"})
-        for directory in ("snippets", "storage-benchmark"):
-            required.update(p.relative_to(source).as_posix() for p in (source / directory).rglob("*")
-                            if p.is_file() and p.name != ".gitignore")
+        required.update(p.relative_to(source).as_posix() for p in (source / "snippets").rglob("*")
+                        if p.is_file() and p.name != ".gitignore")
         if not required.issubset(files):
             raise ValueError(f"npm archive is incomplete: {sorted(required - files.keys())}")
         for relative, content in files.items():

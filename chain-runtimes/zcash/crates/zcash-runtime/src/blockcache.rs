@@ -140,24 +140,9 @@ impl BlockSource for MemoryBlockCache {
             out
         }; // lock released here
 
-        // Per-block tracing separates a stall in scanning from one in the later
-        // database/tree writes. debug-tracing builds only.
-        #[cfg(feature = "debug-tracing")]
-        let total = selected.len();
-        // The index is consumed only by the debug-tracing build.
-        #[allow(clippy::unused_enumerate_index)]
-        for (_i, block) in selected.into_iter().enumerate() {
-            #[cfg(feature = "debug-tracing")]
-            crate::sync::trace(&format!(
-                "cache: handing out block {}/{} h={}",
-                _i + 1,
-                total,
-                block.height
-            ));
+        for block in selected {
             with_block(block)?;
         }
-        #[cfg(feature = "debug-tracing")]
-        crate::sync::trace("cache: batch handed out; remaining time is upstream db/tree writes");
         Ok(())
     }
 }

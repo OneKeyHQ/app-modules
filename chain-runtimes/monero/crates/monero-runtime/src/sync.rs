@@ -239,11 +239,8 @@ async fn fetch_blocks(
 ///
 /// Fallback when the batch path (`blocks_bin`) is unusable.
 ///
-/// Does not use `contiguous_scannable_blocks`: it tries `get_blocks.bin` first, but
-/// released monerod (through v0.18.5.1) omits `prunable_hash` when `prune=true`
-/// (monero-project/monero#10120; fix #10652 is master-only), so monero-oxide drops
-/// the whole batch and falls back to serial per-block JSON, wasting a full download
-/// every step.
+/// Does not use `contiguous_scannable_blocks`; see `blocks_bin` for why its batch
+/// path always fails against released monerod.
 ///
 /// Instead fetch per block with N-way concurrency. Upstream still validates each
 /// block (number, transactions match the block's tx list); cross-block continuity

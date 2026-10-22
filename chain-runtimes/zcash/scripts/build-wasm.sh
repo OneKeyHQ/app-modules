@@ -71,15 +71,11 @@ esac
 echo "==> Artifacts"
 ls -lh "${OUT}"/*.wasm | awk '{print "   ", $9, $5}'
 
-echo "==> Building storage benchmark"
-(cd "${ROOT}/crates/zcash-storage-benchmark" && \
-  rustup run "${RUST_TOOLCHAIN}" wasm-pack build --mode no-install --locked --target web --out-dir "${ROOT}/pkg/storage-benchmark" --release)
-
 # Always rebuild the keys package too, so the host never pairs a fresh runtime
 # with a stale keys build.
 echo "==> Building onekey-zcash-keys"
 (cd "${ROOT}/crates/zcash-keys-runtime" && rustup run "${RUST_TOOLCHAIN}" wasm-pack build --mode no-install --locked --target web --out-dir "${ROOT}/pkg-keys" --release)
-echo "Artifacts: $(du -h "${ROOT}"/pkg/*.wasm "${ROOT}"/pkg-keys/*.wasm "${ROOT}"/pkg/storage-benchmark/*.wasm | tr '\n' ' ')"
+echo "Artifacts: $(du -h "${ROOT}"/pkg/*.wasm "${ROOT}"/pkg-keys/*.wasm | tr '\n' ' ')"
 
 if [ "${OUT}" = "${ROOT}/pkg" ]; then
   python3 "${ROOT}/scripts/package-release.py" prepare
