@@ -1,5 +1,5 @@
 import React, { useSyncExternalStore } from 'react';
-import { View, Text, StyleSheet, Switch, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Switch, ScrollView, Platform } from 'react-native';
 import type { BottomTabsSettingsState } from '../route';
 import { getBottomTabsSettings, setBottomTabsSettings, subscribeBottomTabsSettings } from './bottomTabsSettingsStore';
 
@@ -19,6 +19,9 @@ export function BottomTabsSettingsPage() {
     { label: 'Haptic Feedback', key: 'hapticFeedback' },
     { label: 'Android Floating Tab Bar', key: 'androidFloating' },
   ];
+  if (Platform.OS === 'android') {
+    items.push({ label: 'Bottom Background Blur', key: 'androidBottomBlurEnabled' });
+  }
 
   return (
     <ScrollView style={styles.container}>

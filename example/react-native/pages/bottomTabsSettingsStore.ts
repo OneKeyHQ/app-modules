@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import type { BottomTabsSettingsState } from '../route';
 
 type Listener = () => void;
@@ -10,6 +11,7 @@ let state: BottomTabsSettingsState = {
   sidebarAdaptable: false,
   hapticFeedback: false,
   androidFloating: true,
+  androidBottomBlurEnabled: Platform.OS === 'android' && Number(Platform.Version) >= 36,
 };
 
 const listeners = new Set<Listener>();

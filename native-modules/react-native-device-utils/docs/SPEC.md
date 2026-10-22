@@ -128,3 +128,53 @@ reload behavior. Remaining device acceptance on both Android and iOS: rebuild
 the host, claim from main/bg HybridObjects, reload/recreate each runtime,
 confirm retained state and independent keys, exercise a rejected write through
 the bridge, then restart the OS process and confirm an empty store.
+
+# DeviceUtils: Android navigation bar appearance
+
+## Status and scope
+
+This section covers `setNavigationBarAppearance(r, g, b, a, useDarkIcons)` on
+Android. iOS treats the call as a no-op. The behavior below is Implemented.
+Emulator acceptance: Android 14 (API 34) with three-button, gesture, and no
+navigation bar, and Android 16 (API 36) with three-button and gesture, each in
+light and dark themes, including repeated runtime theme switches. Side bars were
+checked on an Android 14 phone in landscape: a portrait-locked activity is
+letterboxed away from the bar, so the protection receives no inset there.
+Physical devices and side bars beside a full-width window remain unverified.
+
+## Platform contract
+
+The call always sets the light navigation bar appearance to `useDarkIcons` and,
+on Android 10+, disables the platform contrast scrim. On Android 11+ it writes
+`APPEARANCE_LIGHT_NAVIGATION_BARS` through the platform `WindowInsetsController`:
+on Android 11-14, `WindowInsetsControllerCompat` left the previous value in place
+once the window was appearance-controlled, so runtime theme switches kept stale
+button colors. Android 8-10 use the compat controller. How the requested color is
+drawn depends on whether the window is edge-to-edge:
+
+| Window | Platform bar color | Requested color |
+| --- | --- | --- |
+| Edge-to-edge: Android 15+ (enforced), or React Native's edge-to-edge flag on below it | Transparent | Protection view behind three-button navigation only |
+| Not edge-to-edge | The requested color | Not drawn separately |
+
+Edge-to-edge below Android 15 is detected through React Native's
+`isEdgeToEdgeFeatureFlagOn`, so hosts that opt in with `edgeToEdgeEnabled` get
+the same layout as Android 15+. Without this, the opaque platform bar would
+cover app content drawn behind it, such as a floating tab bar shadow.
+
+The protection view covers `min(navigationBars, tappableElement)` on the bar's
+side: three-button navigation shows it, while gesture navigation and devices
+without a navigation bar hide it. It fades from transparent at the content edge
+to the requested color over its first third and stays solid to the screen edge,
+so it never draws a hard line against the page while the buttons sit on a solid
+ground that hides scrolled content.
+A later call replaces the color; window inset changes re-measure the side and
+size.
+
+## Conformance and acceptance
+
+- Android: `ReactNativeDeviceUtils.kt` (`applyNavigationBarAppearance`,
+  `installNavigationBarProtection`).
+- Acceptance is rendered-pixel inspection in the OneKey app with
+  `edgeToEdgeEnabled`; see Status for the covered cases. Android 15+ without a
+  navigation bar could not be produced on stock emulators.

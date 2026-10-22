@@ -51,6 +51,7 @@ export interface BottomTabsNativeProps extends ViewProps {
   scrollEdgeAppearance?: string;
   barTintColor?: ColorValue;
   translucent?: WithDefault<boolean, true>;
+  androidBottomBlurEnabled?: WithDefault<boolean, false>;
   rippleColor?: ColorValue;
   activeTintColor?: ColorValue;
   inactiveTintColor?: ColorValue;

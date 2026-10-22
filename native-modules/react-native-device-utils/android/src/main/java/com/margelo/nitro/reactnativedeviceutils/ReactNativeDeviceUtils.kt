@@ -4,9 +4,11 @@ import android.app.Activity
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.graphics.Rect
 import android.os.Build
 import android.view.Gravity
+import android.view.WindowInsetsController
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -909,16 +911,30 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
         val window = activity.window
         val decorView = window.decorView
 
-        WindowCompat.getInsetsController(window, decorView)
-          .isAppearanceLightNavigationBars = appearance.useDarkIcons
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+          // WindowInsetsControllerCompat leaves the previous value in place on
+          // Android 11-14 once the window is appearance-controlled, so runtime
+          // theme switches kept stale button colors. Use the platform API.
+          window.insetsController?.setSystemBarsAppearance(
+            if (appearance.useDarkIcons) WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS else 0,
+            WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,
+          )
+        } else {
+          WindowCompat.getInsetsController(window, decorView)
+            .isAppearanceLightNavigationBars = appearance.useDarkIcons
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
           window.isNavigationBarContrastEnforced = false
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
-          // Android 15 enforces edge-to-edge. Keep the platform bar transparent
-          // and draw the requested color only behind three-button navigation.
+        if (
+          Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM ||
+          com.facebook.react.views.view.isEdgeToEdgeFeatureFlagOn
+        ) {
+          // Edge-to-edge windows (enforced on Android 15, opted in below it) keep
+          // the platform bar transparent and draw the requested color only
+          // behind three-button navigation.
           window.navigationBarColor = Color.TRANSPARENT
           installNavigationBarProtection(decorView, appearance.color)
         } else {
@@ -953,7 +969,6 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
       )
     }
 
-    protectionView.setBackgroundColor(color)
     protectionView.visibility = View.VISIBLE
     protectionView.bringToFront()
     ViewCompat.setOnApplyWindowInsetsListener(protectionView) { view, windowInsets ->
@@ -985,6 +1000,17 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
         )
         else -> Triple(0, 0, Gravity.BOTTOM)
       }
+      // Fade in over the first third from the content edge so the protection never
+      // draws a hard line against the page; the buttons sit on the solid rest.
+      val fadeOrientation = when (gravity) {
+        Gravity.LEFT -> GradientDrawable.Orientation.RIGHT_LEFT
+        Gravity.RIGHT -> GradientDrawable.Orientation.LEFT_RIGHT
+        else -> GradientDrawable.Orientation.TOP_BOTTOM
+      }
+      view.background = GradientDrawable(
+        fadeOrientation,
+        intArrayOf(color and 0x00FFFFFF, color, color, color),
+      )
       if (
         layoutParams.width != width ||
         layoutParams.height != height ||
