@@ -1,0 +1,6 @@
+# Same toolchain as the Zcash runtime, so one install builds both. Pinned for
+# reproducible wasm; this is not the MSRV (`rust-version` in Cargo.toml).
+[toolchain]
+channel = "1.93.0"
+profile = "minimal"
+targets = ["wasm32-unknown-unknown"]

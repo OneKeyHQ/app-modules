@@ -1,0 +1,480 @@
+//! Account import and reads: UFVK import and balances. No private keys,
+//! address derivation or signing on this path.
+
+use zcash_client_backend::data_api::wallet::ConfirmationsPolicy;
+use zcash_client_backend::data_api::{
+    Account as _, AccountBalance, AccountBirthday, AccountPurpose, Balance, WalletRead,
+    WalletWrite, Zip32Derivation,
+};
+use zcash_keys::keys::UnifiedFullViewingKey;
+
+use crate::error::{ErrorCode, Result, RuntimeError};
+use crate::network::{self, LightClient};
+use crate::wallet::Db;
+use serde_json::json;
+
+/// Imports an account from a UFVK.
+///
+/// `birthday_height` is the earliest height the account can have received a
+/// note; scanning starts there. Fetches the tree state of the block before it.
+pub async fn import_ufvk(
+    db: &mut Db,
+    client: &mut LightClient,
+    account_name: &str,
+    ufvk_str: &str,
+    birthday_height: u32,
+    derivation: Option<(&str, u32)>,
+) -> Result<String> {
+    let params = *db.params();
+
+    let ufvk = UnifiedFullViewingKey::decode(&params, ufvk_str)
+        .map_err(|e| RuntimeError::new(ErrorCode::InvalidUfvk).detail(e))?;
+
+    // With a seed fingerprint and account index the account is imported as
+    // spending: upstream then puts zip32_derivation on PCZT spends, and
+    // send::mark_wallet_outputs puts it on change outputs (upstream does not),
+    // so signers can find the key and verify change returns to the wallet.
+    let purpose = match derivation {
+        Some((fingerprint_hex, account_index)) => AccountPurpose::Spending {
+            derivation: Some(parse_zip32_derivation(fingerprint_hex, account_index)?),
+        },
+        None => AccountPurpose::ViewOnly,
+    };
+
+    // The account starts at the birthday, so the anchor is the tree state just before it.
+    let anchor_height = birthday_height.saturating_sub(1);
+    let treestate = network::tree_state(client, anchor_height).await?;
+    check_birthday_tree_state(&treestate, anchor_height, &params)?;
+
+    let birthday = AccountBirthday::from_treestate(treestate, None).map_err(|e| {
+        RuntimeError::with(
+            ErrorCode::InvalidBlockHeight,
+            json!({ "birthdayHeight": birthday_height }),
+        )
+        .detail(format!("{e:?}"))
+    })?;
+
+    let account = db
+        .import_account_ufvk(account_name, &ufvk, &birthday, purpose, None)
+        .map_err(|e| {
+            RuntimeError::with(
+                ErrorCode::DatabaseError,
+                json!({ "operation": "importAccount" }),
+            )
+            .detail(e)
+        })?;
+
+    Ok(account.id().expose_uuid().to_string())
+}
+
+/// Pairs the spending derivation fields; half a pair is refused, not imported view-only.
+pub fn derivation_pair(
+    seed_fingerprint_hex: Option<&str>,
+    account_index: Option<u32>,
+) -> Result<Option<(&str, u32)>> {
+    match (seed_fingerprint_hex, account_index) {
+        (Some(fingerprint), Some(index)) => Ok(Some((fingerprint, index))),
+        (None, None) => Ok(None),
+        _ => Err(RuntimeError::with(
+            ErrorCode::InvalidAccountId,
+            json!({ "field": "derivation", "reason": "incomplete" }),
+        )),
+    }
+}
+
+fn parse_zip32_derivation(fingerprint_hex: &str, account_index: u32) -> Result<Zip32Derivation> {
+    let bytes = hex::decode(fingerprint_hex).map_err(|e| {
+        RuntimeError::with(
+            ErrorCode::InvalidAccountId,
+            json!({ "field": "seedFingerprint" }),
+        )
+        .detail(e)
+    })?;
+    let fingerprint: [u8; 32] = bytes.try_into().map_err(|_| {
+        RuntimeError::with(
+            ErrorCode::InvalidAccountId,
+            json!({ "field": "seedFingerprint", "expectedBytes": 32 }),
+        )
+    })?;
+    let account_id = zip32::AccountId::try_from(account_index).map_err(|_| {
+        RuntimeError::with(
+            ErrorCode::InvalidAccountId,
+            json!({ "field": "accountIndex", "value": account_index }),
+        )
+    })?;
+    Ok(Zip32Derivation::new(
+        zip32::fingerprint::SeedFingerprint::from_bytes(fingerprint),
+        account_id,
+    ))
+}
+
+/// Account balance as JSON.
+pub fn balance_json(db: &Db, account_uuid: &str, policy: ConfirmationsPolicy) -> Result<String> {
+    let account_id = parse_account_id(db, account_uuid)?;
+
+    let summary = db.get_wallet_summary(policy).map_err(|e| {
+        RuntimeError::with(
+            ErrorCode::DatabaseError,
+            json!({ "operation": "walletSummary" }),
+        )
+        .detail(e)
+    })?;
+
+    // No summary before any block is scanned; reported as an error code, with
+    // user-facing text left to the host.
+    let Some(summary) = summary else {
+        return Err(RuntimeError::new(ErrorCode::NotSynced));
+    };
+
+    let balances = summary.account_balances().get(&account_id).ok_or_else(|| {
+        RuntimeError::with(
+            ErrorCode::AccountNotFound,
+            json!({ "accountId": account_uuid }),
+        )
+    })?;
+
+    Ok(balance_value(
+        u32::from(summary.chain_tip_height()),
+        u32::from(summary.fully_scanned_height()),
+        balances,
+    )
+    .to_string())
+}
+
+/// `total` (per pool and overall) is upstream's `Balance::total`, which leaves
+/// out notes worth at most the ZIP-317 marginal fee. That value is reported
+/// beside it as `uneconomic`, so a host can show it without changing what
+/// `total` or `spendable` mean.
+fn balance_value(
+    chain_tip: u32,
+    fully_scanned_height: u32,
+    balances: &AccountBalance,
+) -> serde_json::Value {
+    // Each pool reports its values with no cross-pool merging: which pools
+    // count as spendable is wallet policy, not chain fact, and per-pool detail is
+    // shown in the UI. The host computes any totals it needs.
+    let pool = |b: &Balance| {
+        serde_json::json!({
+            "spendable": u64::from(b.spendable_value()),
+            "pendingChange": u64::from(b.change_pending_confirmation()),
+            "pendingSpendable": u64::from(b.value_pending_spendability()),
+            // Held by an unexpired upstream output lock; this runtime's sends take none.
+            "locked": u64::from(b.locked_value()),
+            "total": u64::from(b.total()),
+            // Unspent notes worth <= the marginal fee, confirmed or not. Upstream
+            // note selection skips them, so they are never part of `spendable`.
+            "uneconomic": u64::from(b.uneconomic_value()),
+        })
+    };
+
+    let supported = [
+        balances.orchard_balance(),
+        balances.ironwood_balance(),
+        balances.unshielded_regular_balance(),
+        balances.unshielded_coinbase_balance(),
+    ];
+    let supported_total = supported
+        .iter()
+        .map(|balance| u64::from(balance.total()))
+        .sum::<u64>();
+    let supported_uneconomic = supported
+        .iter()
+        .map(|balance| u64::from(balance.uneconomic_value()))
+        .sum::<u64>();
+
+    serde_json::json!({
+        "ready": true,
+        "chainTip": chain_tip,
+        "fullyScannedHeight": fully_scanned_height,
+
+        "orchard": pool(balances.orchard_balance()),
+        "ironwood": pool(balances.ironwood_balance()),
+
+        // Coinbase is reported separately: it has its own maturity rules and can
+        // only be shielded via `propose_shielding_coinbase`.
+        "transparentRegular": pool(balances.unshielded_regular_balance()),
+        "transparentCoinbase": pool(balances.unshielded_coinbase_balance()),
+
+        // Sapling is intentionally excluded from both the pool list and the product total.
+        "total": supported_total,
+        "uneconomic": supported_uneconomic,
+    })
+}
+
+/// Removes one account from the shared database. Deleting the database would
+/// remove other wallets' accounts; the host drops it after the last account.
+pub fn remove_account(db: &mut Db, account_uuid: &str) -> Result<()> {
+    let account_id = parse_account_id(db, account_uuid)?;
+    db.transactionally_with_extension(|wallet, ext| {
+        wallet.delete_account(account_id).map_err(|e| {
+            RuntimeError::with(
+                ErrorCode::DatabaseError,
+                json!({ "operation": "deleteAccount" }),
+            )
+            .detail(e)
+        })?;
+        crate::tx_state::prune_orphaned_rows(ext)
+    })
+}
+
+/// Finds the account with this UFVK, or returns `"null"`.
+///
+/// This is how to locate an account in the shared database: it holds every
+/// wallet's accounts, and runtime UUIDs change after a purge. The UFVK is the
+/// host's stable unique key.
+pub fn account_by_ufvk(db: &Db, ufvk_str: &str) -> Result<String> {
+    let params = *db.params();
+    let target = UnifiedFullViewingKey::decode(&params, ufvk_str)
+        .map_err(|e| RuntimeError::new(ErrorCode::InvalidUfvk).detail(e))?
+        .encode(&params);
+
+    for id in db.get_account_ids().map_err(|e| {
+        RuntimeError::with(
+            ErrorCode::DatabaseError,
+            json!({ "operation": "getAccountIds" }),
+        )
+        .detail(e)
+    })? {
+        let Some(acct) = db.get_account(id).map_err(|e| {
+            RuntimeError::with(
+                ErrorCode::DatabaseError,
+                json!({ "operation": "getAccount" }),
+            )
+            .detail(e)
+        })?
+        else {
+            continue;
+        };
+        if acct.ufvk().map(|k| k.encode(&params)).as_deref() == Some(target.as_str()) {
+            return Ok(json!({ "uuid": acct.id().expose_uuid().to_string() }).to_string());
+        }
+    }
+    Ok("null".to_string())
+}
+
+/// Local account UUIDs as a JSON array.
+pub fn list_accounts_json(db: &Db) -> Result<String> {
+    let ids = db.get_account_ids().map_err(|e| {
+        RuntimeError::with(
+            ErrorCode::DatabaseError,
+            json!({ "operation": "listAccounts" }),
+        )
+        .detail(e)
+    })?;
+    let out: Vec<String> = ids.iter().map(|id| id.expose_uuid().to_string()).collect();
+    Ok(serde_json::to_string(&out).unwrap_or_else(|_| "[]".into()))
+}
+
+pub fn parse_account_id(db: &Db, account_uuid: &str) -> Result<<Db as WalletRead>::AccountId> {
+    let uuid = uuid_from_str(account_uuid)?;
+    let id = zcash_client_sqlite::AccountUuid::from_uuid(uuid);
+    db.get_account(id)
+        .map_err(|e| {
+            RuntimeError::with(
+                ErrorCode::DatabaseError,
+                json!({ "operation": "getAccount" }),
+            )
+            .detail(e)
+        })?
+        .map(|a| a.id())
+        .ok_or_else(|| {
+            RuntimeError::with(
+                ErrorCode::AccountNotFound,
+                json!({ "accountId": account_uuid }),
+            )
+        })
+}
+
+fn uuid_from_str(s: &str) -> Result<uuid::Uuid> {
+    uuid::Uuid::parse_str(s).map_err(|e| {
+        RuntimeError::with(ErrorCode::InvalidAccountId, json!({ "value": s })).detail(e)
+    })
+}
+
+/// Builds a confirmations policy. Both thresholds must be >= 1 and trusted <= untrusted.
+pub fn confirmations_policy(
+    trusted: u32,
+    untrusted: u32,
+    allow_zero_conf_shielding: bool,
+) -> Result<ConfirmationsPolicy> {
+    let bad = || {
+        RuntimeError::with(
+            ErrorCode::InvalidConfirmationsPolicy,
+            json!({ "trusted": trusted, "untrusted": untrusted }),
+        )
+    };
+    let t = std::num::NonZeroU32::new(trusted).ok_or_else(bad)?;
+    let u = std::num::NonZeroU32::new(untrusted).ok_or_else(bad)?;
+    ConfirmationsPolicy::new(t, u, allow_zero_conf_shielding).map_err(|e| bad().detail(e))
+}
+
+/// Upstream sets the birthday to the server's reported tree state height + 1
+/// without checking it. A height too high skips earlier receipts forever and a
+/// wrong network puts the account on another chain, so the height must equal
+/// the request and the network (if given) must match the wallet.
+fn check_birthday_tree_state(
+    treestate: &zcash_client_backend::proto::service::TreeState,
+    anchor_height: u32,
+    params: &zcash_protocol::consensus::Network,
+) -> Result<()> {
+    use zcash_protocol::consensus::Network;
+    let expected_network = match params {
+        Network::MainNetwork => "main",
+        Network::TestNetwork => "test",
+    };
+    let network_ok = treestate.network.is_empty() || treestate.network == expected_network;
+    if treestate.height != u64::from(anchor_height) || !network_ok {
+        return Err(RuntimeError::with(
+            ErrorCode::InvalidBlockHeight,
+            json!({
+                "stage": "birthdayTreeState",
+                "requestedHeight": anchor_height,
+                "returnedHeight": treestate.height,
+                "returnedNetwork": treestate.network,
+            }),
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod birthday_tests {
+    use super::check_birthday_tree_state;
+    use zcash_client_backend::proto::service::TreeState;
+    use zcash_protocol::consensus::Network;
+
+    fn state(network: &str, height: u64) -> TreeState {
+        TreeState {
+            network: network.to_owned(),
+            height,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn the_birthday_tree_state_must_be_the_requested_block_on_our_network() {
+        let main = Network::MainNetwork;
+        check_birthday_tree_state(&state("main", 3_000_000), 3_000_000, &main).unwrap();
+        check_birthday_tree_state(&state("", 3_000_000), 3_000_000, &main).unwrap();
+        for bad in [
+            state("main", 3_000_001),
+            state("main", 2_999_999),
+            state("test", 3_000_000),
+        ] {
+            assert!(check_birthday_tree_state(&bad, 3_000_000, &main).is_err());
+        }
+        check_birthday_tree_state(&state("test", 10), 10, &Network::TestNetwork).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod balance_tests {
+    use super::balance_value;
+    use zcash_client_backend::data_api::{AccountBalance, Balance};
+    use zcash_protocol::value::{BalanceError, Zatoshis};
+
+    fn zat(value: u64) -> Zatoshis {
+        Zatoshis::const_from_u64(value)
+    }
+
+    #[test]
+    fn dust_change_is_reported_beside_total_not_inside_it() {
+        let mut balances = AccountBalance::ZERO;
+        balances
+            .with_ironwood_balance_mut::<_, BalanceError>(|b: &mut Balance| {
+                b.add_spendable_value(zat(100_000))?;
+                b.add_uneconomic_value(zat(5_000))
+            })
+            .unwrap();
+        balances
+            .with_orchard_balance_mut::<_, BalanceError>(|b: &mut Balance| {
+                b.add_pending_change_value(zat(20_000))?;
+                b.add_uneconomic_value(zat(1_000))
+            })
+            .unwrap();
+        // Sapling is out of the product, dust included.
+        balances
+            .with_sapling_balance_mut::<_, BalanceError>(|b: &mut Balance| {
+                b.add_uneconomic_value(zat(3_000))
+            })
+            .unwrap();
+
+        let v = balance_value(10, 9, &balances);
+
+        assert_eq!(v["ironwood"]["spendable"], 100_000);
+        assert_eq!(v["ironwood"]["total"], 100_000);
+        assert_eq!(v["ironwood"]["uneconomic"], 5_000);
+        assert_eq!(v["orchard"]["pendingChange"], 20_000);
+        assert_eq!(v["orchard"]["total"], 20_000);
+        assert_eq!(v["orchard"]["uneconomic"], 1_000);
+        assert_eq!(v["transparentRegular"]["uneconomic"], 0);
+        assert_eq!(v["total"], 120_000);
+        assert_eq!(v["uneconomic"], 6_000);
+    }
+
+    #[test]
+    fn no_dust_reports_zero() {
+        let v = balance_value(1, 1, &AccountBalance::ZERO);
+        for pool in [
+            "orchard",
+            "ironwood",
+            "transparentRegular",
+            "transparentCoinbase",
+        ] {
+            assert_eq!(v[pool]["uneconomic"], 0);
+        }
+        assert_eq!(v["uneconomic"], 0);
+    }
+
+    #[test]
+    fn small_change_preserves_value_after_payment_and_fee() {
+        let payment = 10_000;
+        let fee = 10_000;
+        for change in [1, 4_999, 5_000] {
+            let mut before = AccountBalance::ZERO;
+            before
+                .with_ironwood_balance_mut::<_, BalanceError>(|balance| {
+                    balance.add_spendable_value(zat(payment + fee + change))
+                })
+                .unwrap();
+            let mut after = AccountBalance::ZERO;
+            after
+                .with_ironwood_balance_mut::<_, BalanceError>(|balance| {
+                    balance.add_uneconomic_value(zat(change))
+                })
+                .unwrap();
+
+            let before = balance_value(10, 10, &before);
+            let after = balance_value(11, 11, &after);
+            assert_eq!(
+                before["total"].as_u64().unwrap(),
+                payment
+                    + fee
+                    + after["total"].as_u64().unwrap()
+                    + after["uneconomic"].as_u64().unwrap()
+            );
+            assert_eq!(after["ironwood"]["spendable"], 0);
+            assert_eq!(after["ironwood"]["uneconomic"], change);
+        }
+    }
+}
+
+#[cfg(test)]
+mod derivation_tests {
+    use super::derivation_pair;
+    use crate::ErrorCode;
+
+    #[test]
+    fn half_a_derivation_pair_is_refused() {
+        assert_eq!(derivation_pair(None, None).unwrap(), None);
+        assert_eq!(
+            derivation_pair(Some("ab"), Some(0)).unwrap(),
+            Some(("ab", 0))
+        );
+        for (fingerprint, index) in [(Some("ab"), None), (None, Some(0))] {
+            let err = derivation_pair(fingerprint, index).unwrap_err();
+            assert_eq!(err.code, ErrorCode::InvalidAccountId);
+            assert_eq!(err.params["reason"], "incomplete");
+        }
+    }
+}

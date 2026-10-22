@@ -1,0 +1,88 @@
+[package]
+name = "onekey-zcash-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "OneKey Zcash Runtime: a thin wasm binding over librustzcash"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+blake2b_simd.workspace = true
+zcash_client_backend.workspace = true
+zcash_client_sqlite.workspace = true
+zcash_keys.workspace = true
+zcash_protocol.workspace = true
+zcash_primitives.workspace = true
+transparent.workspace = true
+zcash_address.workspace = true
+zip321.workspace = true
+zip32 = "0.2"
+pczt.workspace = true
+# circuit: Orchard and Ironwood proving. This is the main WASM size cost.
+orchard = { workspace = true, features = ["circuit"] }
+# Trial-decrypts PCZT outputs to tell real change from randomized fabricated outputs.
+zcash_note_encryption = "0.4"
+
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+schemerz.workspace = true
+schemerz-rusqlite.workspace = true
+rand.workspace = true
+rand_chacha.workspace = true
+getrandom.workspace = true
+tonic.workspace = true
+hex.workspace = true
+prost.workspace = true
+
+futures-util.workspace = true
+sapling.workspace = true
+uuid.workspace = true
+
+# Native targets: add tonic transport (features are additive; wasm is unaffected)
+# so browser issues can be reproduced natively under a debugger.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tonic = { workspace = true, features = ["transport", "tls-ring", "tls-webpki-roots"] }
+tokio = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+tokio.workspace = true
+# Only for building a signed PCZT fixture in the combine_pczt tests; must track
+# the version `transparent`/`pczt` use or the key types will not unify.
+secp256k1 = { version = "0.29", features = ["alloc"], default-features = false }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+sqlite-wasm-rs.workspace = true
+sqlite-wasm-vfs.workspace = true
+wasm-bindgen.workspace = true
+wasm-bindgen-futures.workspace = true
+js-sys.workspace = true
+gloo-timers.workspace = true
+console_error_panic_hook = "0.1"
+tracing.workspace = true
+getrandom = { workspace = true, features = ["wasm_js"] }
+tonic-web-wasm-client.workspace = true
+# Not used directly; only enables the feature. zcash_client_backend records
+# `created` via time::OffsetDateTime::now_utc(), bypassing the injected Clock.
+# Without wasm-bindgen it falls back to SystemTime::now(), which panics on
+# wasm32-unknown-unknown ("time not implemented on this platform") in pcztSubmit.
+time = { version = "0.3", features = ["wasm-bindgen"] }
+
+[dev-dependencies]
+futures = "0.3"
+
+# wasm-pack defaults to `wasm-opt -O`; -Oz shrinks further at the cost of build
+# time, with negligible runtime impact on this IO-bound workload.
+[package.metadata.wasm-pack.profile.release]
+# No --enable-simd: the curve libraries have no SIMD paths, so there is no
+# measurable gain, and it breaks old WebViews.
+wasm-opt = ["-Oz", "--enable-bulk-memory", "--enable-nontrapping-float-to-int"]
+
+# Profiling profile: keep cargo optimizations (Halo2 proving is unusable without
+# them) but skip wasm-opt, which strips the name section panic stacks need.
+[package.metadata.wasm-pack.profile.profiling]
+wasm-opt = false

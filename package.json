@@ -9,7 +9,10 @@
     "create:view": "node scripts/create-nitro-view.js",
     "version:set": "node scripts/set-release-version.mjs",
     "version:patch": "node scripts/set-release-version.mjs --next",
-    "version:publish": "node scripts/validate-npm-dist-tag.mjs latest && yarn workspaces foreach --all --exclude @onekeyfe/app-modules-example --exclude @onekeyfe/app-modules --exclude @onekeyfe/react-native-native-list --topological --parallel --jobs 4 --interlaced run release --tag latest"
+    "version:publish": "node scripts/validate-npm-dist-tag.mjs latest && yarn workspaces foreach --all --exclude @onekeyfe/app-modules-example --exclude @onekeyfe/app-modules --exclude @onekeyfe/react-native-native-list --topological --parallel --jobs 4 --interlaced run release --tag latest",
+    "zcash:prepare": "cd chain-runtimes/zcash && bash scripts/vendor-deps.sh",
+    "zcash:test": "cd chain-runtimes/zcash && cargo test --workspace --locked",
+    "zcash:build": "cd chain-runtimes/zcash && bash scripts/build-wasm.sh"
   },
   "workspaces": [
     "native-modules/*",
