@@ -9,6 +9,15 @@ The first Windows module is `electron-windows-hello`, published as
 `@onekeyfe/electron-windows-hello`; macOS and Linux have
 no release jobs or modules yet.
 
+`electron-windows-process-hardening` is a private Windows x64/ARM64
+validation module. Its current-process DACL and extension-point policy are
+checked in the desktop PR workflow, including an Electron main-process smoke
+test. Its `process-hardening-*` artifacts are unsigned validation outputs and
+are excluded from the `native-*` release inventory inputs. The module is not
+listed in `release.json`, signed, published, or integrated into consumers.
+Adding it to the release baseline requires a separate reviewed packaging and
+publication contract; the existing Windows Hello release policy is unchanged.
+
 ## Version and validation baseline
 
 `release.json` is the reviewed release baseline. Its exact stable version

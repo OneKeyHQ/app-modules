@@ -45,12 +45,26 @@ jobs:
           - runner: windows-2025
             arch: x64
             target: x86_64-pc-windows-msvc
+            module: electron-windows-hello
+            artifact: native-x64
           - runner: windows-11-arm
             arch: arm64
             target: aarch64-pc-windows-msvc
+            module: electron-windows-hello
+            artifact: native-arm64
+          - runner: windows-2025
+            arch: x64
+            target: x86_64-pc-windows-msvc
+            module: electron-windows-process-hardening
+            artifact: process-hardening-x64
+          - runner: windows-11-arm
+            arch: arm64
+            target: aarch64-pc-windows-msvc
+            module: electron-windows-process-hardening
+            artifact: process-hardening-arm64
     defaults:
       run:
-        working-directory: desktop/win/electron-windows-hello
+        working-directory: desktop/win/${{ matrix.module }}
         shell: pwsh
     env:
       RUST_TOOLCHAIN: ${{ needs.baseline.outputs.rust }}
@@ -74,7 +88,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node node_modules/electron/install.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Build and test native module and Electron utility process
+      - name: Build and test native module and Electron smoke test
         run: |
           cargo fmt --check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -105,11 +119,11 @@ jobs:
           } | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8NoBOM build-info.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: native-${{ matrix.arch }}
+          name: ${{ matrix.artifact }}
           if-no-files-found: error
           path: |
-            desktop/win/electron-windows-hello/*.node
-            desktop/win/electron-windows-hello/build-info.json
+            desktop/win/${{ matrix.module }}/*.node
+            desktop/win/${{ matrix.module }}/build-info.json
 
   package:
     needs: [baseline, native]
