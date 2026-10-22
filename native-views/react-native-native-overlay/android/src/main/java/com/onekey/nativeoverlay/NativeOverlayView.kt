@@ -417,6 +417,8 @@ class NativeOverlayView(
     (child.parent as? ViewGroup)?.let { previous ->
       previous.removeOnLayoutChangeListener(contentLayoutListener)
       previous.removeView(child)
+      // Android retains a transitioning child's parent until the transition ends.
+      previous.endViewTransition(child)
     }
     container.addView(child)
     container.addOnLayoutChangeListener(contentLayoutListener)
