@@ -1,11 +1,15 @@
 package com.onekey.nativeoverlay
 
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import com.facebook.react.bridge.BridgeReactContext
+import com.facebook.react.uimanager.PointerEvents
 import com.facebook.react.uimanager.ThemedReactContext
+import com.facebook.react.uimanager.TouchTargetHelper
+import com.facebook.react.views.view.ReactViewGroup
 import java.lang.ref.WeakReference
 import java.util.WeakHashMap
 import org.junit.Assert.assertEquals
@@ -122,6 +126,140 @@ class NativeOverlayBackTest {
     assertTrue(back())
     assertEquals(listOf("global:back", "page:back"), dismissals)
     pageHost.invalidateHost()
+  }
+
+  @Test
+  fun closingGlobalBlockerKeepsTouchBackAndAccessibilityOwnership() {
+    var pageTouches = 0
+    val page = View(activity).apply {
+      setOnTouchListener { _, _ ->
+        pageTouches += 1
+        true
+      }
+    }
+    activity.setContentView(page)
+    val lower = entry("lower", true, true)
+    val top = entry("top", true, true, 1)
+    host.attach(lower, NativeOverlayLevel.MODAL)
+    host.attach(top, NativeOverlayLevel.MODAL)
+    top.isClosing = true
+    host.onEntriesChanged()
+
+    assertEquals(PointerEvents.BOX_ONLY, top.pointerEvents)
+    assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS, top.contentView.importantForAccessibility)
+    assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS, page.importantForAccessibility)
+    assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS, lower.importantForAccessibility)
+    assertTrue(back())
+    assertEquals(emptyList<String>(), dismissals)
+
+    val content = activity.findViewById<FrameLayout>(android.R.id.content)
+    val size = View.MeasureSpec.makeMeasureSpec(300, View.MeasureSpec.EXACTLY)
+    content.measure(size, size)
+    content.layout(0, 0, 300, 300)
+    val down = MotionEvent.obtain(0L, 0L, MotionEvent.ACTION_DOWN, 150f, 150f, 0)
+    try {
+      assertTrue(content.dispatchTouchEvent(down))
+      assertEquals(0, pageTouches)
+    } finally {
+      down.recycle()
+    }
+
+    top.isClosing = false
+    host.onEntriesChanged()
+    assertEquals(PointerEvents.AUTO, top.pointerEvents)
+    assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO, top.contentView.importantForAccessibility)
+    assertTrue(back())
+    assertEquals(listOf("top:back"), dismissals)
+  }
+
+  @Test
+  fun closingPageBlockerStillTakesBack() {
+    val pageHost = NativeOverlayPageHostView(context).apply { hostKey = "closing-page" }
+    activity.setContentView(pageHost)
+    val top = entry("page", true, true)
+    pageHost.attach(top)
+    top.isClosing = true
+    host.onEntriesChanged()
+
+    assertEquals(PointerEvents.BOX_ONLY, top.pointerEvents)
+    assertTrue(back())
+    assertEquals(emptyList<String>(), dismissals)
+    top.isClosing = false
+    host.onEntriesChanged()
+    assertEquals(PointerEvents.AUTO, top.pointerEvents)
+    assertTrue(back())
+    assertEquals(listOf("page:back"), dismissals)
+    pageHost.invalidateHost()
+  }
+
+  @Test
+  fun pageEntryHitTestingKeepsClosingContentAndLowerPageSeparate() {
+    val root = ReactViewGroup(context).apply { id = 101 }
+    val below = ReactViewGroup(context).apply { id = 102 }
+    val child = ReactViewGroup(context).apply { id = 103 }
+    val pageHost = NativeOverlayPageHostView(context).apply { hostKey = "page-hit-test" }
+    root.addView(below)
+    root.addView(pageHost)
+    activity.setContentView(root)
+    val overlay = entry("page", true, true)
+    overlay.contentView.addView(child)
+    pageHost.attach(overlay)
+
+    val size = View.MeasureSpec.makeMeasureSpec(300, View.MeasureSpec.EXACTLY)
+    root.measure(size, size)
+    root.layout(0, 0, 300, 300)
+    below.layout(0, 0, 300, 300)
+    pageHost.layout(0, 0, 300, 300)
+    child.layout(0, 0, 300, 300)
+
+    fun target() = TouchTargetHelper.findTargetTagForTouch(150f, 150f, root)
+    assertEquals(child.id, target())
+    overlay.isClosing = true
+    assertEquals(root.id, target())
+    overlay.updateBlocking(false)
+    assertEquals(below.id, target())
+    overlay.updateBlocking(true)
+    overlay.isClosing = false
+    assertEquals(child.id, target())
+    pageHost.invalidateHost()
+  }
+
+  @Test
+  fun reopeningCoveredClosingEntryRestoresItsContentAccessibility() {
+    activity.setContentView(View(activity))
+    val first = entry("first", true, true)
+    val second = entry("second", true, true)
+    host.attach(first, NativeOverlayLevel.MODAL)
+    first.isClosing = true
+    host.onEntriesChanged()
+    host.attach(second, NativeOverlayLevel.SECURE)
+
+    first.isClosing = false
+    host.onEntriesChanged()
+    assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS, first.importantForAccessibility)
+    host.detach(second)
+    assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO, first.importantForAccessibility)
+    assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO, first.contentView.importantForAccessibility)
+  }
+
+  @Test
+  fun closingNonBlockingEntryPassesTouchAndBackToLowerBlocker() {
+    val lower = entry("lower", true, true)
+    val toast = entry("toast", false, true)
+    host.attach(lower, NativeOverlayLevel.MODAL)
+    host.attach(toast, NativeOverlayLevel.TOAST)
+    toast.isClosing = true
+    host.onEntriesChanged()
+
+    assertEquals(PointerEvents.NONE, toast.pointerEvents)
+    val down = MotionEvent.obtain(0L, 0L, MotionEvent.ACTION_DOWN, 150f, 150f, 0)
+    try {
+      assertFalse(toast.dispatchTouchEvent(down))
+    } finally {
+      down.recycle()
+    }
+    assertTrue(back())
+    assertEquals(listOf("lower:back"), dismissals)
   }
 
   @Test

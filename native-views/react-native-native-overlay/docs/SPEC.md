@@ -1,8 +1,10 @@
 # react-native-native-overlay SPEC
 
 Status: Implemented through the P5 caller migration in app-monorepo. Android
-and Web runtime checks passed there; iOS runtime, physical-device and iPad
-acceptance remain unverified. Packaging in app-modules is validated separately.
+and Web runtime checks passed there; focused iOS 26.5 simulator and Android 16
+emulator checks are recorded below. Broader iOS runtime, physical-device and
+iPad acceptance remain unverified. Packaging in app-modules is validated
+separately.
 
 The implementation is migrated from app-monorepo commit
 `376633bd9f1c410dbccb01fb6a0492be9a5c3f38`, package
@@ -39,13 +41,15 @@ attribution in source comments.
 
 ### Release boundary
 
-The earlier `3.0.162-alpha.272` release remains immutable. This branch now
-includes the current main SDK baseline, with all publishable workspaces aligned
-before release. Use `package-publish` with `npm_dist_tag=next` and an empty
-`only_workspace` to generate a fresh `6.7.0-alpha.N` preview, publish every
-workspace, and verify every registry version. Preserve `latest` and keep both
-repository PRs open. App consumers pin the verified exact preview version and
-refresh dependency and native locks before installed-version acceptance.
+The earlier `3.0.162-alpha.272` release remains immutable. This branch is
+prepared at `6.7.0-9`: the repository's release validator requires all 43
+publishable workspace manifests and exact internal pins to use the same
+version. Publish only `@onekeyfe/react-native-native-overlay` through the
+manual `package-publish` workflow with `npm_dist_tag=latest` and
+`only_workspace=@onekeyfe/react-native-native-overlay`; verify that exact
+registry tarball before the App pins it and refreshes its dependency and native
+locks. The other workspace version changes are release metadata, not a request
+to publish their packages in this run. Leave the source PR open for review.
 
 ## 5.1 Purpose, scope, and non-goals
 
@@ -168,8 +172,20 @@ visible)`, `removePage(ownerKey)`.
 - `motion` is a preset name or a concrete `{ type: 'spring', spring: { mass, stiffness, damping, overshootClamping } }`
   or `{ type: 'timing', timing: { durationMs, easing: cubicBezier } }`.
 - Presets are resolved per platform:
-  - Native mirrors the Reanimated driver: `quick` is a spring with m 0.1,
-    k 100, c 20 (damping ratio ≈ 3.16).
+  - Native `quick` supplies spring m 0.1, k 100, c 20. The iOS sheet's
+    measured position and dimming response use the critically damped curve
+    at angular frequency `sqrt(k/m)`; UIKit reports an animator duration near
+    292 ms. Android caps an overdamped spring's effective damping ratio at 1
+    while preserving m and k; underdamped and timing motions retain their
+    existing response. This rule
+    also applies to custom overdamped springs as a platform compatibility
+    inference; only the default `quick` sheet path has been measured on iOS.
+    Android's implementation is covered by native tests. In the consumer
+    shells, the default `quick` Dialog and ActionList sheet enter/exit motion
+    and dimming were compared over three cycles per direction on Android 16
+    and iOS 26.5; their normalized visible curves met the recorded parity
+    tolerance. This does not verify custom springs, exact cross-device
+    rectangles, or callback timing.
   - Web mirrors the CSS driver: `quick` is 150 ms `cubic-bezier(.25,.1,.25,1)`.
   - Converting native springs for web is opt-in (`springToCssLinear`), because
     it would slow web overlays down 4–9×.
@@ -182,6 +198,13 @@ visible)`, `removePage(ownerKey)`.
 | toast        | slide from top + fade, `toastSlide` (native 300 ms quad in-out, web 400 ms ease) | none          |
 | fullscreen   | fade, `quick`                                                                    | none          |
 | anchored     | scale 0.95 + fade from the resolved anchor placement, `popoverQuick`             | fade          |
+
+- **Android sheet transform ownership (Implemented; Android 16 consumer-shell runtime verified):**
+  the overlay's enter/exit transform belongs to the sheet's CoordinatorLayout
+  parent. Material's IME insets callback owns the child sheet's `translationY`,
+  and the keyboard layer owns the IME avoidance lift. These transforms compose
+  while the child sheet remains the BottomSheetBehavior drag target. The
+  overlay must not animate the child sheet's `translationY` during IME motion.
 
 - Special cases the callers set explicitly:
   - App lock: `enter: none`, `exit: fade lockFade`. The web tamper check reloads
@@ -216,6 +239,22 @@ request ─► queued ─► active ─► (enter anim) presented
   its current value. It does not restart.
 - `onRemoved` fires exactly once per entry, even when a finalize and the
   timeout race.
+- **Android exit ownership (Implemented; blocking page/global touch and global
+  Back runtime verified on Android 16; accessibility native-test verified,
+  TalkBack device verification pending):** A
+  blocking entry keeps ownership of touch, Back, and accessibility isolation
+  until its exit animation completes and the native host detaches it. During
+  exit, the entry consumes touches and Back without forwarding them to its
+  closing React content or requesting a
+  second dismissal. Its content is hidden from TalkBack while lower content
+  remains isolated. A reopen during exit restores content input and
+  accessibility without briefly exposing the page below. Closing non-blocking
+  entries pass through touch and Back to the entry below.
+  Consumer-shell recordings verify that page and global blocking entries keep
+  lower touch targets inert during their visible exit, then release them, and
+  that Back does not navigate beneath a closing global entry. Native tests
+  cover closing non-blocking entries and same-entry reopen; those paths and
+  TalkBack reading during exit have not been verified on device.
 - Page entries:
   - They are suspended (hidden but kept) while the owner page is covered or
     detached.

@@ -69,8 +69,9 @@ internal sealed class OverlayMotion {
 }
 
 /**
- * Analytic step response of `m·x'' + c·x' + k·x = 0`, identical to
- * Reanimated and `springProgressAt` in JS. Driving one ValueAnimator with it
+ * Analytic step response of `m·x'' + c·x' + k·x = 0`, with overdamped
+ * responses capped at critical damping to match UIKit's sheet response.
+ * Driving one ValueAnimator with it
  * keeps alpha, translation, scale and backdrop on the same clock; androidx
  * SpringAnimation would need one animation per property.
  */
@@ -89,19 +90,13 @@ internal class SpringInterpolator(private val spring: OverlayMotion.Spring) : Ti
 
     fun progressAt(spring: OverlayMotion.Spring, t: Double): Double {
       val w0 = sqrt(spring.stiffness / spring.mass)
-      val zeta = spring.damping / (2 * sqrt(spring.stiffness * spring.mass))
+      val zeta = minOf(1.0, spring.damping / (2 * sqrt(spring.stiffness * spring.mass)))
       return when {
         zeta < 1 -> {
           val wd = w0 * sqrt(1 - zeta * zeta)
           1 - exp(-zeta * w0 * t) * (cos(wd * t) + (zeta * w0 / wd) * sin(wd * t))
         }
-        zeta == 1.0 -> 1 - exp(-w0 * t) * (1 + w0 * t)
-        else -> {
-          val root = sqrt(zeta * zeta - 1)
-          val r1 = -w0 * (zeta - root)
-          val r2 = -w0 * (zeta + root)
-          1 - (r2 * exp(r1 * t) - r1 * exp(r2 * t)) / (r2 - r1)
-        }
+        else -> 1 - exp(-w0 * t) * (1 + w0 * t)
       }
     }
 
