@@ -10,11 +10,7 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parent.parent
 MANIFEST = "zcash-wasm-manifest.json"
-PACKAGES = {
-    "pkg": "onekey_zcash_runtime",
-    "pkg-keys": "onekey_zcash_keys",
-    "pkg/storage-benchmark": "onekey_zcash_storage_benchmark",
-}
+PACKAGES = {"pkg": "onekey_zcash_runtime", "pkg-keys": "onekey_zcash_keys"}
 
 
 def digest(path):

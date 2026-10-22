@@ -257,13 +257,7 @@ pub async fn step(
         let (batch, batch_len) = loop {
             let attempt_end = std::cmp::min(start + attempt_len, range.block_range().end);
             let candidate = ScanRange::from_parts(start..attempt_end, range.priority());
-            let candidate_len = candidate.len();
-            trace(&format!(
-                "step: download {candidate_len} blocks @{}",
-                u32::from(start)
-            ));
             // download_batch times out on stalls; only real failures reach here.
-            let _ = candidate_len;
             match download_batch(client, &cache, &candidate).await {
                 Ok(got) => break (candidate, got),
                 Err(e) => {
@@ -272,14 +266,12 @@ pub async fn step(
                     }
                     if same_size_retry > 0 {
                         same_size_retry -= 1;
-                        trace("step: download failed, retrying same batch");
                         continue;
                     }
                     if attempt_len <= MIN_DOWNLOAD_BATCH {
                         return Err(e);
                     }
                     attempt_len = std::cmp::max(MIN_DOWNLOAD_BATCH, attempt_len / 2);
-                    trace(&format!("step: download timeout, halving -> {attempt_len}"));
                 }
             }
         };
@@ -298,7 +290,6 @@ pub async fn step(
                 let grown = std::cmp::min(batch_size, attempt_len.saturating_mul(2));
                 DOWNLOAD_BATCH_HINT.with(|h| h.set(grown));
                 DOWNLOAD_BATCH_STREAK.with(|s| s.set(0));
-                trace(&format!("step: growing batch -> {grown}"));
             }
         }
         // A budget cut may store fewer blocks than requested; scan only what arrived.
@@ -329,7 +320,6 @@ pub async fn step(
 
         let t_treestate = now_ms();
         ms_treestate += t_treestate - t_downloaded;
-        trace(&format!("step: scanning {batch_len} blocks"));
 
         // Reorgs surface as REORG_DETECTED with an exact atHeight.
         scan_blocks_inline(
@@ -343,7 +333,6 @@ pub async fn step(
         )?;
 
         ms_scan += now_ms() - t_treestate;
-        trace(&format!("step: scan done, total {ms_scan:.0}ms"));
 
         blocks_scanned += batch_len as u64;
 
@@ -713,62 +702,6 @@ pub fn peek(db: &Db) -> Result<String> {
     Ok(json!({ "ranges": items, "totalBlocks": total }).to_string())
 }
 
-/// Diagnostic probe: download only, no scan, no writes. Returns per-phase timings.
-///
-/// Separates a slow or hung network from a slow or hung scan, which look the same
-/// in the browser.
-pub async fn probe_download(db: &Db, client: &mut LightClient, batch_size: u32) -> Result<String> {
-    let t0 = now_ms();
-
-    let ranges = db
-        .suggest_scan_ranges()
-        .map_err(|e| db_err("suggestScanRanges", e))?;
-    let Some(range) = ranges.into_iter().find(|r| !r.is_empty()) else {
-        return Ok(json!({ "skipped": "noRange" }).to_string());
-    };
-
-    let start = range.block_range().start;
-    let end = std::cmp::min(start + batch_size, range.block_range().end);
-    let batch = ScanRange::from_parts(start..end, range.priority());
-    let t_range = now_ms();
-
-    let cache = MemoryBlockCache::new();
-    download_batch(client, &cache, &batch).await?;
-    let t_download = now_ms();
-
-    let params = *db.params();
-    let anchor = anchor_height(&params, start);
-    crate::network::with_timeout(
-        async {
-            client
-                .get_tree_state(service::BlockId {
-                    height: u64::from(anchor),
-                    hash: Vec::new(),
-                })
-                .await
-                .map_err(|e| net_err("getTreeState", e))?
-                .into_inner()
-                .to_chain_state()
-                .map_err(|e| net_err("toChainState", e))
-        },
-        crate::network::DEFAULT_TIMEOUT_MS,
-        "getTreeState",
-    )
-    .await?;
-    let t_tree = now_ms();
-
-    Ok(json!({
-        "rangeStart": u32::from(start),
-        "rangeEnd": u32::from(end),
-        "blocksCached": cache.len(),
-        "anchorHeight": anchor,
-        "msSuggestRanges": (t_range - t0) as u32,
-        "msDownload": (t_download - t_range) as u32,
-        "msTreeState": (t_tree - t_download) as u32,
-    })
-    .to_string())
-}
-
 #[cfg(target_arch = "wasm32")]
 fn now_ms() -> f64 {
     js_sys::Date::now()
@@ -781,27 +714,6 @@ fn now_ms() -> f64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs_f64() * 1000.0)
         .unwrap_or(0.0)
-}
-
-/// Phase trace. When a call runs long, the last trace shows which phase it is in.
-#[cfg(target_arch = "wasm32")]
-pub(crate) fn trace(msg: &str) {
-    #[wasm_bindgen::prelude::wasm_bindgen]
-    extern "C" {
-        #[wasm_bindgen(js_namespace = console)]
-        fn log(s: &str);
-    }
-    // Every scan step logs several lines; only with diagnostics on.
-    if crate::perf::is_enabled() {
-        log(msg);
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn trace(msg: &str) {
-    if crate::perf::is_enabled() {
-        println!("{msg}");
-    }
 }
 
 /// Anchor at `start - 1`, but not below Sapling activation.
@@ -862,7 +774,6 @@ async fn download_batch(
     let mut blocks = Vec::new();
     loop {
         if !blocks.is_empty() && now_ms() - started > DOWNLOAD_SOFT_BUDGET_MS {
-            trace(&format!("step: over budget, scan {} blocks", blocks.len()));
             break;
         }
         let next = crate::network::with_timeout(
@@ -883,7 +794,6 @@ async fn download_batch(
                 if blocks.is_empty() {
                     return Err(e); // stalled with nothing received
                 }
-                trace(&format!("step: stalled, scan {} blocks", blocks.len()));
                 break;
             }
         }

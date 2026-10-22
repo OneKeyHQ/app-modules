@@ -16,7 +16,7 @@ pub fn validate_address(network: &str, address: &str) -> Result<bool, JsValue> {
 
 /// Derive the Unified Address from a UFVK. Public material only.
 ///
-/// `receiverPolicy` selects the receivers: `"all"` / `"shielded"` / `"orchard"`.
+/// `receiverPolicy` selects the receivers: `"all"` / `"orchard"`.
 /// It is a host privacy decision with no default: a transparent receiver links
 /// the user's transparent and shielded activity.
 #[wasm_bindgen(js_name = unifiedAddress)]

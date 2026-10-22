@@ -37,7 +37,6 @@ pub mod wallet;
 
 // Network and sync: gRPC-web in browsers, tonic transport natively.
 pub mod network;
-pub mod perf;
 pub mod sync;
 
 // Cross-call state uses thread_local, valid only in the single-threaded wasm host.

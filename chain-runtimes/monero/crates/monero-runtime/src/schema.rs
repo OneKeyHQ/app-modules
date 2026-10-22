@@ -11,11 +11,7 @@
 //! transparent pool, and before FCMP++ no commitment tree, so no witnesses or
 //! checkpoints. The schema can stay small.
 //!
-//! ## On disk, not in memory
-//!
-//! monero-ts keeps the whole wallet in wasm memory and can only persist by
-//! reserializing all of it, which grows with history and loses everything on
-//! a torn write. Here writes are incremental and transactional.
+//! Writes are incremental and transactional; see the crate docs for why.
 
 use rusqlite::Connection;
 

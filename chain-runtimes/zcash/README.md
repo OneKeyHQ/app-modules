@@ -8,7 +8,7 @@ the wallet store. Two packages built from one source, used on every App platform
 - `onekey-zcash-runtime`: wallet, scanning, SQLite and PCZT proving.
 
 Both run inside a DedicatedWorker. Native Rust builds are for tests and diagnostics
-only. `zcash-storage-benchmark` is a developer tool for synthetic storage tests.
+only.
 
 ## Build
 
@@ -64,7 +64,6 @@ importAccountUfvk(name, ufvk, birthday, seedFingerprintHex?, accountIndex?)
                                          → UUID; the server's tree state must be
                                          exactly the block before birthday
 removeAccount(uuid)                     pending transactions do not block removal
-removeDeletedAccount(uuid)              compatibility alias for removeAccount
 accountByUfvk(ufvk) / listAccounts() / accountSyncStatus(uuid)
 accountBalance(uuid, trusted, untrusted, allowZeroConfShielding)
                                          per pool: spendable, pendingChange,
@@ -83,6 +82,8 @@ transactionHistory(uuid, limit, offset)  limit ≤ 500
 transactionDetails(uuid, txid) / transactionOutputs(uuid, txid)
 deleteWallet(dbName)                     deletes the local cache (rebuildable)
 storageStats()
+diagDatabaseExists(dbName)               persisted bytes exist; opens nothing
+diagDatabaseHealth()                     read-only consistency checks
 
 pcztQuote(...)                           quote only; builds nothing
 pcztCreate(...) → { pcztHex, feeZat }    build; locks no notes
@@ -95,7 +96,7 @@ broadcastTransaction(txid)               resend a stored transaction; explicit u
 prewarmPczt(network, height)             build proving parameters; no wallet
 pcztProveAtHeight(height, pczt)          prove without a wallet
 pcztExtractStateless(pczt)               verify and extract without a wallet
-dependencyVersions() / setPerfTrace(enabled) / diag*
+capabilities() / dependencyVersions()
 ```
 
 ### `onekey-zcash-keys`
@@ -105,7 +106,7 @@ ufvkFromAccountKeys(network, orchardSk, accountXpub, accountIndex)
                                          mainnet only; orchardSk is the 32-byte Orchard key
 unifiedAddress(network, ufvk, receiverPolicy)
                                          "all" = Orchard + transparent;
-                                         "shielded" / "orchard" = Orchard only; never Sapling
+                                         "orchard" = Orchard only; never Sapling
 transparentAddressFromUfvk(network, ufvk) / transparentAccountPubKeyFromUfvk(network, ufvk)
 validateAddress(network, address)
 pcztVerifyReview(pczt, reviewJson)       check only, no signing
@@ -195,7 +196,6 @@ use the stateless API in
 ```
 crates/zcash-runtime/            wallet, scanning, PCZT build/prove/submit
 crates/zcash-keys-runtime/       derivation, review checks, signing, stateless transparent sends
-crates/zcash-storage-benchmark/  synthetic storage tests
 patches/                         pinned upstream checksums and patches
 scripts/                         vendor-deps.sh, build-wasm.sh, package-release.py
 ```

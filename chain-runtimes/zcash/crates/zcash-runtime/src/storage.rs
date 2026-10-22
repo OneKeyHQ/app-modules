@@ -150,7 +150,7 @@ pub async fn durability_barrier() -> Result<()> {
             json!({ "reason": "storageRequiresWorkerRestart" }),
         ));
     }
-    if !memory_mode() && !is_ready() {
+    if !is_ready() {
         return Err(RuntimeError::new(ErrorCode::NotInitialized));
     }
     Ok(())
@@ -180,30 +180,8 @@ pub fn is_ready() -> bool {
     true
 }
 
-#[cfg(target_arch = "wasm32")]
-static MEMORY_MODE: AtomicBool = AtomicBool::new(false);
-
-/// Diagnostic-only mode, selected before installing a persistent VFS.
-#[cfg(target_arch = "wasm32")]
-pub fn use_memory_storage() {
-    MEMORY_MODE.store(true, Ordering::SeqCst);
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn use_memory_storage() {}
-
-#[cfg(target_arch = "wasm32")]
-fn memory_mode() -> bool {
-    MEMORY_MODE.load(Ordering::SeqCst)
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn memory_mode() -> bool {
-    true
-}
-
 pub fn open_connection(db_name: &str) -> Result<rusqlite::Connection> {
-    if !memory_mode() && !is_ready() {
+    if !is_ready() {
         return Err(RuntimeError::new(ErrorCode::NotInitialized));
     }
     let bad_name = db_name.is_empty()
@@ -221,12 +199,10 @@ pub fn open_connection(db_name: &str) -> Result<rusqlite::Connection> {
     // Zero deleted rows (viewing keys, notes, memos) instead of leaving them
     // in free pages; per connection, so every open needs it.
     conn.execute_batch("PRAGMA secure_delete = ON;")?;
+    // SAH-pool uses rollback journals, not cross-context WAL coordination.
+    // Never weaken transaction durability to improve scan throughput.
     #[cfg(target_arch = "wasm32")]
-    if !memory_mode() {
-        // SAH-pool uses rollback journals, not cross-context WAL coordination.
-        // Never weaken transaction durability to improve scan throughput.
-        conn.execute_batch("PRAGMA journal_mode = DELETE; PRAGMA synchronous = FULL;")?;
-    }
+    conn.execute_batch("PRAGMA journal_mode = DELETE; PRAGMA synchronous = FULL;")?;
     rusqlite::vtab::array::load_module(&conn)?;
     Ok(conn)
 }
@@ -262,9 +238,6 @@ pub fn reclaim_free_pages(conn: &rusqlite::Connection, max_pages: u32) -> Result
 /// Inspect the pool's file table without opening or creating a database.
 #[cfg(target_arch = "wasm32")]
 pub async fn database_exists(db_name: &str) -> Result<bool> {
-    if memory_mode() {
-        return Ok(false);
-    }
     persistent_vfs()?
         .exists(db_name)
         .map_err(|error| db_storage_err("inspectDatabase", db_name, error))
@@ -278,9 +251,6 @@ pub async fn database_exists(db_name: &str) -> Result<bool> {
 /// Delete a closed database.
 #[cfg(target_arch = "wasm32")]
 pub async fn delete_database(db_name: &str) -> Result<bool> {
-    if memory_mode() {
-        return Ok(false);
-    }
     persistent_vfs()?
         .delete_db(db_name)
         .map_err(|error| db_storage_err("deleteDatabase", db_name, error))

@@ -1,12 +1,12 @@
 //! Storage usage stats. Read-only, fixed SQL.
 //!
-//! Reports bytes per data group, which `diagSelfCheck` (object counts only) cannot.
+//! Reports bytes per data group.
 //!
 //! There is deliberately no arbitrary-SQL entry point: one bad statement could
 //! delete anchors still needed for proving.
 //!
-//! Table and column names come from `wallet.rs::tests::dump_schema`. A wrong
-//! column name can yield NULL under some aggregates instead of an error.
+//! Table and column names must match the migrated `zcash_client_sqlite` schema.
+//! A wrong column name can yield NULL under some aggregates instead of an error.
 
 use crate::error::{ErrorCode, Result, RuntimeError};
 use rusqlite::Connection;

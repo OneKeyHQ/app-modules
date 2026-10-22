@@ -18,7 +18,6 @@
 
 use wasm_bindgen::prelude::*;
 
-use crate::perf;
 use crate::{
     account,
     error::{ErrorCode, RuntimeError},
@@ -49,37 +48,9 @@ pub fn storage_requires_worker_restart() -> bool {
 
 /// Turns a panic into a console error with a stack trace instead of a Promise that never settles.
 ///
-/// Must be installed at every entry point, including `diagInitMemoryStorage()`.
+/// Must be installed at every entry point.
 fn install_panic_hook() {
     console_error_panic_hook::set_once();
-}
-
-/// Enables tracing output to the browser console (requires the `debug-tracing` feature).
-///
-/// Upstream `zcash_client_backend` is instrumented with `tracing`; when sync stalls,
-/// the last console entry shows the step it stopped at.
-///
-/// Very verbose and slows scanning; use only for debugging.
-#[wasm_bindgen(js_name = diagEnableTracing)]
-pub fn enable_debug_tracing() {
-    #[cfg(feature = "debug-tracing")]
-    {
-        use tracing_subscriber::prelude::*;
-        let _ = tracing_subscriber::registry()
-            .with(tracing_wasm::WASMLayer::new(Default::default()))
-            .try_init();
-    }
-}
-
-/// Uses in-memory storage: no persistent VFS; data lives only for the page lifetime.
-///
-/// For ephemeral wallets, and for isolating storage from computation when profiling.
-///
-/// Call instead of `init()`, never both.
-#[wasm_bindgen(js_name = diagInitMemoryStorage)]
-pub fn init_memory_storage() {
-    install_panic_hook();
-    storage::use_memory_storage();
 }
 
 /// The capabilities of this version-locked wallet and keys package set.
@@ -114,33 +85,14 @@ pub fn dependency_versions() -> String {
     crate::dependency_versions().to_string()
 }
 
-/// Diagnostic: structural summary of a single block. No scanning, no writes.
-#[wasm_bindgen(js_name = diagBlockSummary)]
-pub async fn block_summary(height: u32) -> Result<String, JsValue> {
-    Ok(
-        runtime::with_db_and_client(move |db, mut client| async move {
-            let r = network::block_summary(&mut client, height).await;
-            (db, client, r)
-        })
-        .await?,
-    )
-}
-
 /// Opens a page-backed database and applies the official SQLite migrations.
 #[wasm_bindgen(js_name = openWallet)]
 pub async fn open_wallet(network_name: String, db_name: String) -> Result<String, JsValue> {
-    let _perf = perf::span("openWallet");
     let (network_name, db_name) = (network_name.as_str(), db_name.as_str());
     let db = wallet::open_and_migrate(network_name, db_name)?;
     // WALLET_BUSY must propagate, or the caller assumes the database was swapped.
     runtime::set_db(db, db_name)?;
     Ok(serde_json::json!({ "dbName": db_name, "network": network_name }).to_string())
-}
-
-/// Perf tracing switch: logs per-step timings to the console (`[PRIV-PERF] rt`).
-#[wasm_bindgen(js_name = setPerfTrace)]
-pub fn set_perf_trace(enabled: bool) {
-    perf::set_enabled(enabled);
 }
 
 /// Closes the wallet, releasing the database and network client.
@@ -229,18 +181,11 @@ pub async fn remove_account(account_uuid: String) -> Result<(), JsValue> {
     Ok(())
 }
 
-/// Compatibility alias for hosts that distinguish app-account removal.
-#[wasm_bindgen(js_name = removeDeletedAccount)]
-pub async fn remove_deleted_account(account_uuid: String) -> Result<(), JsValue> {
-    remove_account(account_uuid).await
-}
-
 /// Finds the account for a UFVK, returning `{ uuid }` or `"null"` if absent.
 ///
 /// The only correct lookup in the shared per-network database: UUIDs change after a purge.
 #[wasm_bindgen(js_name = accountByUfvk)]
 pub fn account_by_ufvk(ufvk: String) -> Result<String, JsValue> {
-    let _perf = perf::span("accountByUfvk");
     Ok(runtime::with_db(|db| account::account_by_ufvk(db, &ufvk))?)
 }
 
@@ -274,7 +219,6 @@ pub fn account_balance(
     untrusted: u32,
     allow_zero_conf_shielding: bool,
 ) -> Result<String, JsValue> {
-    let _perf = perf::span("accountBalance");
     let policy = account::confirmations_policy(trusted, untrusted, allow_zero_conf_shielding)?;
     Ok(runtime::with_db(|db| {
         account::balance_json(db, &account_uuid, policy)
@@ -290,7 +234,6 @@ pub fn account_balance(
 /// Returns `{ chainTip, saplingSubtrees, orchardSubtrees, ironwoodSubtrees }`.
 #[wasm_bindgen(js_name = syncPrepare)]
 pub async fn sync_prepare() -> Result<String, JsValue> {
-    let _perf = perf::span("syncPrepare");
     Ok(
         runtime::with_db_and_client(|mut db, mut client| async move {
             let r = sync::prepare(&mut db, &mut client).await;
@@ -320,20 +263,6 @@ pub async fn sync_tip() -> Result<String, JsValue> {
 #[wasm_bindgen(js_name = syncPeek)]
 pub fn sync_peek() -> Result<String, JsValue> {
     Ok(runtime::with_db(|db| sync::peek(db))?)
-}
-
-/// Diagnostic: downloads without scanning and returns per-phase timings. Does not change wallet state.
-///
-/// Separates network stalls from scan stalls, which look the same in the browser.
-#[wasm_bindgen(js_name = diagProbeDownload)]
-pub async fn sync_probe_download(batch_size: u32) -> Result<String, JsValue> {
-    Ok(
-        runtime::with_db_and_client(move |db, mut client| async move {
-            let r = sync::probe_download(&db, &mut client, batch_size).await;
-            (db, client, r)
-        })
-        .await?,
-    )
 }
 
 /// Quotes only: no transaction built. Returns `{ feeZat, steps }`.
@@ -378,7 +307,6 @@ pub fn pczt_quote(
 /// lacks the transaction (external txid, rolled-back transaction); that is a normal state.
 #[wasm_bindgen(js_name = transactionDetails)]
 pub fn transaction_details(account_uuid: String, txid: String) -> Result<String, JsValue> {
-    let _perf = perf::span("transactionDetails");
     Ok(runtime::with_read_conn(|conn| {
         history::details(conn, &account_uuid, &txid)
     })?)
@@ -415,7 +343,6 @@ pub async fn sync_step(
     priority: Option<String>,
     active_ufvks_json: String,
 ) -> Result<String, JsValue> {
-    let _perf = perf::span("syncStep");
     let preferred = sync::parse_priority(priority.as_deref().unwrap_or(""))?;
     let active_ufvks: Vec<String> = serde_json::from_str(&active_ufvks_json).map_err(|e| {
         RuntimeError::new(ErrorCode::InvalidUfvk).detail(format!("activeUfvksJson: {e}"))
@@ -451,7 +378,6 @@ pub fn transaction_history(
     limit: u32,
     offset: u32,
 ) -> Result<String, JsValue> {
-    let _perf = perf::span("transactionHistory");
     Ok(runtime::with_read_conn(|conn| {
         history::list(conn, &account_uuid, limit, offset)
     })?)
@@ -699,61 +625,6 @@ pub async fn database_exists(db_name: &str) -> Result<bool, JsValue> {
 #[wasm_bindgen(js_name = diagDatabaseHealth)]
 pub fn database_health() -> Result<String, JsValue> {
     Ok(runtime::with_read_conn(crate::stats::database_health)?)
-}
-
-/// Diagnostic: counts inputs per bundle in a PCZT.
-///
-/// Input counts show which pool funds left from.
-#[wasm_bindgen(js_name = diagPcztInputCounts)]
-pub fn pczt_input_counts(pczt_bytes: Vec<u8>) -> Result<String, JsValue> {
-    let pczt = pczt::Pczt::parse(&pczt_bytes).map_err(|e| {
-        JsValue::from(
-            crate::RuntimeError::new(crate::ErrorCode::PcztError).detail(format!("{e:?}")),
-        )
-    })?;
-    // Action counts alone mislead (actions pair a spend with an output and are padded to 2).
-    // `valueSum` = the pool's spends minus outputs; positive means notes from it were spent.
-    let sum = |b: &pczt::orchard::Bundle| {
-        let (magnitude, negative) = *b.value_sum();
-        serde_json::json!({ "magnitude": magnitude, "negative": negative })
-    };
-    // shielded spend = payment + fee − transparent input; `valueSum` gives only net flow.
-    let transparent_value: u64 = pczt.transparent().inputs().iter().map(|i| *i.value()).sum();
-
-    Ok(serde_json::json!({
-        "transparent": pczt.transparent().inputs().len(),
-        "transparentValue": transparent_value,
-        "sapling": pczt.sapling().spends().len(),
-        "orchard": pczt.orchard().actions().len(),
-        "ironwood": pczt.ironwood().actions().len(),
-        "orchardValueSum": sum(pczt.orchard()),
-        "ironwoodValueSum": sum(pczt.ironwood()),
-    })
-    .to_string())
-}
-
-/// Self-check: opens the database, runs migrations, and reports table / view / index counts.
-#[wasm_bindgen(js_name = diagSelfCheck)]
-pub fn self_check(network_name: &str, db_name: &str) -> Result<String, JsValue> {
-    drop(wallet::open_and_migrate(network_name, db_name)?);
-    let conn = storage::open_connection(db_name)?;
-
-    let count_of = |kind: &str| -> Result<i64, JsValue> {
-        conn.query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type = ?1",
-            [kind],
-            |r| r.get(0),
-        )
-        .map_err(|e| JsValue::from(crate::RuntimeError::from(e)))
-    };
-
-    Ok(serde_json::json!({
-        "tables": count_of("table")?,
-        "views": count_of("view")?,
-        "indexes": count_of("index")?,
-        "versions": crate::dependency_versions(),
-    })
-    .to_string())
 }
 
 /// Builds only public circuit parameters without opening wallet storage.
