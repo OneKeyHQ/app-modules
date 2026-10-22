@@ -200,6 +200,7 @@ class NativeOverlayView(
     }
     cancelAnimators()
     phase = Phase.ENTERING
+    target.isClosing = false
     target.isShownForInput = true
     notifyHostEntriesChanged()
     if (blocking) {
@@ -226,7 +227,7 @@ class NativeOverlayView(
     val target = entry ?: return finishDismiss("programmatic")
     cancelAnimators()
     phase = Phase.EXITING
-    target.isShownForInput = false
+    target.isClosing = true
     notifyHostEntriesChanged()
     val transition = config.exit.reduceMotionAdjusted(isReduceMotionEnabled())
     if (transition.kind == "none") return finishDismiss("programmatic")
@@ -241,6 +242,7 @@ class NativeOverlayView(
     phase = Phase.HIDDEN
     entry?.let { target ->
       target.isShownForInput = false
+      target.isClosing = false
       stageContent()
       host?.detach(target)
       pageHost?.detach(target)

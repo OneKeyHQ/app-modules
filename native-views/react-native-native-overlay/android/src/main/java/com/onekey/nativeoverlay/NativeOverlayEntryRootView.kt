@@ -60,7 +60,12 @@ internal class NativeOverlayEntryRootView(
    * below), non-blocking ones let it continue past the empty area.
    */
   override val pointerEvents: PointerEvents
-    get() = if (blocking && isShownForInput) PointerEvents.AUTO else PointerEvents.BOX_NONE
+    get() = when {
+      blocking && isClosing -> PointerEvents.BOX_ONLY
+      isClosing -> PointerEvents.NONE
+      blocking && isShownForInput -> PointerEvents.AUTO
+      else -> PointerEvents.BOX_NONE
+    }
   var stackOrder = 0
   var levelOrder = 0
   /** Page scope: the owning page, used by the page host to hide the entry. */
@@ -74,6 +79,19 @@ internal class NativeOverlayEntryRootView(
   var dismissOnBackPress = true
   var dismissOnBackdropPress = false
   var isShownForInput = false
+  private var contentAccessibilityBeforeClose: Int? = null
+  var isClosing = false
+    set(value) {
+      if (field == value) return
+      field = value
+      if (value) {
+        contentAccessibilityBeforeClose = contentView.importantForAccessibility
+        contentView.importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+      } else {
+        contentAccessibilityBeforeClose?.let { contentView.importantForAccessibility = it }
+        contentAccessibilityBeforeClose = null
+      }
+    }
   var onRequestDismiss: ((String) -> Unit)? = null
 
   val backdropView = View(reactContext).apply { alpha = 0f }
@@ -90,12 +108,13 @@ internal class NativeOverlayEntryRootView(
   /** `sheet` presentation: the draggable surface; otherwise null. */
   var sheetView: FrameLayout? = null
     private set
+  private var sheetAnimationView: CoordinatorLayout? = null
   private var sheetBehavior: BottomSheetBehavior<FrameLayout>? = null
   private var handleView: View? = null
   var onSheetHiddenByPan: (() -> Unit)? = null
 
   /** The view that enter / exit animations move. */
-  val animatedView: View get() = sheetView ?: contentView
+  val animatedView: View get() = sheetAnimationView ?: contentView
 
   private val touchDispatcher = JSTouchDispatcher(this)
   private val pointerDispatcher = if (ReactFeatureFlags.dispatchPointerEvents) {
@@ -220,6 +239,7 @@ internal class NativeOverlayEntryRootView(
       },
     )
     sheetView = sheet
+    sheetAnimationView = coordinator
     sheetBehavior = behavior
     handleView = handle
     return sheet
@@ -350,6 +370,7 @@ internal class NativeOverlayEntryRootView(
   }
 
   override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+    if (isClosing) return blocking
     if (!isShownForInput) return false
     if (event.actionMasked == MotionEvent.ACTION_DOWN) {
       // Non-blocking overlays (toasts) only take touches that land on content.

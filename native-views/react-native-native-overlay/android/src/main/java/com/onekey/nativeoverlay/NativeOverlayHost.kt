@@ -50,7 +50,7 @@ internal class NativeOverlayHost private constructor(
   private val backCallback = object : OnBackPressedCallback(false) {
     override fun handleOnBackPressed() {
       topBackEntry()?.let { entry ->
-        if (entry.dismissOnBackPress) entry.onRequestDismiss?.invoke("back")
+        if (!entry.isClosing && entry.dismissOnBackPress) entry.onRequestDismiss?.invoke("back")
       }
     }
   }
@@ -68,7 +68,7 @@ internal class NativeOverlayHost private constructor(
    */
   fun handleBackKey(event: KeyEvent): Boolean {
     val entry = topBackEntry() ?: return false
-    if (event.action == KeyEvent.ACTION_UP && !event.isCanceled && entry.dismissOnBackPress) {
+    if (event.action == KeyEvent.ACTION_UP && !event.isCanceled && !entry.isClosing && entry.dismissOnBackPress) {
       entry.onRequestDismiss?.invoke("back")
     }
     return true
@@ -135,10 +135,12 @@ internal class NativeOverlayHost private constructor(
 
   /** Global overlays win; otherwise the topmost visible page overlay. */
   private fun topBackEntry(): NativeOverlayEntryRootView? =
-    orderedEntries().lastOrNull { (it.blocking || it.dismissOnBackPress) && it.isShownForInput }
+    orderedEntries().lastOrNull {
+      (it.blocking || it.dismissOnBackPress) && it.isShownForInput && (!it.isClosing || it.blocking)
+    }
       ?: shownPageHosts()
         .flatMap { it.shownEntries() }
-        .lastOrNull { it.blocking || it.dismissOnBackPress }
+        .lastOrNull { (it.blocking || it.dismissOnBackPress) && (!it.isClosing || it.blocking) }
 
   private fun shownPageHosts(): List<NativeOverlayPageHostView> =
     NativeOverlayPageHostView.allHosts().filter {
