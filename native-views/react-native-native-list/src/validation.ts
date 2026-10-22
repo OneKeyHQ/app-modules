@@ -2041,7 +2041,11 @@ function assertRowProtocol(row: RowModel, path: string): void {
   assertProtocolFields(row, path);
   for (const field of ['leading', 'visual', 'secondaryLeading'] as const) {
     const visual = (row as unknown as Record<string, unknown>)[field];
-    if (visual !== undefined) {
+    if (
+      visual !== undefined ||
+      (field === 'leading' &&
+        (row.type === 'identity' || row.type === 'market'))
+    ) {
       const object = protocolObject(visual, `${path}.${field}`);
       if (object.kind === 'stackedImages' && !Array.isArray(object.images))
         fail(`${path}.${field}.images`, 'must be an array');

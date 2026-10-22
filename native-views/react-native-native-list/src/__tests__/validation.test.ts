@@ -1316,6 +1316,19 @@ describe('NativeList production validation', () => {
     });
   });
 
+  it.each([
+    { ...row('account'), presentation: 'accountSelector', height: 56 },
+    marketRow(),
+  ] as const)('rejects missing required $type leading visuals', (validRow) => {
+    const input = snapshot([validRow]);
+    expect(validateSnapshot(input)).toEqual(input);
+    const invalidRow = { ...validRow };
+    Reflect.deleteProperty(invalidRow, 'leading');
+    expect(() => validateSnapshot(snapshot([invalidRow as RowModel]))).toThrow(
+      'rows[0].leading: must be an object'
+    );
+  });
+
   it('normalizes absent images and patch typography before serialization', () => {
     const input = snapshot([
       {
