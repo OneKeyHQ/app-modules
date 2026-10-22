@@ -33,3 +33,13 @@ Require `OK (3 tests)` in the instrumentation output; adb's shell exit status
 alone does not establish test success. Coverage includes structural/font
 cancellation, wallet expansion and declared opacity, translation/elevation,
 detached helper auto-scroll and stale callbacks, and the next valid/unmoved drop.
+
+## Section-index parent transitions
+
+The same build command also includes `NativeListSectionIndexReparentingTest`.
+Run it on a task-owned emulator by replacing the `-e class` value above with
+`com.margelo.nitro.nativelist.NativeListSectionIndexReparentingTest` and require
+`OK (3 tests)`. It exercises the production `NativeListView` with real Android
+view transitions in both attachment directions, then checks delayed transition
+completion, visibility/configuration changes, RTL, and detach/reattach ownership.
+It does not establish physical-device interaction acceptance.

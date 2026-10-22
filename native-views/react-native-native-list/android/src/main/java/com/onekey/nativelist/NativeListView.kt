@@ -1939,7 +1939,10 @@ class NativeListView(
 
   private fun attachSectionIndexToList() {
     if (sectionIndexView.parent === contentContainer) return
-    (sectionIndexView.parent as? ViewGroup)?.removeView(sectionIndexView)
+    (sectionIndexView.parent as? ViewGroup)?.let { previous ->
+      previous.removeView(sectionIndexView)
+      previous.endViewTransition(sectionIndexView)
+    }
     sectionIndexView.translationX = 0f
     contentContainer.addView(
       sectionIndexView,
@@ -1975,7 +1978,10 @@ class NativeListView(
       topMargin = (windowHost.height - railHeight) / 2
     }
     if (sectionIndexView.parent !== windowHost) {
-      (sectionIndexView.parent as? ViewGroup)?.removeView(sectionIndexView)
+      (sectionIndexView.parent as? ViewGroup)?.let { previous ->
+        previous.removeView(sectionIndexView)
+        previous.endViewTransition(sectionIndexView)
+      }
       windowHost.addView(sectionIndexView, layoutParams)
       sectionIndexView.bringToFront()
     } else if (!sectionIndexView.hasSameWindowLayout(layoutParams)) {
