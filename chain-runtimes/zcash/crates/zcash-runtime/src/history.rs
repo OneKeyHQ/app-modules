@@ -12,6 +12,9 @@
 //! and labelling transactions is up to the host.
 
 use serde_json::json;
+use zcash_address::unified::{self, Container, Encoding};
+use zcash_address::{ConversionError, ToAddress, TryFromAddress, ZcashAddress};
+use zcash_protocol::consensus::NetworkType;
 
 use crate::error::{ErrorCode, Result, RuntimeError};
 
@@ -96,6 +99,7 @@ const HISTORY_ROW_SELECT: &str = "SELECT
             AND (output.to_account_uuid IS NULL
                  OR output.to_account_uuid <> tx_summary.account_uuid)
             AND COALESCE(output.is_change, 0) = 0
+          ORDER BY output.output_pool, output.output_index
           LIMIT 1) AS recipient,
          (SELECT COUNT(*)
             FROM v_tx_outputs output
@@ -104,7 +108,17 @@ const HISTORY_ROW_SELECT: &str = "SELECT
              AND (output.to_account_uuid IS NULL
                   OR output.to_account_uuid <> tx_summary.account_uuid)
              AND COALESCE(output.is_change, 0) = 0
-         ) AS external_output_count
+         ) AS external_output_count,
+         (SELECT output.output_pool
+          FROM v_tx_outputs output
+          WHERE output.txid = tx_summary.txid
+            AND output.from_account_uuid = tx_summary.account_uuid
+            AND (output.to_account_uuid IS NULL
+                 OR output.to_account_uuid <> tx_summary.account_uuid)
+            AND COALESCE(output.is_change, 0) = 0
+          ORDER BY output.output_pool, output.output_index
+          LIMIT 1) AS recipient_pool,
+         chain_tx.created IS NOT NULL AS created_locally
      FROM v_transactions tx_summary
      JOIN transactions chain_tx ON chain_tx.txid = tx_summary.txid
      LEFT JOIN ext_onekey_tx_state rejected
@@ -211,6 +225,10 @@ fn row_to_json(row: &rusqlite::Row<'_>) -> rusqlite::Result<serde_json::Value> {
         .into_iter()
         .map(|(pool, delta)| (pool.to_string(), serde_json::Value::String(delta)))
         .collect::<serde_json::Map<_, _>>();
+    let recipient = match (row.get::<_, Option<String>>(16)?, row.get(18)?) {
+        (Some(address), Some(pool)) => Some(paid_address(&address, pool, row.get(19)?)),
+        (address, _) => address,
+    };
     Ok(json!({
         // Display (big-endian) order, as block explorers show it.
         "txid": hex_display_order(&txid),
@@ -237,7 +255,7 @@ fn row_to_json(row: &rusqlite::Row<'_>) -> rusqlite::Result<serde_json::Value> {
         "perPoolBalanceDeltaZat": per_pool_balance_delta_zat,
         // The trusted node definitively rejected it; it can never be mined.
         "rejected": row.get::<_, bool>(15)?,
-        "recipient": row.get::<_, Option<String>>(16)?,
+        "recipient": recipient,
         // Outputs sent to addresses outside this account. Zero with spends means
         // an internal transfer, whether or not the fee is known; inferring from
         // spent - received misreads self-transfers as sends when the fee is unknown.
@@ -302,12 +320,14 @@ pub fn details_outputs(
                 "SELECT output.output_pool, output.value, output.is_change,
                         output.memo, output.to_address,
                         output.to_account_uuid, output.from_account_uuid,
-                        payment.to_address
+                        payment.to_address, chain_tx.created IS NOT NULL
                  FROM v_tx_outputs output
                  LEFT JOIN sent_notes payment
                    ON payment.transaction_id = output.transaction_id
                   AND payment.output_pool = output.output_pool
                   AND payment.output_index = output.output_index
+                 LEFT JOIN transactions chain_tx
+                   ON chain_tx.id_tx = output.transaction_id
                  WHERE output.txid = ?1",
             )
             .map_err(db_err)?;
@@ -325,6 +345,7 @@ pub fn details_outputs(
             let to_acct: Option<Vec<u8>> = row.get(5).map_err(db_err)?;
             let from_acct: Option<Vec<u8>> = row.get(6).map_err(db_err)?;
             let payment_address: Option<String> = row.get(7).map_err(db_err)?;
+            let created_locally: bool = row.get(8).map_err(db_err)?;
             // Compact scanning also marks explicit self-payments as change.
             // A recorded shielded recipient identifies a payment; actual change
             // has no sent-note recipient address. Keep the scan flags intact.
@@ -356,7 +377,8 @@ pub fn details_outputs(
                     "valueZat": value,
                     "pool": pool,
                     "poolName": pool_name(pool),
-                    "address": address,
+                    "address": address
+                        .map(|address| paid_address(&address, pool, created_locally)),
                 }));
             }
         }
@@ -415,6 +437,57 @@ fn pool_name(pool: i64) -> &'static str {
         4 => "ironwood",
         _ => "unknown",
     }
+}
+
+/// A stored Unified Address with the network it was encoded for.
+struct StoredUnified(NetworkType, unified::Address);
+
+impl TryFromAddress for StoredUnified {
+    type Error = std::convert::Infallible;
+
+    fn try_from_unified(
+        net: NetworkType,
+        data: unified::Address,
+    ) -> std::result::Result<Self, ConversionError<Self::Error>> {
+        Ok(Self(net, data))
+    }
+}
+
+/// The receiver an output paid, where upstream stored a wallet UA containing it.
+/// Shielded: Orchard-only UA, unless a send made here names an address unlike
+/// the wallet's address-table UAs (exactly Orchard + P2PKH for OneKey UFVKs).
+fn paid_address(stored: &str, pool: i64, created_locally: bool) -> String {
+    let Some(StoredUnified(net, ua)) = ZcashAddress::try_from_encoded(stored)
+        .ok()
+        .and_then(|address| address.convert().ok())
+    else {
+        return stored.to_owned();
+    };
+    let items = ua.items();
+    let is_address_table_shape = items.len() == 2
+        && items
+            .iter()
+            .any(|receiver| matches!(receiver, unified::Receiver::Orchard(_)))
+        && items
+            .iter()
+            .any(|receiver| matches!(receiver, unified::Receiver::P2pkh(_)));
+    let paid = items.into_iter().find_map(|receiver| match receiver {
+        unified::Receiver::P2pkh(data) if pool == 0 => {
+            Some(ZcashAddress::from_transparent_p2pkh(net, data))
+        }
+        unified::Receiver::P2sh(data) if pool == 0 => {
+            Some(ZcashAddress::from_transparent_p2sh(net, data))
+        }
+        unified::Receiver::Orchard(data)
+            if (pool == 3 || pool == 4) && (!created_locally || is_address_table_shape) =>
+        {
+            unified::Address::try_from_items(vec![unified::Receiver::Orchard(data)])
+                .ok()
+                .map(|orchard_only| ZcashAddress::from_unified(net, orchard_only))
+        }
+        _ => None,
+    });
+    paid.map_or_else(|| stored.to_owned(), |address| address.encode())
 }
 
 #[derive(Debug, PartialEq)]
@@ -618,7 +691,7 @@ mod tests {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         conn.execute_batch(
             "CREATE TABLE accounts (id INTEGER PRIMARY KEY, uuid BLOB NOT NULL);
-             CREATE TABLE transactions (id_tx INTEGER PRIMARY KEY, txid BLOB NOT NULL);
+             CREATE TABLE transactions (id_tx INTEGER PRIMARY KEY, txid BLOB NOT NULL, created TEXT);
              CREATE TABLE v_received_outputs (
                id_within_pool_table INTEGER NOT NULL,
                transaction_id INTEGER NOT NULL,
@@ -634,6 +707,7 @@ mod tests {
              );
              CREATE TABLE v_tx_outputs (
                transaction_id INTEGER,
+               output_pool INTEGER DEFAULT 4,
                output_index INTEGER DEFAULT 0,
                txid BLOB NOT NULL,
                from_account_uuid BLOB,
@@ -790,8 +864,7 @@ mod tests {
     fn decrypted_memos_are_visible_only_to_the_output_sender_or_receiver() {
         let conn = history_fixture();
         conn.execute_batch(
-            "ALTER TABLE v_tx_outputs ADD COLUMN output_pool INTEGER DEFAULT 4;
-             ALTER TABLE v_tx_outputs ADD COLUMN value INTEGER DEFAULT 10000;
+            "ALTER TABLE v_tx_outputs ADD COLUMN value INTEGER DEFAULT 10000;
              ALTER TABLE v_tx_outputs ADD COLUMN memo BLOB;
              ALTER TABLE v_received_outputs ADD COLUMN address_id INTEGER;
              CREATE TABLE addresses (id INTEGER PRIMARY KEY, address TEXT);",
@@ -844,8 +917,7 @@ mod tests {
     fn explicit_self_payment_is_not_displayed_as_change_after_scanning() {
         let conn = history_fixture();
         conn.execute_batch(
-            "ALTER TABLE v_tx_outputs ADD COLUMN output_pool INTEGER DEFAULT 4;
-             ALTER TABLE v_tx_outputs ADD COLUMN value INTEGER;
+            "ALTER TABLE v_tx_outputs ADD COLUMN value INTEGER;
              ALTER TABLE v_tx_outputs ADD COLUMN memo BLOB;
              ALTER TABLE v_received_outputs ADD COLUMN address_id INTEGER;
              CREATE TABLE addresses (id INTEGER PRIMARY KEY, address TEXT);",
@@ -993,5 +1065,459 @@ mod tests {
                 serde_json::from_str(&list(&conn, &sender.to_string(), 20, 0).unwrap()).unwrap();
             assert_eq!(rows[0], detail);
         }
+    }
+}
+
+/// Recipients of transactions stored the way the wallet really stores them:
+/// decrypted by enhancement, or recorded by a local send.
+#[cfg(test)]
+mod recipient_tests {
+    use std::collections::HashMap;
+
+    use orchard::builder::{Builder as OrchardBuilder, BundleType};
+    use orchard::bundle::{Authorized as OrchardAuthorized, BundleVersion};
+    use orchard::primitives::redpallas::Signature;
+    use orchard::value::NoteValue;
+    use orchard::{Anchor, Proof};
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha20Rng;
+    use transparent::address::{Script, TransparentAddress};
+    use transparent::bundle::{Authorized, Bundle, OutPoint, TxIn, TxOut};
+    use transparent::keys::{IncomingViewingKey, NonHardenedChildIndex};
+    use zcash_client_backend::data_api::chain::ChainState;
+    use zcash_client_backend::data_api::wallet::TargetHeight;
+    use zcash_client_backend::data_api::{
+        Account as _, AccountBirthday, AccountPurpose, SentTransaction, SentTransactionOutput,
+        WalletWrite,
+    };
+    use zcash_client_backend::decrypt_transaction;
+    use zcash_client_backend::encoding::AddressCodec;
+    use zcash_client_backend::wallet::{Recipient, WalletTransparentOutput};
+    use zcash_client_sqlite::wallet::init::WalletMigrator;
+    use zcash_client_sqlite::{AccountUuid, WalletDb};
+    use zcash_keys::keys::{
+        ReceiverRequirement, UnifiedAddressRequest, UnifiedFullViewingKey, UnifiedSpendingKey,
+    };
+    use zcash_primitives::block::BlockHash;
+    use zcash_primitives::transaction::{Transaction, TransactionData};
+    use zcash_protocol::consensus::{BlockHeight, BranchId, Network};
+    use zcash_protocol::memo::MemoBytes;
+    use zcash_protocol::value::{ZatBalance, Zatoshis};
+    use zcash_protocol::PoolType;
+
+    use super::*;
+    use crate::clock::HostClock;
+
+    const NET: Network = Network::MainNetwork;
+    const TIP: u32 = 3_525_600;
+    const MINED: u32 = 3_525_531;
+
+    struct Wallet {
+        conn: rusqlite::Connection,
+        accounts: Vec<(AccountUuid, UnifiedFullViewingKey)>,
+    }
+
+    impl Wallet {
+        /// Accounts 0..count of one seed, as the host registers them.
+        fn new(count: u32) -> Self {
+            let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+            rusqlite::vtab::array::load_module(&conn).unwrap();
+            let mut accounts = Vec::new();
+            {
+                let mut db = db(&mut conn);
+                WalletMigrator::new()
+                    .with_external_migrations(crate::tx_state::migrations())
+                    .init_or_migrate(&mut db)
+                    .unwrap();
+                let birthday = AccountBirthday::from_parts(
+                    ChainState::empty(BlockHeight::from_u32(3_525_000), BlockHash([0; 32])),
+                    None,
+                );
+                for index in 0..count {
+                    let ufvk = ufvk(&[9; 32], index);
+                    let account = db
+                        .import_account_ufvk(
+                            &format!("hd-{index}"),
+                            &ufvk,
+                            &birthday,
+                            AccountPurpose::ViewOnly,
+                            None,
+                        )
+                        .unwrap();
+                    accounts.push((account.id(), ufvk));
+                }
+                db.update_chain_tip(BlockHeight::from_u32(TIP)).unwrap();
+            }
+            Self { conn, accounts }
+        }
+
+        fn account(&self, index: usize) -> AccountUuid {
+            self.accounts[index].0
+        }
+
+        /// A transparent UTXO of `index`, so stored transactions spending it are
+        /// attributed to that account.
+        fn fund(&mut self, index: usize) -> OutPoint {
+            let outpoint = OutPoint::new([5; 32], 0);
+            let utxo = WalletTransparentOutput::from_parts(
+                outpoint.clone(),
+                TxOut::new(
+                    Zatoshis::const_from_u64(1_000_000),
+                    taddr(&self.accounts[index].1, 0).script().into(),
+                ),
+                Some(BlockHeight::from_u32(3_525_100)),
+                Some(self.account(index)),
+                None,
+                None,
+            )
+            .unwrap();
+            db(&mut self.conn)
+                .put_received_transparent_utxo(&utxo)
+                .unwrap();
+            outpoint
+        }
+
+        /// Stores `tx` as enhancement does: decrypted with every account's keys.
+        fn enhance(&mut self, tx: &Transaction) {
+            let keys = self.accounts.iter().cloned().collect::<HashMap<_, _>>();
+            db(&mut self.conn)
+                .store_decrypted_tx(decrypt_transaction(
+                    &NET,
+                    Some(BlockHeight::from_u32(MINED)),
+                    Some(BlockHeight::from_u32(TIP)),
+                    tx,
+                    &keys,
+                ))
+                .unwrap();
+        }
+
+        fn remove(&mut self, index: usize) {
+            let account = self.account(index);
+            db(&mut self.conn).delete_account(account).unwrap();
+        }
+
+        fn row(&self, index: usize, tx: &Transaction) -> serde_json::Value {
+            let txid = tx.txid().to_string();
+            let rows: Vec<serde_json::Value> = serde_json::from_str(
+                &list(
+                    &self.conn,
+                    &self.account(index).expose_uuid().to_string(),
+                    20,
+                    0,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            let row = rows.into_iter().find(|row| row["txid"] == txid).unwrap();
+            let detail: serde_json::Value = serde_json::from_str(
+                &details(
+                    &self.conn,
+                    &self.account(index).expose_uuid().to_string(),
+                    &txid,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(row, detail);
+            row
+        }
+
+        fn external(&self, index: usize, tx: &Transaction) -> Vec<serde_json::Value> {
+            let outputs: serde_json::Value = serde_json::from_str(
+                &details_outputs(
+                    &self.conn,
+                    &self.account(index).expose_uuid().to_string(),
+                    &tx.txid().to_string(),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            outputs["external"].as_array().unwrap().clone()
+        }
+
+        /// What upstream stored for the payment, before the read projection:
+        /// its address and whether it names a receiving account.
+        fn stored_payment(&self) -> (String, bool) {
+            self.conn
+                .query_row(
+                    "SELECT to_address, to_account_id IS NOT NULL FROM sent_notes
+                     WHERE transaction_id = (SELECT MAX(id_tx) FROM transactions)
+                     ORDER BY output_pool, output_index LIMIT 1",
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .unwrap()
+        }
+
+        /// Records `tx` as a send created here, paying `to` in Ironwood.
+        fn record_local_send(&mut self, tx: &Transaction, input: OutPoint, index: usize, to: &str) {
+            let outputs = [SentTransactionOutput::from_parts(
+                index,
+                Recipient::External {
+                    recipient_address: to.parse().unwrap(),
+                    output_pool: PoolType::IRONWOOD,
+                },
+                Zatoshis::const_from_u64(20_000),
+                Some(MemoBytes::empty()),
+            )];
+            let account = self.account(0);
+            db(&mut self.conn)
+                .store_transactions_to_be_sent(&[SentTransaction::new(
+                    tx,
+                    // `time` is a wasm-only dependency of this crate.
+                    std::time::SystemTime::now().into(),
+                    TargetHeight::from(BlockHeight::from_u32(MINED)),
+                    account,
+                    &outputs,
+                    Zatoshis::const_from_u64(10_000),
+                    &[input],
+                )])
+                .unwrap();
+        }
+    }
+
+    fn db(
+        conn: &mut rusqlite::Connection,
+    ) -> WalletDb<&mut rusqlite::Connection, Network, HostClock, ChaCha20Rng> {
+        WalletDb::from_connection(conn, NET, HostClock, ChaCha20Rng::from_seed([7; 32]))
+    }
+
+    /// A UFVK as a third-party wallet derives it, with a Sapling key.
+    fn full_ufvk(seed: &[u8; 32], index: u32) -> UnifiedFullViewingKey {
+        UnifiedSpendingKey::from_seed(&NET, seed, index.try_into().unwrap())
+            .unwrap()
+            .to_unified_full_viewing_key()
+    }
+
+    /// A UFVK as OneKey builds it (keys runtime `ufvkFromAccountKeys`):
+    /// transparent and Orchard only.
+    fn ufvk(seed: &[u8; 32], index: u32) -> UnifiedFullViewingKey {
+        use zcash_address::unified::{Fvk, Ufvk};
+        let (net, full) = Ufvk::decode(&full_ufvk(seed, index).encode(&NET)).unwrap();
+        let items = full
+            .items()
+            .into_iter()
+            .filter(|item| matches!(item, Fvk::P2pkh(_) | Fvk::Orchard(_)))
+            .collect();
+        let onekey = Ufvk::try_from_items(items).unwrap().encode(&net);
+        UnifiedFullViewingKey::decode(&NET, &onekey).unwrap()
+    }
+
+    fn taddr(ufvk: &UnifiedFullViewingKey, index: u32) -> TransparentAddress {
+        ufvk.transparent()
+            .unwrap()
+            .derive_external_ivk()
+            .unwrap()
+            .derive_address(NonHardenedChildIndex::from_index(index).unwrap())
+            .unwrap()
+    }
+
+    fn receive_orchard(encoded: &str) -> orchard::Address {
+        match zcash_keys::address::Address::decode(&NET, encoded) {
+            Some(zcash_keys::address::Address::Unified(ua)) => *ua.orchard().unwrap(),
+            _ => panic!("not a unified address"),
+        }
+    }
+
+    /// The address the Receive page shows (keys runtime policy "orchard").
+    fn receive_address(ufvk: &UnifiedFullViewingKey) -> zcash_keys::address::UnifiedAddress {
+        ufvk.default_address(UnifiedAddressRequest::ORCHARD)
+            .unwrap()
+            .0
+    }
+
+    /// An Ironwood bundle paying `recipient`, and the payment's action index.
+    /// The proof and signatures are placeholders: storing a transaction never
+    /// verifies them.
+    fn ironwood_payment(
+        recipient: orchard::Address,
+    ) -> (orchard::Bundle<OrchardAuthorized, ZatBalance>, usize) {
+        let version = BundleVersion::ironwood_v3();
+        let mut builder = OrchardBuilder::new(
+            BundleType::DEFAULT,
+            version,
+            version.default_flags(),
+            Anchor::empty_tree(),
+        )
+        .unwrap();
+        builder
+            .add_output(None, recipient, NoteValue::from_raw(20_000), [0; 512])
+            .unwrap();
+        let mut rng = ChaCha20Rng::from_seed([3; 32]);
+        let (bundle, meta) = builder.build::<ZatBalance>(&mut rng).unwrap().unwrap();
+        let proof_len = Proof::expected_proof_size(bundle.actions().len());
+        let bundle = bundle.map_authorization(
+            &mut rng,
+            |_, _, _| Signature::from([0; 64]),
+            |_, _| {
+                OrchardAuthorized::from_parts(
+                    Proof::new(vec![0; proof_len]),
+                    Signature::from([0; 64]),
+                )
+            },
+        );
+        (bundle, meta.output_action_index(0).unwrap())
+    }
+
+    fn transaction(
+        input: OutPoint,
+        outputs: Vec<TxOut>,
+        ironwood: Option<orchard::Bundle<OrchardAuthorized, ZatBalance>>,
+    ) -> Transaction {
+        let transparent = Bundle {
+            vin: vec![TxIn::from_parts(input, Script::default(), u32::MAX)],
+            vout: outputs,
+            authorization: Authorized,
+        };
+        TransactionData::<zcash_primitives::transaction::Authorized>::from_parts_v6(
+            BranchId::Nu6_3,
+            0,
+            BlockHeight::from_u32(MINED + 40),
+            Some(transparent),
+            None,
+            None,
+            ironwood,
+        )
+        .freeze()
+        .unwrap()
+    }
+
+    fn pay(address: &TransparentAddress) -> TxOut {
+        TxOut::new(Zatoshis::const_from_u64(20_000), address.script().into())
+    }
+
+    #[test]
+    fn enhanced_transparent_payment_to_a_sibling_names_its_t_address() {
+        let mut wallet = Wallet::new(2);
+        let input = wallet.fund(0);
+        let sibling = taddr(&wallet.accounts[1].1, 0).encode(&NET);
+        let tx = transaction(input, vec![pay(&taddr(&wallet.accounts[1].1, 0))], None);
+        wallet.enhance(&tx);
+
+        assert_eq!(wallet.row(0, &tx)["recipient"], sibling);
+        assert_eq!(wallet.external(0, &tx)[0]["address"], sibling);
+    }
+
+    #[test]
+    fn removing_the_paid_sibling_keeps_its_t_address() {
+        let mut wallet = Wallet::new(2);
+        let input = wallet.fund(0);
+        let sibling = taddr(&wallet.accounts[1].1, 0).encode(&NET);
+        let tx = transaction(input, vec![pay(&taddr(&wallet.accounts[1].1, 0))], None);
+        wallet.enhance(&tx);
+        wallet.remove(1);
+
+        // Upstream rewrote the payment to the sibling's address-table UA.
+        assert!(wallet.stored_payment().0.starts_with("u1"));
+        assert_eq!(wallet.row(0, &tx)["recipient"], sibling);
+        assert_eq!(wallet.external(0, &tx)[0]["address"], sibling);
+    }
+
+    #[test]
+    fn enhanced_shielded_payment_to_a_sibling_names_its_receive_address() {
+        let mut wallet = Wallet::new(2);
+        let input = wallet.fund(0);
+        let receive = receive_address(&wallet.accounts[1].1);
+        let (bundle, _) = ironwood_payment(*receive.orchard().unwrap());
+        let tx = transaction(input, vec![], Some(bundle));
+        wallet.enhance(&tx);
+        let expected = receive.encode(&NET);
+
+        // Upstream stores the sibling's address-table UA, which adds receivers
+        // the payer never saw.
+        assert_ne!(wallet.stored_payment().0, expected);
+        assert_eq!(wallet.row(0, &tx)["recipient"], expected);
+        assert_eq!(wallet.external(0, &tx)[0]["address"], expected);
+
+        wallet.remove(1);
+        assert_eq!(wallet.row(0, &tx)["recipient"], expected);
+        assert_eq!(wallet.external(0, &tx)[0]["address"], expected);
+    }
+
+    #[test]
+    fn a_local_send_keeps_an_entered_address_unless_it_has_the_address_table_shape() {
+        use ReceiverRequirement::{Omit, Require};
+        let payee = full_ufvk(&[4; 32], 0);
+        let address = |request| payee.default_address(request).unwrap().0.encode(&NET);
+        let all = address(UnifiedAddressRequest::unsafe_custom(
+            Require, Require, Require,
+        ));
+        let orchard_only = address(UnifiedAddressRequest::ORCHARD);
+        let orchard_p2pkh = address(UnifiedAddressRequest::unsafe_custom(Require, Omit, Require));
+        for (entered, shown) in [
+            (all.clone(), all),
+            (orchard_only.clone(), orchard_only.clone()),
+            // The shape upstream substitutes for a sibling account's address.
+            (orchard_p2pkh, orchard_only),
+        ] {
+            let mut wallet = Wallet::new(1);
+            let input = wallet.fund(0);
+            let (bundle, index) = ironwood_payment(receive_orchard(&entered));
+            let tx = transaction(input.clone(), vec![], Some(bundle));
+            wallet.record_local_send(&tx, input, index, &entered);
+
+            assert_eq!(wallet.row(0, &tx)["recipient"], shown);
+            assert_eq!(wallet.external(0, &tx)[0]["address"], shown);
+        }
+    }
+
+    #[test]
+    fn a_local_send_to_a_removed_sibling_names_its_receive_address() {
+        let mut wallet = Wallet::new(2);
+        let input = wallet.fund(0);
+        let receive = receive_address(&wallet.accounts[1].1).encode(&NET);
+        let (bundle, index) = ironwood_payment(receive_orchard(&receive));
+        let tx = transaction(input.clone(), vec![], Some(bundle));
+        wallet.record_local_send(&tx, input, index, &receive);
+        assert_eq!(wallet.stored_payment(), (receive.clone(), false));
+        // Status observation fetches the sent transaction and stores it again,
+        // which links the payment to the sibling.
+        wallet.enhance(&tx);
+        assert_eq!(wallet.stored_payment(), (receive.clone(), true));
+        // Removing the sibling rewrites it to an address-table UA.
+        wallet.remove(1);
+        let (stored, _) = wallet.stored_payment();
+        assert_ne!(stored, receive);
+        let (_, rewritten) = unified::Address::decode(&stored).unwrap();
+        let mut kinds = rewritten
+            .items()
+            .iter()
+            .map(|receiver| match receiver {
+                unified::Receiver::Orchard(_) => "orchard",
+                unified::Receiver::P2pkh(_) => "p2pkh",
+                _ => "other",
+            })
+            .collect::<Vec<_>>();
+        kinds.sort_unstable();
+        assert_eq!(kinds, ["orchard", "p2pkh"]);
+
+        assert_eq!(wallet.row(0, &tx)["recipient"], receive);
+        assert_eq!(wallet.external(0, &tx)[0]["address"], receive);
+    }
+
+    #[test]
+    fn the_first_external_output_is_the_recipient() {
+        let mut wallet = Wallet::new(1);
+        let input = wallet.fund(0);
+        let payee = ufvk(&[4; 32], 0);
+        let first = taddr(&payee, 7);
+        let second = taddr(&payee, 3);
+        let tx = transaction(input, vec![pay(&first), pay(&second)], None);
+        wallet.enhance(&tx);
+
+        let row = wallet.row(0, &tx);
+        assert_eq!(row["externalOutputCount"], 2);
+        assert_eq!(row["recipient"], first.encode(&NET));
+    }
+
+    #[test]
+    fn unparseable_or_plain_addresses_are_returned_unchanged() {
+        for pool in [0, 3, 4] {
+            assert_eq!(paid_address("synthetic", pool, false), "synthetic");
+        }
+        let t = taddr(&ufvk(&[4; 32], 0), 0).encode(&NET);
+        assert_eq!(paid_address(&t, 0, false), t);
+        let receive = receive_address(&ufvk(&[4; 32], 0)).encode(&NET);
+        assert_eq!(paid_address(&receive, 4, false), receive);
     }
 }
