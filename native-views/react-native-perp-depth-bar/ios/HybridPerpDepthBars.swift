@@ -111,22 +111,24 @@ final class HybridPerpDepthBars: HybridPerpDepthBarsSpec {
   /// path the prop uses — only the data source differs.
   func setDepth(buffer: ArrayBuffer) throws {
     let count = buffer.size / 4
-    guard count > 0 else {
-      percents = []
-      return
-    }
-    // `buffer.data` is a `UInt8` pointer; reinterpret it as little-endian
-    // Float32. iOS (arm/x86) is little-endian and JS `Float32Array` is too, so
-    // an unaligned little-endian load matches the prop semantics exactly.
     var depths = [Double](repeating: 0, count: count)
-    let raw = UnsafeRawPointer(buffer.data)
-    for i in 0..<count {
-      let bits = raw.loadUnaligned(fromByteOffset: i * 4, as: UInt32.self)
-      depths[i] = Double(Float(bitPattern: UInt32(littleEndian: bits)))
+    if count > 0 {
+      // `buffer.data` is a `UInt8` pointer; reinterpret it as little-endian
+      // Float32. iOS (arm/x86) is little-endian and JS `Float32Array` is too, so
+      // an unaligned little-endian load matches the prop semantics exactly.
+      let raw = UnsafeRawPointer(buffer.data)
+      for i in 0..<count {
+        let bits = raw.loadUnaligned(fromByteOffset: i * 4, as: UInt32.self)
+        depths[i] = Double(Float(bitPattern: UInt32(littleEndian: bits)))
+      }
     }
-    // Feed through the single source of truth so the clamp/target/easing logic
-    // is byte-for-byte identical to the `percents` prop path.
-    percents = depths
+    // Finish reading the caller's buffer before publishing Swift-owned values.
+    // Layout and its layer state are owned by the main thread.
+    if Thread.isMainThread {
+      percents = depths
+    } else {
+      DispatchQueue.main.async { [weak self] in self?.percents = depths }
+    }
   }
 
   /// Imperatively update the per-row price/size text — companion to `setDepth`
@@ -135,8 +137,16 @@ final class HybridPerpDepthBars: HybridPerpDepthBarsSpec {
   /// → `performLayout` path the prop setters use (REACT-NATIVE-1JZ). Call in the
   /// SAME frame as `setDepth` so bar fill and row text share one source frame.
   func setText(prices: [String], sizes: [String]) throws {
-    self.prices = prices
-    self.sizes = sizes
+    if Thread.isMainThread {
+      self.prices = prices
+      self.sizes = sizes
+    } else {
+      DispatchQueue.main.async { [weak self] in
+        guard let self else { return }
+        self.prices = prices
+        self.sizes = sizes
+      }
+    }
   }
 
   private func handleTap(atY y: CGFloat) {
@@ -150,8 +160,7 @@ final class HybridPerpDepthBars: HybridPerpDepthBarsSpec {
   }
 
   private func scheduleLayout() {
-    // Imperative setDepth/setText run on the JS thread (off-main); `setNeedsLayout`
-    // must be issued on the main thread.
+    // UIKit layout requests belong on the main thread.
     if Thread.isMainThread {
       view.setNeedsLayout()
     } else {
