@@ -44,6 +44,19 @@ All notable changes to this project will be documented in this file.
 - Stop tracking `nitrogen/generated` for `react-native-image` and `react-native-native-list`. Every other Nitro package already ignores `nitrogen/` and regenerates it from the spec at release time; these two were missing a package `.gitignore`, so 117 generated files rode along in every diff that touched a prop. `react-native-native-list` now runs `yarn nitrogen` in its `release` script like the other view packages, and local builds need `yarn nitrogen` in the package before the first native build.
 - No version bump here; these changes ship with the next release. Note that 3.0.157 was published from this branch before the review fixes landed and should not be used.
 
+## [6.7.0-8] - 2026-10-22
+
+### Features
+- **native-overlay**: Publish the independent native and Web overlay hosts from main, including ordered levels, page ownership, dismissal and responsive draft retention.
+- **bottom-tabs (Android)**: Blur the floating tab bar backdrop on supported hardware-rendered Android windows and blend the navigation bar with the tab surface.
+
+### Bug Fixes
+- **native-list**: Contain input-validation failures at the component boundary, preserve the last valid snapshot and log sanitized warnings without crashing the host.
+
+### Chores
+- Publish all 43 regular native-module and native-view packages at the exact version `6.7.0-8` under `latest`; synchronize internal dependencies and the example lockfiles.
+- Includes the merged main changes through `630035a24` (PRs #137, #160 and #162). Desktop Windows and chain-runtime packages retain their independent release workflows.
+
 ## [3.0.156] - 2026-09-21
 
 ### Features
