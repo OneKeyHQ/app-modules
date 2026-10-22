@@ -232,6 +232,12 @@ request ─► queued ─► active ─► (enter anim) presented
 - Content stays mounted until `finalize`. This replaces today's hardcoded
   timers: the Dialog 300 ms portal destroy, the ColorPicker 300 ms, the
   ActionList and Select 150 ms waits, and the DialogLoading 50 ms delays.
+- On Android, moving the same React child between its hidden staging view and
+  the entry host must release an in-progress transition held by the previous
+  parent before the new parent adds it. Completing that previous transition
+  later must not detach the child from its new parent. Animated closing moves
+  the child back after exit completion; reopening during exit keeps the same
+  child and entry without reporting a completed dismissal.
 - A queued entry is promoted only after the previous entry in its lane is
   finalized, so exit and enter never overlap. `replace` is the exception: the
   new entry enters while the replaced one exits.
@@ -407,6 +413,9 @@ Automated (P0):
   blockers, input readiness, canceled key-up, global/page precedence,
   suspension and blocking-only accessibility isolation. It also checks live
   host reuse, Activity isolation and rebuilding after a cleared weak value.
+- `NativeOverlayMotionTest` exercises the production Android view's transition
+  reparenting in both directions, including the exit-completion staging path,
+  old-parent transition completion after the move, and reopen during exit.
 - `src/__tests__/pageIsolation.web.test.ts` mounts a real React portal in a
   DOM host and verifies late suspension, level ordering and restoration after
   the blocking entry is removed.
