@@ -10,6 +10,7 @@ import type {
 } from '../models';
 import {
   applyRowPatches,
+  serializePatches,
   serializeSnapshot,
   validatePatches,
   validateSnapshot,
@@ -862,6 +863,50 @@ describe('NativeList model validation', () => {
     );
   });
 
+  it.each([' btc', 'btc ', '\tbtc\n', '\u00a0btc\u3000'])(
+    'preserves surrounding whitespace in opaque keys: %j',
+    (key) => {
+      const initial = {
+        ...snapshot([row(key), row('btc')]),
+        selection: {
+          mode: 'multiple' as const,
+          selectedKeys: [key],
+          rowPressToggles: true,
+        },
+      };
+      expect(validateSnapshot(initial)).toBe(initial);
+      expect(JSON.parse(serializeSnapshot(initial)).rows[0].key).toBe(key);
+      const next = applyRowPatches(initial, [
+        { type: 'identity', key, changes: { title: 'Updated' } },
+      ]);
+      expect(next.rows[0]).toMatchObject({ key, title: 'Updated' });
+      expect(next.rows[1]).toBe(initial.rows[1]);
+      expect(next.selection?.selectedKeys).toEqual([key]);
+      expect(() => validateSnapshot(snapshot([row(key), row(key)]))).toThrow(
+        'duplicate key'
+      );
+    }
+  );
+
+  it.each(['', ' ', '\t\n', '\u00a0\u3000', 'x'.repeat(257)])(
+    'rejects blank or oversized keys: %j',
+    (key) => {
+      expect(() => validateSnapshot(snapshot([row(key)]))).toThrow(
+        'rows[0].key'
+      );
+      expect(() =>
+        validatePatches([
+          { type: 'identity', key, changes: { title: 'Updated' } },
+        ])
+      ).toThrow('patches[0].key');
+    }
+  );
+
+  it('preserves the 256-code-unit key limit with surrounding whitespace', () => {
+    const key = ` ${'x'.repeat(254)} `;
+    expect(validateSnapshot(snapshot([row(key)])).rows[0]?.key).toBe(key);
+  });
+
   it('rejects duplicate stable keys', () => {
     expect(() => validateSnapshot(snapshot([row('btc'), row('btc')]))).toThrow(
       'duplicate key'
@@ -1238,6 +1283,169 @@ describe('NativeList patches', () => {
         } as unknown as RowPatch,
       ])
     ).toThrow('bodyLines');
+  });
+});
+
+describe('NativeList production validation', () => {
+  const environment = globalThis as typeof globalThis & { __DEV__: boolean };
+  const development = environment.__DEV__;
+  beforeEach(() => {
+    environment.__DEV__ = false;
+  });
+  afterEach(() => {
+    environment.__DEV__ = development;
+  });
+
+  it('keeps production identity and text without enforcing display budgets', () => {
+    const key = ` ${'k'.repeat(257)} `;
+    const input = snapshot([
+      {
+        ...row(key),
+        title: 'T'.repeat(4097),
+        style: { title: { token: '$bodySm' } },
+      },
+    ]);
+    const next = validateSnapshot(input);
+    expect(next.rows[0]).toMatchObject({
+      key,
+      title: input.rows[0].type === 'identity' ? input.rows[0].title : '',
+      style: { title: { fontSize: 12, lineHeight: 16 } },
+    });
+    expect(input.rows[0]).toMatchObject({
+      style: { title: { token: '$bodySm' } },
+    });
+  });
+
+  it.each([
+    { ...row('account'), presentation: 'accountSelector', height: 56 },
+    marketRow(),
+  ] as const)('rejects missing required $type leading visuals', (validRow) => {
+    const input = snapshot([validRow]);
+    expect(validateSnapshot(input)).toEqual(input);
+    const invalidRow = { ...validRow };
+    Reflect.deleteProperty(invalidRow, 'leading');
+    expect(() => validateSnapshot(snapshot([invalidRow as RowModel]))).toThrow(
+      'rows[0].leading: must be an object'
+    );
+  });
+
+  it('normalizes absent images and patch typography before serialization', () => {
+    const input = snapshot([
+      {
+        ...row('image'),
+        leading: {
+          kind: 'token',
+          fallbackText: 'I',
+          image: { uri: ' ', width: 32, height: 32 },
+        },
+      },
+    ]);
+    expect(validateSnapshot(input).rows[0]).toMatchObject({
+      leading: { fallbackText: 'I', image: undefined },
+    });
+    const patches: RowPatch[] = [
+      {
+        type: 'identity',
+        key: 'image',
+        changes: {
+          style: { title: { token: '$bodyLg' } },
+          leading: { kind: 'token', image: { uri: '', width: 32, height: 32 } },
+        },
+      },
+    ];
+    expect(validatePatches(patches)[0]).toMatchObject({
+      changes: {
+        style: { title: { fontSize: 16, lineHeight: 24 } },
+        leading: { image: undefined },
+      },
+    });
+    expect(
+      applyRowPatches(validateSnapshot(input), patches).rows[0]
+    ).toMatchObject({ style: { title: { fontSize: 16 } } });
+  });
+
+  it('allows display index titles and empty patch no-ops', () => {
+    const headers: RowModel[] = ['a', 'b'].map((key) => ({
+      type: 'sectionHeader',
+      key,
+      sectionKey: key,
+      indexTitle: ' Same title ',
+      title: key,
+    }));
+    expect(validateSnapshot(snapshot(headers)).rows).toHaveLength(2);
+    expect(
+      validatePatches([{ type: 'identity', key: 'a', changes: {} }])
+    ).toEqual([]);
+  });
+
+  it('keeps empty image patches consistent with their native JSON payload', () => {
+    const initial = snapshot([
+      {
+        type: 'mediaTile',
+        key: 'media',
+        variant: 'gallery',
+        title: 'Image',
+        image: { uri: 'https://example.com/image.png', width: 32, height: 32 },
+      },
+    ]);
+    const patches: RowPatch[] = [
+      {
+        type: 'mediaTile',
+        key: 'media',
+        changes: { image: { uri: '', width: 32, height: 32 } },
+      },
+    ];
+    const nativePatches = JSON.parse(serializePatches(patches)) as RowPatch[];
+    expect(serializeSnapshot(applyRowPatches(initial, patches))).toBe(
+      serializeSnapshot(applyRowPatches(initial, nativePatches))
+    );
+  });
+
+  it('still rejects duplicate identities, unserializable input and invalid renderer shapes', () => {
+    expect(() =>
+      validateSnapshot(snapshot([row('same'), row('same')]))
+    ).toThrow('duplicate');
+    expect(() =>
+      validateSnapshot(snapshot([{ ...row('x'), height: Number.NaN }]))
+    ).toThrow('finite');
+    expect(() =>
+      validateSnapshot(
+        snapshot([{ ...row('x'), type: 'unknown' } as unknown as RowModel])
+      )
+    ).toThrow('supported');
+    expect(() =>
+      validateSnapshot(
+        snapshot([{ ...row('x'), trailing: [null] } as unknown as RowModel])
+      )
+    ).toThrow('object');
+    expect(() =>
+      applyRowPatches(snapshot(), [
+        { type: 'identity', key: 'missing', changes: { title: 'No' } },
+      ])
+    ).toThrow('unknown');
+  });
+
+  it('retains complete assertions in development', () => {
+    environment.__DEV__ = true;
+    expect(() => validateSnapshot(snapshot([row('k'.repeat(257))]))).toThrow(
+      '256'
+    );
+    expect(() =>
+      validateSnapshot(
+        snapshot([
+          {
+            ...row('x'),
+            leading: {
+              kind: 'token',
+              image: { uri: '', width: 32, height: 32 },
+            },
+          },
+        ])
+      )
+    ).toThrow('empty');
+    expect(() =>
+      validatePatches([{ type: 'identity', key: 'x', changes: {} }])
+    ).toThrow('at least one');
   });
 });
 

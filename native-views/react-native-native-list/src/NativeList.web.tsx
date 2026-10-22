@@ -21,7 +21,13 @@ import {
   validateOffset,
   type NormalizedPositionScroll,
 } from './scrolling';
-import { applyRowPatches, validateSnapshot } from './validation';
+import {
+  applyRowPatches,
+  containNativeListInput,
+  emptyNativeListSnapshot,
+  validatePatches,
+  validateSnapshot,
+} from './validation';
 import {
   NativeListWebEngine,
   type NativeListWebCallbacks,
@@ -83,14 +89,14 @@ export function preloadNativeListAvatarImages(
 export const NativeList = forwardRef<NativeListRef, NativeListProps>(
   function NativeList(
     {
-      snapshot,
+      snapshot: inputSnapshot,
       listHeader,
       listEmpty,
       listFooter,
       topOverlay: _topOverlay,
       topScrollEdgeEffect: _topScrollEdgeEffect,
       webScrollHost,
-      webStickyInset = 0,
+      webStickyInset: inputStickyInset = 0,
       scrollPositionThresholds: _scrollPositionThresholds,
       onScrollPositionThresholdChange: _onScrollPositionThresholdChange,
       webVirtualizationEnabled = true,
@@ -113,6 +119,24 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     },
     forwardedRef
   ) {
+    const acceptedSnapshotRef = useRef<NativeListSnapshot>(
+      emptyNativeListSnapshot()
+    );
+    const initializedSnapshot = useRef(false);
+    const webStickyInset = useMemo(
+      () =>
+        containNativeListInput(() => {
+          if (!Number.isFinite(inputStickyInset) || inputStickyInset < 0)
+            throw new Error('webStickyInset must be finite and non-negative');
+          return inputStickyInset;
+        }) ?? 0,
+      [inputStickyInset]
+    );
+    const preparedSnapshot = useMemo(
+      () => containNativeListInput(() => validateSnapshot(inputSnapshot)),
+      [inputSnapshot]
+    );
+    const snapshot = preparedSnapshot ?? acceptedSnapshotRef.current;
     const fontFamiliesJson = useNativeListFontFamiliesJson();
     const fontFamiliesJsonRef = useRef(fontFamiliesJson);
     fontFamiliesJsonRef.current = fontFamiliesJson;
@@ -188,13 +212,14 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
           ? ownedScrollHost
           : undefined
         : webScrollHost;
-    if (!Number.isFinite(webStickyInset) || webStickyInset < 0)
-      throw new Error('webStickyInset must be finite and non-negative');
     const engineRef = useRef<NativeListWebEngine | undefined>(undefined);
     const webVirtualizationEnabledRef = useRef(webVirtualizationEnabled);
     webVirtualizationEnabledRef.current = webVirtualizationEnabled;
     const validatedSnapshot = useMemo(
-      () => normalizeWebSnapshot(snapshot, hasEmptySlot, useSlotLayout),
+      () =>
+        containNativeListInput(() =>
+          normalizeWebSnapshot(snapshot, hasEmptySlot, useSlotLayout)
+        ) ?? acceptedSnapshotRef.current,
       [snapshot, hasEmptySlot, useSlotLayout]
     );
     const snapshotRef = useRef(validatedSnapshot);
@@ -203,7 +228,12 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     if (snapshotPropRef.current !== validatedSnapshot) {
       snapshotPropRef.current = validatedSnapshot;
       snapshotRef.current = validatedSnapshot;
+      acceptedSnapshotRef.current = validatedSnapshot;
       synchronizeSlots(snapshot);
+    }
+    if (!initializedSnapshot.current) {
+      acceptedSnapshotRef.current = validatedSnapshot;
+      initializedSnapshot.current = true;
     }
     const appliedSnapshotRef = useRef<NativeListSnapshot | undefined>(
       undefined
@@ -227,26 +257,28 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
         }>
       | undefined
     >(
-      initialScrollIndex === undefined && initialScrollKey === undefined
-        ? undefined
-        : initialScrollIndex !== undefined
-        ? normalizeIndexScroll({
-            index: initialScrollIndex,
-            animated: false,
-            viewPosition: initialScrollViewPosition,
-            viewOffset: initialScrollViewOffset,
-          })
-        : {
-            key: initialScrollKey,
-            scroll: normalizePositionScroll(
-              {
-                animated: false,
-                viewPosition: initialScrollViewPosition,
-                viewOffset: initialScrollViewOffset,
-              },
-              'start'
-            ),
-          }
+      containNativeListInput(() =>
+        initialScrollIndex === undefined && initialScrollKey === undefined
+          ? undefined
+          : initialScrollIndex !== undefined
+          ? normalizeIndexScroll({
+              index: initialScrollIndex,
+              animated: false,
+              viewPosition: initialScrollViewPosition,
+              viewOffset: initialScrollViewOffset,
+            })
+          : {
+              key: initialScrollKey,
+              scroll: normalizePositionScroll(
+                {
+                  animated: false,
+                  viewPosition: initialScrollViewPosition,
+                  viewOffset: initialScrollViewOffset,
+                },
+                'start'
+              ),
+            }
+      )
     );
     const didApplyInitialScroll = useRef(false);
     const scrollOptionsRef = useRef({
@@ -265,19 +297,23 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
         (useSlotLayout && !contentBounds)
       )
         return;
-      const engine = new NativeListWebEngine(
-        host,
-        snapshotRef.current,
-        callbacksRef.current,
-        webVirtualizationEnabledRef.current,
-        webSectionIndexContainerRef?.current as unknown as HTMLElement | null,
-        fontFamiliesJsonRef.current,
-        {
-          scrollHost: resolvedScrollHost as HTMLElement | undefined,
-          contentBounds: contentBounds ?? undefined,
-          ...scrollOptionsRef.current,
-        }
+      const engine = containNativeListInput(
+        () =>
+          new NativeListWebEngine(
+            host,
+            snapshotRef.current,
+            callbacksRef.current,
+            webVirtualizationEnabledRef.current,
+            webSectionIndexContainerRef?.current as unknown as HTMLElement | null,
+            fontFamiliesJsonRef.current,
+            {
+              scrollHost: resolvedScrollHost as HTMLElement | undefined,
+              contentBounds: contentBounds ?? undefined,
+              ...scrollOptionsRef.current,
+            }
+          )
       );
+      if (!engine) return;
       host.style.height = '';
       engineRef.current = engine;
       appliedSnapshotRef.current = snapshotRef.current;
@@ -337,20 +373,30 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
 
     useImperativeHandle(forwardedRef, () => ({
       applySnapshot(nextSnapshot) {
-        const next = normalizeWebSnapshot(nextSnapshot);
+        const next = containNativeListInput(() =>
+          normalizeWebSnapshot(nextSnapshot)
+        );
+        if (!next) return;
         engineRef.current?.applySnapshot(next);
         snapshotRef.current = next;
+        acceptedSnapshotRef.current = next;
         appliedSnapshotRef.current = next;
-        synchronizeSlots(nextSnapshot);
+        synchronizeSlots(next);
       },
       applyPatches(patches) {
-        if (patches.length > 0) {
+        const accepted = containNativeListInput(() => validatePatches(patches));
+        if (accepted && accepted.length > 0) {
           const engine = engineRef.current;
           if (engine) {
-            engine.applyPatches(patches);
+            engine.applyPatches(accepted);
             snapshotRef.current = engine.currentSnapshot();
-          } else
-            snapshotRef.current = applyRowPatches(snapshotRef.current, patches);
+          } else {
+            const next = containNativeListInput(() =>
+              applyRowPatches(snapshotRef.current, accepted)
+            );
+            if (next) snapshotRef.current = next;
+          }
+          acceptedSnapshotRef.current = snapshotRef.current;
         }
       },
       reconcileSelection(selectedKeys) {

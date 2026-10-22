@@ -129,6 +129,112 @@ const snapshot: NativeListSnapshot = {
 describe('NativeList imperative ref', () => {
   beforeEach(() => jest.clearAllMocks());
 
+  it.each(['ios', 'android'])(
+    'contains rejected production input on %s and keeps normalized native updates',
+    async (platform) => {
+      const environment = globalThis as typeof globalThis & {
+        __DEV__: boolean;
+      };
+      const development = environment.__DEV__;
+      const native = jest.requireMock('react-native') as {
+        Platform: { OS: string };
+      };
+      const previousPlatform = native.Platform.OS;
+      const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      environment.__DEV__ = false;
+      native.Platform.OS = platform;
+      const { NativeList } = jest.requireActual(
+        '../NativeList'
+      ) as typeof import('../NativeList');
+      const ref = createRef<NativeListRef>();
+      const key = ` ${'k'.repeat(257)} `;
+      const valid: NativeListSnapshot = {
+        schemaVersion: 1,
+        generation: 1,
+        layout: { kind: 'linear' },
+        rows: [
+          {
+            type: 'identity',
+            key,
+            title: 'T'.repeat(4097),
+            leading: {
+              kind: 'token',
+              fallbackText: 'T',
+              image: { uri: '', width: 32, height: 32 },
+            },
+            style: { title: { token: '$bodySm' } },
+          },
+        ],
+      };
+      const invalid = { ...valid, rows: [valid.rows[0], valid.rows[0]] };
+      let renderer: TestRenderer.ReactTestRenderer | undefined;
+      try {
+        await act(async () => {
+          renderer = TestRenderer.create(
+            <NativeList ref={ref} snapshot={invalid} testID="validation-mode" />
+          );
+        });
+        const latestSnapshot = () =>
+          JSON.parse(
+            mockFontRenders.mock.calls
+              .filter(([props]) => props.testID === 'validation-mode')
+              .slice(-1)[0][0].snapshotJson
+          ) as NativeListSnapshot;
+        expect(latestSnapshot().rows).toEqual([]);
+        await act(async () => {
+          renderer?.update(
+            <NativeList ref={ref} snapshot={valid} testID="validation-mode" />
+          );
+        });
+        expect(latestSnapshot().rows[0]).toMatchObject({
+          key,
+          style: { title: { fontSize: 12, lineHeight: 16 } },
+          leading: { fallbackText: 'T' },
+        });
+        const acceptedJson = JSON.stringify(latestSnapshot());
+        await act(async () => {
+          renderer?.update(
+            <NativeList ref={ref} snapshot={invalid} testID="validation-mode" />
+          );
+        });
+        expect(JSON.stringify(latestSnapshot())).toBe(acceptedJson);
+        expect(() =>
+          ref.current?.applyPatches([
+            {
+              type: 'identity',
+              key: 'missing-sensitive-key',
+              changes: { title: 'Rejected' },
+            },
+          ])
+        ).not.toThrow();
+        expect(mockNativeMethods.applyPatches).not.toHaveBeenCalled();
+        ref.current?.applyPatches([
+          {
+            type: 'identity',
+            key,
+            changes: { style: { title: { token: '$bodyLg' } } },
+          },
+        ]);
+        expect(
+          JSON.parse(mockNativeMethods.applyPatches.mock.calls[0][0])
+        ).toMatchObject([
+          {
+            key,
+            changes: { style: { title: { fontSize: 16, lineHeight: 24 } } },
+          },
+        ]);
+        expect(JSON.stringify(warning.mock.calls)).not.toContain(
+          'missing-sensitive-key'
+        );
+      } finally {
+        await act(async () => renderer?.unmount());
+        environment.__DEV__ = development;
+        native.Platform.OS = previousPlatform;
+        warning.mockRestore();
+      }
+    }
+  );
+
   it('forwards either edge style and disables it when cleared', async () => {
     const { NativeList } = jest.requireActual(
       '../NativeList'
@@ -516,23 +622,23 @@ describe('NativeList imperative ref', () => {
       ref.current?.applyPatches([
         { type: 'identity', key: 'wallet', changes: { disabled: true } },
       ])
-    ).toThrow('not selectable');
+    ).not.toThrow();
     expect(() =>
       ref.current?.applyPatches([
         { type: 'identity', key: 'missing', changes: { title: 'Missing' } },
       ])
-    ).toThrow('unknown row key');
+    ).not.toThrow();
     expect(() =>
       ref.current?.applyPatches([
         { type: 'system', key: 'wallet', changes: { message: 'Wrong type' } },
       ])
-    ).toThrow('not system');
+    ).not.toThrow();
     expect(() =>
       ref.current?.applySnapshot({
         ...selectedSnapshot,
         schemaVersion: 2,
       } as unknown as NativeListSnapshot)
-    ).toThrow('schemaVersion');
+    ).not.toThrow();
     expect(mockNativeMethods.applyPatches).not.toHaveBeenCalled();
     expect(mockNativeMethods.applySnapshot).toHaveBeenCalledTimes(1);
     expect(() =>
@@ -580,7 +686,7 @@ describe('NativeList imperative ref', () => {
       ref.current?.applyPatches([
         { type: 'identity', key: 'wallet', changes: { disabled: true } },
       ])
-    ).toThrow('not selectable');
+    ).not.toThrow();
 
     await act(async () => {
       renderer.update(
@@ -607,7 +713,7 @@ describe('NativeList imperative ref', () => {
         ref.current?.applyPatches([
           { type: 'identity', key: 'wallet', changes: { disabled: true } },
         ])
-      ).toThrow('not selectable');
+      ).not.toThrow();
     });
     await act(async () => {
       TestRenderer.create(
