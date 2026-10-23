@@ -111,6 +111,7 @@ func nativeListIcon(named name: String) -> UIImage? {
   // OneKey patch: official selector icon geometry.
   case "GlobusOutline": assetName = "onekey_selector_globus_outline"
   case "GasSolid": assetName = "onekey_gas_solid"
+  case "RefreshCcwOutline": assetName = "onekey_refresh_ccw_outline"
   case "CryptoCoinOutline": assetName = "onekey_crypto_coin_outline"
   case "ArrowBottomOutline": assetName = "onekey_arrow_bottom"
   case "ArrowTopOutline": assetName = "onekey_arrow_top"

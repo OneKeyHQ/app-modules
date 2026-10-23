@@ -26,6 +26,28 @@ prevention; there is no automatic fitting or shrinking pass.
 
 ## Public API and defaults
 
+### Segmented value-pair accessory
+
+Status: implemented in local source, unreleased. Focused validation and Web DOM
+tests pass; production iOS target compilation passes. Native instrumentation,
+full App builds and device acceptance remain separate gates. A `valuePair`
+trailing accessory retains its required `primary` and `secondary` fallback
+strings. It may also supply optional readonly `primaryTextSegments` and
+`secondaryTextSegments` arrays of existing `ValueTextSegment` objects. Missing
+or empty arrays display the corresponding fallback; nonempty arrays display
+their text runs. Callers provide matching fallback text, but validation does
+not enforce that match.
+
+Each array has at most 64 segments, each with string `text` of at most 4096
+characters and optional `style: 'subscript'`. Total text per array is at most
+4096 characters. Full snapshots and explicit patch replacements reject null,
+malformed arrays, unknown segment keys and other styles. An omitted patch field
+leaves the existing accessory unchanged; replacement without segments clears
+old runs. Subscript retains the existing 60-percent smaller-font convention
+after semantic text styling. Both lines retain their default size, tone, line
+height, right alignment and accessibility text. These fields add no action or
+hit target and travel in existing snapshot JSON without a Nitro ABI change.
+
 ### Identity row risk-management controls
 
 Status: implemented in source for local consumers, unreleased. Focused validation,
@@ -40,7 +62,17 @@ row activation remains unchanged. Departure, scroll, full rebind and destroy
 invalidate the anchor. Omission removes the icon in a full snapshot; omission
 in a patch leaves the existing value unchanged. An explicit replacement icon
 without `hoverActionKey` clears the old hover action. Removing the icon
-requires a full snapshot. `identity.style.leadingContentMaxWidthRatio`, when given,
+requires a full snapshot.
+
+On Web, `identity.secondaryTitleIcon` accepts the same descriptor and appears
+after `titleIcon`. Both icons retain independent hover/touch anchors at their
+own glyph rectangles; entering the other invalidates the previous anchor.
+Native renderers ignore this optional Web-only field. Full rebinding to one
+or no icons clears the removed glyph and anchor; explicit icon replacement
+without `hoverActionKey` clears that icon's old hover action. Neither icon
+creates a tab stop or separate click action.
+
+`identity.style.leadingContentMaxWidthRatio`, when given,
 must be finite and within `(0, 1]`; it caps the combined leading visual, gap
 and title content relative to the row's available inner width. Omission keeps
 the existing unrestricted layout. Long titles truncate inside the cap, and
@@ -104,6 +136,9 @@ The existing icon accessory accepts only one optional `buttonStyle` value,
 `tertiary`, for the source icon button's 38-point press frame, 24-point glyph,
 six-point padding, one-point border, seven-point visual overhang and pressed
 background. Omission preserves every existing icon accessory layout and action.
+The non-action `RefreshCcwOutline` accessory keeps the source's 16-point glyph
+and frame, with no independent press target. Rebinding it to an actionable
+icon restores the existing icon size and event behavior.
 
 ### iOS 26 fixed top scroll-edge overlay
 

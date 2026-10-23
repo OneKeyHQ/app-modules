@@ -287,7 +287,10 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
         image?.let { source ->
           val slot = overlaySlots[index]
           slot.view.visibility = INVISIBLE
-          slot.bind(source, "$key:overlay:$index", placeholder = placeholder) {
+          val circularImage = data.optInt("padding", 0) > 0 &&
+            data.optInt("width", data.optInt("size", 20)) == overlayHeight(data)
+          slot.bind(source, "$key:overlay:$index", placeholder = placeholder,
+            round = circularImage) {
             slot.view.visibility = if (it) VISIBLE else INVISIBLE
             fallbackGlyph.visibility = if (!it && fallbackData != null) VISIBLE else GONE
           }

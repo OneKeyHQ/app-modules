@@ -329,7 +329,8 @@ final class NativeListLeadingVisual: UIView {
     cornerBackdrop.frame = networkBackdrop.frame
     corner.frame = cornerBackdrop.frame.insetBy(dx: 1, dy: 1)
     unread.frame = logical(CGRect(x: bounds.width - 8, y: 0, width: 8, height: 8))
-    for (frame, data) in overlays {
+    for (index, overlay) in overlays.enumerated() {
+      let (frame, data) = overlay
       let size = CGFloat(data.double("size", default: 20))
       // Legacy wallet text badges size to their text (tabular 12pt + 4) at the line height.
       let textBadgeLine =
@@ -358,6 +359,15 @@ final class NativeListLeadingVisual: UIView {
         dx: data["text"] != nil ? overlayTextHorizontalInset ?? inset : inset,
         dy: data["text"] != nil && overlayTextHorizontalInset != nil ? 0 : inset)
       frame.subviews.forEach { $0.frame = contentFrame }
+      let slot = overlaySlots[index].view
+      if data.dictionary("image") != nil {
+        let circularImage = inset > 0 && width == height
+        slot.layer.cornerRadius = circularImage ? min(contentFrame.width, contentFrame.height) / 2 : 0
+        slot.clipsToBounds = circularImage
+      } else {
+        slot.layer.cornerRadius = 0
+        slot.clipsToBounds = false
+      }
     }
     dashedBorder.isHidden = visual.string("borderStyle") != "dashed"
     dashedBorder.strokeColor =

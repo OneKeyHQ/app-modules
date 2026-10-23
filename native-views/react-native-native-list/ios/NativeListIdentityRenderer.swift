@@ -616,6 +616,17 @@ final class NativeListIdentityCell: NativeListRendererCell {
       trailingStack.alignment = .center
       trailingStack.spacing = 8
     } else if accessories.count == 2,
+      (accessories[0].string("kind") == "valuePair"
+        && accessories[1].string("kind") == "chevron")
+        || (accessories[0].string("kind") == "icon"
+          && accessories[0].string("name") == "RefreshCcwOutline"
+          && accessories[0].string("actionKey").isEmpty
+          && accessories[1].string("kind") == "chevron")
+    {
+      trailingStack.axis = .horizontal
+      trailingStack.alignment = .center
+      trailingStack.spacing = 12
+    } else if accessories.count == 2,
       accessories[0].string("kind") == "icon",
       accessories[0].string("name") == "PencilOutline",
       accessories[1].string("kind") == "icon",
@@ -636,12 +647,13 @@ final class NativeListIdentityCell: NativeListRendererCell {
     trailingStack.isHidden = false
     if let gap = trailingStack.contentGap { root.setCustomSpacing(gap, after: mainStack) }
     if let inset = trailingStack.endInset { rightInset = -inset }
-    if item.data.string("presentation") == "accountSelector",
-      accessories.count == 1,
+    if accessories.count == 1,
+      (item.data.string("presentation") == "accountSelector"
+        || accessories[0].string("kind") == "valuePair"),
       let accessory = trailingStack.firstVisibleControl
     {
       // The vertical trailing stack has no stable intrinsic width, so keep its
-      // flexible space in the account title and subtitle column.
+      // flexible space in the title and subtitle column.
       let width = trailingStack.widthAnchor.constraint(equalTo: accessory.widthAnchor)
       width.isActive = true
       selectorConstraints.append(width)

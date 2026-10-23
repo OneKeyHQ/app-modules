@@ -226,7 +226,7 @@ function createIdentityRow(
       });
       column.insertBefore(segments, titleElement.nextSibling);
     }
-    if (row.titleIcon) {
+    if (row.titleIcon || row.secondaryTitleIcon) {
       const badgeLine = titleElement.querySelector<HTMLElement>(
         ':scope > .ok-native-list-badges'
       );
@@ -236,24 +236,29 @@ function createIdentityRow(
       while (titleElement.firstChild && titleElement.firstChild !== badgeLine)
         titleText.appendChild(titleElement.firstChild);
       titleElement.prepend(titleText);
-      const icon = primitives.iconAction(
-        row.titleIcon.name, undefined, undefined, row.titleIcon.tintColor
-      );
-      icon.className = 'ok-native-list-identity-title-icon';
-      if (row.titleIcon.hoverActionKey) {
-        setData(icon, 'nativeListHoverAction', row.titleIcon.hoverActionKey);
-        setData(icon, 'nativeListIconHelp', true);
-        markActionAnchorSource(icon, 'leadingAction');
-      }
-      if (row.titleIcon.accessibilityLabel)
-        icon.setAttribute('aria-label', row.titleIcon.accessibilityLabel);
-      else icon.setAttribute('aria-hidden', 'true');
-      titleText.after(icon);
+      const icons = [row.titleIcon, row.secondaryTitleIcon]
+        .filter((icon): icon is NonNullable<typeof icon> => icon !== undefined)
+        .map((descriptor) => {
+          const icon = primitives.iconAction(
+            descriptor.name, undefined, undefined, descriptor.tintColor
+          );
+          icon.className = 'ok-native-list-identity-title-icon';
+          if (descriptor.hoverActionKey) {
+            setData(icon, 'nativeListHoverAction', descriptor.hoverActionKey);
+            setData(icon, 'nativeListIconHelp', true);
+            markActionAnchorSource(icon, 'leadingAction');
+          }
+          if (descriptor.accessibilityLabel)
+            icon.setAttribute('aria-label', descriptor.accessibilityLabel);
+          else icon.setAttribute('aria-hidden', 'true');
+          return icon;
+        });
+      titleText.after(...icons);
       titleElement.style.display = 'flex';
       titleElement.style.alignItems = 'center';
       titleElement.style.gap = '4px';
     }
-    if (row.badges?.length && !row.titleIcon) {
+    if (row.badges?.length && !row.titleIcon && !row.secondaryTitleIcon) {
       const titleText = titleElement.querySelector<HTMLElement>(
         ':scope > [data-nl-slot="title"]'
       );

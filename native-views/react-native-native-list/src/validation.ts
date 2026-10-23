@@ -1091,29 +1091,52 @@ function assertTrailingAccessories(
     if (accessory.kind === 'valuePair') {
       assertTextTone(accessory.primaryTone, `${accessoryPath}.primaryTone`);
       assertTextTone(accessory.secondaryTone, `${accessoryPath}.secondaryTone`);
+      for (const field of ['primaryTextSegments', 'secondaryTextSegments'] as const) {
+        const segments = accessory[field];
+        if (segments === undefined) continue;
+        const segmentPath = `${accessoryPath}.${field}`;
+        if (!Array.isArray(segments) || segments.length > 64)
+          fail(segmentPath, 'must be an array of at most 64 segments');
+        let textLength = 0;
+        segments.forEach((segment, segmentIndex) => {
+          const path = `${segmentPath}[${segmentIndex}]`;
+          const entry = protocolObject(segment, path);
+          assertUnknownKeys(entry, ['text', 'style'], path, 'segment key');
+          if (typeof entry.text !== 'string' || entry.text.length > MAX_TEXT_LENGTH)
+            fail(`${path}.text`, `must be a string no longer than ${MAX_TEXT_LENGTH} characters`);
+          if (entry.style !== undefined && entry.style !== 'subscript')
+            fail(`${path}.style`, 'must be subscript when provided');
+          textLength += entry.text.length;
+        });
+        if (textLength > MAX_TEXT_LENGTH)
+          fail(segmentPath, `total text must be at most ${MAX_TEXT_LENGTH} characters`);
+      }
     }
   });
 }
 
 function assertIdentityExtras(
-  row: Pick<IdentityRow, 'titleIcon' | 'trailing' | 'style'>,
+  row: Pick<IdentityRow, 'titleIcon' | 'secondaryTitleIcon' | 'trailing' | 'style'>,
   path: string
 ): void {
-  if (row.titleIcon !== undefined) {
-    const icon = protocolObject(row.titleIcon, `${path}.titleIcon`);
+  for (const field of ['titleIcon', 'secondaryTitleIcon'] as const) {
+    const titleIcon = row[field];
+    if (titleIcon === undefined) continue;
+    const iconPath = `${path}.${field}`;
+    const icon = protocolObject(titleIcon, iconPath);
     assertUnknownKeys(icon, ['name', 'tintColor', 'accessibilityLabel', 'hoverActionKey'],
-      `${path}.titleIcon`, 'title icon key');
-    if (typeof row.titleIcon.name !== 'string' || !row.titleIcon.name.trim())
-      fail(`${path}.titleIcon.name`, 'must be non-blank');
-    if (row.titleIcon.tintColor !== undefined &&
-      (typeof row.titleIcon.tintColor !== 'string' ||
-        !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(row.titleIcon.tintColor)))
-      fail(`${path}.titleIcon.tintColor`, 'must be #RRGGBB or #RRGGBBAA');
-    if (row.titleIcon.accessibilityLabel !== undefined &&
-      typeof row.titleIcon.accessibilityLabel !== 'string')
-      fail(`${path}.titleIcon.accessibilityLabel`, 'must be a string');
-    if (row.titleIcon.hoverActionKey !== undefined)
-      assertKey(row.titleIcon.hoverActionKey, `${path}.titleIcon.hoverActionKey`);
+      iconPath, 'title icon key');
+    if (typeof titleIcon.name !== 'string' || !titleIcon.name.trim())
+      fail(`${iconPath}.name`, 'must be non-blank');
+    if (titleIcon.tintColor !== undefined &&
+      (typeof titleIcon.tintColor !== 'string' ||
+        !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(titleIcon.tintColor)))
+      fail(`${iconPath}.tintColor`, 'must be #RRGGBB or #RRGGBBAA');
+    if (titleIcon.accessibilityLabel !== undefined &&
+      typeof titleIcon.accessibilityLabel !== 'string')
+      fail(`${iconPath}.accessibilityLabel`, 'must be a string');
+    if (titleIcon.hoverActionKey !== undefined)
+      assertKey(titleIcon.hoverActionKey, `${iconPath}.hoverActionKey`);
   }
   const ratio = row.style?.leadingContentMaxWidthRatio;
   if (ratio !== undefined && (typeof ratio !== 'number' ||

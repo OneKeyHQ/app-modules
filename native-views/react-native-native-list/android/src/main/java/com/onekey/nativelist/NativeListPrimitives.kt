@@ -241,6 +241,7 @@ internal class OneKeyIconView(context: android.content.Context) : View(context) 
       mapOf(
         "GlobusOutline" to listOf(null),
         "GasSolid" to listOf(null),
+        "RefreshCcwOutline" to listOf(null),
         "CryptoCoinOutline" to listOf(null, null),
         "LockSolid" to listOf(null),
         "GoogleIllus" to
@@ -270,6 +271,7 @@ internal class OneKeyIconView(context: android.content.Context) : View(context) 
       mapOf(
         "GlobusOutline" to 24f,
         "GasSolid" to 24f,
+        "RefreshCcwOutline" to 24f,
         "CryptoCoinOutline" to 24f,
         "LockSolid" to 24f,
         "GoogleIllus" to 24f,
@@ -287,6 +289,7 @@ internal class OneKeyIconView(context: android.content.Context) : View(context) 
       mapOf(
         "GlobusOutline" to listOf(Path.FillType.EVEN_ODD),
         "GasSolid" to listOf(Path.FillType.EVEN_ODD),
+        "RefreshCcwOutline" to listOf(Path.FillType.WINDING),
         "CryptoCoinOutline" to listOf(Path.FillType.WINDING, Path.FillType.EVEN_ODD),
         "LockSolid" to listOf(Path.FillType.EVEN_ODD),
         "GoogleIllus" to
@@ -330,6 +333,10 @@ internal class OneKeyIconView(context: android.content.Context) : View(context) 
     // Exact 24x24 paths from app-monorepo packages/components Icon sources.
     private val iconPaths =
       mapOf(
+        "RefreshCcwOutline" to
+          listOf(
+            "M5 12a7 7 0 0 0 7 7 7.15 7.15 0 0 0 4.955-2h-2.943v-2h6v6h-2v-2.257A9.148 9.148 0 0 1 12 21a9 9 0 0 1-9-9v-1h2v1Zm1-6.754A9.148 9.148 0 0 1 12 3a9 9 0 0 1 9 9v1h-2v-1a7 7 0 0 0-7-7 7.15 7.15 0 0 0-4.955 2H10v2H4V3h2v2.246Z"
+          ),
         "GasSolid" to
           listOf(
             "M15 9h4v7h1V8.414L17.586 6 19 4.586l3 3V18h-5v-7h-2v8h1v2H2v-2h1V3h12zM6 9v2h6V9z"

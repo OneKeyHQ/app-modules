@@ -2052,6 +2052,57 @@ describe('web row style', () => {
     expect(single.textContent).toBe('One Two');
   });
 
+  it('renders both segmented value-pair lines and clears runs on a plain rebind', () => {
+    const base: IdentityRow = {
+      type: 'identity', key: 'tiny-pair', title: 'Tiny',
+      leading: { kind: 'icon', name: 'coin' },
+      trailing: [{
+        kind: 'valuePair', primary: '0.001', secondary: '$0.01',
+        primaryTextSegments: [{ text: '0.00' }, { text: '1', style: 'subscript' }],
+        secondaryTextSegments: [{ text: '$0.0' }, { text: '1', style: 'subscript' }],
+      }],
+      style: { value: { fontSize: 18, color: '#123456' } },
+    };
+    const rich = render(base);
+    const lines = rich.querySelectorAll<HTMLElement>('.ok-native-list-amounts > span');
+    expect(Array.from(lines, (line) => line.textContent)).toEqual(['0.001', '$0.01']);
+    expect(Array.from(rich.querySelectorAll<HTMLElement>('[data-nl-segment="subscript"]'),
+      (run) => [run.textContent, run.style.fontSize, run.style.color])).toEqual([
+      ['1', '11px', 'rgb(18, 52, 86)'], ['1', '11px', 'rgb(18, 52, 86)'],
+    ]);
+    const plain = render({ ...base, trailing: [{ kind: 'valuePair', primary: '10', secondary: '$2' }] });
+    expect(plain.textContent).toContain('10\n$2');
+    expect(plain.querySelector('[data-nl-segment="subscript"]')).toBeNull();
+    const empty = render({ ...base, trailing: [{
+      kind: 'valuePair', primary: '10', secondary: '$2',
+      primaryTextSegments: [], secondaryTextSegments: [],
+    }] });
+    expect(empty.textContent).toContain('10\n$2');
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const engine = new NativeListWebEngine(host, snapshot({ kind: 'sectioned' }, [base]), {}, false);
+    try {
+      const row = () => host.querySelector<HTMLElement>('[data-native-list-row-key="tiny-pair"]')!;
+      const wrapper = row();
+      expect(wrapper.querySelectorAll('[data-nl-segment="subscript"]')).toHaveLength(2);
+      engine.applySnapshot(snapshot({ kind: 'sectioned' }, [{
+        ...base, trailing: [{ kind: 'valuePair', primary: '10', secondary: '$2' }],
+      }]));
+      expect(row()).toBe(wrapper);
+      expect(row().querySelector('[data-nl-segment="subscript"]')).toBeNull();
+      expect(row().querySelector('.ok-native-list-amounts')?.textContent).toBe('10\n$2');
+      engine.applySnapshot(snapshot({ kind: 'sectioned' }, [{
+        ...base, trailing: [{ kind: 'valuePair', primary: '11', secondary: '$3',
+          primaryTextSegments: [], secondaryTextSegments: [] }],
+      }]));
+      expect(row()).toBe(wrapper);
+      expect(row().querySelector('.ok-native-list-amounts')?.textContent).toBe('11\n$3');
+    } finally {
+      engine.destroy();
+    }
+  });
+
   it('keeps the media leading gap independent of container alignment', () => {
     const body = render({
       type: 'mediaTile',
@@ -3005,6 +3056,142 @@ describe('complex renderer lifecycle', () => {
       global.Node = previousNode;
     }
   });
+  it('anchors two title help icons to their own rectangles and clears removed icons', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const row: IdentityRow = {
+      type: 'identity', key: 'two-help', title: 'ETH',
+      leading: { kind: 'token', image },
+      titleIcon: { name: 'TicketOutline', hoverActionKey: 'ticket-info' },
+      secondaryTitleIcon: { name: 'GasSolid', hoverActionKey: 'gas-info' },
+    };
+    const onRowAction = jest.fn();
+    const onActionAnchorInvalidated = jest.fn();
+    const engine = new NativeListWebEngine(host, snap(row), {
+      onRowAction, onActionAnchorInvalidated,
+    }, false);
+    const previousElement = global.Element;
+    const previousNode = global.Node;
+    global.Element = document.defaultView!.Element;
+    global.Node = document.defaultView!.Node;
+    const icons = () => host.querySelectorAll<HTMLElement>('.ok-native-list-identity-title-icon');
+    const pointer = (element: HTMLElement, type: string, pointerType: string) =>
+      element.dispatchEvent(Object.assign(
+        new document.defaultView!.Event(type, { bubbles: true }),
+        { pointerType }
+      ));
+    try {
+      expect(icons()).toHaveLength(2);
+      expect(Array.from(icons(), (icon) => icon.querySelectorAll('svg path').length))
+        .toEqual([2, 1]);
+      expect(icons()[0]!.querySelector('svg path')?.getAttribute('d'))
+        .toBe('M16 17.01h-2V15h2v2.01Zm0-4h-2V11h2v2.01Zm0-4h-2V7h2v2.01Z');
+      expect(Array.from(icons(), (icon) => icon.dataset.nativeListHoverAction))
+        .toEqual(['ticket-info', 'gas-info']);
+      expect(Array.from(icons(), (icon) => icon.tabIndex)).toEqual([-1, -1]);
+      icons()[0]!.getBoundingClientRect = () => ({
+        left: 10, top: 20, width: 20, height: 20,
+      } as DOMRect);
+      icons()[1]!.getBoundingClientRect = () => ({
+        left: 70, top: 80, width: 20, height: 20,
+      } as DOMRect);
+      pointer(icons()[0]!, 'pointerover', 'mouse');
+      const first = onRowAction.mock.calls[0]![0];
+      expect(first).toMatchObject({
+        actionKey: 'ticket-info',
+        anchor: { source: 'leadingAction', windowRect: { x: 10, y: 20, width: 20, height: 20 } },
+      });
+      engine.setActionAnchorState({ token: first.anchor.token, open: true });
+      pointer(icons()[1]!, 'pointerover', 'mouse');
+      const second = onRowAction.mock.calls[1]![0];
+      expect(second).toMatchObject({
+        actionKey: 'gas-info',
+        anchor: { source: 'leadingAction', windowRect: { x: 70, y: 80, width: 20, height: 20 } },
+      });
+      expect(second.anchor.token).not.toBe(first.anchor.token);
+      expect(onActionAnchorInvalidated).toHaveBeenCalledWith(
+        expect.objectContaining({ token: first.anchor.token })
+      );
+      engine.setActionAnchorState({ token: second.anchor.token, open: true });
+      pointer(icons()[1]!, 'pointerdown', 'touch');
+      expect(onActionAnchorInvalidated).toHaveBeenCalledWith(
+        expect.objectContaining({ token: second.anchor.token })
+      );
+      pointer(icons()[1]!, 'pointerdown', 'touch');
+      const touched = onRowAction.mock.calls[2]![0];
+      expect(touched).toMatchObject({
+        actionKey: 'gas-info',
+        anchor: { windowRect: { x: 70, y: 80, width: 20, height: 20 } },
+      });
+      expect(onRowAction.mock.calls.every(([action]) => action.actionKey !== 'press'))
+        .toBe(true);
+      engine.setActionAnchorState({ token: touched.anchor.token, open: true });
+      engine.applySnapshot(snap({ ...row, secondaryTitleIcon: undefined }));
+      expect(icons()).toHaveLength(1);
+      expect(onActionAnchorInvalidated).toHaveBeenCalledWith(
+        expect.objectContaining({ token: touched.anchor.token })
+      );
+      engine.applyPatches([{
+        type: 'identity', key: 'two-help',
+        changes: { titleIcon: { name: 'TicketOutline' } },
+      }]);
+      expect(icons()[0]!.dataset.nativeListHoverAction).toBeUndefined();
+      engine.applySnapshot(snap({ ...row, titleIcon: undefined, secondaryTitleIcon: undefined }));
+      expect(icons()).toHaveLength(0);
+    } finally {
+      engine.destroy();
+      global.Element = previousElement;
+      global.Node = previousNode;
+    }
+  });
+  it('renders the source refresh icon for missing detail and anchors its hover', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const row: IdentityRow = {
+      type: 'identity', key: 'missing-detail', title: 'Asset',
+      leading: { kind: 'token', image },
+      trailing: [{
+        kind: 'icon', name: 'RefreshCcwOutline', hoverActionKey: 'missing-detail',
+      }, { kind: 'chevron' }],
+    };
+    const onRowAction = jest.fn();
+    const engine = new NativeListWebEngine(host, snap(row), { onRowAction }, false);
+    const previousElement = global.Element;
+    const previousNode = global.Node;
+    global.Element = document.defaultView!.Element;
+    global.Node = document.defaultView!.Node;
+    try {
+      const refresh = host.querySelector<HTMLElement>(
+        '[data-native-list-hover-action="missing-detail"]'
+      )!;
+      expect(refresh.querySelectorAll('svg path')).toHaveLength(1);
+      expect(refresh.querySelector('svg path')?.getAttribute('d'))
+        .toContain('M5 12a7 7');
+      expect(refresh.tagName).toBe('SPAN');
+      expect(refresh.querySelector('svg')?.getAttribute('width')).toBe('16');
+      expect(refresh.querySelector('svg')?.getAttribute('height')).toBe('16');
+      expect(document.defaultView!.getComputedStyle(refresh).width).toBe('16px');
+      expect(document.defaultView!.getComputedStyle(refresh).height).toBe('16px');
+      refresh.getBoundingClientRect = () => ({
+        left: 30, top: 40, width: 24, height: 24,
+      } as DOMRect);
+      refresh.dispatchEvent(Object.assign(
+        new document.defaultView!.Event('pointerover', { bubbles: true }),
+        { pointerType: 'mouse' }
+      ));
+      expect(onRowAction).toHaveBeenCalledWith(expect.objectContaining({
+        rowKey: 'missing-detail', actionKey: 'missing-detail',
+        anchor: expect.objectContaining({ source: 'trailingAccessory', slot: 0,
+          windowRect: { x: 30, y: 40, width: 24, height: 24 } }),
+      }));
+    } finally {
+      engine.destroy();
+      global.Element = previousElement;
+      global.Node = previousNode;
+    }
+  });
   it('clears an explicit image skeleton on load, failure and rebind', () => {
     const { document } = new JSDOM('<!doctype html><body></body>').window;
     const host = document.createElement('div');
@@ -3144,6 +3331,7 @@ describe('complex renderer lifecycle', () => {
       const networkImage = host.querySelector<HTMLImageElement>(
         '.ok-native-list-visual-overlay img'
       )!;
+      expect(networkImage.style.borderRadius).toBe('50%');
       expect(host.querySelector('.ok-native-list-overlay-fallback')).toBeNull();
       networkImage.dispatchEvent(new document.defaultView!.Event('error'));
       expect(host.querySelector('.ok-native-list-visual-overlay img')).toBeNull();
@@ -3154,6 +3342,7 @@ describe('complex renderer lifecycle', () => {
       }));
       expect(host.querySelector('.ok-native-list-overlay-fallback')).toBeNull();
       expect(host.querySelector('.ok-native-list-tertiary-icon')).toBeNull();
+      expect(host.querySelector('.ok-native-list-visual-overlay img')).toBeNull();
     } finally {
       engine.destroy();
     }

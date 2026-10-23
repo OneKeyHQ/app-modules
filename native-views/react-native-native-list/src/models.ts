@@ -416,6 +416,8 @@ export type TrailingAccessory =
       kind: 'valuePair';
       primary: string;
       secondary: string;
+      primaryTextSegments?: readonly ValueTextSegment[];
+      secondaryTextSegments?: readonly ValueTextSegment[];
       primaryTone?: TextTone;
       secondaryTone?: TextTone;
     }>
@@ -518,6 +520,8 @@ export type IdentityRow = RowBase &
       /** Web-only anchored help from this icon; does not add a click action. */
       hoverActionKey?: string;
     }>;
+    /** Web-only additional help icon after titleIcon. */
+    secondaryTitleIcon?: IdentityRow['titleIcon'];
     subtitle?: string;
     tertiary?: string;
     tertiaryTone?: 'secondary' | 'info';
@@ -1001,6 +1005,7 @@ export type RowPatch =
           | CommonPatchFields
           | 'title'
           | 'titleIcon'
+          | 'secondaryTitleIcon'
           | 'subtitle'
           | 'tertiary'
           | 'tertiaryTone'

@@ -37,6 +37,7 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
   private val spinner = ProgressBar(context)
   private var boundCheckboxData: JSONObject? = null
   private val semanticValueViews = mutableListOf<TextView>()
+  private val segmentedValuePairs = mutableMapOf<TextView, JSONObject>()
   private var selectorUsesSourceScale = false
   private var checkboxUsesSelectorStyle = false
   private var checkboxCheckedColor = Color.BLACK
@@ -146,7 +147,12 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
       (checkbox.layoutParams as LayoutParams).marginStart = dp(12)
     for ((index, key) in listOf("value", "valueSecondary").withIndex()) {
       style.optJSONObject(key)?.let { value ->
-        semanticValueViews.getOrNull(index)?.let { applyStyledText(it, value) }
+        semanticValueViews.getOrNull(index)?.let { view ->
+          applyStyledText(view, value)
+          if (value.has("fontSize")) segmentedValuePairs[view]?.let { accessory ->
+            restorePairSubscriptSizes(view, accessory, value.optDouble("fontSize").toFloat())
+          }
+        }
       }
     }
     if (style.has("trailingGap")) {
@@ -161,6 +167,13 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
           previous = true
         }
       }
+    }
+    val pairedChevron = horizontal && (kinds == listOf("valuePair", "chevron") ||
+      (kinds == listOf("icon", "chevron") &&
+        descriptors.getJSONObject(0).optString("name") == "RefreshCcwOutline" &&
+        descriptors.getJSONObject(0).optString("actionKey").isEmpty()))
+    if (pairedChevron) {
+      (trailingIcons[1].layoutParams as LayoutParams).marginEnd = 0
     }
     visibility =
       if ((0 until childCount).any { getChildAt(it).visibility != GONE }) VISIBLE else GONE
@@ -203,6 +216,7 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
     clipChildren = true
     clipToPadding = true
     semanticValueViews.clear()
+    segmentedValuePairs.clear()
     boundCheckboxData = null
     trailingViews.forEachIndexed { index, v ->
       buttonDownEpochs[index] = -1
@@ -372,6 +386,7 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
         }
         "valuePair" -> {
           showTrailingValuePair(textIndex, accessory, theme)
+          segmentedValuePairs[trailingViews[textIndex]] = accessory
           semanticValueViews.add(trailingViews[textIndex++])
         }
         "checkbox" -> bindCheckbox(item, accessory, checkboxState)
@@ -529,8 +544,10 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
 
   private fun showTrailingValuePair(index: Int, accessory: JSONObject, theme: JSONObject?) {
     if (index !in trailingViews.indices) return
-    val primary = accessory.optString("primary")
-    val secondary = accessory.optString("secondary")
+    val primarySegments = accessory.optJSONArray("primaryTextSegments")
+    val secondarySegments = accessory.optJSONArray("secondaryTextSegments")
+    val primary = segmentTextOrFallback(primarySegments, accessory.optString("primary"))
+    val secondary = segmentTextOrFallback(secondarySegments, accessory.optString("secondary"))
     if (primary.isEmpty() && secondary.isEmpty()) return
     val value = SpannableStringBuilder()
     val primaryStart = value.length
@@ -550,6 +567,7 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
       value.length,
       Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
     )
+    applyPairSubscriptSizes(value, primarySegments, primaryStart, 16f)
     if (primary.isNotEmpty() && secondary.isNotEmpty()) value.append('\n')
     val secondaryStart = value.length
     value.append(secondary)
@@ -570,6 +588,7 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
       value.length,
       Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
     )
+    applyPairSubscriptSizes(value, secondarySegments, secondaryStart, 14f)
     val view = trailingViews[index]
     view.text = value
     view.maxLines = 2
@@ -579,6 +598,48 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
     view.fontFeatureSettings = "tnum"
     TextViewCompat.setLineHeight(view, dp(20))
     view.visibility = VISIBLE
+  }
+
+  private fun segmentTextOrFallback(segments: JSONArray?, fallback: String): String {
+    if (segments == null || segments.length() == 0) return fallback
+    return buildString {
+      for (index in 0 until segments.length()) append(segments.getJSONObject(index).optString("text"))
+    }
+  }
+
+  private fun applyPairSubscriptSizes(
+    value: SpannableStringBuilder,
+    segments: JSONArray?,
+    start: Int,
+    baseSize: Float,
+  ) {
+    if (segments == null) return
+    var offset = start
+    for (index in 0 until segments.length()) {
+      val segment = segments.getJSONObject(index)
+      val end = offset + segment.optString("text").length
+      if (end > offset && segment.optString("style") == "subscript")
+        value.setSpan(
+          AbsoluteSizeSpan(sp(kotlin.math.ceil(baseSize * 0.6).toFloat()).roundToInt(), true),
+          offset,
+          end,
+          Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+        )
+      offset = end
+    }
+  }
+
+  private fun restorePairSubscriptSizes(view: TextView, accessory: JSONObject, baseSize: Float) {
+    val primary = accessory.optJSONArray("primaryTextSegments")
+    val secondary = accessory.optJSONArray("secondaryTextSegments")
+    if ((primary?.length() ?: 0) == 0 && (secondary?.length() ?: 0) == 0) return
+    val value = SpannableStringBuilder(view.text)
+    applyPairSubscriptSizes(value, primary, 0, baseSize)
+    val primaryText = segmentTextOrFallback(primary, accessory.optString("primary"))
+    val secondaryStart = primaryText.length + if (primaryText.isNotEmpty() &&
+      segmentTextOrFallback(secondary, accessory.optString("secondary")).isNotEmpty()) 1 else 0
+    applyPairSubscriptSizes(value, secondary, secondaryStart, baseSize)
+    view.text = value
   }
 
   private fun showTrailingMenu(index: Int, actionKey: String) {
@@ -664,6 +725,13 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
             )
             addState(intArrayOf(), roundedFill(Color.TRANSPARENT, 19f))
           }
+      }
+    } else if (icon.iconName == "RefreshCcwOutline" && data.optString("actionKey").isEmpty()) {
+      icon.glyphSizeDp = 16
+      icon.isClickable = false
+      icon.isFocusable = false
+      icon.layoutParams = LayoutParams(dp(16), dp(16)).apply {
+        gravity = Gravity.CENTER_VERTICAL
       }
     } else if (icon.iconName == "ChevronRightSmallOutline") {
       icon.glyphSizeDp = null

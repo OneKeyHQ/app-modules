@@ -200,6 +200,160 @@ final class NativeListLifecycleTests: XCTestCase {
       .allSatisfy { $0.isHidden })
   }
 
+  func testValuePairSegmentsStyleAndPlainRebindOnProductionAccessoryStack() throws {
+    let stack = NativeListAccessoryStack(frame: CGRect(x: 0, y: 0, width: 180, height: 48))
+    let item = try NativeListItem(data: [
+      "key": "pair", "type": "identity", "title": "Pair",
+      "leading": ["kind": "icon", "name": "coin"],
+    ])
+    let pair: [String: Any] = [
+      "kind": "valuePair", "primary": "0.001", "secondary": "$0.01",
+      "primaryTextSegments": [["text": "0.00"], ["text": "1", "style": "subscript"]],
+      "secondaryTextSegments": [["text": "$0.0"], ["text": "1", "style": "subscript"]],
+    ]
+    func bind(_ descriptor: [String: Any], size: Int? = nil) {
+      let style: [String: Any] = size.map { ["value": ["fontSize": $0]] } ?? [:]
+      stack.bind(item, descriptors: [descriptor], theme: nil, style: style,
+        checkboxState: { _, _, fallback in fallback }, fonts: NativeListFontFamilies())
+    }
+    func fontSize(_ title: NSAttributedString, at index: Int) throws -> CGFloat {
+      try XCTUnwrap(title.attribute(.font, at: index, effectiveRange: nil) as? UIFont).pointSize
+    }
+    bind(pair)
+    let button = try XCTUnwrap(stack.arrangedSubviews.compactMap { $0 as? UIButton }
+      .first { !$0.isHidden })
+    let rich = try XCTUnwrap(button.attributedTitle(for: .normal))
+    XCTAssertEqual(rich.string, "0.001\n$0.01")
+    XCTAssertEqual(try fontSize(rich, at: 0), 16)
+    XCTAssertEqual(try fontSize(rich, at: 4), 10)
+    XCTAssertEqual(try fontSize(rich, at: 6), 14)
+    XCTAssertEqual(try fontSize(rich, at: 10), 9)
+    bind(pair, size: 20)
+    let styled = try XCTUnwrap(button.attributedTitle(for: .normal))
+    XCTAssertEqual(try fontSize(styled, at: 0), 20)
+    XCTAssertEqual(try fontSize(styled, at: 4), 12)
+    XCTAssertEqual(try fontSize(styled, at: 10), 12)
+    bind(["kind": "valuePair", "primary": "10", "secondary": "$2"])
+    let plain = try XCTUnwrap(button.attributedTitle(for: .normal))
+    XCTAssertEqual(plain.string, "10\n$2")
+    XCTAssertEqual(try fontSize(plain, at: 0), 16)
+    XCTAssertEqual(try fontSize(plain, at: 3), 14)
+    bind(["kind": "valuePair", "primary": "10", "secondary": "$2",
+      "primaryTextSegments": [], "secondaryTextSegments": []])
+    XCTAssertEqual(button.attributedTitle(for: .normal)?.string, "10\n$2")
+  }
+
+  func testDecorativeRefreshKeepsSixteenPointFrameAcrossActionRebind() throws {
+    let stack = NativeListAccessoryStack(frame: CGRect(x: 0, y: 0, width: 80, height: 40))
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 160, height: 80))
+    window.addSubview(stack)
+    let item = try NativeListItem(data: [
+      "key": "refresh", "type": "identity", "title": "Network",
+      "leading": ["kind": "icon", "name": "coin"],
+    ])
+    func bind(actionKey: String? = nil) {
+      var icon: [String: Any] = ["kind": "icon", "name": "RefreshCcwOutline"]
+      if let actionKey { icon["actionKey"] = actionKey }
+      stack.bind(item, descriptors: [icon], theme: nil, style: [:],
+        checkboxState: { _, _, fallback in fallback }, fonts: NativeListFontFamilies())
+      stack.layoutIfNeeded()
+    }
+    bind()
+    let button = try XCTUnwrap(stack.firstVisibleControl as? UIButton)
+    XCTAssertEqual(button.bounds.width, 16, accuracy: 0.5)
+    XCTAssertEqual(button.bounds.height, 16, accuracy: 0.5)
+    XCTAssertNotNil(button.image(for: .normal))
+    XCTAssertEqual(button.image(for: .normal)?.size.width, 16)
+    XCTAssertEqual(button.image(for: .normal)?.size.height, 16)
+    XCTAssertFalse(button.isUserInteractionEnabled)
+    bind(actionKey: "refresh")
+    XCTAssertEqual(button.bounds.width, 36, accuracy: 0.5)
+    XCTAssertTrue(button.isUserInteractionEnabled)
+    bind()
+    XCTAssertEqual(button.bounds.width, 16, accuracy: 0.5)
+    XCTAssertFalse(button.isUserInteractionEnabled)
+  }
+
+  func testLowValueAndOverviewAccessoryLayoutsOnProductionIdentityCell() throws {
+    let cell = NativeListIdentityCell(frame: CGRect(x: 0, y: 0, width: 386, height: 60))
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 386, height: 180))
+    window.addSubview(cell)
+    let main = try XCTUnwrap(Mirror(reflecting: cell).children.first { $0.label == "mainStack" }?
+      .value as? UIStackView)
+    let trailing = try XCTUnwrap(Mirror(reflecting: cell).children.first {
+      $0.label == "trailingStack"
+    }?.value as? NativeListAccessoryStack)
+    func bind(_ data: [String: Any], height: CGFloat) throws {
+      cell.frame.size.height = height
+      cell.bind(item: try NativeListItem(data: data), theme: nil, layout: "linear",
+        selected: false, checkboxState: { _, _, fallback in fallback },
+        fonts: NativeListFontFamilies())
+      window.layoutIfNeeded()
+      cell.layoutIfNeeded()
+    }
+    let pair: [String: Any] = ["kind": "valuePair", "primary": "1.0193B",
+      "secondary": "$1,018,849,363.70"]
+    let lowValue: [String: Any] = ["key": "low", "type": "identity", "height": 60,
+      "title": "FRAX", "subtitleSegments": [
+        ["text": "$0.9918", "tone": "secondary", "textSegments": [
+          ["text": "$0.99"], ["text": "18", "style": "subscript"]]],
+        ["text": "\u{00a0}+0.05%", "tone": "positive"]],
+      "leading": ["kind": "token", "fallbackIcon": ["name": "CryptoCoinOutline"]],
+      "trailing": [pair], "style": ["horizontalPadding": 12, "verticalPadding": 8,
+        "leadingGap": 12, "image": ["width": 40, "height": 40]]]
+    try bind(lowValue, height: 60)
+    let priceLabels = try XCTUnwrap(Mirror(reflecting: cell).children.first {
+      $0.label == "semanticSubtitleLabels"
+    }?.value as? [UILabel])
+    XCTAssertEqual(priceLabels.count, 2)
+    XCTAssertGreaterThan(main.bounds.width, 150)
+    XCTAssertTrue(priceLabels.allSatisfy { $0.bounds.width > 0 && !$0.isHidden })
+    XCTAssertLessThanOrEqual(priceLabels.last?.frame.maxX ?? .infinity, main.bounds.width + 0.5)
+    XCTAssertEqual(trailing.bounds.width, trailing.firstVisibleControl?.bounds.width ?? -1,
+      accuracy: 0.5)
+    let detail: [String: Any] = ["key": "detail", "type": "identity", "height": 60,
+      "title": "Ethereum", "subtitle": "100.0%",
+      "leading": ["kind": "network", "fallbackIcon": ["name": "GlobusOutline"]],
+      "trailing": [pair, ["kind": "chevron"]],
+      "style": ["horizontalPadding": 12, "verticalPadding": 8, "leadingGap": 12,
+        "trailingGap": 12, "image": ["width": 32, "height": 32]]]
+    try bind(detail, height: 60)
+    XCTAssertEqual(trailing.axis, .horizontal)
+    let detailControls = trailing.arrangedSubviews.filter { !$0.isHidden }
+    XCTAssertEqual(detailControls.count, 2)
+    let detailRects = detailControls.map { $0.convert($0.bounds, to: cell) }
+    XCTAssertTrue(detailRects.allSatisfy { $0.minY >= 0 && $0.maxY <= 60 })
+    XCTAssertEqual(detailRects[0].midY, detailRects[1].midY, accuracy: 1)
+    XCTAssertEqual(detailRects[1].minX - detailRects[0].maxX, 12, accuracy: 0.5)
+    XCTAssertEqual(detailRects[1].maxX, cell.bounds.maxX - 12, accuracy: 0.5)
+    let missing: [String: Any] = ["key": "missing", "type": "identity", "height": 48,
+      "title": "Ethereum", "leading": ["kind": "network",
+        "fallbackIcon": ["name": "GlobusOutline"]],
+      "trailing": [["kind": "icon", "name": "RefreshCcwOutline"], ["kind": "chevron"]],
+      "style": ["horizontalPadding": 12, "verticalPadding": 8, "leadingGap": 12,
+        "trailingGap": 12, "image": ["width": 32, "height": 32]]]
+    try bind(missing, height: 48)
+    XCTAssertEqual(trailing.axis, .horizontal)
+    let missingControls = trailing.arrangedSubviews.filter { !$0.isHidden }
+    XCTAssertEqual(missingControls.count, 2)
+    XCTAssertEqual(missingControls[0].bounds.width, 16, accuracy: 0.5)
+    XCTAssertEqual(missingControls[1].bounds.width, 24, accuracy: 0.5)
+    let missingRects = missingControls.map { $0.convert($0.bounds, to: cell) }
+    XCTAssertTrue(missingRects.allSatisfy { $0.minY >= 0 && $0.maxY <= 48 })
+    XCTAssertEqual(missingRects[0].midY, missingRects[1].midY, accuracy: 1)
+    XCTAssertEqual(missingRects[1].minX - missingRects[0].maxX, 12, accuracy: 0.5)
+    XCTAssertEqual(missingRects[1].maxX, cell.bounds.maxX - 12, accuracy: 0.5)
+    try bind(detail, height: 60)
+    XCTAssertEqual(trailing.axis, .horizontal)
+    try bind(["key": "plain", "type": "identity", "title": "Plain", "height": 56,
+      "leading": ["kind": "token", "fallbackIcon": ["name": "CryptoCoinOutline"]]],
+      height: 56)
+    let remainingConstraints = try XCTUnwrap(Mirror(reflecting: cell).children.first {
+      $0.label == "selectorConstraints"
+    }?.value as? [NSLayoutConstraint])
+    XCTAssertTrue(remainingConstraints.isEmpty)
+  }
+
   func testRiskIdentityRatioKeepsTitleVisibleWithAndWithoutButton() throws {
     let cell = NativeListIdentityCell(frame: CGRect(x: 0, y: 0, width: 386, height: 56))
     let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 386, height: 200))
@@ -370,6 +524,35 @@ final class NativeListLifecycleTests: XCTestCase {
     view.setFontFamiliesJson("{\"regular\":\"Georgia\",\"medium\":\"Georgia\"}")
     XCTAssertEqual(labels(footer).first { $0.text == "Continue" }?.font.fontName, "Georgia")
     XCTAssertEqual(footer.accessibilityLabel, "Continue")
+  }
+
+  func testPaddedSquareNetworkOverlayRoundsInnerImageAndResetsOnRebind() throws {
+    let visual = NativeListLeadingVisual(frame: CGRect(x: 0, y: 0, width: 40, height: 40))
+    func bind(_ overlay: [String: Any]) {
+      visual.bind(["kind": "token", "overlays": [overlay]], style: [:], key: "overlay",
+        theme: nil, isUnread: false, fonts: NativeListFontFamilies())
+      visual.layoutIfNeeded()
+    }
+    let image: [String: Any] = ["uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9xvY0AAAAASUVORK5CYII="]
+    bind(["position": "bottomRight", "size": 20, "width": 20, "height": 20,
+      "padding": 2, "image": image, "fallbackIcon": ["name": "GlobusOutline"]])
+    let slots = try XCTUnwrap(Mirror(reflecting: visual).children.first {
+      $0.label == "overlaySlots"
+    }?.value as? [NativeListImageSlot])
+    let slot = try XCTUnwrap(slots.first?.view)
+    XCTAssertEqual(slot.bounds.size, CGSize(width: 16, height: 16))
+    XCTAssertEqual(slot.layer.cornerRadius, 8, accuracy: 0.5)
+    XCTAssertTrue(slot.clipsToBounds)
+    bind(["position": "bottomRight", "width": 20, "height": 14,
+      "padding": 2, "image": image])
+    XCTAssertEqual(slot.layer.cornerRadius, 0)
+    XCTAssertFalse(slot.clipsToBounds)
+    bind(["position": "bottomRight", "size": 20, "padding": 2, "text": "E"])
+    XCTAssertEqual(slot.layer.cornerRadius, 0)
+    XCTAssertFalse(slot.clipsToBounds)
+    bind(["position": "bottomRight", "size": 20, "padding": 2, "image": image])
+    XCTAssertEqual(slot.layer.cornerRadius, 8, accuracy: 0.5)
+    visual.recycle()
   }
 
   func testNestedWalletMembersAndDragBadgeFollowEachBindMapping() throws {

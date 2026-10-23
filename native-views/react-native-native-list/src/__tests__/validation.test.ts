@@ -1227,6 +1227,43 @@ describe('NativeList model validation', () => {
     );
   });
 
+  it('validates independent segmented value-pair lines in snapshots and patches', () => {
+    const pair = {
+      kind: 'valuePair' as const,
+      primary: '0.001',
+      secondary: '$0.01',
+      primaryTextSegments: [{ text: '0.00' }, { text: '1', style: 'subscript' as const }],
+      secondaryTextSegments: [{ text: '$0.0' }, { text: '1', style: 'subscript' as const }],
+    };
+    const item = { ...row('segmented-pair'), trailing: [pair] };
+    expect(JSON.parse(serializeSnapshot(snapshot([item]))).rows[0].trailing[0])
+      .toMatchObject(pair);
+    const patch: RowPatch = {
+      type: 'identity', key: item.key,
+      changes: { revision: 2, trailing: [{ ...pair, primaryTextSegments: [] }] },
+    };
+    expect(JSON.parse(serializePatches([patch]))[0].changes.trailing[0].primaryTextSegments)
+      .toEqual([]);
+    expect(applyRowPatches(snapshot([item]), [patch]).rows[0]).toMatchObject({
+      trailing: [{ ...pair, primaryTextSegments: [] }],
+    });
+    for (const field of ['primaryTextSegments', 'secondaryTextSegments'] as const) {
+      for (const invalid of [null, {}, [{ text: 4 }], [{ text: '1', style: 'super' }],
+        Array.from({ length: 65 }, () => ({ text: '1' })),
+        [{ text: 'x'.repeat(4097) }],
+        [{ text: 'x'.repeat(2049) }, { text: 'x'.repeat(2049) }]]) {
+        const malformed = { ...pair, [field]: invalid };
+        expect(() => validateSnapshot(snapshot([{
+          ...item, trailing: [malformed],
+        } as unknown as IdentityRow]))).toThrow(field);
+        expect(() => validatePatches([{
+          type: 'identity', key: item.key,
+          changes: { revision: 3, trailing: [malformed] },
+        } as unknown as RowPatch])).toThrow(field);
+      }
+    }
+  });
+
   it('rejects selection of disabled and structural rows', () => {
     const disabled = { ...row('disabled'), disabled: true };
     expect(() =>
@@ -1417,6 +1454,17 @@ describe('NativeList production validation', () => {
       type: 'identity', key: invalid.key,
       changes: { titleIcon: { name: 'GasSolid', hoverActionKey: '' } },
     }])).toThrow('hoverActionKey');
+    expect(() => validateSnapshot(snapshot([{
+      ...row('risk'), secondaryTitleIcon: { name: 'TicketSolid', tintColor: 'red' },
+    } as unknown as IdentityRow]))).toThrow('secondaryTitleIcon.tintColor');
+    expect(() => validatePatches([{
+      type: 'identity', key: invalid.key,
+      changes: { secondaryTitleIcon: { name: 'TicketSolid', hoverActionKey: '' } },
+    }])).toThrow('secondaryTitleIcon.hoverActionKey');
+    expect(() => validatePatches([{
+      type: 'identity', key: invalid.key,
+      changes: { secondaryTitleIcon: null },
+    } as unknown as RowPatch])).toThrow('secondaryTitleIcon');
     expect(() => validateSnapshot({ ...snapshot(),
       theme: { rowHoverBackground: 'bad' } as NativeListSnapshot['theme'],
     })).toThrow('rowHoverBackground');

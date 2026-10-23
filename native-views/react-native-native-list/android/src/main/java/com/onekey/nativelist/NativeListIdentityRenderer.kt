@@ -300,6 +300,16 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
   private fun addLeading(visual: JSONObject?, sizeDp: Int, spacingDp: Int = 12) {
     // Legacy: a missing visual still reserves an empty, transparent leading slot.
     val descriptor = visual ?: JSONObject().put("backgroundColor", "#00000000")
+    val overlays = descriptor.optJSONArray("overlays")
+    if (overlays != null && (0 until minOf(2, overlays.length())).any { index ->
+        val overlay = overlays.optJSONObject(index) ?: return@any false
+        overlay.optInt("offsetX", overlay.optInt("offset", 2)) > 0 ||
+          overlay.optInt("offsetY", overlay.optInt("offset", 2)) > 0
+      }) {
+      // The badge extends beyond the avatar and the row's padded content box.
+      clipChildren = false
+      clipToPadding = false
+    }
     leadingFrame.bitmapBorderWidth =
       if (descriptor.optString("borderColor").isNotEmpty() &&
         descriptor.optString("borderStyle") != "dashed") dp(1) else 0
@@ -733,6 +743,10 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
           .let { kinds ->
             kinds.containsAll(listOf("value", "checkbox")) ||
               kinds == listOf("valuePair", "menu") ||
+              kinds == listOf("valuePair", "chevron") ||
+              (kinds == listOf("icon", "chevron") &&
+                accessories.getJSONObject(0).optString("name") == "RefreshCcwOutline" &&
+                accessories.getJSONObject(0).optString("actionKey").isEmpty()) ||
               (kinds == listOf("icon", "icon") &&
                 accessories.getJSONObject(0).optString("name") == "PencilOutline" &&
                 accessories.getJSONObject(1).optString("name") == "DragOutline")

@@ -6,6 +6,10 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
+import android.text.Spanned
+import android.text.style.AbsoluteSizeSpan
+import android.text.style.MetricAffectingSpan
+import android.text.TextPaint
 import android.net.Uri
 import android.os.SystemClock
 import android.test.InstrumentationTestCase
@@ -60,6 +64,157 @@ class NativeListRiskAccessoryTest : InstrumentationTestCase() {
       activity.finish()
     }
     super.tearDown()
+  }
+
+  fun testValuePairSegmentsRebindAndSemanticStyleOnProductionStack() {
+    onMain {
+      val context = ThemedReactContext(BridgeReactContext(activity), activity, "PairTest", 1)
+      val stack = NativeListAccessoryStack(context, NativeListFonts())
+      activity.setContentView(stack)
+      val item = NativeListItem("pair", "identity", null, 0,
+        JSONObject().put("key", "pair").put("type", "identity").put("title", "Pair"))
+      fun bind(primary: JSONArray?, secondary: JSONArray?, size: Int? = null) {
+        val pair = JSONObject().put("kind", "valuePair")
+          .put("primary", "0.001").put("secondary", "\$0.01")
+        if (primary != null) pair.put("primaryTextSegments", primary)
+        if (secondary != null) pair.put("secondaryTextSegments", secondary)
+        val style = JSONObject()
+        if (size != null) style.put("value", JSONObject().put("fontSize", size))
+        stack.bind(item, JSONArray().put(pair), null, style, false,
+          { _, _, fallback -> fallback })
+      }
+      val primary = JSONArray().put(JSONObject().put("text", "0.00"))
+        .put(JSONObject().put("text", "1").put("style", "subscript"))
+      val secondary = JSONArray().put(JSONObject().put("text", "\$0.0"))
+        .put(JSONObject().put("text", "1").put("style", "subscript"))
+      bind(primary, secondary)
+      val view = stack.visibleValues.single()
+      fun effectiveSize(position: Int): Float {
+        val rich = view.text as Spanned
+        val paint = TextPaint(view.paint).apply { density = activity.resources.displayMetrics.density }
+        rich.getSpans(position, position + 1, MetricAffectingSpan::class.java)
+          .forEach { it.updateMeasureState(paint) }
+        return paint.textSize
+      }
+      assertEquals("0.001\n\$0.01", view.text.toString())
+      val rich = view.text as Spanned
+      assertTrue(effectiveSize(4) < effectiveSize(0))
+      assertTrue(effectiveSize(10) < effectiveSize(6))
+      assertEquals(0.6f, effectiveSize(4) / effectiveSize(0), 0.12f)
+      assertEquals(0.6f, effectiveSize(10) / effectiveSize(6), 0.12f)
+      bind(primary, secondary, 20)
+      val styled = stack.visibleValues.single().text as Spanned
+      assertEquals("0.001\n\$0.01", styled.toString())
+      assertEquals(0.6f, effectiveSize(4) / effectiveSize(0), 0.12f)
+      assertEquals(0.6f, effectiveSize(10) / effectiveSize(6), 0.12f)
+      bind(null, null)
+      val plain = stack.visibleValues.single().text as Spanned
+      assertEquals("0.001\n\$0.01", plain.toString())
+      assertTrue(plain.getSpans(0, plain.length, AbsoluteSizeSpan::class.java).size <= 2)
+      assertTrue(effectiveSize(4) >= effectiveSize(0) * 0.9f)
+      bind(JSONArray(), JSONArray())
+      assertEquals("0.001\n\$0.01", stack.visibleValues.single().text.toString())
+      assertFalse(stack.visibleValues.single().isClickable)
+    }
+  }
+
+  fun testOverviewAccessoryPairsUseHorizontalProductionIdentityCells() {
+    onMain {
+      val context = ThemedReactContext(BridgeReactContext(activity), activity, "OverviewTest", 1)
+      val identity = NativeListIdentityRowView(context, NativeListFonts())
+      activity.setContentView(identity)
+      fun bind(trailing: JSONArray, height: Int, subtitle: String? = "100.0%") {
+        val json = JSONObject().put("key", "overview").put("type", "identity")
+          .put("height", height).put("title", "Ethereum")
+          .put("leading", JSONObject().put("kind", "network")
+            .put("fallbackIcon", JSONObject().put("name", "GlobusOutline")))
+          .put("trailing", trailing)
+          .put("style", JSONObject().put("trailingGap", 12)
+            .put("horizontalPadding", 12).put("verticalPadding", 8)
+            .put("leadingGap", 12)
+            .put("image", JSONObject().put("width", 32).put("height", 32)))
+        if (subtitle != null) json.put("subtitle", subtitle)
+        identity.bind(NativeListItem("overview", "identity", null, 0, json), null,
+          "linear", "vertical", 0, false, { _, _, fallback -> fallback }, false)
+        identity.measure(View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY),
+          View.MeasureSpec.makeMeasureSpec(NativeListScale.dp(activity.resources, height),
+            View.MeasureSpec.EXACTLY))
+        identity.layout(0, 0, 1080, identity.measuredHeight)
+      }
+      val pair = JSONObject().put("kind", "valuePair").put("primary", "1.0193B")
+        .put("secondary", "\$1,018,849,363.70")
+      val chevron = JSONObject().put("kind", "chevron")
+      bind(JSONArray().put(pair).put(chevron), 60)
+      val trailing = field<NativeListAccessoryStack>(identity, "trailingColumn")
+      val value = trailing.visibleValues.single()
+      val arrow = trailing.firstVisibleIcon!!
+      assertEquals(LinearLayout.HORIZONTAL, trailing.orientation)
+      assertEquals("1.0193B\n\$1,018,849,363.70", value.text.toString())
+      assertTrue(value.top >= 0 && value.bottom <= trailing.height)
+      assertTrue(arrow.top >= 0 && arrow.bottom <= trailing.height)
+      assertTrue(trailing.top + value.top >= 0 && trailing.top + value.bottom <= identity.height)
+      assertTrue(trailing.top + arrow.top >= 0 && trailing.top + arrow.bottom <= identity.height)
+      assertTrue(value.lineCount >= 2)
+      assertTrue(kotlin.math.abs(identity.width - identity.paddingRight -
+        trailing.left - arrow.right) <= NativeListScale.dp(activity.resources, 1))
+      assertTrue(kotlin.math.abs(NativeListScale.dp(activity.resources, 12) -
+        arrow.left + value.right) <= NativeListScale.dp(activity.resources, 1))
+      assertTrue(kotlin.math.abs((value.top + value.bottom) - (arrow.top + arrow.bottom)) <=
+        NativeListScale.dp(activity.resources, 4))
+      val refresh = JSONObject().put("kind", "icon").put("name", "RefreshCcwOutline")
+      bind(JSONArray().put(refresh).put(chevron), 48, subtitle = null)
+      val icons = (0 until trailing.childCount).map(trailing::getChildAt)
+        .filterIsInstance<OneKeyIconView>().filter { it.visibility == View.VISIBLE }
+      assertEquals(LinearLayout.HORIZONTAL, trailing.orientation)
+      assertEquals(2, icons.size)
+      assertEquals(NativeListScale.dp(activity.resources, 16), icons[0].width)
+      assertEquals(NativeListScale.dp(activity.resources, 24), icons[1].width)
+      assertFalse(icons[0].isClickable)
+      assertTrue(trailing.top + icons[0].top >= 0 &&
+        trailing.top + icons[0].bottom <= identity.height)
+      assertTrue(trailing.top + icons[1].top >= 0 &&
+        trailing.top + icons[1].bottom <= identity.height)
+      assertTrue(kotlin.math.abs(identity.width - identity.paddingRight -
+        trailing.left - icons[1].right) <= NativeListScale.dp(activity.resources, 1))
+      assertTrue(kotlin.math.abs(NativeListScale.dp(activity.resources, 12) -
+        icons[1].left + icons[0].right) <= NativeListScale.dp(activity.resources, 1))
+      assertTrue(kotlin.math.abs((icons[0].top + icons[0].bottom) -
+        (icons[1].top + icons[1].bottom)) <= NativeListScale.dp(activity.resources, 4))
+      bind(JSONArray().put(pair).put(chevron), 60)
+      assertEquals(LinearLayout.HORIZONTAL, trailing.orientation)
+      assertEquals("1.0193B\n\$1,018,849,363.70", trailing.visibleValues.single().text.toString())
+    }
+  }
+
+  fun testDecorativeRefreshKeepsSixteenDpFrameAndResetsForActionIcon() {
+    onMain {
+      val context = ThemedReactContext(BridgeReactContext(activity), activity, "RefreshTest", 1)
+      val stack = NativeListAccessoryStack(context, NativeListFonts())
+      activity.setContentView(stack)
+      val item = NativeListItem("refresh", "identity", null, 0,
+        JSONObject().put("key", "refresh").put("type", "identity").put("title", "Network"))
+      fun bind(actionKey: String? = null) {
+        val descriptor = JSONObject().put("kind", "icon").put("name", "RefreshCcwOutline")
+        if (actionKey != null) descriptor.put("actionKey", actionKey)
+        stack.bind(item, JSONArray().put(descriptor), null, JSONObject(), false,
+          { _, _, fallback -> fallback })
+      }
+      bind()
+      val icon = stack.firstVisibleIcon as OneKeyIconView
+      assertEquals(NativeListScale.dp(activity.resources, 16), icon.layoutParams.width)
+      assertEquals(NativeListScale.dp(activity.resources, 16), icon.layoutParams.height)
+      assertEquals(16, icon.glyphSizeDp)
+      assertEquals(0, (icon.layoutParams as LinearLayout.LayoutParams).marginStart)
+      icon.layout(0, 0, icon.layoutParams.width, icon.layoutParams.height)
+      assertTrue(paintedPixelCount(icon) > 0)
+      bind("refresh")
+      assertEquals(NativeListScale.dp(activity.resources, 36), icon.layoutParams.width)
+      assertEquals(24, icon.glyphSizeDp)
+      bind()
+      assertEquals(NativeListScale.dp(activity.resources, 16), icon.layoutParams.width)
+      assertEquals(16, icon.glyphSizeDp)
+      assertFalse(icon.isClickable)
+    }
   }
 
   fun testActivityHideLeadingRebindsLegacyAndRichWithoutReservedSlot() {
@@ -403,6 +558,151 @@ class NativeListRiskAccessoryTest : InstrumentationTestCase() {
       imageServer.close()
       serverThread.join(1000)
       successFile.delete()
+    }
+  }
+
+  fun testPaddedSquareNetworkOverlayRoundsInnerImageAndResetsAcrossSources() {
+    val imageFile = File(activity.cacheDir, "native-list-overlay-circle.png")
+    val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888).apply {
+      eraseColor(Color.RED)
+    }
+    imageFile.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    bitmap.recycle()
+    val leading = onMainValue {
+      val context = ThemedReactContext(BridgeReactContext(activity), activity, "OverlayTest", 1)
+      NativeListLeadingVisual(context, NativeListFonts())
+    }
+    val leadingSize = NativeListScale.dp(activity.resources, 40)
+    fun bind(overlay: JSONObject) {
+      onMain {
+        leading.bind(JSONObject().put("kind", "token")
+          .put("overlays", JSONArray().put(overlay)), JSONObject(), "overlay", null,
+          false, false)
+        leading.measure(View.MeasureSpec.makeMeasureSpec(leadingSize, View.MeasureSpec.EXACTLY),
+          View.MeasureSpec.makeMeasureSpec(leadingSize, View.MeasureSpec.EXACTLY))
+        leading.layout(0, 0, leadingSize, leadingSize)
+      }
+    }
+    onMain { activity.setContentView(leading) }
+    fun innerHost(): View {
+      val slot = field<MutableList<NativeListImageSlot>>(leading, "overlaySlots").first()
+      val image = field<Any>(slot.view, "image")
+      return field(image, "hostView")
+    }
+    fun imageOverlay(uri: String, width: Int = 20, height: Int = 20) =
+      JSONObject().put("position", "bottomRight").put("width", width).put("height", height)
+        .put("padding", 2).put("image", JSONObject().put("uri", uri))
+        .put("fallbackIcon", JSONObject().put("name", "GlobusOutline"))
+    val successUri = Uri.fromFile(imageFile).toString()
+    bind(imageOverlay(successUri))
+    awaitCondition {
+      val slot = field<MutableList<NativeListImageSlot>>(leading, "overlaySlots").first()
+      innerHost().clipToOutline && field<Boolean?>(slot, "result") == true
+    }
+    onMain {
+      val slot = field<MutableList<NativeListImageSlot>>(leading, "overlaySlots").first()
+      assertTrue(kotlin.math.abs(NativeListScale.dp(activity.resources, 16) -
+        slot.view.width) <= 1)
+    }
+    bind(imageOverlay(successUri, width = 20, height = 14))
+    onMain { assertFalse(innerHost().clipToOutline) }
+    bind(JSONObject().put("position", "bottomRight").put("size", 20)
+      .put("padding", 2).put("text", "E"))
+    onMain { assertFalse(innerHost().clipToOutline) }
+    bind(imageOverlay("file:///missing/overlay-${SystemClock.uptimeMillis()}.png"))
+    awaitCondition {
+      field<MutableList<OneKeyIconView>>(leading, "overlayFallbackIcons")
+        .first().visibility == View.VISIBLE
+    }
+    bind(imageOverlay(successUri))
+    awaitCondition {
+      val slot = field<MutableList<NativeListImageSlot>>(leading, "overlaySlots").first()
+      innerHost().clipToOutline && field<Boolean?>(slot, "result") == true &&
+        field<MutableList<OneKeyIconView>>(leading, "overlayFallbackIcons")
+          .first().visibility == View.GONE
+    }
+    onMain { leading.recycle() }
+    imageFile.delete()
+  }
+
+  fun testIdentityCellDrawsOutsetNetworkOverlayBeyondAvatarAndResetsClip() {
+    val imageFile = File(activity.cacheDir, "native-list-overlay-outset.png")
+    val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888).apply {
+      eraseColor(Color.BLUE)
+    }
+    imageFile.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    bitmap.recycle()
+    val identity = onMainValue {
+      val context = ThemedReactContext(BridgeReactContext(activity), activity, "OutsetTest", 1)
+      NativeListIdentityRowView(context, NativeListFonts()).also(activity::setContentView)
+    }
+    val rowWidth = NativeListScale.dp(activity.resources, 360)
+    val rowHeight = NativeListScale.dp(activity.resources, 60)
+    fun bind(withOverlay: Boolean) {
+      onMain {
+        val leading = JSONObject().put("kind", "token")
+          .put("backgroundColor", "#FF0000")
+        if (withOverlay) leading.put("overlays", JSONArray().put(JSONObject()
+          .put("position", "bottomRight").put("size", 20).put("padding", 2)
+          .put("offset", 4).put("backgroundColor", "#00FF00")
+          .put("image", JSONObject().put("uri", Uri.fromFile(imageFile).toString()))))
+        val row = JSONObject().put("key", "outset").put("type", "identity")
+          .put("title", "Token").put("height", 60).put("leading", leading)
+          .put("style", JSONObject().put("image", JSONObject()
+            .put("width", 40).put("height", 40)))
+        identity.bind(NativeListItem("outset", "identity", null, 0, row), null,
+          "linear", "vertical", 0, false, { _, _, fallback -> fallback }, false)
+        identity.measure(View.MeasureSpec.makeMeasureSpec(rowWidth, View.MeasureSpec.EXACTLY),
+          View.MeasureSpec.makeMeasureSpec(rowHeight, View.MeasureSpec.EXACTLY))
+        identity.layout(0, 0, rowWidth, rowHeight)
+      }
+    }
+    try {
+      bind(true)
+      awaitCondition {
+        val leading = field<NativeListLeadingVisual>(identity, "leadingFrame")
+        val slot = field<MutableList<NativeListImageSlot>>(leading, "overlaySlots").first()
+        field<Boolean?>(slot, "result") == true
+      }
+      onMain {
+        val leading = field<NativeListLeadingVisual>(identity, "leadingFrame")
+        assertFalse(identity.clipChildren)
+        assertFalse(identity.clipToPadding)
+        val rowImage = Bitmap.createBitmap(identity.width, identity.height,
+          Bitmap.Config.ARGB_8888)
+        identity.draw(Canvas(rowImage))
+        val center = NativeListScale.dp(activity.resources, 34)
+        val rightRing = (1..4).map { distance ->
+          rowImage.getPixel(leading.right + NativeListScale.dp(activity.resources, distance),
+            leading.top + center)
+        }
+        val bottomRing = (1..4).map { distance ->
+          rowImage.getPixel(leading.left + center,
+            leading.bottom + NativeListScale.dp(activity.resources, distance))
+        }
+        val frame = field<MutableList<Pair<android.widget.FrameLayout, JSONObject>>>(leading,
+          "overlays").first().first
+        val imageView = frame.getChildAt(0)
+        assertTrue("right outer ring: $rightRing; frame=${frame.left},${frame.top}," +
+          "${frame.right},${frame.bottom}; child=${imageView.left},${imageView.top}," +
+          "${imageView.right},${imageView.bottom}; padding=${frame.paddingLeft}," +
+          "${frame.paddingTop}; color=${(frame.background as GradientDrawable).color?.defaultColor}",
+          rightRing.any {
+          Color.alpha(it) > 128 && Color.green(it) > Color.blue(it)
+        })
+        assertTrue("bottom outer ring: $bottomRing", bottomRing.any {
+          Color.alpha(it) > 128 && Color.green(it) > Color.blue(it)
+        })
+        rowImage.recycle()
+      }
+      bind(false)
+      onMain {
+        assertTrue(identity.clipChildren)
+        assertTrue(identity.clipToPadding)
+      }
+    } finally {
+      onMain { activity.setContentView(View(activity)) }
+      imageFile.delete()
     }
   }
 

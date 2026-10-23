@@ -53,11 +53,15 @@ separately from source implementation in STYLE_SPEC §9.
 
 - **Use:** an identifiable asset, account, wallet, network or setting.
 - **Required data:** `leading`, `title`; optional `subtitle`, `tertiary`, `badges`,
-  `trailing`, `leadingAction`, `titleIcon`, match ranges and structured subtitle segments.
+  `trailing`, `leadingAction`, `titleIcon`, Web-only `secondaryTitleIcon`, match ranges and structured subtitle segments.
 - **Static title icon:** optional 20-point icon immediately after the title with
   a 4-point gap. It has no click action; an optional Web `hoverActionKey`
   emits an icon-anchored tooltip request on hover or touch. A trailing `button` is the fixed small
   secondary text action and uses the normal accessory event slot.
+- **Second Web help icon:** `secondaryTitleIcon` uses the same descriptor after
+  `titleIcon`; each glyph has its own hover/touch anchor. Native ignores it.
+- **Decorative refresh:** a trailing `RefreshCcwOutline` without `actionKey`
+  occupies a 16-point frame and leaves row press with the row.
 - **Web neutral badge:** generic Identity rows with an explicit `tone: 'neutral'`
   use a 20-pixel pill with 12/16 medium text, 8-pixel horizontal and 2-pixel
   vertical padding, and the strong/subdued theme colors. Omitted tone and
@@ -75,7 +79,10 @@ separately from source implementation in STYLE_SPEC §9.
   `valueSecondary`. The last two refer to value accessories in `trailing`; `badge`
   refers to badge text. `value`/`valueSecondary` select the first/second value
   accessory, ignoring intervening controls. A `valuePair` is one accessory, so
-  its style applies to both text runs. They are semantic roles, not extra top-level data fields.
+  its style applies to both text runs. Optional `primaryTextSegments` and
+  `secondaryTextSegments` use the existing subscript run shape per line; missing
+  or empty arrays retain the required fallback string. They are semantic roles,
+  not extra top-level data fields.
 - **Layout boundary:** reserve visual and accessory slots; text compresses within
   its own column. Styling cannot move a checkbox/menu into the title column,
   reorder accessories or convert a horizontal row into the sidebar presentation.
