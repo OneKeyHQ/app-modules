@@ -817,6 +817,23 @@ fallback debounce, including replacement-state restoration. Other collection
 fallbacks keep that safety delay. Caller insets and retained logical offsets
 remain governed by the existing restoration policy.
 
+When the active scroll owner is removed before its replacement becomes usable,
+the pager MUST retain its existing bounded recovery (at most 12 retries, spaced
+100 ms apart). Clearing the completed mount's reattachment flag MUST NOT cancel
+that recovery. A replacement that becomes usable without another Fabric
+insertion MUST receive the observer, shared headers, insets and retained collapse
+state. Page selection changes and recycling invalidate stale retry callbacks.
+While no usable candidate is found, repeated mount attempts MUST NOT reset
+this retry budget.
+
+Status of replacement recovery: implemented and runtime verified on iOS 26.5
+(2026-10-23). The late-replacement UIKit regression fails before the fix and
+passes afterward; the full Pager suite executes 82 tests, with one iOS-27-only
+skip and no failures. In the consuming app based on x at b0789571d8 with SDK
+6.7.0-9 and this local native change, two empty Favorites-to-Wallet-add-to-Market
+cycles and a Trending/Favorites round trip keep the first row aligned with the
+sticky header. The previously observed 212-point gap is absent.
+
 This is a UI-thread, main-runtime native coordination change with no new props,
 events, background-runtime work, persistence or retained strong view cache.
 Android already prepares discovered scroll children before draw and is unchanged;

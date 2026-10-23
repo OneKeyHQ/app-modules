@@ -3661,18 +3661,14 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   if (candidate == nil) {
     [self detachScrollObserver];
     [self restoreSharedHeadersToContainer];
-    // Stop retrying released lists on unrelated commits without discarding a
-    // surviving identity or offset. A relevant insertion resumes recovery.
+    // Native replacements can become usable after Fabric's final insertion.
+    // Keep the bounded retry alive without restarting its budget on each mount.
     if (_needsScrollObserverReattachAfterMount) {
       _needsScrollObserverReattachAfterMount = NO;
-      _scrollResolveRetryToken += 1;
-      _scrollResolveRetryScheduled = NO;
-      _scrollResolveRetryAttempt = 0;
       _pendingFallbackScrollView = nil;
       _pendingFallbackScrollViewDetectedAt = 0;
-    } else {
-      [self scheduleScrollObserverRetryForCurrentPage];
     }
+    [self scheduleScrollObserverRetryForCurrentPage];
     return;
   }
   if ([candidate isKindOfClass:UICollectionView.class] &&
