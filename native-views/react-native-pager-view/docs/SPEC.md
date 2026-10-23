@@ -498,6 +498,28 @@ Status: implemented; focused native-wrapper tests cover both directions,
 explicit overrides and in-flight/superseded command targets. Home applies this policy to its JS tab bar, with iOS and
 Android simulator recordings verifying distant jumps and adjacent transitions.
 
+## Native tab trailing control reservation
+
+Status: implemented locally, unreleased. The focused Android host test passed
+(1/1); iOS hit tests had 8 passes and 1 existing skip. iOS companion-app UI
+acceptance remains unverified.
+`nativeTabBar.style.trailingReservedWidth` is an optional logical trailing
+reservation for a sibling React control in the full-width sticky header. It
+defaults to zero. JavaScript normalizes non-finite or negative input to zero;
+native also clamps the reservation to the actual tab viewport width. On Android
+and iOS, only the native tab viewport shrinks from `W` to `W - R`: its frame
+begins at zero in LTR and at `R` in RTL. The sticky React header, its height,
+and page content keep their original full-width geometry. Touches in the
+reserved region reach the sibling control, while native tab hit testing and
+last-tab visibility use the reduced viewport. Changing the reservation updates
+that viewport; removing it or recycling the pager restores the default zero.
+Web does not render the native tab and ignores this style field. For a positive
+reservation, the box-none sticky React control draws above the native tab so
+its inward fade and toolbar hit area remain visible; zero preserves the old
+native-tab foreground order. Acceptance requires focused native layout and hit
+testing for zero, nonzero, reset, and RTL reservations; type forwarding alone
+is insufficient.
+
 ## Android refresh foreground coordination
 
 Status: implemented; Android Home simulator placement verified on 2026-09-28.

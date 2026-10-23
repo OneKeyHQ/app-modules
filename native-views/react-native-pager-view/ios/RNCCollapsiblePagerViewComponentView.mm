@@ -18,6 +18,7 @@
 
 // OneKey patch: deduplicate structural mutation parents before scanning the page.
 #include <unordered_set>
+#include <cmath>
 
 using namespace facebook::react;
 
@@ -1471,6 +1472,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 - (void)liftSharedHeadersForPagerTransition:(NSString *)reason;
 - (void)restoreSharedHeadersToContainer;
 - (void)layoutSharedHeaders;
+- (void)bringReservedStickyControlToFront;
 - (void)restorePinnedStickyHeader;
 - (void)updatePinnedStickyHeader;
 - (UIScrollView *)currentVerticalScrollViewForParentPager;
@@ -1558,6 +1560,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   NSUInteger _pendingTopInsetReboundGeneration;
   NSTimer *_topInsetReboundTimer;
   CGFloat _nativeTabBarHeight;
+  CGFloat _nativeTabBarTrailingReservedWidth;
   CGFloat _nativeSubHeaderHeight;
   CGFloat _headerOffset;
   BOOL _scrollEnabled;
@@ -2479,6 +2482,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   }
   [_nativeTabBarView updateAncestorGesturePrecedence];
   [_nativeSubHeaderView updateAncestorGesturePrecedence];
+  [self bringReservedStickyControlToFront];
 }
 
 - (void)restoreSharedHeadersToContainer
@@ -2584,10 +2588,11 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   CGFloat nativeTabBarVisibleHeight = _nativeTabBarView.hidden
     ? 0
     : MIN(_stickyHeaderHeight, _nativeTabBarHeight);
+  CGFloat tabReservedWidth = MIN(width, MAX(0, _nativeTabBarTrailingReservedWidth));
   _nativeTabBarView.frame = CGRectMake(
-    0,
+    self.isLtrLayout ? 0 : tabReservedWidth,
     stickyChildY,
-    width,
+    width - tabReservedWidth,
     nativeTabBarVisibleHeight
   );
   _nativeSubHeaderView.frame = CGRectMake(
@@ -2601,7 +2606,24 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   );
   _topOverlayHostView.frame = CGRectMake(0, 0, width, self.effectiveTopOverlayHeight);
   _topOverlayView.frame = _topOverlayHostView.bounds;
+  [self bringReservedStickyControlToFront];
   [self applyHeaderOffset];
+}
+
+- (void)bringReservedStickyControlToFront
+{
+  if (_stickyHeaderView != nil &&
+      _stickyHeaderView.superview == _nativeTabBarView.superview) {
+    if (_nativeTabBarTrailingReservedWidth > 0) {
+      [_stickyHeaderView.superview bringSubviewToFront:_stickyHeaderView];
+    } else {
+      [_nativeTabBarView.superview bringSubviewToFront:_nativeTabBarView];
+      if (!_nativeSubHeaderView.hidden &&
+          _nativeSubHeaderView.superview == _nativeTabBarView.superview) {
+        [_nativeSubHeaderView.superview bringSubviewToFront:_nativeSubHeaderView];
+      }
+    }
+  }
 }
 
 - (void)updatePinnedStickyHeader
@@ -2650,8 +2672,10 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   CGFloat childY = shouldPin ? 0 : _headerHeight;
   CGFloat width = CGRectGetWidth(self.bounds);
   CGFloat tabHeight = _nativeTabBarView.hidden ? 0 : MIN(_stickyHeaderHeight, _nativeTabBarHeight);
+  CGFloat tabReservedWidth = MIN(width, MAX(0, _nativeTabBarTrailingReservedWidth));
   _stickyHeaderView.frame = CGRectMake(0, childY, width, _stickyHeaderHeight);
-  _nativeTabBarView.frame = CGRectMake(0, childY, width, tabHeight);
+  _nativeTabBarView.frame = CGRectMake(self.isLtrLayout ? 0 : tabReservedWidth,
+    childY, width - tabReservedWidth, tabHeight);
   _nativeSubHeaderView.frame = CGRectMake(0, childY + tabHeight, width,
     MIN(MAX(0, _stickyHeaderHeight - tabHeight), _nativeSubHeaderHeight));
   _pinnedStickyHostView.hidden = !shouldPin;
@@ -2671,6 +2695,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   }
   [_nativeTabBarView updateAncestorGesturePrecedence];
   [_nativeSubHeaderView updateAncestorGesturePrecedence];
+  [self bringReservedStickyControlToFront];
   [self updateTopScrollEdgeForScrollView:_observedScrollView];
   [self logHomeVisualGeometry:shouldPin ? @"pin" : @"unpin"
                     scrollView:_observedScrollView];
@@ -3050,6 +3075,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   if (_stickyHeaderView != nil) [_sharedHeaderHostView bringSubviewToFront:_stickyHeaderView];
   if (!_nativeTabBarView.hidden) [_sharedHeaderHostView bringSubviewToFront:_nativeTabBarView];
   if (!_nativeSubHeaderView.hidden) [_sharedHeaderHostView bringSubviewToFront:_nativeSubHeaderView];
+  [self bringReservedStickyControlToFront];
   [_containerView bringSubviewToFront:_sharedHeaderHostView];
   if (_stickyHeaderIsPinned) {
     [_pinnedStickyHostView.superview bringSubviewToFront:_pinnedStickyHostView];
@@ -3262,6 +3288,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   _homeVisualLastLayoutLog = 0;
   _homeVisualLastGeometrySignature = nil;
   _nativeTabBarHeight = 44;
+  _nativeTabBarTrailingReservedWidth = 0;
   _nativeSubHeaderHeight = 74;
   _headerOffset = 0;
   _currentLogicalOffset = 0;
@@ -3343,6 +3370,13 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     _layoutDirection = RCTNSStringFromString(toString(newViewProps.layoutDirection));
     [_nativeTabBarView setLeftToRight:self.isLtrLayout];
     [_nativeSubHeaderView setLeftToRight:self.isLtrLayout];
+    [self setNeedsLayout];
+  }
+  if (_needsPropsReapply ||
+      oldViewProps.nativeTabBarTrailingReservedWidth != newViewProps.nativeTabBarTrailingReservedWidth) {
+    double reserved = newViewProps.nativeTabBarTrailingReservedWidth;
+    _nativeTabBarTrailingReservedWidth = std::isfinite(reserved) && reserved >= 0 ? reserved : 0;
+    [self setNeedsLayout];
   }
   BOOL insetsChanged = NO;
   if (_needsPropsReapply || oldViewProps.headerHeight != newViewProps.headerHeight) {
@@ -3474,6 +3508,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   if (!_nativeSubHeaderView.hidden) {
     [_nativeSubHeaderView.superview bringSubviewToFront:_nativeSubHeaderView];
   }
+  [self bringReservedStickyControlToFront];
   [_sharedHeaderHostView.superview bringSubviewToFront:_sharedHeaderHostView];
   if (_stickyHeaderIsPinned) {
     [_pinnedStickyHostView.superview bringSubviewToFront:_pinnedStickyHostView];

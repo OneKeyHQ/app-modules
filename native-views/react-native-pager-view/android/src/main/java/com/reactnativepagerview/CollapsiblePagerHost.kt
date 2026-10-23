@@ -293,6 +293,20 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   var onNativeSubHeaderPress: ((Int, String) -> Unit)? = null
 
   var nativeTabBarHeight = 44.0
+  var nativeTabBarTrailingReservedWidth = 0.0
+    set(value) {
+      field = if (value.isFinite() && value >= 0.0) value else 0.0
+      bringNativeHeadersToFront()
+      requestLayout()
+    }
+
+  private fun nativeTabReservationPx(width: Int): Int {
+    val reserved = nativeTabBarTrailingReservedWidth
+    val density = resources.displayMetrics.density
+    return if (reserved.isFinite() && reserved > 0.0 && width > 0 && density > 0f) {
+      (reserved.coerceAtMost(width / density.toDouble()) * density).roundToInt()
+    } else 0
+  }
   var nativeTabBarContentPaddingHorizontal = 20.0
   var nativeTabBarItemSpacing = 8.0
   var nativeTabBarFontSize = 16.0
@@ -442,6 +456,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   private fun bringNativeHeadersToFront() {
     nativeTabBarView.bringToFront()
     nativeSubHeaderView.bringToFront()
+    if (nativeTabBarTrailingReservedWidth > 0.0) stickyHeaderView?.bringToFront()
   }
 
   fun addReactChild(child: View, index: Int) {
@@ -742,8 +757,9 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     val nativeTabHeight = if (nativeTabBarView.visibility == View.VISIBLE) {
       nativeTabBarView.preferredHeightPx()
     } else 0
+    val tabReservedWidth = nativeTabReservationPx(width)
     nativeTabBarView.measure(
-      MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+      MeasureSpec.makeMeasureSpec(width - tabReservedWidth, MeasureSpec.EXACTLY),
       MeasureSpec.makeMeasureSpec(nativeTabHeight, MeasureSpec.EXACTLY),
     )
     val nativeSubHeaderHeight = if (nativeSubHeaderView.visibility == View.VISIBLE) {
@@ -773,7 +789,12 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
       headerHeightPx + stickyHeaderHeightPx,
     )
     val nativeTabHeight = nativeTabBarView.measuredHeight
-    nativeTabBarView.layout(0, headerHeightPx, width, headerHeightPx + nativeTabHeight)
+    val tabReservedWidth = nativeTabReservationPx(width)
+    val tabLeft = if (nativeTabBarView.layoutDirection == View.LAYOUT_DIRECTION_RTL) {
+      tabReservedWidth
+    } else 0
+    nativeTabBarView.layout(tabLeft, headerHeightPx, tabLeft + width - tabReservedWidth,
+      headerHeightPx + nativeTabHeight)
     nativeSubHeaderView.layout(
       0,
       headerHeightPx + nativeTabHeight,
@@ -2019,14 +2040,16 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     }
   }
 
-  private fun headerRegionAt(y: Float): String? {
+  private fun headerRegionAt(x: Float, y: Float): String? {
     val headerBottom = headerHeightPx - headerOffsetPx
     val stickyBottom = headerHeightPx + stickyHeaderHeightPx - headerOffsetPx
     return when {
       y < 0 || y >= stickyBottom -> null
       y < headerBottom -> "header"
       y < headerBottom + nativeTabBarView.measuredHeight &&
-        nativeTabBarView.visibility == View.VISIBLE -> "primary-tab"
+        nativeTabBarView.visibility == View.VISIBLE ->
+        if (x >= nativeTabBarView.left && x < nativeTabBarView.right) "primary-tab"
+        else "sticky-controls"
       y < headerBottom + nativeTabBarView.measuredHeight + nativeSubHeaderView.measuredHeight &&
         nativeSubHeaderView.visibility == View.VISIBLE -> "secondary-header"
       else -> "sticky-controls"
@@ -2135,7 +2158,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
         pressCancelled = false
         nativeGestureStarted = false
         nestedNativeGestureStarted = false
-        headerTouchRegion = headerRegionAt(event.y) ?: "none"
+        headerTouchRegion = headerRegionAt(event.x, event.y) ?: "none"
         headerTouchActive = headerTouchRegion != "none"
         if (!headerTouchActive) return super.dispatchTouchEvent(event)
         headerDownX = event.x
