@@ -1,5 +1,6 @@
 import type {
   ActionRow,
+  ActivityRow,
   IdentityRow,
   MarketRow,
   MetricCardRow,
@@ -93,6 +94,100 @@ const snapshot = (
 });
 
 describe('NativeList model validation', () => {
+  it('serializes Activity hideLeading in snapshots and patches and rejects non-booleans', () => {
+    const activity: ActivityRow = {
+      type: 'activity',
+      key: 'tx',
+      leading: { kind: 'icon', name: 'ArrowTopOutline' },
+      title: 'Send',
+      amounts: [{ key: 'send', text: '-1 ETH' }],
+      hideLeading: true,
+    };
+    expect(JSON.parse(serializeSnapshot(snapshot([activity]))).rows[0].hideLeading).toBe(true);
+    const patch: RowPatch = {
+      type: 'activity', key: 'tx', changes: { hideLeading: false },
+    };
+    expect(JSON.parse(serializePatches([patch]))[0].changes.hideLeading).toBe(false);
+    expect(applyRowPatches(snapshot([activity]), [patch]).rows[0]).toMatchObject({
+      hideLeading: false,
+      leading: activity.leading,
+      amounts: activity.amounts,
+    });
+    expect(() => validateSnapshot(snapshot([{
+      ...activity, hideLeading: 'false',
+    } as unknown as ActivityRow]))).toThrow('hideLeading');
+    expect(() => validatePatches([{
+      type: 'activity', key: 'tx', changes: { hideLeading: 1 },
+    } as unknown as RowPatch])).toThrow('hideLeading');
+  });
+  it('keeps identity button, title icon and leading width through snapshots and patches', () => {
+    const identity: IdentityRow = {
+      ...row('risk'),
+      titleIcon: { name: 'GasSolid', tintColor: '#888888', hoverActionKey: 'native-token-info' },
+      leading: {
+        kind: 'token',
+        fallbackIcon: { name: 'CryptoCoinOutline', size: 28, backgroundColor: '#eeeeee' },
+        overlays: [{ position: 'bottomRight', image: { uri: 'https://example.com/n.png', width: 16, height: 16 }, fallbackIcon: { name: 'GlobusOutline' } }],
+      },
+      trailing: [{
+        kind: 'button',
+        label: 'Show',
+        actionKey: 'show',
+        backgroundColor: '#111111',
+      }],
+      style: { leadingContentMaxWidthRatio: 0.6 },
+    };
+    const parsed = JSON.parse(serializeSnapshot({
+      ...snapshot([identity]),
+      theme: { background: '#ffffff', rowBackground: '#ffffff',
+        rowSelectedBackground: '#eeeeee', rowHoverBackground: '#dddddd',
+        primaryText: '#111111', secondaryText: '#222222', separator: '#333333',
+        accent: '#444444', positive: '#555555', negative: '#666666' },
+    }));
+    expect(parsed.rows[0]).toMatchObject({
+      titleIcon: { name: 'GasSolid', hoverActionKey: 'native-token-info' },
+      trailing: [{ kind: 'button', actionKey: 'show' }],
+      style: { leadingContentMaxWidthRatio: 0.6 },
+      leading: { fallbackIcon: { size: 28 }, overlays: [{ fallbackIcon: { name: 'GlobusOutline' } }] },
+    });
+    expect(parsed.theme.rowHoverBackground).toBe('#dddddd');
+    expect(validatePatches([{
+      type: 'identity', key: identity.key,
+      changes: {
+        titleIcon: { name: 'GasSolid', hoverActionKey: 'native-token-info' },
+        trailing: [{ kind: 'button', label: 'Hide', actionKey: 'hide' }],
+        style: { leadingContentMaxWidthRatio: 1 },
+      },
+    }])).toHaveLength(1);
+    for (const invalid of [
+      { ...identity, trailing: [{ kind: 'button', label: '', actionKey: 'show' }] },
+      { ...identity, trailing: [{ kind: 'button', label: 'Show', actionKey: '' }] },
+      { ...identity, trailing: [{ kind: 'button', label: 'Show', actionKey: 'show', textColor: 'red' }] },
+      { ...identity, titleIcon: { name: '' } },
+      { ...identity, titleIcon: { name: 'GasSolid', hoverActionKey: '' } },
+      { ...identity, style: { leadingContentMaxWidthRatio: 0 } },
+      { ...identity, leading: {
+        kind: 'token', overlays: [{ position: 'bottomRight', text: 'E', fontWeight: 'heavy' }],
+      } },
+      { ...identity, leading: { kind: 'token', fallbackIcon: { name: 'CryptoCoinOutline', size: -1 } } },
+      { ...identity, leading: { kind: 'token', fallbackIcon: { name: 'CryptoCoinOutline', backgroundColor: 'red' } } },
+      { ...identity, leading: { kind: 'token', overlays: [{ position: 'bottomRight', fallbackIcon: { name: 'GlobusOutline' } }] } },
+      { ...identity, trailing: [{ kind: 'icon', name: 'EditOutline', buttonStyle: 'other' }] },
+    ]) {
+      expect(() => validateSnapshot(snapshot([invalid as IdentityRow]))).toThrow();
+    }
+    expect(() => validatePatches([{
+      type: 'identity', key: identity.key,
+      changes: { trailing: [{ kind: 'button', label: '', actionKey: 'show' }] },
+    } as RowPatch])).toThrow('label');
+    expect(() => validatePatches([{
+      type: 'identity', key: identity.key,
+      changes: { titleIcon: { name: 'GasSolid', hoverActionKey: '' } },
+    }])).toThrow('hoverActionKey');
+    expect(() => validateSnapshot({ ...snapshot([identity]),
+      theme: { rowHoverBackground: 'red' } as NativeListSnapshot['theme'],
+    })).toThrow('rowHoverBackground');
+  });
   it('accepts the bounded Market row, verified glyph, styles, and states', () => {
     const styled: MarketRow = {
       ...marketRow(),
@@ -1294,6 +1389,61 @@ describe('NativeList production validation', () => {
   });
   afterEach(() => {
     environment.__DEV__ = development;
+  });
+
+  it('rejects malformed identity action and overlay fields in production snapshots and patches', () => {
+    const invalid = {
+      ...row('risk'),
+      titleIcon: { name: 'GasSolid' },
+      trailing: [{ kind: 'button', label: 'Show', actionKey: 'show', textColor: 'red' }],
+      style: { leadingContentMaxWidthRatio: 2 },
+    } as unknown as IdentityRow;
+    expect(() => validateSnapshot(snapshot([invalid]))).toThrow();
+    expect(() => validatePatches([{
+      type: 'identity',
+      key: invalid.key,
+      changes: { trailing: invalid.trailing },
+    }])).toThrow('textColor');
+    expect(() => validatePatches([{
+      type: 'identity',
+      key: invalid.key,
+      changes: { style: invalid.style },
+    }])).toThrow('leadingContentMaxWidthRatio');
+    expect(() => validateSnapshot(snapshot([{
+      ...invalid, titleIcon: { name: 'GasSolid', hoverActionKey: '' },
+      trailing: [], style: undefined,
+    }]))).toThrow('hoverActionKey');
+    expect(() => validatePatches([{
+      type: 'identity', key: invalid.key,
+      changes: { titleIcon: { name: 'GasSolid', hoverActionKey: '' } },
+    }])).toThrow('hoverActionKey');
+    expect(() => validateSnapshot({ ...snapshot(),
+      theme: { rowHoverBackground: 'bad' } as NativeListSnapshot['theme'],
+    })).toThrow('rowHoverBackground');
+    expect(() => validatePatches([{
+      type: 'identity',
+      key: invalid.key,
+      changes: { leading: {
+        kind: 'token',
+        overlays: [{ position: 'bottomRight', text: 'E', fontWeight: 'heavy' }],
+      } },
+    } as unknown as RowPatch])).toThrow('fontWeight');
+    expect(() => validatePatches([{
+      type: 'identity', key: invalid.key,
+      changes: { leading: { kind: 'token', fallbackIcon: {
+        name: 'CryptoCoinOutline', size: 0,
+      } } },
+    } as RowPatch])).toThrow('size');
+    expect(() => validatePatches([{
+      type: 'identity', key: invalid.key,
+      changes: { leading: { kind: 'token', overlays: [{
+        position: 'bottomRight', fallbackIcon: { name: 'GlobusOutline' },
+      }] } },
+    } as RowPatch])).toThrow('requires image');
+    expect(() => validatePatches([{
+      type: 'identity', key: invalid.key,
+      changes: { trailing: [{ kind: 'icon', name: 'EditOutline', buttonStyle: 'other' }] },
+    } as unknown as RowPatch])).toThrow('buttonStyle');
   });
 
   it('keeps production identity and text without enforcing display budgets', () => {

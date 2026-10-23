@@ -28,6 +28,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
   private val mainColumn = LinearLayout(context)
   private val titleLine = PackedTitleLineLayout(context)
   private val title = NativeListTextView(context)
+  private val titleIcon = OneKeyIconView(context)
   private val subtitle = NativeListTextView(context)
   private val tertiary = NativeListTextView(context)
   private val badgeLine = NativeListTextView(context)
@@ -83,6 +84,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
     titleLine.orientation = HORIZONTAL
     titleLine.gravity = Gravity.CENTER_VERTICAL
     titleLine.addView(title, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
+    titleLine.addView(titleIcon, LayoutParams(dp(20), dp(20)).apply { marginStart = dp(4) })
     titleLine.addView(badgeLine)
     trailingColumn.onAction = { key, view, slot, target ->
       emitAction(key, view, "trailingAccessory", slot, target, trailingColumn.anchorInset(view))
@@ -157,8 +159,12 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
     mainColumn.gravity = Gravity.CENTER_VERTICAL
     titleLine.gravity = Gravity.CENTER_VERTICAL
     titleLine.packsChildrenAtStart = false
+    titleLine.leadingTextMaxWidth = Int.MAX_VALUE
     titleLine.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
     title.layoutParams = LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)
+    titleIcon.visibility = GONE
+    titleIcon.contentDescription = null
+    titleIcon.setOnClickListener(null)
     for (view in listOf(title, subtitle, tertiary, badgeLine)) {
       view.text = ""
       view.visibility = GONE
@@ -294,6 +300,9 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
   private fun addLeading(visual: JSONObject?, sizeDp: Int, spacingDp: Int = 12) {
     // Legacy: a missing visual still reserves an empty, transparent leading slot.
     val descriptor = visual ?: JSONObject().put("backgroundColor", "#00000000")
+    leadingFrame.bitmapBorderWidth =
+      if (descriptor.optString("borderColor").isNotEmpty() &&
+        descriptor.optString("borderStyle") != "dashed") dp(1) else 0
     if (visual == null) leadingFrame.recycle()
     val item = currentItem!!
     val style = item.json.optJSONObject("style")?.optJSONObject("image") ?: JSONObject()
@@ -356,6 +365,18 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
   }
 
   override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+    val ratio = currentItem?.json?.optJSONObject("style")
+      ?.optDouble("leadingContentMaxWidthRatio", Double.NaN) ?: Double.NaN
+    titleLine.leadingTextMaxWidth =
+      if (ratio.isFinite() && ratio > 0.0 && ratio <= 1.0 && leadingFrame.parent === this) {
+        val inner = (MeasureSpec.getSize(widthMeasureSpec) - paddingLeft - paddingRight)
+          .coerceAtLeast(0)
+        val leading = leadingFrame.layoutParams as LayoutParams
+        val icon = if (titleIcon.visibility == VISIBLE) dp(24) else 0
+        (inner * ratio).roundToInt()
+          .minus(leading.width + leading.marginEnd + icon)
+          .coerceAtLeast(0)
+      } else Int.MAX_VALUE
     super.onMeasure(widthMeasureSpec, heightMeasureSpec)
     val item = currentItem ?: return
     if (
@@ -582,6 +603,17 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
     titleLine.packsChildrenAtStart = true
     title.ellipsize = TextUtils.TruncateAt.END
     showText(title, item.json.optString("title"), item.json.optInt("titleLines", 1))
+    item.json.optJSONObject("titleIcon")?.let { icon ->
+      titleIcon.iconName = icon.optString("name")
+      titleIcon.glyphSizeDp = 20
+      titleIcon.useSourceScale = sourceScale
+      titleIcon.tintColor = safeColor(
+        icon.optString("tintColor").takeIf(String::isNotEmpty),
+        color(theme, "iconSubdued", "#00000072"),
+      )
+      titleIcon.contentDescription = icon.optString("accessibilityLabel").takeIf(String::isNotEmpty)
+      titleIcon.visibility = VISIBLE
+    }
     if (item.json.optString("presentation") == "accountSelector") {
       title.typeface = fonts.regular(context)
     }

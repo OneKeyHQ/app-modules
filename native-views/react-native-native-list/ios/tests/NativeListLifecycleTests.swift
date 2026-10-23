@@ -153,6 +153,132 @@ final class NativeListLifecycleTests: XCTestCase {
     XCTAssertNotEqual(cell.bindingEpoch, changedEpoch)
   }
 
+  func testRiskIdentityTitleIconAndButtonResetOnProductionCellBind() throws {
+    let cell = NativeListIdentityCell(frame: CGRect(x: 0, y: 0, width: 320, height: 56))
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 200))
+    window.addSubview(cell)
+    let titleIcon = try XCTUnwrap(
+      Mirror(reflecting: cell).children.first { $0.label == "titleIconView" }?.value as? UIImageView)
+    let titleStack = try XCTUnwrap(
+      Mirror(reflecting: cell).children.first { $0.label == "titleRowStack" }?.value as? UIStackView)
+    let titleLabel = try XCTUnwrap(
+      Mirror(reflecting: cell).children.first { $0.label == "titleLabel" }?.value as? UILabel)
+    let trailing = try XCTUnwrap(
+      Mirror(reflecting: cell).children.first { $0.label == "trailingStack" }?.value
+        as? NativeListAccessoryStack)
+    func bind(_ data: [String: Any]) throws {
+      let item = try NativeListItem(data: data)
+      cell.bind(item: item, theme: nil, layout: "linear", selected: false,
+        checkboxState: { _, _, fallback in fallback }, fonts: NativeListFontFamilies())
+      cell.layoutIfNeeded()
+    }
+    let base: [String: Any] = ["key": "risk", "type": "identity", "title": "Risk",
+      "height": 56, "leading": ["kind": "token",
+        "fallbackIcon": ["name": "CryptoCoinOutline"]]]
+    try bind(base)
+    XCTAssertTrue(titleIcon.isHidden)
+    XCTAssertLessThanOrEqual(titleIcon.bounds.width, 0.5)
+    try bind(base.merging(["titleIcon": ["name": "GasSolid"],
+      "trailing": [["kind": "button", "label": "Show", "actionKey": "show",
+        "backgroundColor": "#DDDDDD", "pressedBackgroundColor": "#AAAAAA"]]]) { _, newer in newer })
+    XCTAssertFalse(titleIcon.isHidden)
+    XCTAssertNotNil(titleIcon.image)
+    XCTAssertEqual(titleIcon.bounds.width, 20, accuracy: 0.5)
+    XCTAssertEqual(titleStack.customSpacing(after: titleLabel), 4, accuracy: 0.1)
+    let button = try XCTUnwrap(trailing.arrangedSubviews.compactMap { $0 as? NativeListAccessoryButton }
+      .first { !$0.isHidden })
+    XCTAssertEqual(button.intrinsicContentSize.height, 30, accuracy: 0.5)
+    let normal = button.backgroundColor
+    button.isHighlighted = true
+    XCTAssertNotEqual(button.backgroundColor, normal)
+    button.isHighlighted = false
+    XCTAssertEqual(button.backgroundColor, normal)
+    try bind(base)
+    XCTAssertTrue(titleIcon.isHidden)
+    XCTAssertLessThanOrEqual(titleIcon.bounds.width, 0.5)
+    XCTAssertTrue(trailing.arrangedSubviews.compactMap { $0 as? NativeListAccessoryButton }
+      .allSatisfy { $0.isHidden })
+  }
+
+  func testRiskIdentityRatioKeepsTitleVisibleWithAndWithoutButton() throws {
+    let cell = NativeListIdentityCell(frame: CGRect(x: 0, y: 0, width: 386, height: 56))
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 386, height: 200))
+    window.addSubview(cell)
+    let titleLabel = try XCTUnwrap(
+      Mirror(reflecting: cell).children.first { $0.label == "titleLabel" }?.value as? UILabel)
+    let mainStack = try XCTUnwrap(
+      Mirror(reflecting: cell).children.first { $0.label == "mainStack" }?.value as? UIStackView)
+    let trailing = try XCTUnwrap(
+      Mirror(reflecting: cell).children.first { $0.label == "trailingStack" }?.value
+        as? NativeListAccessoryStack)
+    let base: [String: Any] = [
+      "key": "risk", "type": "identity", "title": "XSR", "height": 56,
+      "leading": ["kind": "token", "fallbackIcon": ["name": "CryptoCoinOutline"]],
+      "style": [
+        "horizontalPadding": 12, "verticalPadding": 8, "leadingGap": 12,
+        "leadingContentMaxWidthRatio": 0.6,
+        "image": ["width": 40, "height": 40, "shape": "circle"],
+        "title": ["fontSize": 16, "lineHeight": 24, "fontWeight": "medium", "lines": 1],
+      ],
+    ]
+
+    func bind(_ data: [String: Any], capped: Bool = true) throws {
+      cell.bind(item: try NativeListItem(data: data), theme: nil, layout: "linear",
+        selected: false, checkboxState: { _, _, fallback in fallback },
+        fonts: NativeListFontFamilies())
+      window.layoutIfNeeded()
+      cell.layoutIfNeeded()
+      XCTAssertFalse(titleLabel.isHidden)
+      XCTAssertGreaterThan(titleLabel.bounds.width, 0.5,
+        "A visible token title must not collapse when the row reserves trailing space")
+      XCTAssertEqual(titleLabel.bounds.height, 24, accuracy: 0.5)
+      XCTAssertGreaterThan(mainStack.bounds.width, 20)
+      XCTAssertEqual(trailing.frame.maxX, cell.root.bounds.maxX, accuracy: 0.5)
+      if capped {
+        XCTAssertLessThanOrEqual(mainStack.bounds.width, cell.root.bounds.width * 0.6 - 52 + 0.5)
+      }
+    }
+
+    try bind(base)
+    XCTAssertGreaterThan(titleLabel.bounds.width, 20)
+    XCTAssertNil(trailing.firstVisibleControl)
+    try bind(base.merging(["trailing": [[
+      "kind": "button", "label": "Show on home", "actionKey": "show",
+    ]]]) { _, newer in newer })
+    let button = try XCTUnwrap(trailing.firstVisibleControl)
+    XCTAssertGreaterThan(button.bounds.width, 100)
+    XCTAssertEqual(trailing.frame.minX + button.frame.maxX, cell.root.bounds.maxX, accuracy: 0.5)
+    cell.frame.size.height = 88
+    try bind(base.merging(["trailing": [
+      ["kind": "button", "label": "A", "actionKey": "first"],
+      ["kind": "button", "label": "Longer action", "actionKey": "second"],
+    ], "height": 88]) { _, newer in newer })
+    let visibleButtons = trailing.arrangedSubviews.compactMap { $0 as? NativeListAccessoryButton }
+      .filter { !$0.isHidden }
+    XCTAssertEqual(visibleButtons.count, 2)
+    XCTAssertGreaterThan(visibleButtons[1].bounds.width, visibleButtons[0].bounds.width)
+    XCTAssertEqual(trailing.frame.minX + visibleButtons[1].frame.maxX,
+      cell.root.bounds.maxX, accuracy: 0.5)
+    cell.frame.size.height = 56
+    try bind(base.merging(["title": "A very long token symbol that must truncate within the cap"])
+      { _, newer in newer })
+    XCTAssertLessThan(titleLabel.bounds.width, titleLabel.intrinsicContentSize.width)
+    try bind(base)
+    XCTAssertNil(trailing.firstVisibleControl)
+    try bind(base.merging(["key": "searched-risk", "title": "rkl"]) { _, newer in newer })
+    XCTAssertNil(trailing.firstVisibleControl)
+    try bind(base)
+    var unrestricted = base
+    var unrestrictedStyle = try XCTUnwrap(base["style"] as? [String: Any])
+    unrestrictedStyle.removeValue(forKey: "leadingContentMaxWidthRatio")
+    unrestricted["style"] = unrestrictedStyle
+    try bind(unrestricted, capped: false)
+    XCTAssertEqual(cell.root.arrangedSubviews.count, 3)
+    XCTAssertEqual(mainStack.contentHuggingPriority(for: .horizontal).rawValue, 1, accuracy: 0.1)
+    let spacing = cell.root.customSpacing(after: mainStack)
+    XCTAssertTrue(spacing == UIStackView.spacingUseDefault || spacing == cell.root.spacing)
+  }
+
   func testFixedFooterReplacesRendererAndKeepsActionRouting() throws {
     let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
     var actions: [[String: Any]] = []

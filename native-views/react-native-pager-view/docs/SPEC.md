@@ -333,6 +333,32 @@ warnings were observed. Keyboard, multi-touch, physical-device performance and
 the full lifecycle/interaction matrix remain unverified. These are local source
 builds; the currently installed npm version does not yet contain this migration.
 
+## Android removal-transition geometry retention
+
+Status: implemented locally; unreleased. On the Android UI thread, during a
+screen removal transition,
+NativeList and CollapsiblePager layout entry points respect the RecyclerView
+suppression state established by the screen-transition owner. The owner restores
+the original state when its last transition ownership ends. This adds no public
+API and does not change Web or iOS behavior.
+
+If Fabric removes the current NativeScroller React child while its origin-frame
+transition remains active, Android retains the already displayed native extent
+for drawing. The current child and raw content dimensions still clear normally;
+only native content measurement and layout use the retained effective extent.
+The matching transition end or detach clears the private child and extent state
+idempotently. Adding a new child cancels prior retention, and a late end for the
+old child cannot alter the new content. Ordinary removal, size events and scroll
+commands keep their existing semantics.
+
+Local arm64 DevShell acceptance covered Base, CXO and Overview exit content,
+normal scrolling, RecyclerView ownership and suppression cleanup for the
+observed CXO exit, and NativeScroller raw-zero content dimensions with a
+nonzero displayed origin followed by detach cleanup. Nested-owner and cancel
+paths, Overview rebound/cancel, natural resize and new-child runtime cases,
+and the full performance matrix remain unverified. SDK publication and
+consumer version alignment are separate steps.
+
 ## iOS vertical-scroll press cancellation
 
 Status: implemented in source. A source-identical `node_modules` build was

@@ -689,7 +689,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
 
   private fun layoutPagerIfRequested() {
     val recycler = pager.getChildAt(0) as? RecyclerView ?: return
-    if (!recycler.isLayoutRequested || recycler.isComputingLayout || recycler.width <= 0 || recycler.height <= 0) return
+    if (!recycler.isLayoutRequested || recycler.isLayoutSuppressed || recycler.isComputingLayout || recycler.width <= 0 || recycler.height <= 0) return
     // OneKey patch: a non-animated page command queues RecyclerView layout, but RN
     // can stop that request after navigation. Drain it before showing the page.
     recycler.measure(
@@ -712,6 +712,9 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     layout(left, top, right, bottom)
   }
 
+  private fun isPagerRecyclerLayoutSuppressed(): Boolean =
+    (pager.getChildAt(0) as? RecyclerView)?.isLayoutSuppressed == true
+
   override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
     val width = MeasureSpec.getSize(widthMeasureSpec)
     val height = MeasureSpec.getSize(heightMeasureSpec)
@@ -722,10 +725,12 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
       return
     }
     val pagerHeight = height + headerHeightPx
-    pager.measure(
-      MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
-      MeasureSpec.makeMeasureSpec(pagerHeight, MeasureSpec.EXACTLY),
-    )
+    if (!isPagerRecyclerLayoutSuppressed()) {
+      pager.measure(
+        MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+        MeasureSpec.makeMeasureSpec(pagerHeight, MeasureSpec.EXACTLY),
+      )
+    }
     headerView?.measure(
       MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
       MeasureSpec.makeMeasureSpec(headerHeightPx, MeasureSpec.EXACTLY),
@@ -757,7 +762,9 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     // RN ancestors allow overflow; keep translated header content inside this viewport.
     clipBounds = Rect(0, 0, width, height)
     if (width <= 0 || height <= 0) return
-    pager.layout(0, 0, width, height + headerHeightPx)
+    if (!isPagerRecyclerLayoutSuppressed()) {
+      pager.layout(0, 0, width, height + headerHeightPx)
+    }
     headerView?.layout(0, 0, width, headerHeightPx)
     stickyHeaderView?.layout(
       0,
@@ -828,7 +835,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     }
     if (!reached()) {
       if (!isAttachedToWindow || !view.isAttachedToWindow || width <= 0 || height <= 0 ||
-          view.width <= 0 || view.height <= 0 || isInLayout || view.isInLayout || view.isComputingLayout ||
+          view.width <= 0 || view.height <= 0 || isInLayout || view.isInLayout || view.isLayoutSuppressed || view.isComputingLayout ||
           pageKey(index) != key || primaryScrollableForPage(index) !== view || !isCurrentPageRestore(key, request)) return false
       val previousSynthetic = syntheticPageRestore
       syntheticPageRestore = true
@@ -1033,7 +1040,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
           if (animated && !recyclerIsAtBodyTop(view)) view.smoothScrollToPosition(0)
           else if (manager != null && manager.orientation == RecyclerView.VERTICAL) {
             manager.scrollToPositionWithOffset(0, 0)
-            if (view.width > 0 && view.height > 0 && !isInLayout && !view.isInLayout && !view.isComputingLayout) {
+            if (view.width > 0 && view.height > 0 && !isInLayout && !view.isInLayout && !view.isLayoutSuppressed && !view.isComputingLayout) {
               view.measure(MeasureSpec.makeMeasureSpec(view.width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(view.height, MeasureSpec.EXACTLY))
               view.layout(view.left, view.top, view.right, view.bottom)
             }
@@ -1638,7 +1645,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
       if (anchorOffset != null) manager?.scrollToPositionWithOffset(first, anchorOffset)
       // React Native can stop this nested requestLayout at its React-owned parent.
       // Commit the changed inset before drawing instead of waiting for a data update.
-      if (recycler.width > 0 && recycler.height > 0 && !recycler.isComputingLayout) {
+      if (recycler.width > 0 && recycler.height > 0 && !recycler.isLayoutSuppressed && !recycler.isComputingLayout) {
         recycler.forceLayout()
         recycler.measure(
           MeasureSpec.makeMeasureSpec(recycler.width, MeasureSpec.EXACTLY),

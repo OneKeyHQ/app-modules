@@ -1,5 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-  <application android:theme="@android:style/Theme.Material.Light.NoActionBar">
+  <uses-permission android:name="android.permission.INTERNET" />
+  <application android:theme="@android:style/Theme.Material.Light.NoActionBar" android:usesCleartextTraffic="true">
     <uses-library android:name="android.test.runner" android:required="false" />
     <uses-library android:name="android.test.base" android:required="false" />
     <activity android:name="com.margelo.nitro.nativelist.NativeListReorderTestActivity" android:exported="false" />

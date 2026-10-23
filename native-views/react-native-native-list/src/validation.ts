@@ -226,6 +226,7 @@ const TEXT_STYLE_KEYS_BY_ROW_TYPE: Readonly<
 const EXTRA_STYLE_KEYS_BY_ROW_TYPE: Readonly<
   Partial<Record<RowModel['type'], readonly string[]>>
 > = {
+  identity: ['leadingContentMaxWidthRatio'],
   market: [
     'titleBadgeLayout',
     'contentTrailingGap',
@@ -492,6 +493,11 @@ function assertRowStyle(row: RowModel, path: string): void {
   // Market keeps its own richer assertions, driven from assertMarketRow.
   if (row.type === 'market') return;
   assertBoxStyle(style as RowBoxStyle, `${path}.style`);
+  if (row.type === 'identity') {
+    const ratio = (style as IdentityRow['style'])?.leadingContentMaxWidthRatio;
+    if (ratio !== undefined && (!Number.isFinite(ratio) || ratio <= 0 || ratio > 1))
+      fail(`${path}.style.leadingContentMaxWidthRatio`, 'must be within (0, 1]');
+  }
   const slots = style as Record<string, NativeListTextStyle | undefined>;
   textKeys.forEach((key) =>
     assertTextStyle(slots[key], `${path}.style.${key}`)
@@ -1049,6 +1055,33 @@ function assertTrailingAccessories(
 ): void {
   accessories?.forEach((accessory, index) => {
     const accessoryPath = `${path}[${index}]`;
+    if (accessory.kind === 'button') {
+      assertUnknownKeys(
+        accessory as Record<string, unknown>,
+        [
+          'kind', 'label', 'actionKey', 'disabled', 'testID',
+          'accessibilityLabel', 'textColor', 'backgroundColor',
+          'pressedBackgroundColor', 'hoverBackgroundColor', 'focusRingColor',
+        ],
+        accessoryPath,
+        'button key'
+      );
+      if (typeof accessory.label !== 'string' || !accessory.label.trim())
+        fail(`${accessoryPath}.label`, 'must be non-blank');
+      assertKey(accessory.actionKey, `${accessoryPath}.actionKey`);
+      if (accessory.disabled !== undefined && typeof accessory.disabled !== 'boolean')
+        fail(`${accessoryPath}.disabled`, 'must be boolean');
+      for (const field of ['textColor', 'backgroundColor', 'pressedBackgroundColor',
+        'hoverBackgroundColor', 'focusRingColor'] as const) {
+        const value = accessory[field];
+        if (value !== undefined &&
+          (typeof value !== 'string' || !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(value)))
+          fail(`${accessoryPath}.${field}`, 'must be #RRGGBB or #RRGGBBAA');
+      }
+    }
+    if (accessory.kind === 'icon' && accessory.buttonStyle !== undefined &&
+      accessory.buttonStyle !== 'tertiary')
+      fail(`${accessoryPath}.buttonStyle`, 'must be tertiary');
     if (
       accessory.kind === 'progress' &&
       (accessory.value < 0 || accessory.value > 1)
@@ -1060,6 +1093,33 @@ function assertTrailingAccessories(
       assertTextTone(accessory.secondaryTone, `${accessoryPath}.secondaryTone`);
     }
   });
+}
+
+function assertIdentityExtras(
+  row: Pick<IdentityRow, 'titleIcon' | 'trailing' | 'style'>,
+  path: string
+): void {
+  if (row.titleIcon !== undefined) {
+    const icon = protocolObject(row.titleIcon, `${path}.titleIcon`);
+    assertUnknownKeys(icon, ['name', 'tintColor', 'accessibilityLabel', 'hoverActionKey'],
+      `${path}.titleIcon`, 'title icon key');
+    if (typeof row.titleIcon.name !== 'string' || !row.titleIcon.name.trim())
+      fail(`${path}.titleIcon.name`, 'must be non-blank');
+    if (row.titleIcon.tintColor !== undefined &&
+      (typeof row.titleIcon.tintColor !== 'string' ||
+        !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(row.titleIcon.tintColor)))
+      fail(`${path}.titleIcon.tintColor`, 'must be #RRGGBB or #RRGGBBAA');
+    if (row.titleIcon.accessibilityLabel !== undefined &&
+      typeof row.titleIcon.accessibilityLabel !== 'string')
+      fail(`${path}.titleIcon.accessibilityLabel`, 'must be a string');
+    if (row.titleIcon.hoverActionKey !== undefined)
+      assertKey(row.titleIcon.hoverActionKey, `${path}.titleIcon.hoverActionKey`);
+  }
+  const ratio = row.style?.leadingContentMaxWidthRatio;
+  if (ratio !== undefined && (typeof ratio !== 'number' ||
+    !Number.isFinite(ratio) || ratio <= 0 || ratio > 1))
+    fail(`${path}.style.leadingContentMaxWidthRatio`, 'must be within (0, 1]');
+  assertTrailingAccessories(row.trailing, `${path}.trailing`);
 }
 
 function assertImage(image: ImageSource | undefined, path: string): void {
@@ -1132,6 +1192,13 @@ function assertLeadingVisual(
     assertText(visual.cornerIcon?.name, `${path}.cornerIcon.name`);
     // OneKey patch: validate optional selector overlays at the JSON boundary.
     assertText(visual.fallbackIcon?.name, `${path}.fallbackIcon.name`);
+    if (visual.fallbackIcon?.size !== undefined &&
+      (!Number.isFinite(visual.fallbackIcon.size) || visual.fallbackIcon.size <= 0 ||
+        visual.fallbackIcon.size > 40))
+      fail(`${path}.fallbackIcon.size`, 'must be within (0, 40]');
+    if (visual.fallbackIcon?.backgroundColor !== undefined &&
+      !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(visual.fallbackIcon.backgroundColor))
+      fail(`${path}.fallbackIcon.backgroundColor`, 'must be a hex color');
     if ((visual.overlays?.length ?? 0) > 2)
       fail(`${path}.overlays`, 'supports at most two overlays');
     visual.overlays?.forEach((overlay, index) => {
@@ -1191,7 +1258,19 @@ function assertLeadingVisual(
           'must fit inside the overlay'
         );
       assertImage(overlay.image, `${path}.overlays[${index}].image`);
+      if (overlay.fallbackIcon !== undefined && !overlay.image)
+        fail(`${path}.overlays[${index}].fallbackIcon`, 'requires image');
+      if (overlay.fallbackIcon !== undefined &&
+        (typeof overlay.fallbackIcon.name !== 'string' || !overlay.fallbackIcon.name.trim()))
+        fail(`${path}.overlays[${index}].fallbackIcon.name`, 'must be non-blank');
+      if (overlay.fallbackIcon?.tintColor !== undefined &&
+        !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(overlay.fallbackIcon.tintColor))
+        fail(`${path}.overlays[${index}].fallbackIcon.tintColor`, 'must be a hex color');
       assertText(overlay.text, `${path}.overlays[${index}].text`);
+      if (overlay.fontWeight !== undefined &&
+        !['regular', 'medium', 'semibold', 'bold'].includes(overlay.fontWeight))
+        fail(`${path}.overlays[${index}].fontWeight`,
+          'must be regular, medium, semibold, or bold');
     });
     if (visual.kind === 'token') {
       assertImage(visual.networkImage, `${path}.networkImage`);
@@ -1223,6 +1302,8 @@ function assertVisual(row: RowModel, path: string): void {
 }
 
 function assertActivity(row: Partial<ActivityRow>, path: string): void {
+  if (row.hideLeading !== undefined && typeof row.hideLeading !== 'boolean')
+    fail(`${path}.hideLeading`, 'must be boolean');
   assertText(row.title, `${path}.title`);
   assertText(row.description, `${path}.description`);
   if (
@@ -1399,6 +1480,7 @@ function assertRow(
         );
       }
       assertText(row.title, `${path}.title`);
+      assertIdentityExtras(row, path);
       assertText(row.subtitle, `${path}.subtitle`);
       // OneKey patch: selector text segments truncate independently.
       row.subtitleSegments?.forEach((segment, segmentIndex) => {
@@ -1727,6 +1809,10 @@ function assertSnapshotContract(
     snapshot.theme?.imageFallbackBackground,
     'theme.imageFallbackBackground'
   );
+  if (snapshot.theme?.rowHoverBackground !== undefined &&
+    (typeof snapshot.theme.rowHoverBackground !== 'string' ||
+      !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(snapshot.theme.rowHoverBackground)))
+    fail('theme.rowHoverBackground', 'must be a hex color');
   if (snapshot.schemaVersion !== 1) fail('snapshot.schemaVersion', 'must be 1');
   if (!Number.isSafeInteger(snapshot.generation) || snapshot.generation < 0) {
     fail('snapshot.generation', 'must be a non-negative safe integer');
@@ -1899,6 +1985,7 @@ const PROTOCOL_ARRAY_FIELDS = new Set([
   'primaryTextSegments',
 ]);
 const PROTOCOL_NUMBER_FIELDS = new Set([
+  'leadingContentMaxWidthRatio',
   'height',
   'width',
   'fontSize',
@@ -1961,6 +2048,21 @@ function assertProtocolFields(
     return;
   }
   const object = value as Record<string, unknown>;
+  if (parentField === 'fallbackIcon') {
+    protocolKey(object.name, `${path}.name`);
+    if (object.size !== undefined &&
+      (typeof object.size !== 'number' || !Number.isFinite(object.size) ||
+        object.size <= 0 || object.size > 40))
+      fail(`${path}.size`, 'must be within (0, 40]');
+    for (const field of ['tintColor', 'backgroundColor'] as const) {
+      const color = object[field];
+      if (color !== undefined &&
+        (typeof color !== 'string' || !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(color)))
+        fail(`${path}.${field}`, 'must be a hex color');
+    }
+  }
+  if (parentField === 'overlays' && object.fallbackIcon !== undefined && !object.image)
+    fail(`${path}.fallbackIcon`, 'requires image');
   if (
     !path.includes('.style.') &&
     ['image', 'networkImage', 'thumbnail', 'images', 'hoverImages'].includes(
@@ -1987,6 +2089,16 @@ function assertProtocolFields(
       !['offsetX', 'offsetY'].includes(field)
     )
       fail(fieldPath, 'must be non-negative');
+    if (
+      parentField === 'overlays' &&
+      field === 'fontWeight' &&
+      !['regular', 'medium', 'semibold', 'bold'].includes(item as string)
+    )
+      fail(fieldPath, 'must be regular, medium, semibold, or bold');
+    if (field === 'buttonStyle' && item !== 'tertiary')
+      fail(fieldPath, 'must be tertiary');
+    if (field === 'hideLeading' && typeof item !== 'boolean')
+      fail(fieldPath, 'must be boolean');
     if (
       field === 'key' ||
       field === 'sectionKey' ||
@@ -2067,6 +2179,7 @@ function assertRowProtocol(row: RowModel, path: string): void {
   if (row.height !== undefined && row.height < 0)
     fail(`${path}.height`, 'must be non-negative');
   if (row.type === 'identity') {
+    assertIdentityExtras(row, path);
     let end = 0;
     row.titleMatch?.forEach((match) => {
       if (
@@ -2150,6 +2263,10 @@ function assertRowProtocol(row: RowModel, path: string): void {
 
 function assertSnapshotProtocol(snapshot: NativeListSnapshot): void {
   protocolObject(snapshot, 'snapshot');
+  if (snapshot.theme?.rowHoverBackground !== undefined &&
+    (typeof snapshot.theme.rowHoverBackground !== 'string' ||
+      !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(snapshot.theme.rowHoverBackground)))
+    fail('theme.rowHoverBackground', 'must be a hex color');
   if (snapshot.schemaVersion !== 1) fail('snapshot.schemaVersion', 'must be 1');
   if (!Number.isSafeInteger(snapshot.generation) || snapshot.generation < 0)
     fail('snapshot.generation', 'must be a non-negative safe integer');
@@ -2295,6 +2412,7 @@ function assertPatchChanges(patch: RowPatch, index: number): void {
   switch (patch.type) {
     case 'identity':
       assertText(patch.changes.title, `${path}.title`);
+      assertIdentityExtras(patch.changes, path);
       assertText(patch.changes.subtitle, `${path}.subtitle`);
       assertText(patch.changes.tertiary, `${path}.tertiary`);
       if (
@@ -2495,6 +2613,8 @@ export function validatePatches(
     protocolObject(patch.changes, `patches[${index}].changes`);
     assertRowType(patch.type, `patches[${index}]`);
     assertProtocolFields(patch.changes, `patches[${index}].changes`);
+    if (patch.type === 'identity')
+      assertIdentityExtras(patch.changes, `patches[${index}].changes`);
     if (!isDevelopment()) continue;
     assertKey(patch.key, `patches[${index}].key`);
     if (Object.keys(patch.changes).length === 0) {

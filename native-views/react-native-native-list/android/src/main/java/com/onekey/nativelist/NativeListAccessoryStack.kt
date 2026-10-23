@@ -13,6 +13,7 @@ import android.text.style.ForegroundColorSpan
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
+import android.view.MotionEvent
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -29,6 +30,8 @@ import org.json.JSONObject
 // Bounded controls only. Event ownership and epochs stay with the row host.
 internal class NativeListAccessoryStack(context: android.content.Context, val fonts: NativeListFonts) : LinearLayout(context) {
   private val trailingViews = List(2) { NativeListTextView(context) }
+  private val buttonDownEpochs = IntArray(2) { -1 }
+  private var bindingEpoch = 0
   private val trailingIcons = List(2) { OneKeyIconView(context) }
   private val checkbox = OneKeyCheckboxView(context)
   private val spinner = ProgressBar(context)
@@ -63,6 +66,19 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
         info: android.view.accessibility.AccessibilityNodeInfo,
       ) {
         super.onInitializeAccessibilityNodeInfo(host, info)
+        info.viewIdResourceName = host.getTag(com.facebook.react.R.id.react_test_id) as? String
+      }
+    }
+  private val buttonAccessibilityDelegate =
+    object : View.AccessibilityDelegate() {
+      override fun onInitializeAccessibilityNodeInfo(
+        host: View,
+        info: android.view.accessibility.AccessibilityNodeInfo,
+      ) {
+        super.onInitializeAccessibilityNodeInfo(host, info)
+        info.className = android.widget.Button::class.java.name
+        info.isEnabled = host.isEnabled
+        info.isClickable = host.isEnabled && host.isClickable
         info.viewIdResourceName = host.getTag(com.facebook.react.R.id.react_test_id) as? String
       }
     }
@@ -167,14 +183,20 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
 
   fun anchorInset(view: View): Int =
     if (
-      (tag as? NativeListItem)?.json?.optString("presentation") == "accountSelector" &&
-        view in trailingIcons &&
-        (view.layoutParams as MarginLayoutParams).marginStart < 0
+      view in trailingIcons &&
+        (view.layoutParams as MarginLayoutParams).marginStart < 0 &&
+        ((tag as? NativeListItem)?.json?.optString("presentation") == "accountSelector" ||
+          (tag as? NativeListItem)?.json?.optJSONArray("trailing")?.let { trailing ->
+            (0 until trailing.length()).any { index ->
+              trailing.optJSONObject(index)?.optString("buttonStyle") == "tertiary"
+            }
+          } == true)
     )
       dp(7)
     else 0
 
   fun reset() {
+    bindingEpoch += 1
     tag = null
     endInset = null
     requestsUnclippedHost = false
@@ -183,11 +205,20 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
     semanticValueViews.clear()
     boundCheckboxData = null
     trailingViews.forEachIndexed { index, v ->
+      buttonDownEpochs[index] = -1
       v.paintFlags = trailingPaintFlags[index]
       v.visibility = GONE
       v.text = ""
       v.layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
       v.setOnClickListener(null)
+      v.setOnTouchListener(null)
+      v.isPressed = false
+      v.isClickable = false
+      v.isEnabled = true
+      v.alpha = 1f
+      v.contentDescription = null
+      v.setTag(com.facebook.react.R.id.react_test_id, null)
+      v.accessibilityDelegate = null
       v.background = null
       v.setPadding(0, 0, 0, 0)
       // Legacy trailing text: END gravity, one line, no ellipsis.
@@ -252,6 +283,83 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
     for (index in 0 until minOf(2, accessories.length())) {
       val accessory = accessories.getJSONObject(index)
       when (accessory.optString("kind")) {
+        "button" -> {
+          if (textIndex !in trailingViews.indices) continue
+          val view = trailingViews[textIndex]
+          val buttonIndex = textIndex
+          val epoch = bindingEpoch
+          val disabled =
+            item.json.optBoolean("disabled", false) || accessory.optBoolean("disabled", false)
+          showTrailing(textIndex, accessory.optString("label"), false)
+          view.typeface = fonts.medium(context)
+          view.gravity = Gravity.CENTER
+          view.setTextColor(
+            safeColor(
+              accessory.optString("textColor").takeIf(String::isNotEmpty),
+              color(theme, "primaryText", "#000000DF"),
+            )
+          )
+          view.layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, dp(30))
+          view.setPadding(dp(11), dp(4), dp(11), dp(4))
+          view.background =
+            StateListDrawable().apply {
+              fun fill(value: Int) =
+                GradientDrawable().apply {
+                  setColor(value)
+                  cornerRadius = dp(15).toFloat()
+                  setStroke(dp(1), Color.TRANSPARENT)
+                }
+              addState(
+                intArrayOf(android.R.attr.state_pressed),
+                fill(safeColor(accessory.optString("pressedBackgroundColor").takeIf(String::isNotEmpty),
+                  color(theme, "rowPressedBackground", "#00000017"))),
+              )
+              addState(
+                intArrayOf(),
+                fill(safeColor(accessory.optString("backgroundColor").takeIf(String::isNotEmpty),
+                  color(theme, "strongBackground", "#0000000F"))),
+              )
+            }
+          view.setTag(
+            com.facebook.react.R.id.react_test_id,
+            accessory.optString("testID").takeIf(String::isNotEmpty),
+          )
+          view.accessibilityDelegate = buttonAccessibilityDelegate
+          view.contentDescription =
+            accessory.optString("accessibilityLabel").ifEmpty { accessory.optString("label") }
+          view.isEnabled = !disabled
+          view.alpha = if (disabled) 0.4f else 1f
+          view.isClickable = true
+          view.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+              MotionEvent.ACTION_DOWN -> {
+                buttonDownEpochs[buttonIndex] = epoch
+                false
+              }
+              MotionEvent.ACTION_UP -> {
+                if (buttonDownEpochs[buttonIndex] != bindingEpoch) {
+                  view.isPressed = false
+                  true
+                } else false
+              }
+              MotionEvent.ACTION_CANCEL -> {
+                buttonDownEpochs[buttonIndex] = -1
+                false
+              }
+              else -> false
+            }
+          }
+          view.setOnClickListener {
+            if (epoch != bindingEpoch) return@setOnClickListener
+            (tag as? NativeListItem)?.takeUnless { it.json.optBoolean("disabled", false) }
+              ?.takeUnless { accessory.optBoolean("disabled", false) }
+              ?.let {
+                emitAction(it, accessory.optString("actionKey"), null, view,
+                  "trailingAccessory", index)
+              }
+          }
+          textIndex++
+        }
         "value" -> {
           showTrailing(
             textIndex,
@@ -512,7 +620,26 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
     )
     icon.accessibilityDelegate = selectorAccessibilityDelegate
     icon.contentDescription = data.optString("accessibilityLabel").takeIf { it.isNotEmpty() }
-    if (item.json.optString("presentation") == "accountSelector") {
+    if (data.optString("buttonStyle") == "tertiary") {
+      icon.glyphSizeDp = 24
+      icon.layoutParams = LayoutParams(dp(38), dp(38)).apply {
+        gravity = Gravity.CENTER_VERTICAL
+        marginStart = -dp(7)
+        marginEnd = -dp(7)
+      }
+      icon.background = StateListDrawable().apply {
+        addState(intArrayOf(android.R.attr.state_pressed),
+          roundedFill(color(theme, "rowPressedBackground", "#00000017"), 19f).apply {
+            setStroke(dp(1), Color.TRANSPARENT)
+          })
+        addState(intArrayOf(), roundedFill(Color.TRANSPARENT, 19f).apply {
+          setStroke(dp(1), Color.TRANSPARENT)
+        })
+      }
+      clipChildren = false
+      clipToPadding = false
+      requestsUnclippedHost = true
+    } else if (item.json.optString("presentation") == "accountSelector") {
       icon.glyphSizeDp = 24
       val isSourceMenu = item.hasExplicitHeight && icon.iconName == "DotHorOutline"
       val size = if (item.hasExplicitHeight && icon.iconName == "PlusSmallOutline") 36 else 38

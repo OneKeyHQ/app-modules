@@ -26,6 +26,85 @@ prevention; there is no automatic fitting or shrinking pass.
 
 ## Public API and defaults
 
+### Identity row risk-management controls
+
+Status: implemented in source for local consumers, unreleased. Focused validation,
+Web DOM tests, native builds and device acceptance are tracked separately below.
+The optional `identity.titleIcon` is a static, non-actionable icon after the
+title: a 20-point glyph with a 4-point gap, optional tint and accessibility
+label. Its optional Web-only `hoverActionKey` emits an anchored help action
+from the icon alone on mouse/pen hover or touch press; the consumer owns the
+tooltip. Mouse/pen press closes the anchor until pointer leave. Touch press
+toggles the icon anchor. The icon adds no tab stop or separate click action;
+row activation remains unchanged. Departure, scroll, full rebind and destroy
+invalidate the anchor. Omission removes the icon in a full snapshot; omission
+in a patch leaves the existing value unchanged. An explicit replacement icon
+without `hoverActionKey` clears the old hover action. Removing the icon
+requires a full snapshot. `identity.style.leadingContentMaxWidthRatio`, when given,
+must be finite and within `(0, 1]`; it caps the combined leading visual, gap
+and title content relative to the row's available inner width. Omission keeps
+the existing unrestricted layout. Long titles truncate inside the cap, and
+unused width remains available to trailing controls. The ratio is layout-only,
+never a reuse identity or row-height input.
+
+`trailing` accepts an optional `button` accessory with required nonempty
+`label` and `actionKey`, optional `disabled`, `testID`,
+`accessibilityLabel`, and optional hex colors `textColor`,
+`backgroundColor`, `pressedBackgroundColor`, `hoverBackgroundColor`, and
+`focusRingColor`. This single variant has the existing small secondary button
+geometry: medium 14/20 text, 10-point horizontal and 4-point vertical
+padding, a one-point transparent border and a pill radius. Omitted colors use
+the theme's corresponding text and strong-background colors. The button does
+not carry arbitrary React content, a size or variant parameter, or loading
+state. Row or accessory disabled state prevents its action and dims the control
+to 0.4 opacity.
+
+Activation emits one existing row-action event with the current row key,
+`trailingAccessory` source and accessory slot, without also activating the row.
+The host's existing binding epoch guards recycled controls. Full rebinding
+clears omitted title icons and old button text, visual states, test IDs,
+accessibility values and callbacks, including button-to-icon-to-absent reuse.
+Patches replace fields they explicitly change and leave omitted fields intact.
+iOS and Android use native controls; Web uses a semantic `button` with native
+keyboard activation and disabled semantics. The new fields travel inside the
+existing snapshot JSON and do not alter the Nitro bridge ABI. Consumers own
+localized labels, state updates and any tooltip outside the data row.
+
+Acceptance requires snapshot and patch validation, Web action/isolation and
+reuse checks, native renderer tests on production classes, native builds and
+device checks for title placement, cap/truncation, colors, press and recycle.
+No source-only check counts as native runtime evidence.
+
+`theme.rowHoverBackground` is an optional Web-only hex color for an enabled
+row's hover background. Omission keeps the existing pressed-background hover
+color. Pressed/active rows continue to use `rowPressedBackground`; native
+renderers ignore the new field. The existing `loadingStrategy: 'skeleton'`
+on a Web leading image displays an animated skeleton while loading, then
+clears it on success, failure, rebind or recycle; other strategies keep their
+existing appearance.
+
+Identity leading visuals consume the existing `borderColor` as a one-point/dp
+solid bitmap border when supplied without `borderStyle: 'dashed'`; omission or
+a dashed style clears the solid border on every bind.
+The image is inset by that border width. An overlay may optionally set
+`fontWeight` to one of the existing text weight names
+(`regular | medium | semibold | bold`). This changes only overlay text;
+omission retains the current platform default. Setting and clearing the field
+must survive patching and recycled-view rebinding on all three platforms.
+The existing `leading.fallbackIcon` may optionally set a positive `size` for
+its glyph and a hex `backgroundColor` for the visual's no-image and image-load-
+failure states. A successfully loaded bitmap continues to use
+`leading.backgroundColor`. Omitted fallback fields preserve current rendering.
+Image success, failure and full rebinding must restore the matching background
+and glyph size without carrying values from the previous visual.
+An image overlay may optionally declare `fallbackIcon` with a required glyph
+name and optional tint. It shows only after that overlay image fails, while
+loading retains the overlay's empty background and success shows the bitmap.
+The existing icon accessory accepts only one optional `buttonStyle` value,
+`tertiary`, for the source icon button's 38-point press frame, 24-point glyph,
+six-point padding, one-point border, seven-point visual overhang and pressed
+background. Omission preserves every existing icon accessory layout and action.
+
 ### iOS 26 fixed top scroll-edge overlay
 
 Standalone `NativeList` accepts optional
@@ -756,8 +835,28 @@ applied inset and remains valid while that inset is retained across detach.
 
 ## Native rich activity presentation
 
+Status: Source implemented for `ActivityRow.hideLeading`. Web DOM tests cover
+both Activity paths, Android production renderer instrumentation covers
+same-view rebinds, and the iOS NativeListModule arm64 Simulator target builds.
+iOS runtime acceptance remains pending. Optional `hideLeading: true` suppresses
+the activity row's main leading visual, its accessibility content, and the entire visual width and
+following gap. The title, description, status, amounts, fee, and footer actions
+retain their normal semantics; footer actions align with the title region rather
+than a reserved visual slot. `leading` remains required in the row model and is
+still validated. Omitted or `false` preserves the existing layout and image
+behavior. The field must be a boolean in snapshots and patches; an omitted patch
+field preserves the current value. A full snapshot or patch changing
+`hideLeading` rebinds the visual and layout in both legacy and rich Activity
+presentations, including key reuse. Hidden visuals do not start image requests;
+rebinding to `false` may load the current image. Recycling and late image
+callbacks must not restore a hidden visual or leave hidden layout/accessibility
+state on a later visible row. This contract applies on iOS, Android, and Web.
+The Android instrumentation uses icon visuals to verify layout, action alignment
+and amount preservation. Late image completion is guarded by the existing
+image-slot recycle epoch; a hide-during-image-load device case remains unverified.
+
 Status: Source implemented; native runtime acceptance pending. Optional `amounts`
-supersedes legacy `primaryAmount`/`secondaryAmount` only on native. It accepts at
+supersedes legacy `primaryAmount`/`secondaryAmount` in rich Activity rows. It accepts at
 most 32 keyed lines, each with formatted text, optional leading visual, tone,
 secondary text and subscript text segments. Segments are caller-formatted and
 never interpreted as numbers by NativeList. Omission preserves the legacy tree.

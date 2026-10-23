@@ -1607,6 +1607,71 @@ describe('web row style', () => {
     }
   });
 
+  it.each([false, true])(
+    'removes and restores the Activity leading slot on %s rich rows',
+    (rich) => {
+      const { document } = new JSDOM('<!doctype html><body></body>').window;
+      const host = document.createElement('div');
+      document.body.appendChild(host);
+      const row: ActivityRow = {
+        type: 'activity',
+        key: 'tx',
+        leading: { kind: 'image', image },
+        title: 'Send',
+        description: 'To Alice',
+        footerActions: [{ key: 'speed-up', label: 'Speed up' }],
+        ...(rich ? { amounts: [{ key: 'send', text: '-1 ETH' }] } : {
+          primaryAmount: '-1 ETH',
+        }),
+      };
+      const engine = new NativeListWebEngine(
+        host,
+        snapshot({ kind: 'sectioned' }, [row]),
+        {},
+        false
+      );
+      const body = host.querySelector<HTMLElement>(
+        '[data-nl-renderer="activity"]'
+      )!;
+      const visual = () => rich
+        ? body.querySelector<HTMLElement>('.ok-native-list-history-visual')!
+        : body;
+      const action = () => body.querySelector<HTMLElement>(
+        '[data-native-list-action="speed-up"]'
+      )!;
+      try {
+        expect(visual().querySelector('img')).not.toBeNull();
+        engine.applySnapshot(snapshot({ kind: 'sectioned' }, [{
+          ...row, hideLeading: true,
+        }]));
+        expect(visual().querySelector('img')).toBeNull();
+        expect(body.textContent).toContain('-1 ETH');
+        expect(action()).not.toBeNull();
+        if (rich) {
+          expect(visual().style.display).toBe('none');
+          expect(body.querySelector<HTMLElement>(
+            '.ok-native-list-history-identity'
+          )!.style.gap).toBe('0');
+          expect(body.querySelector<HTMLElement>(
+            '.ok-native-list-history-actions'
+          )!.style.paddingLeft).toBe('0px');
+        } else {
+          expect(body.firstElementChild?.className).toBe('ok-native-list-flex');
+        }
+        engine.applySnapshot(snapshot({ kind: 'sectioned' }, [row]));
+        expect(visual().querySelector('img')).not.toBeNull();
+        if (rich) {
+          expect(visual().style.display).not.toBe('none');
+          expect(body.querySelector<HTMLElement>(
+            '.ok-native-list-history-actions'
+          )!.style.paddingLeft).toBe('52px');
+        }
+      } finally {
+        engine.destroy();
+      }
+    }
+  );
+
   it('restores System warning styles and replaces variant content in its own host', () => {
     const { document } = new JSDOM('<!doctype html><body></body>').window;
     const host = document.createElement('div');
@@ -2834,6 +2899,264 @@ describe('complex renderer lifecycle', () => {
     generation: 1,
     layout: { kind: 'linear' },
     rows: [row],
+  });
+  it('keeps Identity badges beside a one-line title', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const style = document.createElement('style');
+    style.textContent = WEB_LIST_CSS;
+    document.head.appendChild(style);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const row: IdentityRow = {
+      type: 'identity', key: 'badged', title: 'ETH',
+      leading: { kind: 'token', image },
+      badges: [{ key: 'multichain', text: 'Multichain', tone: 'neutral' }],
+      style: { title: { lines: 1 } },
+    };
+    const engine = new NativeListWebEngine(host, snap(row), {}, false);
+    try {
+      const title = host.querySelector<HTMLElement>('.ok-native-list-title')!;
+      const text = title.querySelector<HTMLElement>('[data-nl-slot="title"]')!;
+      const badges = title.querySelector<HTMLElement>('.ok-native-list-badges')!;
+      expect(title.style.display).toBe('flex');
+      expect(title.style.alignItems).toBe('center');
+      expect(text.nextElementSibling).toBe(badges);
+      expect(text.style.minWidth).toBe('0');
+      expect(text.style.whiteSpace).toBe('nowrap');
+      expect(document.defaultView!.getComputedStyle(badges.firstElementChild!).height)
+        .toBe('20px');
+      expect(document.defaultView!.getComputedStyle(badges.firstElementChild!).fontSize)
+        .toBe('12px');
+      engine.applySnapshot(snap({ ...row, badges: [
+        { key: 'multichain', text: 'Multichain' },
+      ] }));
+      const defaultBadge = host.querySelector<HTMLElement>('.ok-native-list-badge')!;
+      expect(defaultBadge.dataset.tone).toBeUndefined();
+      expect(document.defaultView!.getComputedStyle(defaultBadge).height)
+        .toBe('18px');
+      expect(document.defaultView!.getComputedStyle(defaultBadge).fontSize)
+        .toBe('11px');
+    } finally {
+      engine.destroy();
+    }
+  });
+  it('opens icon-only help and clears it on press, rebind and touch toggle', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const row: IdentityRow = {
+      type: 'identity', key: 'gas', title: 'ETH',
+      leading: { kind: 'token', image },
+      titleIcon: { name: 'GasSolid', hoverActionKey: 'native-token-info' },
+    };
+    const onRowAction = jest.fn();
+    const onActionAnchorInvalidated = jest.fn();
+    const engine = new NativeListWebEngine(host, snap(row), {
+      onRowAction, onActionAnchorInvalidated,
+    }, false);
+    const previousElement = global.Element;
+    const previousNode = global.Node;
+    global.Element = document.defaultView!.Element;
+    global.Node = document.defaultView!.Node;
+    const icon = () => host.querySelector<HTMLElement>(
+      '.ok-native-list-identity-title-icon'
+    )!;
+    const pointer = (type: string, pointerType: string) =>
+      icon().dispatchEvent(Object.assign(
+        new document.defaultView!.Event(type, { bubbles: true }),
+        { pointerType }
+      ));
+    try {
+      expect(icon().tabIndex).toBe(-1);
+      pointer('pointerover', 'touch');
+      expect(onRowAction).not.toHaveBeenCalled();
+      pointer('pointerover', 'mouse');
+      expect(onRowAction).toHaveBeenCalledTimes(1);
+      const event = onRowAction.mock.calls[0]![0];
+      expect(event).toMatchObject({
+        rowKey: 'gas', actionKey: 'native-token-info',
+        anchor: { source: 'leadingAction' },
+      });
+      engine.setActionAnchorState({ token: event.anchor.token, open: true });
+      pointer('pointerdown', 'mouse');
+      expect(onActionAnchorInvalidated).toHaveBeenCalledTimes(1);
+      pointer('pointerover', 'mouse');
+      expect(onRowAction).toHaveBeenCalledTimes(1);
+      pointer('pointerout', 'mouse');
+      pointer('pointerdown', 'touch');
+      expect(onRowAction).toHaveBeenCalledTimes(2);
+      const touchEvent = onRowAction.mock.calls[1]![0];
+      engine.setActionAnchorState({ token: touchEvent.anchor.token, open: true });
+      pointer('pointerout', 'touch');
+      expect(onActionAnchorInvalidated).toHaveBeenCalledTimes(1);
+      pointer('pointerdown', 'touch');
+      expect(onActionAnchorInvalidated).toHaveBeenCalledTimes(2);
+      pointer('pointerover', 'mouse');
+      const reboundEvent = onRowAction.mock.calls[2]![0];
+      engine.setActionAnchorState({ token: reboundEvent.anchor.token, open: true });
+      engine.applySnapshot(snap({ ...row, titleIcon: { name: 'GasSolid' } }));
+      expect(onActionAnchorInvalidated).toHaveBeenCalledTimes(3);
+      expect(icon().dataset.nativeListHoverAction).toBeUndefined();
+      pointer('pointerover', 'mouse');
+      expect(onRowAction).toHaveBeenCalledTimes(3);
+    } finally {
+      engine.destroy();
+      global.Element = previousElement;
+      global.Node = previousNode;
+    }
+  });
+  it('clears an explicit image skeleton on load, failure and rebind', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const row: IdentityRow = {
+      type: 'identity', key: 'visual-loading', title: 'ETH',
+      leading: { kind: 'token', image: { ...image, loadingStrategy: 'skeleton' } },
+    };
+    const engine = new NativeListWebEngine(host, snap(row), {}, false);
+    try {
+      const visual = () => host.querySelector<HTMLElement>('.ok-native-list-visual')!;
+      expect(visual().querySelector('.ok-native-list-image-skeleton')).not.toBeNull();
+      visual().querySelector('img')!.dispatchEvent(
+        new document.defaultView!.Event('load')
+      );
+      expect(visual().querySelector('.ok-native-list-image-skeleton')).toBeNull();
+      engine.applySnapshot(snap({ ...row, key: 'failed-loading' }));
+      expect(visual().querySelector('.ok-native-list-image-skeleton')).not.toBeNull();
+      visual().querySelector('img')!.dispatchEvent(
+        new document.defaultView!.Event('error')
+      );
+      expect(visual().querySelector('.ok-native-list-image-skeleton')).toBeNull();
+      engine.applySnapshot(snap({ ...row, key: 'plain', leading: {
+        kind: 'token', image: { ...image, loadingStrategy: 'none' },
+      } }));
+      expect(visual().querySelector('.ok-native-list-image-skeleton')).toBeNull();
+    } finally {
+      engine.destroy();
+    }
+  });
+  it('isolates identity buttons and clears risk controls on rebind', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const onRowAction = jest.fn();
+    const first: IdentityRow = {
+      type: 'identity',
+      key: 'risk',
+      title: 'A long risk token symbol',
+      titleIcon: { name: 'GasSolid', tintColor: '#888888' },
+      leading: {
+        kind: 'token',
+        image,
+        borderColor: '#111111',
+        overlays: [
+          { position: 'bottomRight', text: 'E', fontWeight: 'semibold' },
+        ],
+      },
+      style: { leadingContentMaxWidthRatio: 0.6 },
+      trailing: [
+        { kind: 'button', label: 'Show', actionKey: 'show', testID: 'risk-show' },
+      ],
+    };
+    const engine = new NativeListWebEngine(
+      host,
+      snap(first),
+      { onRowAction },
+      false
+    );
+    const originalElement = global.Element;
+    global.Element = document.defaultView!.Element;
+    try {
+      const button = host.querySelector<HTMLButtonElement>(
+        '.ok-native-list-trailing-button'
+      )!;
+      expect(button.type).toBe('button');
+      expect(button.dataset.testid).toBe('risk-show');
+      expect(host.querySelector('.ok-native-list-identity-title-icon')).not.toBeNull();
+      expect(host.querySelector<HTMLElement>('.ok-native-list-flex')?.style.maxWidth).toContain('60%');
+      expect(host.querySelector<HTMLElement>('.ok-native-list-accessories')?.style.marginInlineStart).toBe('auto');
+      expect(host.querySelector<HTMLElement>('.ok-native-list-visual')?.style.borderColor).toBe('rgb(17, 17, 17)');
+      expect(host.querySelector<HTMLElement>('.ok-native-list-visual-overlay')?.style.fontWeight).toBe('600');
+      button.click();
+      expect(onRowAction).toHaveBeenCalledTimes(1);
+      expect(onRowAction.mock.calls[0]![0]).toMatchObject({
+        rowKey: 'risk', actionKey: 'show',
+        anchor: { source: 'trailingAccessory', slot: 0 },
+      });
+      engine.applySnapshot(snap({
+        ...first,
+        trailing: [{ kind: 'button', label: 'Hide', actionKey: 'hide', disabled: true }],
+      }));
+      host.querySelector<HTMLButtonElement>('.ok-native-list-trailing-button')!.click();
+      expect(onRowAction).toHaveBeenCalledTimes(1);
+      engine.applySnapshot(snap({
+        ...first,
+        key: 'other-risk',
+        titleIcon: undefined,
+        leading: { kind: 'token', image, overlays: [{ position: 'bottomRight', text: 'E' }] },
+        style: undefined,
+        trailing: [{ kind: 'icon', name: 'EditOutline', actionKey: 'edit' }],
+      }));
+      expect(host.querySelector('.ok-native-list-trailing-button')).toBeNull();
+      expect(host.querySelector('.ok-native-list-identity-title-icon')).toBeNull();
+      expect(host.querySelector<HTMLElement>('.ok-native-list-visual')?.style.borderColor).toBe('');
+      expect(host.querySelector<HTMLElement>('.ok-native-list-visual-overlay')?.style.fontWeight).toBe('');
+      expect(host.querySelector<HTMLElement>('.ok-native-list-flex')?.style.maxWidth).toBe('');
+      engine.applySnapshot(snap({ ...first, key: 'third-risk', titleIcon: undefined, trailing: [] }));
+      expect(host.querySelector('[data-native-list-action="show"]')).toBeNull();
+      expect(host.querySelector('[data-native-list-action="edit"]')).toBeNull();
+    } finally {
+      engine.destroy();
+      global.Element = originalElement;
+    }
+  });
+  it('renders official risk glyphs and swaps overlay image failure to fallback', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const row: IdentityRow = {
+      type: 'identity', key: 'risk-icons', title: 'Token',
+      titleIcon: { name: 'GasSolid' },
+      leading: { kind: 'token', fallbackIcon: {
+        name: 'CryptoCoinOutline', size: 28, backgroundColor: '#eeeeee',
+      }, overlays: [{ position: 'bottomRight', size: 20, padding: 2,
+        image, fallbackIcon: { name: 'GlobusOutline' } }] },
+      trailing: [{ kind: 'icon', name: 'CryptoCoinOutline', actionKey: 'edit', buttonStyle: 'tertiary' }],
+    };
+    const engine = new NativeListWebEngine(host, snap(row), {}, false);
+    try {
+      expect(host.querySelector('.ok-native-list-identity-title-icon svg path')
+        ?.getAttribute('d')).toContain('M15 9h4v7');
+      expect(host.querySelector('.ok-native-list-visual-fallback svg path')
+        ?.getAttribute('d')).toContain('M11 16.387');
+      expect(host.querySelector<HTMLElement>('.ok-native-list-visual')?.style.background)
+        .toBe('rgb(238, 238, 238)');
+      expect(host.querySelector('.ok-native-list-tertiary-icon')).not.toBeNull();
+      const style = document.createElement('style');
+      style.textContent = WEB_LIST_CSS;
+      document.head.appendChild(style);
+      const tertiaryFocus = Array.from(style.sheet!.cssRules).find((rule) =>
+        rule.cssText.startsWith(
+          '.ok-native-list-icon-button.ok-native-list-tertiary-icon:focus-visible:not(:disabled)'
+        )
+      );
+      expect(tertiaryFocus?.cssText).toContain('outline: 2px solid var(--nl-accent)');
+      const networkImage = host.querySelector<HTMLImageElement>(
+        '.ok-native-list-visual-overlay img'
+      )!;
+      expect(host.querySelector('.ok-native-list-overlay-fallback')).toBeNull();
+      networkImage.dispatchEvent(new document.defaultView!.Event('error'));
+      expect(host.querySelector('.ok-native-list-visual-overlay img')).toBeNull();
+      expect(host.querySelector('.ok-native-list-overlay-fallback svg path')).not.toBeNull();
+      engine.applySnapshot(snap({ ...row, titleIcon: undefined,
+        leading: { kind: 'token', overlays: [{ position: 'bottomRight', text: 'E' }] },
+        trailing: [],
+      }));
+      expect(host.querySelector('.ok-native-list-overlay-fallback')).toBeNull();
+      expect(host.querySelector('.ok-native-list-tertiary-icon')).toBeNull();
+    } finally {
+      engine.destroy();
+    }
   });
   it('keeps Market image slots and action context through quotes, styles and clear', () => {
     const { document } = new JSDOM('<!doctype html><body></body>').window;
