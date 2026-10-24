@@ -71,6 +71,8 @@ Native renderers ignore this optional Web-only field. Full rebinding to one
 or no icons clears the removed glyph and anchor; explicit icon replacement
 without `hoverActionKey` clears that icon's old hover action. Neither icon
 creates a tab stop or separate click action.
+On Web, clicking either help icon (including its SVG) does not activate the row;
+clicking elsewhere on the row keeps the normal row action.
 
 `identity.style.leadingContentMaxWidthRatio`, when given,
 must be finite and within `(0, 1]`; it caps the combined leading visual, gap
@@ -92,7 +94,7 @@ state. Row or accessory disabled state prevents its action and dims the control
 to 0.4 opacity.
 
 Activation emits one existing row-action event with the current row key,
-`trailingAccessory` source and accessory slot, without also activating the row.
+`trailingAccessory` source and zero-based descriptor slot, without also activating the row.
 The host's existing binding epoch guards recycled controls. Full rebinding
 clears omitted title icons and old button text, visual states, test IDs,
 accessibility values and callbacks, including button-to-icon-to-absent reuse.

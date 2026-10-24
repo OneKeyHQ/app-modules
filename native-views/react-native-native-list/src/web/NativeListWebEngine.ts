@@ -1951,14 +1951,15 @@ function createAccessory(
   context: RenderContext,
   rowKey: string,
   accessory: TrailingAccessory,
-  slot: number
+  slot: number,
+  rowDisabled: boolean
 ): HTMLElement {
   if (accessory.kind === 'button') {
     const element = createElement(
       context.document, 'button', 'ok-native-list-trailing-button', accessory.label
     ) as HTMLButtonElement;
     element.type = 'button';
-    element.disabled = Boolean(accessory.disabled);
+    element.disabled = Boolean(rowDisabled || accessory.disabled);
     element.setAttribute('aria-disabled', String(element.disabled));
     element.setAttribute('aria-label', accessory.accessibilityLabel ?? accessory.label);
     setData(element, 'testid', accessory.testID);
@@ -2084,11 +2085,11 @@ function createAccessory(
   return element;
 }
 
-function rendererPrimitives(context: RenderContext) {
+function rendererPrimitives(context: RenderContext, rowDisabled: boolean) {
   return {
     background: resolvedTheme(context.snapshot).background,
     accessory: (key: string, descriptor: TrailingAccessory, slot: number) =>
-      createAccessory(context, key, descriptor, slot),
+      createAccessory(context, key, descriptor, slot, rowDisabled),
     visual: (source: LeadingVisual | undefined, presentation?: string) =>
       createVisual(context, source, presentation),
     thumbnail: (source: ImageSource) =>
@@ -2109,7 +2110,10 @@ export function createRowBody(
   context: RenderContext,
   row: RowModel
 ): HTMLElement {
-  return rowRenderer(row).create(context.document, rendererPrimitives(context));
+  return rowRenderer(row).create(
+    context.document,
+    rendererPrimitives(context, Boolean(row.disabled))
+  );
 }
 
 export type NativeListWebScrollOptions = Readonly<{
@@ -3320,7 +3324,7 @@ export class NativeListWebEngine {
     const body = reusableBody ?? createRowBody(context, row);
     if (reusableBody) {
       resetRowContainerStyle(body);
-      registered.bind(body, rendererPrimitives(context));
+      registered.bind(body, rendererPrimitives(context, Boolean(row.disabled)));
     }
     // OneKey patch: explicit selector fields preserve original page geometry.
     element.style.contain = row.backgroundFullWidth ? 'layout style' : '';
@@ -4418,6 +4422,11 @@ export class NativeListWebEngine {
     }
     const target = event.target;
     if (!(target instanceof Element)) return;
+    if (target.closest('[data-native-list-icon-help="true"]')) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     const rowElement = target.closest<HTMLElement>(
       '[data-native-list-row-key]'
     );

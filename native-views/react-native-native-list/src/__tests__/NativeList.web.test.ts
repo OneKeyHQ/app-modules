@@ -3036,20 +3036,28 @@ describe('complex renderer lifecycle', () => {
       pointer('pointerout', 'mouse');
       pointer('pointerdown', 'touch');
       expect(onRowAction).toHaveBeenCalledTimes(2);
+      pointer('pointerup', 'touch');
+      icon().click();
+      expect(onRowAction).toHaveBeenCalledTimes(2);
       const touchEvent = onRowAction.mock.calls[1]![0];
       engine.setActionAnchorState({ token: touchEvent.anchor.token, open: true });
       pointer('pointerout', 'touch');
       expect(onActionAnchorInvalidated).toHaveBeenCalledTimes(1);
       pointer('pointerdown', 'touch');
       expect(onActionAnchorInvalidated).toHaveBeenCalledTimes(2);
+      pointer('pointerup', 'touch');
+      icon().click();
+      expect(onRowAction).toHaveBeenCalledTimes(2);
+      host.querySelector<HTMLElement>('[data-native-list-row-key]')!.click();
+      expect(onRowAction.mock.calls[2]![0].actionKey).toBe('press');
       pointer('pointerover', 'mouse');
-      const reboundEvent = onRowAction.mock.calls[2]![0];
+      const reboundEvent = onRowAction.mock.calls[3]![0];
       engine.setActionAnchorState({ token: reboundEvent.anchor.token, open: true });
       engine.applySnapshot(snap({ ...row, titleIcon: { name: 'GasSolid' } }));
       expect(onActionAnchorInvalidated).toHaveBeenCalledTimes(3);
       expect(icon().dataset.nativeListHoverAction).toBeUndefined();
       pointer('pointerover', 'mouse');
-      expect(onRowAction).toHaveBeenCalledTimes(3);
+      expect(onRowAction).toHaveBeenCalledTimes(4);
     } finally {
       engine.destroy();
       global.Element = previousElement;
@@ -3115,10 +3123,14 @@ describe('complex renderer lifecycle', () => {
       );
       engine.setActionAnchorState({ token: second.anchor.token, open: true });
       pointer(icons()[1]!, 'pointerdown', 'touch');
+      pointer(icons()[1]!, 'pointerup', 'touch');
+      icons()[1]!.click();
       expect(onActionAnchorInvalidated).toHaveBeenCalledWith(
         expect.objectContaining({ token: second.anchor.token })
       );
       pointer(icons()[1]!, 'pointerdown', 'touch');
+      pointer(icons()[1]!, 'pointerup', 'touch');
+      icons()[1]!.click();
       const touched = onRowAction.mock.calls[2]![0];
       expect(touched).toMatchObject({
         actionKey: 'gas-info',
@@ -3132,6 +3144,20 @@ describe('complex renderer lifecycle', () => {
       expect(onActionAnchorInvalidated).toHaveBeenCalledWith(
         expect.objectContaining({ token: touched.anchor.token })
       );
+      pointer(icons()[0]!, 'pointerdown', 'touch');
+      pointer(icons()[0]!, 'pointerup', 'touch');
+      const glyph = icons()[0]!.querySelector('svg path')!;
+      const glyphClick = new document.defaultView!.Event('click', {
+        bubbles: true, cancelable: true,
+      });
+      glyph.dispatchEvent(glyphClick);
+      expect(glyphClick.defaultPrevented).toBe(true);
+      expect(onRowAction.mock.calls[3]![0].actionKey).toBe('ticket-info');
+      expect(onRowAction.mock.calls.every(([action]) => action.actionKey !== 'press'))
+        .toBe(true);
+      pointer(icons()[0]!, 'pointerdown', 'pen');
+      icons()[0]!.click();
+      expect(onRowAction).toHaveBeenCalledTimes(4);
       engine.applyPatches([{
         type: 'identity', key: 'two-help',
         changes: { titleIcon: { name: 'TicketOutline' } },
@@ -3274,8 +3300,28 @@ describe('complex renderer lifecycle', () => {
         ...first,
         trailing: [{ kind: 'button', label: 'Hide', actionKey: 'hide', disabled: true }],
       }));
-      host.querySelector<HTMLButtonElement>('.ok-native-list-trailing-button')!.click();
+      const accessoryDisabledButton = host.querySelector<HTMLButtonElement>('.ok-native-list-trailing-button')!;
+      expect(accessoryDisabledButton.disabled).toBe(true);
+      accessoryDisabledButton.click();
       expect(onRowAction).toHaveBeenCalledTimes(1);
+      engine.applySnapshot(snap({ ...first, disabled: true }));
+      const rowDisabledButton = host.querySelector<HTMLButtonElement>('.ok-native-list-trailing-button')!;
+      expect(rowDisabledButton.disabled).toBe(true);
+      expect(rowDisabledButton.getAttribute('aria-disabled')).toBe('true');
+      rowDisabledButton.focus();
+      expect(document.activeElement).not.toBe(rowDisabledButton);
+      rowDisabledButton.click();
+      expect(onRowAction).toHaveBeenCalledTimes(1);
+      engine.applyPatches([{
+        type: 'identity', key: 'risk', changes: { disabled: false },
+      }]);
+      const reenabledButton = host.querySelector<HTMLButtonElement>('.ok-native-list-trailing-button')!;
+      expect(reenabledButton.disabled).toBe(false);
+      expect(reenabledButton.getAttribute('aria-disabled')).toBe('false');
+      reenabledButton.focus();
+      expect(document.activeElement).toBe(reenabledButton);
+      reenabledButton.click();
+      expect(onRowAction).toHaveBeenCalledTimes(2);
       engine.applySnapshot(snap({
         ...first,
         key: 'other-risk',
