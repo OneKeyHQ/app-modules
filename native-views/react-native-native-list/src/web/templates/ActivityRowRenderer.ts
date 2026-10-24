@@ -47,6 +47,7 @@ function bindLegacy(
   }
   const visualKey = JSON.stringify([
     row.key,
+    row.hideLeading,
     row.leading,
     row.secondaryLeading,
   ]);
@@ -55,7 +56,7 @@ function bindLegacy(
       primitives.dispose(node);
       node.remove();
     });
-    v.visuals = [row.leading, row.secondaryLeading]
+    v.visuals = (row.hideLeading ? [] : [row.leading, row.secondaryLeading])
       .map((source) => primitives.visual(source))
       .filter((node): node is HTMLElement => !!node);
     v.visuals.forEach((node) => body.insertBefore(node, v.column));
@@ -389,11 +390,12 @@ function bindHistory(
   Object.assign(v.identity.style, {
     display: 'flex',
     alignItems: 'center',
-    gap: '12px',
+    gap: row.hideLeading ? '0' : '12px',
     minWidth: '0',
     flex: '1 1 0',
   });
   Object.assign(v.visual.style, {
+    display: row.hideLeading ? 'none' : '',
     position: 'relative',
     width: '40px',
     height: '40px',
@@ -401,6 +403,7 @@ function bindHistory(
   });
   const visualKey = JSON.stringify([
     row.key,
+    row.hideLeading,
     row.leading,
     row.secondaryLeading,
   ]);
@@ -410,7 +413,9 @@ function bindHistory(
     );
     v.visual.replaceChildren();
     v.visuals = [];
-    const sources = [row.leading, row.secondaryLeading].filter(Boolean);
+    const sources = row.hideLeading
+      ? []
+      : [row.leading, row.secondaryLeading].filter(Boolean);
     sources.forEach((source) => {
       const visual = primitives.visual(source);
       if (!visual) return;
@@ -439,7 +444,9 @@ function bindHistory(
     });
     v.visualKey = visualKey;
   }
-  const sources = [row.leading, row.secondaryLeading].filter(Boolean);
+  const sources = row.hideLeading
+    ? []
+    : [row.leading, row.secondaryLeading].filter(Boolean);
   v.visuals.forEach((retained, index) => {
     const { node: visual, style, background, loaded } = retained;
     const source = sources[index];
@@ -774,7 +781,7 @@ function bindHistory(
     400
   );
   v.actions.style.cssText =
-    'display:flex;gap:12px;padding-left:52px;padding-bottom:4px;';
+    `display:flex;gap:12px;padding-left:${row.hideLeading ? 0 : 52}px;padding-bottom:4px;`;
   v.actions.style.display = footer ? 'flex' : 'none';
   const actionKeys = new Set<string>();
   for (const [index, action] of (row.footerActions ?? []).entries()) {

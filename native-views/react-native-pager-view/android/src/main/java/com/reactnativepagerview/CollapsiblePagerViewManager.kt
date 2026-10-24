@@ -239,6 +239,11 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
     view.applyNativeHeaderStyle()
   }
 
+  @ReactProp(name = "nativeTabBarTrailingReservedWidth", defaultDouble = 0.0)
+  override fun setNativeTabBarTrailingReservedWidth(view: CollapsiblePagerHost?, value: Double) {
+    view?.nativeTabBarTrailingReservedWidth = value
+  }
+
   @ReactProp(name = "nativeTabBarContentPaddingHorizontal")
   override fun setNativeTabBarContentPaddingHorizontal(
     view: CollapsiblePagerHost?,

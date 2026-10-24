@@ -203,7 +203,20 @@ class NativeListView(
   var keyboardDismissMode = NativeListKeyboardDismissMode.NONE
   var keyboardShouldPersistTaps = NativeListKeyboardShouldPersistTaps.NEVER
   private val density = resources.displayMetrics.density
-  private val recyclerView = RecyclerView(context)
+  private val recyclerView = object : RecyclerView(context) {
+    override fun onMeasure(widthSpec: Int, heightSpec: Int) {
+      if (isLayoutSuppressed) {
+        setMeasuredDimension(measuredWidth, measuredHeight)
+        return
+      }
+      super.onMeasure(widthSpec, heightSpec)
+    }
+
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+      if (isLayoutSuppressed) return
+      super.onLayout(changed, left, top, right, bottom)
+    }
+  }
   private var configuredTopPaddingPx = 0
   private var slotInsetPx = 0
   private var configuredBottomPaddingPx = 0

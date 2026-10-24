@@ -333,6 +333,32 @@ warnings were observed. Keyboard, multi-touch, physical-device performance and
 the full lifecycle/interaction matrix remain unverified. These are local source
 builds; the currently installed npm version does not yet contain this migration.
 
+## Android removal-transition geometry retention
+
+Status: implemented locally; unreleased. On the Android UI thread, during a
+screen removal transition,
+NativeList and CollapsiblePager layout entry points respect the RecyclerView
+suppression state established by the screen-transition owner. The owner restores
+the original state when its last transition ownership ends. This adds no public
+API and does not change Web or iOS behavior.
+
+If Fabric removes the current NativeScroller React child while its origin-frame
+transition remains active, Android retains the already displayed native extent
+for drawing. The current child and raw content dimensions still clear normally;
+only native content measurement and layout use the retained effective extent.
+The matching transition end or detach clears the private child and extent state
+idempotently. Adding a new child cancels prior retention, and a late end for the
+old child cannot alter the new content. Ordinary removal, size events and scroll
+commands keep their existing semantics.
+
+Local arm64 DevShell acceptance covered Base, CXO and Overview exit content,
+normal scrolling, RecyclerView ownership and suppression cleanup for the
+observed CXO exit, and NativeScroller raw-zero content dimensions with a
+nonzero displayed origin followed by detach cleanup. Nested-owner and cancel
+paths, Overview rebound/cancel, natural resize and new-child runtime cases,
+and the full performance matrix remain unverified. SDK publication and
+consumer version alignment are separate steps.
+
 ## iOS vertical-scroll press cancellation
 
 Status: implemented in source. A source-identical `node_modules` build was
@@ -471,6 +497,28 @@ Callers rendering their own JS tab bar choose the matching imperative command.
 Status: implemented; focused native-wrapper tests cover both directions,
 explicit overrides and in-flight/superseded command targets. Home applies this policy to its JS tab bar, with iOS and
 Android simulator recordings verifying distant jumps and adjacent transitions.
+
+## Native tab trailing control reservation
+
+Status: implemented locally, unreleased. The focused Android host test passed
+(1/1); iOS hit tests had 8 passes and 1 existing skip. iOS companion-app UI
+acceptance remains unverified.
+`nativeTabBar.style.trailingReservedWidth` is an optional logical trailing
+reservation for a sibling React control in the full-width sticky header. It
+defaults to zero. JavaScript normalizes non-finite or negative input to zero;
+native also clamps the reservation to the actual tab viewport width. On Android
+and iOS, only the native tab viewport shrinks from `W` to `W - R`: its frame
+begins at zero in LTR and at `R` in RTL. The sticky React header, its height,
+and page content keep their original full-width geometry. Touches in the
+reserved region reach the sibling control, while native tab hit testing and
+last-tab visibility use the reduced viewport. Changing the reservation updates
+that viewport; removing it or recycling the pager restores the default zero.
+Web does not render the native tab and ignores this style field. For a positive
+reservation, the box-none sticky React control draws above the native tab so
+its inward fade and toolbar hit area remain visible; zero preserves the old
+native-tab foreground order. Acceptance requires focused native layout and hit
+testing for zero, nonzero, reset, and RTL reservations; type forwarding alone
+is insufficient.
 
 ## Android refresh foreground coordination
 

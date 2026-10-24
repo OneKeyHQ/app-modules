@@ -226,6 +226,56 @@ function createIdentityRow(
       });
       column.insertBefore(segments, titleElement.nextSibling);
     }
+    if (row.titleIcon || row.secondaryTitleIcon) {
+      const badgeLine = titleElement.querySelector<HTMLElement>(
+        ':scope > .ok-native-list-badges'
+      );
+      const titleText = createElement(
+        document, 'span', 'ok-native-list-identity-title-text'
+      );
+      while (titleElement.firstChild && titleElement.firstChild !== badgeLine)
+        titleText.appendChild(titleElement.firstChild);
+      titleElement.prepend(titleText);
+      const icons = [row.titleIcon, row.secondaryTitleIcon]
+        .filter((icon): icon is NonNullable<typeof icon> => icon !== undefined)
+        .map((descriptor) => {
+          const icon = primitives.iconAction(
+            descriptor.name, undefined, undefined, descriptor.tintColor
+          );
+          icon.className = 'ok-native-list-identity-title-icon';
+          if (descriptor.hoverActionKey) {
+            setData(icon, 'nativeListHoverAction', descriptor.hoverActionKey);
+            setData(icon, 'nativeListIconHelp', true);
+            markActionAnchorSource(icon, 'leadingAction');
+          }
+          if (descriptor.accessibilityLabel)
+            icon.setAttribute('aria-label', descriptor.accessibilityLabel);
+          else icon.setAttribute('aria-hidden', 'true');
+          return icon;
+        });
+      titleText.after(...icons);
+      titleElement.style.display = 'flex';
+      titleElement.style.alignItems = 'center';
+      titleElement.style.gap = '4px';
+    }
+    if (row.badges?.length && !row.titleIcon && !row.secondaryTitleIcon) {
+      const titleText = titleElement.querySelector<HTMLElement>(
+        ':scope > [data-nl-slot="title"]'
+      );
+      const badges = titleElement.querySelector<HTMLElement>(
+        ':scope > .ok-native-list-badges'
+      );
+      titleElement.style.display = 'flex';
+      titleElement.style.alignItems = 'center';
+      if (titleText) {
+        titleText.style.flex = '0 1 auto';
+        titleText.style.minWidth = '0';
+      }
+      if (badges) {
+        badges.style.flex = '0 1 auto';
+        badges.style.minWidth = '0';
+      }
+    }
     if (presentation === 'walletSidebar' && row.badges?.length) {
       const badges = createElement(
         document,
@@ -272,6 +322,25 @@ function applyIdentityStyle(body: HTMLElement, row: IdentityRow) {
   const leading = body.querySelector<HTMLElement>(
     ':scope > .ok-native-list-visual, :scope > .ok-native-list-stacked'
   );
+  if (row.style?.leadingContentMaxWidthRatio !== undefined && !vertical) {
+    const column = body.querySelector<HTMLElement>(
+      ':scope > .ok-native-list-flex'
+    );
+    const trailing = body.querySelector<HTMLElement>(
+      ':scope > .ok-native-list-accessories'
+    );
+    const visualWidth = leading
+      ? row.style.image?.width ??
+        (row.presentation === 'accountSelector' || row.presentation === 'networkSelector'
+          ? 32 : 40)
+      : 0;
+    const gap = leading ? row.style.leadingGap ?? 12 : 0;
+    if (column) {
+      column.style.flex = '0 1 auto';
+      column.style.maxWidth = `calc(${row.style.leadingContentMaxWidthRatio * 100}% - ${visualWidth + gap}px)`;
+    }
+    if (trailing) trailing.style.marginInlineStart = 'auto';
+  }
   const defaultGap =
     body.style.gap ||
     (row.type === 'identity' && row.presentation === 'walletSidebar'

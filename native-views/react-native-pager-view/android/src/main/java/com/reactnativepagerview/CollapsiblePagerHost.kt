@@ -293,6 +293,20 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   var onNativeSubHeaderPress: ((Int, String) -> Unit)? = null
 
   var nativeTabBarHeight = 44.0
+  var nativeTabBarTrailingReservedWidth = 0.0
+    set(value) {
+      field = if (value.isFinite() && value >= 0.0) value else 0.0
+      bringNativeHeadersToFront()
+      requestLayout()
+    }
+
+  private fun nativeTabReservationPx(width: Int): Int {
+    val reserved = nativeTabBarTrailingReservedWidth
+    val density = resources.displayMetrics.density
+    return if (reserved.isFinite() && reserved > 0.0 && width > 0 && density > 0f) {
+      (reserved.coerceAtMost(width / density.toDouble()) * density).roundToInt()
+    } else 0
+  }
   var nativeTabBarContentPaddingHorizontal = 20.0
   var nativeTabBarItemSpacing = 8.0
   var nativeTabBarFontSize = 16.0
@@ -442,6 +456,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   private fun bringNativeHeadersToFront() {
     nativeTabBarView.bringToFront()
     nativeSubHeaderView.bringToFront()
+    if (nativeTabBarTrailingReservedWidth > 0.0) stickyHeaderView?.bringToFront()
   }
 
   fun addReactChild(child: View, index: Int) {
@@ -689,7 +704,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
 
   private fun layoutPagerIfRequested() {
     val recycler = pager.getChildAt(0) as? RecyclerView ?: return
-    if (!recycler.isLayoutRequested || recycler.isComputingLayout || recycler.width <= 0 || recycler.height <= 0) return
+    if (!recycler.isLayoutRequested || recycler.isLayoutSuppressed || recycler.isComputingLayout || recycler.width <= 0 || recycler.height <= 0) return
     // OneKey patch: a non-animated page command queues RecyclerView layout, but RN
     // can stop that request after navigation. Drain it before showing the page.
     recycler.measure(
@@ -712,6 +727,9 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     layout(left, top, right, bottom)
   }
 
+  private fun isPagerRecyclerLayoutSuppressed(): Boolean =
+    (pager.getChildAt(0) as? RecyclerView)?.isLayoutSuppressed == true
+
   override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
     val width = MeasureSpec.getSize(widthMeasureSpec)
     val height = MeasureSpec.getSize(heightMeasureSpec)
@@ -722,10 +740,12 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
       return
     }
     val pagerHeight = height + headerHeightPx
-    pager.measure(
-      MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
-      MeasureSpec.makeMeasureSpec(pagerHeight, MeasureSpec.EXACTLY),
-    )
+    if (!isPagerRecyclerLayoutSuppressed()) {
+      pager.measure(
+        MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+        MeasureSpec.makeMeasureSpec(pagerHeight, MeasureSpec.EXACTLY),
+      )
+    }
     headerView?.measure(
       MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
       MeasureSpec.makeMeasureSpec(headerHeightPx, MeasureSpec.EXACTLY),
@@ -737,8 +757,9 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     val nativeTabHeight = if (nativeTabBarView.visibility == View.VISIBLE) {
       nativeTabBarView.preferredHeightPx()
     } else 0
+    val tabReservedWidth = nativeTabReservationPx(width)
     nativeTabBarView.measure(
-      MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+      MeasureSpec.makeMeasureSpec(width - tabReservedWidth, MeasureSpec.EXACTLY),
       MeasureSpec.makeMeasureSpec(nativeTabHeight, MeasureSpec.EXACTLY),
     )
     val nativeSubHeaderHeight = if (nativeSubHeaderView.visibility == View.VISIBLE) {
@@ -757,7 +778,9 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     // RN ancestors allow overflow; keep translated header content inside this viewport.
     clipBounds = Rect(0, 0, width, height)
     if (width <= 0 || height <= 0) return
-    pager.layout(0, 0, width, height + headerHeightPx)
+    if (!isPagerRecyclerLayoutSuppressed()) {
+      pager.layout(0, 0, width, height + headerHeightPx)
+    }
     headerView?.layout(0, 0, width, headerHeightPx)
     stickyHeaderView?.layout(
       0,
@@ -766,7 +789,12 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
       headerHeightPx + stickyHeaderHeightPx,
     )
     val nativeTabHeight = nativeTabBarView.measuredHeight
-    nativeTabBarView.layout(0, headerHeightPx, width, headerHeightPx + nativeTabHeight)
+    val tabReservedWidth = nativeTabReservationPx(width)
+    val tabLeft = if (nativeTabBarView.layoutDirection == View.LAYOUT_DIRECTION_RTL) {
+      tabReservedWidth
+    } else 0
+    nativeTabBarView.layout(tabLeft, headerHeightPx, tabLeft + width - tabReservedWidth,
+      headerHeightPx + nativeTabHeight)
     nativeSubHeaderView.layout(
       0,
       headerHeightPx + nativeTabHeight,
@@ -828,7 +856,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     }
     if (!reached()) {
       if (!isAttachedToWindow || !view.isAttachedToWindow || width <= 0 || height <= 0 ||
-          view.width <= 0 || view.height <= 0 || isInLayout || view.isInLayout || view.isComputingLayout ||
+          view.width <= 0 || view.height <= 0 || isInLayout || view.isInLayout || view.isLayoutSuppressed || view.isComputingLayout ||
           pageKey(index) != key || primaryScrollableForPage(index) !== view || !isCurrentPageRestore(key, request)) return false
       val previousSynthetic = syntheticPageRestore
       syntheticPageRestore = true
@@ -1033,7 +1061,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
           if (animated && !recyclerIsAtBodyTop(view)) view.smoothScrollToPosition(0)
           else if (manager != null && manager.orientation == RecyclerView.VERTICAL) {
             manager.scrollToPositionWithOffset(0, 0)
-            if (view.width > 0 && view.height > 0 && !isInLayout && !view.isInLayout && !view.isComputingLayout) {
+            if (view.width > 0 && view.height > 0 && !isInLayout && !view.isInLayout && !view.isLayoutSuppressed && !view.isComputingLayout) {
               view.measure(MeasureSpec.makeMeasureSpec(view.width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(view.height, MeasureSpec.EXACTLY))
               view.layout(view.left, view.top, view.right, view.bottom)
             }
@@ -1638,7 +1666,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
       if (anchorOffset != null) manager?.scrollToPositionWithOffset(first, anchorOffset)
       // React Native can stop this nested requestLayout at its React-owned parent.
       // Commit the changed inset before drawing instead of waiting for a data update.
-      if (recycler.width > 0 && recycler.height > 0 && !recycler.isComputingLayout) {
+      if (recycler.width > 0 && recycler.height > 0 && !recycler.isLayoutSuppressed && !recycler.isComputingLayout) {
         recycler.forceLayout()
         recycler.measure(
           MeasureSpec.makeMeasureSpec(recycler.width, MeasureSpec.EXACTLY),
@@ -2012,14 +2040,16 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     }
   }
 
-  private fun headerRegionAt(y: Float): String? {
+  private fun headerRegionAt(x: Float, y: Float): String? {
     val headerBottom = headerHeightPx - headerOffsetPx
     val stickyBottom = headerHeightPx + stickyHeaderHeightPx - headerOffsetPx
     return when {
       y < 0 || y >= stickyBottom -> null
       y < headerBottom -> "header"
       y < headerBottom + nativeTabBarView.measuredHeight &&
-        nativeTabBarView.visibility == View.VISIBLE -> "primary-tab"
+        nativeTabBarView.visibility == View.VISIBLE ->
+        if (x >= nativeTabBarView.left && x < nativeTabBarView.right) "primary-tab"
+        else "sticky-controls"
       y < headerBottom + nativeTabBarView.measuredHeight + nativeSubHeaderView.measuredHeight &&
         nativeSubHeaderView.visibility == View.VISIBLE -> "secondary-header"
       else -> "sticky-controls"
@@ -2128,7 +2158,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
         pressCancelled = false
         nativeGestureStarted = false
         nestedNativeGestureStarted = false
-        headerTouchRegion = headerRegionAt(event.y) ?: "none"
+        headerTouchRegion = headerRegionAt(event.x, event.y) ?: "none"
         headerTouchActive = headerTouchRegion != "none"
         if (!headerTouchActive) return super.dispatchTouchEvent(event)
         headerDownX = event.x

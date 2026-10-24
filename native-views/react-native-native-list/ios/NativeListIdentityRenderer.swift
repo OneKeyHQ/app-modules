@@ -20,6 +20,7 @@ final class NativeListIdentityCell: NativeListRendererCell {
   private let mainStack = UIStackView()
   private let titleRowStack = UIStackView()
   private let titleLabel = NativeListTextLabel()
+  private let titleIconView = UIImageView()
   private let subtitleLabel = NativeListTextLabel()
   private let tertiaryLabel = NativeListTextLabel()
   private let badgeLabel = NativeListInsetLabel()
@@ -75,7 +76,17 @@ final class NativeListIdentityCell: NativeListRendererCell {
     titleRowStack.axis = .horizontal
     titleRowStack.alignment = .center
     titleRowStack.addArrangedSubview(titleLabel)
+    titleRowStack.addArrangedSubview(titleIconView)
     titleRowStack.addArrangedSubview(badgeLabel)
+    titleIconView.translatesAutoresizingMaskIntoConstraints = false
+    let titleIconWidth = titleIconView.widthAnchor.constraint(equalToConstant: 20)
+    titleIconWidth.priority = UILayoutPriority(999)
+    NSLayoutConstraint.activate([
+      titleIconWidth,
+      titleIconView.heightAnchor.constraint(equalToConstant: 20),
+    ])
+    titleIconView.contentMode = .scaleAspectFit
+    titleIconView.setContentHuggingPriority(.required, for: .horizontal)
     [titleRowStack, subtitleLabel, tertiaryLabel].forEach(mainStack.addArrangedSubview)
     visual.translatesAutoresizingMaskIntoConstraints = false
     leadingWidth = visual.widthAnchor.constraint(equalToConstant: 40)
@@ -133,6 +144,10 @@ final class NativeListIdentityCell: NativeListRendererCell {
       titleRowStack.setCustomSpacing(UIStackView.spacingUseDefault, after: $0)
     }
     titleRowStack.spacing = 8
+    titleIconView.image = nil
+    titleIconView.isHidden = true
+    titleIconView.accessibilityLabel = nil
+    titleIconView.isAccessibilityElement = false
     titleRowStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
     titleRowStack.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
     for label in [titleLabel, subtitleLabel, tertiaryLabel, badgeLabel] {
@@ -165,6 +180,10 @@ final class NativeListIdentityCell: NativeListRendererCell {
     leadingWidth.constant = 40
     leadingHeight.constant = 40
     visual.glyphSize = 18
+    visual.bitmapBorderWidth =
+      item.data.dictionary("leading")?.string("borderColor").isEmpty == false
+      && item.data.dictionary("leading")?.string("borderStyle") != "dashed"
+      ? 1 : 0
     fallbackLabel.attributedText = nil
     fallbackLabel.font = nativeListFont(ofSize: 13, weight: .bold, fonts: fonts)
     trailingStack.reset()
@@ -175,6 +194,31 @@ final class NativeListIdentityCell: NativeListRendererCell {
     leadingActionButton.setImage(nil, for: .normal)
     bindIdentity(item, theme: theme, selected: item.data.bool("selected"), checkboxState)
     let style = item.data.dictionary("style") ?? [:]
+    if let titleIcon = item.data.dictionary("titleIcon") {
+      titleIconView.image = nativeListIcon(named: titleIcon.string("name"))
+      titleIconView.tintColor = UIColor(
+        nativeListHex: titleIcon.string("tintColor",
+          default: theme?["iconSubdued"] as? String ?? "#8D8D8D"),
+        fallback: .gray)
+      titleIconView.isHidden = false
+      let label = titleIcon.string("accessibilityLabel")
+      titleIconView.accessibilityLabel = label.isEmpty ? nil : label
+      titleIconView.isAccessibilityElement = !label.isEmpty
+      titleRowStack.setCustomSpacing(4, after: titleLabel)
+    }
+    if let ratio = style["leadingContentMaxWidthRatio"] as? NSNumber,
+      root.arrangedSubviews.contains(visual)
+    {
+      titleLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+      let visualWidth = CGFloat(style.dictionary("image")?.double("width", default: 40) ?? 40)
+      let leadingGap = CGFloat(style.double("leadingGap", default: 12))
+      let constraint = mainStack.widthAnchor.constraint(
+        lessThanOrEqualTo: root.widthAnchor,
+        multiplier: CGFloat(ratio.doubleValue),
+        constant: -(visualWidth + leadingGap))
+      constraint.isActive = true
+      selectorConstraints.append(constraint)
+    }
     if style["horizontalPadding"] != nil {
       leftInset = CGFloat(style.double("horizontalPadding"))
       rightInset = -leftInset
@@ -196,7 +240,9 @@ final class NativeListIdentityCell: NativeListRendererCell {
       if walletBadgeLine != nil {
         mainStack.setCustomSpacing(CGFloat(style.double("titleBadgeGap")), after: titleRowStack)
       } else {
-        titleRowStack.setCustomSpacing(CGFloat(style.double("titleBadgeGap")), after: titleLabel)
+        titleRowStack.setCustomSpacing(
+          CGFloat(style.double("titleBadgeGap")),
+          after: titleIconView.isHidden ? titleLabel : titleIconView)
       }
     }
     if style["trailingGap"] != nil { trailingStack.spacing = CGFloat(style.double("trailingGap")) }
@@ -570,6 +616,17 @@ final class NativeListIdentityCell: NativeListRendererCell {
       trailingStack.alignment = .center
       trailingStack.spacing = 8
     } else if accessories.count == 2,
+      (accessories[0].string("kind") == "valuePair"
+        && accessories[1].string("kind") == "chevron")
+        || (accessories[0].string("kind") == "icon"
+          && accessories[0].string("name") == "RefreshCcwOutline"
+          && accessories[0].string("actionKey").isEmpty
+          && accessories[1].string("kind") == "chevron")
+    {
+      trailingStack.axis = .horizontal
+      trailingStack.alignment = .center
+      trailingStack.spacing = 12
+    } else if accessories.count == 2,
       accessories[0].string("kind") == "icon",
       accessories[0].string("name") == "PencilOutline",
       accessories[1].string("kind") == "icon",
@@ -590,12 +647,13 @@ final class NativeListIdentityCell: NativeListRendererCell {
     trailingStack.isHidden = false
     if let gap = trailingStack.contentGap { root.setCustomSpacing(gap, after: mainStack) }
     if let inset = trailingStack.endInset { rightInset = -inset }
-    if item.data.string("presentation") == "accountSelector",
-      accessories.count == 1,
+    if accessories.count == 1,
+      (item.data.string("presentation") == "accountSelector"
+        || accessories[0].string("kind") == "valuePair"),
       let accessory = trailingStack.firstVisibleControl
     {
       // The vertical trailing stack has no stable intrinsic width, so keep its
-      // flexible space in the account title and subtitle column.
+      // flexible space in the title and subtitle column.
       let width = trailingStack.widthAnchor.constraint(equalTo: accessory.widthAnchor)
       width.isActive = true
       selectorConstraints.append(width)

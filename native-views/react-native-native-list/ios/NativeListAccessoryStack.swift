@@ -3,12 +3,14 @@ import UIKit
 // OneKey patch: explicit summary actions use the source text's physical-pixel line box.
 final class NativeListAccessoryButton: UIButton {
   var pressedBackgroundColor: UIColor?
+  var normalBackgroundColor: UIColor = .clear
+  var fixedTextLineHeight: CGFloat?
   var rowTextOffsetY: CGFloat = 0
 
   override var isHighlighted: Bool {
     didSet {
       guard let pressedBackgroundColor else { return }
-      backgroundColor = isHighlighted ? pressedBackgroundColor : .clear
+      backgroundColor = isHighlighted ? pressedBackgroundColor : normalBackgroundColor
     }
   }
 
@@ -52,6 +54,11 @@ final class NativeListAccessoryButton: UIButton {
 
   override var intrinsicContentSize: CGSize {
     var size = super.intrinsicContentSize
+    if let fixedTextLineHeight {
+      size.width += 2
+      size.height = fixedTextLineHeight + contentEdgeInsets.top + contentEdgeInsets.bottom + 2
+      return size
+    }
     guard selectorSummaryLineHeight != nil || marketLineHeight != nil,
       let title = attributedTitle(for: .normal)
     else { return size }
@@ -71,6 +78,10 @@ final class NativeListAccessoryButton: UIButton {
     defer {
       if let titleLabel {
         var frame = titleLabel.frame
+        if let fixedTextLineHeight {
+          frame.size.height = fixedTextLineHeight
+          frame.origin.y = (bounds.height - fixedTextLineHeight) / 2
+        }
         if contentVerticalAlignment == .top {
           frame.origin.y = contentEdgeInsets.top
         } else if contentVerticalAlignment == .bottom {
@@ -127,6 +138,8 @@ final class NativeListAccessoryStack: UIStackView {
   private var boundCheckboxData: [String: Any]?
   private var boundCheckboxTarget: NativeSelectionTarget?
   private var semanticValueButtons: [UIButton] = []
+  private var valuePairSubscriptRanges: [ObjectIdentifier: [(NSRange, Bool)]] = [:]
+  private var tertiaryIconButtons: Set<ObjectIdentifier> = []
   private var accessorySizeConstraints: [NSLayoutConstraint] = []
   private var currentItem: NativeListItem?
   private var currentTheme: [String: Any]?
@@ -210,14 +223,19 @@ final class NativeListAccessoryStack: UIStackView {
     }
   }
   func anchorInset(for view: UIView) -> CGFloat {
-    currentItem?.data.string("presentation") == "accountSelector"
-      && accessoryButtons.contains { $0 === view } && view.bounds.width == 38 ? 7 : 0
+    guard accessoryButtons.contains(where: { $0 === view }), view.bounds.width == 38 else {
+      return 0
+    }
+    if tertiaryIconButtons.contains(ObjectIdentifier(view)) { return 7 }
+    return currentItem?.data.string("presentation") == "accountSelector" ? 7 : 0
   }
   func reset() {
     NSLayoutConstraint.deactivate(accessorySizeConstraints)
     accessorySizeConstraints.removeAll()
     accessoryActions.removeAll()
     semanticValueButtons.removeAll()
+    valuePairSubscriptRanges.removeAll()
+    tertiaryIconButtons.removeAll()
     checkboxAction = nil
     boundCheckboxData = nil
     boundCheckboxTarget = nil
@@ -225,6 +243,7 @@ final class NativeListAccessoryStack: UIStackView {
     contentGap = nil
     currentItem = nil
     for (index, button) in accessoryButtons.enumerated() {
+      button.tag = index
       button.setAttributedTitle(nil, for: .normal)
       button.setTitle(nil, for: .normal)
       button.setImage(nil, for: .normal)
@@ -241,9 +260,15 @@ final class NativeListAccessoryStack: UIStackView {
       button.selectorSummaryLineHeight = nil
       button.backgroundColor = .clear
       button.pressedBackgroundColor = nil
+      button.normalBackgroundColor = .clear
+      button.fixedTextLineHeight = nil
+      button.contentEdgeInsets = .zero
+      button.layer.borderWidth = 0
+      button.layer.borderColor = nil
       button.layer.cornerRadius = 0
       button.isHidden = true
       button.isEnabled = true
+      button.isUserInteractionEnabled = true
       button.alpha = 1
       button.accessibilityIdentifier = nil
       button.accessibilityLabel = nil
@@ -253,8 +278,9 @@ final class NativeListAccessoryStack: UIStackView {
     spinner.alpha = 1
   }
   @objc private func pressed(_ button: UIButton) {
-    guard accessoryActions.indices.contains(button.tag) else { return }
-    let action = accessoryActions[button.tag]
+    guard let controlIndex = accessoryButtons.firstIndex(where: { $0 === button }),
+      accessoryActions.indices.contains(controlIndex) else { return }
+    let action = accessoryActions[controlIndex]
     if !action.0.isEmpty { onAction?(action.0, button, button.tag, action.1) }
   }
   @objc private func checkboxPressed() {
@@ -267,8 +293,42 @@ final class NativeListAccessoryStack: UIStackView {
     _ checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
   ) {
     var textIndex = 0
-    for accessory in accessories.prefix(2) {
+    for (slot, accessory) in accessories.prefix(2).enumerated() {
+      let controlIndex = textIndex
       switch accessory.string("kind") {
+      case "button":
+        showAccessory(
+          textIndex, accessory.string("label"),
+          action: accessory.bool("disabled") || item.data.bool("disabled")
+            ? nil : (accessory.string("actionKey"), nil))
+        let button = accessoryButtons[textIndex]
+        button.titleLabel?.font = nativeListFont(ofSize: 14, weight: .medium, fonts: fonts)
+        button.fixedTextLineHeight = 20
+        button.contentEdgeInsets = UIEdgeInsets(top: 4, left: 10, bottom: 4, right: 10)
+        button.layer.borderWidth = 1
+        button.layer.borderColor = UIColor.clear.cgColor
+        button.layer.cornerRadius = 15
+        button.backgroundColor = UIColor(
+          nativeListHex: accessory.string("backgroundColor",
+            default: theme?["strongBackground"] as? String ?? "#F0F0F0"),
+          fallback: .clear)
+        button.normalBackgroundColor = button.backgroundColor ?? .clear
+        button.pressedBackgroundColor = UIColor(
+          nativeListHex: accessory.string("pressedBackgroundColor",
+            default: theme?["rowPressedBackground"] as? String ?? "#E4E4E4"),
+          fallback: .clear)
+        button.setTitleColor(
+          UIColor(
+            nativeListHex: accessory.string("textColor",
+              default: theme?["primaryText"] as? String ?? "#202020"),
+            fallback: .darkGray),
+          for: .normal)
+        button.accessibilityIdentifier = accessory.string("testID")
+        button.accessibilityLabel =
+          accessory.string("accessibilityLabel", default: accessory.string("label"))
+        button.isEnabled = !item.data.bool("disabled") && !accessory.bool("disabled")
+        button.alpha = button.isEnabled ? 1 : 0.4
+        textIndex += 1
       case "value":
         showAccessory(textIndex, accessory.string("text"))
         semanticValueButtons.append(accessoryButtons[textIndex])
@@ -325,6 +385,7 @@ final class NativeListAccessoryStack: UIStackView {
         textIndex += 1
       default: break
       }
+      if textIndex > controlIndex { accessoryButtons[controlIndex].tag = slot }
     }
   }
 
@@ -405,8 +466,12 @@ final class NativeListAccessoryStack: UIStackView {
     theme: [String: Any]?
   ) {
     guard accessoryButtons.indices.contains(index) else { return }
-    let primary = accessory.string("primary")
-    let secondary = accessory.string("secondary")
+    let primarySegments = accessory.dictionaries("primaryTextSegments")
+    let secondarySegments = accessory.dictionaries("secondaryTextSegments")
+    let primary = primarySegments.isEmpty
+      ? accessory.string("primary") : primarySegments.map { $0.string("text") }.joined()
+    let secondary = secondarySegments.isEmpty
+      ? accessory.string("secondary") : secondarySegments.map { $0.string("text") }.joined()
     guard !primary.isEmpty || !secondary.isEmpty else { return }
     let button = accessoryButtons[index]
     let text = NSMutableAttributedString()
@@ -414,45 +479,59 @@ final class NativeListAccessoryStack: UIStackView {
     primaryParagraph.alignment = .right
     primaryParagraph.minimumLineHeight = 20
     primaryParagraph.maximumLineHeight = 20
-    text.append(
-      NSAttributedString(
-        string: primary,
-        attributes: [
-          .font: nativeListFont(ofSize: 16, weight: .medium, fonts: fonts),
-          .foregroundColor: accessoryTextColor(
-            accessory.string("primaryTone"),
-            defaultTone: "primary",
-            theme: theme
-          ),
-          .paragraphStyle: primaryParagraph,
-        ]
-      ))
+    var subscriptRanges: [(NSRange, Bool)] = []
+    appendValuePairLine(
+      to: text, fallback: primary, segments: primarySegments, fontSize: 16,
+      weight: .medium,
+      color: accessoryTextColor(accessory.string("primaryTone"), defaultTone: "primary", theme: theme),
+      paragraph: primaryParagraph, isPrimary: true, subscriptRanges: &subscriptRanges)
     if !primary.isEmpty, !secondary.isEmpty { text.append(NSAttributedString(string: "\n")) }
     let secondaryParagraph = NSMutableParagraphStyle()
     secondaryParagraph.alignment = .right
     secondaryParagraph.minimumLineHeight = 20
     secondaryParagraph.maximumLineHeight = 20
-    text.append(
-      NSAttributedString(
-        string: secondary,
-        attributes: [
-          .font: nativeListFont(ofSize: 14, fonts: fonts),
-          .foregroundColor: accessoryTextColor(
-            accessory.string("secondaryTone"),
-            defaultTone: "secondary",
-            theme: theme
-          ),
-          .paragraphStyle: secondaryParagraph,
-        ]
-      ))
+    appendValuePairLine(
+      to: text, fallback: secondary, segments: secondarySegments, fontSize: 14,
+      weight: .regular,
+      color: accessoryTextColor(accessory.string("secondaryTone"), defaultTone: "secondary", theme: theme),
+      paragraph: secondaryParagraph, isPrimary: false, subscriptRanges: &subscriptRanges)
     button.isHidden = false
     button.titleLabel?.numberOfLines = 2
     button.contentHorizontalAlignment = .trailing
     button.setAttributedTitle(text, for: .normal)
+    valuePairSubscriptRanges[ObjectIdentifier(button)] = subscriptRanges
     button.setContentHuggingPriority(.required, for: .horizontal)
     button.setContentCompressionResistancePriority(.required, for: .horizontal)
     while accessoryActions.count <= index { accessoryActions.append(("", nil)) }
     accessoryActions[index] = ("", nil)
+  }
+
+  private func appendValuePairLine(
+    to text: NSMutableAttributedString,
+    fallback: String,
+    segments: [[String: Any]],
+    fontSize: CGFloat,
+    weight: NativeListFontWeight,
+    color: UIColor,
+    paragraph: NSParagraphStyle,
+    isPrimary: Bool,
+    subscriptRanges: inout [(NSRange, Bool)]
+  ) {
+    let runs = segments.isEmpty ? [["text": fallback]] : segments
+    for run in runs {
+      let content = run.string("text")
+      let isSubscript = run.string("style") == "subscript"
+      let start = text.length
+      text.append(NSAttributedString(string: content, attributes: [
+        .font: nativeListFont(
+          ofSize: isSubscript ? ceil(fontSize * 0.6) : fontSize, weight: weight, fonts: fonts),
+        .foregroundColor: color,
+        .paragraphStyle: paragraph,
+      ]))
+      if isSubscript && text.length > start {
+        subscriptRanges.append((NSRange(location: start, length: text.length - start), isPrimary))
+      }
+    }
   }
 
   private func showMenuAccessory(
@@ -500,7 +579,12 @@ final class NativeListAccessoryStack: UIStackView {
       ? nativeListColor(currentTheme, "iconSubdued", "#8D8D8D")
       : UIColor(nativeListHex: data.string("tintColor", default: "#646464"), fallback: .darkGray)
     button.tintColor = tintColor
-    if let image = nativeListIcon(named: data.string("name")) {
+    let isDecorativeRefresh =
+      data.string("name") == "RefreshCcwOutline" && data.string("actionKey").isEmpty
+    let image = isDecorativeRefresh
+      ? nativeListIcon(named: data.string("name"), size: CGSize(width: 16, height: 16))
+      : nativeListIcon(named: data.string("name"))
+    if let image {
       button.setImage(image, for: .normal)
       button.setImage(
         image.withTintColor(tintColor, renderingMode: .alwaysOriginal),
@@ -508,8 +592,22 @@ final class NativeListAccessoryStack: UIStackView {
       )
     }
     let isDrillIn = data.string("kind") == "chevron"
+    let isTertiary = data.string("buttonStyle") == "tertiary"
+    if data.string("kind") == "icon" && isTertiary {
+      tertiaryIconButtons.insert(ObjectIdentifier(button))
+    }
     let isAccountIcon = currentItem?.data.string("presentation") == "accountSelector" && !isDrillIn
-    let size: CGFloat = isDrillIn ? 24 : isAccountIcon && !isAccountCreate ? 38 : 36
+    button.isUserInteractionEnabled = !isDecorativeRefresh
+    let size: CGFloat =
+      isDecorativeRefresh ? 16 : isDrillIn ? 24 : isTertiary || isAccountIcon && !isAccountCreate ? 38 : 36
+    if isTertiary {
+      button.pressedBackgroundColor = nativeListColor(
+        currentTheme, "rowPressedBackground", "#E8E8E8")
+      button.layer.borderWidth = 1
+      button.layer.borderColor = UIColor.clear.cgColor
+      button.layer.cornerRadius = 19
+      button.contentEdgeInsets = UIEdgeInsets(top: 6, left: 6, bottom: 6, right: 6)
+    }
     if isAccountCreate { button.layer.cornerRadius = 8 }
     if isAccountIcon && !isAccountCreate && !data.string("actionKey").isEmpty {
       button.pressedBackgroundColor = nativeListColor(
@@ -647,6 +745,19 @@ final class NativeListAccessoryStack: UIStackView {
     }
     button.titleLabel?.font = font
     attributed.addAttributes(attributes, range: NSRange(location: 0, length: attributed.length))
+    if style["fontSize"] != nil,
+      let ranges = valuePairSubscriptRanges[ObjectIdentifier(button)]
+    {
+      for (range, isPrimary) in ranges {
+        let weight = style["fontWeight"] == nil
+          ? (isPrimary ? NativeListFontWeight.medium : NativeListFontWeight.regular)
+          : marketFontWeight(style.string("fontWeight"), fallback: .regular)
+        attributed.addAttribute(
+          .font,
+          value: nativeListFont(ofSize: ceil(size * 0.6), weight: weight, fonts: fonts),
+          range: range)
+      }
+    }
     button.setAttributedTitle(attributed, for: .normal)
   }
 

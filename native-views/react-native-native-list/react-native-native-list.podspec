@@ -33,6 +33,7 @@ Pod::Spec.new do |s|
   s.dependency "React-callinvoker"
 
   s.test_spec "Tests" do |test_spec|
+    test_spec.requires_app_host = true
     test_spec.source_files = "ios/tests/**/*.swift"
     test_spec.pod_target_xcconfig = {
       "PRODUCT_MODULE_NAME" => "NativeListModuleTests",

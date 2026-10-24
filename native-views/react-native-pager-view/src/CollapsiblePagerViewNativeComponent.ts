@@ -67,6 +67,7 @@ export interface NativeProps extends ViewProps {
   retainedPages?: string;
   nativeTabBarItems?: string;
   nativeTabBarHeight?: Double;
+  nativeTabBarTrailingReservedWidth?: WithDefault<Double, 0>;
   nativeTabBarContentPaddingHorizontal?: Double;
   nativeTabBarItemSpacing?: Double;
   nativeTabBarFontSize?: Double;

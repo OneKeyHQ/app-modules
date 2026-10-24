@@ -53,7 +53,19 @@ separately from source implementation in STYLE_SPEC §9.
 
 - **Use:** an identifiable asset, account, wallet, network or setting.
 - **Required data:** `leading`, `title`; optional `subtitle`, `tertiary`, `badges`,
-  `trailing`, `leadingAction`, match ranges and structured subtitle segments.
+  `trailing`, `leadingAction`, `titleIcon`, Web-only `secondaryTitleIcon`, match ranges and structured subtitle segments.
+- **Static title icon:** optional 20-point icon immediately after the title with
+  a 4-point gap. It has no click action; an optional Web `hoverActionKey`
+  emits an icon-anchored tooltip request on hover or touch. A trailing `button` is the fixed small
+  secondary text action and uses the normal accessory event slot.
+- **Second Web help icon:** `secondaryTitleIcon` uses the same descriptor after
+  `titleIcon`; each glyph has its own hover/touch anchor. Native ignores it.
+- **Decorative refresh:** a trailing `RefreshCcwOutline` without `actionKey`
+  occupies a 16-point frame and leaves row press with the row.
+- **Web neutral badge:** generic Identity rows with an explicit `tone: 'neutral'`
+  use a 20-pixel pill with 12/16 medium text, 8-pixel horizontal and 2-pixel
+  vertical padding, and the strong/subdued theme colors. Omitted tone and
+  selector presentations keep their existing badge defaults.
 - **Variants:** default horizontal row; `accountSelector` and `networkSelector`
   preserve selector control geometry; `walletSidebar` uses a compact, centered
   wallet presentation. A variant is explicit model data, never inferred from font size.
@@ -67,7 +79,10 @@ separately from source implementation in STYLE_SPEC §9.
   `valueSecondary`. The last two refer to value accessories in `trailing`; `badge`
   refers to badge text. `value`/`valueSecondary` select the first/second value
   accessory, ignoring intervening controls. A `valuePair` is one accessory, so
-  its style applies to both text runs. They are semantic roles, not extra top-level data fields.
+  its style applies to both text runs. Optional `primaryTextSegments` and
+  `secondaryTextSegments` use the existing subscript run shape per line; missing
+  or empty arrays retain the required fallback string. They are semantic roles,
+  not extra top-level data fields.
 - **Layout boundary:** reserve visual and accessory slots; text compresses within
   its own column. Styling cannot move a checkbox/menu into the title column,
   reorder accessories or convert a horizontal row into the sidebar presentation.
@@ -132,7 +147,7 @@ separately from source implementation in STYLE_SPEC §9.
 ![Activity: leading visual and description, trailing amounts, optional actions within the row](images/row-activity.svg)
 
 - **Use:** a transaction/activity record with amounts and optional commands.
-- **Required data:** `leading`, `title`; optional `secondaryLeading`,
+- **Required data:** `leading`, `title`; optional `hideLeading`, `secondaryLeading`,
   `description`, `status`, `primaryAmount`, `secondaryAmount`, `footerActions`.
   At most three footer actions are accepted, each with a unique key.
 - **Text style roles:** `title`, `description`, `status`, `primaryAmount`,
@@ -140,6 +155,10 @@ separately from source implementation in STYLE_SPEC §9.
 - **Layout boundary:** amounts remain in the amount column, description stays
   in its text region, actions stay in the row's action area. Adding actions is a
   model/height choice, not a typography trick.
+- **Leading visibility:** `hideLeading: true` removes the main visual, its
+  accessibility content and its width plus gap. The title and footer actions
+  start at the row content inset. The required `leading` model remains valid;
+  omitted or `false` retains the existing visual and spacing.
 - **Common-capability boundary:** `footerActions` are inside this activity row.
   The list footer is independently configured through the container.
 
@@ -149,8 +168,8 @@ separately from source implementation in STYLE_SPEC §9.
   most four keyed badges. `descriptionActionKey` emits a description action.
   `presentation: 'table'` allocates equal identity/amount columns and an
   optional fee column; `stacked` keeps right-aligned amounts beside identity.
-  `fee.hidden` reserves its column while hiding its content. These native
-  additions do not change the Web renderer.
+  `fee.hidden` reserves its column while hiding its content. The Web rich
+  Activity renderer uses these fields and the same `hideLeading` visibility.
 
 ```text
 stacked (phone)                     table (wide)

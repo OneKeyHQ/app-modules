@@ -33,6 +33,7 @@ export type CollapsiblePagerNativeTabBarItem = Readonly<{
 
 export type CollapsiblePagerNativeTabBarStyle = Readonly<{
   height?: number;
+  trailingReservedWidth?: number;
   contentPaddingHorizontal?: number;
   itemSpacing?: number;
   fontSize?: number;
@@ -94,6 +95,7 @@ export interface CollapsiblePagerViewProps
     | "retainedPages"
     | "nativeTabBarItems"
     | "nativeTabBarHeight"
+    | "nativeTabBarTrailingReservedWidth"
     | "nativeTabBarContentPaddingHorizontal"
     | "nativeTabBarItemSpacing"
     | "nativeTabBarFontSize"
@@ -319,7 +321,11 @@ export class CollapsiblePagerView extends React.PureComponent<
     );
   }
 
-  private dispatchNativeTabPageCommand(position: number, animated: boolean) {
+  private dispatchNativeTabPageCommand(
+    position: number,
+    animated: boolean,
+    expectedKey?: string
+  ) {
     const commandId = ++this.nativeTabCommandId;
     this.nativeTabCommandQueuedDuringScroll =
       this.nativePagerScrollState !== "idle";
@@ -332,7 +338,13 @@ export class CollapsiblePagerView extends React.PureComponent<
       }),
       () => {
         requestAnimationFrame(() => {
-          if (commandId !== this.nativeTabCommandId || !this.nativeRef) {
+          if (
+            commandId !== this.nativeTabCommandId ||
+            !this.nativeRef ||
+            (expectedKey !== undefined &&
+              (!this.nativeTabBarEnabled() ||
+                this.props.nativeTabBar?.items[position]?.key !== expectedKey))
+          ) {
             return;
           }
           this.dispatchedNativeTabTarget = position;
@@ -458,7 +470,13 @@ export class CollapsiblePagerView extends React.PureComponent<
   ) => {
     const position = pageIndex(event.nativeEvent.position);
     if (
-      position !== null &&
+      !this.nativeTabBarEnabled() ||
+      position === null ||
+      this.props.nativeTabBar?.items[position]?.key !== event.nativeEvent.key
+    ) {
+      return;
+    }
+    if (
       position >= 0 &&
       position < this.pages().length &&
       (position !== this.state.selectedPage ||
@@ -470,7 +488,8 @@ export class CollapsiblePagerView extends React.PureComponent<
       this.dispatchNativeTabPageCommand(
         position,
         this.props.nativeTabPressAnimationEnabled ??
-          Math.abs(position - currentPage) <= 1
+          Math.abs(position - currentPage) <= 1,
+        event.nativeEvent.key
       );
     }
     this.props.onNativeTabPress?.(event);
@@ -533,6 +552,14 @@ export class CollapsiblePagerView extends React.PureComponent<
       (Platform.OS === "ios" || Platform.OS === "android") &&
       !!nativeTabBar?.items.length;
     const nativeTabBarStyle = nativeTabBar?.style;
+    const requestedTrailingReservedWidth =
+      nativeTabBarStyle?.trailingReservedWidth;
+    const nativeTabBarTrailingReservedWidth =
+      typeof requestedTrailingReservedWidth === "number" &&
+      Number.isFinite(requestedTrailingReservedWidth) &&
+      requestedTrailingReservedWidth >= 0
+        ? requestedTrailingReservedWidth
+        : 0;
     const nativeSubHeaderEnabled =
       (Platform.OS === "ios" || Platform.OS === "android") &&
       !!nativeSubHeader?.items.length;
@@ -585,6 +612,9 @@ export class CollapsiblePagerView extends React.PureComponent<
         }
         nativeTabBarHeight={
           nativeTabBarEnabled ? nativeTabBarStyle?.height ?? 44 : undefined
+        }
+        nativeTabBarTrailingReservedWidth={
+          nativeTabBarEnabled ? nativeTabBarTrailingReservedWidth : 0
         }
         nativeTabBarContentPaddingHorizontal={
           nativeTabBarEnabled

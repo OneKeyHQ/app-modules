@@ -97,6 +97,7 @@ final class NativeListActivityCell: NativeListRendererCell {
     details.recycle()
     let style = data.dictionary("style") ?? [:]
     let image = style.dictionary("image") ?? [:]
+    let hideLeading = data.bool("hideLeading")
     root.spacing = 12
     root.setCustomSpacing(CGFloat(style.double("leadingGap", default: 12)), after: visual)
     switch style.dictionary("container")?.string("contentVerticalAlignment") {
@@ -113,12 +114,17 @@ final class NativeListActivityCell: NativeListRendererCell {
       bottom: CGFloat(style.double("verticalPadding", default: 8)),
       right: CGFloat(style.double("horizontalPadding", default: layout == "table" ? 16 : 12)))
     NSLayoutConstraint.deactivate(dimensions)
+    let visualWidth = visual.widthAnchor.constraint(equalToConstant: CGFloat(image.double("width", default: 40)))
+    if hideLeading { visualWidth.priority = UILayoutPriority(999) }
     dimensions = [
-      visual.widthAnchor.constraint(equalToConstant: CGFloat(image.double("width", default: 40))),
+      visualWidth,
       visual.heightAnchor.constraint(equalToConstant: CGFloat(image.double("height", default: 40))),
     ]
     NSLayoutConstraint.activate(dimensions)
-    if let leading = data.dictionary("leading") {
+    visual.isHidden = hideLeading
+    if hideLeading {
+      visual.recycle()
+    } else if let leading = data.dictionary("leading") {
       visual.bind(
         leading, style: image, key: item.key, theme: theme, isUnread: false,
         secondaryVisual: data.dictionary("secondaryLeading"), fonts: fonts)

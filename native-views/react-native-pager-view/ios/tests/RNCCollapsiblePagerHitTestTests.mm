@@ -2,13 +2,22 @@
 
 #import "RNCCollapsiblePagerViewComponentView.h"
 #import "RNCPagerViewComponentView.h"
+#import <React/RCTViewComponentView.h>
 #import <react/renderer/components/pagerview/Props.h>
+#import <react/renderer/components/view/ViewProps.h>
 
 using namespace facebook::react;
 
 @interface RNCCollapsiblePagerViewComponentView (ScrollEdgeTesting)
 - (void)updateTopScrollEdgeForScrollView:(UIScrollView *)scrollView;
 - (void)updateScrollEdgeContentMasks;
+- (void)layoutSharedHeaders;
+@end
+
+@interface UIView (NativeTabReservationTesting)
+- (void)updateItemsJSON:(NSString *)itemsJSON;
+- (void)setProgress:(CGFloat)progress;
+- (void)setLeftToRight:(BOOL)leftToRight;
 @end
 
 @interface RNCCollapsiblePagerHitTestTests : XCTestCase
@@ -54,6 +63,84 @@ using namespace facebook::react;
 - (void)testCollapsedHeaderDoesNotInterceptSiblingToolbar
 {
   XCTAssertEqual([self.root hitTest:CGPointMake(20, 80) withEvent:nil], self.toolbar);
+}
+
+- (void)testNativeTabReservationKeepsReactToolbarAboveTabsAndResetsInRTL
+{
+  UIView *sharedHost = [self.pager valueForKey:@"sharedHeaderHostView"];
+  UIView *tabBar = [self.pager valueForKey:@"nativeTabBarView"];
+  [tabBar updateItemsJSON:@"[{\"key\":\"a\",\"title\":\"Overview\"},"
+    @"{\"key\":\"b\",\"title\":\"Ethereum\"},"
+    @"{\"key\":\"c\",\"title\":\"BNB Chain\"},"
+    @"{\"key\":\"d\",\"title\":\"Polygon\"}]"];
+  RCTViewComponentView *sticky = [RCTViewComponentView new];
+  auto stickyProps = std::make_shared<ViewProps>();
+  stickyProps->pointerEvents = PointerEventsMode::BoxNone;
+  [sticky updateProps:stickyProps oldProps:nullptr];
+  UIButton *trailingControl = [[UIButton alloc] initWithFrame:CGRectMake(250, 0, 70, 44)];
+  [sticky addSubview:trailingControl];
+  [sharedHost addSubview:sticky];
+  [sharedHost addSubview:tabBar];
+  [self.pager setValue:sticky forKey:@"stickyHeaderView"];
+  [self.pager setValue:@0 forKey:@"headerHeight"];
+  [self.pager setValue:@44 forKey:@"stickyHeaderHeight"];
+  tabBar.hidden = NO;
+
+  [self.pager setValue:@64 forKey:@"nativeTabBarTrailingReservedWidth"];
+  [self.pager layoutSharedHeaders];
+  XCTAssertEqualWithAccuracy(CGRectGetWidth(sticky.frame), 320, 0.001);
+  XCTAssertEqualWithAccuracy(CGRectGetWidth(tabBar.frame), 256, 0.001);
+  XCTAssertEqualWithAccuracy(CGRectGetMinX(tabBar.frame), 0, 0.001);
+  XCTAssertEqual(sharedHost.subviews.lastObject, sticky);
+  XCTAssertEqual([sharedHost hitTest:CGPointMake(300, 22) withEvent:nil], trailingControl);
+  XCTAssertTrue([tabBar pointInside:CGPointMake(250, 22) withEvent:nil]);
+  [tabBar layoutIfNeeded];
+  [tabBar setProgress:3];
+  UIScrollView *tabScroll = (UIScrollView *)tabBar.subviews.firstObject;
+  NSArray<UIButton *> *buttons = [tabScroll.subviews filteredArrayUsingPredicate:
+    [NSPredicate predicateWithBlock:^BOOL(UIView *view, NSDictionary *bindings) {
+      return [view isKindOfClass:UIButton.class];
+    }]];
+  UIButton *lastTab = buttons.lastObject;
+  XCTAssertNotNil(lastTab);
+  XCTAssertGreaterThanOrEqual(CGRectGetMinX(lastTab.frame), tabScroll.contentOffset.x - 1);
+  XCTAssertLessThanOrEqual(CGRectGetMaxX(lastTab.frame),
+    tabScroll.contentOffset.x + CGRectGetWidth(tabScroll.bounds) + 1);
+
+  [self.pager setValue:@"rtl" forKey:@"layoutDirection"];
+  [tabBar setLeftToRight:NO];
+  trailingControl.frame = CGRectMake(0, 0, 70, 44);
+  [self.pager layoutSharedHeaders];
+  XCTAssertEqualWithAccuracy(CGRectGetMinX(tabBar.frame), 64, 0.001);
+  XCTAssertEqualWithAccuracy(CGRectGetMaxX(tabBar.frame), 320, 0.001);
+  XCTAssertEqual([sharedHost hitTest:CGPointMake(20, 22) withEvent:nil], trailingControl);
+
+  [self.pager setValue:@500 forKey:@"nativeTabBarTrailingReservedWidth"];
+  [self.pager layoutSharedHeaders];
+  XCTAssertEqualWithAccuracy(CGRectGetMinX(tabBar.frame), 320, 0.001);
+  XCTAssertEqualWithAccuracy(CGRectGetWidth(tabBar.frame), 0, 0.001);
+
+  [self.pager setValue:@0 forKey:@"nativeTabBarTrailingReservedWidth"];
+  [self.pager layoutSharedHeaders];
+  XCTAssertEqualWithAccuracy(CGRectGetMinX(tabBar.frame), 0, 0.001);
+  XCTAssertEqualWithAccuracy(CGRectGetWidth(tabBar.frame), 320, 0.001);
+  XCTAssertEqual(sharedHost.subviews.lastObject, tabBar);
+}
+
+- (void)testNativeTabReservationPropsRestoreDefaultOnRemoval
+{
+  auto reservedProps = std::make_shared<RNCCollapsiblePagerViewProps>();
+  reservedProps->nativeSmoothHeaderScrollEnabled = true;
+  reservedProps->nativeTabBarTrailingReservedWidth = 64;
+  [self.pager updateProps:reservedProps oldProps:nullptr];
+  XCTAssertEqualWithAccuracy(
+    [[self.pager valueForKey:@"nativeTabBarTrailingReservedWidth"] doubleValue], 64, 0.001);
+
+  auto defaultProps = std::make_shared<RNCCollapsiblePagerViewProps>();
+  defaultProps->nativeSmoothHeaderScrollEnabled = true;
+  [self.pager updateProps:defaultProps oldProps:reservedProps];
+  XCTAssertEqualWithAccuracy(
+    [[self.pager valueForKey:@"nativeTabBarTrailingReservedWidth"] doubleValue], 0, 0.001);
 }
 
 - (void)testPinnedChildOutsideHeaderHostStillReceivesViewportTouches

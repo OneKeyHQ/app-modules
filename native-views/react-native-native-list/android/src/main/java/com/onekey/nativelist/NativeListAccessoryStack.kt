@@ -13,6 +13,7 @@ import android.text.style.ForegroundColorSpan
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
+import android.view.MotionEvent
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -29,11 +30,14 @@ import org.json.JSONObject
 // Bounded controls only. Event ownership and epochs stay with the row host.
 internal class NativeListAccessoryStack(context: android.content.Context, val fonts: NativeListFonts) : LinearLayout(context) {
   private val trailingViews = List(2) { NativeListTextView(context) }
+  private val buttonDownEpochs = IntArray(2) { -1 }
+  private var bindingEpoch = 0
   private val trailingIcons = List(2) { OneKeyIconView(context) }
   private val checkbox = OneKeyCheckboxView(context)
   private val spinner = ProgressBar(context)
   private var boundCheckboxData: JSONObject? = null
   private val semanticValueViews = mutableListOf<TextView>()
+  private val segmentedValuePairs = mutableMapOf<TextView, JSONObject>()
   private var selectorUsesSourceScale = false
   private var checkboxUsesSelectorStyle = false
   private var checkboxCheckedColor = Color.BLACK
@@ -63,6 +67,19 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
         info: android.view.accessibility.AccessibilityNodeInfo,
       ) {
         super.onInitializeAccessibilityNodeInfo(host, info)
+        info.viewIdResourceName = host.getTag(com.facebook.react.R.id.react_test_id) as? String
+      }
+    }
+  private val buttonAccessibilityDelegate =
+    object : View.AccessibilityDelegate() {
+      override fun onInitializeAccessibilityNodeInfo(
+        host: View,
+        info: android.view.accessibility.AccessibilityNodeInfo,
+      ) {
+        super.onInitializeAccessibilityNodeInfo(host, info)
+        info.className = android.widget.Button::class.java.name
+        info.isEnabled = host.isEnabled
+        info.isClickable = host.isEnabled && host.isClickable
         info.viewIdResourceName = host.getTag(com.facebook.react.R.id.react_test_id) as? String
       }
     }
@@ -130,7 +147,12 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
       (checkbox.layoutParams as LayoutParams).marginStart = dp(12)
     for ((index, key) in listOf("value", "valueSecondary").withIndex()) {
       style.optJSONObject(key)?.let { value ->
-        semanticValueViews.getOrNull(index)?.let { applyStyledText(it, value) }
+        semanticValueViews.getOrNull(index)?.let { view ->
+          applyStyledText(view, value)
+          if (value.has("fontSize")) segmentedValuePairs[view]?.let { accessory ->
+            restorePairSubscriptSizes(view, accessory, value.optDouble("fontSize").toFloat())
+          }
+        }
       }
     }
     if (style.has("trailingGap")) {
@@ -145,6 +167,13 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
           previous = true
         }
       }
+    }
+    val pairedChevron = horizontal && (kinds == listOf("valuePair", "chevron") ||
+      (kinds == listOf("icon", "chevron") &&
+        descriptors.getJSONObject(0).optString("name") == "RefreshCcwOutline" &&
+        descriptors.getJSONObject(0).optString("actionKey").isEmpty()))
+    if (pairedChevron) {
+      (trailingIcons[1].layoutParams as LayoutParams).marginEnd = 0
     }
     visibility =
       if ((0 until childCount).any { getChildAt(it).visibility != GONE }) VISIBLE else GONE
@@ -167,27 +196,43 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
 
   fun anchorInset(view: View): Int =
     if (
-      (tag as? NativeListItem)?.json?.optString("presentation") == "accountSelector" &&
-        view in trailingIcons &&
-        (view.layoutParams as MarginLayoutParams).marginStart < 0
+      view in trailingIcons &&
+        (view.layoutParams as MarginLayoutParams).marginStart < 0 &&
+        ((tag as? NativeListItem)?.json?.optString("presentation") == "accountSelector" ||
+          (tag as? NativeListItem)?.json?.optJSONArray("trailing")?.let { trailing ->
+            (0 until trailing.length()).any { index ->
+              trailing.optJSONObject(index)?.optString("buttonStyle") == "tertiary"
+            }
+          } == true)
     )
       dp(7)
     else 0
 
   fun reset() {
+    bindingEpoch += 1
     tag = null
     endInset = null
     requestsUnclippedHost = false
     clipChildren = true
     clipToPadding = true
     semanticValueViews.clear()
+    segmentedValuePairs.clear()
     boundCheckboxData = null
     trailingViews.forEachIndexed { index, v ->
+      buttonDownEpochs[index] = -1
       v.paintFlags = trailingPaintFlags[index]
       v.visibility = GONE
       v.text = ""
       v.layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
       v.setOnClickListener(null)
+      v.setOnTouchListener(null)
+      v.isPressed = false
+      v.isClickable = false
+      v.isEnabled = true
+      v.alpha = 1f
+      v.contentDescription = null
+      v.setTag(com.facebook.react.R.id.react_test_id, null)
+      v.accessibilityDelegate = null
       v.background = null
       v.setPadding(0, 0, 0, 0)
       // Legacy trailing text: END gravity, one line, no ellipsis.
@@ -252,6 +297,83 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
     for (index in 0 until minOf(2, accessories.length())) {
       val accessory = accessories.getJSONObject(index)
       when (accessory.optString("kind")) {
+        "button" -> {
+          if (textIndex !in trailingViews.indices) continue
+          val view = trailingViews[textIndex]
+          val buttonIndex = textIndex
+          val epoch = bindingEpoch
+          val disabled =
+            item.json.optBoolean("disabled", false) || accessory.optBoolean("disabled", false)
+          showTrailing(textIndex, accessory.optString("label"), false)
+          view.typeface = fonts.medium(context)
+          view.gravity = Gravity.CENTER
+          view.setTextColor(
+            safeColor(
+              accessory.optString("textColor").takeIf(String::isNotEmpty),
+              color(theme, "primaryText", "#000000DF"),
+            )
+          )
+          view.layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, dp(30))
+          view.setPadding(dp(11), dp(4), dp(11), dp(4))
+          view.background =
+            StateListDrawable().apply {
+              fun fill(value: Int) =
+                GradientDrawable().apply {
+                  setColor(value)
+                  cornerRadius = dp(15).toFloat()
+                  setStroke(dp(1), Color.TRANSPARENT)
+                }
+              addState(
+                intArrayOf(android.R.attr.state_pressed),
+                fill(safeColor(accessory.optString("pressedBackgroundColor").takeIf(String::isNotEmpty),
+                  color(theme, "rowPressedBackground", "#00000017"))),
+              )
+              addState(
+                intArrayOf(),
+                fill(safeColor(accessory.optString("backgroundColor").takeIf(String::isNotEmpty),
+                  color(theme, "strongBackground", "#0000000F"))),
+              )
+            }
+          view.setTag(
+            com.facebook.react.R.id.react_test_id,
+            accessory.optString("testID").takeIf(String::isNotEmpty),
+          )
+          view.accessibilityDelegate = buttonAccessibilityDelegate
+          view.contentDescription =
+            accessory.optString("accessibilityLabel").ifEmpty { accessory.optString("label") }
+          view.isEnabled = !disabled
+          view.alpha = if (disabled) 0.4f else 1f
+          view.isClickable = true
+          view.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+              MotionEvent.ACTION_DOWN -> {
+                buttonDownEpochs[buttonIndex] = epoch
+                false
+              }
+              MotionEvent.ACTION_UP -> {
+                if (buttonDownEpochs[buttonIndex] != bindingEpoch) {
+                  view.isPressed = false
+                  true
+                } else false
+              }
+              MotionEvent.ACTION_CANCEL -> {
+                buttonDownEpochs[buttonIndex] = -1
+                false
+              }
+              else -> false
+            }
+          }
+          view.setOnClickListener {
+            if (epoch != bindingEpoch) return@setOnClickListener
+            (tag as? NativeListItem)?.takeUnless { it.json.optBoolean("disabled", false) }
+              ?.takeUnless { accessory.optBoolean("disabled", false) }
+              ?.let {
+                emitAction(it, accessory.optString("actionKey"), null, view,
+                  "trailingAccessory", index)
+              }
+          }
+          textIndex++
+        }
         "value" -> {
           showTrailing(
             textIndex,
@@ -264,6 +386,7 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
         }
         "valuePair" -> {
           showTrailingValuePair(textIndex, accessory, theme)
+          segmentedValuePairs[trailingViews[textIndex]] = accessory
           semanticValueViews.add(trailingViews[textIndex++])
         }
         "checkbox" -> bindCheckbox(item, accessory, checkboxState)
@@ -421,8 +544,10 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
 
   private fun showTrailingValuePair(index: Int, accessory: JSONObject, theme: JSONObject?) {
     if (index !in trailingViews.indices) return
-    val primary = accessory.optString("primary")
-    val secondary = accessory.optString("secondary")
+    val primarySegments = accessory.optJSONArray("primaryTextSegments")
+    val secondarySegments = accessory.optJSONArray("secondaryTextSegments")
+    val primary = segmentTextOrFallback(primarySegments, accessory.optString("primary"))
+    val secondary = segmentTextOrFallback(secondarySegments, accessory.optString("secondary"))
     if (primary.isEmpty() && secondary.isEmpty()) return
     val value = SpannableStringBuilder()
     val primaryStart = value.length
@@ -442,6 +567,7 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
       value.length,
       Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
     )
+    applyPairSubscriptSizes(value, primarySegments, primaryStart, 16f)
     if (primary.isNotEmpty() && secondary.isNotEmpty()) value.append('\n')
     val secondaryStart = value.length
     value.append(secondary)
@@ -462,6 +588,7 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
       value.length,
       Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
     )
+    applyPairSubscriptSizes(value, secondarySegments, secondaryStart, 14f)
     val view = trailingViews[index]
     view.text = value
     view.maxLines = 2
@@ -471,6 +598,48 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
     view.fontFeatureSettings = "tnum"
     TextViewCompat.setLineHeight(view, dp(20))
     view.visibility = VISIBLE
+  }
+
+  private fun segmentTextOrFallback(segments: JSONArray?, fallback: String): String {
+    if (segments == null || segments.length() == 0) return fallback
+    return buildString {
+      for (index in 0 until segments.length()) append(segments.getJSONObject(index).optString("text"))
+    }
+  }
+
+  private fun applyPairSubscriptSizes(
+    value: SpannableStringBuilder,
+    segments: JSONArray?,
+    start: Int,
+    baseSize: Float,
+  ) {
+    if (segments == null) return
+    var offset = start
+    for (index in 0 until segments.length()) {
+      val segment = segments.getJSONObject(index)
+      val end = offset + segment.optString("text").length
+      if (end > offset && segment.optString("style") == "subscript")
+        value.setSpan(
+          AbsoluteSizeSpan(sp(kotlin.math.ceil(baseSize * 0.6).toFloat()).roundToInt(), true),
+          offset,
+          end,
+          Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+        )
+      offset = end
+    }
+  }
+
+  private fun restorePairSubscriptSizes(view: TextView, accessory: JSONObject, baseSize: Float) {
+    val primary = accessory.optJSONArray("primaryTextSegments")
+    val secondary = accessory.optJSONArray("secondaryTextSegments")
+    if ((primary?.length() ?: 0) == 0 && (secondary?.length() ?: 0) == 0) return
+    val value = SpannableStringBuilder(view.text)
+    applyPairSubscriptSizes(value, primary, 0, baseSize)
+    val primaryText = segmentTextOrFallback(primary, accessory.optString("primary"))
+    val secondaryStart = primaryText.length + if (primaryText.isNotEmpty() &&
+      segmentTextOrFallback(secondary, accessory.optString("secondary")).isNotEmpty()) 1 else 0
+    applyPairSubscriptSizes(value, secondary, secondaryStart, baseSize)
+    view.text = value
   }
 
   private fun showTrailingMenu(index: Int, actionKey: String) {
@@ -512,7 +681,26 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
     )
     icon.accessibilityDelegate = selectorAccessibilityDelegate
     icon.contentDescription = data.optString("accessibilityLabel").takeIf { it.isNotEmpty() }
-    if (item.json.optString("presentation") == "accountSelector") {
+    if (data.optString("buttonStyle") == "tertiary") {
+      icon.glyphSizeDp = 24
+      icon.layoutParams = LayoutParams(dp(38), dp(38)).apply {
+        gravity = Gravity.CENTER_VERTICAL
+        marginStart = -dp(7)
+        marginEnd = -dp(7)
+      }
+      icon.background = StateListDrawable().apply {
+        addState(intArrayOf(android.R.attr.state_pressed),
+          roundedFill(color(theme, "rowPressedBackground", "#00000017"), 19f).apply {
+            setStroke(dp(1), Color.TRANSPARENT)
+          })
+        addState(intArrayOf(), roundedFill(Color.TRANSPARENT, 19f).apply {
+          setStroke(dp(1), Color.TRANSPARENT)
+        })
+      }
+      clipChildren = false
+      clipToPadding = false
+      requestsUnclippedHost = true
+    } else if (item.json.optString("presentation") == "accountSelector") {
       icon.glyphSizeDp = 24
       val isSourceMenu = item.hasExplicitHeight && icon.iconName == "DotHorOutline"
       val size = if (item.hasExplicitHeight && icon.iconName == "PlusSmallOutline") 36 else 38
@@ -537,6 +725,13 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
             )
             addState(intArrayOf(), roundedFill(Color.TRANSPARENT, 19f))
           }
+      }
+    } else if (icon.iconName == "RefreshCcwOutline" && data.optString("actionKey").isEmpty()) {
+      icon.glyphSizeDp = 16
+      icon.isClickable = false
+      icon.isFocusable = false
+      icon.layoutParams = LayoutParams(dp(16), dp(16)).apply {
+        gravity = Gravity.CENTER_VERTICAL
       }
     } else if (icon.iconName == "ChevronRightSmallOutline") {
       icon.glyphSizeDp = null

@@ -201,6 +201,7 @@ type TemplateBoxStyle<T extends keyof typeof ROW_BOX_STYLE_KEYS_BY_TYPE> = Pick<
  */
 export type IdentityRowStyle = TemplateBoxStyle<'identity'> &
   Readonly<{
+    leadingContentMaxWidthRatio?: number;
     title?: NativeListTextStyle;
     subtitle?: NativeListTextStyle;
     tertiary?: NativeListTextStyle;
@@ -344,14 +345,21 @@ export type VisualOverlay = Readonly<{
   offsetX?: number;
   offsetY?: number;
   image?: ImageSource;
+  fallbackIcon?: Readonly<{ name: string; tintColor?: string }>;
   name?: string;
   text?: string;
+  fontWeight?: NativeListTextStyle['fontWeight'];
   tintColor?: string;
   backgroundColor?: string;
 }>;
 
 type VisualWithImage = Readonly<{
-  fallbackIcon?: Readonly<{ name: string; tintColor?: string }>;
+  fallbackIcon?: Readonly<{
+    name: string;
+    tintColor?: string;
+    size?: number;
+    backgroundColor?: string;
+  }>;
   overlays?: readonly VisualOverlay[];
   borderStyle?: 'dashed';
   borderColor?: string;
@@ -408,8 +416,23 @@ export type TrailingAccessory =
       kind: 'valuePair';
       primary: string;
       secondary: string;
+      primaryTextSegments?: readonly ValueTextSegment[];
+      secondaryTextSegments?: readonly ValueTextSegment[];
       primaryTone?: TextTone;
       secondaryTone?: TextTone;
+    }>
+  | Readonly<{
+      kind: 'button';
+      label: string;
+      actionKey: string;
+      disabled?: boolean;
+      testID?: string;
+      accessibilityLabel?: string;
+      textColor?: string;
+      backgroundColor?: string;
+      pressedBackgroundColor?: string;
+      hoverBackgroundColor?: string;
+      focusRingColor?: string;
     }>
   | Readonly<{
       kind: 'checkbox';
@@ -438,6 +461,7 @@ export type TrailingAccessory =
       kind: 'icon';
       name: string;
       tintColor?: string;
+      buttonStyle?: 'tertiary';
       disabled?: boolean;
       actionKey?: string;
       testID?: string;
@@ -489,6 +513,15 @@ export type IdentityRow = RowBase &
     leading: LeadingVisual;
     leadingAction?: Extract<TrailingAccessory, { kind: 'icon' }>;
     title: string;
+    titleIcon?: Readonly<{
+      name: string;
+      tintColor?: string;
+      accessibilityLabel?: string;
+      /** Web-only anchored help from this icon; does not add a click action. */
+      hoverActionKey?: string;
+    }>;
+    /** Web-only additional help icon after titleIcon. */
+    secondaryTitleIcon?: IdentityRow['titleIcon'];
     subtitle?: string;
     tertiary?: string;
     tertiaryTone?: 'secondary' | 'info';
@@ -534,6 +567,7 @@ export type ActivityRow = RowBase &
   Readonly<{
     type: 'activity';
     leading: LeadingVisual;
+    hideLeading?: boolean;
     secondaryLeading?: LeadingVisual;
     title: string;
     description?: string;
@@ -853,6 +887,8 @@ export type NativeListTheme = Readonly<{
   rowBackground: string;
   rowSelectedBackground: string;
   rowPressedBackground?: string;
+  /** Web-only enabled-row hover color; defaults to rowPressedBackground. */
+  rowHoverBackground?: string;
   subduedBackground?: string;
   strongBackground?: string;
   /** Web-only background for a displayed declared image fallback. */
@@ -968,6 +1004,8 @@ export type RowPatch =
           IdentityRow,
           | CommonPatchFields
           | 'title'
+          | 'titleIcon'
+          | 'secondaryTitleIcon'
           | 'subtitle'
           | 'tertiary'
           | 'tertiaryTone'
@@ -1010,6 +1048,7 @@ export type RowPatch =
           | 'primaryAmount'
           | 'secondaryAmount'
           | 'leading'
+          | 'hideLeading'
           | 'secondaryLeading'
           | 'footerActions'
         >
