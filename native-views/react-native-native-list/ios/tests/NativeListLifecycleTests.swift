@@ -244,21 +244,25 @@ final class NativeListLifecycleTests: XCTestCase {
   }
 
   func testDecorativeRefreshKeepsSixteenPointFrameAcrossActionRebind() throws {
-    let stack = NativeListAccessoryStack(frame: CGRect(x: 0, y: 0, width: 80, height: 40))
-    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 160, height: 80))
-    window.addSubview(stack)
-    let item = try NativeListItem(data: [
-      "key": "refresh", "type": "identity", "title": "Network",
-      "leading": ["kind": "icon", "name": "coin"],
-    ])
-    func bind(actionKey: String? = nil) {
+    let cell = NativeListIdentityCell(frame: CGRect(x: 0, y: 0, width: 386, height: 56))
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 386, height: 80))
+    window.addSubview(cell)
+    let stack = try XCTUnwrap(Mirror(reflecting: cell).children.first {
+      $0.label == "trailingStack"
+    }?.value as? NativeListAccessoryStack)
+    func bind(actionKey: String? = nil) throws {
       var icon: [String: Any] = ["kind": "icon", "name": "RefreshCcwOutline"]
       if let actionKey { icon["actionKey"] = actionKey }
-      stack.bind(item, descriptors: [icon], theme: nil, style: [:],
+      let item = try NativeListItem(data: [
+        "key": "refresh", "type": "identity", "title": "Network", "height": 56,
+        "leading": ["kind": "icon", "name": "coin"], "trailing": [icon],
+      ])
+      cell.bind(item: item, theme: nil, layout: "linear", selected: false,
         checkboxState: { _, _, fallback in fallback }, fonts: NativeListFontFamilies())
-      stack.layoutIfNeeded()
+      window.layoutIfNeeded()
+      cell.layoutIfNeeded()
     }
-    bind()
+    try bind()
     let button = try XCTUnwrap(stack.firstVisibleControl as? UIButton)
     XCTAssertEqual(button.bounds.width, 16, accuracy: 0.5)
     XCTAssertEqual(button.bounds.height, 16, accuracy: 0.5)
@@ -266,11 +270,15 @@ final class NativeListLifecycleTests: XCTestCase {
     XCTAssertEqual(button.image(for: .normal)?.size.width, 16)
     XCTAssertEqual(button.image(for: .normal)?.size.height, 16)
     XCTAssertFalse(button.isUserInteractionEnabled)
-    bind(actionKey: "refresh")
+    try bind(actionKey: "refresh")
     XCTAssertEqual(button.bounds.width, 36, accuracy: 0.5)
+    XCTAssertEqual(button.bounds.height, 36, accuracy: 0.5)
     XCTAssertTrue(button.isUserInteractionEnabled)
-    bind()
+    try bind()
     XCTAssertEqual(button.bounds.width, 16, accuracy: 0.5)
+    XCTAssertEqual(button.bounds.height, 16, accuracy: 0.5)
+    XCTAssertEqual(button.image(for: .normal)?.size.width, 16)
+    XCTAssertEqual(button.image(for: .normal)?.size.height, 16)
     XCTAssertFalse(button.isUserInteractionEnabled)
   }
 
@@ -386,7 +394,14 @@ final class NativeListLifecycleTests: XCTestCase {
       XCTAssertGreaterThan(titleLabel.bounds.width, 0.5,
         "A visible token title must not collapse when the row reserves trailing space")
       XCTAssertEqual(titleLabel.bounds.height, 24, accuracy: 0.5)
-      XCTAssertGreaterThan(mainStack.bounds.width, 20)
+      let intrinsicWidth = titleLabel.intrinsicContentSize.width
+      let capWidth = cell.root.bounds.width * 0.6 - 52
+      let requiredTitleWidth = capped ? min(intrinsicWidth, capWidth) : intrinsicWidth
+      XCTAssertGreaterThanOrEqual(titleLabel.bounds.width, requiredTitleWidth - 0.5,
+        "title=\(data["title"] ?? "") intrinsic=\(intrinsicWidth) "
+          + "rendered=\(titleLabel.bounds.width) root=\(cell.root.bounds.width) "
+          + "trailing=\(trailing.bounds.width)")
+      XCTAssertGreaterThanOrEqual(mainStack.bounds.width, titleLabel.bounds.width - 0.5)
       XCTAssertEqual(trailing.frame.maxX, cell.root.bounds.maxX, accuracy: 0.5)
       if capped {
         XCTAssertLessThanOrEqual(mainStack.bounds.width, cell.root.bounds.width * 0.6 - 52 + 0.5)
@@ -394,7 +409,6 @@ final class NativeListLifecycleTests: XCTestCase {
     }
 
     try bind(base)
-    XCTAssertGreaterThan(titleLabel.bounds.width, 20)
     XCTAssertNil(trailing.firstVisibleControl)
     try bind(base.merging(["trailing": [[
       "kind": "button", "label": "Show on home", "actionKey": "show",
