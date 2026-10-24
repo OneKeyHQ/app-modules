@@ -200,6 +200,75 @@ final class NativeListLifecycleTests: XCTestCase {
       .allSatisfy { $0.isHidden })
   }
 
+  func testIdentityTrailingActionUsesDescriptorSlotAfterCheckboxAndRebind() throws {
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 386, height: 200))
+    let controller = UIViewController()
+    window.rootViewController = controller
+    window.isHidden = false
+    defer { window.isHidden = true }
+    let cell = NativeListIdentityCell(frame: CGRect(x: 0, y: 0, width: 386, height: 56))
+    controller.view.addSubview(cell)
+    let trailing = try XCTUnwrap(
+      Mirror(reflecting: cell).children.first { $0.label == "trailingStack" }?.value
+        as? NativeListAccessoryStack)
+    var actions: [(rowKey: String, key: String, source: String, slot: Int?)] = []
+    cell.onAction = { item, key, _, origin in
+      actions.append((item.key, key, origin?.source ?? "", origin?.slot))
+    }
+    func bind(_ trailingData: [[String: Any]], key: String = "row") throws {
+      let item = try NativeListItem(data: [
+        "key": key, "type": "identity", "title": "Row", "trailing": trailingData,
+      ])
+      cell.bind(item: item, theme: nil, layout: "linear", selected: false,
+        checkboxState: { _, _, fallback in fallback }, fonts: NativeListFontFamilies())
+      window.layoutIfNeeded()
+      cell.layoutIfNeeded()
+    }
+    func visibleButtons() -> [NativeListAccessoryButton] {
+      trailing.arrangedSubviews.compactMap { $0 as? NativeListAccessoryButton }
+        .filter { !$0.isHidden }
+    }
+    let checkbox: [String: Any] = [
+      "kind": "checkbox", "state": "unchecked", "actionKey": "selection",
+    ]
+    let first: [String: Any] = ["kind": "button", "label": "First", "actionKey": "first"]
+    let second: [String: Any] = ["kind": "button", "label": "Second", "actionKey": "second"]
+
+    try bind([checkbox, second])
+    XCTAssertEqual(visibleButtons().count, 1)
+    XCTAssertTrue(visibleButtons()[0].isEnabled)
+    XCTAssertTrue(visibleButtons()[0].isUserInteractionEnabled)
+    XCTAssertTrue(visibleButtons()[0].allTargets.contains(trailing))
+    XCTAssertNotNil(trailing.onAction)
+    visibleButtons()[0].sendActions(for: .touchUpInside)
+    XCTAssertEqual(actions.last?.rowKey, "row")
+    XCTAssertEqual(actions.last?.key, "second")
+    XCTAssertEqual(actions.last?.source, "trailingAccessory")
+    XCTAssertEqual(actions.last?.slot, 1)
+    let selection = try XCTUnwrap(trailing.arrangedSubviews.compactMap { $0 as? UIButton }
+      .first { !($0 is NativeListAccessoryButton) && !$0.isHidden })
+    selection.sendActions(for: .touchUpInside)
+    XCTAssertEqual(actions.last?.key, "selection")
+    XCTAssertNil(actions.last?.slot)
+
+    try bind([first, second])
+    XCTAssertEqual(visibleButtons().count, 2)
+    visibleButtons()[0].sendActions(for: .touchUpInside)
+    XCTAssertEqual(actions.last?.key, "first")
+    XCTAssertEqual(actions.last?.slot, 0)
+    visibleButtons()[1].sendActions(for: .touchUpInside)
+    XCTAssertEqual(actions.last?.key, "second")
+    XCTAssertEqual(actions.last?.slot, 1)
+
+    try bind([second], key: "replacement")
+    XCTAssertEqual(visibleButtons().count, 1)
+    visibleButtons()[0].sendActions(for: .touchUpInside)
+    XCTAssertEqual(actions.last?.rowKey, "replacement")
+    XCTAssertEqual(actions.last?.key, "second")
+    XCTAssertEqual(actions.last?.slot, 0)
+    XCTAssertEqual(actions.count, 5)
+  }
+
   func testValuePairSegmentsStyleAndPlainRebindOnProductionAccessoryStack() throws {
     let stack = NativeListAccessoryStack(frame: CGRect(x: 0, y: 0, width: 180, height: 48))
     let item = try NativeListItem(data: [

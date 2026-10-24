@@ -238,6 +238,7 @@ final class NativeListAccessoryStack: UIStackView {
     contentGap = nil
     currentItem = nil
     for (index, button) in accessoryButtons.enumerated() {
+      button.tag = index
       button.setAttributedTitle(nil, for: .normal)
       button.setTitle(nil, for: .normal)
       button.setImage(nil, for: .normal)
@@ -272,8 +273,9 @@ final class NativeListAccessoryStack: UIStackView {
     spinner.alpha = 1
   }
   @objc private func pressed(_ button: UIButton) {
-    guard accessoryActions.indices.contains(button.tag) else { return }
-    let action = accessoryActions[button.tag]
+    guard let controlIndex = accessoryButtons.firstIndex(where: { $0 === button }),
+      accessoryActions.indices.contains(controlIndex) else { return }
+    let action = accessoryActions[controlIndex]
     if !action.0.isEmpty { onAction?(action.0, button, button.tag, action.1) }
   }
   @objc private func checkboxPressed() {
@@ -286,7 +288,8 @@ final class NativeListAccessoryStack: UIStackView {
     _ checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
   ) {
     var textIndex = 0
-    for accessory in accessories.prefix(2) {
+    for (slot, accessory) in accessories.prefix(2).enumerated() {
+      let controlIndex = textIndex
       switch accessory.string("kind") {
       case "button":
         showAccessory(
@@ -377,6 +380,7 @@ final class NativeListAccessoryStack: UIStackView {
         textIndex += 1
       default: break
       }
+      if textIndex > controlIndex { accessoryButtons[controlIndex].tag = slot }
     }
   }
 
