@@ -269,6 +269,93 @@ final class NativeListLifecycleTests: XCTestCase {
     XCTAssertEqual(actions.count, 5)
   }
 
+  func testIdentityTertiaryIconAnchorInsetSurvivesAccessoryRebind() throws {
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 386, height: 200))
+    let controller = UIViewController()
+    window.rootViewController = controller
+    window.isHidden = false
+    defer { window.isHidden = true }
+    let cell = NativeListIdentityCell(frame: CGRect(x: 0, y: 0, width: 386, height: 88))
+    controller.view.addSubview(cell)
+    let trailing = try XCTUnwrap(
+      Mirror(reflecting: cell).children.first { $0.label == "trailingStack" }?.value
+        as? NativeListAccessoryStack)
+    var actions: [(rowKey: String, source: String, slot: Int?, inset: CGFloat,
+      width: CGFloat)] = []
+    cell.onAction = { item, _, _, origin in
+      actions.append((item.key, origin?.source ?? "", origin?.slot, origin?.anchorInset ?? -1,
+        origin?.sourceView?.bounds.width ?? -1))
+    }
+    func bind(_ descriptors: [[String: Any]], key: String,
+      presentation: String? = nil) throws -> NativeListAccessoryButton {
+      var data: [String: Any] = [
+        "key": key, "type": "identity", "title": "Row", "height": 88,
+        "trailing": descriptors,
+      ]
+      if let presentation { data["presentation"] = presentation }
+      cell.bind(item: try NativeListItem(data: data), theme: nil, layout: "linear",
+        selected: false, checkboxState: { _, _, fallback in fallback },
+        fonts: NativeListFontFamilies())
+      window.layoutIfNeeded()
+      cell.layoutIfNeeded()
+      return try XCTUnwrap(trailing.firstVisibleControl as? NativeListAccessoryButton)
+    }
+    let tertiary: [String: Any] = [
+      "kind": "icon", "name": "CryptoCoinOutline", "buttonStyle": "tertiary",
+      "actionKey": "menu",
+    ]
+    let ordinary: [String: Any] = [
+      "kind": "icon", "name": "CryptoCoinOutline", "actionKey": "menu",
+    ]
+
+    let first = try bind([
+      ["kind": "checkbox", "state": "unchecked", "actionKey": "selection"], tertiary,
+    ], key: "tertiary-first")
+    XCTAssertEqual(first.bounds.width, 38, accuracy: 0.5)
+    first.sendActions(for: .touchUpInside)
+    XCTAssertEqual(actions.last?.rowKey, "tertiary-first")
+    XCTAssertEqual(actions.last?.source, "trailingAccessory")
+    XCTAssertEqual(actions.last?.slot, 1)
+    XCTAssertEqual(actions.last?.inset, 7)
+    let firstOrigin = try XCTUnwrap(actions.last)
+    XCTAssertEqual(firstOrigin.width - 2 * firstOrigin.inset, 24, accuracy: 0.5)
+
+    let normal = try bind([ordinary], key: "ordinary")
+    XCTAssertEqual(normal.bounds.width, 36, accuracy: 0.5)
+    normal.sendActions(for: .touchUpInside)
+    XCTAssertEqual(actions.last?.rowKey, "ordinary")
+    XCTAssertEqual(actions.last?.slot, 0)
+    XCTAssertEqual(actions.last?.inset, 0)
+    XCTAssertEqual(actions.last?.width, 36)
+
+    let value = try bind([["kind": "value", "text": "Value"]], key: "value")
+    value.bounds.size.width = 38
+    XCTAssertEqual(trailing.anchorInset(for: value), 0)
+
+    let rebound = try bind([tertiary], key: "tertiary-again")
+    rebound.sendActions(for: .touchUpInside)
+    XCTAssertEqual(actions.last?.rowKey, "tertiary-again")
+    XCTAssertEqual(actions.last?.slot, 0)
+    XCTAssertEqual(actions.last?.inset, 7)
+    let reboundOrigin = try XCTUnwrap(actions.last)
+    XCTAssertEqual(reboundOrigin.width - 2 * reboundOrigin.inset, 24, accuracy: 0.5)
+
+    let account = try bind([ordinary], key: "account", presentation: "accountSelector")
+    XCTAssertEqual(account.bounds.width, 38, accuracy: 0.5)
+    account.sendActions(for: .touchUpInside)
+    XCTAssertEqual(actions.last?.rowKey, "account")
+    XCTAssertEqual(actions.last?.slot, 0)
+    XCTAssertEqual(actions.last?.inset, 7)
+    let accountOrigin = try XCTUnwrap(actions.last)
+    XCTAssertEqual(accountOrigin.width - 2 * accountOrigin.inset, 24, accuracy: 0.5)
+
+    let finalOrdinary = try bind([ordinary], key: "ordinary-again")
+    finalOrdinary.sendActions(for: .touchUpInside)
+    XCTAssertEqual(actions.last?.rowKey, "ordinary-again")
+    XCTAssertEqual(actions.last?.inset, 0)
+    XCTAssertEqual(actions.count, 5)
+  }
+
   func testValuePairSegmentsStyleAndPlainRebindOnProductionAccessoryStack() throws {
     let stack = NativeListAccessoryStack(frame: CGRect(x: 0, y: 0, width: 180, height: 48))
     let item = try NativeListItem(data: [

@@ -139,6 +139,7 @@ final class NativeListAccessoryStack: UIStackView {
   private var boundCheckboxTarget: NativeSelectionTarget?
   private var semanticValueButtons: [UIButton] = []
   private var valuePairSubscriptRanges: [ObjectIdentifier: [(NSRange, Bool)]] = [:]
+  private var tertiaryIconButtons: Set<ObjectIdentifier> = []
   private var accessorySizeConstraints: [NSLayoutConstraint] = []
   private var currentItem: NativeListItem?
   private var currentTheme: [String: Any]?
@@ -222,8 +223,11 @@ final class NativeListAccessoryStack: UIStackView {
     }
   }
   func anchorInset(for view: UIView) -> CGFloat {
-    currentItem?.data.string("presentation") == "accountSelector"
-      && accessoryButtons.contains { $0 === view } && view.bounds.width == 38 ? 7 : 0
+    guard accessoryButtons.contains(where: { $0 === view }), view.bounds.width == 38 else {
+      return 0
+    }
+    if tertiaryIconButtons.contains(ObjectIdentifier(view)) { return 7 }
+    return currentItem?.data.string("presentation") == "accountSelector" ? 7 : 0
   }
   func reset() {
     NSLayoutConstraint.deactivate(accessorySizeConstraints)
@@ -231,6 +235,7 @@ final class NativeListAccessoryStack: UIStackView {
     accessoryActions.removeAll()
     semanticValueButtons.removeAll()
     valuePairSubscriptRanges.removeAll()
+    tertiaryIconButtons.removeAll()
     checkboxAction = nil
     boundCheckboxData = nil
     boundCheckboxTarget = nil
@@ -588,6 +593,9 @@ final class NativeListAccessoryStack: UIStackView {
     }
     let isDrillIn = data.string("kind") == "chevron"
     let isTertiary = data.string("buttonStyle") == "tertiary"
+    if data.string("kind") == "icon" && isTertiary {
+      tertiaryIconButtons.insert(ObjectIdentifier(button))
+    }
     let isAccountIcon = currentItem?.data.string("presentation") == "accountSelector" && !isDrillIn
     button.isUserInteractionEnabled = !isDecorativeRefresh
     let size: CGFloat =
