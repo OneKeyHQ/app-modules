@@ -902,13 +902,11 @@ final class NativeListLifecycleTests: XCTestCase {
 
   func testStructuralShrinkUsesTheTallerFinalColumnForOffsetClamping() throws {
     let cases: [(name: String, sidecar: Int, offset: CGFloat, height: CGFloat,
-      explicitInset: UIEdgeInsets?)] = [
-      ("sidecar stays taller", 2200, 1450, 2200, nil),
-      ("left column stays taller", 1000, 1100, 1560, nil),
-      ("left column explicit inset", 1000, 1100, 1560,
-        UIEdgeInsets(top: 62, left: 0, bottom: 34, right: 0)),
-      ("left column zero inset", 1000, 1100, 1560, .zero),
-      ("sidecar becomes taller", 1700, 1050, 1700, nil),
+      zeroInset: Bool)] = [
+      ("sidecar stays taller", 2200, 1450, 2200, false),
+      ("left column stays taller", 1000, 1100, 1560, false),
+      ("left column zero inset", 1000, 1100, 1560, true),
+      ("sidecar becomes taller", 1700, 1050, 1700, false),
     ]
     for testCase in cases {
       let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1000, height: 600))
@@ -918,9 +916,17 @@ final class NativeListLifecycleTests: XCTestCase {
       controller.view.addSubview(view)
       window.isHidden = false
       defer {
+        view.dispose()
         view.removeFromSuperview()
         window.isHidden = true
+        window.rootViewController = nil
       }
+      let list = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+      // Keep the viewport insets fixed while testing structural offset clamping.
+      let explicitInset = testCase.zeroInset ? UIEdgeInsets.zero :
+        UIEdgeInsets(top: 62, left: 0, bottom: 34, right: 0)
+      list.contentInsetAdjustmentBehavior = .never
+      list.contentInset = explicitInset
       view.mountContainerSlot(UIView(), atIndex: 0)
       view.mountContainerSlot(UIView(), atIndex: 1)
       let footer = UIView()
@@ -931,52 +937,21 @@ final class NativeListLifecycleTests: XCTestCase {
       view.setSidecarLayoutJson("{\"width\":300,\"gap\":24,\"maxContentWidth\":1000}")
       view.applySnapshotJson(try structuralRowsSnapshot(count: 30))
       view.layoutIfNeeded()
-      let list = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
-      if let explicitInset = testCase.explicitInset {
-        list.contentInsetAdjustmentBehavior = .never
-        list.contentInset = explicitInset
-      }
-      let trace = testCase.sidecar == 1000
-      let start = CACurrentMediaTime()
-      func record(_ phase: String) {
-        guard trace else { return }
-        let state = Mirror(reflecting: view).children
-        let fields = ["structuralTargetOffset", "structuralStartOffset",
-          "structuralScrollInterrupted", "structuralRemovalProgress", "structuralDisplayLink"]
-          .map { key in
-            "\(key)=\(String(describing: state.first { $0.label == key }?.value))"
-          }.joined(separator: ",")
-        print("SDK_CI_GEOMETRY case=\(testCase.name) phase=\(phase) time=\(CACurrentMediaTime() - start) offset=\(list.contentOffset.y) size=\(list.contentSize) bounds=\(list.bounds) contentInset=\(list.contentInset) adjustedInset=\(list.adjustedContentInset) flags=\(list.isTracking)/\(list.isDragging)/\(list.isDecelerating) window=\(window.frame)/\(window.safeAreaInsets)/\(window.isKeyWindow)/\(window.windowScene != nil) controller=\(controller.view.frame)/\(controller.view.safeAreaInsets)/\(controller.isBeingPresented)/\(controller.isBeingDismissed) state=\(fields)")
-      }
-      let offsetObservation = trace ? list.observe(\.contentOffset, options: [.new]) { _, _ in
-        record("offset-kvo")
-      } : nil
-      let sizeObservation = trace ? list.observe(\.contentSize, options: [.new]) { _, _ in
-        record("size-kvo")
-      } : nil
-      defer {
-        offsetObservation?.invalidate()
-        sizeObservation?.invalidate()
-      }
       list.layoutIfNeeded()
       drainMainQueue()
-      if let explicitInset = testCase.explicitInset {
-        XCTAssertEqual(list.adjustedContentInset, explicitInset, testCase.name)
-      }
+      XCTAssertEqual(list.adjustedContentInset, explicitInset, testCase.name)
       XCTAssertEqual(list.contentSize.height, max(1860, CGFloat(testCase.sidecar)),
         accuracy: 1, testCase.name)
       list.contentOffset.y = testCase.offset
       list.layoutIfNeeded()
       XCTAssertEqual(list.contentOffset.y, testCase.offset, accuracy: 1, testCase.name)
-      record("before")
 
       view.applySnapshotJson(try structuralRowsSnapshot(count: 25, transitionID: testCase.name))
-      record("applied")
       let completed = expectation(description: "Native structural display link: \(testCase.name)")
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { completed.fulfill() }
       wait(for: [completed], timeout: 1)
       list.layoutIfNeeded()
-      record("settled")
+      XCTAssertEqual(list.adjustedContentInset, explicitInset, testCase.name)
       XCTAssertEqual(list.contentSize.height, testCase.height, accuracy: 1, testCase.name)
       let inset = list.adjustedContentInset
       let finalMaximum = max(-inset.top, testCase.height - list.bounds.height + inset.bottom)
@@ -985,7 +960,7 @@ final class NativeListLifecycleTests: XCTestCase {
       XCTAssertNotNil(sidecar.superview, testCase.name)
       XCTAssertEqual(footer.convert(.zero, to: list).y, 1500, accuracy: 1, testCase.name)
       waitForStructuralFrames(0.1)
-      record("stable")
+      XCTAssertEqual(list.adjustedContentInset, explicitInset, testCase.name)
       XCTAssertEqual(list.contentSize.height, testCase.height, accuracy: 1, testCase.name)
       XCTAssertEqual(list.contentOffset.y, expectedOffset, accuracy: 1, testCase.name)
     }
