@@ -71,6 +71,8 @@ jest.mock("../CollapsiblePagerViewNativeComponent", () => {
       ReactMock.createElement("CollapsibleNativeHost", { ...props, ref })
     ),
     Commands: {
+      scrollHeaderToOffset: jest.fn(),
+      scrollHeaderBy: jest.fn(),
       setPage: jest.fn(),
       setPageWithoutAnimation: jest.fn(),
     },
@@ -129,6 +131,40 @@ describe("CollapsiblePagerView native tab reservation and press", () => {
     expect(host().nativeTabBarTrailingReservedWidth).toBe(0);
     act(() => renderer.update(renderPager(64, false)));
     expect(host().nativeTabBarTrailingReservedWidth).toBe(0);
+  });
+
+  it("forwards finite partial-header deltas only while mounted", () => {
+    jest.mocked(CollapsibleCommands.scrollHeaderBy).mockClear();
+    jest.mocked(CollapsibleCommands.scrollHeaderToOffset).mockClear();
+    act(() => {
+      renderer = create(renderPager(), {
+        createNodeMock: () => nativeHandle,
+      });
+    });
+    const pager = renderer.root.findByType(CollapsiblePagerView)
+      .instance as CollapsiblePagerView;
+    act(() => {
+      pager.scrollHeaderBy(42);
+      pager.scrollHeaderBy(Number.NaN);
+      pager.scrollHeaderBy(Number.POSITIVE_INFINITY);
+      pager.scrollHeaderToOffset(64);
+      pager.scrollHeaderToOffset(Number.NEGATIVE_INFINITY);
+    });
+    expect(CollapsibleCommands.scrollHeaderBy).toHaveBeenCalledTimes(1);
+    expect(CollapsibleCommands.scrollHeaderBy).toHaveBeenCalledWith(
+      nativeHandle,
+      42
+    );
+    expect(CollapsibleCommands.scrollHeaderToOffset).toHaveBeenCalledTimes(1);
+    expect(CollapsibleCommands.scrollHeaderToOffset).toHaveBeenCalledWith(
+      nativeHandle,
+      64
+    );
+    act(() => renderer.unmount());
+    pager.scrollHeaderBy(10);
+    pager.scrollHeaderToOffset(10);
+    expect(CollapsibleCommands.scrollHeaderBy).toHaveBeenCalledTimes(1);
+    expect(CollapsibleCommands.scrollHeaderToOffset).toHaveBeenCalledTimes(1);
   });
 
   it("rejects a stale native tab key before page commands and callbacks", () => {

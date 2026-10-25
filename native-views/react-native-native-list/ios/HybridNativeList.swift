@@ -36,6 +36,16 @@ final class HybridNativeList: HybridNativeListSpec {
     }
   }
 
+  var sidecarLayoutJson: String = "" {
+    didSet {
+      guard sidecarLayoutJson != oldValue else { return }
+      runOnMain { [weak self] in
+        guard let self else { return }
+        self.hostView?.setSidecarLayoutJson(self.sidecarLayoutJson)
+      }
+    }
+  }
+
   private var fontsChanged = false
   private var snapshotChanged = false
 

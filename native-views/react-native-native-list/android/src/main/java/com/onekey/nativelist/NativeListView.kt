@@ -1,6 +1,9 @@
 package com.margelo.nitro.nativelist
 
 import android.animation.TimeInterpolator
+import android.animation.ValueAnimator
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
@@ -11,6 +14,7 @@ import android.graphics.RectF
 import android.graphics.drawable.ShapeDrawable
 import android.graphics.drawable.shapes.PathShape
 import android.os.Bundle
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -32,6 +36,7 @@ import android.widget.TextView
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.recyclerview.widget.ConcatAdapter
+import androidx.recyclerview.widget.DefaultItemAnimator
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -219,21 +224,113 @@ class NativeListView(
   }
   private var configuredTopPaddingPx = 0
   private var slotInsetPx = 0
+  private var slotRightInsetPx = 0
   private var configuredBottomPaddingPx = 0
+  private data class SidecarLayout(val width: Int, val gap: Int, val maxContentWidth: Int)
+  private var sidecarLayout: SidecarLayout? = null
+  private var sidecarSpacerHeightPx = 0
+  private var sidecarSpacerScheduled = false
+  private var consumedStructuralTransitionId: String? = null
+  private var structuralAnimator: ValueAnimator? = null
+  private var structuralSpacerHeightPx = 0
+  private var structuralStartSpacerPx = 0
+  private var structuralFooterVisualStartTop: Int? = null
+  private var structuralFooterVisualEndTop: Int? = null
+  private var structuralFooterVisualProgress = 0f
+  private var structuralFooterCompensatedHeightPx: Int? = null
+  private var structuralScrollInterrupted = false
+  private var structuralFooterHoldTop: Int? = null
+  private var structuralTransitionEpoch = 0
+  private data class PendingStructuralTransition(
+    val transition: NativeListConfig.StructuralTransition,
+    val epoch: Int,
+    val anchorKey: String?,
+    val anchorTop: Int?,
+    val footerStartTop: Int?,
+    val heldHeightPx: Int,
+    val collapsing: Boolean,
+    val spacerInserted: Boolean = false,
+    val footerAnchorAppliedTop: Int? = null,
+    val rowAnchorAppliedTop: Int? = null,
+  )
+  private var pendingStructuralTransition: PendingStructuralTransition? = null
+  private var pendingStructuralStartScheduled = false
   private val refreshLayout = SwipeRefreshLayout(context)
   private val refreshIndicatorTravelPx = refreshLayout.progressViewEndOffset
   private val defaultRefreshTriggerDistancePx = (64 * resources.displayMetrics.density).roundToInt()
   private var refreshIndicatorOffsetPx = 0
   private val contentContainer = FrameLayout(context)
+  private val sidecarHost = object : FrameLayout(context) {
+    private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+    private var down: MotionEvent? = null
+    private var routing = false
+
+    private fun route(event: MotionEvent) {
+      val copy = MotionEvent.obtain(event)
+      copy.offsetLocation(x - refreshLayout.x, y - refreshLayout.y)
+      refreshLayout.dispatchTouchEvent(copy)
+      copy.recycle()
+    }
+
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+      when (event.actionMasked) {
+        MotionEvent.ACTION_DOWN -> {
+          down?.recycle()
+          down = MotionEvent.obtain(event)
+          routing = false
+        }
+        MotionEvent.ACTION_MOVE -> {
+          if (routing) {
+            route(event)
+            return true
+          }
+          val start = down
+          if (start != null && abs(event.y - start.y) > touchSlop &&
+            abs(event.y - start.y) > abs(event.x - start.x)) {
+            val cancel = MotionEvent.obtain(event)
+            cancel.action = MotionEvent.ACTION_CANCEL
+            super.dispatchTouchEvent(cancel)
+            cancel.recycle()
+            route(start)
+            route(event)
+            routing = true
+            return true
+          }
+        }
+        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+          if (routing) route(event)
+          down?.recycle()
+          down = null
+          if (routing) {
+            routing = false
+            return true
+          }
+        }
+        else -> if (routing) {
+          route(event)
+          return true
+        }
+      }
+      return super.dispatchTouchEvent(event)
+    }
+  }
   private val adapter = NativeListAdapter(reactContext, fonts)
   private val containerSlots = mutableListOf<View>()
-  private val slotHeights = IntArray(3)
+  private val slotHeights = IntArray(4)
+  private var initialHeaderInsertionHandled = false
   private var containerSlotRelayoutPending = false
   private var containerSlotRelayoutScheduled = false
   private val headerSlotAdapter = NativeListContainerSlotAdapter()
   private val emptySlotAdapter = NativeListContainerSlotAdapter()
+  private val structuralSpacerView = View(context)
+  private val structuralSpacerAdapter = NativeListContainerSlotAdapter()
   private val footerSlotAdapter = NativeListContainerSlotAdapter()
-  private val scrollContentAdapter = ConcatAdapter(headerSlotAdapter, adapter, emptySlotAdapter, footerSlotAdapter)
+  private val sidecarSpacerView = View(context)
+  private val sidecarSpacerAdapter = NativeListContainerSlotAdapter()
+  private val scrollContentAdapter = ConcatAdapter(
+    headerSlotAdapter, adapter, emptySlotAdapter, structuralSpacerAdapter,
+    footerSlotAdapter, sidecarSpacerAdapter,
+  )
 
   private val homeOffsetDiagnosticEnabled =
     context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
@@ -251,7 +348,8 @@ class NativeListView(
         headerSlotAdapter -> 0
         adapter -> 1
         emptySlotAdapter -> 2
-        footerSlotAdapter -> 3
+        structuralSpacerAdapter -> 3
+        footerSlotAdapter -> 4
         else -> -1
       }
       val focused = recyclerView.findFocus()
@@ -261,7 +359,7 @@ class NativeListView(
         "seq=${++homeOffsetDiagnosticSequence} wallMs=${System.currentTimeMillis()} monoMs=${SystemClock.uptimeMillis()} " +
         "list=${System.identityHashCode(this)} view=${System.identityHashCode(recyclerView)} tag=$id " +
         "generation=${config?.generation} configuredCount=${config?.items?.size} " +
-        "counts=${headerSlotAdapter.itemCount},${adapter.itemCount},${emptySlotAdapter.itemCount},${footerSlotAdapter.itemCount} " +
+        "counts=${headerSlotAdapter.itemCount},${adapter.itemCount},${emptySlotAdapter.itemCount},${structuralSpacerAdapter.itemCount},${footerSlotAdapter.itemCount} " +
         "total=${scrollContentAdapter.itemCount} pendingCommand=${pendingScrollRequest?.javaClass?.simpleName ?: "none"} " +
         "stateCount=${state?.itemCount} preLayout=${state?.isPreLayout} structureChanged=${state?.didStructureChange()} predictive=${state?.willRunPredictiveAnimations()} " +
         "first=$first last=${layoutManager.findLastVisibleItemPosition()} " +
@@ -292,19 +390,141 @@ class NativeListView(
 
   fun setContainerSlotHeightsJson(json: String) {
     val values = runCatching { JSONArray(json) }.getOrNull() ?: return
-    if (values.length() != 3) return
-    for (index in 0..2) {
+    if (values.length() != 4) return
+    for (index in 0..3) {
       val value = values.optDouble(index)
       if (!value.isFinite() || value < 0) return
     }
+    reconcileStructuralFooterHeight((values.getDouble(2) * density).roundToInt())
     var changed = false
-    for (index in 0..2) {
+    for (index in 0..3) {
       val height = (values.getDouble(index) * density).roundToInt()
       if (slotHeights[index] != height) changed = true
       slotHeights[index] = height
     }
     updateContainerSlots()
+    updateSidecarGeometry()
+    scheduleSidecarSpacer()
     if (changed) scheduleContainerSlotRelayout()
+  }
+
+  private fun reconcileStructuralFooterHeight(nextHeightPx: Int) {
+    val previousHeightPx = structuralFooterCompensatedHeightPx ?: slotHeights[2]
+    val footerDelta = previousHeightPx - nextHeightPx
+    if (footerDelta == 0) return
+    if (pendingStructuralTransition != null || structuralAnimator != null || structuralFooterHoldTop != null) {
+      structuralFooterCompensatedHeightPx = nextHeightPx
+    }
+    if (pendingStructuralTransition != null) {
+      pendingStructuralTransition = pendingStructuralTransition?.let {
+        val updated = it.copy(
+          footerStartTop = it.footerStartTop?.plus(footerDelta),
+          heldHeightPx = (it.heldHeightPx + footerDelta).coerceAtLeast(0),
+        )
+        if (updated.spacerInserted) setStructuralSpacerHeight(updated.heldHeightPx)
+        updated
+      }
+      structuralFooterHoldTop = structuralFooterHoldTop?.plus(footerDelta)
+      updateStructuralFooterHoldPosition()
+    } else if (structuralFooterHoldTop != null && structuralAnimator == null) {
+      setStructuralSpacerHeight(structuralSpacerHeightPx + footerDelta)
+      structuralFooterHoldTop = structuralFooterHoldTop?.plus(footerDelta)
+      updateStructuralFooterHoldPosition()
+    } else if (structuralAnimator != null) {
+      structuralStartSpacerPx = (structuralStartSpacerPx + footerDelta).coerceAtLeast(0)
+      structuralFooterVisualStartTop = structuralFooterVisualStartTop?.plus(footerDelta)
+      val fraction = (structuralAnimator?.animatedValue as? Float) ?: 0f
+      setStructuralSpacerHeight((structuralStartSpacerPx * (1f - fraction)).roundToInt())
+      updateStructuralFooterVisualPosition()
+    }
+  }
+
+  fun setSidecarLayoutJson(json: String) {
+    val next = if (json.isEmpty()) null else {
+      val value = runCatching { JSONObject(json) }.getOrNull() ?: return
+      val width = value.optDouble("width")
+      val gap = value.optDouble("gap")
+      val maxWidth = value.optDouble("maxContentWidth")
+      if (!width.isFinite() || width <= 0 || !gap.isFinite() || gap < 0 ||
+        !maxWidth.isFinite() || maxWidth <= width + gap) return
+      SidecarLayout((width * density).roundToInt(), (gap * density).roundToInt(),
+        (maxWidth * density).roundToInt())
+    }
+    if (next == sidecarLayout) return
+    sidecarLayout = next
+    config?.let(::updateLayout)
+    updateSidecarGeometry()
+    scheduleSidecarSpacer()
+  }
+
+  private fun sidecarBaseInsetPx(): Int {
+    val layout = sidecarLayout ?: return 0
+    val width = recyclerView.width
+    return max(0, (width - minOf(width, layout.maxContentWidth)) / 2)
+  }
+
+  private fun updateSidecarGeometry() {
+    val layout = sidecarLayout
+    val root = containerSlots.getOrNull(3)
+    if (root !== sidecarHost.getChildAt(0)) {
+      sidecarHost.removeAllViews()
+      (root?.parent as? ViewGroup)?.removeView(root)
+      if (root != null) sidecarHost.addView(root)
+    }
+    val params = sidecarHost.layoutParams as? FrameLayout.LayoutParams
+      ?: FrameLayout.LayoutParams(0, 0, Gravity.TOP or Gravity.RIGHT)
+    val nextWidth = layout?.width ?: 0
+    val nextHeight = if (layout != null) slotHeights[3] else 0
+    val isRtl = layoutDirection == LAYOUT_DIRECTION_RTL
+    val nextGravity = Gravity.TOP or (if (isRtl) Gravity.LEFT else Gravity.RIGHT)
+    val nextSideMargin = sidecarBaseInsetPx()
+    if (params.width != nextWidth || params.height != nextHeight ||
+      params.gravity != nextGravity ||
+      params.leftMargin != (if (isRtl) nextSideMargin else 0) ||
+      params.rightMargin != (if (isRtl) 0 else nextSideMargin)) {
+      params.width = nextWidth
+      params.height = nextHeight
+      params.gravity = nextGravity
+      params.leftMargin = if (isRtl) nextSideMargin else 0
+      params.rightMargin = if (isRtl) 0 else nextSideMargin
+      sidecarHost.layoutParams = params
+    }
+    sidecarHost.visibility = if (layout != null && root != null && slotHeights[3] > 0) VISIBLE else GONE
+    updateSidecarPosition()
+  }
+
+  private fun updateSidecarPosition(resync: Boolean = false) {
+    if (sidecarLayout == null) return
+    if (resync) measuredScrollDistancePx()?.let { logicalScrollDistancePx = it }
+    sidecarHost.translationY = (recyclerView.paddingTop - logicalScrollDistancePx).toFloat()
+  }
+
+  private fun sidecarLeftExtentPx(): Int =
+    (nativeListScrollPrefixPx(
+      scrollContentAdapter.itemCount - sidecarSpacerAdapter.itemCount,
+      layoutManager.spanCount,
+      layoutManager.spanSizeLookup::getSpanSize,
+      ::estimatedScrollExtentPx,
+    ) + recyclerView.paddingTop + recyclerView.paddingBottom)
+      .coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+
+  private fun scheduleSidecarSpacer() {
+    if (sidecarLayout == null && sidecarSpacerHeightPx == 0) return
+    if (disposed || sidecarSpacerScheduled) return
+    sidecarSpacerScheduled = true
+    recyclerView.post {
+      sidecarSpacerScheduled = false
+      if (disposed || recyclerView.width <= 0 || recyclerView.height <= 0) return@post
+      val desired = if (sidecarLayout != null) {
+        recyclerView.paddingTop + slotHeights[3] + recyclerView.paddingBottom
+      } else 0
+      val leftExtent = sidecarLeftExtentPx()
+      val next = (desired - leftExtent).coerceAtLeast(0)
+      if (abs(next - sidecarSpacerHeightPx) <= 1) return@post
+      sidecarSpacerHeightPx = next
+      sidecarSpacerAdapter.update(sidecarSpacerView, next, next > 0)
+      recyclerView.requestLayout()
+    }
   }
 
   private fun scheduleContainerSlotRelayout() {
@@ -327,9 +547,27 @@ class NativeListView(
 
   private fun updateContainerSlots() {
     homeOffsetDiagnostic("slots-before")
+    val headerWasAbsent = headerSlotAdapter.itemCount == 0
+    val firstVisible = layoutManager.findFirstVisibleItemPosition()
+    val firstView = layoutManager.findViewByPosition(firstVisible)
+    val restoreInitialHeaderTop = !initialHeaderInsertionHandled && headerWasAbsent &&
+      layoutManager.orientation == RecyclerView.VERTICAL &&
+      adapter.itemCount > 0 && readingIntentEpoch == 0L && pendingScrollRequest == null &&
+      acceptedScrollRequest == null && !executingScrollCommand &&
+      recyclerView.scrollState == RecyclerView.SCROLL_STATE_IDLE && firstVisible == 0 &&
+      firstView != null && abs(layoutManager.getDecoratedTop(firstView) - recyclerView.paddingTop) <= 1 &&
+      !recyclerView.canScrollVertically(-1)
     headerSlotAdapter.update(containerSlots.getOrNull(0), slotHeights[0], true)
     emptySlotAdapter.update(containerSlots.getOrNull(1), slotHeights[1], config?.items?.isEmpty() != false)
     footerSlotAdapter.update(containerSlots.getOrNull(2), slotHeights[2], true)
+    updateSidecarGeometry()
+    if (headerWasAbsent && headerSlotAdapter.itemCount > 0) {
+      initialHeaderInsertionHandled = true
+      if (restoreInitialHeaderTop) {
+        // RecyclerView otherwise keeps the first body row at the top when this slot arrives late.
+        layoutManager.scrollToPositionWithOffset(0, 0)
+      }
+    }
     homeOffsetDiagnostic("slots-after")
     layoutManager.spanSizeLookup.invalidateSpanIndexCache()
     recyclerView.requestLayout()
@@ -358,13 +596,128 @@ class NativeListView(
     if (position < headerCount) return slotHeights[0]
     val row = position - headerCount
     if (row >= adapter.itemCount) {
-      return if (row - adapter.itemCount < emptySlotAdapter.itemCount) slotHeights[1] else slotHeights[2]
+      val slot = row - adapter.itemCount
+      return when {
+        slot < emptySlotAdapter.itemCount -> slotHeights[1]
+        slot < emptySlotAdapter.itemCount + structuralSpacerAdapter.itemCount -> structuralSpacerHeightPx
+        slot < emptySlotAdapter.itemCount + structuralSpacerAdapter.itemCount + footerSlotAdapter.itemCount -> slotHeights[2]
+        else -> sidecarSpacerHeightPx
+      }
     }
     val item = adapter.itemAt(row)
     item?.key?.let(measuredRowExtentsPx::get)?.let { return it }
     val explicit = item?.styledHeight ?: item?.json?.optDouble("height")?.takeIf { it.isFinite() }
     if (explicit != null) return (explicit * density).roundToInt()
     return if (measuredRowExtentsPx.isEmpty()) 0 else (measuredRowExtentSumPx / measuredRowExtentsPx.size).toInt()
+  }
+
+  private fun estimatedItemExtentPx(item: NativeListItem): Int {
+    measuredRowExtentsPx[item.key]?.let { return it }
+    val explicit = item.styledHeight ?: item.json.optDouble("height").takeIf { it.isFinite() }
+    if (explicit != null) return (explicit * density).roundToInt()
+    return if (measuredRowExtentsPx.isEmpty()) dp(56)
+      else (measuredRowExtentSumPx / measuredRowExtentsPx.size).toInt()
+  }
+
+  private fun setStructuralSpacerHeight(heightPx: Int) {
+    val next = heightPx.coerceAtLeast(0)
+    if (next == structuralSpacerHeightPx) return
+    structuralSpacerHeightPx = next
+    structuralSpacerAdapter.update(structuralSpacerView, next, true)
+    layoutManager.spanSizeLookup.invalidateSpanIndexCache()
+  }
+
+  private fun updateStructuralFooterHoldPosition() {
+    val targetTop = structuralFooterHoldTop ?: return
+    if (footerSlotAdapter.itemCount == 0) return
+    val footerPosition = scrollContentAdapter.itemCount - 1 - sidecarSpacerAdapter.itemCount
+    layoutManager.findViewByPosition(footerPosition)?.let { footer ->
+      footerSlotAdapter.setVisualTranslationY((targetTop - layoutManager.getDecoratedTop(footer)).toFloat())
+    }
+  }
+
+  private fun updateStructuralFooterVisualPosition() {
+    val startTop = structuralFooterVisualStartTop ?: return
+    val endTop = structuralFooterVisualEndTop ?: return
+    if (footerSlotAdapter.itemCount == 0) return
+    val footerPosition = scrollContentAdapter.itemCount - 1 - sidecarSpacerAdapter.itemCount
+    layoutManager.findViewByPosition(footerPosition)?.let { footer ->
+      val desiredTop = startTop + (endTop - startTop) * structuralFooterVisualProgress
+      footerSlotAdapter.setVisualTranslationY(desiredTop - layoutManager.getDecoratedTop(footer))
+    }
+  }
+
+  private fun cancelStructuralTransition() {
+    structuralTransitionEpoch += 1
+    pendingStructuralTransition = null
+    pendingStructuralStartScheduled = false
+    structuralAnimator?.cancel()
+    structuralAnimator = null
+    recyclerView.itemAnimator = null
+    setStructuralSpacerHeight(0)
+    footerSlotAdapter.setVisualTranslationY(0f)
+    structuralFooterHoldTop = null
+    structuralFooterVisualStartTop = null
+    structuralFooterVisualEndTop = null
+    structuralFooterVisualProgress = 0f
+    structuralFooterCompensatedHeightPx = null
+    structuralStartSpacerPx = 0
+  }
+
+  private fun startPendingStructuralTransition() {
+    val pending = pendingStructuralTransition ?: return
+    if (pending.epoch != structuralTransitionEpoch || disposed || pendingStructuralStartScheduled) return
+    val expected = config?.items?.map { it.key } ?: return
+    if (adapter.currentList.map { it.key } != expected) return
+    pendingStructuralStartScheduled = true
+    recyclerView.postOnAnimation {
+      if (pending.epoch != structuralTransitionEpoch) return@postOnAnimation
+      pendingStructuralStartScheduled = false
+      val latest = pendingStructuralTransition
+      if (latest?.epoch == pending.epoch && !disposed) {
+        if (recyclerView.isComputingLayout) {
+          startPendingStructuralTransition()
+          return@postOnAnimation
+        }
+        alignPendingStructuralAnchor(latest)
+        if (latest.anchorTop != null || (latest.collapsing && latest.footerStartTop != null)) {
+          relayoutRecyclerViewImmediately()
+        }
+        pendingStructuralTransition = null
+        startStructuralTransition(
+          latest.transition, latest.epoch, latest.anchorKey, latest.anchorTop,
+          latest.footerStartTop,
+        )
+      }
+    }
+  }
+
+  private fun alignPendingStructuralFooter(pending: PendingStructuralTransition): Boolean {
+    val top = pending.footerStartTop ?: return false
+    if (!pending.collapsing || !pending.spacerInserted || footerSlotAdapter.itemCount == 0 || structuralScrollInterrupted) return false
+    if (pending.footerAnchorAppliedTop == top) return false
+    val footerPosition = scrollContentAdapter.itemCount - 1 - sidecarSpacerAdapter.itemCount
+    layoutManager.scrollToPositionWithOffset(footerPosition, top - recyclerView.paddingTop)
+    pendingStructuralTransition = pending.copy(footerAnchorAppliedTop = top)
+    return true
+  }
+
+  private fun alignPendingStructuralRow(pending: PendingStructuralTransition): Boolean {
+    val key = pending.anchorKey ?: return false
+    val top = pending.anchorTop ?: return false
+    if (structuralScrollInterrupted || pending.rowAnchorAppliedTop == top) return false
+    val desiredItems = config?.items ?: return false
+    val rowIndex = desiredItems.indexOfFirst { it.key == key }
+    if (rowIndex < 0 || adapter.itemCount != desiredItems.size ||
+      adapter.currentList.getOrNull(rowIndex)?.key != key) return false
+    layoutManager.scrollToPositionWithOffset(scrollPositionForRow(rowIndex), top - recyclerView.paddingTop)
+    pendingStructuralTransition = pending.copy(rowAnchorAppliedTop = top)
+    return true
+  }
+
+  private fun alignPendingStructuralAnchor(pending: PendingStructuralTransition) {
+    if (pending.anchorTop != null) alignPendingStructuralRow(pending)
+    else alignPendingStructuralFooter(pending)
   }
 
   private fun measuredScrollDistancePx(): Int? {
@@ -540,6 +893,14 @@ class NativeListView(
     override fun onDetachedFromWindow() { down?.recycle(); down = null; super.onDetachedFromWindow() }
   }
   private val stickyPreDraw = android.view.ViewTreeObserver.OnPreDrawListener {
+    if (pendingStructuralTransition != null || structuralAnimator != null) {
+      val measuredHeightPx = footerSlotAdapter.contentView()?.measuredHeight ?: 0
+      if (measuredHeightPx > 0) {
+        // React layout can change the footer's contents before its onLayout height reaches JS.
+        val roundedDip = ceil(measuredHeightPx / density.toDouble())
+        reconcileStructuralFooterHeight((roundedDip * density).roundToInt())
+      }
+    }
     updateStickyHeader()
     finishScrollCommandIfSettled()
     true
@@ -608,7 +969,7 @@ class NativeListView(
     recyclerView.addItemDecoration(reorderPlaceholderDecoration)
     // OneKey patch: full-width selector header backgrounds do not change row content insets.
     recyclerView.addItemDecoration(SelectorBackgroundDecoration(adapter))
-    recyclerView.addItemDecoration(ContainerSlotInsetDecoration { slotInsetPx })
+    recyclerView.addItemDecoration(ContainerSlotInsetDecoration { slotInsetPx to slotRightInsetPx })
     if (homeOffsetDiagnosticEnabled) layoutManager.onDiagnosticLayout = ::homeOffsetDiagnostic
     layoutManager.onBeforeDataLayout = {
       if (pendingBodyStartEpoch == readingIntentEpoch && adapter.itemCount > 0 && pendingScrollRequest == null) {
@@ -616,10 +977,14 @@ class NativeListView(
         pendingBodyStartEpoch = null
         homeOffsetDiagnostic("first-fill-body-start")
       }
+      pendingStructuralTransition?.let(::alignPendingStructuralAnchor)
     }
     layoutManager.onChildLaidOut = ::recordLaidOutRowExtent
     layoutManager.onLayoutPassCompleted = {
+      if (structuralFooterHoldTop != null) updateStructuralFooterHoldPosition()
+      else if (structuralAnimator != null) updateStructuralFooterVisualPosition()
       emitScrollPositionThresholdIfNeeded(resync = true)
+      updateSidecarPosition(resync = true)
       if (containerSlotRelayoutPending) scheduleContainerSlotRelayout()
       if (commandLayoutRequest === acceptedScrollRequest) commandLayoutRequest = null
       finishScrollCommandIfSettled()
@@ -631,7 +996,7 @@ class NativeListView(
         val rowPosition = rowPositionForScroll(position)
         if (rowPosition !in 0 until adapter.itemCount) return layoutManager.spanCount
         val type = adapter.itemAt(rowPosition)?.type
-        return if (type == "sectionHeader" || type == "system" || type == "action") {
+        return if (type == "sectionHeader" || type == "system" || type == "action" || type == "buttonGroup") {
           layoutManager.spanCount
         } else {
           1
@@ -649,6 +1014,8 @@ class NativeListView(
         FrameLayout.LayoutParams.MATCH_PARENT,
       ),
     )
+    contentContainer.addView(sidecarHost,
+      FrameLayout.LayoutParams(0, 0, Gravity.TOP or Gravity.RIGHT))
     stickyHeaderHost.visibility = GONE
     stickyHeaderHost.addView(stickyHeaderView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
     contentContainer.addView(stickyHeaderHost, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP))
@@ -713,6 +1080,8 @@ class NativeListView(
     recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
       override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
         if (newState == RecyclerView.SCROLL_STATE_DRAGGING) {
+          if (structuralAnimator != null || pendingStructuralTransition != null)
+            structuralScrollInterrupted = true
           cancelExecutingScrollCommand()
           readingIntentEpoch++
           pendingBodyStartEpoch = null
@@ -737,6 +1106,20 @@ class NativeListView(
 
       override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
         logicalScrollDistancePx = (logicalScrollDistancePx + dy).coerceAtLeast(0)
+        if (structuralScrollInterrupted && dy != 0) {
+          if (pendingStructuralTransition != null) {
+            pendingStructuralTransition = pendingStructuralTransition?.let {
+              it.copy(footerStartTop = it.footerStartTop?.minus(dy))
+            }
+            structuralFooterHoldTop = structuralFooterHoldTop?.minus(dy)
+            updateStructuralFooterHoldPosition()
+          } else if (structuralAnimator != null) {
+            structuralFooterVisualStartTop = structuralFooterVisualStartTop?.minus(dy)
+            structuralFooterVisualEndTop = structuralFooterVisualEndTop?.minus(dy)
+            updateStructuralFooterVisualPosition()
+          }
+        }
+        updateSidecarPosition()
         emitScrollPositionThresholdIfNeeded(resync = dx == 0 && dy == 0)
         if (dx != 0 || dy != 0) invalidateActionAnchor("scroll")
         syncSectionIndexToVisibleRows()
@@ -794,6 +1177,8 @@ class NativeListView(
     }
     val nextWidth = right - left
     val nextHeight = bottom - top
+    val widthChanged = lastLayoutWidth != nextWidth
+    val directionChanged = layoutDirection != lastLayoutDirection
     if (
       lastLayoutWidth >= 0 &&
       (nextWidth != lastLayoutWidth || nextHeight != lastLayoutHeight || layoutDirection != lastLayoutDirection)
@@ -803,6 +1188,9 @@ class NativeListView(
     lastLayoutWidth = nextWidth
     lastLayoutHeight = nextHeight
     lastLayoutDirection = layoutDirection
+    if ((widthChanged || directionChanged) && sidecarLayout != null) config?.let(::updateLayout)
+    updateSidecarGeometry()
+    scheduleSidecarSpacer()
     updateSectionIndexAttachment()
     performPendingScrollIfNeeded()
   }
@@ -857,6 +1245,42 @@ class NativeListView(
     homeOffsetDiagnostic("snapshot-before-nextCount=${next.items.size}")
     invalidateActionAnchor("snapshot")
     val previous = config
+    val transition = next.structuralTransition
+    val isNewTransition = transition != null && transition.id != consumedStructuralTransitionId
+    if (transition != null) consumedStructuralTransitionId = transition.id
+    val oldKeys = previous?.items?.map { it.key } ?: emptyList()
+    val nextKeys = next.items.map { it.key }
+    val animateStructure = previous != null && isNewTransition && oldKeys != nextKeys &&
+      next.orientation == "vertical" && (next.layout == "linear" || next.layout == "table") &&
+      (transition?.durationMs ?: 0) > 0 &&
+      (if (Build.VERSION.SDK_INT >= 26) ValueAnimator.areAnimatorsEnabled() else
+        android.provider.Settings.Global.getFloat(context.contentResolver, "animator_duration_scale", 1f) > 0f)
+    val nextKeySet = nextKeys.toHashSet()
+    val visibleAnchor = if (animateStructure) {
+      val first = layoutManager.findFirstVisibleItemPosition()
+      val last = layoutManager.findLastVisibleItemPosition()
+      (first..last).firstNotNullOfOrNull { position ->
+        val rowIndex = rowPositionForScroll(position)
+        oldKeys.getOrNull(rowIndex)?.takeIf(nextKeySet::contains)?.let { key ->
+          layoutManager.findViewByPosition(position)?.let { key to layoutManager.getDecoratedTop(it) }
+        }
+      }
+    } else null
+    val anchorKey = visibleAnchor?.first ?: transition?.anchorKey?.takeIf(nextKeySet::contains)
+    val anchorTop = visibleAnchor?.second
+    val footerStartTop = if (animateStructure && footerSlotAdapter.itemCount > 0) {
+      layoutManager.findViewByPosition(scrollContentAdapter.itemCount - 1 - sidecarSpacerAdapter.itemCount)?.let {
+        layoutManager.getDecoratedTop(it) + it.translationY.roundToInt()
+      }
+    } else null
+    val oldKeySet = oldKeys.toHashSet()
+    val removedExtent = if (animateStructure) previous?.items?.sumOf { item ->
+      if (nextKeySet.contains(item.key)) 0 else estimatedItemExtentPx(item)
+    } ?: 0 else 0
+    val addedExtent = if (animateStructure) next.items.sumOf { item ->
+      if (oldKeySet.contains(item.key)) 0 else estimatedItemExtentPx(item)
+    } else 0
+    if (!animateStructure && oldKeys != nextKeys) cancelStructuralTransition()
     if (previous?.items?.isEmpty() == true && next.items.isNotEmpty() && adapter.itemCount == 0 &&
       pendingScrollRequest == null && recyclerView.scrollState != RecyclerView.SCROLL_STATE_DRAGGING &&
       !recyclerView.canScrollVertically(-1) && layoutManager.findFirstVisibleItemPosition() == 0) {
@@ -896,6 +1320,8 @@ class NativeListView(
         // OneKey patch: DiffUtil has dispatched its payloads; release the old serialized rows.
         next.items.forEach { it.selectionUpdateFromContent = null }
         recyclerView.post {
+          scheduleSidecarSpacer()
+          startPendingStructuralTransition()
           bindVisibleSelection(changedSummaryKeys)
           bindFooterSelection()
           performPendingScrollIfNeeded()
@@ -932,12 +1358,40 @@ class NativeListView(
     adapter.selectedKeys = next.selectedKeys
     configureSectionIndex(next)
     updateLayout(next)
+    if (animateStructure && transition != null) {
+      structuralTransitionEpoch += 1
+      pendingStructuralStartScheduled = false
+      structuralAnimator?.cancel()
+      structuralAnimator = null
+      structuralScrollInterrupted = false
+      structuralFooterHoldTop = footerStartTop
+      structuralFooterCompensatedHeightPx = slotHeights[2]
+      val held = (structuralSpacerHeightPx + removedExtent - addedExtent).coerceAtLeast(0)
+      pendingStructuralTransition = PendingStructuralTransition(
+        transition, structuralTransitionEpoch, anchorKey, anchorTop, footerStartTop, held,
+        removedExtent > addedExtent,
+      )
+      recyclerView.itemAnimator = DefaultItemAnimator().apply {
+        addDuration = transition.durationMs
+        removeDuration = transition.durationMs
+        moveDuration = 0
+        changeDuration = 0
+        supportsChangeAnimations = false
+      }
+    }
     adapter.submitList(next.items) {
+      pendingStructuralTransition?.takeIf { it.epoch == structuralTransitionEpoch }?.let {
+        setStructuralSpacerHeight(it.heldHeightPx)
+        pendingStructuralTransition = it.copy(spacerInserted = true)
+        pendingStructuralTransition?.let(::alignPendingStructuralAnchor)
+      }
       homeOffsetDiagnostic("snapshot-submit-commit-marketAnchor=${marketStartOffset != null}")
       if (marketStartOffset != null) {
         layoutManager.scrollToPositionWithOffset(scrollPositionForRow(0), marketStartOffset)
       }
       relayoutContents(preserveMarketPaginationAnchor)
+      scheduleSidecarSpacer()
+      startPendingStructuralTransition()
       performPendingScrollIfNeeded()
       syncSectionIndexToVisibleRows()
       scheduleVisibleEvent()
@@ -948,6 +1402,85 @@ class NativeListView(
     refreshLayout.isRefreshing = next.refreshing
     bindFooter(next)
     updateReordering(next)
+  }
+
+  private fun startStructuralTransition(
+    transition: NativeListConfig.StructuralTransition,
+    epoch: Int,
+    anchorKey: String?,
+    anchorTop: Int?,
+    footerStartTop: Int?,
+  ) {
+    structuralFooterHoldTop = null
+    val startSpacer = structuralSpacerHeightPx
+    structuralStartSpacerPx = startSpacer
+    structuralFooterVisualStartTop = footerStartTop
+    structuralFooterVisualProgress = 0f
+    val startOffset = measuredScrollDistancePx()?.also { logicalScrollDistancePx = it }
+      ?: logicalScrollDistancePx
+    val anchorIndex = anchorKey?.let { key -> adapter.currentList.indexOfFirst { it.key == key } }
+    val currentAnchorTop = anchorIndex?.takeIf { it >= 0 }?.let { index ->
+      layoutManager.findViewByPosition(scrollPositionForRow(index))?.let(layoutManager::getDecoratedTop)
+    }
+    val anchorDelta = if (anchorTop != null && currentAnchorTop != null) currentAnchorTop - anchorTop else 0
+    val leftFinal = (sidecarLeftExtentPx() - startSpacer).coerceAtLeast(0)
+    val sidecarBottom = if (sidecarLayout != null)
+      recyclerView.paddingTop + slotHeights[3] + recyclerView.paddingBottom else 0
+    val finalMax = (max(leftFinal, sidecarBottom) - recyclerView.height).coerceAtLeast(0)
+    var targetOffset = (startOffset + anchorDelta).coerceIn(0, finalMax)
+    if (anchorTop == null && anchorIndex != null && anchorIndex >= 0) {
+      val fallbackTop = nativeListScrollPrefixPx(
+        scrollPositionForRow(anchorIndex),
+        layoutManager.spanCount,
+        layoutManager.spanSizeLookup::getSpanSize,
+        ::estimatedScrollExtentPx,
+      ).coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+      targetOffset = minOf(targetOffset, fallbackTop)
+    }
+    structuralFooterVisualEndTop = if (footerStartTop != null && footerSlotAdapter.itemCount > 0) {
+      val footerPosition = scrollContentAdapter.itemCount - 1 - sidecarSpacerAdapter.itemCount
+      val finalPrefix = nativeListScrollPrefixPx(
+        footerPosition,
+        layoutManager.spanCount,
+        layoutManager.spanSizeLookup::getSpanSize,
+        ::estimatedScrollExtentPx,
+      ) - startSpacer
+      (finalPrefix + recyclerView.paddingTop - targetOffset)
+        .coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong()).toInt()
+    } else null
+    structuralAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+      duration = transition.durationMs
+      interpolator = android.view.animation.AccelerateDecelerateInterpolator()
+      addUpdateListener { animation ->
+        if (epoch != structuralTransitionEpoch || disposed) return@addUpdateListener
+        val fraction = animation.animatedValue as Float
+        structuralFooterVisualProgress = fraction
+        setStructuralSpacerHeight((structuralStartSpacerPx * (1f - fraction)).roundToInt())
+        measuredScrollDistancePx()?.let { logicalScrollDistancePx = it }
+        val finalLeftExtent = (sidecarLeftExtentPx() - structuralSpacerHeightPx).coerceAtLeast(0)
+        val finalMaximum = (max(finalLeftExtent, sidecarBottom) - recyclerView.height).coerceAtLeast(0)
+        val desired = (startOffset + (minOf(targetOffset, finalMaximum) - startOffset) * fraction).roundToInt()
+        if (!structuralScrollInterrupted && recyclerView.scrollState == RecyclerView.SCROLL_STATE_IDLE)
+          recyclerView.scrollBy(0, desired - logicalScrollDistancePx)
+        updateStructuralFooterVisualPosition()
+      }
+      addListener(object : AnimatorListenerAdapter() {
+        override fun onAnimationEnd(animation: Animator) {
+          if (epoch != structuralTransitionEpoch) return
+          structuralAnimator = null
+          recyclerView.itemAnimator = null
+          setStructuralSpacerHeight(0)
+          scheduleSidecarSpacer()
+          footerSlotAdapter.setVisualTranslationY(0f)
+          structuralFooterVisualStartTop = null
+          structuralFooterVisualEndTop = null
+          structuralFooterVisualProgress = 0f
+          structuralFooterCompensatedHeightPx = null
+          structuralStartSpacerPx = 0
+        }
+      })
+      start()
+    }
   }
 
   private fun captureVisibleMarketAnchor(): VisibleMarketAnchor? {
@@ -1366,6 +1899,7 @@ class NativeListView(
         }
         is ScrollRequest.End -> {
           val finalSlotHeight = when {
+            sidecarSpacerAdapter.itemCount > 0 -> sidecarSpacerHeightPx
             footerSlotAdapter.itemCount > 0 -> slotHeights[2]
             emptySlotAdapter.itemCount > 0 -> slotHeights[1]
             adapter.itemCount == 0 && headerSlotAdapter.itemCount > 0 -> slotHeights[0]
@@ -1671,6 +2205,8 @@ class NativeListView(
   private fun disposeResources() {
     if (resourcesDisposed) return
     resourcesDisposed = true
+    cancelStructuralTransition()
+    recyclerView.itemAnimator = null
     stopSectionIndexAttachmentTracking()
     scheduleSectionIndexAttachmentToList()
     stopReorderRelayoutLoop()
@@ -1735,12 +2271,26 @@ class NativeListView(
     val coordinatorBottomPadding = (recyclerView.paddingBottom - configuredBottomPaddingPx).coerceAtLeast(0)
     // Slot roots are laid out by React at the unscaled JS inset, without the index gutter.
     slotInsetPx = (horizontalPadding * density).roundToInt()
+    val sidecar = sidecarLayout
+    val contentWidth = recyclerView.width
+    if (sidecar != null && contentWidth > 0) {
+      slotInsetPx = (contentWidth - minOf(contentWidth, sidecar.maxContentWidth)) / 2
+    }
+    val sidecarSpace = (sidecar?.width ?: 0) + (sidecar?.gap ?: 0)
+    val baseSlotInset = slotInsetPx
+    if (sidecar != null && layoutDirection == LAYOUT_DIRECTION_RTL) {
+      slotInsetPx += sidecarSpace
+      slotRightInsetPx = baseSlotInset
+    } else {
+      slotRightInsetPx = baseSlotInset + sidecarSpace
+    }
     configuredTopPaddingPx = dp(topPadding)
     configuredBottomPaddingPx = dp(bottomPadding)
     recyclerView.setPaddingRelative(
-      dp(horizontalPadding),
+      if (sidecar == null) dp(horizontalPadding) else baseSlotInset + dp(horizontalPadding),
       configuredTopPaddingPx + coordinatorTopPadding,
-      dp(horizontalPadding + indexGutter),
+      if (sidecar == null) dp(horizontalPadding + indexGutter)
+      else baseSlotInset + sidecarSpace + dp(horizontalPadding + indexGutter),
       configuredBottomPaddingPx + coordinatorBottomPadding,
     )
     recyclerView.clipToPadding = false
@@ -2124,15 +2674,16 @@ class NativeListView(
     actionAnchor = record
     // OneKey patch: selector menus anchor to the glyph slot, not its expanded press target.
     val anchorInset = origin.anchorInsetPixels
+    val helpBounds = (origin.sourceView as? NativeListTextView)?.helpAnchorBounds
     return JSONObject()
       .put("token", token)
       .put(
         "windowRect",
         JSONObject()
-          .put("x", (location[0] + anchorInset) / density)
-          .put("y", (location[1] + anchorInset) / density)
-          .put("width", (origin.sourceView.width - anchorInset * 2) / density)
-          .put("height", (origin.sourceView.height - anchorInset * 2) / density),
+          .put("x", (location[0] + (helpBounds?.left ?: anchorInset.toFloat())) / density)
+          .put("y", (location[1] + (helpBounds?.top ?: anchorInset.toFloat())) / density)
+          .put("width", (helpBounds?.width() ?: (origin.sourceView.width - anchorInset * 2).toFloat()) / density)
+          .put("height", (helpBounds?.height() ?: (origin.sourceView.height - anchorInset * 2).toFloat()) / density),
       )
       .put("source", origin.source)
       .put("generation", generation)
@@ -3361,7 +3912,7 @@ private class ItemSpacingDecoration(
  * from each edge. Row padding may be scaled or widened by the section-index gutter, so slot
  * holders offset themselves (possibly negatively) back to the JavaScript inset.
  */
-private class ContainerSlotInsetDecoration(private val insetPx: () -> Int) : RecyclerView.ItemDecoration() {
+private class ContainerSlotInsetDecoration(private val insetsPx: () -> Pair<Int, Int>) : RecyclerView.ItemDecoration() {
   override fun getItemOffsets(
     outRect: android.graphics.Rect,
     view: View,
@@ -3369,9 +3920,9 @@ private class ContainerSlotInsetDecoration(private val insetPx: () -> Int) : Rec
     state: RecyclerView.State,
   ) {
     if (parent.getChildViewHolder(view) !is NativeListContainerSlotAdapter.Holder) return
-    val inset = insetPx()
-    outRect.left = inset - parent.paddingLeft
-    outRect.right = inset - parent.paddingRight
+    val (leftInset, rightInset) = insetsPx()
+    outRect.left = leftInset - parent.paddingLeft
+    outRect.right = rightInset - parent.paddingRight
   }
 }
 

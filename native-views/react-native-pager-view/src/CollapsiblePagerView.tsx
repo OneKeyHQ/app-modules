@@ -292,6 +292,22 @@ export class CollapsiblePagerView extends React.PureComponent<
       );
   };
 
+  public scrollHeaderBy = (delta: number) => {
+    if (this.nativeRef && Number.isFinite(delta))
+      CollapsiblePagerViewNativeCommands.scrollHeaderBy(
+        this.nativeRef,
+        delta
+      );
+  };
+
+  public scrollHeaderToOffset = (offset: number) => {
+    if (this.nativeRef && Number.isFinite(offset))
+      CollapsiblePagerViewNativeCommands.scrollHeaderToOffset(
+        this.nativeRef,
+        offset
+      );
+  };
+
   public scrollToStickyTop = (options?: Readonly<{ animated?: boolean }>) => {
     if (this.nativeRef)
       CollapsiblePagerViewNativeCommands.scrollToTop(

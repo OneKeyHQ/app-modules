@@ -4473,8 +4473,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 - (void)updateNativeScrollerViewport:(UIScrollView *)scrollView stickyHeight:(CGFloat)height
 {
-  if ([scrollView.superview isKindOfClass:RNCNativeScrollerComponentView.class]) {
-    [(RNCNativeScrollerComponentView *)scrollView.superview setPagerStickyHeight:height forOwner:self];
+  id host = scrollView.superview;
+  if ([host respondsToSelector:@selector(setPagerStickyHeight:forOwner:)]) {
+    [host setPagerStickyHeight:height forOwner:self];
   }
 }
 
@@ -5268,6 +5269,13 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 {
   UIScrollView *scrollView = _pagerTopScrollView;
   if (_dispatchingPagerTop || ![self matchesPagerTop:scrollView]) return;
+  CGFloat clampedTarget = MIN(MAX(_pagerTopLogicalTarget, 0), _headerHeight);
+  if (clampedTarget != _pagerTopLogicalTarget) {
+    _pagerTopLogicalTarget = clampedTarget;
+    CGFloat physicalTarget = RNCLimitRestoredScrollOffset(clampedTarget - scrollView.contentInset.top,
+      scrollView.contentSize.height, scrollView.bounds.size.height, scrollView.contentInset.top, scrollView.contentInset.bottom);
+    [scrollView setContentOffset:CGPointMake(scrollView.contentOffset.x, physicalTarget) animated:NO];
+  }
   CGFloat logical = scrollView.contentOffset.y + scrollView.contentInset.top;
   if (fabs(logical - _pagerTopLogicalTarget) > 0.5) return;
   _pageOffsets[_pagerTopPageKey] = @(_nativeSmoothHeaderScrollEnabled ? 0 : _pagerTopLogicalTarget);
@@ -5280,10 +5288,28 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 - (void)scrollToTop:(NSInteger)target animated:(BOOL)animated
 {
+  if (target != 0 && target != 1) return;
+  [self scrollHeaderToOffset:(target == 1 ? _headerHeight : 0) animated:animated];
+}
+
+- (void)scrollHeaderBy:(double)delta
+{
+  if (!std::isfinite(delta)) return;
+  [self scrollHeaderToOffset:MIN(MAX(_headerOffset + delta, 0), _headerHeight) animated:NO];
+}
+
+- (void)scrollHeaderToOffset:(double)offset
+{
+  if (!std::isfinite(offset)) return;
+  [self scrollHeaderToOffset:MIN(MAX(offset, 0), _headerHeight) animated:NO];
+}
+
+- (void)scrollHeaderToOffset:(CGFloat)logicalTarget animated:(BOOL)animated
+{
   [self cancelTopInsetReboundCheck];
   UIScrollView *scrollView = _observedScrollView;
   NSString *key = _observedPageKey;
-  if ((target != 0 && target != 1) || _isBeingRecycled || _transitioning || _isPagerDragging ||
+  if (_isBeingRecycled || _transitioning || _isPagerDragging ||
       _transitionPageOffsets != nil || _syntheticPageRestore || scrollView == nil || scrollView.window == nil ||
       key == nil || ![key isEqualToString:self.currentPageKey] || _observedPageIndex != _currentIndex ||
       _observedPageGeneration != _generation || self.window == nil) return;
@@ -5299,7 +5325,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   [_alignedBodyKeys removeObject:key];
   [_suspendedBodyKeys removeObject:key];
   [_displayBodyOverrides removeObjectForKey:key];
-  CGFloat logicalTarget = target == 1 ? _headerHeight : 0;
+  logicalTarget = MIN(MAX(logicalTarget, 0), _headerHeight);
   _pageOffsets[key] = @(_nativeSmoothHeaderScrollEnabled ? 0 : logicalTarget);
   _pagerTopScrollView = scrollView;
   _pagerTopPageKey = [key copy];

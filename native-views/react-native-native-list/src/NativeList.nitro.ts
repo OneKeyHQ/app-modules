@@ -13,6 +13,7 @@ export interface NativeListNativeProps extends HybridViewProps {
   snapshotJson: string;
   fontFamiliesJson: string;
   containerSlotHeightsJson: string;
+  sidecarLayoutJson: string;
   topScrollEdgeEffect: NativeListScrollEdgeEffect;
   topOverlayHeight: number;
   scrollPositionThresholdsJson: string;

@@ -173,7 +173,7 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
     val restored = fallbackKey?.let(NativeListSourceFallbackState::has) == true
     fallback.textSize = if (sourceScale) 13f else NativeListScale.font(resources, 13f)
     fallback.text = visual.optString("fallbackText").take(2)
-    fallback.setTextColor(color("#00000072"))
+    fallback.setTextColor(color(visual.optString("fallbackTextColor", "#00000072")))
     fallback.visibility =
       if (kind != "icon" && fallbackIcon == null && (sources.isEmpty() || restored)) VISIBLE
       else GONE

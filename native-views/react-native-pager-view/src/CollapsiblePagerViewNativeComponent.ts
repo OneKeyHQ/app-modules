@@ -92,6 +92,14 @@ export interface NativeProps extends ViewProps {
 type CollapsiblePagerViewNativeType = HostComponent<NativeProps>;
 
 export interface NativeCommands {
+  scrollHeaderToOffset: (
+    viewRef: React.ElementRef<CollapsiblePagerViewNativeType>,
+    offset: Double
+  ) => void;
+  scrollHeaderBy: (
+    viewRef: React.ElementRef<CollapsiblePagerViewNativeType>,
+    delta: Double
+  ) => void;
   scrollToTop: (
     viewRef: React.ElementRef<CollapsiblePagerViewNativeType>,
     target: Int32,
@@ -113,6 +121,8 @@ export interface NativeCommands {
 
 export const Commands: NativeCommands = codegenNativeCommands<NativeCommands>({
   supportedCommands: [
+    "scrollHeaderToOffset",
+    "scrollHeaderBy",
     "scrollToTop",
     "setPage",
     "setPageWithoutAnimation",

@@ -185,6 +185,7 @@ export const ROW_BOX_STYLE_KEYS_BY_TYPE = {
     'trailingGap',
     'image',
   ],
+  buttonGroup: [],
   system: ['horizontalPadding', 'verticalPadding', 'lineGap'],
 } as const;
 
@@ -280,7 +281,15 @@ export type SectionHeaderRowStyle = TemplateBoxStyle<'sectionHeader'> &
     title?: NativeListTextStyle;
     subtitle?: NativeListTextStyle;
     value?: NativeListTextStyle;
+    valuePlacement?: 'afterTitle';
+    titleDecoration?: 'none' | 'dashed';
   }>;
+
+export type RowTextHelp = Readonly<{
+  actionKey: string;
+  presentation: 'tooltip' | 'popover';
+  underline?: 'dashed';
+}>;
 
 export type ActionRowStyle = TemplateBoxStyle<'action'> &
   Readonly<{
@@ -365,6 +374,7 @@ type VisualWithImage = Readonly<{
   borderColor?: string;
   image?: ImageSource;
   fallbackText?: string;
+  fallbackTextColor?: string;
   backgroundColor?: string;
   shape?: 'circle' | 'rounded' | 'square';
   cornerIcon?: Readonly<{
@@ -416,6 +426,8 @@ export type TrailingAccessory =
       kind: 'valuePair';
       primary: string;
       secondary: string;
+      primaryFontWeight?: 'medium';
+      primaryHelp?: RowTextHelp;
       primaryTextSegments?: readonly ValueTextSegment[];
       secondaryTextSegments?: readonly ValueTextSegment[];
       primaryTone?: TextTone;
@@ -504,6 +516,10 @@ export type RowBase = Readonly<{
 export type IdentityRow = RowBase &
   Readonly<{
     type: 'identity';
+    /** Opt in to content-based height; explicit row/container height still wins. */
+    contentHeight?: 'auto';
+    /** Emits a row action instead of a press after a successful long press. */
+    longPressActionKey?: string;
     // OneKey patch: UTF-16 ranges match Fuse indices and native attributed strings.
     titleMatch?: readonly Readonly<{ start: number; end: number }>[];
     titleActionKey?: string;
@@ -513,6 +529,12 @@ export type IdentityRow = RowBase &
     leading: LeadingVisual;
     leadingAction?: Extract<TrailingAccessory, { kind: 'icon' }>;
     title: string;
+    /** Plain 12/16 labels beside the title, preserving independent tones. */
+    titleSuffixes?: readonly Readonly<{
+      text: string;
+      tone: 'secondary' | 'disabled';
+      maxWidth?: number;
+    }>[];
     titleIcon?: Readonly<{
       name: string;
       tintColor?: string;
@@ -526,7 +548,8 @@ export type IdentityRow = RowBase &
     tertiary?: string;
     tertiaryTone?: 'secondary' | 'info';
     titleLines?: 1 | 2;
-    subtitleLines?: 1 | 2;
+    /** Zero displays the complete subtitle. */
+    subtitleLines?: 0 | 1 | 2;
     badges?: readonly BadgeModel[];
     trailing?: readonly TrailingAccessory[];
     draggable?: boolean;
@@ -593,11 +616,14 @@ export type ActivityRow = RowBase &
 export type MessageRow = RowBase &
   Readonly<{
     type: 'message';
+    /** Draws only top and bottom container borders when a border is supplied. */
+    presentation?: 'inlineWarning';
     unread?: boolean;
     leading?: LeadingVisual;
     title: string;
     body: string;
-    bodyLines?: 1 | 2 | 3;
+    /** Zero displays the complete body. */
+    bodyLines?: 0 | 1 | 2 | 3;
     time: string;
     thumbnail?: ImageSource;
     style?: MessageRowStyle;
@@ -606,8 +632,12 @@ export type MessageRow = RowBase &
 export type DataColumn = Readonly<{
   key: string;
   text: string;
+  textSegments?: readonly ValueTextSegment[];
+  titleIcon?: IdentityRow['titleIcon'];
+  secondaryTitleIcon?: IdentityRow['titleIcon'];
   secondaryLeadingText?: string;
   secondaryText?: string;
+  secondaryTextSegments?: readonly ValueTextSegment[];
   weight?: 1 | 2 | 3;
   alignment?: 'start' | 'center' | 'end';
   tone?: 'primary' | 'secondary' | 'positive' | 'negative';
@@ -619,6 +649,7 @@ export type DataRow = RowBase &
     type: 'dataRow';
     leading?: LeadingVisual;
     columns: readonly DataColumn[];
+    trailing?: readonly TrailingAccessory[];
     checkbox?: Extract<TrailingAccessory, { kind: 'checkbox' }>;
     index?: number;
     badge?: BadgeModel;
@@ -800,9 +831,11 @@ export type SectionHeaderRow = RowBase &
     indexTitle?: string;
     variant?: 'summary' | 'gallery' | 'history';
     title: string;
+    leadingBadge?: BadgeModel;
     titleLoading?: boolean;
     subtitle?: string;
     value?: string;
+    valueHelp?: RowTextHelp;
     valueActionKey?: string;
     titleIcon?: Extract<TrailingAccessory, { kind: 'icon' }>;
     valueIcon?: Extract<TrailingAccessory, { kind: 'icon' }>;
@@ -821,6 +854,21 @@ export type ActionRow = RowBase &
     checkbox?: Extract<TrailingAccessory, { kind: 'checkbox' }>;
     trailing?: readonly TrailingAccessory[];
     style?: ActionRowStyle;
+  }>;
+
+export type ButtonGroupRow = RowBase &
+  Readonly<{
+    type: 'buttonGroup';
+    buttons: readonly Readonly<{
+      key: string;
+      label: string;
+      actionKey: string;
+      disabled?: boolean;
+      loading?: boolean;
+      testID?: string;
+      accessibilityLabel?: string;
+    }>[];
+    style?: TemplateBoxStyle<'buttonGroup'>;
   }>;
 
 export type SystemRow = RowBase &
@@ -875,6 +923,7 @@ export type RowModel =
   | MetricCardRow
   | SectionHeaderRow
   | ActionRow
+  | ButtonGroupRow
   | SystemRow;
 
 export type NativeListTheme = Readonly<{
@@ -901,6 +950,8 @@ export type NativeListTheme = Readonly<{
   separator: string;
   accent: string;
   positive: string;
+  /** Optional exact background for the success tone of section leading badges. */
+  successBackground?: string;
   negative: string;
   criticalBackground?: string;
   inverseBackground?: string;
@@ -947,6 +998,12 @@ export type NativeListListStyle = Readonly<{
 export type NativeListSnapshot = Readonly<{
   schemaVersion: 1;
   generation: number;
+  /** One-shot animation for a user-initiated row-key insertion or removal. */
+  structuralTransition?: Readonly<{
+    id: string;
+    durationMs?: number;
+    anchorKey?: string;
+  }>;
   layout: Readonly<{
     kind: NativeListLayout;
     orientation?: NativeListOrientation;
@@ -1004,9 +1061,13 @@ export type RowPatch =
           IdentityRow,
           | CommonPatchFields
           | 'title'
+          | 'titleSuffixes'
           | 'titleIcon'
           | 'secondaryTitleIcon'
           | 'subtitle'
+          | 'subtitleLines'
+          | 'contentHeight'
+          | 'longPressActionKey'
           | 'tertiary'
           | 'tertiaryTone'
           | 'badges'
@@ -1065,6 +1126,7 @@ export type RowPatch =
           | 'title'
           | 'body'
           | 'bodyLines'
+          | 'presentation'
           | 'time'
           | 'thumbnail'
         >
@@ -1079,6 +1141,7 @@ export type RowPatch =
           | CommonPatchFields
           | 'leading'
           | 'columns'
+          | 'trailing'
           | 'checkbox'
           | 'index'
           | 'badge'
@@ -1163,6 +1226,8 @@ export type RowPatch =
           | 'title'
           | 'subtitle'
           | 'value'
+          | 'valueHelp'
+          | 'leadingBadge'
           | 'valueActionKey'
           | 'titleActionKey'
           | 'titleActionOnHover'
@@ -1188,6 +1253,11 @@ export type RowPatch =
       >;
     }>
   | Readonly<{
+      type: 'buttonGroup';
+      key: string;
+      changes: Partial<Pick<ButtonGroupRow, CommonPatchFields | 'buttons'>>;
+    }>
+  | Readonly<{
       type: 'system';
       key: string;
       changes: Readonly<{
@@ -1203,6 +1273,7 @@ export type NativeListActionSource =
   | 'leadingAction'
   | 'trailingAccessory'
   | 'footerAction'
+  | 'buttonGroup'
   | 'description'
   | 'mediaClose';
 

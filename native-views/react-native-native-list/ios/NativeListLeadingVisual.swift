@@ -97,7 +97,8 @@ final class NativeListLeadingVisual: UIView {
     let restored = fallbackKey.map(NativeListSourceFallbackState.has) ?? false
     let fallbackData = kind == "icon" ? visual : fallbackIcon
     fallback.text = String(visual.string("fallbackText").prefix(2))
-    fallback.textColor = UIColor(nativeListHex: "#8D8D8D", fallback: .gray)
+    fallback.textColor = UIColor(
+      nativeListHex: visual.string("fallbackTextColor", default: "#8D8D8D"), fallback: .gray)
     icon.image = fallbackData.map { nativeListIcon(named: $0.string("name")) } ?? nil
     icon.tintColor = UIColor(
       nativeListHex: fallbackData?.string("tintColor", default: "#646464") ?? "#646464",

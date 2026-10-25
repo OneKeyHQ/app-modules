@@ -32,6 +32,8 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
   private val subtitle = NativeListTextView(context)
   private val tertiary = NativeListTextView(context)
   private val badgeLine = NativeListTextView(context)
+  private val titleSuffixLabels = mutableListOf<NativeListTextView>()
+  private val titleSuffixMaxWidths = mutableListOf<Int>()
   private val trailingColumn = NativeListAccessoryStack(context, fonts)
   private val semanticBadgeLabels = mutableListOf<TextView>()
   private val semanticSubtitleLabels = mutableListOf<TextView>()
@@ -113,7 +115,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
 
   private fun showText(view: TextView, text: String, lines: Int) {
     view.text = text
-    view.maxLines = lines
+    view.maxLines = if (lines == 0) Int.MAX_VALUE else lines
     view.visibility = if (text.isEmpty()) GONE else VISIBLE
   }
 
@@ -138,9 +140,25 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
   ) {
     currentItem = item
+    val longPressActionKey = item.json.optString("longPressActionKey")
+    setOnLongClickListener(
+      if (longPressActionKey.isNotEmpty())
+        OnLongClickListener {
+          if (!isEnabled || !item.isRowPressEnabled || currentItem?.key != item.key) false
+          else {
+            emitAction(longPressActionKey, this, "row")
+            true
+          }
+        }
+      else null
+    )
+    isLongClickable = longPressActionKey.isNotEmpty()
     currentTheme = theme
     removeAllViews()
     mainColumn.removeAllViews()
+    titleSuffixLabels.forEach(titleLine::removeView)
+    titleSuffixLabels.clear()
+    titleSuffixMaxWidths.clear()
     semanticBadgeLabels.clear()
     semanticSubtitleLabels.clear()
     walletBadgeLine = null
@@ -387,7 +405,46 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
           .minus(leading.width + leading.marginEnd + icon)
           .coerceAtLeast(0)
       } else Int.MAX_VALUE
+    titleSuffixLabels.forEachIndexed { index, label ->
+      label.maxWidth = titleSuffixMaxWidths[index]
+    }
     super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+    if (titleSuffixLabels.isNotEmpty()) {
+      val fixedWidth =
+        (1 until titleLine.childCount).sumOf { index ->
+          val view = titleLine.getChildAt(index)
+          if (view.visibility == GONE || titleSuffixLabels.any { it === view }) 0
+          else {
+            val margins = view.layoutParams as MarginLayoutParams
+            view.measuredWidth + margins.leftMargin + margins.rightMargin
+          }
+        }
+      val suffixMargins = titleSuffixLabels.sumOf {
+        val margins = it.layoutParams as MarginLayoutParams
+        margins.leftMargin + margins.rightMargin
+      }
+      val available =
+        (titleLine.measuredWidth - fixedWidth - suffixMargins - dp(80)).coerceAtLeast(0)
+      val desired = titleSuffixLabels.mapIndexed { index, label ->
+        label.paint.measureText(label.text.toString()).roundToInt()
+          .coerceAtMost(titleSuffixMaxWidths[index])
+      }
+      val total = desired.sum()
+      var remaining = available
+      var changed = false
+      titleSuffixLabels.forEachIndexed { index, label ->
+        val share =
+          if (total <= available) desired[index]
+          else if (index == titleSuffixLabels.lastIndex) remaining
+          else (desired[index].toLong() * available / total).toInt()
+        remaining -= share
+        if (label.maxWidth != share) {
+          label.maxWidth = share
+          changed = true
+        }
+      }
+      if (changed) super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+    }
     val item = currentItem ?: return
     if (
       item.hasExplicitHeight &&
@@ -613,6 +670,37 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
     titleLine.packsChildrenAtStart = true
     title.ellipsize = TextUtils.TruncateAt.END
     showText(title, item.json.optString("title"), item.json.optInt("titleLines", 1))
+    item.json.optJSONArray("titleSuffixes")?.let { suffixes ->
+      for (index in 0 until suffixes.length()) {
+        val suffix = suffixes.optJSONObject(index) ?: continue
+        val label = NativeListTextView(context).apply {
+          text = suffix.optString("text")
+          typeface = fonts.regular(context)
+          textSize = sp(12f)
+          includeFontPadding = false
+          maxLines = 1
+          ellipsize = TextUtils.TruncateAt.END
+          setTextColor(
+            color(
+              theme,
+              if (suffix.optString("tone") == "disabled") "disabledText" else "secondaryText",
+              "#0000009B",
+            )
+          )
+        }
+        TextViewCompat.setLineHeight(label, dp(16))
+        val maxWidth =
+          if (suffix.has("maxWidth")) stylePx(suffix.optDouble("maxWidth")) else Int.MAX_VALUE
+        label.maxWidth = maxWidth
+        titleSuffixMaxWidths.add(maxWidth)
+        titleSuffixLabels.add(label)
+        titleLine.addView(
+          label,
+          titleLine.childCount - 1,
+          LayoutParams(LayoutParams.WRAP_CONTENT, dp(16)).apply { marginStart = dp(8) },
+        )
+      }
+    }
     item.json.optJSONObject("titleIcon")?.let { icon ->
       titleIcon.iconName = icon.optString("name")
       titleIcon.glyphSizeDp = 20

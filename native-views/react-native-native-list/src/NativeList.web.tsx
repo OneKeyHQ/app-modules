@@ -93,6 +93,8 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       listHeader,
       listEmpty,
       listFooter,
+      listSidecar,
+      sidecarLayout,
       topOverlay: _topOverlay,
       topScrollEdgeEffect: _topScrollEdgeEffect,
       webScrollHost,
@@ -156,6 +158,8 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
         snapshot.layout.contentPadding ??
         0,
     }));
+    const [viewportWidth, setViewportWidth] = useState(0);
+    const [sidecarHeight, setSidecarHeight] = useState(0);
     const synchronizeSlots = (next: NativeListSnapshot) => {
       const hasRows = next.rows.length > 0;
       const padding =
@@ -205,6 +209,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       listHeader !== undefined ||
       listEmpty !== undefined ||
       listFooter !== undefined;
+    useSlotLayoutRef.current ||= listSidecar !== undefined;
     const useSlotLayout = useSlotLayoutRef.current;
     const resolvedScrollHost =
       webScrollHost === undefined
@@ -217,10 +222,27 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     webVirtualizationEnabledRef.current = webVirtualizationEnabled;
     const validatedSnapshot = useMemo(
       () =>
-        containNativeListInput(() =>
-          normalizeWebSnapshot(snapshot, hasEmptySlot, useSlotLayout)
-        ) ?? acceptedSnapshotRef.current,
-      [snapshot, hasEmptySlot, useSlotLayout]
+        containNativeListInput(() => {
+          if ((listSidecar !== undefined) !== (sidecarLayout !== undefined))
+            throw new Error(
+              'listSidecar and sidecarLayout must be supplied together'
+            );
+          if (sidecarLayout) {
+            const { width, gap, maxContentWidth } = sidecarLayout;
+            if (
+              snapshot.layout.kind !== 'linear' ||
+              !Number.isFinite(width) ||
+              width <= 0 ||
+              !Number.isFinite(gap) ||
+              gap < 0 ||
+              !Number.isFinite(maxContentWidth) ||
+              maxContentWidth <= width + gap
+            )
+              throw new Error('Invalid NativeList sidecar layout');
+          }
+          return normalizeWebSnapshot(snapshot, hasEmptySlot, useSlotLayout);
+        }) ?? acceptedSnapshotRef.current,
+      [snapshot, hasEmptySlot, useSlotLayout, listSidecar, sidecarLayout]
     );
     const snapshotRef = useRef(validatedSnapshot);
     const snapshotPropRef = useRef(validatedSnapshot);
@@ -500,7 +522,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     const padding = slotState.padding;
     const content = (
       <View
-        ref={setBoundsRef}
+        ref={sidecarLayout ? undefined : setBoundsRef}
         style={{ position: 'relative', flexShrink: 0, minWidth: 0 }}
       >
         {listHeader !== undefined ? (
@@ -518,13 +540,55 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
           </View>
         ) : null}
         {listFooter !== undefined ? (
-          <View style={{ paddingHorizontal: padding }}>{listFooter}</View>
+          <View
+            testID="native-list-footer-slot"
+            style={{ paddingHorizontal: padding }}
+          >
+            {listFooter}
+          </View>
         ) : null}
       </View>
+    );
+    const bandWidth = sidecarLayout
+      ? Math.min(viewportWidth, sidecarLayout.maxContentWidth)
+      : 0;
+    const sidecarMargin = Math.max(0, (viewportWidth - bandWidth) / 2);
+    const leftWidth = Math.max(
+      0,
+      bandWidth - (sidecarLayout?.width ?? 0) - (sidecarLayout?.gap ?? 0)
+    );
+    const scrollContent = sidecarLayout ? (
+      <View
+        ref={setBoundsRef}
+        style={{ position: 'relative', minHeight: sidecarHeight }}
+      >
+        <View style={{ marginStart: sidecarMargin, width: leftWidth }}>
+          {content}
+        </View>
+        <View
+          style={{
+            position: 'absolute',
+            end: sidecarMargin,
+            top: 0,
+            width: sidecarLayout.width,
+          }}
+          onLayout={(event) =>
+            setSidecarHeight(event.nativeEvent.layout.height)
+          }
+        >
+          {listSidecar}
+        </View>
+      </View>
+    ) : (
+      content
     );
     return (
       <View
         {...viewProps}
+        onLayout={(event) => {
+          setViewportWidth(event.nativeEvent.layout.width);
+          viewProps.onLayout?.(event);
+        }}
         style={[viewProps.style, { position: 'relative', minHeight: 0 }]}
       >
         {webScrollHost === undefined ? (
@@ -532,10 +596,10 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
             ref={setScrollHostRef}
             style={{ position: 'absolute', inset: 0, overflow: 'scroll' }}
           >
-            {content}
+            {scrollContent}
           </View>
         ) : (
-          content
+          scrollContent
         )}
       </View>
     );

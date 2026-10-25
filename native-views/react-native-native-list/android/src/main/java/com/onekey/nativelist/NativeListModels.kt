@@ -13,7 +13,7 @@ internal fun isNativeListRowPressEnabled(
   variant: String,
   disabled: Boolean,
   pressDisabled: Boolean,
-): Boolean = !disabled && !pressDisabled && (type != "system" || variant == "retry")
+): Boolean = !disabled && !pressDisabled && type != "buttonGroup" && (type != "system" || variant == "retry")
 
 internal fun isNativeListWholeRowInteractive(
   type: String,
@@ -57,7 +57,7 @@ private fun updateLengthPrefixed(digest: MessageDigest, value: String) {
 }
 
 // Template type alone partitions reuse; data keys and styles never select a renderer.
-internal enum class NativeListRendererKey { MESSAGE, RAIL, MEDIA_TILE, ACTION, SYSTEM, ACTIVITY, DATA_ROW, METRIC_CARD, MARKET, IDENTITY, SECTION_HEADER, WALLET_GROUP }
+internal enum class NativeListRendererKey { MESSAGE, RAIL, MEDIA_TILE, ACTION, SYSTEM, ACTIVITY, DATA_ROW, METRIC_CARD, MARKET, IDENTITY, SECTION_HEADER, WALLET_GROUP, BUTTON_GROUP }
 
 internal data class NativeListItem(
   val key: String,
@@ -142,6 +142,7 @@ internal data class NativeListItem(
 
 internal data class NativeListConfig(
   val generation: Int,
+  val structuralTransition: StructuralTransition?,
   val layout: String,
   val orientation: String,
   val gridColumns: Int,
@@ -168,9 +169,22 @@ internal data class NativeListConfig(
   val fixedFooter: NativeListItem?,
   val items: List<NativeListItem>,
 ) {
+  internal data class StructuralTransition(
+    val id: String,
+    val durationMs: Long,
+    val anchorKey: String?,
+  )
   companion object {
     fun parse(snapshotJson: String): NativeListConfig {
       val root = JSONObject(snapshotJson)
+      val transition = root.optJSONObject("structuralTransition")
+      val structuralTransition = transition?.optString("id")?.takeIf(String::isNotEmpty)?.let { id ->
+        StructuralTransition(
+          id = id,
+          durationMs = transition.optDouble("durationMs", 220.0).coerceIn(0.0, 2000.0).toLong(),
+          anchorKey = transition.optString("anchorKey").takeIf(String::isNotEmpty),
+        )
+      }
       require(root.getInt("schemaVersion") == 1) { "Unsupported schemaVersion" }
       val layout = root.getJSONObject("layout")
       val selection = root.optJSONObject("selection")
@@ -193,6 +207,7 @@ internal data class NativeListConfig(
       val fixedFooter = root.optJSONObject("fixedFooter")?.let(NativeListItem::parse)
       return NativeListConfig(
         generation = root.getInt("generation"),
+        structuralTransition = structuralTransition,
         layout = layout.getString("kind"),
         orientation = layout.optString("orientation", "vertical"),
         gridColumns = layout.optInt("gridColumns", 1).coerceIn(1, 7),

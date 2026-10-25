@@ -348,6 +348,14 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
     view?.scrollToTop(target, animated)
   }
 
+  override fun scrollHeaderBy(view: CollapsiblePagerHost?, delta: Double) {
+    view?.scrollHeaderBy(delta)
+  }
+
+  override fun scrollHeaderToOffset(view: CollapsiblePagerHost?, offset: Double) {
+    view?.scrollHeaderToOffset(offset)
+  }
+
   override fun setPage(view: CollapsiblePagerHost?, selectedPage: Int) {
     if (view != null && selectedPage in 0 until view.adapter.itemCount) {
       view.beginPageTransition(selectedPage)

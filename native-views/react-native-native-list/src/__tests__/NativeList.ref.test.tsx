@@ -1,7 +1,7 @@
 import React, { createRef } from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
 import type { NativeListRef } from '../NativeList.types';
-import type { NativeListSnapshot } from '../models';
+import type { NativeListSnapshot, RowPatch } from '../models';
 import { configureNativeListFonts } from '../fonts';
 import { ScrollEdgeEffect } from '../ScrollEdgeEffect';
 
@@ -128,6 +128,316 @@ const snapshot: NativeListSnapshot = {
 
 describe('NativeList imperative ref', () => {
   beforeEach(() => jest.clearAllMocks());
+
+  it('patches owned selector value rows with an unchanged undefined segment field', async () => {
+    const { NativeList } = jest.requireActual(
+      '../NativeList'
+    ) as typeof import('../NativeList');
+    const ref = createRef<NativeListRef>();
+    const input: NativeListSnapshot = {
+      schemaVersion: 1,
+      generation: 1,
+      layout: { kind: 'linear' },
+      rows: Array.from({ length: 1000 }, (_, index) => ({
+        type: 'identity' as const,
+        key: `token-${index}`,
+        title: `T${index}`,
+        leading: { kind: 'icon' as const, name: 'CryptoCoinOutline' },
+        subtitle: 'Price',
+        trailing: [{ kind: 'value' as const, text: '$1.00' }],
+      })),
+    };
+    let renderer!: TestRenderer.ReactTestRenderer;
+    try {
+      await act(async () => {
+        renderer = TestRenderer.create(
+          <NativeList ref={ref} snapshot={input} />
+        );
+      });
+      const callerRow = input.rows[500] as unknown as {
+        subtitle: string | number;
+      };
+      callerRow.subtitle = 123;
+      act(() =>
+        ref.current?.applyPatches(
+          Array.from({ length: 10 }, (_, index) => ({
+            type: 'identity' as const,
+            key: `token-${index * 10}`,
+            changes: {
+              subtitle: 'Price',
+              subtitleSegments: undefined,
+              trailing: [{ kind: 'value' as const, text: '$2.00' }],
+            },
+          }))
+        )
+      );
+      expect(mockNativeMethods.applyPatches).toHaveBeenCalledTimes(1);
+      const patchJson = mockNativeMethods.applyPatches.mock
+        .calls[0]?.[0] as string;
+      expect(JSON.parse(patchJson)[0].changes).toEqual({
+        subtitle: 'Price',
+        trailing: [{ kind: 'value', text: '$2.00' }],
+      });
+    } finally {
+      await act(async () => renderer?.unmount());
+    }
+  });
+
+  it('isolates accepted patches from later caller mutations', async () => {
+    const { NativeList } = jest.requireActual(
+      '../NativeList'
+    ) as typeof import('../NativeList');
+    const ref = createRef<NativeListRef>();
+    const input: NativeListSnapshot = {
+      schemaVersion: 1,
+      generation: 1,
+      layout: { kind: 'linear' },
+      rows: [
+        {
+          type: 'identity',
+          key: 'token',
+          title: 'Token',
+          leading: { kind: 'icon', name: 'CryptoCoinOutline' },
+          subtitle: 'Price',
+          trailing: [{ kind: 'value', text: '$1.00' }],
+        },
+      ],
+    };
+    let renderer!: TestRenderer.ReactTestRenderer;
+    try {
+      await act(async () => {
+        renderer = TestRenderer.create(
+          <NativeList ref={ref} snapshot={input} />
+        );
+      });
+      expect(Object.isFrozen(input)).toBe(false);
+      const trailing = [{ kind: 'value' as const, text: '$2.00' }];
+      act(() =>
+        ref.current?.applyPatches([
+          { type: 'identity', key: 'token', changes: { trailing } },
+        ])
+      );
+      expect(mockNativeMethods.applyPatches).toHaveBeenCalledTimes(1);
+      (trailing[0] as { text: string | number }).text = 123;
+      act(() =>
+        ref.current?.applyPatches([
+          {
+            type: 'identity',
+            key: 'token',
+            changes: { subtitle: 'New price' },
+          },
+        ])
+      );
+      expect(mockNativeMethods.applyPatches).toHaveBeenCalledTimes(2);
+      expect(
+        JSON.parse(mockNativeMethods.applyPatches.mock.calls[1][0])
+      ).toMatchObject([{ key: 'token', changes: { subtitle: 'New price' } }]);
+    } finally {
+      await act(async () => renderer?.unmount());
+    }
+  });
+
+  it('does not freeze or retain caller selection arrays on an unowned fallback', async () => {
+    const { NativeList } = jest.requireActual(
+      '../NativeList'
+    ) as typeof import('../NativeList');
+    const ref = createRef<NativeListRef>();
+    const input: NativeListSnapshot = {
+      schemaVersion: 1,
+      generation: 1,
+      layout: { kind: 'linear' },
+      selection: { mode: 'multiple', selectedKeys: [] },
+      rows: [
+        {
+          type: 'identity',
+          key: 'wallet',
+          title: 'Wallet',
+          leading: { kind: 'icon', name: 'WalletOutline' },
+        },
+      ],
+    };
+    let renderer!: TestRenderer.ReactTestRenderer;
+    try {
+      await act(async () => {
+        renderer = TestRenderer.create(
+          <NativeList ref={ref} snapshot={input} />
+        );
+      });
+      const selectedKeys = ['wallet'];
+      ref.current?.reconcileSelection(selectedKeys);
+      selectedKeys.push('missing');
+      act(() =>
+        ref.current?.applyPatches([
+          { type: 'identity', key: 'wallet', changes: { subtitle: 'One' } },
+        ])
+      );
+      expect(mockNativeMethods.applyPatches).toHaveBeenCalledTimes(1);
+      expect(Object.isFrozen(selectedKeys)).toBe(false);
+      selectedKeys.push('still mutable');
+      act(() =>
+        ref.current?.applyPatches([
+          { type: 'identity', key: 'wallet', changes: { title: 'Updated' } },
+        ])
+      );
+      expect(mockNativeMethods.applyPatches).toHaveBeenCalledTimes(2);
+    } finally {
+      await act(async () => renderer?.unmount());
+    }
+  });
+
+  it('rejects unsafe cross-row patches without dispatch or partial acceptance', async () => {
+    const { NativeList } = jest.requireActual(
+      '../NativeList'
+    ) as typeof import('../NativeList');
+    const ref = createRef<NativeListRef>();
+    const input: NativeListSnapshot = {
+      schemaVersion: 1,
+      generation: 1,
+      layout: { kind: 'sectioned' },
+      selection: { mode: 'multiple', selectedKeys: ['item'] },
+      rows: [
+        {
+          type: 'sectionHeader',
+          key: 'header-a',
+          sectionKey: 'a',
+          title: 'A',
+          indexTitle: 'A',
+        },
+        {
+          type: 'identity',
+          key: 'item',
+          sectionKey: 'a',
+          title: 'Item',
+          leading: { kind: 'icon', name: 'CryptoCoinOutline' },
+        },
+        {
+          type: 'sectionHeader',
+          key: 'header-b',
+          sectionKey: 'b',
+          title: 'B',
+          indexTitle: 'B',
+        },
+      ],
+    };
+    const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    let renderer!: TestRenderer.ReactTestRenderer;
+    try {
+      await act(async () => {
+        renderer = TestRenderer.create(
+          <NativeList ref={ref} snapshot={input} />
+        );
+      });
+      act(() =>
+        ref.current?.applyPatches([
+          {
+            type: 'sectionHeader',
+            key: 'header-b',
+            changes: { indexTitle: 'A' },
+          } as unknown as RowPatch,
+        ])
+      );
+      act(() =>
+        ref.current?.applyPatches([
+          {
+            type: 'identity',
+            key: 'item',
+            changes: { groupId: 'group' },
+          } as unknown as RowPatch,
+        ])
+      );
+      act(() =>
+        ref.current?.applyPatches([
+          { type: 'identity', key: 'item', changes: { disabled: true } },
+        ])
+      );
+      expect(mockNativeMethods.applyPatches).not.toHaveBeenCalled();
+      act(() =>
+        ref.current?.applyPatches([
+          { type: 'identity', key: 'item', changes: { subtitle: 'Valid' } },
+        ])
+      );
+      expect(mockNativeMethods.applyPatches).toHaveBeenCalledTimes(1);
+    } finally {
+      await act(async () => renderer?.unmount());
+      warning.mockRestore();
+    }
+  });
+
+  it('validates the captured accessor value used by the native snapshot', async () => {
+    const { NativeList } = jest.requireActual(
+      '../NativeList'
+    ) as typeof import('../NativeList');
+    const ref = createRef<NativeListRef>();
+    let reads = 0;
+    const token = {
+      type: 'identity' as const,
+      key: 'accessor-token',
+      title: 'Token',
+      leading: { kind: 'icon' as const, name: 'CryptoCoinOutline' },
+    };
+    Object.defineProperty(token, 'subtitle', {
+      enumerable: true,
+      get: () => (reads++ === 0 ? 'Price' : 123),
+    });
+    const input: NativeListSnapshot = {
+      schemaVersion: 1,
+      generation: 1,
+      layout: { kind: 'linear' },
+      rows: [token],
+    };
+    let renderer!: TestRenderer.ReactTestRenderer;
+    try {
+      await act(async () => {
+        renderer = TestRenderer.create(
+          <NativeList ref={ref} snapshot={input} />
+        );
+      });
+      const initialJson = mockFontRenders.mock.calls.at(-1)?.[0].snapshotJson;
+      expect(JSON.parse(initialJson).rows[0].subtitle).toBe('Price');
+      expect(reads).toBe(1);
+
+      let patchReads = 0;
+      const changes = Object.defineProperty({}, 'subtitle', {
+        enumerable: true,
+        get: () => (patchReads++ === 0 ? 'Updated' : 123),
+      }) as { subtitle: string };
+      act(() =>
+        ref.current?.applyPatches([
+          { type: 'identity', key: 'accessor-token', changes },
+        ])
+      );
+      expect(mockNativeMethods.applyPatches).toHaveBeenCalledTimes(1);
+      expect(
+        JSON.parse(mockNativeMethods.applyPatches.mock.calls[0][0])[0].changes
+          .subtitle
+      ).toBe('Updated');
+      expect(patchReads).toBe(1);
+
+      mockNativeMethods.applyPatches.mockClear();
+      const throwing = Object.defineProperty({}, 'subtitle', {
+        enumerable: true,
+        get: () => {
+          throw new Error('private payload');
+        },
+      }) as { subtitle: string };
+      const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        act(() =>
+          ref.current?.applyPatches([
+            { type: 'identity', key: 'accessor-token', changes: throwing },
+          ])
+        );
+        expect(mockNativeMethods.applyPatches).not.toHaveBeenCalled();
+        expect(JSON.stringify(warning.mock.calls)).not.toContain(
+          'private payload'
+        );
+      } finally {
+        warning.mockRestore();
+      }
+    } finally {
+      await act(async () => renderer?.unmount());
+    }
+  });
 
   it.each(['ios', 'android'])(
     'contains rejected production input on %s and keeps normalized native updates',

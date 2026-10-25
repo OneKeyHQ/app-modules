@@ -1,6 +1,8 @@
 import type {
   ActionRow,
   ActivityRow,
+  ButtonGroupRow,
+  DataRow,
   IdentityRow,
   MarketRow,
   MetricCardRow,
@@ -10,7 +12,10 @@ import type {
   RowPatch,
 } from '../models';
 import {
+  applyOwnedNativePatches,
   applyRowPatches,
+  captureNativeListInput,
+  ownValidatedNativeSnapshot,
   serializePatches,
   serializeSnapshot,
   validatePatches,
@@ -93,7 +98,517 @@ const snapshot = (
   selection: { mode: 'multiple', selectedKeys: [], rowPressToggles: true },
 });
 
+describe('native owned snapshot patch boundary', () => {
+  it.each([
+    [true, 'identity'],
+    [true, 'dataRow'],
+    [false, 'identity'],
+    [false, 'dataRow'],
+  ] as const)(
+    'matches full validation in dev=%s for %s value patches',
+    (development, family) => {
+      const environment = globalThis as typeof globalThis & {
+        __DEV__: boolean;
+      };
+      const previous = environment.__DEV__;
+      environment.__DEV__ = development;
+      try {
+        const image = {
+          uri: development ? 'https://example.com/token.png' : ' ',
+          width: 32,
+          height: 32,
+        };
+        const base: IdentityRow | DataRow =
+          family === 'identity'
+            ? {
+                ...row('token'),
+                subtitle: 'Old price',
+                leading: { kind: 'token', image },
+                style: { subtitle: { token: '$bodySm' } },
+              }
+            : {
+                type: 'dataRow',
+                key: 'token',
+                leading: { kind: 'token', image },
+                columns: [
+                  { key: 'asset', text: 'Token' },
+                  { key: 'value', text: '$1' },
+                ],
+                style: { columns: { token: '$bodyLg' } },
+              };
+        const patches: RowPatch[] = [
+          family === 'identity'
+            ? {
+                type: 'identity',
+                key: 'token',
+                changes: {
+                  subtitle: 'New price',
+                  subtitleSegments: undefined,
+                  trailing: [{ kind: 'value', text: '$2' }],
+                },
+              }
+            : {
+                type: 'dataRow',
+                key: 'token',
+                changes: {
+                  columns: [
+                    { key: 'asset', text: 'Token' },
+                    { key: 'value', text: '$2' },
+                  ],
+                  trailing: undefined,
+                },
+              },
+        ];
+        const owned = ownValidatedNativeSnapshot(
+          validateSnapshot(
+            captureNativeListInput(snapshot([base, row('untouched')]))
+          )
+        );
+        const accepted = applyOwnedNativePatches(owned, patches);
+        const full = applyRowPatches(owned, patches);
+        expect(JSON.stringify(accepted.snapshot)).toBe(JSON.stringify(full));
+        expect(accepted.json).toBe(serializePatches(patches));
+        expect(accepted.snapshot.rows[1]).toBe(owned.rows[1]);
+        if (family === 'identity') {
+          expect(
+            Object.hasOwn(accepted.snapshot.rows[0], 'subtitleSegments')
+          ).toBe(true);
+        }
+        expect(JSON.stringify(accepted.snapshot)).not.toContain('$bodySm');
+        expect(JSON.stringify(accepted.snapshot)).not.toContain('$bodyLg');
+        if (!development) {
+          expect(
+            (accepted.snapshot.rows[0] as IdentityRow | DataRow).leading
+          ).toHaveProperty('image', undefined);
+        }
+      } finally {
+        environment.__DEV__ = previous;
+      }
+    }
+  );
+
+  it('does not inspect unchanged rows for selector-shaped undefined fields', () => {
+    const owned = ownValidatedNativeSnapshot(
+      validateSnapshot(
+        captureNativeListInput(
+          snapshot(
+            Array.from({ length: 1000 }, (_, index) => row(`token-${index}`))
+          )
+        )
+      )
+    );
+    const unchanged = owned.rows[500];
+    const entries = jest.spyOn(Object, 'entries');
+    try {
+      const accepted = applyOwnedNativePatches(owned, [
+        {
+          type: 'identity',
+          key: 'token-0',
+          changes: {
+            subtitle: 'Price',
+            subtitleSegments: undefined,
+            trailing: [{ kind: 'value', text: '$2' }],
+          },
+        },
+      ]);
+      expect(accepted.snapshot.rows[500]).toBe(unchanged);
+      expect(accepted.json).not.toContain('subtitleSegments');
+      expect(
+        entries.mock.calls.filter(([value]) => value === unchanged)
+      ).toHaveLength(0);
+    } finally {
+      entries.mockRestore();
+    }
+  });
+
+  it.each(['absent', 'own undefined', 'defined'] as const)(
+    'preserves full patch semantics when subtitleSegments starts %s',
+    (initial) => {
+      const base: IdentityRow =
+        initial === 'own undefined'
+          ? { ...row('token'), subtitleSegments: undefined }
+          : initial === 'defined'
+          ? { ...row('token'), subtitleSegments: [{ text: 'Old' }] }
+          : row('token');
+      const owned = ownValidatedNativeSnapshot(
+        validateSnapshot(captureNativeListInput(snapshot([base, row('other')])))
+      );
+      const patches: RowPatch[] = [
+        {
+          type: 'identity',
+          key: 'token',
+          changes: { subtitleSegments: undefined },
+        },
+      ];
+      const unchanged = owned.rows[1];
+      const entries = jest.spyOn(Object, 'entries');
+      let accepted: ReturnType<typeof applyOwnedNativePatches>;
+      let unchangedReads = 0;
+      try {
+        accepted = applyOwnedNativePatches(owned, patches);
+        unchangedReads = entries.mock.calls.filter(
+          ([value]) => value === unchanged
+        ).length;
+      } finally {
+        entries.mockRestore();
+      }
+      const full = applyRowPatches(owned, patches);
+      expect(accepted.json).toBe(serializePatches(patches));
+      expect(JSON.stringify(accepted.snapshot)).toBe(JSON.stringify(full));
+      expect(Object.hasOwn(accepted.snapshot.rows[0], 'subtitleSegments')).toBe(
+        Object.hasOwn(full.rows[0], 'subtitleSegments')
+      );
+      if (initial === 'defined') {
+        expect(unchangedReads).toBeGreaterThan(0);
+      } else {
+        expect(unchangedReads).toBe(0);
+      }
+    }
+  );
+
+  it('captures plain data without losing sharing, sparse arrays, or null prototypes', () => {
+    const shared = { text: 'value' };
+    const sparse = new Array<string | undefined>(3);
+    sparse[0] = 'first';
+    sparse[2] = undefined;
+    const special = new Array<string>(2);
+    Object.defineProperty(special, '0', {
+      value: 'non-enumerable',
+      configurable: true,
+    });
+    const arrayPrototype = Object.create(Array.prototype);
+    arrayPrototype[1] = 'inherited';
+    Object.setPrototypeOf(special, arrayPrototype);
+    const nullPrototype = Object.assign(Object.create(null), { value: null });
+    const caller = {
+      first: shared,
+      second: shared,
+      sparse,
+      special,
+      nullPrototype,
+      missing: undefined,
+    };
+    const captured = captureNativeListInput(caller);
+    expect(captured).not.toBe(caller);
+    expect(captured.first).toBe(captured.second);
+    expect(captured.first).not.toBe(shared);
+    expect(captured.sparse).toHaveLength(3);
+    expect(1 in captured.sparse).toBe(false);
+    expect(2 in captured.sparse).toBe(true);
+    expect(captured.special[0]).toBe('non-enumerable');
+    expect(captured.special[1]).toBe('inherited');
+    expect(Object.hasOwn(captured.special, '1')).toBe(true);
+    expect(Object.getPrototypeOf(captured.nullPrototype)).toBe(null);
+    expect(captured.nullPrototype.value).toBeNull();
+    expect('missing' in captured).toBe(true);
+  });
+
+  it('matches public full patch semantics for owned value rows', () => {
+    const base = ownValidatedNativeSnapshot(
+      validateSnapshot(captureNativeListInput(snapshot([row('btc')])))
+    );
+    const patches: RowPatch[] = [
+      {
+        type: 'identity',
+        key: 'btc',
+        changes: {
+          subtitle: 'Price',
+          trailing: [{ kind: 'value', text: '$2' }],
+        },
+      },
+    ];
+    const accepted = applyOwnedNativePatches(base, patches);
+    const full = applyRowPatches(base, patches);
+    expect(JSON.stringify(accepted.snapshot)).toBe(JSON.stringify(full));
+    expect(accepted.json).toBe(serializePatches(patches));
+    expect(Object.isFrozen(accepted.snapshot)).toBe(true);
+    expect(Object.isFrozen(accepted.snapshot.rows[0])).toBe(true);
+    expect(base.rows[0]).toEqual(row('btc'));
+  });
+
+  it('fully validates unowned baselines and rejected batches leave owned rows intact', () => {
+    const input = snapshot([row('btc'), row('eth')]);
+    const owned = ownValidatedNativeSnapshot(
+      validateSnapshot(captureNativeListInput(input))
+    );
+    const before = JSON.stringify(owned);
+    expect(() =>
+      applyOwnedNativePatches(owned, [
+        { type: 'identity', key: 'btc', changes: { subtitle: 'Valid' } },
+        { type: 'identity', key: 'absent', changes: { subtitle: 'Invalid' } },
+      ])
+    ).toThrow();
+    expect(JSON.stringify(owned)).toBe(before);
+
+    const unowned = captureNativeListInput(input);
+    (
+      unowned.rows[1] as unknown as { subtitle: string | number }
+    ).subtitle = 123;
+    expect(() =>
+      applyOwnedNativePatches(unowned, [
+        { type: 'identity', key: 'btc', changes: { subtitle: 'Valid' } },
+      ])
+    ).toThrow('rows[1].subtitle');
+
+    const validUnowned = captureNativeListInput(input);
+    const fallback = applyOwnedNativePatches(validUnowned, [
+      { type: 'identity', key: 'btc', changes: { title: 'Updated' } },
+    ]);
+    expect(Object.isFrozen(validUnowned.rows[1])).toBe(false);
+    (validUnowned.rows[1] as unknown as { title: string }).title =
+      'Caller mutation';
+    expect((fallback.snapshot.rows[1] as IdentityRow).title).toBe('eth');
+  });
+});
+
 describe('NativeList model validation', () => {
+  it('validates one-shot structural transitions and title-adjacent data column icons', () => {
+    const withIcons: RowModel = {
+      type: 'dataRow',
+      key: 'asset',
+      columns: [
+        {
+          key: 'asset',
+          text: 'ETH',
+          titleIcon: { name: 'GasSolid' },
+          secondaryTitleIcon: {
+            name: 'TicketOutline',
+            hoverActionKey: 'asset.receiptHelp',
+          },
+        },
+        { key: 'balance', text: '1.00' },
+      ],
+    };
+    const valid = {
+      ...snapshot([withIcons]),
+      structuralTransition: {
+        id: 'show-more-1',
+        durationMs: 220,
+        anchorKey: 'asset',
+      },
+    } as const;
+    expect(JSON.parse(serializeSnapshot(valid)).structuralTransition).toEqual(
+      valid.structuralTransition
+    );
+    expect(() =>
+      validateSnapshot({
+        ...valid,
+        structuralTransition: { ...valid.structuralTransition, durationMs: -1 },
+      })
+    ).toThrow('durationMs');
+    expect(() =>
+      validateSnapshot({
+        ...valid,
+        rows: [
+          {
+            ...withIcons,
+            columns: [
+              { ...withIcons.columns[0], titleIcon: { name: '' } },
+              withIcons.columns[1],
+            ],
+          },
+        ],
+      } as NativeListSnapshot)
+    ).toThrow('titleIcon.name');
+  });
+
+  it('accepts complete recipient addresses and inline warnings on snapshot and patch paths', () => {
+    const recipient: IdentityRow = {
+      ...row('recipient'),
+      subtitle: 'bc1qverylongaddresswithmemoandwrappedcontent',
+      subtitleLines: 0,
+      contentHeight: 'auto',
+      longPressActionKey: 'recipient.menu',
+      leading: {
+        kind: 'wallet',
+        fallbackText: 'A',
+        fallbackTextColor: '#ffffff',
+        backgroundColor: '#000000',
+      },
+    };
+    const warning: RowModel = {
+      type: 'message',
+      key: 'warning',
+      title: '',
+      body: 'Unverified token warning',
+      bodyLines: 0,
+      presentation: 'inlineWarning',
+      time: '',
+    };
+    expect(validateSnapshot(snapshot([recipient, warning])).rows).toHaveLength(
+      2
+    );
+    expect(
+      applyRowPatches(snapshot([recipient, warning]), [
+        {
+          type: 'identity',
+          key: 'recipient',
+          changes: {
+            subtitleLines: 0,
+            contentHeight: 'auto',
+            longPressActionKey: 'open.menu',
+          },
+        },
+        {
+          type: 'message',
+          key: 'warning',
+          changes: { bodyLines: 0, presentation: 'inlineWarning' },
+        },
+      ]).rows
+    ).toMatchObject([
+      {
+        subtitleLines: 0,
+        contentHeight: 'auto',
+        longPressActionKey: 'open.menu',
+      },
+      { bodyLines: 0, presentation: 'inlineWarning' },
+    ]);
+    expect(() =>
+      validateSnapshot(
+        snapshot([
+          { ...recipient, contentHeight: 'fixed' } as unknown as IdentityRow,
+        ])
+      )
+    ).toThrow('contentHeight');
+    expect(() =>
+      validateSnapshot(
+        snapshot([{ ...recipient, subtitleLines: 3 } as unknown as IdentityRow])
+      )
+    ).toThrow('subtitleLines');
+    expect(() =>
+      validateSnapshot(
+        snapshot([
+          {
+            ...recipient,
+            leading: { kind: 'wallet', fallbackTextColor: 'white' },
+          },
+        ])
+      )
+    ).toThrow('fallbackTextColor');
+    expect(() =>
+      validateSnapshot(
+        snapshot([
+          { ...warning, presentation: 'dialog' } as unknown as RowModel,
+        ])
+      )
+    ).toThrow('presentation');
+  });
+  it('validates DeFi button groups and explicit help without imposing an action count', () => {
+    const group: ButtonGroupRow = {
+      type: 'buttonGroup',
+      key: 'actions',
+      buttons: Array.from({ length: 40 }, (_, index) => ({
+        key: `action-${index}`,
+        label: `Action ${index}`,
+        actionKey: `press-${index}`,
+      })),
+    };
+    const heading: RowModel = {
+      type: 'sectionHeader',
+      key: 'heading',
+      sectionKey: 'position',
+      title: 'Pool',
+      leadingBadge: { key: 'staking', text: 'Staking', tone: 'success' },
+      value: '$1',
+      valueHelp: {
+        actionKey: 'price-help',
+        presentation: 'popover',
+        underline: 'dashed',
+      },
+      style: { valuePlacement: 'afterTitle', titleDecoration: 'none' },
+    };
+    const asset: IdentityRow = {
+      ...row('asset'),
+      trailing: [
+        {
+          kind: 'valuePair',
+          primary: '--',
+          secondary: '1 ETH',
+          primaryHelp: { actionKey: 'missing-price', presentation: 'tooltip' },
+        },
+      ],
+    };
+    expect(
+      validateSnapshot(snapshot([heading, asset, group])).rows
+    ).toHaveLength(3);
+    expect(() =>
+      validateSnapshot({
+        ...snapshot([heading]),
+        theme: { successBackground: 'not-a-color' },
+      } as unknown as NativeListSnapshot)
+    ).toThrow('theme.successBackground');
+    expect(() =>
+      validateSnapshot(snapshot([{ ...group, buttons: [] }]))
+    ).toThrow('buttons');
+    expect(() =>
+      validateSnapshot(
+        snapshot([
+          { ...group, buttons: [group.buttons[0]!, group.buttons[0]!] },
+        ])
+      )
+    ).toThrow('duplicate button key');
+    expect(() =>
+      validateSnapshot(
+        snapshot([
+          {
+            ...group,
+            buttons: [{ ...group.buttons[0]!, loading: 'yes' }],
+          } as unknown as ButtonGroupRow,
+        ])
+      )
+    ).toThrow('loading');
+    expect(() =>
+      validateSnapshot(
+        snapshot([
+          {
+            ...heading,
+            valueHelp: {
+              actionKey: 'price-help',
+              underline: 'dashed',
+            },
+          } as unknown as RowModel,
+        ])
+      )
+    ).toThrow('presentation');
+    expect(() =>
+      validateSnapshot(
+        snapshot([
+          {
+            ...asset,
+            trailing: [
+              {
+                kind: 'valuePair',
+                primary: '--',
+                secondary: '1 ETH',
+                primaryHelp: {
+                  actionKey: 'missing-price',
+                  presentation: 'hover',
+                },
+              },
+            ],
+          } as unknown as RowModel,
+        ])
+      )
+    ).toThrow('presentation');
+    expect(
+      applyRowPatches(snapshot([group]), [
+        {
+          type: 'buttonGroup',
+          key: 'actions',
+          changes: {
+            buttons: [
+              {
+                key: 'withdraw',
+                label: 'Withdraw',
+                actionKey: 'withdraw',
+                loading: true,
+              },
+            ],
+          },
+        },
+      ]).rows[0]
+    ).toMatchObject({ buttons: [{ loading: true }] });
+  });
   it('serializes Activity hideLeading in snapshots and patches and rejects non-booleans', () => {
     const activity: ActivityRow = {
       type: 'activity',
@@ -103,90 +618,213 @@ describe('NativeList model validation', () => {
       amounts: [{ key: 'send', text: '-1 ETH' }],
       hideLeading: true,
     };
-    expect(JSON.parse(serializeSnapshot(snapshot([activity]))).rows[0].hideLeading).toBe(true);
+    expect(
+      JSON.parse(serializeSnapshot(snapshot([activity]))).rows[0].hideLeading
+    ).toBe(true);
     const patch: RowPatch = {
-      type: 'activity', key: 'tx', changes: { hideLeading: false },
+      type: 'activity',
+      key: 'tx',
+      changes: { hideLeading: false },
     };
-    expect(JSON.parse(serializePatches([patch]))[0].changes.hideLeading).toBe(false);
-    expect(applyRowPatches(snapshot([activity]), [patch]).rows[0]).toMatchObject({
+    expect(JSON.parse(serializePatches([patch]))[0].changes.hideLeading).toBe(
+      false
+    );
+    expect(
+      applyRowPatches(snapshot([activity]), [patch]).rows[0]
+    ).toMatchObject({
       hideLeading: false,
       leading: activity.leading,
       amounts: activity.amounts,
     });
-    expect(() => validateSnapshot(snapshot([{
-      ...activity, hideLeading: 'false',
-    } as unknown as ActivityRow]))).toThrow('hideLeading');
-    expect(() => validatePatches([{
-      type: 'activity', key: 'tx', changes: { hideLeading: 1 },
-    } as unknown as RowPatch])).toThrow('hideLeading');
+    expect(() =>
+      validateSnapshot(
+        snapshot([
+          {
+            ...activity,
+            hideLeading: 'false',
+          } as unknown as ActivityRow,
+        ])
+      )
+    ).toThrow('hideLeading');
+    expect(() =>
+      validatePatches([
+        {
+          type: 'activity',
+          key: 'tx',
+          changes: { hideLeading: 1 },
+        } as unknown as RowPatch,
+      ])
+    ).toThrow('hideLeading');
   });
   it('keeps identity button, title icon and leading width through snapshots and patches', () => {
     const identity: IdentityRow = {
       ...row('risk'),
-      titleIcon: { name: 'GasSolid', tintColor: '#888888', hoverActionKey: 'native-token-info' },
+      titleIcon: {
+        name: 'GasSolid',
+        tintColor: '#888888',
+        hoverActionKey: 'native-token-info',
+      },
       leading: {
         kind: 'token',
-        fallbackIcon: { name: 'CryptoCoinOutline', size: 28, backgroundColor: '#eeeeee' },
-        overlays: [{ position: 'bottomRight', image: { uri: 'https://example.com/n.png', width: 16, height: 16 }, fallbackIcon: { name: 'GlobusOutline' } }],
+        fallbackIcon: {
+          name: 'CryptoCoinOutline',
+          size: 28,
+          backgroundColor: '#eeeeee',
+        },
+        overlays: [
+          {
+            position: 'bottomRight',
+            image: { uri: 'https://example.com/n.png', width: 16, height: 16 },
+            fallbackIcon: { name: 'GlobusOutline' },
+          },
+        ],
       },
-      trailing: [{
-        kind: 'button',
-        label: 'Show',
-        actionKey: 'show',
-        backgroundColor: '#111111',
-      }],
+      trailing: [
+        {
+          kind: 'button',
+          label: 'Show',
+          actionKey: 'show',
+          backgroundColor: '#111111',
+        },
+      ],
       style: { leadingContentMaxWidthRatio: 0.6 },
     };
-    const parsed = JSON.parse(serializeSnapshot({
-      ...snapshot([identity]),
-      theme: { background: '#ffffff', rowBackground: '#ffffff',
-        rowSelectedBackground: '#eeeeee', rowHoverBackground: '#dddddd',
-        primaryText: '#111111', secondaryText: '#222222', separator: '#333333',
-        accent: '#444444', positive: '#555555', negative: '#666666' },
-    }));
+    const parsed = JSON.parse(
+      serializeSnapshot({
+        ...snapshot([identity]),
+        theme: {
+          background: '#ffffff',
+          rowBackground: '#ffffff',
+          rowSelectedBackground: '#eeeeee',
+          rowHoverBackground: '#dddddd',
+          primaryText: '#111111',
+          secondaryText: '#222222',
+          separator: '#333333',
+          accent: '#444444',
+          positive: '#555555',
+          negative: '#666666',
+        },
+      })
+    );
     expect(parsed.rows[0]).toMatchObject({
       titleIcon: { name: 'GasSolid', hoverActionKey: 'native-token-info' },
       trailing: [{ kind: 'button', actionKey: 'show' }],
       style: { leadingContentMaxWidthRatio: 0.6 },
-      leading: { fallbackIcon: { size: 28 }, overlays: [{ fallbackIcon: { name: 'GlobusOutline' } }] },
+      leading: {
+        fallbackIcon: { size: 28 },
+        overlays: [{ fallbackIcon: { name: 'GlobusOutline' } }],
+      },
     });
     expect(parsed.theme.rowHoverBackground).toBe('#dddddd');
-    expect(validatePatches([{
-      type: 'identity', key: identity.key,
-      changes: {
-        titleIcon: { name: 'GasSolid', hoverActionKey: 'native-token-info' },
-        trailing: [{ kind: 'button', label: 'Hide', actionKey: 'hide' }],
-        style: { leadingContentMaxWidthRatio: 1 },
-      },
-    }])).toHaveLength(1);
+    expect(
+      validatePatches([
+        {
+          type: 'identity',
+          key: identity.key,
+          changes: {
+            titleIcon: {
+              name: 'GasSolid',
+              hoverActionKey: 'native-token-info',
+            },
+            trailing: [{ kind: 'button', label: 'Hide', actionKey: 'hide' }],
+            style: { leadingContentMaxWidthRatio: 1 },
+          },
+        },
+      ])
+    ).toHaveLength(1);
     for (const invalid of [
-      { ...identity, trailing: [{ kind: 'button', label: '', actionKey: 'show' }] },
-      { ...identity, trailing: [{ kind: 'button', label: 'Show', actionKey: '' }] },
-      { ...identity, trailing: [{ kind: 'button', label: 'Show', actionKey: 'show', textColor: 'red' }] },
+      {
+        ...identity,
+        trailing: [{ kind: 'button', label: '', actionKey: 'show' }],
+      },
+      {
+        ...identity,
+        trailing: [{ kind: 'button', label: 'Show', actionKey: '' }],
+      },
+      {
+        ...identity,
+        trailing: [
+          {
+            kind: 'button',
+            label: 'Show',
+            actionKey: 'show',
+            textColor: 'red',
+          },
+        ],
+      },
       { ...identity, titleIcon: { name: '' } },
       { ...identity, titleIcon: { name: 'GasSolid', hoverActionKey: '' } },
       { ...identity, style: { leadingContentMaxWidthRatio: 0 } },
-      { ...identity, leading: {
-        kind: 'token', overlays: [{ position: 'bottomRight', text: 'E', fontWeight: 'heavy' }],
-      } },
-      { ...identity, leading: { kind: 'token', fallbackIcon: { name: 'CryptoCoinOutline', size: -1 } } },
-      { ...identity, leading: { kind: 'token', fallbackIcon: { name: 'CryptoCoinOutline', backgroundColor: 'red' } } },
-      { ...identity, leading: { kind: 'token', overlays: [{ position: 'bottomRight', fallbackIcon: { name: 'GlobusOutline' } }] } },
-      { ...identity, trailing: [{ kind: 'icon', name: 'EditOutline', buttonStyle: 'other' }] },
+      {
+        ...identity,
+        leading: {
+          kind: 'token',
+          overlays: [
+            { position: 'bottomRight', text: 'E', fontWeight: 'heavy' },
+          ],
+        },
+      },
+      {
+        ...identity,
+        leading: {
+          kind: 'token',
+          fallbackIcon: { name: 'CryptoCoinOutline', size: -1 },
+        },
+      },
+      {
+        ...identity,
+        leading: {
+          kind: 'token',
+          fallbackIcon: { name: 'CryptoCoinOutline', backgroundColor: 'red' },
+        },
+      },
+      {
+        ...identity,
+        leading: {
+          kind: 'token',
+          overlays: [
+            {
+              position: 'bottomRight',
+              fallbackIcon: { name: 'GlobusOutline' },
+            },
+          ],
+        },
+      },
+      {
+        ...identity,
+        trailing: [{ kind: 'icon', name: 'EditOutline', buttonStyle: 'other' }],
+      },
     ]) {
-      expect(() => validateSnapshot(snapshot([invalid as IdentityRow]))).toThrow();
+      expect(() =>
+        validateSnapshot(snapshot([invalid as IdentityRow]))
+      ).toThrow();
     }
-    expect(() => validatePatches([{
-      type: 'identity', key: identity.key,
-      changes: { trailing: [{ kind: 'button', label: '', actionKey: 'show' }] },
-    } as RowPatch])).toThrow('label');
-    expect(() => validatePatches([{
-      type: 'identity', key: identity.key,
-      changes: { titleIcon: { name: 'GasSolid', hoverActionKey: '' } },
-    }])).toThrow('hoverActionKey');
-    expect(() => validateSnapshot({ ...snapshot([identity]),
-      theme: { rowHoverBackground: 'red' } as NativeListSnapshot['theme'],
-    })).toThrow('rowHoverBackground');
+    expect(() =>
+      validatePatches([
+        {
+          type: 'identity',
+          key: identity.key,
+          changes: {
+            trailing: [{ kind: 'button', label: '', actionKey: 'show' }],
+          },
+        } as RowPatch,
+      ])
+    ).toThrow('label');
+    expect(() =>
+      validatePatches([
+        {
+          type: 'identity',
+          key: identity.key,
+          changes: { titleIcon: { name: 'GasSolid', hoverActionKey: '' } },
+        },
+      ])
+    ).toThrow('hoverActionKey');
+    expect(() =>
+      validateSnapshot({
+        ...snapshot([identity]),
+        theme: { rowHoverBackground: 'red' } as NativeListSnapshot['theme'],
+      })
+    ).toThrow('rowHoverBackground');
   });
   it('accepts the bounded Market row, verified glyph, styles, and states', () => {
     const styled: MarketRow = {
@@ -1227,39 +1865,103 @@ describe('NativeList model validation', () => {
     );
   });
 
+  it('accepts medium only for a value-pair primary font weight', () => {
+    const pair = {
+      kind: 'valuePair' as const,
+      primary: '$3.00',
+      secondary: '1 ETH',
+      primaryFontWeight: 'medium' as const,
+    };
+    expect(
+      JSON.parse(
+        serializeSnapshot(
+          snapshot([
+            {
+              ...row('weighted-pair'),
+              trailing: [pair],
+            },
+          ])
+        )
+      ).rows[0].trailing[0].primaryFontWeight
+    ).toBe('medium');
+    expect(() =>
+      validateSnapshot(
+        snapshot([
+          {
+            ...row('invalid-weight'),
+            trailing: [{ ...pair, primaryFontWeight: 'regular' }],
+          } as unknown as IdentityRow,
+        ])
+      )
+    ).toThrow('primaryFontWeight');
+  });
+
   it('validates independent segmented value-pair lines in snapshots and patches', () => {
     const pair = {
       kind: 'valuePair' as const,
       primary: '0.001',
       secondary: '$0.01',
-      primaryTextSegments: [{ text: '0.00' }, { text: '1', style: 'subscript' as const }],
-      secondaryTextSegments: [{ text: '$0.0' }, { text: '1', style: 'subscript' as const }],
+      primaryTextSegments: [
+        { text: '0.00' },
+        { text: '1', style: 'subscript' as const },
+      ],
+      secondaryTextSegments: [
+        { text: '$0.0' },
+        { text: '1', style: 'subscript' as const },
+      ],
     };
     const item = { ...row('segmented-pair'), trailing: [pair] };
-    expect(JSON.parse(serializeSnapshot(snapshot([item]))).rows[0].trailing[0])
-      .toMatchObject(pair);
+    expect(
+      JSON.parse(serializeSnapshot(snapshot([item]))).rows[0].trailing[0]
+    ).toMatchObject(pair);
     const patch: RowPatch = {
-      type: 'identity', key: item.key,
-      changes: { revision: 2, trailing: [{ ...pair, primaryTextSegments: [] }] },
+      type: 'identity',
+      key: item.key,
+      changes: {
+        revision: 2,
+        trailing: [{ ...pair, primaryTextSegments: [] }],
+      },
     };
-    expect(JSON.parse(serializePatches([patch]))[0].changes.trailing[0].primaryTextSegments)
-      .toEqual([]);
+    expect(
+      JSON.parse(serializePatches([patch]))[0].changes.trailing[0]
+        .primaryTextSegments
+    ).toEqual([]);
     expect(applyRowPatches(snapshot([item]), [patch]).rows[0]).toMatchObject({
       trailing: [{ ...pair, primaryTextSegments: [] }],
     });
-    for (const field of ['primaryTextSegments', 'secondaryTextSegments'] as const) {
-      for (const invalid of [null, {}, [{ text: 4 }], [{ text: '1', style: 'super' }],
+    for (const field of [
+      'primaryTextSegments',
+      'secondaryTextSegments',
+    ] as const) {
+      for (const invalid of [
+        null,
+        {},
+        [{ text: 4 }],
+        [{ text: '1', style: 'super' }],
         Array.from({ length: 65 }, () => ({ text: '1' })),
         [{ text: 'x'.repeat(4097) }],
-        [{ text: 'x'.repeat(2049) }, { text: 'x'.repeat(2049) }]]) {
+        [{ text: 'x'.repeat(2049) }, { text: 'x'.repeat(2049) }],
+      ]) {
         const malformed = { ...pair, [field]: invalid };
-        expect(() => validateSnapshot(snapshot([{
-          ...item, trailing: [malformed],
-        } as unknown as IdentityRow]))).toThrow(field);
-        expect(() => validatePatches([{
-          type: 'identity', key: item.key,
-          changes: { revision: 3, trailing: [malformed] },
-        } as unknown as RowPatch])).toThrow(field);
+        expect(() =>
+          validateSnapshot(
+            snapshot([
+              {
+                ...item,
+                trailing: [malformed],
+              } as unknown as IdentityRow,
+            ])
+          )
+        ).toThrow(field);
+        expect(() =>
+          validatePatches([
+            {
+              type: 'identity',
+              key: item.key,
+              changes: { revision: 3, trailing: [malformed] },
+            } as unknown as RowPatch,
+          ])
+        ).toThrow(field);
       }
     }
   });
@@ -1432,66 +2134,152 @@ describe('NativeList production validation', () => {
     const invalid = {
       ...row('risk'),
       titleIcon: { name: 'GasSolid' },
-      trailing: [{ kind: 'button', label: 'Show', actionKey: 'show', textColor: 'red' }],
+      trailing: [
+        { kind: 'button', label: 'Show', actionKey: 'show', textColor: 'red' },
+      ],
       style: { leadingContentMaxWidthRatio: 2 },
     } as unknown as IdentityRow;
     expect(() => validateSnapshot(snapshot([invalid]))).toThrow();
-    expect(() => validatePatches([{
-      type: 'identity',
-      key: invalid.key,
-      changes: { trailing: invalid.trailing },
-    }])).toThrow('textColor');
-    expect(() => validatePatches([{
-      type: 'identity',
-      key: invalid.key,
-      changes: { style: invalid.style },
-    }])).toThrow('leadingContentMaxWidthRatio');
-    expect(() => validateSnapshot(snapshot([{
-      ...invalid, titleIcon: { name: 'GasSolid', hoverActionKey: '' },
-      trailing: [], style: undefined,
-    }]))).toThrow('hoverActionKey');
-    expect(() => validatePatches([{
-      type: 'identity', key: invalid.key,
-      changes: { titleIcon: { name: 'GasSolid', hoverActionKey: '' } },
-    }])).toThrow('hoverActionKey');
-    expect(() => validateSnapshot(snapshot([{
-      ...row('risk'), secondaryTitleIcon: { name: 'TicketSolid', tintColor: 'red' },
-    } as unknown as IdentityRow]))).toThrow('secondaryTitleIcon.tintColor');
-    expect(() => validatePatches([{
-      type: 'identity', key: invalid.key,
-      changes: { secondaryTitleIcon: { name: 'TicketSolid', hoverActionKey: '' } },
-    }])).toThrow('secondaryTitleIcon.hoverActionKey');
-    expect(() => validatePatches([{
-      type: 'identity', key: invalid.key,
-      changes: { secondaryTitleIcon: null },
-    } as unknown as RowPatch])).toThrow('secondaryTitleIcon');
-    expect(() => validateSnapshot({ ...snapshot(),
-      theme: { rowHoverBackground: 'bad' } as NativeListSnapshot['theme'],
-    })).toThrow('rowHoverBackground');
-    expect(() => validatePatches([{
-      type: 'identity',
-      key: invalid.key,
-      changes: { leading: {
-        kind: 'token',
-        overlays: [{ position: 'bottomRight', text: 'E', fontWeight: 'heavy' }],
-      } },
-    } as unknown as RowPatch])).toThrow('fontWeight');
-    expect(() => validatePatches([{
-      type: 'identity', key: invalid.key,
-      changes: { leading: { kind: 'token', fallbackIcon: {
-        name: 'CryptoCoinOutline', size: 0,
-      } } },
-    } as RowPatch])).toThrow('size');
-    expect(() => validatePatches([{
-      type: 'identity', key: invalid.key,
-      changes: { leading: { kind: 'token', overlays: [{
-        position: 'bottomRight', fallbackIcon: { name: 'GlobusOutline' },
-      }] } },
-    } as RowPatch])).toThrow('requires image');
-    expect(() => validatePatches([{
-      type: 'identity', key: invalid.key,
-      changes: { trailing: [{ kind: 'icon', name: 'EditOutline', buttonStyle: 'other' }] },
-    } as unknown as RowPatch])).toThrow('buttonStyle');
+    expect(() =>
+      validatePatches([
+        {
+          type: 'identity',
+          key: invalid.key,
+          changes: { trailing: invalid.trailing },
+        },
+      ])
+    ).toThrow('textColor');
+    expect(() =>
+      validatePatches([
+        {
+          type: 'identity',
+          key: invalid.key,
+          changes: { style: invalid.style },
+        },
+      ])
+    ).toThrow('leadingContentMaxWidthRatio');
+    expect(() =>
+      validateSnapshot(
+        snapshot([
+          {
+            ...invalid,
+            titleIcon: { name: 'GasSolid', hoverActionKey: '' },
+            trailing: [],
+            style: undefined,
+          },
+        ])
+      )
+    ).toThrow('hoverActionKey');
+    expect(() =>
+      validatePatches([
+        {
+          type: 'identity',
+          key: invalid.key,
+          changes: { titleIcon: { name: 'GasSolid', hoverActionKey: '' } },
+        },
+      ])
+    ).toThrow('hoverActionKey');
+    expect(() =>
+      validateSnapshot(
+        snapshot([
+          {
+            ...row('risk'),
+            secondaryTitleIcon: { name: 'TicketSolid', tintColor: 'red' },
+          } as unknown as IdentityRow,
+        ])
+      )
+    ).toThrow('secondaryTitleIcon.tintColor');
+    expect(() =>
+      validatePatches([
+        {
+          type: 'identity',
+          key: invalid.key,
+          changes: {
+            secondaryTitleIcon: { name: 'TicketSolid', hoverActionKey: '' },
+          },
+        },
+      ])
+    ).toThrow('secondaryTitleIcon.hoverActionKey');
+    expect(() =>
+      validatePatches([
+        {
+          type: 'identity',
+          key: invalid.key,
+          changes: { secondaryTitleIcon: null },
+        } as unknown as RowPatch,
+      ])
+    ).toThrow('secondaryTitleIcon');
+    expect(() =>
+      validateSnapshot({
+        ...snapshot(),
+        theme: { rowHoverBackground: 'bad' } as NativeListSnapshot['theme'],
+      })
+    ).toThrow('rowHoverBackground');
+    expect(() =>
+      validatePatches([
+        {
+          type: 'identity',
+          key: invalid.key,
+          changes: {
+            leading: {
+              kind: 'token',
+              overlays: [
+                { position: 'bottomRight', text: 'E', fontWeight: 'heavy' },
+              ],
+            },
+          },
+        } as unknown as RowPatch,
+      ])
+    ).toThrow('fontWeight');
+    expect(() =>
+      validatePatches([
+        {
+          type: 'identity',
+          key: invalid.key,
+          changes: {
+            leading: {
+              kind: 'token',
+              fallbackIcon: {
+                name: 'CryptoCoinOutline',
+                size: 0,
+              },
+            },
+          },
+        } as RowPatch,
+      ])
+    ).toThrow('size');
+    expect(() =>
+      validatePatches([
+        {
+          type: 'identity',
+          key: invalid.key,
+          changes: {
+            leading: {
+              kind: 'token',
+              overlays: [
+                {
+                  position: 'bottomRight',
+                  fallbackIcon: { name: 'GlobusOutline' },
+                },
+              ],
+            },
+          },
+        } as RowPatch,
+      ])
+    ).toThrow('requires image');
+    expect(() =>
+      validatePatches([
+        {
+          type: 'identity',
+          key: invalid.key,
+          changes: {
+            trailing: [
+              { kind: 'icon', name: 'EditOutline', buttonStyle: 'other' },
+            ],
+          },
+        } as unknown as RowPatch,
+      ])
+    ).toThrow('buttonStyle');
   });
 
   it('keeps production identity and text without enforcing display budgets', () => {

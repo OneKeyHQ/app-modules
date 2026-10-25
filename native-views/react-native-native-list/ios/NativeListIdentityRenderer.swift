@@ -12,6 +12,35 @@ final class NativeListIdentityCell: NativeListRendererCell {
       return item.data.dictionaries("badges").isEmpty ? 68 : 92
     }
     if item.data.string("presentation") == "networkSelector" { return 47 }
+    if item.data.string("contentHeight") == "auto" {
+      let style = item.data.dictionary("style") ?? [:]
+      let horizontalPadding = CGFloat(style.double("horizontalPadding", default: layout == "table" ? 16 : 12))
+      let verticalPadding = CGFloat(style.double("verticalPadding", default: 8))
+      let imageWidth = CGFloat(style.dictionary("image")?.double("width", default: 40) ?? 40)
+      let imageHeight = CGFloat(style.dictionary("image")?.double("height", default: 40) ?? 40)
+      let leadingGap = CGFloat(style.double("leadingGap", default: 12))
+      let trailingWidth: CGFloat = item.data.dictionaries("trailing").isEmpty ? 0 : 48
+      let textWidth = max(1, width - horizontalPadding * 2 - imageWidth - leadingGap - trailingWidth - 12)
+      let title = NativeListResolvedText(
+        item.data.string("title"), style: style.dictionary("title"), size: 16,
+        weight: .medium, color: .black, lineHeight: 24,
+        lines: item.data.int("titleLines", default: 1), fonts: fonts)
+      let subtitle = NativeListResolvedText(
+        item.data.string("subtitle"), style: style.dictionary("subtitle"), size: 14,
+        color: .black, lineHeight: 20,
+        lines: item.data.int("subtitleLines", default: 1),
+        breakMode: item.data.int("subtitleLines", default: 1) == 0 ? .byWordWrapping : .byTruncatingTail,
+        fonts: fonts)
+      let tertiary = NativeListResolvedText(
+        item.data.string("tertiary"), style: style.dictionary("tertiary"), size: 14,
+        color: .black, lineHeight: 20, lines: 1, fonts: fonts)
+      let textHeight = title.measure(width: textWidth)
+        + subtitle.measure(width: textWidth)
+        + tertiary.measure(width: textWidth)
+        + (item.data.string("subtitle").isEmpty ? 0 : CGFloat(style.double("lineGap", default: 0)))
+      return max(item.data.string("subtitle").isEmpty ? 56 : 60,
+        verticalPadding * 2 + max(imageHeight, textHeight))
+    }
     return !item.data.string("tertiary").isEmpty
       ? 72 : !item.data.string("subtitle").isEmpty ? 60 : 56
   }
@@ -486,9 +515,37 @@ final class NativeListIdentityCell: NativeListRendererCell {
     }
     root.addArrangedSubview(mainStack)
     show(titleLabel, item.data.string("title"), lines: item.data.int("titleLines", default: 1))
+    let titleSuffixes = item.data.dictionaries("titleSuffixes")
+    if !titleSuffixes.isEmpty {
+      titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+      let minimumTitleWidth = titleLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 80)
+      minimumTitleWidth.priority = UILayoutPriority(751)
+      minimumTitleWidth.isActive = true
+      selectorConstraints.append(minimumTitleWidth)
+      for suffix in titleSuffixes {
+        let label = NativeListTextLabel()
+        label.font = nativeListFont(ofSize: 12, fonts: fonts)
+        label.textColor = dataTextColor(suffix.string("tone", default: "secondary"), theme: theme)
+        label.numberOfLines = 1
+        label.lineBreakMode = .byTruncatingTail
+        label.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+        label.setContentCompressionResistancePriority(UILayoutPriority(749), for: .horizontal)
+        setLineHeight(label, text: suffix.string("text"), lineHeight: 16)
+        if let maxWidth = suffix["maxWidth"] as? NSNumber {
+          let limit = label.widthAnchor.constraint(lessThanOrEqualToConstant: CGFloat(truncating: maxWidth))
+          limit.isActive = true
+          selectorConstraints.append(limit)
+        }
+        titleRowStack.insertArrangedSubview(label, at: titleRowStack.arrangedSubviews.count - 1)
+        selectorViews.append(label)
+      }
+    }
     show(
       subtitleLabel, item.data.string("subtitle"), lines: item.data.int("subtitleLines", default: 1)
     )
+    if item.data.int("subtitleLines", default: 1) == 0 {
+      subtitleLabel.lineBreakMode = .byWordWrapping
+    }
     show(tertiaryLabel, item.data.string("tertiary"), lines: 1)
     if !item.data.string("subtitle").isEmpty, item.data.string("tertiary").isEmpty {
       mainStack.spacing = 0

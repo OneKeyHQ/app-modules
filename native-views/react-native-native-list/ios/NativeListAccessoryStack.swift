@@ -6,6 +6,64 @@ final class NativeListAccessoryButton: UIButton {
   var normalBackgroundColor: UIColor = .clear
   var fixedTextLineHeight: CGFloat?
   var rowTextOffsetY: CGFloat = 0
+  var helpBindingGeneration = 0
+  private var helpTrackingGeneration = 0
+  override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
+    helpTrackingGeneration = helpBindingGeneration
+    return super.beginTracking(touch, with: event)
+  }
+  override func endTracking(_ touch: UITouch?, with event: UIEvent?) {
+    guard helpTrackingGeneration == helpBindingGeneration else {
+      cancelTracking(with: event)
+      return
+    }
+    super.endTracking(touch, with: event)
+  }
+  var helpPrimaryLineOnly = false
+  var showsHelpUnderline = false
+  let helpAnchor = UIView()
+  private let helpUnderline = CAShapeLayer()
+
+  override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+    if helpPrimaryLineOnly { return helpAnchor.frame.contains(point) }
+    return super.point(inside: point, with: event)
+  }
+
+  private func layoutHelp() {
+    guard helpPrimaryLineOnly || showsHelpUnderline else {
+      helpUnderline.isHidden = true
+      return
+    }
+    guard let titleLabel else { return }
+    if helpAnchor.superview == nil {
+      helpAnchor.isUserInteractionEnabled = false
+      helpAnchor.isAccessibilityElement = false
+      addSubview(helpAnchor)
+      helpUnderline.fillColor = UIColor.clear.cgColor
+      helpUnderline.lineWidth = 1
+      helpUnderline.lineDashPattern = [3, 2]
+      helpAnchor.layer.addSublayer(helpUnderline)
+    }
+    var frame = titleLabel.frame
+    if helpPrimaryLineOnly, let text = attributedTitle(for: .normal) {
+      let range = (text.string as NSString).range(of: "\n")
+      let primary = text.attributedSubstring(from: NSRange(location: 0, length: range.location == NSNotFound ? text.length : range.location))
+      let width = min(frame.width, ceil(primary.size().width))
+      frame.origin.x += frame.width - width
+      frame.size.width = width
+      let paragraph = primary.length > 0 ? primary.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle : nil
+      frame.size.height = paragraph?.minimumLineHeight ?? 20
+    }
+    helpAnchor.frame = frame
+    let text = attributedTitle(for: .normal)
+    let color = text.flatMap { $0.length > 0 ? $0.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? UIColor : nil }
+    helpUnderline.strokeColor = (color ?? titleColor(for: .normal))?.cgColor
+    helpUnderline.isHidden = !showsHelpUnderline
+    let path = UIBezierPath()
+    path.move(to: CGPoint(x: 0, y: frame.height - 1))
+    path.addLine(to: CGPoint(x: frame.width, y: frame.height - 1))
+    helpUnderline.path = path.cgPath
+  }
 
   override var isHighlighted: Bool {
     didSet {
@@ -90,6 +148,7 @@ final class NativeListAccessoryButton: UIButton {
         frame.origin.y += rowTextOffsetY
         titleLabel.frame = frame
       }
+      layoutHelp()
     }
     if let lineHeight = marketLineHeight, let titleLabel, let title = attributedTitle(for: .normal)
     {
@@ -255,6 +314,9 @@ final class NativeListAccessoryStack: UIStackView {
       button.contentHorizontalAlignment = .center
       button.contentVerticalAlignment = .center
       button.rowTextOffsetY = 0
+      button.helpBindingGeneration += 1
+      button.helpPrimaryLineOnly = false
+      button.showsHelpUnderline = false
       button.transform = .identity
       button.marketLineHeight = nil
       button.selectorSummaryLineHeight = nil
@@ -281,7 +343,10 @@ final class NativeListAccessoryStack: UIStackView {
     guard let controlIndex = accessoryButtons.firstIndex(where: { $0 === button }),
       accessoryActions.indices.contains(controlIndex) else { return }
     let action = accessoryActions[controlIndex]
-    if !action.0.isEmpty { onAction?(action.0, button, button.tag, action.1) }
+    if !action.0.isEmpty {
+      let anchor = accessoryButtons[controlIndex]
+      onAction?(action.0, anchor.helpPrimaryLineOnly ? anchor.helpAnchor : button, button.tag, action.1)
+    }
   }
   @objc private func checkboxPressed() {
     if let action = checkboxAction { onAction?(action.0, checkboxButton, nil, action.1) }
@@ -504,6 +569,13 @@ final class NativeListAccessoryStack: UIStackView {
     button.setContentCompressionResistancePriority(.required, for: .horizontal)
     while accessoryActions.count <= index { accessoryActions.append(("", nil)) }
     accessoryActions[index] = ("", nil)
+    if let help = accessory.dictionary("primaryHelp") {
+      button.helpPrimaryLineOnly = true
+      button.showsHelpUnderline = help.string("underline") == "dashed"
+      button.isUserInteractionEnabled = help.string("presentation") == "popover"
+      accessoryActions[index] = (help.string("presentation") == "popover" ? help.string("actionKey") : "", nil)
+      button.setNeedsLayout()
+    }
   }
 
   private func appendValuePairLine(

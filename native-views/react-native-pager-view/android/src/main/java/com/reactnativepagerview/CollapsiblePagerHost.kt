@@ -142,7 +142,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   private var transitionSourceRecyclerAnchor: RecyclerReadingAnchor? = null
   private val commandBodyKeys = HashSet<String>()
   private var explicitTopCommand: Pair<String, PageRestoreRequest>? = null
-  private class PagerTopRequest(view: View, val key: String, val pageIndex: Int, val generation: Int, val target: Int, val token: Int) {
+  private class PagerTopRequest(view: View, val key: String, val pageIndex: Int, val generation: Int, val logicalOffset: Int, val token: Int) {
     val view = WeakReference(view)
   }
   private var pagerTopRequest: PagerTopRequest? = null
@@ -1015,13 +1015,33 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     if (!settled) return
     pageOffsets[request.key] = 0
     if (view is RecyclerView) saveRecyclerReadingAnchor(request.key, view)
-    setHeaderOffset(if (request.target == 1) headerHeightPx else 0)
-    offsetDiag("pager-top-complete-target=${request.target}-token=${request.token}", view, request.key)
+    setHeaderOffset(request.logicalOffset.coerceIn(0, headerHeightPx))
+    offsetDiag("pager-top-complete-offset=${request.logicalOffset}-token=${request.token}", view, request.key)
     cancelPagerTop()
   }
 
   internal fun scrollToTop(target: Int, animated: Boolean) {
-    if (target !in 0..1 || pager.scrollState != ViewPager2.SCROLL_STATE_IDLE || transitionHeaderOffsets != null ||
+    if (target !in 0..1) return
+    scrollHeaderToOffset(if (target == 1) headerHeightPx else 0, animated)
+  }
+
+  internal fun scrollHeaderBy(delta: Double) {
+    if (!delta.isFinite()) return
+    val density = resources.displayMetrics.density.toDouble()
+    val maxDip = headerHeightPx / density
+    val deltaPx = (delta.coerceIn(-maxDip, maxDip) * density).roundToInt()
+    scrollHeaderToOffset((headerOffsetPx.toLong() + deltaPx).coerceIn(0, headerHeightPx.toLong()).toInt(), false)
+  }
+
+  internal fun scrollHeaderToOffset(offset: Double) {
+    if (!offset.isFinite()) return
+    val density = resources.displayMetrics.density.toDouble()
+    val targetPx = (offset.coerceIn(0.0, headerHeightPx / density) * density).roundToInt()
+    scrollHeaderToOffset(targetPx, false)
+  }
+
+  private fun scrollHeaderToOffset(logicalOffset: Int, animated: Boolean) {
+    if (pager.scrollState != ViewPager2.SCROLL_STATE_IDLE || transitionHeaderOffsets != null ||
       syntheticPageRestore || selectedPage !in 0 until adapter.itemCount || !isAttachedToWindow) return
     val view = observedRecyclerView ?: observedOwnedScroller ?: observedNativeScroller ?: return
     val key = currentPageKey()
@@ -1048,11 +1068,12 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     if (view is RecyclerView) deferredRecyclerGeometry.remove(view)
     if (view is ScrollView) deferredScrollerGeometry.remove(view)
     pageOffsets[key] = 0
-    val request = PagerTopRequest(view, key, selectedPage, attachmentGeneration, target, ++pagerTopToken)
+    val targetOffset = logicalOffset.coerceIn(0, headerHeightPx)
+    val request = PagerTopRequest(view, key, selectedPage, attachmentGeneration, targetOffset, ++pagerTopToken)
     pagerTopRequest = request
     commandBodyKeys.add(key)
-    setHeaderOffset(if (target == 1) headerHeightPx else 0)
-    offsetDiag("pager-top-begin-target=$target-animated=$animated-token=${request.token}", view, key)
+    setHeaderOffset(targetOffset)
+    offsetDiag("pager-top-begin-offset=$targetOffset-animated=$animated-token=${request.token}", view, key)
     dispatchingPagerTop = true
     try {
       when (view) {

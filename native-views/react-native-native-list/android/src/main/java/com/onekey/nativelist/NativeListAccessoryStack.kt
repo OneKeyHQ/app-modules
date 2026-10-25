@@ -8,8 +8,10 @@ import android.graphics.drawable.StateListDrawable
 import android.text.Spannable
 import android.text.SpannableStringBuilder
 import android.text.TextUtils
+import android.text.TextPaint
 import android.text.style.AbsoluteSizeSpan
 import android.text.style.ForegroundColorSpan
+import android.text.style.MetricAffectingSpan
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
@@ -238,6 +240,10 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
       // Legacy trailing text: END gravity, one line, no ellipsis.
       v.gravity = Gravity.END
       v.opticalOffsetY = 0f
+      v.helpBindingGeneration += 1
+      v.guardsHelpTouches = false
+      v.primaryHelpOnly = false
+      v.showsHelpUnderline = false
       v.maxLines = 1
       v.setHorizontallyScrolling(false)
       v.ellipsize = null
@@ -386,6 +392,20 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
         }
         "valuePair" -> {
           showTrailingValuePair(textIndex, accessory, theme)
+          accessory.optJSONObject("primaryHelp")?.let { help ->
+            val view = trailingViews[textIndex]
+            val epoch = bindingEpoch
+            view.primaryHelpOnly = true
+            view.guardsHelpTouches = true
+            view.showsHelpUnderline = help.optString("underline") == "dashed"
+            if (help.optString("presentation") == "popover") {
+              view.setOnClickListener {
+                if (epoch == bindingEpoch && !item.json.optBoolean("disabled")) {
+                  emitAction(item, help.optString("actionKey"), null, view, "trailingAccessory", index)
+                }
+              }
+            }
+          }
           segmentedValuePairs[trailingViews[textIndex]] = accessory
           semanticValueViews.add(trailingViews[textIndex++])
         }
@@ -567,6 +587,14 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
       value.length,
       Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
     )
+    if (primary.isNotEmpty() && accessory.optString("primaryFontWeight") == "medium") {
+      value.setSpan(
+        ValuePairTypefaceSpan(fonts.medium(context)),
+        primaryStart,
+        value.length,
+        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+      )
+    }
     applyPairSubscriptSizes(value, primarySegments, primaryStart, 16f)
     if (primary.isNotEmpty() && secondary.isNotEmpty()) value.append('\n')
     val secondaryStart = value.length
@@ -903,4 +931,14 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
       setStroke(dp(2), stroke)
       cornerRadius = scaledDp(radiusDp)
     }
+}
+
+private class ValuePairTypefaceSpan(private val face: Typeface) : MetricAffectingSpan() {
+  override fun updateDrawState(paint: TextPaint) {
+    paint.typeface = face
+  }
+
+  override fun updateMeasureState(paint: TextPaint) {
+    paint.typeface = face
+  }
 }

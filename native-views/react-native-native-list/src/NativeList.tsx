@@ -44,11 +44,11 @@ import {
   type NormalizedPositionScroll,
 } from './scrolling';
 import {
-  applyRowPatches,
+  applyOwnedNativePatches,
+  captureNativeListInput,
   containNativeListInput,
   emptyNativeListSnapshot,
-  serializePatches,
-  validatePatches,
+  ownValidatedNativeSnapshot,
   validateSnapshot,
 } from './validation';
 
@@ -107,6 +107,8 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       listHeader,
       listFooter,
       listEmpty,
+      listSidecar,
+      sidecarLayout,
       topOverlay,
       topScrollEdgeEffect,
       scrollPositionThresholds,
@@ -135,17 +137,48 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
   ) {
     const snapshotRef = useRef<NativeListSnapshot>(emptyNativeListSnapshot());
     const initializedSnapshot = useRef(false);
-    const hasContainerSlots = Boolean(listHeader || listEmpty || listFooter);
+    const hasSidecar = listSidecar !== undefined;
+    const sidecarWidth = sidecarLayout?.width;
+    const sidecarGap = sidecarLayout?.gap;
+    const sidecarMaxContentWidth = sidecarLayout?.maxContentWidth;
+    const hasContainerSlots = Boolean(
+      listHeader || listEmpty || listFooter || listSidecar
+    );
     const prepareSnapshot = useCallback(
       (next: NativeListSnapshot) => {
-        const accepted = validateSnapshot(next);
+        const accepted = validateSnapshot(captureNativeListInput(next));
         if (hasContainerSlots && accepted.layout.orientation === 'horizontal')
           throw new Error(
             'NativeList container slots require vertical orientation'
           );
-        return accepted;
+        if (hasSidecar !== (sidecarWidth !== undefined))
+          throw new Error(
+            'listSidecar and sidecarLayout must be supplied together'
+          );
+        if (sidecarWidth !== undefined) {
+          const width = sidecarWidth;
+          const gap = sidecarGap ?? NaN;
+          const maxContentWidth = sidecarMaxContentWidth ?? NaN;
+          if (
+            accepted.layout.kind !== 'linear' ||
+            !Number.isFinite(width) ||
+            width <= 0 ||
+            !Number.isFinite(gap) ||
+            gap < 0 ||
+            !Number.isFinite(maxContentWidth) ||
+            maxContentWidth <= width + gap
+          )
+            throw new Error('Invalid NativeList sidecar layout');
+        }
+        return ownValidatedNativeSnapshot(accepted);
       },
-      [hasContainerSlots]
+      [
+        hasContainerSlots,
+        hasSidecar,
+        sidecarWidth,
+        sidecarGap,
+        sidecarMaxContentWidth,
+      ]
     );
     const snapshot = useMemo(
       () =>
@@ -154,7 +187,8 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       [inputSnapshot, prepareSnapshot]
     );
     const fontFamiliesJson = useNativeListFontFamiliesJson();
-    const [slotHeights, setSlotHeights] = useState([0, 0, 0]);
+    const [slotHeights, setSlotHeights] = useState([0, 0, 0, 0]);
+    const [viewportWidth, setViewportWidth] = useState(0);
     const [topOverlayHeight, setTopOverlayHeight] = useState(0);
     const hasTopOverlay =
       Platform?.OS === 'ios' &&
@@ -162,11 +196,23 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       (topScrollEdgeEffect === 'hard' || topScrollEdgeEffect === 'soft') &&
       topOverlay != null;
     const containerSlotHeightsJson = JSON.stringify(slotHeights);
-    const slotInset =
+    const defaultSlotInset =
       snapshot.layout.contentPaddingHorizontal ??
       snapshot.layout.contentPadding ??
       0;
-    const slotContents = [listHeader, listEmpty, listFooter];
+    const bandWidth = sidecarLayout
+      ? Math.min(viewportWidth, sidecarLayout.maxContentWidth)
+      : 0;
+    const slotInset = sidecarLayout
+      ? Math.max(0, (viewportWidth - bandWidth) / 2)
+      : defaultSlotInset;
+    const sidecarSpace = sidecarLayout
+      ? sidecarLayout.width + sidecarLayout.gap
+      : 0;
+    const slotContents = [listHeader, listEmpty, listFooter, listSidecar];
+    const sidecarLayoutJson = sidecarLayout
+      ? JSON.stringify(sidecarLayout)
+      : '';
     const normalizedKeyboardShouldPersistTaps =
       keyboardShouldPersistTaps === true
         ? 'always'
@@ -376,14 +422,9 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
         }
       },
       applyPatches(patches) {
-        const accepted = containNativeListInput(() => {
-          const normalized = validatePatches(patches);
-          return {
-            patches: normalized,
-            snapshot: applyRowPatches(snapshotRef.current, normalized),
-            json: serializePatches(normalized),
-          };
-        });
+        const accepted = containNativeListInput(() =>
+          applyOwnedNativePatches(snapshotRef.current, patches)
+        );
         if (!accepted || accepted.patches.length === 0) return;
         const nextSnapshot = accepted.snapshot;
         const native = nativeRef.current;
@@ -401,18 +442,19 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
           updateAvatarPrefetchRef.current();
       },
       reconcileSelection(selectedKeys) {
-        nativeRef.current?.reconcileSelection(JSON.stringify(selectedKeys));
+        const capturedKeys = captureNativeListInput(selectedKeys);
+        nativeRef.current?.reconcileSelection(JSON.stringify(capturedKeys));
         const current = snapshotRef.current;
         if (
           current.selection &&
-          (current.selection.mode !== 'single' || selectedKeys.length <= 1) &&
-          selectedKeys.every((key) =>
+          (current.selection.mode !== 'single' || capturedKeys.length <= 1) &&
+          capturedKeys.every((key) =>
             current.rows.some((row) => row.key === key && isSelectableRow(row))
           )
         ) {
           snapshotRef.current = {
             ...current,
-            selection: { ...current.selection, selectedKeys },
+            selection: { ...current.selection, selectedKeys: capturedKeys },
           };
         }
       },
@@ -553,10 +595,15 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     return (
       <NativeListHost
         {...viewProps}
+        onLayout={(event) => {
+          setViewportWidth(event.nativeEvent.layout.width);
+          viewProps.onLayout?.(event);
+        }}
         {...nativeCallbacks}
         fontFamiliesJson={fontFamiliesJson}
         snapshotJson={snapshotJson}
         containerSlotHeightsJson={containerSlotHeightsJson}
+        sidecarLayoutJson={sidecarLayoutJson}
         topScrollEdgeEffect={
           hasTopOverlay ? topScrollEdgeEffect ?? 'none' : 'none'
         }
@@ -571,8 +618,9 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
             collapsable={false}
             style={{
               position: 'absolute',
-              left: slotInset,
-              right: slotInset,
+              start: index === 3 ? 0 : slotInset,
+              end: index === 3 ? undefined : slotInset + sidecarSpace,
+              width: index === 3 ? sidecarLayout?.width : undefined,
               top: 0,
             }}
             onLayout={(event) => {

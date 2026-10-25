@@ -855,10 +855,11 @@ export const WEB_LIST_CSS = `
 .ok-native-list-visual{position:relative;flex:0 0 40px;width:40px;height:40px;border-radius:20px;overflow:visible;background:var(--nl-strong)}.ok-native-list-visual>img,.ok-native-list-visual-main{display:block;width:40px;height:40px;border-radius:inherit;object-fit:cover}.ok-native-list-visual-fallback{display:flex;width:100%;height:100%;align-items:center;justify-content:center;border-radius:inherit;color:var(--nl-primary);font-size:15px;font-weight:600;overflow:hidden;font-family:var(--nl-font-semibold)}.ok-native-list-image-skeleton{position:absolute;inset:0;border-radius:inherit;pointer-events:none;animation:ok-native-list-skeleton-light 1.5s linear infinite alternate}.ok-native-list-image-skeleton[data-dark="true"]{animation-name:ok-native-list-skeleton-dark}@keyframes ok-native-list-skeleton-light{0%{background-color:#fafafa}100%{background-color:#cdcdcd}}@keyframes ok-native-list-skeleton-dark{0%{background-color:#111111}100%{background-color:#333333}}@media(prefers-reduced-motion:reduce){.ok-native-list-image-skeleton{animation:none;background-color:var(--nl-strong)}}.ok-native-list-visual>.ok-native-list-visual-corner{position:absolute;right:-4px;bottom:-4px;width:18px;height:18px;padding:2px;border-radius:50%;background:var(--nl-row);object-fit:cover}.ok-native-list-stacked{display:flex;align-items:center;width:48px;flex-basis:48px}.ok-native-list-stacked img{width:28px;height:28px;border:2px solid var(--nl-row);border-radius:50%;object-fit:cover;margin-left:-10px}.ok-native-list-stacked img:first-child{margin-left:0}
 .ok-native-list-accessories{display:flex;align-items:center;gap:10px;min-width:0}.ok-native-list-accessory{font-size:14px;color:var(--nl-primary);white-space:nowrap}.ok-native-list-accessory-secondary{color:var(--nl-secondary)}.ok-native-list-icon-button{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:24px;border:0;background:transparent;color:var(--nl-icon);font-size:20px;line-height:1;font-weight:500;cursor:pointer;font-family:var(--nl-font-medium)}.ok-native-list-checkbox{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:20px;height:20px;border:2px solid color-mix(in srgb,var(--nl-primary) 19%,transparent);border-radius:5px;background:var(--nl-row);cursor:pointer}.ok-native-list-checkbox[data-state="checked"],.ok-native-list-checkbox[data-state="indeterminate"]{border-color:transparent;background:var(--nl-primary)}.ok-native-list-checkbox[data-state="checked"]::after{content:"";width:6px;height:10px;margin-top:-2px;border-right:2px solid var(--nl-row);border-bottom:2px solid var(--nl-row);transform:rotate(45deg)}.ok-native-list-checkbox[data-state="indeterminate"]::after{content:"";width:8px;height:2px;border-radius:1px;background:var(--nl-row)}.ok-native-list-spinner{width:16px;height:16px;border:2px solid var(--nl-separator);border-top-color:var(--nl-primary);border-radius:50%;animation:ok-native-list-spin .8s linear infinite}@keyframes ok-native-list-spin{to{transform:rotate(360deg)}}
 .ok-native-list-icon-button.ok-native-list-decorative-refresh{min-width:16px;width:16px;height:16px}
-.ok-native-list-badge{display:inline-flex;align-items:center;max-width:100%;height:18px;padding:0 5px;border-radius:5px;background:color-mix(in srgb,var(--nl-accent) 12%,transparent);color:var(--nl-accent);font-size:11px;line-height:18px;white-space:nowrap}.ok-native-list-badge[data-tone="danger"]{background:var(--nl-critical);color:var(--nl-negative)}.ok-native-list-badges{display:inline-flex;gap:4px;margin-left:6px;vertical-align:middle}
+.ok-native-list-badge{display:inline-flex;align-items:center;max-width:100%;height:18px;padding:0 5px;border-radius:5px;background:color-mix(in srgb,var(--nl-accent) 12%,transparent);color:var(--nl-accent);font-size:11px;line-height:18px;white-space:nowrap}.ok-native-list-badge[data-tone="danger"]{background:var(--nl-critical);color:var(--nl-negative)}.ok-native-list-badge[data-tone="success"]{background:var(--nl-success-background,color-mix(in srgb,var(--nl-positive) 12%,transparent));color:var(--nl-positive)}.ok-native-list-section>.ok-native-list-badge[data-tone="success"]{box-sizing:border-box;height:20px;padding:2px 8px;border-radius:4px;font:500 12px/16px var(--nl-font-medium)}.ok-native-list-badges{display:inline-flex;gap:4px;margin-left:6px;vertical-align:middle}
 .ok-native-list-identity-row .ok-native-list-badge[data-tone="neutral"]{height:20px;box-sizing:border-box;padding:2px 8px;border-radius:4px;background:var(--nl-strong);color:var(--nl-secondary);font-size:12px;line-height:16px;font-weight:500;font-family:var(--nl-font-medium)}
 .ok-native-list-section{padding:0 8px;background:var(--nl-bg);gap:8px}.ok-native-list-section[data-variant="summary"]{padding:0 20px}.ok-native-list-section[data-variant="gallery"]{padding:0 12px}.ok-native-list-section[data-variant="history"]{padding:0 8px}.ok-native-list-section-title{font-size:13px;line-height:18px;font-weight:700;color:var(--nl-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--nl-font-bold)}.ok-native-list-section[data-variant="summary"] .ok-native-list-section-title{font-size:16px;font-weight:500;color:var(--nl-primary);font-family:var(--nl-font-medium)}.ok-native-list-section[data-variant="gallery"] .ok-native-list-section-title{font-size:16px;color:var(--nl-primary)}.ok-native-list-section[data-variant="history"] .ok-native-list-section-title{font-size:12px;line-height:16px;letter-spacing:0.8px}.ok-native-list-section-value{margin-left:auto}
 .ok-native-list-action-row{justify-content:space-between;padding:0 16px}.ok-native-list-action-title{font-size:15px;font-weight:600;color:var(--nl-accent);font-family:var(--nl-font-semibold)}.ok-native-list-action-title[data-tone="danger"]{color:var(--nl-negative)}
+.ok-native-list-button-group{padding:0;gap:10px;overflow:visible}.ok-native-list-block-button{position:relative;display:flex;flex:1 1 0;min-width:0;min-height:48px;align-items:center;justify-content:center;gap:8px;padding:12px 8px;border:1px solid color-mix(in srgb,var(--nl-info) 35%,transparent);border-radius:12px;background:transparent;color:var(--nl-info);font:500 14px/20px var(--nl-font-medium);cursor:pointer}.ok-native-list-block-button>span:not(.ok-native-list-spinner){min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ok-native-list-block-button>.ok-native-list-spinner{position:static;flex:0 0 20px;width:20px;height:20px;border-top-color:var(--nl-info)}.ok-native-list-block-button:hover:not(:disabled){background:color-mix(in srgb,var(--nl-info) 10%,transparent);border-color:var(--nl-info)}.ok-native-list-block-button:active:not(:disabled){background:color-mix(in srgb,var(--nl-info) 17%,transparent)}.ok-native-list-block-button:focus-visible{outline:2px solid var(--nl-info);outline-offset:1px}.ok-native-list-block-button:disabled{opacity:.4;cursor:default}
 .ok-native-list-account-action-row{justify-content:flex-start;gap:12px;padding:0 12px}.ok-native-list-account-action-row .ok-native-list-action-title{color:var(--nl-secondary);font-size:16px;line-height:24px;font-weight:400;font-family:var(--nl-font-regular)}
 .ok-native-list-system{justify-content:center;padding:8px 12px;background:var(--nl-bg);color:var(--nl-secondary);cursor:default}.ok-native-list-system[data-variant="retry"],.ok-native-list-system[data-variant="noMatch"],.ok-native-list-system[data-variant="end"]{justify-content:flex-start}.ok-native-list-system[data-variant="retry"]{cursor:pointer}
 .ok-native-list-rail{padding:4px;gap:6px;border-radius:8px}.ok-native-list-rail .ok-native-list-visual{width:20px;height:20px;flex-basis:20px}.ok-native-list-rail .ok-native-list-visual>img,.ok-native-list-rail .ok-native-list-visual-main{width:20px;height:20px}.ok-native-list-rail-title{font-size:12px;font-weight:500;white-space:nowrap;font-family:var(--nl-font-medium)}
@@ -907,6 +908,7 @@ export const WEB_LIST_CSS = `
 .ok-native-list-root .ok-native-list-item>[data-nl-container-background="true"],.ok-native-list-root .ok-native-list-wallet-member>[data-nl-container-background="true"]{background:var(--nl-container-background)}
 .ok-native-list-root [data-nl-container-border="true"]{position:relative}
 .ok-native-list-root [data-nl-container-border="true"]::before{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 var(--nl-container-border-width) var(--nl-container-border-color);z-index:2;pointer-events:none}
+.ok-native-list-root [data-nl-inline-warning="true"][data-nl-container-border="true"]::before{box-shadow:none;border-block:var(--nl-container-border-width) solid var(--nl-container-border-color);border-inline:0;border-radius:0}
 .ok-native-list-root .ok-native-list-item[data-native-list-row-press-enabled="true"]:hover>[data-nl-container-background="true"],.ok-native-list-root .ok-native-list-item[data-native-list-row-press-enabled="true"]:active>[data-nl-container-background="true"],.ok-native-list-root .ok-native-list-wallet-member:hover>[data-nl-container-background="true"],.ok-native-list-root .ok-native-list-wallet-member:active>[data-nl-container-background="true"]{background:var(--nl-pressed)}
 `;
 
@@ -1195,30 +1197,42 @@ const selectorIcons: Readonly<
 > = {
   RefreshCcwOutline: {
     viewBox: '0 0 24 24',
-    paths: [{
-      d: 'M5 12a7 7 0 0 0 7 7 7.15 7.15 0 0 0 4.955-2h-2.943v-2h6v6h-2v-2.257A9.148 9.148 0 0 1 12 21a9 9 0 0 1-9-9v-1h2v1Zm1-6.754A9.148 9.148 0 0 1 12 3a9 9 0 0 1 9 9v1h-2v-1a7 7 0 0 0-7-7 7.15 7.15 0 0 0-4.955 2H10v2H4V3h2v2.246Z',
-      fill: 'currentColor', fillRule: 'nonzero', opacity: 1,
-    }],
+    paths: [
+      {
+        d: 'M5 12a7 7 0 0 0 7 7 7.15 7.15 0 0 0 4.955-2h-2.943v-2h6v6h-2v-2.257A9.148 9.148 0 0 1 12 21a9 9 0 0 1-9-9v-1h2v1Zm1-6.754A9.148 9.148 0 0 1 12 3a9 9 0 0 1 9 9v1h-2v-1a7 7 0 0 0-7-7 7.15 7.15 0 0 0-4.955 2H10v2H4V3h2v2.246Z',
+        fill: 'currentColor',
+        fillRule: 'nonzero',
+        opacity: 1,
+      },
+    ],
   },
   TicketOutline: {
     viewBox: '0 0 24 24',
     paths: [
       {
         d: 'M16 17.01h-2V15h2v2.01Zm0-4h-2V11h2v2.01Zm0-4h-2V7h2v2.01Z',
-        fill: 'currentColor', fillRule: 'nonzero', opacity: 1,
+        fill: 'currentColor',
+        fillRule: 'nonzero',
+        opacity: 1,
       },
       {
         d: 'm22 9.927-.629.252c-1.661.665-1.661 2.977 0 3.642l.629.252V20H2v-5.927l.629-.252c1.661-.665 1.661-2.977 0-3.642L2 9.927V4h20v5.927ZM4 8.636c2.5 1.52 2.499 5.207 0 6.727V18h16v-2.637c-2.499-1.52-2.5-5.208 0-6.727V6H4v2.636Z',
-        fill: 'currentColor', fillRule: 'evenodd', opacity: 1,
+        fill: 'currentColor',
+        fillRule: 'evenodd',
+        opacity: 1,
       },
     ],
   },
   GasSolid: {
     viewBox: '0 0 24 24',
-    paths: [{
-      d: 'M15 9h4v7h1V8.414L17.586 6 19 4.586l3 3V18h-5v-7h-2v8h1v2H2v-2h1V3h12zM6 9v2h6V9z',
-      fill: 'currentColor', fillRule: 'evenodd', opacity: 1,
-    }],
+    paths: [
+      {
+        d: 'M15 9h4v7h1V8.414L17.586 6 19 4.586l3 3V18h-5v-7h-2v8h1v2H2v-2h1V3h12zM6 9v2h6V9z',
+        fill: 'currentColor',
+        fillRule: 'evenodd',
+        opacity: 1,
+      },
+    ],
   },
   CryptoCoinOutline: {
     viewBox: '0 0 24 24',
@@ -1519,6 +1533,7 @@ function applySelectorIcon(element: HTMLElement, name: string) {
 
 function iconGlyph(name: string): string {
   const normalized = name.toLocaleLowerCase();
+  if (normalized === 'dotversolid') return '⋮';
   if (normalized.includes('chevron')) {
     if (normalized.includes('top')) return '⌃';
     if (normalized.includes('bottom')) return '⌄';
@@ -1596,7 +1611,8 @@ function createVisual(
     : visualBackground;
   const fallbackIcon =
     'fallbackIcon' in visual ? visual.fallbackIcon : undefined;
-  const fallbackBackground = fallbackIcon?.backgroundColor ?? 'var(--nl-strong)';
+  const fallbackBackground =
+    fallbackIcon?.backgroundColor ?? 'var(--nl-strong)';
   if (!source && fallbackIcon?.backgroundColor)
     frame.style.background = fallbackBackground;
   const handlesSourceFallback =
@@ -1614,10 +1630,14 @@ function createVisual(
       if (image.complete && image.naturalWidth > 0) restoreBackground();
     }
     if (selectorPresentation) paintSelectorImageBackground(image, frame);
-    if (source?.loadingStrategy === 'skeleton' &&
-      !(image.complete && image.naturalWidth > 0)) {
+    if (
+      source?.loadingStrategy === 'skeleton' &&
+      !(image.complete && image.naturalWidth > 0)
+    ) {
       const skeleton = createElement(
-        context.document, 'span', 'ok-native-list-image-skeleton'
+        context.document,
+        'span',
+        'ok-native-list-image-skeleton'
       );
       const background = resolvedTheme(context.snapshot).background;
       const rgb = /^#([0-9a-f]{6})/i.exec(background)?.[1];
@@ -1686,6 +1706,12 @@ function createVisual(
           ? visual.fallbackText ?? ''
           : ''
       );
+      if (
+        'fallbackTextColor' in visual &&
+        visual.fallbackTextColor &&
+        !fallbackIcon
+      )
+        fallback.style.color = visual.fallbackTextColor;
       if (fallbackIcon) {
         applySelectorIcon(fallback, fallbackIcon.name);
         if (fallbackIcon.tintColor)
@@ -1698,9 +1724,11 @@ function createVisual(
           }
         }
       }
-      if (fallbackIcon?.backgroundColor) frame.style.background = fallbackBackground;
-      else fallback.style.backgroundColor =
-        'var(--nl-image-fallback-background, transparent)';
+      if (fallbackIcon?.backgroundColor)
+        frame.style.background = fallbackBackground;
+      else
+        fallback.style.backgroundColor =
+          'var(--nl-image-fallback-background, transparent)';
       frame.prepend(fallback);
     };
     if (image) image.addEventListener('error', showFallback, { once: true });
@@ -1743,12 +1771,15 @@ function createVisual(
         applyTextWeight(corner, '400');
       }
       if (overlay.fontWeight)
-        applyTextWeight(corner, {
-          regular: 400,
-          medium: 500,
-          semibold: 600,
-          bold: 700,
-        }[overlay.fontWeight]);
+        applyTextWeight(
+          corner,
+          {
+            regular: 400,
+            medium: 500,
+            semibold: 600,
+            bold: 700,
+          }[overlay.fontWeight]
+        );
       if (
         isWalletText ||
         overlay.width !== undefined ||
@@ -1776,16 +1807,23 @@ function createVisual(
             overlayImage.style.borderRadius = '50%';
           corner.appendChild(overlayImage);
           if (overlay.fallbackIcon) {
-            overlayImage.addEventListener('error', () => {
-              disposeWebImageRetries(overlayImage);
-              overlayImage.remove();
-              const glyph = createElement(context.document, 'span',
-                'ok-native-list-overlay-fallback');
-              applySelectorIcon(glyph, overlay.fallbackIcon!.name);
-              if (overlay.fallbackIcon?.tintColor)
-                glyph.style.color = overlay.fallbackIcon.tintColor;
-              corner.appendChild(glyph);
-            }, { once: true });
+            overlayImage.addEventListener(
+              'error',
+              () => {
+                disposeWebImageRetries(overlayImage);
+                overlayImage.remove();
+                const glyph = createElement(
+                  context.document,
+                  'span',
+                  'ok-native-list-overlay-fallback'
+                );
+                applySelectorIcon(glyph, overlay.fallbackIcon!.name);
+                if (overlay.fallbackIcon?.tintColor)
+                  glyph.style.color = overlay.fallbackIcon.tintColor;
+                corner.appendChild(glyph);
+              },
+              { once: true }
+            );
           }
           if (selectorPresentation)
             paintSelectorImageBackground(
@@ -1956,20 +1994,37 @@ function createAccessory(
 ): HTMLElement {
   if (accessory.kind === 'button') {
     const element = createElement(
-      context.document, 'button', 'ok-native-list-trailing-button', accessory.label
+      context.document,
+      'button',
+      'ok-native-list-trailing-button',
+      accessory.label
     ) as HTMLButtonElement;
     element.type = 'button';
     element.disabled = Boolean(rowDisabled || accessory.disabled);
     element.setAttribute('aria-disabled', String(element.disabled));
-    element.setAttribute('aria-label', accessory.accessibilityLabel ?? accessory.label);
+    element.setAttribute(
+      'aria-label',
+      accessory.accessibilityLabel ?? accessory.label
+    );
     setData(element, 'testid', accessory.testID);
     setData(element, 'nativeListAction', accessory.actionKey);
     markActionAnchorSource(element, 'trailingAccessory', slot);
-    if (accessory.textColor) element.style.setProperty('--nl-button-text', accessory.textColor);
-    if (accessory.backgroundColor) element.style.setProperty('--nl-button-bg', accessory.backgroundColor);
-    if (accessory.pressedBackgroundColor) element.style.setProperty('--nl-button-pressed', accessory.pressedBackgroundColor);
-    if (accessory.hoverBackgroundColor) element.style.setProperty('--nl-button-hover', accessory.hoverBackgroundColor);
-    if (accessory.focusRingColor) element.style.setProperty('--nl-button-focus', accessory.focusRingColor);
+    if (accessory.textColor)
+      element.style.setProperty('--nl-button-text', accessory.textColor);
+    if (accessory.backgroundColor)
+      element.style.setProperty('--nl-button-bg', accessory.backgroundColor);
+    if (accessory.pressedBackgroundColor)
+      element.style.setProperty(
+        '--nl-button-pressed',
+        accessory.pressedBackgroundColor
+      );
+    if (accessory.hoverBackgroundColor)
+      element.style.setProperty(
+        '--nl-button-hover',
+        accessory.hoverBackgroundColor
+      );
+    if (accessory.focusRingColor)
+      element.style.setProperty('--nl-button-focus', accessory.focusRingColor);
     return element;
   }
   if (accessory.kind === 'checkbox') {
@@ -2049,6 +2104,23 @@ function createAccessory(
       );
       primary.style.color = toneColor(accessory.primaryTone, 'primary');
       applyValueSegments(primary, accessory.primaryTextSegments, 16, 20, 500);
+      if (accessory.primaryFontWeight === 'medium')
+        applyTextWeight(primary, 500);
+      if (accessory.primaryHelp) {
+        const help = accessory.primaryHelp;
+        if (help.presentation === 'tooltip') {
+          setData(primary, 'nativeListHoverAction', help.actionKey);
+          setData(primary, 'nativeListIconHelp', true);
+        } else {
+          setData(primary, 'nativeListAction', help.actionKey);
+          primary.setAttribute('role', 'button');
+        }
+        if (help.underline === 'dashed') {
+          primary.style.textDecoration = 'underline dashed';
+          primary.style.textUnderlineOffset = '4px';
+        }
+        markActionAnchorSource(primary, 'trailingAccessory', slot);
+      }
       const secondary = createElement(
         context.document,
         'span',
@@ -2056,7 +2128,13 @@ function createAccessory(
         accessory.secondary
       );
       secondary.style.color = toneColor(accessory.secondaryTone, 'secondary');
-      applyValueSegments(secondary, accessory.secondaryTextSegments, 14, 20, 400);
+      applyValueSegments(
+        secondary,
+        accessory.secondaryTextSegments,
+        14,
+        20,
+        400
+      );
       element.replaceChildren(primary, '\n', secondary);
       element.classList.add('ok-native-list-amounts');
       break;
@@ -2162,6 +2240,7 @@ export class NativeListWebEngine {
     rail: [],
     mediaTile: [],
     action: [],
+    buttonGroup: [],
     system: [],
     activity: [],
     dataRow: [],
@@ -2226,6 +2305,26 @@ export class NativeListWebEngine {
   private lastViewportWidth = -1;
   private lastViewportHeight = -1;
   private destroyed = false;
+  private hasAppliedSnapshot = false;
+  private lastStructuralTransitionId: string | undefined;
+  private structuralFrame: number | undefined;
+  private structuralFinish: number | undefined;
+  private structuralAnimations: Animation[] = [];
+  private structuralScrollInterrupted = false;
+  private structuralRenderedHeight: number | undefined;
+  private structuralTargetHeight: number | undefined;
+  private reactFooterHeight = 0;
+  private structuralFooterCompensation = 0;
+  private structuralFooterExpansion = 0;
+  private structuralFooterFromHeight = 0;
+  private structuralFooterElement: HTMLElement | undefined;
+  private structuralFooterStyles:
+    | { marginBottom: string; transform: string; clipPath: string }
+    | undefined;
+  private structuralProgress = 0;
+  private structuralAnchorStyles:
+    | { owner: string; content: string }
+    | undefined;
   private sectionIndexAlignStart = false;
   // Renderers report intrinsic height after browser text wrapping.
   private measuredRendererHeights = new Map<
@@ -2397,6 +2496,12 @@ export class NativeListWebEngine {
       'ok-collapsible-pager-cancel-scroll-command',
       this.handlePagerScrollCommandCancel
     );
+    for (const event of ['wheel', 'pointerdown', 'touchstart'])
+      (this.externalScrollHost ?? this.viewport).addEventListener(
+        event,
+        this.handleStructuralUserScroll,
+        { passive: true }
+      );
     this.viewport.addEventListener('scroll', this.handleScroll, {
       passive: true,
     });
@@ -2586,7 +2691,234 @@ export class NativeListWebEngine {
     if (!validated) return;
     this.pressedHelpElement = undefined;
     this.invalidateActionAnchor('snapshot');
-    this.setSnapshot(validated);
+    const transition = validated.structuralTransition;
+    const isNewTransition =
+      transition !== undefined &&
+      transition.id !== this.lastStructuralTransitionId;
+    if (transition) this.lastStructuralTransitionId = transition.id;
+    const nextRows = effectiveRows(validated);
+    const changedKeys =
+      this.rows.length !== nextRows.length ||
+      this.rows.some((row, index) => row.key !== nextRows[index]?.key);
+    const shouldAnimate =
+      this.hasAppliedSnapshot &&
+      isNewTransition &&
+      changedKeys &&
+      (validated.layout.kind === 'linear' ||
+        validated.layout.kind === 'table') &&
+      validated.layout.orientation !== 'horizontal' &&
+      (transition?.durationMs ?? 220) > 0 &&
+      !this.document.defaultView?.matchMedia?.(
+        '(prefers-reduced-motion: reduce)'
+      ).matches;
+    if (shouldAnimate && transition)
+      this.applyStructuralSnapshot(validated, transition);
+    else {
+      if (isNewTransition || changedKeys) this.cancelStructuralAnimation();
+      this.setSnapshot(validated);
+    }
+    this.hasAppliedSnapshot = true;
+  }
+
+  private cancelStructuralAnimation() {
+    if (this.structuralFrame !== undefined)
+      this.document.defaultView?.cancelAnimationFrame(this.structuralFrame);
+    if (this.structuralFinish !== undefined)
+      this.document.defaultView?.clearTimeout(this.structuralFinish);
+    this.structuralFrame = undefined;
+    this.structuralFinish = undefined;
+    this.structuralAnimations.forEach((animation) => animation.cancel());
+    this.structuralAnimations = [];
+    if (this.structuralFooterElement && this.structuralFooterStyles) {
+      this.structuralFooterElement.style.marginBottom =
+        this.structuralFooterStyles.marginBottom;
+      this.structuralFooterElement.style.transform =
+        this.structuralFooterStyles.transform;
+      this.structuralFooterElement.style.clipPath =
+        this.structuralFooterStyles.clipPath;
+    }
+    this.structuralFooterElement = undefined;
+    this.structuralFooterStyles = undefined;
+    this.structuralScrollInterrupted = false;
+    this.structuralRenderedHeight = undefined;
+    this.structuralTargetHeight = undefined;
+    this.structuralFooterCompensation = 0;
+    this.structuralFooterExpansion = 0;
+    this.structuralProgress = 0;
+    const owner = this.externalScrollHost ?? this.viewport;
+    if (this.structuralAnchorStyles) {
+      owner.style.overflowAnchor = this.structuralAnchorStyles.owner;
+      this.content.style.overflowAnchor = this.structuralAnchorStyles.content;
+      this.structuralAnchorStyles = undefined;
+    }
+  }
+
+  private handleStructuralUserScroll = (event: Event) => {
+    if (
+      event.type === 'pointerdown' &&
+      event.target !== (this.externalScrollHost ?? this.viewport) &&
+      (event as PointerEvent).pointerType !== 'touch'
+    )
+      return;
+    this.structuralScrollInterrupted = true;
+  };
+
+  private writeStructuralHeight(height: number) {
+    if (this.externalScrollHost) this.writeExternalHeight(height);
+    else this.content.style.height = `${height}px`;
+  }
+
+  private reactFooterElement() {
+    return this.contentBounds?.querySelector<HTMLElement>(
+      '[data-testid="native-list-footer-slot"]'
+    );
+  }
+
+  private readReactFooterHeight() {
+    return this.reactFooterElement()?.getBoundingClientRect().height ?? 0;
+  }
+
+  private applyStructuralFooterVisual(progress: number) {
+    const footer = this.structuralFooterElement;
+    if (!footer || this.structuralFooterExpansion <= 0) return;
+    const hidden = this.structuralFooterExpansion * (1 - progress);
+    footer.style.marginBottom = `${-hidden}px`;
+    footer.style.transform = `translateY(${-hidden}px)`;
+    footer.style.clipPath = `inset(${hidden}px 0 0 0)`;
+  }
+
+  private applyStructuralSnapshot(
+    next: NativeListSnapshot,
+    transition: NonNullable<NativeListSnapshot['structuralTransition']>
+  ) {
+    const owner = this.externalScrollHost ?? this.viewport;
+    const oldOffset = owner.scrollTop;
+    const oldScrollHeight = owner.scrollHeight;
+    const oldHeight =
+      this.structuralRenderedHeight ??
+      (this.content.getBoundingClientRect().height ||
+        this.layout.contentHeight);
+    const nextFooterHeight = this.readReactFooterHeight();
+    const oldFooterHeight =
+      this.structuralRenderedHeight === undefined
+        ? this.reactFooterHeight
+        : this.structuralFooterFromHeight +
+          (this.reactFooterHeight - this.structuralFooterFromHeight) *
+            this.structuralProgress;
+    const footerDifference = oldFooterHeight - nextFooterHeight;
+    const startHeight = oldHeight + Math.max(0, footerDifference);
+    const oldItems = this.layout.items;
+    const oldPositions = new Map<string, number>();
+    this.mounted.forEach((element, index) => {
+      const row = this.rows[index];
+      if (row) oldPositions.set(row.key, element.getBoundingClientRect().top);
+    });
+    const nextKeys = new Set(effectiveRows(next).map((row) => row.key));
+    const visibleOffset = this.currentOffset();
+    const visibleSurvivor = oldItems.find(
+      (item) => item.y + item.height > visibleOffset && nextKeys.has(item.key)
+    );
+    const anchor = visibleSurvivor;
+    this.cancelStructuralAnimation();
+    this.structuralScrollInterrupted = false;
+    this.structuralAnchorStyles = {
+      owner: owner.style.overflowAnchor,
+      content: this.content.style.overflowAnchor,
+    };
+    owner.style.overflowAnchor = 'none';
+    this.content.style.overflowAnchor = 'none';
+    this.structuralRenderedHeight = startHeight;
+    this.structuralFooterFromHeight = oldFooterHeight;
+    this.structuralFooterCompensation = Math.max(0, footerDifference);
+    this.structuralFooterExpansion = Math.max(0, -footerDifference);
+    this.structuralProgress = 0;
+    this.reactFooterHeight = nextFooterHeight;
+    this.structuralFooterElement = this.reactFooterElement() ?? undefined;
+    if (this.structuralFooterElement) {
+      const style = this.structuralFooterElement.style;
+      this.structuralFooterStyles = {
+        marginBottom: style.marginBottom,
+        transform: style.transform,
+        clipPath: style.clipPath,
+      };
+      this.applyStructuralFooterVisual(0);
+    }
+    this.setSnapshot(next);
+    const newHeight = this.layout.contentHeight;
+    this.structuralTargetHeight = newHeight;
+    const nextAnchor =
+      anchor && this.layout.items.find((item) => item.key === anchor.key);
+    const delta = nextAnchor && anchor ? nextAnchor.y - anchor.y : 0;
+    const finalScrollHeight = oldScrollHeight + newHeight - oldHeight;
+    const finalMaxOffset = Math.max(0, finalScrollHeight - owner.clientHeight);
+    let targetOffset = Math.max(0, Math.min(oldOffset + delta, finalMaxOffset));
+    if (!visibleSurvivor && transition.anchorKey) {
+      const fallback = this.layout.items.find(
+        (item) => item.key === transition.anchorKey
+      );
+      if (fallback) {
+        const pagerStickyInset = Number.parseFloat(
+          this.externalScrollHost?.style.getPropertyValue(
+            '--ok-collapsible-pager-sticky-inset'
+          ) ?? ''
+        );
+        const effectiveStickyInset = Math.max(
+          this.externalStickyInset,
+          Number.isFinite(pagerStickyInset) ? pagerStickyInset : 0
+        );
+        const fallbackTop = this.externalScrollHost
+          ? this.externalGeometry().origin + fallback.y - effectiveStickyInset
+          : resolveWebCollapsiblePagerRawOffset(
+              Math.max(0, fallback.y - this.collapsiblePagerInsets().sticky),
+              this.collapsiblePagerInsets().header
+            );
+        targetOffset = Math.min(targetOffset, Math.max(0, fallbackTop));
+      }
+    }
+    const duration = transition.durationMs ?? 220;
+    const easing = 'cubic-bezier(0.42, 0, 0.58, 1)';
+    this.mounted.forEach((element, index) => {
+      const row = this.rows[index];
+      const previousTop = row && oldPositions.get(row.key);
+      if (previousTop === undefined || typeof element.animate !== 'function')
+        return;
+      const offset = previousTop - element.getBoundingClientRect().top;
+      if (Math.abs(offset) < 0.5) return;
+      this.structuralAnimations.push(
+        element.animate(
+          [
+            { transform: `translateY(${offset}px)` },
+            { transform: 'translateY(0)' },
+          ],
+          { duration, easing }
+        )
+      );
+    });
+    const startedAt =
+      this.document.defaultView?.performance.now() ?? Date.now();
+    const step = (time: number) => {
+      const progress = Math.min(1, (time - startedAt) / duration);
+      const eased = progress * progress * (3 - 2 * progress);
+      this.structuralProgress = eased;
+      const renderedHeight =
+        oldHeight +
+        ((this.structuralTargetHeight ?? newHeight) - oldHeight) * eased +
+        this.structuralFooterCompensation * (1 - eased);
+      this.structuralRenderedHeight = renderedHeight;
+      this.writeStructuralHeight(renderedHeight);
+      this.applyStructuralFooterVisual(eased);
+      if (!this.structuralScrollInterrupted)
+        owner.scrollTop = oldOffset + (targetOffset - oldOffset) * eased;
+      if (progress < 1)
+        this.structuralFrame =
+          this.document.defaultView?.requestAnimationFrame(step);
+    };
+    this.structuralFrame =
+      this.document.defaultView?.requestAnimationFrame(step);
+    this.structuralFinish = this.document.defaultView?.setTimeout(() => {
+      this.cancelStructuralAnimation();
+      this.recomputeLayout();
+    }, duration + 40);
   }
 
   currentContentHeight(): number {
@@ -2791,6 +3123,7 @@ export class NativeListWebEngine {
 
   destroy() {
     if (this.destroyed) return;
+    this.cancelStructuralAnimation();
     this.pressedHelpElement = undefined;
     this.invalidateActionAnchor('destroy');
     this.destroyed = true;
@@ -2819,6 +3152,11 @@ export class NativeListWebEngine {
       'ok-collapsible-pager-cancel-scroll-command',
       this.handlePagerScrollCommandCancel
     );
+    for (const event of ['wheel', 'pointerdown', 'touchstart'])
+      (this.externalScrollHost ?? this.viewport).removeEventListener(
+        event,
+        this.handleStructuralUserScroll
+      );
     this.viewport.removeEventListener('scroll', this.handleScroll);
     (this.externalScrollHost ?? this.viewport).removeEventListener(
       'ok-collapsible-pager-insets-changed',
@@ -2833,7 +3171,10 @@ export class NativeListWebEngine {
     this.root.removeEventListener('pointerup', this.handleMarketPointerEnd);
     this.root.removeEventListener('pointercancel', this.handleMarketPointerEnd);
     this.root.removeEventListener('pointerover', this.handleTitlePointerOver);
-    this.root.removeEventListener('pointerdown', this.handleIconHelpPointerDown);
+    this.root.removeEventListener(
+      'pointerdown',
+      this.handleIconHelpPointerDown
+    );
     this.root.removeEventListener('focusin', this.handleTitlePointerOver);
     this.root.removeEventListener('focusout', this.handleTitlePointerOut);
     this.root.removeEventListener('pointerout', this.handleTitlePointerOut);
@@ -2935,6 +3276,7 @@ export class NativeListWebEngine {
       '--nl-separator': theme.separator,
       '--nl-accent': theme.accent,
       '--nl-positive': theme.positive,
+      '--nl-success-background': theme.successBackground,
       '--nl-negative': theme.negative,
       '--nl-critical': theme.criticalBackground,
       '--nl-inverse': theme.inverseBackground,
@@ -3022,13 +3364,30 @@ export class NativeListWebEngine {
 
   private recomputeLayout = () => {
     if (this.destroyed) return;
+    if (this.structuralRenderedHeight === undefined)
+      this.reactFooterHeight = this.readReactFooterHeight();
+    else {
+      const nextFooterHeight = this.readReactFooterHeight();
+      const footerDelta = this.reactFooterHeight - nextFooterHeight;
+      if (footerDelta !== 0) {
+        this.reactFooterHeight = nextFooterHeight;
+        const priorCompensation = this.structuralFooterCompensation;
+        const difference = this.structuralFooterFromHeight - nextFooterHeight;
+        this.structuralFooterCompensation = Math.max(0, difference);
+        this.structuralFooterExpansion = Math.max(0, -difference);
+        this.structuralRenderedHeight +=
+          (this.structuralFooterCompensation - priorCompensation) *
+          (1 - this.structuralProgress);
+        this.applyStructuralFooterVisual(this.structuralProgress);
+      }
+    }
     const cachedWidth = this.lastViewportWidth;
     const cachedHeight = this.lastViewportHeight;
     const precomputedLayout =
       this.externalScrollHost && cachedWidth > 0 && cachedHeight > 0
         ? this.computeLayout(cachedWidth, cachedHeight)
         : undefined;
-    if (precomputedLayout) {
+    if (precomputedLayout && this.structuralRenderedHeight === undefined) {
       // Commit appended row extent before measuring React-owned slot changes.
       this.writeExternalHeight(
         Math.max(this.layout.contentHeight, precomputedLayout.contentHeight)
@@ -3081,11 +3440,15 @@ export class NativeListWebEngine {
         ? precomputedLayout
         : this.computeLayout(viewportWidth, viewportHeight);
     this.content.style.width = String(this.layout.contentWidth) + 'px';
-    this.content.style.height = String(this.layout.contentHeight) + 'px';
+    const renderedHeight =
+      this.structuralRenderedHeight ?? this.layout.contentHeight;
+    this.content.style.height = String(renderedHeight) + 'px';
     if (this.externalScrollHost) {
-      this.writeExternalHeight(this.layout.contentHeight);
+      this.writeExternalHeight(renderedHeight);
       this.externalGeometryCache = undefined;
     }
+    if (this.structuralRenderedHeight !== undefined)
+      this.structuralTargetHeight = this.layout.contentHeight;
     this.renderSectionIndex(
       this.viewport.clientHeight <= 0
         ? DEFAULT_VIEWPORT_HEIGHT
@@ -4230,9 +4593,13 @@ export class NativeListWebEngine {
       '[data-native-list-row-key]'
     );
     const row = this.rowAtElement(rowElement);
-    if (row?.type !== 'market' || !isRowPressEnabled(row)) return;
+    if (
+      (row?.type !== 'market' && row?.type !== 'identity') ||
+      !isRowPressEnabled(row)
+    )
+      return;
     this.cancelMarketPointer();
-    if (row.pressInActionKey)
+    if (row.type === 'market' && row.pressInActionKey)
       this.emitRowAction(
         row,
         row.pressInActionKey,
@@ -4251,7 +4618,7 @@ export class NativeListWebEngine {
         !rowElement.isConnected ||
         rowElement.dataset.nativeListBindingEpoch !== bindingEpoch ||
         currentRow?.key !== row.key ||
-        currentRow.type !== 'market' ||
+        (currentRow.type !== 'market' && currentRow.type !== 'identity') ||
         !isRowPressEnabled(currentRow) ||
         !currentRow.longPressActionKey
       )
@@ -4269,7 +4636,7 @@ export class NativeListWebEngine {
     this.marketPointer = {
       pointerId: event.pointerId,
       pointerType: event.pointerType,
-      compact: !row.webTable,
+      compact: row.type === 'identity' || !row.webTable,
       rowKey: row.key,
       startX: event.clientX,
       startY: event.clientY,
@@ -4338,8 +4705,11 @@ export class NativeListWebEngine {
     )
       return;
     if (action.dataset.nativeListIconHelp === 'true') {
-      if (event.type === 'pointerover' &&
-        (event as PointerEvent).pointerType === 'touch') return;
+      if (
+        event.type === 'pointerover' &&
+        (event as PointerEvent).pointerType === 'touch'
+      )
+        return;
       if (this.pressedHelpElement === action) return;
     }
     if (
@@ -4404,9 +4774,12 @@ export class NativeListWebEngine {
         action.contains(event.relatedTarget))
     )
       return;
-    if (action.dataset.nativeListIconHelp === 'true' &&
+    if (
+      action.dataset.nativeListIconHelp === 'true' &&
       event.type === 'pointerout' &&
-      (event as PointerEvent).pointerType === 'touch') return;
+      (event as PointerEvent).pointerType === 'touch'
+    )
+      return;
     if (event.type === 'pointerout' && this.pressedHelpElement === action)
       this.pressedHelpElement = undefined;
     if (this.actionAnchor?.actionElement === action)
@@ -4447,7 +4820,8 @@ export class NativeListWebEngine {
     // member press is blocked by `isRowPressEnabled` in `handleRowPress`.
     const action = target.closest<HTMLElement>('[data-native-list-action]');
     if (action) {
-      if (action.tagName === 'BUTTON' && action.hasAttribute('disabled')) return;
+      if (action.tagName === 'BUTTON' && action.hasAttribute('disabled'))
+        return;
       if (action.classList.contains('ok-native-list-trailing-button'))
         event.stopPropagation();
       const scope = action.dataset.selectionScope;

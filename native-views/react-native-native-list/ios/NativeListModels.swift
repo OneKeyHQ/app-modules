@@ -3,7 +3,7 @@ import UIKit
 
 // Template type alone partitions reuse; data keys and styles never select a renderer.
 enum NativeListRendererKey: String, CaseIterable {
-  case message, rail, mediaTile, action, system, activity, dataRow, metricCard, market, identity, sectionHeader, walletGroup
+  case message, rail, mediaTile, action, buttonGroup, system, activity, dataRow, metricCard, market, identity, sectionHeader, walletGroup
   /// Not a template: legacy accepted any non-empty type and drew an empty row with the
   /// shared chrome. Unknown types keep that placeholder instead of failing the snapshot.
   case unsupported = "__nativeListUnsupported"
@@ -35,7 +35,7 @@ struct NativeListItem {
   }
 
   var isRowPressEnabled: Bool {
-    !data.bool("disabled") &&
+    type != "buttonGroup" && !data.bool("disabled") &&
       !data.bool("pressDisabled") &&
       (type != "system" || data.string("variant") == "retry")
   }
@@ -78,7 +78,13 @@ struct NativeListItem {
 }
 
 struct NativeListConfig {
+  struct StructuralTransition {
+    let id: String
+    let duration: TimeInterval
+    let anchorKey: String?
+  }
   let generation: Int
+  let structuralTransition: StructuralTransition?
   let layout: String
   let orientation: String
   let gridColumns: Int
@@ -129,6 +135,13 @@ struct NativeListConfig {
     let capabilities = root["capabilities"] as? [String: Any]
     let sectionIndex = capabilities?["sectionIndex"] as? [String: Any]
     let footer = try (root["fixedFooter"] as? [String: Any]).map(NativeListItem.init)
+    let transition = root["structuralTransition"] as? [String: Any]
+    let structuralTransition = (transition?["id"] as? String).map { id in
+      StructuralTransition(
+        id: id,
+        duration: min(2, max(0, (transition?["durationMs"] as? Double ?? 220) / 1000)),
+        anchorKey: transition?["anchorKey"] as? String)
+    }
 
     let contentPadding = max(0, CGFloat(layoutData.double("contentPadding")))
     let contentPaddingHorizontal = layoutData["contentPaddingHorizontal"] == nil
@@ -143,6 +156,7 @@ struct NativeListConfig {
 
     return NativeListConfig(
       generation: generation,
+      structuralTransition: structuralTransition,
       layout: layout,
       orientation: layoutData["orientation"] as? String ?? "vertical",
       gridColumns: min(7, max(1, layoutData["gridColumns"] as? Int ?? 1)),

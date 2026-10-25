@@ -1256,6 +1256,47 @@ describe('web row style', () => {
     ).toBe(120);
   });
 
+  it('wraps an inline warning body without a line cap and marks its horizontal border', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.append(host);
+    const engine = new NativeListWebEngine(
+      host,
+      {
+        schemaVersion: 1,
+        generation: 1,
+        layout: { kind: 'linear' },
+        rows: [
+          {
+            type: 'message',
+            key: 'warning',
+            title: '',
+            body: 'A warning that must wrap completely',
+            bodyLines: 0,
+            time: '',
+            presentation: 'inlineWarning',
+            style: { container: { borderWidth: 1, borderColor: '#aabbcc' } },
+          },
+        ],
+      },
+      {},
+      false
+    );
+    try {
+      const row = host.querySelector<HTMLElement>(
+        '[data-native-list-row-key="warning"]'
+      )!;
+      const body = row.querySelector<HTMLElement>('[data-nl-slot="body"]')!;
+      expect(
+        row.querySelector('[data-nl-inline-warning="true"]')
+      ).not.toBeNull();
+      expect(body.style.whiteSpace).toBe('pre-wrap');
+      expect(body.style.maxHeight).toBe('none');
+    } finally {
+      engine.destroy();
+    }
+  });
+
   it('rebinds a message through styled, cleared and different-template snapshots', () => {
     const { document } = new JSDOM('<!doctype html><body></body>').window;
     const host = document.createElement('div');
@@ -1620,9 +1661,11 @@ describe('web row style', () => {
         title: 'Send',
         description: 'To Alice',
         footerActions: [{ key: 'speed-up', label: 'Speed up' }],
-        ...(rich ? { amounts: [{ key: 'send', text: '-1 ETH' }] } : {
-          primaryAmount: '-1 ETH',
-        }),
+        ...(rich
+          ? { amounts: [{ key: 'send', text: '-1 ETH' }] }
+          : {
+              primaryAmount: '-1 ETH',
+            }),
       };
       const engine = new NativeListWebEngine(
         host,
@@ -1633,28 +1676,37 @@ describe('web row style', () => {
       const body = host.querySelector<HTMLElement>(
         '[data-nl-renderer="activity"]'
       )!;
-      const visual = () => rich
-        ? body.querySelector<HTMLElement>('.ok-native-list-history-visual')!
-        : body;
-      const action = () => body.querySelector<HTMLElement>(
-        '[data-native-list-action="speed-up"]'
-      )!;
+      const visual = () =>
+        rich
+          ? body.querySelector<HTMLElement>('.ok-native-list-history-visual')!
+          : body;
+      const action = () =>
+        body.querySelector<HTMLElement>(
+          '[data-native-list-action="speed-up"]'
+        )!;
       try {
         expect(visual().querySelector('img')).not.toBeNull();
-        engine.applySnapshot(snapshot({ kind: 'sectioned' }, [{
-          ...row, hideLeading: true,
-        }]));
+        engine.applySnapshot(
+          snapshot({ kind: 'sectioned' }, [
+            {
+              ...row,
+              hideLeading: true,
+            },
+          ])
+        );
         expect(visual().querySelector('img')).toBeNull();
         expect(body.textContent).toContain('-1 ETH');
         expect(action()).not.toBeNull();
         if (rich) {
           expect(visual().style.display).toBe('none');
-          expect(body.querySelector<HTMLElement>(
-            '.ok-native-list-history-identity'
-          )!.style.gap).toBe('0');
-          expect(body.querySelector<HTMLElement>(
-            '.ok-native-list-history-actions'
-          )!.style.paddingLeft).toBe('0px');
+          expect(
+            body.querySelector<HTMLElement>('.ok-native-list-history-identity')!
+              .style.gap
+          ).toBe('0');
+          expect(
+            body.querySelector<HTMLElement>('.ok-native-list-history-actions')!
+              .style.paddingLeft
+          ).toBe('0px');
         } else {
           expect(body.firstElementChild?.className).toBe('ok-native-list-flex');
         }
@@ -1662,9 +1714,10 @@ describe('web row style', () => {
         expect(visual().querySelector('img')).not.toBeNull();
         if (rich) {
           expect(visual().style.display).not.toBe('none');
-          expect(body.querySelector<HTMLElement>(
-            '.ok-native-list-history-actions'
-          )!.style.paddingLeft).toBe('52px');
+          expect(
+            body.querySelector<HTMLElement>('.ok-native-list-history-actions')!
+              .style.paddingLeft
+          ).toBe('52px');
         }
       } finally {
         engine.destroy();
@@ -2052,52 +2105,163 @@ describe('web row style', () => {
     expect(single.textContent).toBe('One Two');
   });
 
+  it('applies optional medium weight only to the primary value-pair line and clears it on rebind', () => {
+    const base: IdentityRow = {
+      type: 'identity',
+      key: 'weighted-pair',
+      title: 'Pair',
+      leading: { kind: 'icon', name: 'coin' },
+      trailing: [
+        {
+          kind: 'valuePair',
+          primary: '$3.00',
+          secondary: '1 ETH',
+          primaryFontWeight: 'medium',
+        },
+      ],
+    };
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [base]),
+      {},
+      false
+    );
+    try {
+      const lines = () =>
+        host.querySelectorAll<HTMLElement>('.ok-native-list-amounts > span');
+      expect(lines()[0].style.fontWeight).toBe('500');
+      expect(lines()[0].style.fontFamily).toBe('var(--nl-font-medium)');
+      expect(lines()[1].style.fontWeight).toBe('');
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [
+          {
+            ...base,
+            trailing: [
+              { kind: 'valuePair', primary: '$4.00', secondary: '2 ETH' },
+            ],
+          },
+        ])
+      );
+      expect(lines()[0].style.fontWeight).toBe('');
+      expect(lines()[1].style.fontWeight).toBe('');
+    } finally {
+      engine.destroy();
+    }
+  });
+
   it('renders both segmented value-pair lines and clears runs on a plain rebind', () => {
     const base: IdentityRow = {
-      type: 'identity', key: 'tiny-pair', title: 'Tiny',
+      type: 'identity',
+      key: 'tiny-pair',
+      title: 'Tiny',
       leading: { kind: 'icon', name: 'coin' },
-      trailing: [{
-        kind: 'valuePair', primary: '0.001', secondary: '$0.01',
-        primaryTextSegments: [{ text: '0.00' }, { text: '1', style: 'subscript' }],
-        secondaryTextSegments: [{ text: '$0.0' }, { text: '1', style: 'subscript' }],
-      }],
+      trailing: [
+        {
+          kind: 'valuePair',
+          primary: '0.001',
+          secondary: '$0.01',
+          primaryTextSegments: [
+            { text: '0.00' },
+            { text: '1', style: 'subscript' },
+          ],
+          secondaryTextSegments: [
+            { text: '$0.0' },
+            { text: '1', style: 'subscript' },
+          ],
+        },
+      ],
       style: { value: { fontSize: 18, color: '#123456' } },
     };
     const rich = render(base);
-    const lines = rich.querySelectorAll<HTMLElement>('.ok-native-list-amounts > span');
-    expect(Array.from(lines, (line) => line.textContent)).toEqual(['0.001', '$0.01']);
-    expect(Array.from(rich.querySelectorAll<HTMLElement>('[data-nl-segment="subscript"]'),
-      (run) => [run.textContent, run.style.fontSize, run.style.color])).toEqual([
-      ['1', '11px', 'rgb(18, 52, 86)'], ['1', '11px', 'rgb(18, 52, 86)'],
+    const lines = rich.querySelectorAll<HTMLElement>(
+      '.ok-native-list-amounts > span'
+    );
+    expect(Array.from(lines, (line) => line.textContent)).toEqual([
+      '0.001',
+      '$0.01',
     ]);
-    const plain = render({ ...base, trailing: [{ kind: 'valuePair', primary: '10', secondary: '$2' }] });
+    expect(
+      Array.from(
+        rich.querySelectorAll<HTMLElement>('[data-nl-segment="subscript"]'),
+        (run) => [run.textContent, run.style.fontSize, run.style.color]
+      )
+    ).toEqual([
+      ['1', '11px', 'rgb(18, 52, 86)'],
+      ['1', '11px', 'rgb(18, 52, 86)'],
+    ]);
+    const plain = render({
+      ...base,
+      trailing: [{ kind: 'valuePair', primary: '10', secondary: '$2' }],
+    });
     expect(plain.textContent).toContain('10\n$2');
     expect(plain.querySelector('[data-nl-segment="subscript"]')).toBeNull();
-    const empty = render({ ...base, trailing: [{
-      kind: 'valuePair', primary: '10', secondary: '$2',
-      primaryTextSegments: [], secondaryTextSegments: [],
-    }] });
+    const empty = render({
+      ...base,
+      trailing: [
+        {
+          kind: 'valuePair',
+          primary: '10',
+          secondary: '$2',
+          primaryTextSegments: [],
+          secondaryTextSegments: [],
+        },
+      ],
+    });
     expect(empty.textContent).toContain('10\n$2');
     const { document } = new JSDOM('<!doctype html><body></body>').window;
     const host = document.createElement('div');
     document.body.appendChild(host);
-    const engine = new NativeListWebEngine(host, snapshot({ kind: 'sectioned' }, [base]), {}, false);
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [base]),
+      {},
+      false
+    );
     try {
-      const row = () => host.querySelector<HTMLElement>('[data-native-list-row-key="tiny-pair"]')!;
+      const row = () =>
+        host.querySelector<HTMLElement>(
+          '[data-native-list-row-key="tiny-pair"]'
+        )!;
       const wrapper = row();
-      expect(wrapper.querySelectorAll('[data-nl-segment="subscript"]')).toHaveLength(2);
-      engine.applySnapshot(snapshot({ kind: 'sectioned' }, [{
-        ...base, trailing: [{ kind: 'valuePair', primary: '10', secondary: '$2' }],
-      }]));
+      expect(
+        wrapper.querySelectorAll('[data-nl-segment="subscript"]')
+      ).toHaveLength(2);
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [
+          {
+            ...base,
+            trailing: [{ kind: 'valuePair', primary: '10', secondary: '$2' }],
+          },
+        ])
+      );
       expect(row()).toBe(wrapper);
       expect(row().querySelector('[data-nl-segment="subscript"]')).toBeNull();
-      expect(row().querySelector('.ok-native-list-amounts')?.textContent).toBe('10\n$2');
-      engine.applySnapshot(snapshot({ kind: 'sectioned' }, [{
-        ...base, trailing: [{ kind: 'valuePair', primary: '11', secondary: '$3',
-          primaryTextSegments: [], secondaryTextSegments: [] }],
-      }]));
+      expect(row().querySelector('.ok-native-list-amounts')?.textContent).toBe(
+        '10\n$2'
+      );
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [
+          {
+            ...base,
+            trailing: [
+              {
+                kind: 'valuePair',
+                primary: '11',
+                secondary: '$3',
+                primaryTextSegments: [],
+                secondaryTextSegments: [],
+              },
+            ],
+          },
+        ])
+      );
       expect(row()).toBe(wrapper);
-      expect(row().querySelector('.ok-native-list-amounts')?.textContent).toBe('11\n$3');
+      expect(row().querySelector('.ok-native-list-amounts')?.textContent).toBe(
+        '11\n$3'
+      );
     } finally {
       engine.destroy();
     }
@@ -2959,7 +3123,9 @@ describe('complex renderer lifecycle', () => {
     const host = document.createElement('div');
     document.body.appendChild(host);
     const row: IdentityRow = {
-      type: 'identity', key: 'badged', title: 'ETH',
+      type: 'identity',
+      key: 'badged',
+      title: 'ETH',
       leading: { kind: 'token', image },
       badges: [{ key: 'multichain', text: 'Multichain', tone: 'neutral' }],
       style: { title: { lines: 1 } },
@@ -2968,25 +3134,34 @@ describe('complex renderer lifecycle', () => {
     try {
       const title = host.querySelector<HTMLElement>('.ok-native-list-title')!;
       const text = title.querySelector<HTMLElement>('[data-nl-slot="title"]')!;
-      const badges = title.querySelector<HTMLElement>('.ok-native-list-badges')!;
+      const badges = title.querySelector<HTMLElement>(
+        '.ok-native-list-badges'
+      )!;
       expect(title.style.display).toBe('flex');
       expect(title.style.alignItems).toBe('center');
       expect(text.nextElementSibling).toBe(badges);
       expect(text.style.minWidth).toBe('0');
       expect(text.style.whiteSpace).toBe('nowrap');
-      expect(document.defaultView!.getComputedStyle(badges.firstElementChild!).height)
-        .toBe('20px');
-      expect(document.defaultView!.getComputedStyle(badges.firstElementChild!).fontSize)
-        .toBe('12px');
-      engine.applySnapshot(snap({ ...row, badges: [
-        { key: 'multichain', text: 'Multichain' },
-      ] }));
-      const defaultBadge = host.querySelector<HTMLElement>('.ok-native-list-badge')!;
+      expect(
+        document.defaultView!.getComputedStyle(badges.firstElementChild!).height
+      ).toBe('20px');
+      expect(
+        document.defaultView!.getComputedStyle(badges.firstElementChild!)
+          .fontSize
+      ).toBe('12px');
+      engine.applySnapshot(
+        snap({ ...row, badges: [{ key: 'multichain', text: 'Multichain' }] })
+      );
+      const defaultBadge = host.querySelector<HTMLElement>(
+        '.ok-native-list-badge'
+      )!;
       expect(defaultBadge.dataset.tone).toBeUndefined();
-      expect(document.defaultView!.getComputedStyle(defaultBadge).height)
-        .toBe('18px');
-      expect(document.defaultView!.getComputedStyle(defaultBadge).fontSize)
-        .toBe('11px');
+      expect(document.defaultView!.getComputedStyle(defaultBadge).height).toBe(
+        '18px'
+      );
+      expect(
+        document.defaultView!.getComputedStyle(defaultBadge).fontSize
+      ).toBe('11px');
     } finally {
       engine.destroy();
     }
@@ -2996,27 +3171,36 @@ describe('complex renderer lifecycle', () => {
     const host = document.createElement('div');
     document.body.appendChild(host);
     const row: IdentityRow = {
-      type: 'identity', key: 'gas', title: 'ETH',
+      type: 'identity',
+      key: 'gas',
+      title: 'ETH',
       leading: { kind: 'token', image },
       titleIcon: { name: 'GasSolid', hoverActionKey: 'native-token-info' },
     };
     const onRowAction = jest.fn();
     const onActionAnchorInvalidated = jest.fn();
-    const engine = new NativeListWebEngine(host, snap(row), {
-      onRowAction, onActionAnchorInvalidated,
-    }, false);
+    const engine = new NativeListWebEngine(
+      host,
+      snap(row),
+      {
+        onRowAction,
+        onActionAnchorInvalidated,
+      },
+      false
+    );
     const previousElement = global.Element;
     const previousNode = global.Node;
     global.Element = document.defaultView!.Element;
     global.Node = document.defaultView!.Node;
-    const icon = () => host.querySelector<HTMLElement>(
-      '.ok-native-list-identity-title-icon'
-    )!;
+    const icon = () =>
+      host.querySelector<HTMLElement>('.ok-native-list-identity-title-icon')!;
     const pointer = (type: string, pointerType: string) =>
-      icon().dispatchEvent(Object.assign(
-        new document.defaultView!.Event(type, { bubbles: true }),
-        { pointerType }
-      ));
+      icon().dispatchEvent(
+        Object.assign(
+          new document.defaultView!.Event(type, { bubbles: true }),
+          { pointerType }
+        )
+      );
     try {
       expect(icon().tabIndex).toBe(-1);
       pointer('pointerover', 'touch');
@@ -3025,7 +3209,8 @@ describe('complex renderer lifecycle', () => {
       expect(onRowAction).toHaveBeenCalledTimes(1);
       const event = onRowAction.mock.calls[0]![0];
       expect(event).toMatchObject({
-        rowKey: 'gas', actionKey: 'native-token-info',
+        rowKey: 'gas',
+        actionKey: 'native-token-info',
         anchor: { source: 'leadingAction' },
       });
       engine.setActionAnchorState({ token: event.anchor.token, open: true });
@@ -3040,7 +3225,10 @@ describe('complex renderer lifecycle', () => {
       icon().click();
       expect(onRowAction).toHaveBeenCalledTimes(2);
       const touchEvent = onRowAction.mock.calls[1]![0];
-      engine.setActionAnchorState({ token: touchEvent.anchor.token, open: true });
+      engine.setActionAnchorState({
+        token: touchEvent.anchor.token,
+        open: true,
+      });
       pointer('pointerout', 'touch');
       expect(onActionAnchorInvalidated).toHaveBeenCalledTimes(1);
       pointer('pointerdown', 'touch');
@@ -3052,7 +3240,10 @@ describe('complex renderer lifecycle', () => {
       expect(onRowAction.mock.calls[2]![0].actionKey).toBe('press');
       pointer('pointerover', 'mouse');
       const reboundEvent = onRowAction.mock.calls[3]![0];
-      engine.setActionAnchorState({ token: reboundEvent.anchor.token, open: true });
+      engine.setActionAnchorState({
+        token: reboundEvent.anchor.token,
+        open: true,
+      });
       engine.applySnapshot(snap({ ...row, titleIcon: { name: 'GasSolid' } }));
       expect(onActionAnchorInvalidated).toHaveBeenCalledTimes(3);
       expect(icon().dataset.nativeListHoverAction).toBeUndefined();
@@ -3069,53 +3260,81 @@ describe('complex renderer lifecycle', () => {
     const host = document.createElement('div');
     document.body.appendChild(host);
     const row: IdentityRow = {
-      type: 'identity', key: 'two-help', title: 'ETH',
+      type: 'identity',
+      key: 'two-help',
+      title: 'ETH',
       leading: { kind: 'token', image },
       titleIcon: { name: 'TicketOutline', hoverActionKey: 'ticket-info' },
       secondaryTitleIcon: { name: 'GasSolid', hoverActionKey: 'gas-info' },
     };
     const onRowAction = jest.fn();
     const onActionAnchorInvalidated = jest.fn();
-    const engine = new NativeListWebEngine(host, snap(row), {
-      onRowAction, onActionAnchorInvalidated,
-    }, false);
+    const engine = new NativeListWebEngine(
+      host,
+      snap(row),
+      {
+        onRowAction,
+        onActionAnchorInvalidated,
+      },
+      false
+    );
     const previousElement = global.Element;
     const previousNode = global.Node;
     global.Element = document.defaultView!.Element;
     global.Node = document.defaultView!.Node;
-    const icons = () => host.querySelectorAll<HTMLElement>('.ok-native-list-identity-title-icon');
+    const icons = () =>
+      host.querySelectorAll<HTMLElement>('.ok-native-list-identity-title-icon');
     const pointer = (element: HTMLElement, type: string, pointerType: string) =>
-      element.dispatchEvent(Object.assign(
-        new document.defaultView!.Event(type, { bubbles: true }),
-        { pointerType }
-      ));
+      element.dispatchEvent(
+        Object.assign(
+          new document.defaultView!.Event(type, { bubbles: true }),
+          { pointerType }
+        )
+      );
     try {
       expect(icons()).toHaveLength(2);
-      expect(Array.from(icons(), (icon) => icon.querySelectorAll('svg path').length))
-        .toEqual([2, 1]);
-      expect(icons()[0]!.querySelector('svg path')?.getAttribute('d'))
-        .toBe('M16 17.01h-2V15h2v2.01Zm0-4h-2V11h2v2.01Zm0-4h-2V7h2v2.01Z');
-      expect(Array.from(icons(), (icon) => icon.dataset.nativeListHoverAction))
-        .toEqual(['ticket-info', 'gas-info']);
+      expect(
+        Array.from(icons(), (icon) => icon.querySelectorAll('svg path').length)
+      ).toEqual([2, 1]);
+      expect(icons()[0]!.querySelector('svg path')?.getAttribute('d')).toBe(
+        'M16 17.01h-2V15h2v2.01Zm0-4h-2V11h2v2.01Zm0-4h-2V7h2v2.01Z'
+      );
+      expect(
+        Array.from(icons(), (icon) => icon.dataset.nativeListHoverAction)
+      ).toEqual(['ticket-info', 'gas-info']);
       expect(Array.from(icons(), (icon) => icon.tabIndex)).toEqual([-1, -1]);
-      icons()[0]!.getBoundingClientRect = () => ({
-        left: 10, top: 20, width: 20, height: 20,
-      } as DOMRect);
-      icons()[1]!.getBoundingClientRect = () => ({
-        left: 70, top: 80, width: 20, height: 20,
-      } as DOMRect);
+      icons()[0]!.getBoundingClientRect = () =>
+        ({
+          left: 10,
+          top: 20,
+          width: 20,
+          height: 20,
+        } as DOMRect);
+      icons()[1]!.getBoundingClientRect = () =>
+        ({
+          left: 70,
+          top: 80,
+          width: 20,
+          height: 20,
+        } as DOMRect);
       pointer(icons()[0]!, 'pointerover', 'mouse');
       const first = onRowAction.mock.calls[0]![0];
       expect(first).toMatchObject({
         actionKey: 'ticket-info',
-        anchor: { source: 'leadingAction', windowRect: { x: 10, y: 20, width: 20, height: 20 } },
+        anchor: {
+          source: 'leadingAction',
+          windowRect: { x: 10, y: 20, width: 20, height: 20 },
+        },
       });
       engine.setActionAnchorState({ token: first.anchor.token, open: true });
       pointer(icons()[1]!, 'pointerover', 'mouse');
       const second = onRowAction.mock.calls[1]![0];
       expect(second).toMatchObject({
         actionKey: 'gas-info',
-        anchor: { source: 'leadingAction', windowRect: { x: 70, y: 80, width: 20, height: 20 } },
+        anchor: {
+          source: 'leadingAction',
+          windowRect: { x: 70, y: 80, width: 20, height: 20 },
+        },
       });
       expect(second.anchor.token).not.toBe(first.anchor.token);
       expect(onActionAnchorInvalidated).toHaveBeenCalledWith(
@@ -3136,8 +3355,9 @@ describe('complex renderer lifecycle', () => {
         actionKey: 'gas-info',
         anchor: { windowRect: { x: 70, y: 80, width: 20, height: 20 } },
       });
-      expect(onRowAction.mock.calls.every(([action]) => action.actionKey !== 'press'))
-        .toBe(true);
+      expect(
+        onRowAction.mock.calls.every(([action]) => action.actionKey !== 'press')
+      ).toBe(true);
       engine.setActionAnchorState({ token: touched.anchor.token, open: true });
       engine.applySnapshot(snap({ ...row, secondaryTitleIcon: undefined }));
       expect(icons()).toHaveLength(1);
@@ -3148,22 +3368,29 @@ describe('complex renderer lifecycle', () => {
       pointer(icons()[0]!, 'pointerup', 'touch');
       const glyph = icons()[0]!.querySelector('svg path')!;
       const glyphClick = new document.defaultView!.Event('click', {
-        bubbles: true, cancelable: true,
+        bubbles: true,
+        cancelable: true,
       });
       glyph.dispatchEvent(glyphClick);
       expect(glyphClick.defaultPrevented).toBe(true);
       expect(onRowAction.mock.calls[3]![0].actionKey).toBe('ticket-info');
-      expect(onRowAction.mock.calls.every(([action]) => action.actionKey !== 'press'))
-        .toBe(true);
+      expect(
+        onRowAction.mock.calls.every(([action]) => action.actionKey !== 'press')
+      ).toBe(true);
       pointer(icons()[0]!, 'pointerdown', 'pen');
       icons()[0]!.click();
       expect(onRowAction).toHaveBeenCalledTimes(4);
-      engine.applyPatches([{
-        type: 'identity', key: 'two-help',
-        changes: { titleIcon: { name: 'TicketOutline' } },
-      }]);
+      engine.applyPatches([
+        {
+          type: 'identity',
+          key: 'two-help',
+          changes: { titleIcon: { name: 'TicketOutline' } },
+        },
+      ]);
       expect(icons()[0]!.dataset.nativeListHoverAction).toBeUndefined();
-      engine.applySnapshot(snap({ ...row, titleIcon: undefined, secondaryTitleIcon: undefined }));
+      engine.applySnapshot(
+        snap({ ...row, titleIcon: undefined, secondaryTitleIcon: undefined })
+      );
       expect(icons()).toHaveLength(0);
     } finally {
       engine.destroy();
@@ -3176,14 +3403,26 @@ describe('complex renderer lifecycle', () => {
     const host = document.createElement('div');
     document.body.appendChild(host);
     const row: IdentityRow = {
-      type: 'identity', key: 'missing-detail', title: 'Asset',
+      type: 'identity',
+      key: 'missing-detail',
+      title: 'Asset',
       leading: { kind: 'token', image },
-      trailing: [{
-        kind: 'icon', name: 'RefreshCcwOutline', hoverActionKey: 'missing-detail',
-      }, { kind: 'chevron' }],
+      trailing: [
+        {
+          kind: 'icon',
+          name: 'RefreshCcwOutline',
+          hoverActionKey: 'missing-detail',
+        },
+        { kind: 'chevron' },
+      ],
     };
     const onRowAction = jest.fn();
-    const engine = new NativeListWebEngine(host, snap(row), { onRowAction }, false);
+    const engine = new NativeListWebEngine(
+      host,
+      snap(row),
+      { onRowAction },
+      false
+    );
     const previousElement = global.Element;
     const previousNode = global.Node;
     global.Element = document.defaultView!.Element;
@@ -3193,25 +3432,42 @@ describe('complex renderer lifecycle', () => {
         '[data-native-list-hover-action="missing-detail"]'
       )!;
       expect(refresh.querySelectorAll('svg path')).toHaveLength(1);
-      expect(refresh.querySelector('svg path')?.getAttribute('d'))
-        .toContain('M5 12a7 7');
+      expect(refresh.querySelector('svg path')?.getAttribute('d')).toContain(
+        'M5 12a7 7'
+      );
       expect(refresh.tagName).toBe('SPAN');
       expect(refresh.querySelector('svg')?.getAttribute('width')).toBe('16');
       expect(refresh.querySelector('svg')?.getAttribute('height')).toBe('16');
-      expect(document.defaultView!.getComputedStyle(refresh).width).toBe('16px');
-      expect(document.defaultView!.getComputedStyle(refresh).height).toBe('16px');
-      refresh.getBoundingClientRect = () => ({
-        left: 30, top: 40, width: 24, height: 24,
-      } as DOMRect);
-      refresh.dispatchEvent(Object.assign(
-        new document.defaultView!.Event('pointerover', { bubbles: true }),
-        { pointerType: 'mouse' }
-      ));
-      expect(onRowAction).toHaveBeenCalledWith(expect.objectContaining({
-        rowKey: 'missing-detail', actionKey: 'missing-detail',
-        anchor: expect.objectContaining({ source: 'trailingAccessory', slot: 0,
-          windowRect: { x: 30, y: 40, width: 24, height: 24 } }),
-      }));
+      expect(document.defaultView!.getComputedStyle(refresh).width).toBe(
+        '16px'
+      );
+      expect(document.defaultView!.getComputedStyle(refresh).height).toBe(
+        '16px'
+      );
+      refresh.getBoundingClientRect = () =>
+        ({
+          left: 30,
+          top: 40,
+          width: 24,
+          height: 24,
+        } as DOMRect);
+      refresh.dispatchEvent(
+        Object.assign(
+          new document.defaultView!.Event('pointerover', { bubbles: true }),
+          { pointerType: 'mouse' }
+        )
+      );
+      expect(onRowAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          rowKey: 'missing-detail',
+          actionKey: 'missing-detail',
+          anchor: expect.objectContaining({
+            source: 'trailingAccessory',
+            slot: 0,
+            windowRect: { x: 30, y: 40, width: 24, height: 24 },
+          }),
+        })
+      );
     } finally {
       engine.destroy();
       global.Element = previousElement;
@@ -3223,27 +3479,50 @@ describe('complex renderer lifecycle', () => {
     const host = document.createElement('div');
     document.body.appendChild(host);
     const row: IdentityRow = {
-      type: 'identity', key: 'visual-loading', title: 'ETH',
-      leading: { kind: 'token', image: { ...image, loadingStrategy: 'skeleton' } },
+      type: 'identity',
+      key: 'visual-loading',
+      title: 'ETH',
+      leading: {
+        kind: 'token',
+        image: { ...image, loadingStrategy: 'skeleton' },
+      },
     };
     const engine = new NativeListWebEngine(host, snap(row), {}, false);
     try {
-      const visual = () => host.querySelector<HTMLElement>('.ok-native-list-visual')!;
-      expect(visual().querySelector('.ok-native-list-image-skeleton')).not.toBeNull();
-      visual().querySelector('img')!.dispatchEvent(
-        new document.defaultView!.Event('load')
-      );
-      expect(visual().querySelector('.ok-native-list-image-skeleton')).toBeNull();
+      const visual = () =>
+        host.querySelector<HTMLElement>('.ok-native-list-visual')!;
+      expect(
+        visual().querySelector('.ok-native-list-image-skeleton')
+      ).not.toBeNull();
+      visual()
+        .querySelector('img')!
+        .dispatchEvent(new document.defaultView!.Event('load'));
+      expect(
+        visual().querySelector('.ok-native-list-image-skeleton')
+      ).toBeNull();
       engine.applySnapshot(snap({ ...row, key: 'failed-loading' }));
-      expect(visual().querySelector('.ok-native-list-image-skeleton')).not.toBeNull();
-      visual().querySelector('img')!.dispatchEvent(
-        new document.defaultView!.Event('error')
+      expect(
+        visual().querySelector('.ok-native-list-image-skeleton')
+      ).not.toBeNull();
+      visual()
+        .querySelector('img')!
+        .dispatchEvent(new document.defaultView!.Event('error'));
+      expect(
+        visual().querySelector('.ok-native-list-image-skeleton')
+      ).toBeNull();
+      engine.applySnapshot(
+        snap({
+          ...row,
+          key: 'plain',
+          leading: {
+            kind: 'token',
+            image: { ...image, loadingStrategy: 'none' },
+          },
+        })
       );
-      expect(visual().querySelector('.ok-native-list-image-skeleton')).toBeNull();
-      engine.applySnapshot(snap({ ...row, key: 'plain', leading: {
-        kind: 'token', image: { ...image, loadingStrategy: 'none' },
-      } }));
-      expect(visual().querySelector('.ok-native-list-image-skeleton')).toBeNull();
+      expect(
+        visual().querySelector('.ok-native-list-image-skeleton')
+      ).toBeNull();
     } finally {
       engine.destroy();
     }
@@ -3268,7 +3547,12 @@ describe('complex renderer lifecycle', () => {
       },
       style: { leadingContentMaxWidthRatio: 0.6 },
       trailing: [
-        { kind: 'button', label: 'Show', actionKey: 'show', testID: 'risk-show' },
+        {
+          kind: 'button',
+          label: 'Show',
+          actionKey: 'show',
+          testID: 'risk-show',
+        },
       ],
     };
     const engine = new NativeListWebEngine(
@@ -3285,57 +3569,113 @@ describe('complex renderer lifecycle', () => {
       )!;
       expect(button.type).toBe('button');
       expect(button.dataset.testid).toBe('risk-show');
-      expect(host.querySelector('.ok-native-list-identity-title-icon')).not.toBeNull();
-      expect(host.querySelector<HTMLElement>('.ok-native-list-flex')?.style.maxWidth).toContain('60%');
-      expect(host.querySelector<HTMLElement>('.ok-native-list-accessories')?.style.marginInlineStart).toBe('auto');
-      expect(host.querySelector<HTMLElement>('.ok-native-list-visual')?.style.borderColor).toBe('rgb(17, 17, 17)');
-      expect(host.querySelector<HTMLElement>('.ok-native-list-visual-overlay')?.style.fontWeight).toBe('600');
+      expect(
+        host.querySelector('.ok-native-list-identity-title-icon')
+      ).not.toBeNull();
+      expect(
+        host.querySelector<HTMLElement>('.ok-native-list-flex')?.style.maxWidth
+      ).toContain('60%');
+      expect(
+        host.querySelector<HTMLElement>('.ok-native-list-accessories')?.style
+          .marginInlineStart
+      ).toBe('auto');
+      expect(
+        host.querySelector<HTMLElement>('.ok-native-list-visual')?.style
+          .borderColor
+      ).toBe('rgb(17, 17, 17)');
+      expect(
+        host.querySelector<HTMLElement>('.ok-native-list-visual-overlay')?.style
+          .fontWeight
+      ).toBe('600');
       button.click();
       expect(onRowAction).toHaveBeenCalledTimes(1);
       expect(onRowAction.mock.calls[0]![0]).toMatchObject({
-        rowKey: 'risk', actionKey: 'show',
+        rowKey: 'risk',
+        actionKey: 'show',
         anchor: { source: 'trailingAccessory', slot: 0 },
       });
-      engine.applySnapshot(snap({
-        ...first,
-        trailing: [{ kind: 'button', label: 'Hide', actionKey: 'hide', disabled: true }],
-      }));
-      const accessoryDisabledButton = host.querySelector<HTMLButtonElement>('.ok-native-list-trailing-button')!;
+      engine.applySnapshot(
+        snap({
+          ...first,
+          trailing: [
+            {
+              kind: 'button',
+              label: 'Hide',
+              actionKey: 'hide',
+              disabled: true,
+            },
+          ],
+        })
+      );
+      const accessoryDisabledButton = host.querySelector<HTMLButtonElement>(
+        '.ok-native-list-trailing-button'
+      )!;
       expect(accessoryDisabledButton.disabled).toBe(true);
       accessoryDisabledButton.click();
       expect(onRowAction).toHaveBeenCalledTimes(1);
       engine.applySnapshot(snap({ ...first, disabled: true }));
-      const rowDisabledButton = host.querySelector<HTMLButtonElement>('.ok-native-list-trailing-button')!;
+      const rowDisabledButton = host.querySelector<HTMLButtonElement>(
+        '.ok-native-list-trailing-button'
+      )!;
       expect(rowDisabledButton.disabled).toBe(true);
       expect(rowDisabledButton.getAttribute('aria-disabled')).toBe('true');
       rowDisabledButton.focus();
       expect(document.activeElement).not.toBe(rowDisabledButton);
       rowDisabledButton.click();
       expect(onRowAction).toHaveBeenCalledTimes(1);
-      engine.applyPatches([{
-        type: 'identity', key: 'risk', changes: { disabled: false },
-      }]);
-      const reenabledButton = host.querySelector<HTMLButtonElement>('.ok-native-list-trailing-button')!;
+      engine.applyPatches([
+        {
+          type: 'identity',
+          key: 'risk',
+          changes: { disabled: false },
+        },
+      ]);
+      const reenabledButton = host.querySelector<HTMLButtonElement>(
+        '.ok-native-list-trailing-button'
+      )!;
       expect(reenabledButton.disabled).toBe(false);
       expect(reenabledButton.getAttribute('aria-disabled')).toBe('false');
       reenabledButton.focus();
       expect(document.activeElement).toBe(reenabledButton);
       reenabledButton.click();
       expect(onRowAction).toHaveBeenCalledTimes(2);
-      engine.applySnapshot(snap({
-        ...first,
-        key: 'other-risk',
-        titleIcon: undefined,
-        leading: { kind: 'token', image, overlays: [{ position: 'bottomRight', text: 'E' }] },
-        style: undefined,
-        trailing: [{ kind: 'icon', name: 'EditOutline', actionKey: 'edit' }],
-      }));
+      engine.applySnapshot(
+        snap({
+          ...first,
+          key: 'other-risk',
+          titleIcon: undefined,
+          leading: {
+            kind: 'token',
+            image,
+            overlays: [{ position: 'bottomRight', text: 'E' }],
+          },
+          style: undefined,
+          trailing: [{ kind: 'icon', name: 'EditOutline', actionKey: 'edit' }],
+        })
+      );
       expect(host.querySelector('.ok-native-list-trailing-button')).toBeNull();
-      expect(host.querySelector('.ok-native-list-identity-title-icon')).toBeNull();
-      expect(host.querySelector<HTMLElement>('.ok-native-list-visual')?.style.borderColor).toBe('');
-      expect(host.querySelector<HTMLElement>('.ok-native-list-visual-overlay')?.style.fontWeight).toBe('');
-      expect(host.querySelector<HTMLElement>('.ok-native-list-flex')?.style.maxWidth).toBe('');
-      engine.applySnapshot(snap({ ...first, key: 'third-risk', titleIcon: undefined, trailing: [] }));
+      expect(
+        host.querySelector('.ok-native-list-identity-title-icon')
+      ).toBeNull();
+      expect(
+        host.querySelector<HTMLElement>('.ok-native-list-visual')?.style
+          .borderColor
+      ).toBe('');
+      expect(
+        host.querySelector<HTMLElement>('.ok-native-list-visual-overlay')?.style
+          .fontWeight
+      ).toBe('');
+      expect(
+        host.querySelector<HTMLElement>('.ok-native-list-flex')?.style.maxWidth
+      ).toBe('');
+      engine.applySnapshot(
+        snap({
+          ...first,
+          key: 'third-risk',
+          titleIcon: undefined,
+          trailing: [],
+        })
+      );
       expect(host.querySelector('[data-native-list-action="show"]')).toBeNull();
       expect(host.querySelector('[data-native-list-action="edit"]')).toBeNull();
     } finally {
@@ -3348,23 +3688,55 @@ describe('complex renderer lifecycle', () => {
     const host = document.createElement('div');
     document.body.appendChild(host);
     const row: IdentityRow = {
-      type: 'identity', key: 'risk-icons', title: 'Token',
+      type: 'identity',
+      key: 'risk-icons',
+      title: 'Token',
       titleIcon: { name: 'GasSolid' },
-      leading: { kind: 'token', fallbackIcon: {
-        name: 'CryptoCoinOutline', size: 28, backgroundColor: '#eeeeee',
-      }, overlays: [{ position: 'bottomRight', size: 20, padding: 2,
-        image, fallbackIcon: { name: 'GlobusOutline' } }] },
-      trailing: [{ kind: 'icon', name: 'CryptoCoinOutline', actionKey: 'edit', buttonStyle: 'tertiary' }],
+      leading: {
+        kind: 'token',
+        fallbackIcon: {
+          name: 'CryptoCoinOutline',
+          size: 28,
+          backgroundColor: '#eeeeee',
+        },
+        overlays: [
+          {
+            position: 'bottomRight',
+            size: 20,
+            padding: 2,
+            image,
+            fallbackIcon: { name: 'GlobusOutline' },
+          },
+        ],
+      },
+      trailing: [
+        {
+          kind: 'icon',
+          name: 'CryptoCoinOutline',
+          actionKey: 'edit',
+          buttonStyle: 'tertiary',
+        },
+      ],
     };
     const engine = new NativeListWebEngine(host, snap(row), {}, false);
     try {
-      expect(host.querySelector('.ok-native-list-identity-title-icon svg path')
-        ?.getAttribute('d')).toContain('M15 9h4v7');
-      expect(host.querySelector('.ok-native-list-visual-fallback svg path')
-        ?.getAttribute('d')).toContain('M11 16.387');
-      expect(host.querySelector<HTMLElement>('.ok-native-list-visual')?.style.background)
-        .toBe('rgb(238, 238, 238)');
-      expect(host.querySelector('.ok-native-list-tertiary-icon')).not.toBeNull();
+      expect(
+        host
+          .querySelector('.ok-native-list-identity-title-icon svg path')
+          ?.getAttribute('d')
+      ).toContain('M15 9h4v7');
+      expect(
+        host
+          .querySelector('.ok-native-list-visual-fallback svg path')
+          ?.getAttribute('d')
+      ).toContain('M11 16.387');
+      expect(
+        host.querySelector<HTMLElement>('.ok-native-list-visual')?.style
+          .background
+      ).toBe('rgb(238, 238, 238)');
+      expect(
+        host.querySelector('.ok-native-list-tertiary-icon')
+      ).not.toBeNull();
       const style = document.createElement('style');
       style.textContent = WEB_LIST_CSS;
       document.head.appendChild(style);
@@ -3373,22 +3745,37 @@ describe('complex renderer lifecycle', () => {
           '.ok-native-list-icon-button.ok-native-list-tertiary-icon:focus-visible:not(:disabled)'
         )
       );
-      expect(tertiaryFocus?.cssText).toContain('outline: 2px solid var(--nl-accent)');
+      expect(tertiaryFocus?.cssText).toContain(
+        'outline: 2px solid var(--nl-accent)'
+      );
       const networkImage = host.querySelector<HTMLImageElement>(
         '.ok-native-list-visual-overlay img'
       )!;
       expect(networkImage.style.borderRadius).toBe('50%');
       expect(host.querySelector('.ok-native-list-overlay-fallback')).toBeNull();
       networkImage.dispatchEvent(new document.defaultView!.Event('error'));
-      expect(host.querySelector('.ok-native-list-visual-overlay img')).toBeNull();
-      expect(host.querySelector('.ok-native-list-overlay-fallback svg path')).not.toBeNull();
-      engine.applySnapshot(snap({ ...row, titleIcon: undefined,
-        leading: { kind: 'token', overlays: [{ position: 'bottomRight', text: 'E' }] },
-        trailing: [],
-      }));
+      expect(
+        host.querySelector('.ok-native-list-visual-overlay img')
+      ).toBeNull();
+      expect(
+        host.querySelector('.ok-native-list-overlay-fallback svg path')
+      ).not.toBeNull();
+      engine.applySnapshot(
+        snap({
+          ...row,
+          titleIcon: undefined,
+          leading: {
+            kind: 'token',
+            overlays: [{ position: 'bottomRight', text: 'E' }],
+          },
+          trailing: [],
+        })
+      );
       expect(host.querySelector('.ok-native-list-overlay-fallback')).toBeNull();
       expect(host.querySelector('.ok-native-list-tertiary-icon')).toBeNull();
-      expect(host.querySelector('.ok-native-list-visual-overlay img')).toBeNull();
+      expect(
+        host.querySelector('.ok-native-list-visual-overlay img')
+      ).toBeNull();
     } finally {
       engine.destroy();
     }
@@ -4952,6 +5339,67 @@ describe('Web migration layout and table regressions', () => {
     }
   });
 
+  it('emits an identity long press without also selecting the recipient', () => {
+    jest.useFakeTimers();
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.append(host);
+    const originalElement = Object.getOwnPropertyDescriptor(
+      globalThis,
+      'Element'
+    );
+    Object.defineProperty(globalThis, 'Element', {
+      configurable: true,
+      value: document.defaultView!.Element,
+    });
+    const onRowAction = jest.fn();
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [
+        {
+          type: 'identity',
+          key: 'recipient',
+          leading: { kind: 'icon', name: 'AccountCircleOutline' },
+          title: 'Recipient',
+          subtitle: 'bc1qlongaddress',
+          longPressActionKey: 'recipient.menu',
+        },
+      ]),
+      { onRowAction },
+      false
+    );
+    try {
+      const row = host.querySelector<HTMLElement>(
+        '[data-native-list-row-key="recipient"]'
+      )!;
+      row.dispatchEvent(
+        Object.assign(
+          new document.defaultView!.Event('pointerdown', { bubbles: true }),
+          {
+            pointerId: 1,
+            pointerType: 'touch',
+            button: 0,
+            clientX: 10,
+            clientY: 10,
+          }
+        )
+      );
+      jest.advanceTimersByTime(800);
+      row.dispatchEvent(
+        new document.defaultView!.Event('click', { bubbles: true })
+      );
+      expect(onRowAction.mock.calls.map(([event]) => event.actionKey)).toEqual([
+        'recipient.menu',
+      ]);
+    } finally {
+      engine.destroy();
+      if (originalElement)
+        Object.defineProperty(globalThis, 'Element', originalElement);
+      else Reflect.deleteProperty(globalThis, 'Element');
+      jest.useRealTimers();
+    }
+  });
+
   it.each([2, 3, 4, 6, 7] as const)(
     'retains fractional grid widths for %i columns',
     (columns) => {
@@ -5854,3 +6302,214 @@ describe.each([375, 1920])(
     );
   }
 );
+
+describe('DeFi position Web controls', () => {
+  const { JSDOM } = require('jsdom') as {
+    JSDOM: new (html: string) => { window: { document: Document } };
+  };
+  const snap = (row: RowModel): NativeListSnapshot => ({
+    schemaVersion: 1,
+    generation: 1,
+    layout: { kind: 'linear' },
+    rows: [row],
+  });
+
+  it('keeps every equal-width button and drops stale actions on rebind', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const onRowAction = jest.fn();
+    const first: RowModel = {
+      type: 'buttonGroup',
+      key: 'actions',
+      buttons: [
+        { key: 'withdraw', label: 'Withdraw', actionKey: 'withdraw' },
+        { key: 'claim', label: 'Claim', actionKey: 'claim', loading: true },
+        { key: 'repay', label: 'Repay', actionKey: 'repay', disabled: true },
+      ],
+    };
+    const engine = new NativeListWebEngine(
+      host,
+      snap(first),
+      { onRowAction },
+      false
+    );
+    const previousElement = global.Element;
+    global.Element = document.defaultView!.Element;
+    try {
+      const buttons = () =>
+        Array.from(
+          host.querySelectorAll<HTMLButtonElement>(
+            '.ok-native-list-block-button'
+          )
+        );
+      expect(buttons()).toHaveLength(3);
+      expect(buttons()[0]?.style.flex).toBe(buttons()[1]?.style.flex);
+      expect(buttons()[1]?.disabled).toBe(true);
+      expect(buttons()[1]?.getAttribute('aria-busy')).toBe('true');
+      expect(buttons()[1]?.textContent).toContain('Claim');
+      expect(
+        buttons()[1]?.querySelector('[role="progressbar"]')?.nextElementSibling
+          ?.textContent
+      ).toBe('Claim');
+      buttons()[0]?.click();
+      buttons()[1]?.click();
+      buttons()[2]?.click();
+      expect(onRowAction).toHaveBeenCalledTimes(1);
+      expect(onRowAction.mock.calls[0]![0]).toMatchObject({
+        rowKey: 'actions',
+        actionKey: 'withdraw',
+        anchor: { source: 'buttonGroup', slot: 0 },
+      });
+      engine.applySnapshot(
+        snap({
+          type: 'buttonGroup',
+          key: 'actions',
+          buttons: [{ key: 'new', label: 'New', actionKey: 'new' }],
+        })
+      );
+      expect(buttons()).toHaveLength(1);
+      expect(
+        host.querySelector('[data-native-list-action="withdraw"]')
+      ).toBeNull();
+      buttons()[0]?.click();
+      expect(onRowAction.mock.calls[1]![0].actionKey).toBe('new');
+    } finally {
+      engine.destroy();
+      global.Element = previousElement;
+    }
+  });
+
+  it('uses hover only for tooltip help and click only for popover help', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const onRowAction = jest.fn();
+    const onActionAnchorInvalidated = jest.fn();
+    const base: RowModel = {
+      type: 'sectionHeader',
+      key: 'position',
+      sectionKey: 'position',
+      title: 'LIDO',
+      leadingBadge: { key: 'staking', text: 'Staking', tone: 'success' },
+      value: '--',
+      valueHelp: { actionKey: 'missing', presentation: 'tooltip' },
+      style: { titleDecoration: 'none' },
+    };
+    const engine = new NativeListWebEngine(
+      host,
+      snap(base),
+      {
+        onRowAction,
+        onActionAnchorInvalidated,
+      },
+      false
+    );
+    const previousElement = global.Element;
+    const previousNode = global.Node;
+    global.Element = document.defaultView!.Element;
+    global.Node = document.defaultView!.Node;
+    const value = () =>
+      host.querySelector<HTMLElement>('[data-nl-slot="value"]')!;
+    const pointer = (type: string, pointerType: string) =>
+      value().dispatchEvent(
+        Object.assign(
+          new document.defaultView!.Event(type, { bubbles: true }),
+          { pointerType }
+        )
+      );
+    try {
+      expect(host.textContent).toContain('Staking');
+      expect(
+        host.querySelector<HTMLElement>('.ok-native-list-section-title')?.style
+          .textDecoration
+      ).toBe('none');
+      pointer('pointerover', 'mouse');
+      expect(onRowAction.mock.calls[0]![0]).toMatchObject({
+        actionKey: 'missing',
+        anchor: { source: 'trailingAccessory' },
+      });
+      const token = onRowAction.mock.calls[0]![0].anchor.token;
+      engine.setActionAnchorState({ token, open: true });
+      pointer('pointerdown', 'mouse');
+      expect(onActionAnchorInvalidated).toHaveBeenCalledTimes(1);
+      value().click();
+      expect(onRowAction).toHaveBeenCalledTimes(1);
+      engine.applySnapshot(
+        snap({
+          ...base,
+          value: '$1',
+          valueHelp: {
+            actionKey: 'partial',
+            presentation: 'popover',
+            underline: 'dashed',
+          },
+          style: { valuePlacement: 'afterTitle', titleDecoration: 'dashed' },
+        })
+      );
+      expect(
+        value().parentElement?.classList.contains('ok-native-list-flex')
+      ).toBe(true);
+      expect(value().style.textDecoration).toBe('underline dashed');
+      pointer('pointerover', 'mouse');
+      expect(onRowAction).toHaveBeenCalledTimes(1);
+      value().click();
+      expect(onRowAction.mock.calls[1]![0].actionKey).toBe('partial');
+    } finally {
+      engine.destroy();
+      global.Element = previousElement;
+      global.Node = previousNode;
+    }
+  });
+
+  it('keeps valuePair help on its primary line', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const onRowAction = jest.fn();
+    const row: IdentityRow = {
+      type: 'identity',
+      key: 'asset',
+      pressDisabled: true,
+      title: 'ETH',
+      leading: { kind: 'token', image },
+      trailing: [
+        {
+          kind: 'valuePair',
+          primary: '$1',
+          secondary: '2 ETH',
+          primaryHelp: {
+            actionKey: 'partial',
+            presentation: 'popover',
+            underline: 'dashed',
+          },
+        },
+      ],
+    };
+    const engine = new NativeListWebEngine(
+      host,
+      snap(row),
+      { onRowAction },
+      false
+    );
+    const previousElement = global.Element;
+    global.Element = document.defaultView!.Element;
+    try {
+      const pair = host.querySelector<HTMLElement>('.ok-native-list-amounts')!;
+      const primary = pair.firstElementChild as HTMLElement;
+      const secondary = pair.lastElementChild as HTMLElement;
+      expect(primary.style.textDecoration).toBe('underline dashed');
+      secondary.click();
+      expect(onRowAction).not.toHaveBeenCalled();
+      primary.click();
+      expect(onRowAction.mock.calls[0]![0]).toMatchObject({
+        rowKey: 'asset',
+        actionKey: 'partial',
+        anchor: { source: 'trailingAccessory' },
+      });
+    } finally {
+      engine.destroy();
+      global.Element = previousElement;
+    }
+  });
+});

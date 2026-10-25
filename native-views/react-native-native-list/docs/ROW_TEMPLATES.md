@@ -1,6 +1,6 @@
 # NativeList row template catalog
 
-This catalog defines the **12 types in `RowModel`** on the consolidated spec
+This catalog defines the **13 types in `RowModel`** on the consolidated spec
 branch. Each template owns a fixed internal structure. Its `style` customizes
 named fields inside that structure; it does not define a new layout or enable a
 list feature. See [STYLE_SPEC.md](STYLE_SPEC.md) for tokens, numeric bounds,
@@ -34,6 +34,7 @@ template the owner of sections or the indexed bar.
 | [metricCard](#metriccard) | KPI or portfolio summary | Label/value card or named composite metrics arrangement |
 | [sectionHeader](#sectionheader) | Structural section heading | Header text + optional summary value/controls |
 | [action](#action) | A row-level command | Label + optional icon/value/controls |
+| [buttonGroup](#buttongroup) | DeFi position actions | One or more equal-width info-outline buttons |
 | [system](#system) | Loading, retry, warning, empty/end or spacer | Variant-specific bounded status content |
 
 The style roles below form the shared configurable contract on Web, iOS and
@@ -75,6 +76,10 @@ separately from source implementation in STYLE_SPEC §9.
   and 12 for other templates (Web 0).
 - **Platform default:** without `subtitleLines` or `style.subtitle.lines`, the
   subtitle shows one line on iOS and Web but two on Android (STYLE_SPEC §6.2).
+- **Recipient opt-in:** `subtitleLines: 0` allows the whole subtitle to wrap;
+  `contentHeight: 'auto'` sizes the identity row to that content. Both are
+  explicit so existing selector rows retain their geometry. Optional
+  `longPressActionKey` emits a row action and suppresses the tap for that gesture.
 - **Text style roles:** `title`, `subtitle`, `tertiary`, `badge`, `value`,
   `valueSecondary`. The last two refer to value accessories in `trailing`; `badge`
   refers to badge text. `value`/`valueSecondary` select the first/second value
@@ -83,6 +88,13 @@ separately from source implementation in STYLE_SPEC §9.
   `secondaryTextSegments` use the existing subscript run shape per line; missing
   or empty arrays retain the required fallback string. They are semantic roles,
   not extra top-level data fields.
+- **Primary value weight:** optional `valuePair.primaryFontWeight: 'medium'`
+  styles only the first line. The second line remains regular; omission keeps
+  each platform's existing value-pair typography.
+- **Primary value help:** optional `primaryHelp` on a `valuePair` targets only
+  its first line. `presentation` explicitly selects Web Tooltip or cross-platform
+  Popover behavior; native Tooltip has no press target. Optional dashed underline
+  is visual only. Missing help retains the original passive value pair.
 - **Layout boundary:** reserve visual and accessory slots; text compresses within
   its own column. Styling cannot move a checkbox/menu into the title column,
   reorder accessories or convert a horizontal row into the sidebar presentation.
@@ -188,11 +200,14 @@ stacked (phone)                     table (wide)
 
 - **Use:** a notification or message preview.
 - **Required data:** `title`, `body`, `time`; optional `leading`, `thumbnail`,
-  `unread`. `bodyLines` is the legacy fallback for one, two or three body lines.
+  `unread`. `bodyLines` is the legacy fallback for one, two or three body lines;
+  zero opts into unlimited body wrapping and natural height.
 - **Text style roles:** `title`, `body`, `time`. `style.body.lines` accepts one, two or three and takes precedence over `bodyLines`.
 - **Layout boundary:** time and thumbnail keep their allocated regions; body
-  text wraps/truncates within the message area. Styling cannot displace the
-  timestamp, grow over the next row, or turn the preview into unbounded content.
+  text wraps/truncates within the message area. Unlimited wrapping is explicit
+  and remains bounded by the row's 4096-character text limit. The optional
+  `inlineWarning` presentation draws requested top/bottom container borders
+  across the row width without side borders or rounded corners.
 - **Current divergence:** leading-image size and body typography differ across
   platforms. Larger line boxes need explicit height and visual verification.
 
@@ -328,6 +343,11 @@ chrome and emits no row action. Omission preserves existing rendering.
   icons/actions, checkbox, `sticky`, `indexTitle`. Variants: default, `summary`,
   `gallery`, `history`; `presentation: 'networkSelector'` is also available.
 - **Text style roles:** `title`, `subtitle`, `value`.
+- **DeFi position fields:** optional `leadingBadge` precedes the title.
+  `style.valuePlacement: 'afterTitle'` keeps a short value beside the title;
+  `style.titleDecoration` explicitly selects plain or dashed title text.
+  `valueHelp` uses the same explicit presentation and underline contract as
+  `valuePair.primaryHelp`. Omission keeps the original heading behavior.
 - **Layout boundary:** preserve heading/value/control regions. `summary` does
   not accept a checkbox and is not sticky. Pinning and index-entry generation are
   container behavior, not a text-style property.
@@ -351,6 +371,18 @@ chrome and emits no row action. Omission preserves existing rendering.
 - **Common-capability boundary:** the same action descriptor can live in
   `rows`, `fixedFooter` or `emptyState`. The container decides placement and
   visibility; the action template only renders its content.
+
+## buttonGroup
+
+- **Use:** the full-width DeFi position actions within the list's data stream.
+- **Required data:** a nonempty `buttons` array. Every entry has a unique
+  `key`, `label` and `actionKey`; optional `disabled`, `loading`, `testID` and
+  `accessibilityLabel` retain one control per entry.
+- **Fixed structure:** equal-width medium info-outline buttons with 10-point
+  gaps, 12-point vertical button padding and 12-point radius. Loading retains
+  width and disables only its button. Row disable blocks all actions.
+- **Action boundary:** each button emits its own action and anchor slot; the row
+  has no independent press action. The SDK never resolves DeFi permissions.
 
 ## system
 

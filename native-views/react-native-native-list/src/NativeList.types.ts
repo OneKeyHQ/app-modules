@@ -78,6 +78,12 @@ export type NativeListWebScrollHost = Readonly<{
   scrollTop: number;
 }>;
 
+export type NativeListSidecarLayout = Readonly<{
+  width: number;
+  gap: number;
+  maxContentWidth: number;
+}>;
+
 type InitialScrollProps =
   | Readonly<{
       initialScrollIndex?: never;
@@ -131,6 +137,9 @@ export type NativeListProps = Omit<ViewProps, 'children'> &
     listHeader?: ReactNode;
     listFooter?: ReactNode;
     listEmpty?: ReactNode;
+    /** Scrolling right column for a vertical linear list. Requires sidecarLayout. */
+    listSidecar?: ReactNode;
+    sidecarLayout?: NativeListSidecarLayout;
     /** Fixed overlay above scrolling rows on iOS 26 and newer. */
     topOverlay?: ReactNode;
     /** Selects UIKit's top scroll-edge effect on iOS 26 and newer. */

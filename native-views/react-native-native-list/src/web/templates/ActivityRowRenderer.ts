@@ -780,8 +780,9 @@ function bindHistory(
     20,
     400
   );
-  v.actions.style.cssText =
-    `display:flex;gap:12px;padding-left:${row.hideLeading ? 0 : 52}px;padding-bottom:4px;`;
+  v.actions.style.cssText = `display:flex;gap:12px;padding-left:${
+    row.hideLeading ? 0 : 52
+  }px;padding-bottom:4px;`;
   v.actions.style.display = footer ? 'flex' : 'none';
   const actionKeys = new Set<string>();
   for (const [index, action] of (row.footerActions ?? []).entries()) {

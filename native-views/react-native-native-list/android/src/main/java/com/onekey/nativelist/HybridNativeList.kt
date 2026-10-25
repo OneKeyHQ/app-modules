@@ -31,6 +31,13 @@ class HybridNativeList(context: ThemedReactContext) : HybridNativeListSpec() {
       dispatchToUi { hostView.setContainerSlotHeightsJson(value) }
     }
 
+  override var sidecarLayoutJson: String = ""
+    set(value) {
+      if (field == value) return
+      field = value
+      dispatchToUi { hostView.setSidecarLayoutJson(value) }
+    }
+
   private var fontsChanged = false
   private var snapshotChanged = false
 

@@ -1,6 +1,7 @@
 import { ROW_BOX_STYLE_KEYS_BY_TYPE } from './models';
 import type {
   ActivityRow,
+  ButtonGroupRow,
   IdentityRow,
   ImageSource,
   LeadingVisual,
@@ -13,6 +14,7 @@ import type {
   RowBoxStyle,
   RowModel,
   RowPatch,
+  RowTextHelp,
   WalletGroupRow,
   WebMarketTableCell,
   WebMarketTablePresentation,
@@ -220,6 +222,7 @@ const TEXT_STYLE_KEYS_BY_ROW_TYPE: Readonly<
   metricCard: ['title', 'value', 'subtitle', 'trend'],
   sectionHeader: ['title', 'subtitle', 'value'],
   action: ['title', 'value'],
+  buttonGroup: [],
   system: ['title', 'message', 'actionText'],
 };
 
@@ -235,6 +238,7 @@ const EXTRA_STYLE_KEYS_BY_ROW_TYPE: Readonly<
     'changeHeight',
     'changeCornerRadius',
   ],
+  sectionHeader: ['valuePlacement', 'titleDecoration'],
 };
 
 function assertTextStyle(
@@ -495,8 +499,30 @@ function assertRowStyle(row: RowModel, path: string): void {
   assertBoxStyle(style as RowBoxStyle, `${path}.style`);
   if (row.type === 'identity') {
     const ratio = (style as IdentityRow['style'])?.leadingContentMaxWidthRatio;
-    if (ratio !== undefined && (!Number.isFinite(ratio) || ratio <= 0 || ratio > 1))
-      fail(`${path}.style.leadingContentMaxWidthRatio`, 'must be within (0, 1]');
+    if (
+      ratio !== undefined &&
+      (!Number.isFinite(ratio) || ratio <= 0 || ratio > 1)
+    )
+      fail(
+        `${path}.style.leadingContentMaxWidthRatio`,
+        'must be within (0, 1]'
+      );
+  }
+  if (row.type === 'sectionHeader') {
+    const sectionStyle = style as Extract<
+      RowModel,
+      { type: 'sectionHeader' }
+    >['style'];
+    if (
+      sectionStyle?.valuePlacement !== undefined &&
+      sectionStyle.valuePlacement !== 'afterTitle'
+    )
+      fail(`${path}.style.valuePlacement`, 'must be afterTitle');
+    if (
+      sectionStyle?.titleDecoration !== undefined &&
+      !['none', 'dashed'].includes(sectionStyle.titleDecoration)
+    )
+      fail(`${path}.style.titleDecoration`, 'must be none or dashed');
   }
   const slots = style as Record<string, NativeListTextStyle | undefined>;
   textKeys.forEach((key) =>
@@ -1059,9 +1085,17 @@ function assertTrailingAccessories(
       assertUnknownKeys(
         accessory as Record<string, unknown>,
         [
-          'kind', 'label', 'actionKey', 'disabled', 'testID',
-          'accessibilityLabel', 'textColor', 'backgroundColor',
-          'pressedBackgroundColor', 'hoverBackgroundColor', 'focusRingColor',
+          'kind',
+          'label',
+          'actionKey',
+          'disabled',
+          'testID',
+          'accessibilityLabel',
+          'textColor',
+          'backgroundColor',
+          'pressedBackgroundColor',
+          'hoverBackgroundColor',
+          'focusRingColor',
         ],
         accessoryPath,
         'button key'
@@ -1069,18 +1103,32 @@ function assertTrailingAccessories(
       if (typeof accessory.label !== 'string' || !accessory.label.trim())
         fail(`${accessoryPath}.label`, 'must be non-blank');
       assertKey(accessory.actionKey, `${accessoryPath}.actionKey`);
-      if (accessory.disabled !== undefined && typeof accessory.disabled !== 'boolean')
+      if (
+        accessory.disabled !== undefined &&
+        typeof accessory.disabled !== 'boolean'
+      )
         fail(`${accessoryPath}.disabled`, 'must be boolean');
-      for (const field of ['textColor', 'backgroundColor', 'pressedBackgroundColor',
-        'hoverBackgroundColor', 'focusRingColor'] as const) {
+      for (const field of [
+        'textColor',
+        'backgroundColor',
+        'pressedBackgroundColor',
+        'hoverBackgroundColor',
+        'focusRingColor',
+      ] as const) {
         const value = accessory[field];
-        if (value !== undefined &&
-          (typeof value !== 'string' || !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(value)))
+        if (
+          value !== undefined &&
+          (typeof value !== 'string' ||
+            !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(value))
+        )
           fail(`${accessoryPath}.${field}`, 'must be #RRGGBB or #RRGGBBAA');
       }
     }
-    if (accessory.kind === 'icon' && accessory.buttonStyle !== undefined &&
-      accessory.buttonStyle !== 'tertiary')
+    if (
+      accessory.kind === 'icon' &&
+      accessory.buttonStyle !== undefined &&
+      accessory.buttonStyle !== 'tertiary'
+    )
       fail(`${accessoryPath}.buttonStyle`, 'must be tertiary');
     if (
       accessory.kind === 'progress' &&
@@ -1089,9 +1137,21 @@ function assertTrailingAccessories(
       fail(`${accessoryPath}.value`, 'must be within 0...1');
     }
     if (accessory.kind === 'valuePair') {
+      if (
+        accessory.primaryFontWeight !== undefined &&
+        accessory.primaryFontWeight !== 'medium'
+      )
+        fail(
+          `${accessoryPath}.primaryFontWeight`,
+          'must be medium when provided'
+        );
+      assertTextHelp(accessory.primaryHelp, `${accessoryPath}.primaryHelp`);
       assertTextTone(accessory.primaryTone, `${accessoryPath}.primaryTone`);
       assertTextTone(accessory.secondaryTone, `${accessoryPath}.secondaryTone`);
-      for (const field of ['primaryTextSegments', 'secondaryTextSegments'] as const) {
+      for (const field of [
+        'primaryTextSegments',
+        'secondaryTextSegments',
+      ] as const) {
         const segments = accessory[field];
         if (segments === undefined) continue;
         const segmentPath = `${accessoryPath}.${field}`;
@@ -1102,21 +1162,94 @@ function assertTrailingAccessories(
           const path = `${segmentPath}[${segmentIndex}]`;
           const entry = protocolObject(segment, path);
           assertUnknownKeys(entry, ['text', 'style'], path, 'segment key');
-          if (typeof entry.text !== 'string' || entry.text.length > MAX_TEXT_LENGTH)
-            fail(`${path}.text`, `must be a string no longer than ${MAX_TEXT_LENGTH} characters`);
+          if (
+            typeof entry.text !== 'string' ||
+            entry.text.length > MAX_TEXT_LENGTH
+          )
+            fail(
+              `${path}.text`,
+              `must be a string no longer than ${MAX_TEXT_LENGTH} characters`
+            );
           if (entry.style !== undefined && entry.style !== 'subscript')
             fail(`${path}.style`, 'must be subscript when provided');
           textLength += entry.text.length;
         });
         if (textLength > MAX_TEXT_LENGTH)
-          fail(segmentPath, `total text must be at most ${MAX_TEXT_LENGTH} characters`);
+          fail(
+            segmentPath,
+            `total text must be at most ${MAX_TEXT_LENGTH} characters`
+          );
       }
     }
   });
 }
 
+function assertTextHelp(help: RowTextHelp | undefined, path: string): void {
+  if (help === undefined) return;
+  const object = protocolObject(help, path);
+  assertUnknownKeys(
+    object,
+    ['actionKey', 'presentation', 'underline'],
+    path,
+    'help key'
+  );
+  assertKey(help.actionKey, `${path}.actionKey`);
+  if (!['tooltip', 'popover'].includes(help.presentation))
+    fail(`${path}.presentation`, 'must be tooltip or popover');
+  if (help.underline !== undefined && help.underline !== 'dashed')
+    fail(`${path}.underline`, 'must be dashed');
+}
+
+function assertButtonGroup(
+  row: Pick<ButtonGroupRow, 'buttons'>,
+  path: string
+): void {
+  if (!Array.isArray(row.buttons) || row.buttons.length === 0)
+    fail(`${path}.buttons`, 'must contain at least one button');
+  const keys = new Set<string>();
+  row.buttons.forEach((button, index) => {
+    const itemPath = `${path}.buttons[${index}]`;
+    const object = protocolObject(button, itemPath);
+    assertUnknownKeys(
+      object,
+      [
+        'key',
+        'label',
+        'actionKey',
+        'disabled',
+        'loading',
+        'testID',
+        'accessibilityLabel',
+      ],
+      itemPath,
+      'button key'
+    );
+    assertKey(button.key, `${itemPath}.key`);
+    if (keys.has(button.key)) fail(`${itemPath}.key`, 'duplicate button key');
+    keys.add(button.key);
+    if (
+      typeof button.label !== 'string' ||
+      !button.label.trim() ||
+      button.label.length > MAX_TEXT_LENGTH
+    )
+      fail(`${itemPath}.label`, 'must be non-blank bounded text');
+    assertKey(button.actionKey, `${itemPath}.actionKey`);
+    for (const field of ['disabled', 'loading'] as const) {
+      if (button[field] !== undefined && typeof button[field] !== 'boolean')
+        fail(`${itemPath}.${field}`, 'must be boolean');
+    }
+    for (const field of ['testID', 'accessibilityLabel'] as const) {
+      if (button[field] !== undefined && typeof button[field] !== 'string')
+        fail(`${itemPath}.${field}`, 'must be a string');
+    }
+  });
+}
+
 function assertIdentityExtras(
-  row: Pick<IdentityRow, 'titleIcon' | 'secondaryTitleIcon' | 'trailing' | 'style'>,
+  row: Pick<
+    IdentityRow,
+    'titleIcon' | 'secondaryTitleIcon' | 'trailing' | 'style'
+  >,
   path: string
 ): void {
   for (const field of ['titleIcon', 'secondaryTitleIcon'] as const) {
@@ -1124,23 +1257,36 @@ function assertIdentityExtras(
     if (titleIcon === undefined) continue;
     const iconPath = `${path}.${field}`;
     const icon = protocolObject(titleIcon, iconPath);
-    assertUnknownKeys(icon, ['name', 'tintColor', 'accessibilityLabel', 'hoverActionKey'],
-      iconPath, 'title icon key');
+    assertUnknownKeys(
+      icon,
+      ['name', 'tintColor', 'accessibilityLabel', 'hoverActionKey'],
+      iconPath,
+      'title icon key'
+    );
     if (typeof titleIcon.name !== 'string' || !titleIcon.name.trim())
       fail(`${iconPath}.name`, 'must be non-blank');
-    if (titleIcon.tintColor !== undefined &&
+    if (
+      titleIcon.tintColor !== undefined &&
       (typeof titleIcon.tintColor !== 'string' ||
-        !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(titleIcon.tintColor)))
+        !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(titleIcon.tintColor))
+    )
       fail(`${iconPath}.tintColor`, 'must be #RRGGBB or #RRGGBBAA');
-    if (titleIcon.accessibilityLabel !== undefined &&
-      typeof titleIcon.accessibilityLabel !== 'string')
+    if (
+      titleIcon.accessibilityLabel !== undefined &&
+      typeof titleIcon.accessibilityLabel !== 'string'
+    )
       fail(`${iconPath}.accessibilityLabel`, 'must be a string');
     if (titleIcon.hoverActionKey !== undefined)
       assertKey(titleIcon.hoverActionKey, `${iconPath}.hoverActionKey`);
   }
   const ratio = row.style?.leadingContentMaxWidthRatio;
-  if (ratio !== undefined && (typeof ratio !== 'number' ||
-    !Number.isFinite(ratio) || ratio <= 0 || ratio > 1))
+  if (
+    ratio !== undefined &&
+    (typeof ratio !== 'number' ||
+      !Number.isFinite(ratio) ||
+      ratio <= 0 ||
+      ratio > 1)
+  )
     fail(`${path}.style.leadingContentMaxWidthRatio`, 'must be within (0, 1]');
   assertTrailingAccessories(row.trailing, `${path}.trailing`);
 }
@@ -1215,12 +1361,23 @@ function assertLeadingVisual(
     assertText(visual.cornerIcon?.name, `${path}.cornerIcon.name`);
     // OneKey patch: validate optional selector overlays at the JSON boundary.
     assertText(visual.fallbackIcon?.name, `${path}.fallbackIcon.name`);
-    if (visual.fallbackIcon?.size !== undefined &&
-      (!Number.isFinite(visual.fallbackIcon.size) || visual.fallbackIcon.size <= 0 ||
-        visual.fallbackIcon.size > 40))
+    if (
+      visual.fallbackTextColor !== undefined &&
+      (typeof visual.fallbackTextColor !== 'string' ||
+        !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(visual.fallbackTextColor))
+    )
+      fail(`${path}.fallbackTextColor`, 'must be a hex color');
+    if (
+      visual.fallbackIcon?.size !== undefined &&
+      (!Number.isFinite(visual.fallbackIcon.size) ||
+        visual.fallbackIcon.size <= 0 ||
+        visual.fallbackIcon.size > 40)
+    )
       fail(`${path}.fallbackIcon.size`, 'must be within (0, 40]');
-    if (visual.fallbackIcon?.backgroundColor !== undefined &&
-      !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(visual.fallbackIcon.backgroundColor))
+    if (
+      visual.fallbackIcon?.backgroundColor !== undefined &&
+      !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(visual.fallbackIcon.backgroundColor)
+    )
       fail(`${path}.fallbackIcon.backgroundColor`, 'must be a hex color');
     if ((visual.overlays?.length ?? 0) > 2)
       fail(`${path}.overlays`, 'supports at most two overlays');
@@ -1283,17 +1440,32 @@ function assertLeadingVisual(
       assertImage(overlay.image, `${path}.overlays[${index}].image`);
       if (overlay.fallbackIcon !== undefined && !overlay.image)
         fail(`${path}.overlays[${index}].fallbackIcon`, 'requires image');
-      if (overlay.fallbackIcon !== undefined &&
-        (typeof overlay.fallbackIcon.name !== 'string' || !overlay.fallbackIcon.name.trim()))
-        fail(`${path}.overlays[${index}].fallbackIcon.name`, 'must be non-blank');
-      if (overlay.fallbackIcon?.tintColor !== undefined &&
-        !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(overlay.fallbackIcon.tintColor))
-        fail(`${path}.overlays[${index}].fallbackIcon.tintColor`, 'must be a hex color');
+      if (
+        overlay.fallbackIcon !== undefined &&
+        (typeof overlay.fallbackIcon.name !== 'string' ||
+          !overlay.fallbackIcon.name.trim())
+      )
+        fail(
+          `${path}.overlays[${index}].fallbackIcon.name`,
+          'must be non-blank'
+        );
+      if (
+        overlay.fallbackIcon?.tintColor !== undefined &&
+        !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(overlay.fallbackIcon.tintColor)
+      )
+        fail(
+          `${path}.overlays[${index}].fallbackIcon.tintColor`,
+          'must be a hex color'
+        );
       assertText(overlay.text, `${path}.overlays[${index}].text`);
-      if (overlay.fontWeight !== undefined &&
-        !['regular', 'medium', 'semibold', 'bold'].includes(overlay.fontWeight))
-        fail(`${path}.overlays[${index}].fontWeight`,
-          'must be regular, medium, semibold, or bold');
+      if (
+        overlay.fontWeight !== undefined &&
+        !['regular', 'medium', 'semibold', 'bold'].includes(overlay.fontWeight)
+      )
+        fail(
+          `${path}.overlays[${index}].fontWeight`,
+          'must be regular, medium, semibold, or bold'
+        );
     });
     if (visual.kind === 'token') {
       assertImage(visual.networkImage, `${path}.networkImage`);
@@ -1491,6 +1663,18 @@ function assertRow(
       assertWalletGroup(row, path);
       break;
     case 'identity':
+      if (row.contentHeight !== undefined && row.contentHeight !== 'auto') {
+        fail(`${path}.contentHeight`, 'must be auto');
+      }
+      if (
+        row.subtitleLines !== undefined &&
+        ![0, 1, 2].includes(row.subtitleLines)
+      ) {
+        fail(`${path}.subtitleLines`, 'must be 0, 1, or 2');
+      }
+      if (row.longPressActionKey !== undefined) {
+        assertKey(row.longPressActionKey, `${path}.longPressActionKey`);
+      }
       if (
         row.presentation !== undefined &&
         row.presentation !== 'walletSidebar' &&
@@ -1503,6 +1687,26 @@ function assertRow(
         );
       }
       assertText(row.title, `${path}.title`);
+      if ((row.titleSuffixes?.length ?? 0) > 3)
+        fail(`${path}.titleSuffixes`, 'supports at most 3 suffixes');
+      row.titleSuffixes?.forEach((suffix, index) => {
+        assertText(suffix.text, `${path}.titleSuffixes[${index}].text`);
+        if (!['secondary', 'disabled'].includes(suffix.tone))
+          fail(
+            `${path}.titleSuffixes[${index}].tone`,
+            'must be secondary or disabled'
+          );
+        if (
+          suffix.maxWidth !== undefined &&
+          (!Number.isFinite(suffix.maxWidth) ||
+            suffix.maxWidth < 0 ||
+            suffix.maxWidth > 4096)
+        )
+          fail(
+            `${path}.titleSuffixes[${index}].maxWidth`,
+            'must be finite within 0...4096'
+          );
+      });
       assertIdentityExtras(row, path);
       assertText(row.subtitle, `${path}.subtitle`);
       // OneKey patch: selector text segments truncate independently.
@@ -1571,10 +1775,16 @@ function assertRow(
       assertActivity(row, path);
       break;
     case 'message':
+      if (
+        row.presentation !== undefined &&
+        row.presentation !== 'inlineWarning'
+      ) {
+        fail(`${path}.presentation`, 'must be inlineWarning');
+      }
       assertText(row.title, `${path}.title`);
       assertText(row.body, `${path}.body`);
-      if (![1, 2, 3].includes(row.bodyLines ?? 3)) {
-        fail(`${path}.bodyLines`, 'must be 1, 2, or 3');
+      if (![0, 1, 2, 3].includes(row.bodyLines ?? 3)) {
+        fail(`${path}.bodyLines`, 'must be 0, 1, 2, or 3');
       }
       assertImage(row.thumbnail, `${path}.thumbnail`);
       break;
@@ -1585,6 +1795,23 @@ function assertRow(
       row.columns.forEach((column, columnIndex) => {
         assertKey(column.key, `${path}.columns[${columnIndex}].key`);
         assertText(column.text, `${path}.columns[${columnIndex}].text`);
+        assertIdentityExtras(column, `${path}.columns[${columnIndex}]`);
+        for (const field of [
+          'textSegments',
+          'secondaryTextSegments',
+        ] as const) {
+          column[field]?.forEach((segment, segmentIndex) => {
+            assertText(
+              segment.text,
+              `${path}.columns[${columnIndex}].${field}[${segmentIndex}].text`
+            );
+            if (segment.style !== undefined && segment.style !== 'subscript')
+              fail(
+                `${path}.columns[${columnIndex}].${field}[${segmentIndex}].style`,
+                'must be subscript'
+              );
+          });
+        }
         assertText(
           column.secondaryLeadingText,
           `${path}.columns[${columnIndex}].secondaryLeadingText`
@@ -1601,6 +1828,13 @@ function assertRow(
       if ((row.badges?.length ?? 0) > MAX_BADGES) {
         fail(`${path}.badges`, `supports at most ${MAX_BADGES} badges`);
       }
+      if ((row.trailing?.length ?? 0) > MAX_TRAILING_ACCESSORIES) {
+        fail(
+          `${path}.trailing`,
+          `supports at most ${MAX_TRAILING_ACCESSORIES} accessories`
+        );
+      }
+      assertTrailingAccessories(row.trailing, `${path}.trailing`);
       break;
     case 'market':
       assertMarketRow(row, path);
@@ -1677,6 +1911,11 @@ function assertRow(
       assertText(row.title, `${path}.title`);
       assertText(row.subtitle, `${path}.subtitle`);
       assertText(row.value, `${path}.value`);
+      if (row.leadingBadge) {
+        assertKey(row.leadingBadge.key, `${path}.leadingBadge.key`);
+        assertText(row.leadingBadge.text, `${path}.leadingBadge.text`);
+      }
+      assertTextHelp(row.valueHelp, `${path}.valueHelp`);
       if (row.valueActionKey !== undefined) {
         assertKey(row.valueActionKey, `${path}.valueActionKey`);
       }
@@ -1708,6 +1947,9 @@ function assertRow(
         );
       }
       assertTrailingAccessories(row.trailing, `${path}.trailing`);
+      break;
+    case 'buttonGroup':
+      assertButtonGroup(row, path);
       break;
     case 'system':
       const presentation = 'presentation' in row ? row.presentation : undefined;
@@ -1817,6 +2059,26 @@ function assertMediaPreview(value: unknown, path: string) {
 function assertSnapshotContract(
   snapshot: NativeListSnapshot
 ): NativeListSnapshot {
+  if (snapshot.structuralTransition) {
+    assertKey(
+      snapshot.structuralTransition.id,
+      'snapshot.structuralTransition.id'
+    );
+    if (snapshot.structuralTransition.anchorKey !== undefined)
+      assertKey(
+        snapshot.structuralTransition.anchorKey,
+        'snapshot.structuralTransition.anchorKey'
+      );
+    const duration = snapshot.structuralTransition.durationMs;
+    if (
+      duration !== undefined &&
+      (!Number.isFinite(duration) || duration < 0 || duration > 2000)
+    )
+      fail(
+        'snapshot.structuralTransition.durationMs',
+        'must be finite within 0...2000'
+      );
+  }
   if (
     snapshot.capabilities?.refreshTriggerDistance !== undefined &&
     (!Number.isFinite(snapshot.capabilities.refreshTriggerDistance) ||
@@ -1832,9 +2094,17 @@ function assertSnapshotContract(
     snapshot.theme?.imageFallbackBackground,
     'theme.imageFallbackBackground'
   );
-  if (snapshot.theme?.rowHoverBackground !== undefined &&
+  if (
+    snapshot.theme?.successBackground !== undefined &&
+    (typeof snapshot.theme.successBackground !== 'string' ||
+      !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(snapshot.theme.successBackground))
+  )
+    fail('theme.successBackground', 'must be a hex color');
+  if (
+    snapshot.theme?.rowHoverBackground !== undefined &&
     (typeof snapshot.theme.rowHoverBackground !== 'string' ||
-      !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(snapshot.theme.rowHoverBackground)))
+      !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(snapshot.theme.rowHoverBackground))
+  )
     fail('theme.rowHoverBackground', 'must be a hex color');
   if (snapshot.schemaVersion !== 1) fail('snapshot.schemaVersion', 'must be 1');
   if (!Number.isSafeInteger(snapshot.generation) || snapshot.generation < 0) {
@@ -1983,6 +2253,7 @@ function protocolKey(value: unknown, path: string): void {
 
 const PROTOCOL_ARRAY_FIELDS = new Set([
   'columns',
+  'titleSuffixes',
   'cells',
   'points',
   'images',
@@ -1990,6 +2261,7 @@ const PROTOCOL_ARRAY_FIELDS = new Set([
   'badges',
   'trailing',
   'footerActions',
+  'buttons',
   'amounts',
   'metrics',
   'children',
@@ -2073,18 +2345,29 @@ function assertProtocolFields(
   const object = value as Record<string, unknown>;
   if (parentField === 'fallbackIcon') {
     protocolKey(object.name, `${path}.name`);
-    if (object.size !== undefined &&
-      (typeof object.size !== 'number' || !Number.isFinite(object.size) ||
-        object.size <= 0 || object.size > 40))
+    if (
+      object.size !== undefined &&
+      (typeof object.size !== 'number' ||
+        !Number.isFinite(object.size) ||
+        object.size <= 0 ||
+        object.size > 40)
+    )
       fail(`${path}.size`, 'must be within (0, 40]');
     for (const field of ['tintColor', 'backgroundColor'] as const) {
       const color = object[field];
-      if (color !== undefined &&
-        (typeof color !== 'string' || !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(color)))
+      if (
+        color !== undefined &&
+        (typeof color !== 'string' ||
+          !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(color))
+      )
         fail(`${path}.${field}`, 'must be a hex color');
     }
   }
-  if (parentField === 'overlays' && object.fallbackIcon !== undefined && !object.image)
+  if (
+    parentField === 'overlays' &&
+    object.fallbackIcon !== undefined &&
+    !object.image
+  )
     fail(`${path}.fallbackIcon`, 'requires image');
   if (
     !path.includes('.style.') &&
@@ -2203,6 +2486,26 @@ function assertRowProtocol(row: RowModel, path: string): void {
     fail(`${path}.height`, 'must be non-negative');
   if (row.type === 'identity') {
     assertIdentityExtras(row, path);
+    if (row.titleSuffixes !== undefined && !Array.isArray(row.titleSuffixes))
+      fail(`${path}.titleSuffixes`, 'must be an array');
+    row.titleSuffixes?.forEach((suffix, index) => {
+      protocolObject(suffix, `${path}.titleSuffixes[${index}]`);
+      if (
+        typeof suffix.text !== 'string' ||
+        !['secondary', 'disabled'].includes(suffix.tone)
+      )
+        fail(`${path}.titleSuffixes[${index}]`, 'invalid title suffix');
+      if (
+        suffix.maxWidth !== undefined &&
+        (!Number.isFinite(suffix.maxWidth) ||
+          suffix.maxWidth < 0 ||
+          suffix.maxWidth > 4096)
+      )
+        fail(
+          `${path}.titleSuffixes[${index}].maxWidth`,
+          'must be finite within 0...4096'
+        );
+    });
     let end = 0;
     row.titleMatch?.forEach((match) => {
       if (
@@ -2216,6 +2519,9 @@ function assertRowProtocol(row: RowModel, path: string): void {
       end = match.end;
     });
   }
+  if (row.type === 'buttonGroup') assertButtonGroup(row, path);
+  if (row.type === 'sectionHeader')
+    assertTextHelp(row.valueHelp, `${path}.valueHelp`);
   if (row.type === 'mediaTile' && row.media) {
     protocolObject(row.media.source, `${path}.media.source`);
     if (!Array.isArray(row.media.probeOrder))
@@ -2236,8 +2542,16 @@ function assertRowProtocol(row: RowModel, path: string): void {
       keys.add(member.key);
     });
   }
-  if (row.type === 'dataRow' && !Array.isArray(row.columns))
-    fail(`${path}.columns`, 'must be an array');
+  if (row.type === 'dataRow') {
+    if (!Array.isArray(row.columns))
+      fail(`${path}.columns`, 'must be an array');
+    row.columns.forEach((column, index) => {
+      const columnPath = `${path}.columns[${index}]`;
+      protocolObject(column, columnPath);
+      assertIdentityExtras(column, columnPath);
+    });
+    assertTrailingAccessories(row.trailing, `${path}.trailing`);
+  }
   if (row.type === 'market') {
     protocolObject(row.change, `${path}.change`);
     if (row.webTable) {
@@ -2286,9 +2600,41 @@ function assertRowProtocol(row: RowModel, path: string): void {
 
 function assertSnapshotProtocol(snapshot: NativeListSnapshot): void {
   protocolObject(snapshot, 'snapshot');
-  if (snapshot.theme?.rowHoverBackground !== undefined &&
+  if (snapshot.structuralTransition) {
+    protocolObject(
+      snapshot.structuralTransition,
+      'snapshot.structuralTransition'
+    );
+    protocolKey(
+      snapshot.structuralTransition.id,
+      'snapshot.structuralTransition.id'
+    );
+    if (snapshot.structuralTransition.anchorKey !== undefined)
+      protocolKey(
+        snapshot.structuralTransition.anchorKey,
+        'snapshot.structuralTransition.anchorKey'
+      );
+    const duration = snapshot.structuralTransition.durationMs;
+    if (
+      duration !== undefined &&
+      (!Number.isFinite(duration) || duration < 0 || duration > 2000)
+    )
+      fail(
+        'snapshot.structuralTransition.durationMs',
+        'must be finite within 0...2000'
+      );
+  }
+  if (
+    snapshot.theme?.successBackground !== undefined &&
+    (typeof snapshot.theme.successBackground !== 'string' ||
+      !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(snapshot.theme.successBackground))
+  )
+    fail('theme.successBackground', 'must be a hex color');
+  if (
+    snapshot.theme?.rowHoverBackground !== undefined &&
     (typeof snapshot.theme.rowHoverBackground !== 'string' ||
-      !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(snapshot.theme.rowHoverBackground)))
+      !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(snapshot.theme.rowHoverBackground))
+  )
     fail('theme.rowHoverBackground', 'must be a hex color');
   if (snapshot.schemaVersion !== 1) fail('snapshot.schemaVersion', 'must be 1');
   if (!Number.isSafeInteger(snapshot.generation) || snapshot.generation < 0)
@@ -2378,6 +2724,73 @@ export function validateSnapshot(
   return normalizeSnapshotStyles(normalized);
 }
 
+const ownedNativeSnapshots = new WeakMap<
+  NativeListSnapshot,
+  ReadonlyMap<string, number>
+>();
+
+function capturePlainData<T>(value: T, seen = new Map<object, object>()): T {
+  if (value === null || typeof value !== 'object') return value;
+  const previous = seen.get(value);
+  if (previous) return previous as T;
+  const copy: Record<string, unknown> | unknown[] = Array.isArray(value)
+    ? new Array(value.length)
+    : Object.create(Object.getPrototypeOf(value));
+  seen.set(value, copy);
+  const captureKey = (key: string) => {
+    Object.defineProperty(copy, key, {
+      value: capturePlainData((value as Record<string, unknown>)[key], seen),
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+  };
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      if (index in value) captureKey(String(index));
+    }
+    Object.keys(value).forEach((key) => {
+      const index = Number(key);
+      if (
+        Number.isInteger(index) &&
+        index >= 0 &&
+        index < value.length &&
+        String(index) === key
+      )
+        return;
+      captureKey(key);
+    });
+  } else {
+    Object.keys(value).forEach(captureKey);
+  }
+  return copy as T;
+}
+
+function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
+  if (value === null || typeof value !== 'object' || seen.has(value))
+    return value;
+  seen.add(value);
+  Object.values(value).forEach((item) => deepFreeze(item, seen));
+  return Object.freeze(value);
+}
+
+/** Capture caller data once before validation, including accessor values. */
+export function captureNativeListInput<T>(value: T): T {
+  return capturePlainData(value);
+}
+
+/** Private native-wrapper ownership; exported validators keep their public identity. */
+export function ownValidatedNativeSnapshot(
+  snapshot: NativeListSnapshot
+): NativeListSnapshot {
+  const owned = deepFreeze(snapshot);
+  ownedNativeSnapshots.set(
+    owned,
+    new Map(owned.rows.map((row, index) => [row.key, index]))
+  );
+  return owned;
+}
+
 /**
  * Resolves typography tokens to numbers. Returns the original snapshot when
  * nothing needs resolving, so the common no-style path keeps object identity.
@@ -2434,7 +2847,45 @@ function assertPatchChanges(patch: RowPatch, index: number): void {
 
   switch (patch.type) {
     case 'identity':
+      if (
+        patch.changes.contentHeight !== undefined &&
+        patch.changes.contentHeight !== 'auto'
+      ) {
+        fail(`${path}.contentHeight`, 'must be auto');
+      }
+      if (
+        patch.changes.subtitleLines !== undefined &&
+        ![0, 1, 2].includes(patch.changes.subtitleLines)
+      ) {
+        fail(`${path}.subtitleLines`, 'must be 0, 1, or 2');
+      }
+      if (patch.changes.longPressActionKey !== undefined) {
+        assertKey(
+          patch.changes.longPressActionKey,
+          `${path}.longPressActionKey`
+        );
+      }
       assertText(patch.changes.title, `${path}.title`);
+      if ((patch.changes.titleSuffixes?.length ?? 0) > 3)
+        fail(`${path}.titleSuffixes`, 'supports at most 3 suffixes');
+      patch.changes.titleSuffixes?.forEach((suffix, index) => {
+        assertText(suffix.text, `${path}.titleSuffixes[${index}].text`);
+        if (!['secondary', 'disabled'].includes(suffix.tone))
+          fail(
+            `${path}.titleSuffixes[${index}].tone`,
+            'must be secondary or disabled'
+          );
+        if (
+          suffix.maxWidth !== undefined &&
+          (!Number.isFinite(suffix.maxWidth) ||
+            suffix.maxWidth < 0 ||
+            suffix.maxWidth > 4096)
+        )
+          fail(
+            `${path}.titleSuffixes[${index}].maxWidth`,
+            'must be finite within 0...4096'
+          );
+      });
       assertIdentityExtras(patch.changes, path);
       assertText(patch.changes.subtitle, `${path}.subtitle`);
       assertText(patch.changes.tertiary, `${path}.tertiary`);
@@ -2484,14 +2935,20 @@ function assertPatchChanges(patch: RowPatch, index: number): void {
       }
       break;
     case 'message':
+      if (
+        patch.changes.presentation !== undefined &&
+        patch.changes.presentation !== 'inlineWarning'
+      ) {
+        fail(`${path}.presentation`, 'must be inlineWarning');
+      }
       assertText(patch.changes.title, `${path}.title`);
       assertText(patch.changes.body, `${path}.body`);
       assertText(patch.changes.time, `${path}.time`);
       if (
         patch.changes.bodyLines !== undefined &&
-        ![1, 2, 3].includes(patch.changes.bodyLines)
+        ![0, 1, 2, 3].includes(patch.changes.bodyLines)
       ) {
-        fail(`${path}.bodyLines`, 'must be 1, 2, or 3');
+        fail(`${path}.bodyLines`, 'must be 0, 1, 2, or 3');
       }
       assertImage(patch.changes.thumbnail, `${path}.thumbnail`);
       break;
@@ -2505,6 +2962,23 @@ function assertPatchChanges(patch: RowPatch, index: number): void {
       patch.changes.columns?.forEach((column, columnIndex) => {
         assertKey(column.key, `${path}.columns[${columnIndex}].key`);
         assertText(column.text, `${path}.columns[${columnIndex}].text`);
+        assertIdentityExtras(column, `${path}.columns[${columnIndex}]`);
+        for (const field of [
+          'textSegments',
+          'secondaryTextSegments',
+        ] as const) {
+          column[field]?.forEach((segment, segmentIndex) => {
+            assertText(
+              segment.text,
+              `${path}.columns[${columnIndex}].${field}[${segmentIndex}].text`
+            );
+            if (segment.style !== undefined && segment.style !== 'subscript')
+              fail(
+                `${path}.columns[${columnIndex}].${field}[${segmentIndex}].style`,
+                'must be subscript'
+              );
+          });
+        }
         assertText(
           column.secondaryText,
           `${path}.columns[${columnIndex}].secondaryText`
@@ -2517,6 +2991,13 @@ function assertPatchChanges(patch: RowPatch, index: number): void {
       if ((patch.changes.badges?.length ?? 0) > MAX_BADGES) {
         fail(`${path}.badges`, `supports at most ${MAX_BADGES} badges`);
       }
+      if ((patch.changes.trailing?.length ?? 0) > MAX_TRAILING_ACCESSORIES) {
+        fail(
+          `${path}.trailing`,
+          `supports at most ${MAX_TRAILING_ACCESSORIES} accessories`
+        );
+      }
+      assertTrailingAccessories(patch.changes.trailing, `${path}.trailing`);
       break;
     case 'market':
       assertMarketRow(
@@ -2591,6 +3072,14 @@ function assertPatchChanges(patch: RowPatch, index: number): void {
       assertText(patch.changes.title, `${path}.title`);
       assertText(patch.changes.subtitle, `${path}.subtitle`);
       assertText(patch.changes.value, `${path}.value`);
+      if (patch.changes.leadingBadge) {
+        assertKey(patch.changes.leadingBadge.key, `${path}.leadingBadge.key`);
+        assertText(
+          patch.changes.leadingBadge.text,
+          `${path}.leadingBadge.text`
+        );
+      }
+      assertTextHelp(patch.changes.valueHelp, `${path}.valueHelp`);
       if (patch.changes.valueActionKey !== undefined) {
         assertKey(patch.changes.valueActionKey, `${path}.valueActionKey`);
       }
@@ -2612,6 +3101,10 @@ function assertPatchChanges(patch: RowPatch, index: number): void {
         );
       }
       assertTrailingAccessories(patch.changes.trailing, `${path}.trailing`);
+      break;
+    case 'buttonGroup':
+      if (patch.changes.buttons !== undefined)
+        assertButtonGroup({ buttons: patch.changes.buttons }, path);
       break;
     case 'system':
       assertText(patch.changes.message, `${path}.message`);
@@ -2712,6 +3205,85 @@ export function applyRowPatches(
     } as RowModel;
   });
   return validateSnapshot({ ...snapshot, rows });
+}
+
+/** Native wrapper only: preserve full public validation for unsupported patches. */
+export function applyOwnedNativePatches(
+  snapshot: NativeListSnapshot,
+  patches: readonly RowPatch[]
+): {
+  patches: readonly RowPatch[];
+  snapshot: NativeListSnapshot;
+  json: string;
+} {
+  const acceptedPatches = deepFreeze(
+    validatePatches(capturePlainData(patches))
+  );
+  const rowIndexes = ownedNativeSnapshots.get(snapshot);
+  const canPatchRows =
+    rowIndexes !== undefined &&
+    acceptedPatches.every((patch) => {
+      const index = rowIndexes.get(patch.key);
+      if (index === undefined || snapshot.rows[index].type !== patch.type)
+        return false;
+      const allowed =
+        patch.type === 'identity'
+          ? ['subtitle', 'subtitleSegments', 'trailing']
+          : patch.type === 'dataRow'
+          ? ['columns', 'trailing']
+          : undefined;
+      return (
+        allowed !== undefined &&
+        Object.entries(patch.changes).every(
+          ([key, value]) =>
+            allowed.includes(key) &&
+            (value !== undefined ||
+              (snapshot.rows[index] as unknown as Record<string, unknown>)[
+                key
+              ] === undefined)
+        )
+      );
+    });
+  if (!canPatchRows) {
+    const baseline = rowIndexes ? snapshot : capturePlainData(snapshot);
+    return {
+      patches: acceptedPatches,
+      snapshot: ownValidatedNativeSnapshot(
+        applyRowPatches(baseline, acceptedPatches)
+      ),
+      json: JSON.stringify(acceptedPatches),
+    };
+  }
+
+  const nextRows = snapshot.rows.slice();
+  for (const patch of acceptedPatches) {
+    const index = rowIndexes.get(patch.key)!;
+    const previous = nextRows[index];
+    const merged = {
+      ...previous,
+      ...patch.changes,
+      key: previous.key,
+      type: previous.type,
+    } as RowModel;
+    const path = `rows[${index}]`;
+    assertPlainSerializable(merged, path, new Set<object>());
+    if (isDevelopment()) assertRow(merged, index);
+    const normalized = isDevelopment()
+      ? merged
+      : (normalizeEmptyImages(merged) as RowModel);
+    assertRowProtocol(normalized, path);
+    nextRows[index] = deepFreeze(normalizeRowStyles(normalized));
+  }
+  const nextSnapshot = Object.freeze({
+    ...snapshot,
+    rows: Object.freeze(nextRows),
+  });
+  ownedNativeSnapshots.set(nextSnapshot, rowIndexes);
+  return {
+    patches: acceptedPatches,
+    snapshot: nextSnapshot,
+    json: JSON.stringify(acceptedPatches),
+  };
 }
 
 export function serializeSnapshot(snapshot: NativeListSnapshot): string {

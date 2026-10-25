@@ -74,7 +74,7 @@ the shared host before their old scroll-edge interaction is released.
 The measured overlay height is excluded from the collapsible header distance:
 `header` remains collapsible and `stickyHeader` pins immediately below the
 overlay. Selection, cancellation, reuse and disposal rebind or release the
-interaction and restore any prior scroll-edge style. Native scroll/refresh
+interaction and restore any prior scroll-edge style. The existing owner-scoped native sticky-height callback also reaches NativeList hosts, so their React container slots clip below the same fixed viewport region and release it when the owner detaches. Native scroll/refresh
 coordination continues on the main thread without per-frame JavaScript work.
 Refresh retains the pager-owned `overlay + header + sticky` top inset but offsets
 the indicator by `header + sticky`, so its spinner begins below the fixed overlay.
@@ -170,6 +170,24 @@ new target is established. Same-target commands also take over old reading
 intent. Real vertical consumption, a newer valid command, or owner detachment
 releases the target. Existing NativeList and NativeScroller public coordinates
 are unchanged. The same page-top/sticky-top destinations are available without smooth-header mode.
+
+## Current-page partial header command
+
+`scrollHeaderBy(delta: number)` moves the current page's shared collapsible
+header from its displayed offset C to `clamp(C + delta, 0, D)`.
+`scrollHeaderToOffset(offset: number)` moves it to `clamp(offset, 0, D)`
+regardless of intervening native keyboard or user scrolling. D is the latest
+measured collapsible height. Inputs use logical points on iOS and Android and
+CSS pixels on Web. Non-finite values are ignored. The header and current body move immediately
+so a focused input becomes visible before the next keyboard frame. A valid command
+clears only the current page's body reading position B; it never changes
+another page's memory or adds permanent content/insets. It requires the same
+stable attached current owner as the page-top commands and is a safe no-op
+during horizontal transitions, before mount, or after disposal. A newer
+command or real user vertical consumption takes ownership from an older one.
+Dynamic header measurements clamp any in-flight target to the latest D.
+This command allows a focused input inside the shared header to move above a
+keyboard without replacing the pager's sole vertical scroll owner.
 
 ## Independent NativeScroller migration
 
