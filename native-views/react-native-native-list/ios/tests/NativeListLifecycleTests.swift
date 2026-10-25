@@ -948,6 +948,9 @@ final class NativeListLifecycleTests: XCTestCase {
       XCTAssertEqual(list.contentOffset.y, expectedOffset, accuracy: 1, testCase.name)
       XCTAssertNotNil(sidecar.superview, testCase.name)
       XCTAssertEqual(footer.convert(.zero, to: list).y, 1500, accuracy: 1, testCase.name)
+      waitForStructuralFrames(0.1)
+      XCTAssertEqual(list.contentSize.height, testCase.height, accuracy: 1, testCase.name)
+      XCTAssertEqual(list.contentOffset.y, expectedOffset, accuracy: 1, testCase.name)
     }
   }
 

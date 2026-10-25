@@ -887,6 +887,17 @@ final class NativeListView: UIView {
         dataSource.apply(snapshot, animatingDifferences: false)
         itemsByKey = Dictionary(uniqueKeysWithValues: config.items.map { ($0.key, $0) })
         collectionView.layoutIfNeeded()
+        if !structuralScrollInterrupted && !collectionView.isTracking
+          && !collectionView.isDragging && !collectionView.isDecelerating {
+          let inset = collectionView.adjustedContentInset
+          let maximum = max(-inset.top,
+            collectionView.contentSize.height - collectionView.bounds.height + inset.bottom)
+          let target = min(max(-inset.top, structuralTargetOffset), maximum)
+          // Cancel UIKit's residual content-shrink scroll animation after deleting retired rows.
+          collectionView.setContentOffset(
+            CGPoint(x: collectionView.contentOffset.x, y: target), animated: false)
+          collectionView.layoutIfNeeded()
+        }
       }
       stopStructuralAnimation()
       structuralSpacerHeight = 0
