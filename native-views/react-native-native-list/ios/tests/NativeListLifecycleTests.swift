@@ -901,10 +901,10 @@ final class NativeListLifecycleTests: XCTestCase {
   }
 
   func testStructuralShrinkUsesTheTallerFinalColumnForOffsetClamping() throws {
-    let cases: [(name: String, sidecar: Int, offset: CGFloat, height: CGFloat, finalOffset: CGFloat)] = [
-      ("sidecar stays taller", 2200, 1450, 2200, 1450),
-      ("left column stays taller", 1000, 1100, 1560, 960),
-      ("sidecar becomes taller", 1700, 1050, 1700, 1050),
+    let cases: [(name: String, sidecar: Int, offset: CGFloat, height: CGFloat)] = [
+      ("sidecar stays taller", 2200, 1450, 2200),
+      ("left column stays taller", 1000, 1100, 1560),
+      ("sidecar becomes taller", 1700, 1050, 1700),
     ]
     for testCase in cases {
       let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1000, height: 600))
@@ -942,7 +942,10 @@ final class NativeListLifecycleTests: XCTestCase {
       wait(for: [completed], timeout: 1)
       list.layoutIfNeeded()
       XCTAssertEqual(list.contentSize.height, testCase.height, accuracy: 1, testCase.name)
-      XCTAssertEqual(list.contentOffset.y, testCase.finalOffset, accuracy: 1, testCase.name)
+      let inset = list.adjustedContentInset
+      let finalMaximum = max(-inset.top, testCase.height - list.bounds.height + inset.bottom)
+      let expectedOffset = min(testCase.offset, finalMaximum)
+      XCTAssertEqual(list.contentOffset.y, expectedOffset, accuracy: 1, testCase.name)
       XCTAssertNotNil(sidecar.superview, testCase.name)
       XCTAssertEqual(footer.convert(.zero, to: list).y, 1500, accuracy: 1, testCase.name)
     }
