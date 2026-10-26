@@ -66,8 +66,16 @@ final class HybridPerpSideRatio: HybridPerpSideRatioSpec {
   /// `scheduleLayout` → `performLayout` clamp/split/display-link path the prop
   /// setters use — only the data source differs.
   func setRatio(bidPercentage: Double, askPercentage: Double) throws {
-    self.bidPercentage = bidPercentage
-    self.askPercentage = askPercentage
+    if Thread.isMainThread {
+      self.bidPercentage = bidPercentage
+      self.askPercentage = askPercentage
+    } else {
+      DispatchQueue.main.async { [weak self] in
+        guard let self else { return }
+        self.bidPercentage = bidPercentage
+        self.askPercentage = askPercentage
+      }
+    }
   }
 
   private func scheduleLayout() {
