@@ -1155,7 +1155,7 @@ final class NativeListLifecycleTests: XCTestCase {
     try check("three after zero", count: 3, width: 700)
     list.setContentOffset(.zero, animated: false)
     layout()
-    XCTAssertNil(list.cellForItem(at: IndexPath(item: 20, section: 0)))
+    XCTAssertFalse(list.indexPathsForVisibleItems.contains(IndexPath(item: 20, section: 0)))
     list.setContentOffset(CGPoint(x: 0, y: 18 * 60), animated: false)
     try check("after scroll reuse", count: 3, width: 700)
     window.frame.size.width = 1032
