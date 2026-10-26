@@ -183,11 +183,13 @@ final class NativeOverlaySheetController: UIViewController,
     ) { [weak self] context in
       min(max(self?.style.height ?? 1, 1), context.maximumDetentValue)
     }
+    #if !targetEnvironment(macCatalyst)
     if #available(iOS 26.1, *) {
       let effect = UIColorEffect(color: style.backgroundColor)
       sheet.backgroundEffect = effect
       detent.backgroundEffect = effect
     }
+    #endif
     sheet.detents = [detent]
     sheet.selectedDetentIdentifier = detentIdentifier
     sheet.largestUndimmedDetentIdentifier = detentIdentifier

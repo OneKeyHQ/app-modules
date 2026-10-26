@@ -7,7 +7,7 @@ import {
   compareReleaseVersions,
   validateNpmDistTag,
 } from "./validate-npm-dist-tag.mjs";
-import { packumentUrl } from "./verify-published.mjs";
+import { mapConcurrent, packumentUrl } from "./verify-published.mjs";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const nativeListName = "@onekeyfe/react-native-native-list";
@@ -84,10 +84,11 @@ async function main() {
   ) {
     throw new Error("Publishable workspace versions must match before release");
   }
-  const packuments = new Map();
-  for (const { name } of workspaces) {
-    packuments.set(name, await readPackument(name));
-  }
+  const entries = await mapConcurrent(workspaces, async ({ name }) => [
+    name,
+    await readPackument(name),
+  ]);
+  const packuments = new Map(entries);
   const missing = selectUnpublished(workspaces, packuments, distTag);
   const retags = selectRetags(workspaces, packuments, distTag);
   console.log(
@@ -112,6 +113,9 @@ async function main() {
     ]);
   }
   if (missing.some(({ name }) => name === nativeListName)) {
+    // A recovery runner may skip the already-published Image workspace, but
+    // NativeList still needs its generated declarations during the build.
+    runYarn(["workspace", "@onekeyfe/react-native-image", "prepare"]);
     runYarn(["workspace", nativeListName, "release", "--tag", distTag]);
   }
   for (const { name, version } of retags) {

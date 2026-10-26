@@ -8,7 +8,7 @@ import {
   parseReleaseVersion,
   validateNpmDistTag,
 } from "./validate-npm-dist-tag.mjs";
-import { packumentUrl } from "./verify-published.mjs";
+import { mapConcurrent, packumentUrl } from "./verify-published.mjs";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const dependencySections = [
@@ -101,25 +101,27 @@ export async function preparePreview(
     workspaces
   );
   makePreviewVersion(workspaces[0].version, previewNumber);
-  const publishedVersions = [];
-  for (const { name } of workspaces) {
+  const tagLists = await mapConcurrent(workspaces, async ({ name }) => {
     const response = await fetch(packumentUrl(name), {
       headers: { accept: "application/json" },
     });
     if (response.status === 404) {
-      continue;
+      return [];
     }
     if (!response.ok) {
       throw new Error(`Registry returned HTTP ${response.status} for ${name}`);
     }
     const document = await response.json();
+    const versions = [];
     for (const tag of new Set(["next", distTag])) {
       const version = document?.["dist-tags"]?.[tag];
       if (version) {
-        publishedVersions.push(version);
+        versions.push(version);
       }
     }
-  }
+    return versions;
+  });
+  const publishedVersions = tagLists.flat();
   const previewVersion = makePreviewVersion(
     workspaces[0].version,
     previewNumber,

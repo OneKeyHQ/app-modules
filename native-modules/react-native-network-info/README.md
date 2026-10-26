@@ -1,5 +1,7 @@
 # @onekeyfe/react-native-network-info
 
+See the [behavioral contract](docs/SPEC.md) for platform support and validation limits.
+
 Native network information queries for OneKey on iOS and Android. The
 TurboModule exposes device network addresses and Wi-Fi-related values; it does
 not initiate a connection or monitor reachability continuously.

@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-text",
-  "version": "6.7.0-13",
+  "version": "6.7.0-14",
   "description": "Opt-in native text rendering for React Native",
   "source": "./src/index.ts",
   "main": "./lib/module/index.js",
@@ -81,7 +81,7 @@
     "react": "*",
     "react-native": "*"
   },
-  "packageManager": "yarn@4.11.0",
+  "packageManager": "yarn@4.1.0",
   "react-native-builder-bob": {
     "source": "src",
     "output": "lib",

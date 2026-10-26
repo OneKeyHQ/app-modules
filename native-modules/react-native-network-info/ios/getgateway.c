@@ -19,6 +19,10 @@
 
 #include <net/if.h>
 
+// Catalyst provides the system route structures; iOS needs the definitions below.
+#if TARGET_OS_MACCATALYST
+#include <net/route.h>
+#else
 // Inline route.h definitions (not available in iOS SDK)
 #define RTF_GATEWAY   0x2
 #define NET_RT_FLAGS  2
@@ -54,6 +58,7 @@ struct rt_msghdr {
         u_long rmx_filler[4];
     } rtm_rmx;
 };
+#endif
 #include <string.h>
 
 #define CTL_NET         4               /* network, see socket.h */

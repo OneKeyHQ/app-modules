@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-auto-size-input",
-  "version": "6.7.0-13",
+  "version": "6.7.0-14",
   "description": "Auto-sizing text input with font scaling, prefix and suffix support",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -94,7 +94,7 @@
     "react-native": "*",
     "react-native-nitro-modules": "0.37.0"
   },
-  "packageManager": "yarn@4.11.0",
+  "packageManager": "yarn@4.1.0",
   "react-native-builder-bob": {
     "source": "src",
     "output": "lib",
