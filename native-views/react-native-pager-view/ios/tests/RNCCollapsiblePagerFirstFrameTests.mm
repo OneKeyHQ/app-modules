@@ -461,44 +461,19 @@ using namespace facebook::react;
 
 - (void)testReleasedOwnerRecoversReplacementWithoutAnotherFabricInsertion
 {
-  RNCCollapsiblePagerViewComponentView *pager =
-    [[RNCCollapsiblePagerViewComponentView alloc] initWithFrame:CGRectMake(0, 0, 320, 844)];
-  UIWindow *window = [[UIWindow alloc] initWithFrame:pager.frame];
-  UIViewController *root = [UIViewController new];
-  window.rootViewController = root;
-  [root.view addSubview:pager];
-  window.hidden = NO;
-  [self addTeardownBlock:^{
-    [pager prepareForRecycle];
-    window.hidden = YES;
-  }];
-
-  auto props = std::make_shared<RNCCollapsiblePagerViewProps>();
-  props->nativeSmoothHeaderScrollEnabled = true;
-  props->headerHeight = 120;
-  props->stickyHeaderHeight = 44;
-  props->pageKeys = "[\"page-0\"]";
-  [pager updateProps:props oldProps:nullptr];
-  UIView *header = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 320, 120)];
-  UIView *sticky = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 320, 44)];
-  UIView *page = [[UIView alloc] initWithFrame:pager.bounds];
-  [pager mountChildComponentView:(id)header index:0];
-  [pager mountChildComponentView:(id)sticky index:1];
-  [pager mountChildComponentView:(id)page index:2];
+  RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:1];
+  // The fixture mounts page 0 directly; UIKit must not select it again.
+  [pager setValue:@YES forKey:@"hasAppliedInitialPage"];
   RNCNativeScrollerComponentView *source = [self addScrollerToPager:pager atIndex:0];
   source.tag = 91001;
-  [root.view layoutIfNeeded];
+  [pager.window layoutIfNeeded];
   [pager layoutIfNeeded];
-  XCTestExpectation *settled = [self expectationWithDescription:@"Initial mounting settled"];
-  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 150 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
-    [settled fulfill];
-  });
-  [self waitForExpectations:@[settled] timeout:1];
+  [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.15]];
   [pager setValue:@120 forKey:@"headerOffset"];
   [pager attachScrollObserverForCurrentPage];
   XCTAssertEqual([pager valueForKey:@"observedScrollView"], source.scrollView);
 
-  // Finish the old owner's removal before the replacement has usable geometry.
+  // Finish the old owner's removal before the replacement becomes available.
   ShadowView removedView;
   removedView.tag = (Tag)source.tag;
   MountingTransaction removal(1, 1, {ShadowViewMutation::RemoveMutation(1, removedView, 0)}, {});
@@ -508,20 +483,13 @@ using namespace facebook::react;
   [self finishMount:pager];
   XCTAssertNil([pager valueForKey:@"observedScrollView"]);
 
-  __block RNCNativeScrollerComponentView *replacement;
-  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 50 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
-    replacement = [self addScrollerToPager:pager atIndex:0];
-  });
-  XCTestExpectation *recovered = [self expectationWithDescription:@"Late replacement owns the collapsed header"];
-  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
-    XCTAssertEqual([pager valueForKey:@"observedScrollView"], replacement.scrollView);
-    XCTAssertEqual([pager valueForKey:@"sharedHeaderScrollView"], replacement.scrollView);
-    XCTAssertEqualWithAccuracy(replacement.scrollView.contentOffset.y + replacement.scrollView.contentInset.top,
-                              120, 0.01);
-    XCTAssertEqualWithAccuracy([[pager valueForKey:@"headerOffset"] doubleValue], 120, 0.01);
-    [recovered fulfill];
-  });
-  [self waitForExpectations:@[recovered] timeout:1];
+  RNCNativeScrollerComponentView *replacement = [self addScrollerToPager:pager atIndex:0];
+  [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.3]];
+  XCTAssertEqual([pager valueForKey:@"observedScrollView"], replacement.scrollView);
+  XCTAssertEqual([pager valueForKey:@"sharedHeaderScrollView"], replacement.scrollView);
+  XCTAssertEqualWithAccuracy(replacement.scrollView.contentOffset.y + replacement.scrollView.contentInset.top,
+                            120, 0.01);
+  XCTAssertEqualWithAccuracy([[pager valueForKey:@"headerOffset"] doubleValue], 120, 0.01);
 }
 
 - (void)testRenamedPageDoesNotResurrectPrunedObserverCache
