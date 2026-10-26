@@ -41,7 +41,9 @@ attribution in source comments.
 
 ### Release boundary
 
-The `6.7.0-10` batch adds the Catalyst compile-time sheet background guard.
+The `6.7.0-11` batch adds the Catalyst compile-time sheet background guard
+and restores the npm-packaged Gopenpgp framework links. The incomplete
+`6.7.0-10` candidate is superseded.
 All 43 publishable workspace manifests and exact internal pins use the same
 version, as required by the release validator. Publish the synchronized batch
 through `package-publish` with `npm_dist_tag=latest`, verify the registry

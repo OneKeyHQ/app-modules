@@ -22,6 +22,17 @@ Each `DirHashEntry.relativePath` passed to `verifyDirAgainstHashes` must name a 
 
 The verification and file operations are synchronous inside each native core; the Nitro wrappers return promises for the asynchronous API methods. No long-lived request state is retained by the core. File hashing streams input rather than loading entire files into memory. Android uses BouncyCastle for PGP verification and Java `MessageDigest`; iOS uses Gopenpgp and CommonCrypto. Both platforms use the same embedded public key and directory-path boundary. The caller must separately limit downloaded data and decide how to handle failed verification.
 
+## Mac Catalyst framework packaging
+
+Implemented; extracted npm-package Catalyst Swift import verified. Full consumer
+runtime acceptance remains pending. The Catalyst
+Gopenpgp slice uses a versioned macOS framework. npm does not preserve its
+framework symlinks, so podspec evaluation MUST restore missing `Versions/Current`
+and the binary, Headers, Modules, and Resources links before CocoaPods selects
+the slice. Targets stay inside the packaged framework. This repair MUST NOT
+modify the versioned binary or headers, verification behavior, or iOS/Android
+runtime behavior, and repeated Pod installation MUST be idempotent.
+
 ## Conformance and acceptance
 
 - Android implementation: `android/src/main/java/com/margelo/nitro/reactnativebundlecrypto/BundleCryptoCore.kt`. JVM tests: `android/src/test/java/com/margelo/nitro/reactnativebundlecrypto/BundleCryptoCoreTest.kt`.
