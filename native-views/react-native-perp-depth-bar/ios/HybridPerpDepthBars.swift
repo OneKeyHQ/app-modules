@@ -37,7 +37,16 @@ final class HybridPerpDepthBars: HybridPerpDepthBarsSpec {
   private var hasLaidOut = false
 
   // MARK: - Props (required props -> non-optional in generated spec)
-  var percents: [Double] = [] { didSet { scheduleLayout() } }
+  private var imperativeDepth = false
+  private var displayPercents: [Double] = []
+  var percents: [Double] {
+    get { displayPercents }
+    set {
+      guard !imperativeDepth else { return }
+      displayPercents = newValue
+      scheduleLayout()
+    }
+  }
   var rowHeight: Double = 0 { didSet { scheduleLayout() } }
   var rowMarginTop: Double = 0 { didSet { scheduleLayout() } }
   var barInset: Double = 0 { didSet { scheduleLayout() } }
@@ -56,8 +65,25 @@ final class HybridPerpDepthBars: HybridPerpDepthBarsSpec {
   private var cachedColor: CGColor = UIColor.clear.cgColor
 
   // MARK: - Text props
-  var prices: [String] = [] { didSet { scheduleLayout() } }
-  var sizes: [String] = [] { didSet { scheduleLayout() } }
+  private var imperativeText = false
+  private var displayPrices: [String] = []
+  private var displaySizes: [String] = []
+  var prices: [String] {
+    get { displayPrices }
+    set {
+      guard !imperativeText else { return }
+      displayPrices = newValue
+      scheduleLayout()
+    }
+  }
+  var sizes: [String] {
+    get { displaySizes }
+    set {
+      guard !imperativeText else { return }
+      displaySizes = newValue
+      scheduleLayout()
+    }
+  }
   var priceFontSize: Double = 11 { didSet { scheduleLayout() } }
   var sizeFontSize: Double = 11 { didSet { scheduleLayout() } }
   var textInset: Double = 0 { didSet { scheduleLayout() } }
@@ -125,28 +151,38 @@ final class HybridPerpDepthBars: HybridPerpDepthBarsSpec {
     // Finish reading the caller's buffer before publishing Swift-owned values.
     // Layout and its layer state are owned by the main thread.
     if Thread.isMainThread {
-      percents = depths
+      publishDepth(depths)
     } else {
-      DispatchQueue.main.async { [weak self] in self?.percents = depths }
+      DispatchQueue.main.async { [weak self] in self?.publishDepth(depths) }
     }
+  }
+
+  private func publishDepth(_ depths: [Double]) {
+    imperativeDepth = true
+    displayPercents = depths
+    scheduleLayout()
   }
 
   /// Imperatively update the per-row price/size text — companion to `setDepth`
   /// for the text layer. Bypasses the high-frequency `prices`/`sizes` prop write
-  /// path; assigning them feeds through the identical `didSet` → `scheduleLayout`
-  /// → `performLayout` path the prop setters use (REACT-NATIVE-1JZ). Call in the
+  /// path; publication feeds through the same `scheduleLayout` → `performLayout`
+  /// path the prop setters use (REACT-NATIVE-1JZ). Call in the
   /// SAME frame as `setDepth` so bar fill and row text share one source frame.
   func setText(prices: [String], sizes: [String]) throws {
     if Thread.isMainThread {
-      self.prices = prices
-      self.sizes = sizes
+      publishText(prices: prices, sizes: sizes)
     } else {
       DispatchQueue.main.async { [weak self] in
-        guard let self else { return }
-        self.prices = prices
-        self.sizes = sizes
+        self?.publishText(prices: prices, sizes: sizes)
       }
     }
+  }
+
+  private func publishText(prices: [String], sizes: [String]) {
+    imperativeText = true
+    displayPrices = prices
+    displaySizes = sizes
+    scheduleLayout()
   }
 
   private func handleTap(atY y: CGFloat) {
