@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   checkPackument,
+  mapConcurrent,
   packumentUrl,
   selectWorkspaces,
   verifyPublished,
@@ -132,4 +133,23 @@ test("checks a missing package at most ten times", async () => {
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("maps items with bounded concurrency while preserving input order", async () => {
+  let active = 0;
+  let maxActive = 0;
+  const items = [1, 2, 3, 4, 5];
+  const results = await mapConcurrent(
+    items,
+    async (value) => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active -= 1;
+      return value * 10;
+    },
+    2
+  );
+  assert.deepEqual(results, [10, 20, 30, 40, 50]);
+  assert.ok(maxActive <= 2);
 });

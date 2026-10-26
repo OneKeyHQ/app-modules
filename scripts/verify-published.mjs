@@ -15,7 +15,28 @@ const REGISTRY = "https://registry.npmjs.org";
 // burned and the whole set had to move to 3.0.138. This check exists so that a
 // release like that fails loudly in the run that produced it.
 const DEFAULT_MAX_ATTEMPTS = 10;
-const POLL_INTERVAL_MS = 45 * 1000;
+const POLL_INTERVAL_MS = 15 * 1000;
+const REGISTRY_CONCURRENCY = 8;
+
+export async function mapConcurrent(
+  items,
+  mapper,
+  concurrency = REGISTRY_CONCURRENCY
+) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(1, concurrency), items.length);
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await mapper(items[index], index);
+      }
+    })
+  );
+  return results;
+}
 
 /**
  * The workspaces a run was supposed to publish. `onlyWorkspace` mirrors the
@@ -102,8 +123,7 @@ export async function verifyPublished(
     attempt <= maxAttempts && pending.length > 0;
     attempt += 1
   ) {
-    const stillPending = [];
-    for (const workspace of pending) {
+    const checks = await mapConcurrent(pending, async (workspace) => {
       let result;
       try {
         const packument = await fetchPackument(workspace.name);
@@ -114,6 +134,10 @@ export async function verifyPublished(
         // A transient network blip must not fail the release; keep polling.
         result = { ok: false, reason: `registry request failed: ${error.message}` };
       }
+      return { workspace, result };
+    });
+    const stillPending = [];
+    for (const { workspace, result } of checks) {
       if (result.ok) {
         log(`  ok       ${workspace.name}@${workspace.version}`);
       } else {
