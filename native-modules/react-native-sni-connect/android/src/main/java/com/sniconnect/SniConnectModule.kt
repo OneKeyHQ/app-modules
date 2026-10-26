@@ -17,10 +17,12 @@ import okhttp3.Headers
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.ResponseBody
 import okio.Buffer
+import java.io.File
 import java.io.IOException
 import java.io.InterruptedIOException
 import java.net.Proxy
@@ -191,6 +193,24 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
     }
   }
 
+  override fun uploadFile(config: ReadableMap, promise: Promise) {
+    try {
+      val requestConfig = config.toUploadFileConfig()
+      performRequest(requestConfig, promise)
+    } catch (error: Exception) {
+      SniConnectLogger.error(
+        SniConnectLogger.event(
+          "sni_request_result",
+          "result" to "error",
+          "code" to "SNI_INVALID_CONFIG",
+          "nativeErrorClass" to error.javaClass.simpleName,
+          "stage" to "parse_upload_config",
+        ),
+      )
+      promise.reject("SNI_INVALID_CONFIG", error.message, error)
+    }
+  }
+
   @ReactMethod
   override fun cancelRequest(requestId: String, promise: Promise) {
     val request = synchronized(activeCallsLock) {
@@ -301,7 +321,8 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
           "method" to config.method,
           "timeoutMs" to config.timeoutMillis,
           "headerCount" to config.headers.size,
-          "bodyBytes" to (config.body?.toByteArray(StandardCharsets.UTF_8)?.size ?: 0),
+          "bodyBytes" to config.bodyBytes(),
+          "bodySource" to if (config.bodyFile != null) "file" else "string",
         ),
       )
 
@@ -349,6 +370,7 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
                 "ipFamily" to SniConnectLogger.ipFamily(config.ip),
                 "method" to config.method,
                 "timeoutMs" to config.timeoutMillis,
+                "bodyBytes" to config.bodyBytes(),
                 "responseBytes" to bodyString.toByteArray(StandardCharsets.UTF_8).size,
                 "elapsedMs" to SniConnectLogger.elapsedMs(startedAtMs),
               )
@@ -581,13 +603,13 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
     builder.header("Accept-Encoding", "identity")
 
     val method = config.method
-    val requestBody = config.body?.let { bodyContent ->
-      val mediaType = config.headers.entries
-        .firstOrNull { it.key.equals("Content-Type", ignoreCase = true) }
-        ?.value
-        ?.toMediaTypeOrNull()
-      bodyContent.toRequestBody(mediaType)
-    }
+    val mediaType = config.headers.entries
+      .firstOrNull { it.key.equals("Content-Type", ignoreCase = true) }
+      ?.value
+      ?.toMediaTypeOrNull()
+    // OkHttp streams file bodies from disk instead of buffering them in memory.
+    val requestBody = config.bodyFile?.asRequestBody(mediaType)
+      ?: config.body?.toRequestBody(mediaType)
 
     when (method) {
       "GET" -> builder.get()
@@ -713,6 +735,67 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
     )
   }
 
+  /** Uploads may only read files from this app's own storage. */
+  private fun uploadFileAllowedRoots(): List<File> {
+    val context = reactApplicationContext
+    return listOfNotNull(
+      File(context.applicationInfo.dataDir),
+      context.filesDir,
+      context.cacheDir,
+      context.externalCacheDir,
+      context.getExternalFilesDir(null),
+    )
+  }
+
+  private fun ReadableMap.toUploadFileConfig(): RequestConfig {
+    if (hasKey("body") && !isNull("body")) {
+      throw IllegalArgumentException("uploadFile does not accept body")
+    }
+    val filePath = if (hasKey("filePath") && !isNull("filePath")) getString("filePath") else null
+    if (filePath.isNullOrEmpty()) {
+      throw IllegalArgumentException("filePath is required")
+    }
+    val rawHeadersMap = if (hasKey("headers") && !isNull("headers")) {
+      getMap("headers")?.toHashMap()
+        ?.mapValues { (_, value) -> value?.toString() ?: "" }
+        ?: emptyMap()
+    } else {
+      emptyMap()
+    }
+    val timeoutMillis = if (hasKey("timeout") && !isNull("timeout")) {
+      SniConnectValidation.parseTimeoutMillis(getDouble("timeout"))
+    } else {
+      30_000L
+    }
+    val requestId = if (hasKey("requestId") && !isNull("requestId")) getString("requestId") else null
+    val rawIp = getString("ip") ?: throw IllegalArgumentException("ip is required")
+    val hostname = getString("hostname") ?: throw IllegalArgumentException("hostname is required")
+    val method = getString("method") ?: "POST"
+    val path = getString("path") ?: "/"
+
+    SniConnectValidation.validateRequestId(requestId)
+    val ip = SniConnectValidation.canonicalizePublicIp(rawIp)
+    SniConnectValidation.validateHostname(hostname)
+    val headersMap = SniConnectValidation.normalizeHeaders(rawHeadersMap)
+    val normalizedMethod = SniConnectValidation.normalizeMethod(method)
+    SniConnectValidation.validateUploadMethod(normalizedMethod)
+    val normalizedPath = SniConnectValidation.normalizePath(path)
+    SniConnectValidation.validateTimeout(timeoutMillis)
+    val bodyFile = SniConnectValidation.resolveUploadFile(filePath, uploadFileAllowedRoots())
+
+    return RequestConfig(
+      requestId = requestId,
+      ip = ip,
+      hostname = hostname,
+      method = normalizedMethod,
+      path = normalizedPath,
+      headers = headersMap,
+      body = null,
+      timeoutMillis = timeoutMillis,
+      bodyFile = bodyFile,
+    )
+  }
+
   private data class RequestConfig(
     val requestId: String?,
     val ip: String,
@@ -722,7 +805,12 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
     val headers: Map<String, String>,
     val body: String?,
     val timeoutMillis: Long,
-  )
+    // Set only by uploadFile(); already resolved inside the app sandbox.
+    val bodyFile: File? = null,
+  ) {
+    fun bodyBytes(): Long =
+      bodyFile?.length() ?: (body?.toByteArray(StandardCharsets.UTF_8)?.size?.toLong() ?: 0L)
+  }
 
   private data class HeaderMaps(
     val singleValueHeaders: Map<String, String>,

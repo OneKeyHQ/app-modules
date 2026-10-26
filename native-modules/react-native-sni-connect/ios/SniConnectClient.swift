@@ -259,6 +259,8 @@ final class SniConnectClient {
     let headers: [String: String]
     let body: String?
     let timeout: TimeInterval
+    // Set only by uploadFile(); already resolved inside the app sandbox.
+    var bodyFileURL: URL? = nil
 
     // Advanced timeout configurations
     let connectTimeout: TimeInterval? // Connection establishment timeout
@@ -678,8 +680,15 @@ final class SniConnectClient {
       method = try SniConnectValidation.normalizeMethod(config.method)
       normalizedPath = try SniConnectValidation.normalizePath(config.path)
       try SniConnectValidation.validateTimeout(config.effectiveTotalTimeout)
-      try SniConnectValidation.validateBody(config.body)
-      try SniConnectValidation.validateMethodBody(method: method, body: config.body)
+      if config.bodyFileURL != nil {
+        try SniConnectValidation.validateUploadMethod(method)
+        if config.body != nil {
+          throw SniConnectValidation.ValidationError.invalidBody
+        }
+      } else {
+        try SniConnectValidation.validateBody(config.body)
+        try SniConnectValidation.validateMethodBody(method: method, body: config.body)
+      }
     } catch {
       let sniError = SniConnectError.invalidConfig("\(error)")
       SniConnectLog.error(SniConnectLog.event("sni_request_result", [
@@ -763,8 +772,24 @@ final class SniConnectClient {
     mutableRequest.setValue(config.hostname, forHTTPHeaderField: "Host")
     mutableRequest.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
 
-    if let bodyString = config.body, let bodyData = bodyString.data(using: .utf8) {
+    var bodyBytes = 0
+    if let bodyFileURL = config.bodyFileURL {
+      let fileData: Data
+      do {
+        // Read eagerly instead of memory-mapping so a concurrent delete of the
+        // file cannot fault the upload mid-send.
+        fileData = try Data(contentsOf: bodyFileURL)
+      } catch {
+        throw SniConnectError.invalidConfig("Upload file is not readable")
+      }
+      if fileData.isEmpty || fileData.count > SniConnectValidation.maxUploadFileBytes {
+        throw SniConnectError.invalidConfig("Upload file size is out of range")
+      }
+      mutableRequest.httpBody = fileData
+      bodyBytes = fileData.count
+    } else if let bodyString = config.body, let bodyData = bodyString.data(using: .utf8) {
       mutableRequest.httpBody = bodyData
+      bodyBytes = bodyData.count
     }
 
     // Per-request connect timeout (avoids the process-global setter race).
@@ -781,7 +806,8 @@ final class SniConnectClient {
       ("connectTimeoutMs", Int(config.effectiveConnectTimeout)),
       ("queueWaitMs", queueWaitMilliseconds),
       ("headerCount", normalizedHeaders.count),
-      ("bodyBytes", config.body?.data(using: .utf8)?.count ?? 0),
+      ("bodyBytes", bodyBytes),
+      ("bodySource", config.bodyFileURL != nil ? "file" : "string"),
     ]))
 
     do {
@@ -817,6 +843,7 @@ final class SniConnectClient {
           ("ipFamily", SniConnectLog.ipFamily(config.ip)),
           ("method", method),
           ("timeoutMs", Int(config.effectiveTotalTimeout)),
+          ("bodyBytes", bodyBytes),
           ("responseBytes", data.count),
           ("elapsedMs", SniConnectLog.elapsedMs(since: startedAt)),
         ])

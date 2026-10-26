@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Features
+- **sni-connect**: Add `uploadFile()`, which sends a binary file from app-owned storage over the pinned-IP/SNI transport (POST/PUT, up to 20 MiB). `request()` bodies are UTF-8 strings capped at 1 MiB, so binary payloads such as log archives could not use the SNI path. Older native binaries lack the method, so callers must feature-detect it. See `native-modules/react-native-sni-connect/SPEC.md` §3.1a.
 - **image-crop-picker**: Add byte-preserving single-image selection through the system picker without full-library read authorization. Preserve cropping and sanitize native failure messages.
 - **photo-library**: Add a minimal add-only image-saving module. iOS uses addOnly authorization; Android 29+ saves with MediaStore, and legacy write authorization is capped at API 28 by the consuming App.
 - **capture-protection**: Migrate screenshot protection into a OneKey Nitro module with upstream acknowledgements and no broad media-read permission requirement.

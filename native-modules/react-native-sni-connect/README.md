@@ -40,6 +40,7 @@ import {
   clearDNSCache,
   getDebugSnapshot,
   isProxyActiveForUrl,
+  uploadFile,
 } from '@onekeyfe/react-native-sni-connect';
 
 const proxyActive = await isProxyActiveForUrl('https://example.com/api/v1/ping');

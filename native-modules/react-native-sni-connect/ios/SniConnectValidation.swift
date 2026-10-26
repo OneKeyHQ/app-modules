@@ -18,6 +18,7 @@ enum SniConnectValidation {
     case invalidRequestId(String)
     case invalidTimeout(Double)
     case invalidBody
+    case invalidUploadFile(String)
     case resourceLimit(String)
   }
 
@@ -26,6 +27,7 @@ enum SniConnectValidation {
   static let maxPathBytes = 8 * 1024
   static let maxRequestBodyBytes = 1024 * 1024
   static let maxResponseBodyBytes = 10 * 1024 * 1024
+  static let maxUploadFileBytes = 20 * 1024 * 1024
   static let maxHeaderCount = 64
   static let maxHeaderNameBytes = 128
   static let maxHeaderValueBytes = 8 * 1024
@@ -86,6 +88,64 @@ enum SniConnectValidation {
     if (method == "POST" || method == "PUT" || method == "PATCH") && body == nil {
       throw ValidationError.invalidBody
     }
+  }
+
+  /// File uploads always carry a body, so only body-bearing write methods apply.
+  static func validateUploadMethod(_ method: String) throws {
+    if method != "POST" && method != "PUT" {
+      throw ValidationError.invalidMethod(method)
+    }
+  }
+
+  /// Resolve a caller-supplied upload path to a regular file inside one of
+  /// `allowedRoots` (the app's own sandbox). Symlinks are resolved before the
+  /// containment check so a link cannot point the upload at another file.
+  static func resolveUploadFile(
+    _ rawPath: String,
+    allowedRoots: [URL]
+  ) throws -> (url: URL, sizeBytes: Int) {
+    if rawPath.isEmpty || containsControlCharacters(rawPath) {
+      throw ValidationError.invalidUploadFile("Invalid file path")
+    }
+    let fileURL: URL
+    if rawPath.hasPrefix("file:") {
+      guard let parsed = URL(string: rawPath), parsed.isFileURL else {
+        throw ValidationError.invalidUploadFile("Invalid file URL")
+      }
+      fileURL = parsed
+    } else if rawPath.hasPrefix("/") {
+      fileURL = URL(fileURLWithPath: rawPath)
+    } else {
+      throw ValidationError.invalidUploadFile("File path must be absolute")
+    }
+
+    let resolvedPath = fileURL.standardizedFileURL.resolvingSymlinksInPath().path
+    let isInsideAllowedRoot = allowedRoots.contains { root in
+      let rootPath = root.standardizedFileURL.resolvingSymlinksInPath().path
+      let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+      return resolvedPath.hasPrefix(prefix)
+    }
+    if !isInsideAllowedRoot {
+      throw ValidationError.invalidUploadFile("File is outside the app sandbox")
+    }
+
+    let attributes: [FileAttributeKey: Any]
+    do {
+      attributes = try FileManager.default.attributesOfItem(atPath: resolvedPath)
+    } catch {
+      throw ValidationError.invalidUploadFile("File is not readable")
+    }
+    guard (attributes[.type] as? FileAttributeType) == .typeRegular else {
+      throw ValidationError.invalidUploadFile("Not a regular file")
+    }
+    let sizeBytes = (attributes[.size] as? NSNumber)?.intValue ?? 0
+    if sizeBytes <= 0 {
+      throw ValidationError.invalidUploadFile("File is empty")
+    }
+    if sizeBytes > maxUploadFileBytes {
+      throw ValidationError.invalidUploadFile("File is too large")
+    }
+    return (URL(fileURLWithPath: resolvedPath), sizeBytes)
   }
 
   /// Validate and uppercase the HTTP method.

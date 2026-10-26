@@ -3,12 +3,19 @@ import NativeSniConnect, {
   type SniConnectDebugTarget,
   type SniConnectRequest,
   type SniConnectResponse,
+  type SniConnectUploadFileRequest,
 } from './NativeSniConnect';
 
 export function request(
   config: SniConnectRequest
 ): Promise<SniConnectResponse> {
   return NativeSniConnect.request(config);
+}
+
+export function uploadFile(
+  config: SniConnectUploadFileRequest
+): Promise<SniConnectResponse> {
+  return NativeSniConnect.uploadFile(config);
 }
 
 export function cancelRequest(
@@ -44,4 +51,6 @@ export type {
   SniConnectRequest,
   SniConnectRequiredBodyMethod,
   SniConnectResponse,
+  SniConnectUploadFileMethod,
+  SniConnectUploadFileRequest,
 } from './NativeSniConnect';
