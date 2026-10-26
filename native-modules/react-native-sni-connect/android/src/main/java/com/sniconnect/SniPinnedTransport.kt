@@ -1,5 +1,7 @@
 package com.sniconnect
 
+import java.io.File
+import java.io.IOException
 import java.net.InetAddress
 import java.net.Proxy
 import java.net.UnknownHostException
@@ -8,8 +10,13 @@ import java.util.concurrent.TimeUnit
 import okhttp3.ConnectionPool
 import okhttp3.Dispatcher
 import okhttp3.Dns
+import okhttp3.MediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
+import okhttp3.RequestBody
+import okio.Buffer
+import okio.BufferedSink
+import okio.source
 import javax.net.ssl.HttpsURLConnection
 
 object SniPinnedTransport {
@@ -55,4 +62,40 @@ object SniPinnedTransport {
         )
       }
     }
+}
+
+/** Reads from disk only during transmission, with a fixed, bounded body length. */
+internal class SniUploadFileRequestBody(
+  private val file: File,
+  private val mediaType: MediaType?,
+) : RequestBody() {
+  private val length = file.length().also {
+    if (it <= 0 || it > SniConnectValidation.MAX_UPLOAD_FILE_BYTES) {
+      throw IOException("Upload file size is out of range")
+    }
+  }
+
+  override fun contentType(): MediaType? = mediaType
+
+  override fun contentLength(): Long = length
+
+  override fun writeTo(sink: BufferedSink) {
+    file.source().use { source ->
+      val buffer = Buffer()
+      var totalBytes = 0L
+      while (true) {
+        // One extra byte detects growth without ever writing beyond the bound.
+        val read = source.read(buffer, minOf(8 * 1024L, length - totalBytes + 1))
+        if (read == -1L) break
+        if (totalBytes + read > length) {
+          throw IOException("Upload file grew during transmission")
+        }
+        sink.write(buffer, read)
+        totalBytes += read
+      }
+      if (totalBytes != length) {
+        throw IOException("Upload file was truncated during transmission")
+      }
+    }
+  }
 }

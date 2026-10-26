@@ -40,6 +40,8 @@ import {
   clearDNSCache,
   getDebugSnapshot,
   isProxyActiveForUrl,
+  uploadFile,
+  isUploadFileSupported,
 } from '@onekeyfe/react-native-sni-connect';
 
 const proxyActive = await isProxyActiveForUrl('https://example.com/api/v1/ping');
@@ -82,6 +84,9 @@ collapsed by the transport before this adapter can observe them. Full duplicate
 header preservation on iOS requires an EMASCurl version that exposes the raw
 response header list.
 
+Check `isUploadFileSupported()` before uploading when JS can run with older native
+binaries. `uploadFile()` rejects with `code: SNI_UNSUPPORTED` when unavailable.
+
 ## Specification
 
 The behavior of the SNI connect module is governed by a normative,
@@ -89,6 +94,9 @@ platform-agnostic standard that all implementations (iOS, Android, Node/Desktop,
 shared JS adapters, and any future platform) must conform to:
 
 **-> [OneKey SNI Connect Standard (OSCS)](https://github.com/OneKeyHQ/app-modules/blob/main/native-modules/react-native-sni-connect/SPEC.md)**
+
+The [native upload contract](docs/SPEC.md) defines capability detection and
+consumption-time file bounds.
 
 Any change to request validation, destination pinning, TLS validation, redirect
 handling, cancellation, response shape, or cache behavior must be checked

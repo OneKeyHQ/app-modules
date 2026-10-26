@@ -149,6 +149,34 @@ export type SniConnectRequest =
   baseline maximum is 120 seconds unless a product flow deliberately raises it
   on every supported platform and adds conformance tests.
 
+### 3.1a File upload request
+
+```ts
+export type SniConnectUploadFileRequest = SniConnectRequestBase & {
+  method: 'POST' | 'PUT';
+  filePath: string;
+};
+```
+
+- `uploadFile()` sends the raw bytes of a local file as the request body over
+  the same pinned destination, validation, admission, timeout, cancellation,
+  and response handling as `request()`. It exists because `request()` bodies
+  are UTF-8 strings and cannot carry binary payloads such as log archives.
+- `method` MUST be `POST` or `PUT`. A string `body` MUST NOT be supplied.
+- `filePath` MUST be an absolute path or a `file://` URL. The implementation
+  MUST resolve symlinks and `..` segments and MUST reject a file outside the
+  app's own storage (iOS: the app container and its temporary directory;
+  Android: the app data, files, cache, and app-specific external
+  files/cache directories). The target MUST be a readable regular file of
+  1 byte to 20 MiB. Violations reject with `SNI_INVALID_CONFIG` before network
+  I/O.
+- The caller supplies `content-type` in `headers`; `Content-Length` stays
+  module-owned (Section 4.4).
+- Upload progress events are out of scope. `timeout` covers the whole upload.
+- Status: **Implemented** on iOS and Android React Native. Node/Desktop and
+  shared JS adapters do not expose it; adapters MUST feature-detect it and
+  treat a missing native method as "not supported" (Section 3.3).
+
 ### 3.2 Response
 
 ```ts
@@ -179,6 +207,11 @@ export type SniConnectResponse = {
 ### 3.3 Methods
 
 - `request(config): Promise<SniConnectResponse>`
+- `uploadFile(config): Promise<SniConnectResponse>` (native React Native only;
+  older native binaries lack it, so callers MUST feature-detect before use)
+- `isUploadFileSupported(): boolean` (React Native JS capability probe; see
+  [native upload contract](docs/SPEC.md) for unsupported Promise rejection and
+  consumption-time file bounds)
 - `cancelRequest(requestId): Promise<{ success: boolean }>`
 - `cancelAllRequests(): Promise<{ success: boolean }>`
 - `clearDNSCache(): Promise<{ success: boolean }>`
@@ -294,13 +327,14 @@ module-owned values.
 
 ### 4.5 Body and size limits
 
-`body` is a UTF-8 string. Binary request bodies and streaming uploads are out of
-scope. Implementations MUST define finite request-body and response-body limits
+`body` is a UTF-8 string. Binary request bodies are carried only by
+`uploadFile()` (Section 3.1a). Implementations MUST define finite request-body and response-body limits
 so a caller-selected endpoint cannot force unbounded memory growth. These
 baseline limits are REQUIRED unless a product flow deliberately raises them on
 every supported platform and adds conformance tests:
 
 - request body: 1 MiB,
+- `uploadFile()` file: 20 MiB, read from app-owned storage only,
 - response body: 10 MiB,
 - path/query: 8 KiB.
 
@@ -657,6 +691,10 @@ An implementation is conformant when it passes all of the following:
 | 25 | Caller exceeds requestId, header count, header byte, request body, path/query, active request, or queue limits | Request is rejected or bounded-queued according to this standard; no unbounded resources are created |
 | 26 | Product-level shared adapter is asked to use SNI for a hostname outside the IP table allowlist | Adapter refuses SNI and does not expose the low-level primitive as a general-purpose client |
 | 27 | A request without `requestId` is active when `cancelAllRequests()` is called | The platform task/call/request is cancelled even though it cannot be cancelled individually |
+| 28 | `uploadFile()` names a file outside app storage, a symlink escaping it, a `..` escape, a directory, a missing file, or a relative path | Request is rejected with `SNI_INVALID_CONFIG` before network I/O |
+| 29 | `uploadFile()` names an empty file or a file larger than 20 MiB | Request is rejected with `SNI_INVALID_CONFIG` before network I/O |
+| 30 | `uploadFile()` uses a method other than `POST`/`PUT`, or also supplies `body` | Request is rejected with `SNI_INVALID_CONFIG` before network I/O |
+| 31 | `uploadFile()` sends a binary file to the pinned destination | Server receives the exact file bytes with module-owned `Content-Length`; response follows Section 3.2 |
 
 Conformance is evaluated per behavior. This document records no implementation's
 state; platform-specific gaps are tracked in code review or issue notes until
@@ -720,12 +758,19 @@ blocker unless the platform does not advertise SNI support.
   MAY translate legacy field names, but they MUST NOT weaken validation, hide
   support status, bypass hostname allowlists, drop repeated headers when
   available, or silently convert a low-level SNI failure into success.
-- **React Native codegen** limits the portable JS/native type surface. The
-  public API stays string-body based until a binary-safe response type is added
-  deliberately on every platform.
+- **React Native codegen** limits the portable JS/native type surface. Request
+  bodies passed through JS stay strings; binary request bodies go through
+  `uploadFile()` by file path so bytes never cross the bridge. Responses stay
+  text-only.
+- **File upload body**: iOS reads the file into memory (bounded by the 20 MiB
+  limit) because EMASCurl consumes `httpBody`; Android streams the file through
+  OkHttp's file request body.
 
 ## Appendix B. Change log
 
+- **1.3** (2026-10-26) - Added `uploadFile()` for binary file bodies from
+  app-owned storage (20 MiB limit, POST/PUT only) and conformance scenarios
+  28-31.
 - **1.2** (2026-06-29) - Added normative language, acceptance gate,
   proxy-bypass requirements, fallback fail-closed policy, protocol-upgrade and
   connection-coalescing constraints, concrete resource limits, compression bomb
