@@ -133,6 +133,30 @@ describe("CollapsiblePagerView native tab reservation and press", () => {
     expect(host().nativeTabBarTrailingReservedWidth).toBe(0);
   });
 
+  it("forwards the opt-in segmented variant and resets to underline", () => {
+    const configured = (variant?: "underline" | "segmented", padding?: number) => (
+      <CollapsiblePagerView
+        header={<View />}
+        stickyHeader={<View />}
+        headerHeight={0}
+        stickyHeaderHeight={56}
+        testID="reservation-host"
+        nativeTabBar={{ items, style: { variant, contentPaddingVertical: padding } }}
+      >
+        <View key="overview" />
+        <View key="ethereum" />
+      </CollapsiblePagerView>
+    );
+    act(() => { renderer = create(configured("segmented", 12)); });
+    expect(host().nativeTabBarVariant).toBe("segmented");
+    expect(host().nativeTabBarContentPaddingVertical).toBe(12);
+    act(() => renderer.update(configured(undefined, Number.NaN)));
+    expect(host().nativeTabBarVariant).toBe("underline");
+    expect(host().nativeTabBarContentPaddingVertical).toBe(0);
+    act(() => renderer.update(configured(undefined, -1)));
+    expect(host().nativeTabBarContentPaddingVertical).toBe(0);
+  });
+
   it("forwards finite partial-header deltas only while mounted", () => {
     jest.mocked(CollapsibleCommands.scrollHeaderBy).mockClear();
     jest.mocked(CollapsibleCommands.scrollHeaderToOffset).mockClear();

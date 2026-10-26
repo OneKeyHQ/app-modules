@@ -293,6 +293,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   var onNativeSubHeaderPress: ((Int, String) -> Unit)? = null
 
   var nativeTabBarHeight = 44.0
+  var nativeTabBarVariant = "underline"
   var nativeTabBarTrailingReservedWidth = 0.0
     set(value) {
       field = if (value.isFinite() && value >= 0.0) value else 0.0
@@ -308,6 +309,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     } else 0
   }
   var nativeTabBarContentPaddingHorizontal = 20.0
+  var nativeTabBarContentPaddingVertical = 0.0
   var nativeTabBarItemSpacing = 8.0
   var nativeTabBarFontSize = 16.0
   var nativeTabBarFontFamily: String? = null
@@ -430,7 +432,9 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   fun applyNativeHeaderStyle() {
     nativeTabBarView.updateStyle(
       nativeTabBarHeight,
+      nativeTabBarVariant,
       nativeTabBarContentPaddingHorizontal,
+      nativeTabBarContentPaddingVertical,
       nativeTabBarItemSpacing,
       nativeTabBarFontSize,
       nativeTabBarFontFamily,

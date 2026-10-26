@@ -576,6 +576,63 @@ final class NativeListLifecycleTests: XCTestCase {
     XCTAssertTrue(remainingConstraints.isEmpty)
   }
 
+  func testSwapValuePairAndTertiaryMenuIconFitAndKeepActionState() throws {
+    let cell = NativeListIdentityCell(frame: CGRect(x: 0, y: 0, width: 386, height: 60))
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 386, height: 120))
+    window.addSubview(cell)
+    defer { cell.removeFromSuperview() }
+    let trailing = try XCTUnwrap(Mirror(reflecting: cell).children.first {
+      $0.label == "trailingStack"
+    }?.value as? NativeListAccessoryStack)
+    var actions: [(String, Int?)] = []
+    cell.onAction = { _, action, _, origin in actions.append((action, origin?.slot)) }
+    func bind(disabled: Bool) throws {
+      let item = try NativeListItem(data: [
+        "key": "swap-token", "type": "identity", "height": 60,
+        "title": "ETH", "subtitle": "Ethereum",
+        "leading": ["kind": "token", "fallbackIcon": ["name": "CryptoCoinOutline"]],
+        "trailing": [
+          ["kind": "valuePair", "primary": "0.001328", "secondary": "$3.08"],
+          ["kind": "icon", "name": "DotVerSolid", "buttonStyle": "tertiary",
+           "actionKey": "menu", "disabled": disabled],
+        ],
+        "style": ["horizontalPadding": 20, "verticalPadding": 8,
+          "leadingGap": 12, "trailingGap": 8,
+          "image": ["width": 40, "height": 40]],
+      ])
+      cell.bind(item: item, theme: nil, layout: "linear", selected: false,
+        checkboxState: { _, _, fallback in fallback }, fonts: NativeListFontFamilies())
+      window.layoutIfNeeded()
+      cell.layoutIfNeeded()
+    }
+    try bind(disabled: false)
+    XCTAssertEqual(trailing.axis, .horizontal)
+    let controls = trailing.arrangedSubviews.compactMap { !$0.isHidden ? $0 as? UIButton : nil }
+    XCTAssertEqual(controls.count, 2)
+    let rects = controls.map { $0.convert($0.bounds, to: cell) }
+    XCTAssertTrue(rects.allSatisfy { $0.minY >= 0 && $0.maxY <= cell.bounds.height })
+    let amountLabel = try XCTUnwrap(controls[0].titleLabel)
+    let amountRect = amountLabel.convert(amountLabel.bounds, to: cell)
+    XCTAssertEqual(amountLabel.numberOfLines, 2)
+    XCTAssertGreaterThan(amountRect.height, 30)
+    XCTAssertGreaterThanOrEqual(amountRect.minY, 0)
+    XCTAssertLessThanOrEqual(amountRect.maxY, cell.bounds.height)
+    XCTAssertEqual(rects[0].midY, rects[1].midY, accuracy: 1)
+    XCTAssertEqual(rects[1].minX - rects[0].maxX, 8, accuracy: 0.5)
+    XCTAssertEqual(controls[1].bounds.height, 38, accuracy: 0.5)
+    XCTAssertTrue(controls[1].isEnabled)
+    controls[1].sendActions(for: .touchUpInside)
+    XCTAssertEqual(actions.count, 1)
+    XCTAssertEqual(actions[0].0, "menu")
+    XCTAssertEqual(actions[0].1, 1)
+
+    try bind(disabled: true)
+    let disabledIcon = try XCTUnwrap(trailing.arrangedSubviews.filter { !$0.isHidden }.last as? UIButton)
+    XCTAssertFalse(disabledIcon.isEnabled)
+    disabledIcon.sendActions(for: .touchUpInside)
+    XCTAssertEqual(actions.count, 1)
+  }
+
   func testRiskIdentityRatioKeepsTitleVisibleWithAndWithoutButton() throws {
     let cell = NativeListIdentityCell(frame: CGRect(x: 0, y: 0, width: 386, height: 56))
     let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 386, height: 200))
@@ -898,6 +955,239 @@ final class NativeListLifecycleTests: XCTestCase {
 
     view.unmountContainerSlot(slots[2])
     XCTAssertNil(slots[2].superview)
+  }
+
+  func testSidecarCentersRowsWhenConfiguredBeforeFirstWidth() throws {
+    try assertHomeSidecarGeometry(sidecarBeforeFirstLayout: true)
+  }
+
+  func testSidecarCentersRowsWhenConfiguredAfterFirstWidth() throws {
+    try assertHomeSidecarGeometry(sidecarBeforeFirstLayout: false)
+  }
+
+  func testHomeLinearColumnsStayInsideTheirStackAcrossEmptyMiddleAndReuse() throws {
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1376, height: 900))
+    let controller = UIViewController()
+    window.rootViewController = controller
+    let view = NativeListView(frame: window.bounds)
+    controller.view.addSubview(view)
+    window.isHidden = false
+    defer {
+      view.dispose()
+      view.removeFromSuperview()
+      window.isHidden = true
+      window.rootViewController = nil
+    }
+    for index in 0..<4 { view.mountContainerSlot(UIView(), atIndex: index) }
+    view.setContainerSlotHeightsJson("[0,0,0,1200]")
+    let sidecar = "{\"width\":400,\"gap\":24,\"maxContentWidth\":1140}"
+    view.setSidecarLayoutJson(sidecar)
+
+    func columns(middle: String?, two: Bool = false) -> [[String: Any]] {
+      let first: [String: Any] = ["key": "asset", "text": "USD1",
+        "secondaryText": "Public fixture", "weight": 1]
+      let balance: [String: Any] = ["key": "balance", "text": middle ?? "",
+        "secondaryText": middle == nil ? "" : "$0.01", "alignment": "end", "weight": 1]
+      let price: [String: Any] = ["key": "price", "text": "$1.00",
+        "secondaryText": "0.01%", "alignment": "end", "weight": 1]
+      return two ? [first, price] : [first, balance, price]
+    }
+    let rows: [[String: Any]] = (0..<30).map { index in
+      ["key": "row-\(index)", "type": "dataRow", "height": 60,
+       "leading": ["kind": "token", "fallbackIcon": ["name": "CryptoCoinOutline"]],
+       "columns": index == 20 ? columns(middle: "0.01") : homeSidecarColumns(index, updated: false),
+       "trailing": [["kind": "button", "label": "Swap", "actionKey": "swap"]],
+       "style": ["horizontalPadding": 12, "verticalPadding": 8, "leadingGap": 12,
+         "columns": ["token": "$bodyLg", "fontWeight": "medium", "lines": 1],
+         "columnSecondary": ["token": "$bodyMd", "lines": 1],
+         "image": ["width": 32, "height": 32]]]
+    }
+    let snapshot: [String: Any] = ["schemaVersion": 1, "generation": 1,
+      "layout": ["kind": "linear", "contentPaddingHorizontal": 8], "rows": rows]
+    view.applySnapshotJson(String(decoding: try JSONSerialization.data(withJSONObject: snapshot),
+      as: UTF8.self))
+    let list = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+    list.contentInsetAdjustmentBehavior = .never
+    func layout() {
+      window.layoutIfNeeded()
+      view.layoutIfNeeded()
+      list.layoutIfNeeded()
+    }
+    func check(_ phase: String, count: Int, width: CGFloat, weights: [Int]? = nil) throws {
+      layout()
+      let cell = try XCTUnwrap(list.cellForItem(at: IndexPath(item: 20, section: 0))
+        as? NativeListDataRowCell, phase)
+      let stack = try XCTUnwrap(cell.root.arrangedSubviews[3] as? UIStackView, phase)
+      let visible = stack.arrangedSubviews.filter { !$0.isHidden }
+      XCTAssertEqual(stack.arrangedSubviews.count, 4, phase)
+      XCTAssertEqual(stack.arrangedSubviews.map(\.isHidden),
+        (0..<4).map { $0 >= count }, phase)
+      XCTAssertEqual(visible.count, count, phase)
+      let cellFrame = cell.convert(cell.bounds, to: list)
+      let stackFrame = stack.convert(stack.bounds, to: list)
+      let attributes = try XCTUnwrap(list.layoutAttributesForItem(
+        at: IndexPath(item: 20, section: 0)), phase)
+      XCTAssertEqual(attributes.frame.width, width, accuracy: 1, phase)
+      XCTAssertEqual(cellFrame.width, width, accuracy: 1,
+        "\(phase) window=\(window.frame) controller=\(controller.view.frame) view=\(view.frame) list=\(list.frame) bounds=\(list.bounds) attributes=\(attributes.frame)")
+      let rowConstraints = Mirror(reflecting: cell).children.first {
+        $0.label == "rowConstraints"
+      }?.value as? [NSLayoutConstraint] ?? []
+      let columnWidthConstraints = Mirror(reflecting: cell).children.first {
+        $0.label == "columnWidthConstraints"
+      }?.value as? [NSLayoutConstraint] ?? []
+      let constraints = rowConstraints + columnWidthConstraints
+      let constraintState = constraints.map { constraint in
+        let first = stack.arrangedSubviews.firstIndex {
+          $0 === constraint.firstItem as? UIView
+        } ?? -1
+        let second = stack.arrangedSubviews.firstIndex {
+          $0 === constraint.secondItem as? UIView
+        } ?? -1
+        return "\(first):\(second):\(constraint.multiplier):\(constraint.isActive)"
+      }.joined(separator: ",")
+      let hidingState = stack.arrangedSubviews.enumerated().map { index, column in
+        let hiding = (stack.constraints + column.constraints).filter {
+          $0.isActive && $0.identifier == "UISV-hiding"
+        }.map { "\($0.constant)" }.joined(separator: ",")
+        return "\(index):\(column.isHidden):\(hiding)"
+      }.joined(separator: ",")
+      let geometry = "\(phase) model=\(count) cell=\(cellFrame) stack=\(stackFrame) "
+        + "columns=\(stack.arrangedSubviews.map { "\($0.isHidden):\($0.convert($0.bounds, to: list))" }) "
+        + "constraints=\(constraintState) hiding=\(hidingState)"
+      XCTAssertGreaterThanOrEqual(stackFrame.minX, cellFrame.minX - 0.5, geometry)
+      XCTAssertLessThanOrEqual(stackFrame.maxX, cellFrame.maxX + 0.5, geometry)
+      for column in visible {
+        let columnFrame = column.convert(column.bounds, to: list)
+        XCTAssertGreaterThan(columnFrame.width, 0, geometry)
+        XCTAssertGreaterThanOrEqual(columnFrame.minX, stackFrame.minX - 0.5, geometry)
+        XCTAssertLessThanOrEqual(columnFrame.maxX, stackFrame.maxX + 0.5, geometry)
+        let primaryLine = (column as? UIStackView)?.arrangedSubviews.first
+        if let primaryLine {
+          let lineFrame = primaryLine.convert(primaryLine.bounds, to: list)
+          XCTAssertGreaterThanOrEqual(lineFrame.minX, columnFrame.minX - 0.5, geometry)
+          XCTAssertLessThanOrEqual(lineFrame.maxX, columnFrame.maxX + 0.5, geometry)
+        }
+        for label in labels(in: column) where !label.isHidden {
+          let labelFrame = label.convert(label.bounds, to: list)
+          XCTAssertGreaterThanOrEqual(labelFrame.minX, columnFrame.minX - 0.5,
+            "\(geometry) label=\(labelFrame)")
+          XCTAssertLessThanOrEqual(labelFrame.maxX, columnFrame.maxX + 0.5,
+            "\(geometry) label=\(labelFrame)")
+        }
+      }
+      if count >= 2 {
+        let expectedWeights = weights ?? Array(repeating: 1, count: count)
+        XCTAssertEqual(expectedWeights.count, count, geometry)
+        for index in 1..<count {
+          XCTAssertEqual(visible[index].bounds.width,
+            visible[0].bounds.width * CGFloat(expectedWeights[index])
+              / CGFloat(expectedWeights[0]),
+            accuracy: 1, geometry)
+          let previous = visible[index - 1].convert(visible[index - 1].bounds, to: stack)
+          let current = visible[index].convert(visible[index].bounds, to: stack)
+          XCTAssertGreaterThanOrEqual(current.minX, previous.maxX - 0.5, geometry)
+          XCTAssertEqual(current.minX - previous.maxX, stack.spacing,
+            accuracy: 0.5, geometry)
+        }
+      }
+    }
+    func patch(_ next: [[String: Any]]) throws {
+      let patches: [[String: Any]] = [["key": "row-20", "type": "dataRow",
+        "changes": ["columns": next]]]
+      view.applyPatchesJson(String(decoding: try JSONSerialization.data(withJSONObject: patches),
+        as: UTF8.self))
+    }
+    func widthConstraints() throws -> [NSLayoutConstraint] {
+      let cell = try XCTUnwrap(list.cellForItem(at: IndexPath(item: 20, section: 0))
+        as? NativeListDataRowCell)
+      return try XCTUnwrap(Mirror(reflecting: cell).children.first {
+        $0.label == "columnWidthConstraints"
+      }?.value as? [NSLayoutConstraint])
+    }
+    layout()
+    list.setContentOffset(CGPoint(x: 0, y: 18 * 60), animated: false)
+    try check("three populated", count: 3, width: 700)
+    try patch(columns(middle: nil))
+    try check("three empty middle", count: 3, width: 700)
+    try patch(columns(middle: "0.02"))
+    try check("three restored", count: 3, width: 700)
+    try patch(columns(middle: nil, two: true))
+    try check("two columns", count: 2, width: 700)
+    try patch(columns(middle: nil))
+    try check("three after two", count: 3, width: 700)
+    let stableConstraints = try widthConstraints()
+    XCTAssertEqual(stableConstraints.count, 2)
+    for update in 0..<10 {
+      var next = columns(middle: nil)
+      next[2]["text"] = "$1.\(update)"
+      try patch(next)
+      try check("same-shape price \(update)", count: 3, width: 700)
+      let retained = try widthConstraints()
+      XCTAssertEqual(retained.count, stableConstraints.count)
+      XCTAssertTrue(zip(stableConstraints, retained).allSatisfy { $0 === $1 })
+      XCTAssertTrue(retained.allSatisfy(\.isActive))
+    }
+    var equivalentWeights = columns(middle: nil)
+    for index in equivalentWeights.indices { equivalentWeights[index]["weight"] = 2 }
+    try patch(equivalentWeights)
+    try check("equivalent weights", count: 3, width: 700, weights: [2, 2, 2])
+    let equivalentConstraints = try widthConstraints()
+    XCTAssertEqual(equivalentConstraints.count, stableConstraints.count)
+    XCTAssertTrue(zip(stableConstraints, equivalentConstraints).allSatisfy { $0 === $1 })
+    var unequalWeights = columns(middle: nil)
+    unequalWeights[0]["weight"] = 2
+    try patch(unequalWeights)
+    try check("unequal weights", count: 3, width: 700, weights: [2, 1, 1])
+    let unequalConstraints = try widthConstraints()
+    XCTAssertEqual(unequalConstraints.count, 2)
+    XCTAssertTrue(stableConstraints.allSatisfy { !$0.isActive })
+    try patch(columns(middle: nil, two: true))
+    try check("two after weights", count: 2, width: 700)
+    let twoConstraints = try widthConstraints()
+    XCTAssertEqual(twoConstraints.count, 1)
+    XCTAssertTrue(unequalConstraints.allSatisfy { !$0.isActive })
+    try patch([])
+    try check("zero columns", count: 0, width: 700)
+    XCTAssertTrue((try widthConstraints()).isEmpty)
+    XCTAssertTrue(twoConstraints.allSatisfy { !$0.isActive })
+    try patch(columns(middle: nil))
+    try check("three after zero", count: 3, width: 700)
+    list.setContentOffset(.zero, animated: false)
+    layout()
+    XCTAssertNil(list.cellForItem(at: IndexPath(item: 20, section: 0)))
+    list.setContentOffset(CGPoint(x: 0, y: 18 * 60), animated: false)
+    try check("after scroll reuse", count: 3, width: 700)
+    window.frame.size.width = 1032
+    controller.view.frame = window.bounds
+    view.frame = window.bounds
+    view.setSidecarLayoutJson("")
+    drainMainQueue()
+    try check("narrow no sidecar", count: 3, width: 1016)
+    window.frame.size.width = 1376
+    controller.view.frame = window.bounds
+    view.frame = window.bounds
+    view.setSidecarLayoutJson(sidecar)
+    drainMainQueue()
+    try check("wide sidecar restored", count: 3, width: 700)
+    func animatedPatch(_ next: [[String: Any]], phase: String, count: Int) throws {
+      let patches: [[String: Any]] = [["key": "row-20", "type": "dataRow",
+        "changes": ["columns": next]]]
+      let json = String(decoding: try JSONSerialization.data(withJSONObject: patches), as: UTF8.self)
+      let finished = expectation(description: "Home column animation: \(phase)")
+      UIView.animate(withDuration: 0.2, delay: 0, options: .beginFromCurrentState) {
+        view.applyPatchesJson(json)
+        view.layoutIfNeeded()
+        list.layoutIfNeeded()
+      } completion: { _ in finished.fulfill() }
+      wait(for: [finished], timeout: 1)
+      try check(phase, count: count, width: 700)
+      waitForStructuralFrames(0.1)
+      try check("\(phase) stable", count: count, width: 700)
+    }
+    try animatedPatch(columns(middle: nil, two: true), phase: "animated two", count: 2)
+    try animatedPatch(columns(middle: nil), phase: "animated three", count: 3)
+    try animatedPatch(columns(middle: "0.06"), phase: "animated nonempty", count: 3)
   }
 
   func testStructuralShrinkUsesTheTallerFinalColumnForOffsetClamping() throws {
@@ -1248,6 +1538,109 @@ final class NativeListLifecycleTests: XCTestCase {
       ]
     }
     return String(decoding: try JSONSerialization.data(withJSONObject: value), as: UTF8.self)
+  }
+
+  private func assertHomeSidecarGeometry(sidecarBeforeFirstLayout: Bool) throws {
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1376, height: 900))
+    let controller = UIViewController()
+    window.rootViewController = controller
+    let view = NativeListView(frame: window.bounds)
+    controller.view.addSubview(view)
+    window.isHidden = false
+    defer {
+      view.dispose()
+      view.removeFromSuperview()
+      window.isHidden = true
+      window.rootViewController = nil
+    }
+    for index in 0..<4 { view.mountContainerSlot(UIView(), atIndex: index) }
+    view.setContainerSlotHeightsJson("[0,0,0,1200]")
+    let sidecar = "{\"width\":400,\"gap\":24,\"maxContentWidth\":1140}"
+    if sidecarBeforeFirstLayout { view.setSidecarLayoutJson(sidecar) }
+    view.applySnapshotJson(try homeSidecarSnapshot())
+    let list = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+    list.contentInsetAdjustmentBehavior = .never
+    func layout() {
+      window.layoutIfNeeded()
+      view.layoutIfNeeded()
+      list.layoutIfNeeded()
+    }
+    func assertRows(x: CGFloat, width: CGFloat) {
+      let cells = list.visibleCells.compactMap { $0 as? NativeListDataRowCell }
+      XCTAssertFalse(cells.isEmpty)
+      for cell in cells {
+        let frame = cell.convert(cell.bounds, to: list)
+        XCTAssertEqual(frame.minX, x, accuracy: 1)
+        XCTAssertEqual(frame.width, width, accuracy: 1)
+        if let path = list.indexPath(for: cell),
+          let attributes = list.layoutAttributesForItem(at: path)
+        {
+          XCTAssertEqual(attributes.frame.minX, x, accuracy: 1)
+          XCTAssertEqual(attributes.frame.width, width, accuracy: 1)
+        }
+        let root = cell.root.convert(cell.root.bounds, to: list)
+        XCTAssertGreaterThanOrEqual(root.minX, frame.minX - 1)
+        XCTAssertLessThanOrEqual(root.maxX, frame.maxX + 1)
+      }
+    }
+    layout()
+    if !sidecarBeforeFirstLayout {
+      assertRows(x: 8, width: 1360)
+      view.setSidecarLayoutJson(sidecar)
+      layout()
+    }
+    assertRows(x: 126, width: 700)
+    list.contentOffset.y = 18 * 60
+    layout()
+    assertRows(x: 126, width: 700)
+    let patch: [[String: Any]] = [[
+      "key": "row-20", "type": "dataRow",
+      "changes": ["columns": homeSidecarColumns(20, updated: true),
+        "trailing": [["kind": "button", "label": "Swap", "actionKey": "swap"]]],
+    ]]
+    view.applyPatchesJson(String(decoding: try JSONSerialization.data(withJSONObject: patch),
+      as: UTF8.self))
+    layout()
+    assertRows(x: 126, width: 700)
+    window.frame.size.width = 1024
+    controller.view.frame = window.bounds
+    view.frame = window.bounds
+    layout()
+    assertRows(x: 8, width: 584)
+    window.frame.size.width = 1376
+    controller.view.frame = window.bounds
+    view.frame = window.bounds
+    layout()
+    assertRows(x: 126, width: 700)
+    view.setSidecarLayoutJson("")
+    layout()
+    assertRows(x: 8, width: 1360)
+  }
+
+  private func homeSidecarSnapshot() throws -> String {
+    let rows: [[String: Any]] = (0..<30).map { index in
+      ["key": "row-\(index)", "type": "dataRow", "height": 60,
+       "leading": ["kind": "token", "fallbackIcon": ["name": "CryptoCoinOutline"]],
+       "columns": homeSidecarColumns(index, updated: false),
+       "trailing": [["kind": "button", "label": "Swap", "actionKey": "swap"]],
+       "style": ["horizontalPadding": 12, "verticalPadding": 8, "leadingGap": 12,
+         "image": ["width": 32, "height": 32]]]
+    }
+    let snapshot: [String: Any] = [
+      "schemaVersion": 1, "generation": 1,
+      "layout": ["kind": "linear", "contentPaddingHorizontal": 8], "rows": rows,
+    ]
+    return String(decoding: try JSONSerialization.data(withJSONObject: snapshot), as: UTF8.self)
+  }
+
+  private func homeSidecarColumns(_ index: Int, updated: Bool) -> [[String: Any]] {
+    [
+      ["key": "asset", "text": "Asset \(index)", "secondaryText": "Public fixture", "weight": 1],
+      ["key": "balance", "text": updated ? "0.2966" : "0.000175",
+       "secondaryText": "$0.13", "alignment": "end", "weight": 1],
+      ["key": "price", "text": updated ? "$739.22" : "$0.9989",
+       "secondaryText": "-0.04%", "alignment": "end", "weight": 1],
+    ]
   }
 
   private func makeScrollingList() throws -> NativeListView {

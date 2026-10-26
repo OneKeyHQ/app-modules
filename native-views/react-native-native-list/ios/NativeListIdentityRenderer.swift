@@ -667,7 +667,10 @@ final class NativeListIdentityCell: NativeListRendererCell {
       trailingStack.spacing = 12
     } else if accessories.count == 2,
       accessories[0].string("kind") == "valuePair",
-      accessories[1].string("kind") == "menu"
+      (accessories[1].string("kind") == "menu"
+        || (accessories[1].string("kind") == "icon"
+          && accessories[1].string("name") == "DotVerSolid"
+          && accessories[1].string("actionKey") == "menu"))
     {
       trailingStack.axis = .horizontal
       trailingStack.alignment = .center

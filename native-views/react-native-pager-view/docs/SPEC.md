@@ -496,6 +496,40 @@ The attached UIKit regression intentionally constrains the real pager pan to two
 required touches to prove the no-pan path; it is distinct from natural Home OS
 input, coalesced-event delivery, and physical-device acceptance.
 
+## Native segmented tab bar
+
+Status: implemented locally. Focused production-class iOS XCTest and Android
+instrumentation checks pass; consuming App interaction acceptance is separate.
+`nativeTabBar.style.variant` accepts `"underline"` (the default) or
+`"segmented"` on iOS and Android. The optional
+`nativeTabBar.style.contentPaddingVertical` is a nonnegative logical inset,
+defaulting to zero. Omitting both fields preserves the existing content-width,
+horizontally scrollable underline bar. Web ignores `nativeTabBar` and retains
+its caller-rendered sticky header.
+
+In segmented mode, the existing `height` is the entire tab slot. The track
+fills the space inside `contentPaddingHorizontal` and
+`contentPaddingVertical`, uses `backgroundColor`, and has a fully rounded
+outline. Its visible items divide the track into equal-width segments in their
+current order, including after item insertion, removal, relabeling, or resize.
+The thumb uses `indicatorColor`, is inset two logical points from its segment,
+and is fully rounded. Segment titles use the existing font and active/inactive
+text colors, remain single-line with truncation, and retain their existing
+accessibility labels, test IDs, and native press event keys. The segmented bar
+does not scroll horizontally; `itemSpacing`, `indicatorHeight`, and
+`indicatorBottom` apply only to underline mode. The pager's native fractional
+page progress moves the thumb continuously between equal-width segments and
+interpolates text emphasis without per-frame JavaScript updates. It settles at
+the actual selected page after a completed or cancelled gesture. RTL reverses
+physical segment order without changing logical page keys or indices.
+
+Switching variants or removing the native tab bar clears the previous visual
+state. The existing native press command, page callbacks, retention, vertical
+header geometry, and Web behavior remain unchanged. Acceptance requires
+focused native geometry/progress/press checks on iOS and Android, including
+two or three segments, dynamic labels/items, RTL, narrow widths, and variant
+switching. Type forwarding alone does not prove rendered behavior.
+
 ## Native tab-press animation default
 
 Behavior change: previously an omitted `nativeTabPressAnimationEnabled` animated

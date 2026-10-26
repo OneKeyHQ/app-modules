@@ -369,7 +369,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 @property (nonatomic, copy) RNCCollapsiblePagerNativeTabPressHandler onTabPress;
 - (void)updateItemsJSON:(NSString *)itemsJSON;
 - (void)updateStyleWithHeight:(CGFloat)height
+                      variant:(NSString *)variant
      contentPaddingHorizontal:(CGFloat)contentPaddingHorizontal
+       contentPaddingVertical:(CGFloat)contentPaddingVertical
                   itemSpacing:(CGFloat)itemSpacing
                      fontSize:(CGFloat)fontSize
                    fontFamily:(NSString *)fontFamily
@@ -386,12 +388,15 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 @implementation RNCCollapsiblePagerNativeTabBarView {
   RNCCollapsiblePagerHorizontalScrollView *_scrollView;
+  UIView *_trackView;
   UIView *_indicatorView;
   NSArray<NSDictionary *> *_items;
   NSMutableArray<UIButton *> *_buttons;
   NSMutableArray<NSValue *> *_indicatorFrames;
   CGFloat _barHeight;
   CGFloat _contentPaddingHorizontal;
+  CGFloat _contentPaddingVertical;
+  BOOL _segmented;
   CGFloat _itemSpacing;
   CGFloat _fontSize;
   NSString *_fontFamily;
@@ -414,6 +419,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     _indicatorFrames = [NSMutableArray new];
     _barHeight = 44;
     _contentPaddingHorizontal = 20;
+    _contentPaddingVertical = 0;
+    _segmented = NO;
     _itemSpacing = 8;
     _fontSize = 16;
     _activeTextColor = UIColor.labelColor;
@@ -434,6 +441,10 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     _scrollView.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
     _scrollView.delegate = self;
     [self addSubview:_scrollView];
+
+    _trackView = [UIView new];
+    _trackView.userInteractionEnabled = NO;
+    [_scrollView addSubview:_trackView];
 
     _indicatorView = [UIView new];
     _indicatorView.userInteractionEnabled = NO;
@@ -489,7 +500,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 }
 
 - (void)updateStyleWithHeight:(CGFloat)height
+                      variant:(NSString *)variant
      contentPaddingHorizontal:(CGFloat)contentPaddingHorizontal
+       contentPaddingVertical:(CGFloat)contentPaddingVertical
                   itemSpacing:(CGFloat)itemSpacing
                      fontSize:(CGFloat)fontSize
                    fontFamily:(NSString *)fontFamily
@@ -501,19 +514,26 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
               indicatorBottom:(CGFloat)indicatorBottom
 {
   _barHeight = MAX(1, height);
+  BOOL wasSegmented = _segmented;
+  _segmented = [variant isEqualToString:@"segmented"];
   _contentPaddingHorizontal = MAX(0, contentPaddingHorizontal);
+  _contentPaddingVertical = MAX(0, contentPaddingVertical);
   _itemSpacing = MAX(0, itemSpacing);
   _fontSize = MAX(1, fontSize);
   _fontFamily = [fontFamily copy];
-  self.backgroundColor = backgroundColor ?: UIColor.clearColor;
+  self.backgroundColor = _segmented ? UIColor.clearColor : (backgroundColor ?: UIColor.clearColor);
   _scrollView.backgroundColor = self.backgroundColor;
+  _scrollView.scrollEnabled = !_segmented;
+  if (_segmented && !wasSegmented) [_scrollView setContentOffset:CGPointZero animated:NO];
+  _trackView.hidden = !_segmented;
+  _trackView.backgroundColor = backgroundColor ?: UIColor.clearColor;
   _activeTextColor = activeTextColor ?: UIColor.labelColor;
   _inactiveTextColor = inactiveTextColor ?: UIColor.secondaryLabelColor;
   _indicatorColor = indicatorColor ?: _activeTextColor;
   _indicatorHeight = MAX(0, indicatorHeight);
   _indicatorBottom = MAX(0, indicatorBottom);
   _indicatorView.backgroundColor = _indicatorColor;
-  _indicatorView.layer.cornerRadius = _indicatorHeight / 2;
+  _indicatorView.layer.cornerRadius = _segmented ? 0 : _indicatorHeight / 2;
   for (UIButton *button in _buttons) button.titleLabel.font = self.tabFont;
   [self setNeedsLayout];
 }
@@ -572,6 +592,33 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 {
   [super layoutSubviews];
   _scrollView.frame = self.bounds;
+  if (_segmented) {
+    CGFloat width = CGRectGetWidth(self.bounds);
+    CGFloat height = CGRectGetHeight(self.bounds);
+    CGFloat insetX = MIN(_contentPaddingHorizontal, width / 2);
+    CGFloat insetY = MIN(_contentPaddingVertical, height / 2);
+    CGRect trackFrame = CGRectMake(insetX, insetY,
+      MAX(0, width - 2 * insetX), MAX(0, height - 2 * insetY));
+    _trackView.frame = trackFrame;
+    _trackView.layer.cornerRadius = CGRectGetHeight(trackFrame) / 2;
+    _scrollView.contentSize = self.bounds.size;
+    [_indicatorFrames removeAllObjects];
+    NSUInteger count = _buttons.count;
+    [_buttons enumerateObjectsUsingBlock:^(UIButton *button, NSUInteger index, BOOL *stop) {
+      CGFloat first = CGRectGetMinX(trackFrame) + CGRectGetWidth(trackFrame) * index / count;
+      CGFloat last = CGRectGetMinX(trackFrame) + CGRectGetWidth(trackFrame) * (index + 1) / count;
+      CGFloat x = self->_leftToRight ? first : CGRectGetMaxX(trackFrame) - (last - CGRectGetMinX(trackFrame));
+      CGFloat end = self->_leftToRight ? last : CGRectGetMaxX(trackFrame) - (first - CGRectGetMinX(trackFrame));
+      button.frame = CGRectMake(x, CGRectGetMinY(trackFrame), MAX(0, end - x), CGRectGetHeight(trackFrame));
+      CGRect thumbFrame = CGRectMake(x + 2, CGRectGetMinY(trackFrame) + 2,
+        MAX(0, CGRectGetWidth(button.frame) - 4), MAX(0, CGRectGetHeight(trackFrame) - 4));
+      [self->_indicatorFrames addObject:[NSValue valueWithCGRect:thumbFrame]];
+    }];
+    _indicatorView.layer.cornerRadius = MAX(0, CGRectGetHeight(trackFrame) - 4) / 2;
+    [self updatePresentation];
+    return;
+  }
+  _trackView.frame = CGRectZero;
   UIFont *font = self.tabFont;
   NSMutableArray<NSNumber *> *widths = [NSMutableArray arrayWithCapacity:_buttons.count];
   CGFloat itemsWidth = 0;
@@ -635,10 +682,10 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     CGRectGetMinX(fromFrame) + (CGRectGetMinX(toFrame) - CGRectGetMinX(fromFrame)) * fraction,
     CGRectGetMinY(fromFrame),
     CGRectGetWidth(fromFrame) + (CGRectGetWidth(toFrame) - CGRectGetWidth(fromFrame)) * fraction,
-    _indicatorHeight
+    _segmented ? CGRectGetHeight(fromFrame) : _indicatorHeight
   );
   _indicatorView.frame = indicatorFrame;
-  _indicatorView.hidden = _indicatorHeight <= 0;
+  _indicatorView.hidden = CGRectGetHeight(indicatorFrame) <= 0;
 
   NSInteger selectedIndex = (NSInteger)round(progress);
   [_buttons enumerateObjectsUsingBlock:^(UIButton *button, NSUInteger index, BOOL *stop) {
@@ -655,7 +702,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
       : UIAccessibilityTraitButton;
   }];
 
-  if (_shouldCenterSelectedItem && !_scrollView.tracking && !_scrollView.dragging &&
+  if (_shouldCenterSelectedItem && !_segmented && !_scrollView.tracking && !_scrollView.dragging &&
       !_scrollView.decelerating && CGRectGetWidth(_scrollView.bounds) > 0) {
     CGFloat maximumOffset = MAX(0, _scrollView.contentSize.width - CGRectGetWidth(_scrollView.bounds));
     CGFloat desiredOffset = RNCClamp(
@@ -3457,7 +3504,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   }
   if (_needsPropsReapply ||
       oldViewProps.nativeTabBarHeight != newViewProps.nativeTabBarHeight ||
+      oldViewProps.nativeTabBarVariant != newViewProps.nativeTabBarVariant ||
       oldViewProps.nativeTabBarContentPaddingHorizontal != newViewProps.nativeTabBarContentPaddingHorizontal ||
+      oldViewProps.nativeTabBarContentPaddingVertical != newViewProps.nativeTabBarContentPaddingVertical ||
       oldViewProps.nativeTabBarItemSpacing != newViewProps.nativeTabBarItemSpacing ||
       oldViewProps.nativeTabBarFontSize != newViewProps.nativeTabBarFontSize ||
       oldViewProps.nativeTabBarFontFamily != newViewProps.nativeTabBarFontFamily ||
@@ -3474,7 +3523,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     NSString *fontFamily = RCTNSStringFromString(newViewProps.nativeTabBarFontFamily);
     [_nativeTabBarView
       updateStyleWithHeight:_nativeTabBarHeight
+      variant:RCTNSStringFromString(newViewProps.nativeTabBarVariant)
       contentPaddingHorizontal:MAX(0, newViewProps.nativeTabBarContentPaddingHorizontal)
+      contentPaddingVertical:MAX(0, newViewProps.nativeTabBarContentPaddingVertical)
       itemSpacing:MAX(0, newViewProps.nativeTabBarItemSpacing)
       fontSize:newViewProps.nativeTabBarFontSize > 0 ? newViewProps.nativeTabBarFontSize : 16
       fontFamily:fontFamily

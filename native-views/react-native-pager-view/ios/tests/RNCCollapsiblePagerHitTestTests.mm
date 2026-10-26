@@ -16,6 +16,19 @@ using namespace facebook::react;
 
 @interface UIView (NativeTabReservationTesting)
 - (void)updateItemsJSON:(NSString *)itemsJSON;
+- (void)updateStyleWithHeight:(CGFloat)height
+                      variant:(NSString *)variant
+     contentPaddingHorizontal:(CGFloat)contentPaddingHorizontal
+       contentPaddingVertical:(CGFloat)contentPaddingVertical
+                  itemSpacing:(CGFloat)itemSpacing
+                     fontSize:(CGFloat)fontSize
+                   fontFamily:(NSString *)fontFamily
+              backgroundColor:(UIColor *)backgroundColor
+              activeTextColor:(UIColor *)activeTextColor
+            inactiveTextColor:(UIColor *)inactiveTextColor
+               indicatorColor:(UIColor *)indicatorColor
+              indicatorHeight:(CGFloat)indicatorHeight
+              indicatorBottom:(CGFloat)indicatorBottom;
 - (void)setProgress:(CGFloat)progress;
 - (void)setLeftToRight:(BOOL)leftToRight;
 @end
@@ -141,6 +154,84 @@ using namespace facebook::react;
   [self.pager updateProps:defaultProps oldProps:reservedProps];
   XCTAssertEqualWithAccuracy(
     [[self.pager valueForKey:@"nativeTabBarTrailingReservedWidth"] doubleValue], 0, 0.001);
+}
+
+- (void)testSegmentedNativeTabsFollowFractionalProgressAndResetToUnderline
+{
+  UIView *tabBar = [self.pager valueForKey:@"nativeTabBarView"];
+  [tabBar updateItemsJSON:@"[{\"key\":\"recent\",\"title\":\"Recents\"},"
+    @"{\"key\":\"account\",\"title\":\"Accounts\"},"
+    @"{\"key\":\"book\",\"title\":\"Address Book\"}]"];
+  [tabBar updateStyleWithHeight:56 variant:@"segmented"
+    contentPaddingHorizontal:20 contentPaddingVertical:12 itemSpacing:0
+    fontSize:14 fontFamily:nil backgroundColor:UIColor.lightGrayColor
+    activeTextColor:UIColor.blackColor inactiveTextColor:UIColor.grayColor
+    indicatorColor:UIColor.whiteColor indicatorHeight:2 indicatorBottom:0];
+  tabBar.frame = CGRectMake(0, 0, 320, 56);
+  [tabBar layoutIfNeeded];
+  UIScrollView *scroll = (UIScrollView *)tabBar.subviews.firstObject;
+  UIView *track = scroll.subviews.firstObject;
+  UIView *thumb = [tabBar valueForKey:@"indicatorView"];
+  NSArray<UIButton *> *buttons = [scroll.subviews filteredArrayUsingPredicate:
+    [NSPredicate predicateWithBlock:^BOOL(UIView *view, NSDictionary *bindings) {
+      return [view isKindOfClass:UIButton.class];
+    }]];
+  XCTAssertEqual(buttons.count, 3);
+  XCTAssertFalse(scroll.scrollEnabled);
+  XCTAssertEqualWithAccuracy(CGRectGetMinX(track.frame), 20, 0.01);
+  XCTAssertEqualWithAccuracy(CGRectGetHeight(track.frame), 32, 0.01);
+  XCTAssertEqualWithAccuracy(CGRectGetWidth(buttons[0].frame),
+    CGRectGetWidth(buttons[1].frame), 0.01);
+  [tabBar setProgress:0];
+  CGFloat firstX = CGRectGetMinX(thumb.frame);
+  [tabBar setProgress:1];
+  CGFloat secondX = CGRectGetMinX(thumb.frame);
+  [tabBar setProgress:0.25];
+  XCTAssertEqualWithAccuracy(CGRectGetMinX(thumb.frame), firstX + (secondX - firstX) * 0.25, 0.01);
+  [tabBar setProgress:0.5];
+  XCTAssertEqualWithAccuracy(CGRectGetMinX(thumb.frame), (firstX + secondX) / 2, 0.01);
+  [tabBar setProgress:0];
+  XCTAssertEqualWithAccuracy(CGRectGetMinX(thumb.frame), firstX, 0.01);
+
+  [tabBar setLeftToRight:NO];
+  [tabBar layoutIfNeeded];
+  XCTAssertGreaterThan(CGRectGetMinX(buttons[0].frame), CGRectGetMinX(buttons[1].frame));
+  [tabBar updateItemsJSON:@"[{\"key\":\"recent\",\"title\":\"Recents (8)\"},"
+    @"{\"key\":\"account\",\"title\":\"Accounts\"}]"];
+  [tabBar layoutIfNeeded];
+  NSArray<UIButton *> *twoButtons = [scroll.subviews filteredArrayUsingPredicate:
+    [NSPredicate predicateWithBlock:^BOOL(UIView *view, NSDictionary *bindings) {
+      return [view isKindOfClass:UIButton.class];
+    }]];
+  XCTAssertEqual(twoButtons.count, 2);
+  XCTAssertEqualWithAccuracy(CGRectGetWidth(twoButtons[0].frame),
+    CGRectGetWidth(track.frame) / 2, 0.01);
+  [tabBar updateStyleWithHeight:56 variant:@"segmented"
+    contentPaddingHorizontal:20 contentPaddingVertical:40 itemSpacing:0
+    fontSize:14 fontFamily:nil backgroundColor:UIColor.lightGrayColor
+    activeTextColor:UIColor.blackColor inactiveTextColor:UIColor.grayColor
+    indicatorColor:UIColor.whiteColor indicatorHeight:2 indicatorBottom:0];
+  tabBar.frame = CGRectMake(0, 0, 30, 56);
+  [tabBar layoutIfNeeded];
+  XCTAssertEqualWithAccuracy(CGRectGetMinX(track.frame), 15, 0.01);
+  XCTAssertEqualWithAccuracy(CGRectGetWidth(track.frame), 0, 0.01);
+  XCTAssertEqualWithAccuracy(CGRectGetMinY(track.frame), 28, 0.01);
+  XCTAssertEqualWithAccuracy(CGRectGetHeight(track.frame), 0, 0.01);
+  XCTAssertTrue(thumb.hidden);
+  [tabBar updateItemsJSON:@"[]"];
+  XCTAssertTrue(tabBar.hidden);
+
+  [tabBar updateItemsJSON:@"[{\"key\":\"recent\",\"title\":\"Recents\"}]"];
+  [tabBar updateStyleWithHeight:44 variant:@"underline"
+    contentPaddingHorizontal:20 contentPaddingVertical:0 itemSpacing:8
+    fontSize:16 fontFamily:nil backgroundColor:UIColor.clearColor
+    activeTextColor:UIColor.blackColor inactiveTextColor:UIColor.grayColor
+    indicatorColor:UIColor.blackColor indicatorHeight:2 indicatorBottom:0];
+  tabBar.frame = CGRectMake(0, 0, 320, 44);
+  [tabBar layoutIfNeeded];
+  XCTAssertTrue(scroll.scrollEnabled);
+  XCTAssertTrue(track.hidden);
+  XCTAssertEqualWithAccuracy(CGRectGetHeight(thumb.frame), 2, 0.01);
 }
 
 - (void)testPinnedChildOutsideHeaderHostStillReceivesViewportTouches

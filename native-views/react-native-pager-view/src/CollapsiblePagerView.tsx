@@ -32,9 +32,11 @@ export type CollapsiblePagerNativeTabBarItem = Readonly<{
 }>;
 
 export type CollapsiblePagerNativeTabBarStyle = Readonly<{
+  variant?: "underline" | "segmented";
   height?: number;
   trailingReservedWidth?: number;
   contentPaddingHorizontal?: number;
+  contentPaddingVertical?: number;
   itemSpacing?: number;
   fontSize?: number;
   fontFamily?: string;
@@ -95,8 +97,10 @@ export interface CollapsiblePagerViewProps
     | "retainedPages"
     | "nativeTabBarItems"
     | "nativeTabBarHeight"
+    | "nativeTabBarVariant"
     | "nativeTabBarTrailingReservedWidth"
     | "nativeTabBarContentPaddingHorizontal"
+    | "nativeTabBarContentPaddingVertical"
     | "nativeTabBarItemSpacing"
     | "nativeTabBarFontSize"
     | "nativeTabBarFontFamily"
@@ -568,6 +572,14 @@ export class CollapsiblePagerView extends React.PureComponent<
       (Platform.OS === "ios" || Platform.OS === "android") &&
       !!nativeTabBar?.items.length;
     const nativeTabBarStyle = nativeTabBar?.style;
+    const requestedContentPaddingVertical =
+      nativeTabBarStyle?.contentPaddingVertical;
+    const nativeTabBarContentPaddingVertical =
+      typeof requestedContentPaddingVertical === "number" &&
+      Number.isFinite(requestedContentPaddingVertical) &&
+      requestedContentPaddingVertical >= 0
+        ? requestedContentPaddingVertical
+        : 0;
     const requestedTrailingReservedWidth =
       nativeTabBarStyle?.trailingReservedWidth;
     const nativeTabBarTrailingReservedWidth =
@@ -629,6 +641,9 @@ export class CollapsiblePagerView extends React.PureComponent<
         nativeTabBarHeight={
           nativeTabBarEnabled ? nativeTabBarStyle?.height ?? 44 : undefined
         }
+        nativeTabBarVariant={
+          nativeTabBarEnabled ? nativeTabBarStyle?.variant ?? "underline" : undefined
+        }
         nativeTabBarTrailingReservedWidth={
           nativeTabBarEnabled ? nativeTabBarTrailingReservedWidth : 0
         }
@@ -636,6 +651,9 @@ export class CollapsiblePagerView extends React.PureComponent<
           nativeTabBarEnabled
             ? nativeTabBarStyle?.contentPaddingHorizontal ?? 20
             : undefined
+        }
+        nativeTabBarContentPaddingVertical={
+          nativeTabBarEnabled ? nativeTabBarContentPaddingVertical : undefined
         }
         nativeTabBarItemSpacing={
           nativeTabBarEnabled ? nativeTabBarStyle?.itemSpacing ?? 8 : undefined

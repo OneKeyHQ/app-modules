@@ -18,6 +18,8 @@ final class NativeListDataRowCell: NativeListRendererCell {
   private let columns = UIStackView()
   private let cells = (0..<4).map { _ in NativeListTableColumnView() }
   private var rowConstraints: [NSLayoutConstraint] = []
+  private var columnWidthConstraints: [NSLayoutConstraint] = []
+  private var columnWeights: [Int]?
   override func unselectedBackground(
     _ item: NativeListItem, theme: [String: Any]?, layout: String, itemIndex: Int?
   ) -> UIColor {
@@ -109,8 +111,20 @@ final class NativeListDataRowCell: NativeListRendererCell {
         trailingAccessories.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize).width))
     }
     let values = Array(data.dictionaries("columns").prefix(4))
+    let weights = values.map { max(1, $0.int("weight", default: 1)) }
+    var divisor = weights.first ?? 1
+    for weight in weights.dropFirst() {
+      var a = divisor
+      var b = weight
+      while b != 0 { (a, b) = (b, a % b) }
+      divisor = a
+    }
+    let normalizedWeights = weights.map { $0 / divisor }
+    let columnsChanged = columnWeights != normalizedWeights
+    if columnsChanged { NSLayoutConstraint.deactivate(columnWidthConstraints) }
     for (index, cell) in cells.enumerated() {
-      cell.isHidden = index >= values.count
+      let hidden = index >= values.count
+      if cell.isHidden != hidden { cell.isHidden = hidden }
       guard index < values.count else {
         cell.reset()
         continue
@@ -126,15 +140,16 @@ final class NativeListDataRowCell: NativeListRendererCell {
       }
       cell.applySegments(values[index])
       cell.bindTitleIcons(values[index], theme: theme)
-      if index > 0 {
-        rowConstraints.append(
-          cell.widthAnchor.constraint(
-            equalTo: cells[0].widthAnchor,
-            multiplier: CGFloat(max(1, values[index].int("weight", default: 1)))
-              / CGFloat(max(1, values[0].int("weight", default: 1)))))
-      }
     }
     NSLayoutConstraint.activate(rowConstraints)
+    if columnsChanged {
+      columnWidthConstraints = values.count > 1 ? (1..<values.count).map { index in
+        cells[index].widthAnchor.constraint(equalTo: cells[0].widthAnchor,
+          multiplier: CGFloat(weights[index]) / CGFloat(weights[0]))
+      } : []
+      NSLayoutConstraint.activate(columnWidthConstraints)
+      columnWeights = normalizedWeights
+    }
   }
   override func bindSelectionContent(
     _ item: NativeListItem,

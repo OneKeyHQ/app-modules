@@ -364,6 +364,7 @@ final class NativeListView: UIView {
   private var sectionIndexHapticsEnabled = true
   private var lastLayoutDirection: UIUserInterfaceLayoutDirection?
   private var lastLayoutSize: CGSize?
+  private var lastConfiguredCollectionWidth: CGFloat?
   private var commandAcceptedForPendingScroll = false
   private var performingExplicitScrollCommand = false
   private var animatedExplicitScrollCommand = false
@@ -635,7 +636,9 @@ final class NativeListView: UIView {
       invalidateActionAnchor(reason: "layout")
     }
     lastLayoutSize = bounds.size
-    if (lastLayoutDirection != direction || sizeChanged && sidecarLayout != nil), let config {
+    let collectionWidthChanged = collectionView.bounds.width > 0
+      && lastConfiguredCollectionWidth != collectionView.bounds.width
+    if (lastLayoutDirection != direction || collectionWidthChanged), let config {
       configureLayout(config)
       if lastLayoutDirection != direction { rebindRowsForLayoutDirection(config) }
     }
@@ -1296,6 +1299,7 @@ final class NativeListView: UIView {
     listBodyGestureGuard.isEnabled = !isHorizontal
     collectionView.showsVerticalScrollIndicator = sectionIndexEntries.isEmpty
     collectionView.dragInteractionEnabled = false
+    lastConfiguredCollectionWidth = collectionView.bounds.width
     lastLayoutDirection = effectiveUserInterfaceLayoutDirection
   }
 

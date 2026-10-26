@@ -20,6 +20,117 @@ import kotlin.math.roundToInt
 class CollapsiblePagerHitTestActivity : Activity()
 
 class CollapsiblePagerTabReservationTest : InstrumentationTestCase() {
+  fun testSegmentedNativeTabsTrackFractionalProgressAndReset() {
+    val context = instrumentation.targetContext
+    assertTrue(context.applicationInfo.flags and ApplicationInfo.FLAG_SUPPORTS_RTL != 0)
+    val activity = instrumentation.startActivitySync(
+      Intent(context, CollapsiblePagerHitTestActivity::class.java)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+    ) as CollapsiblePagerHitTestActivity
+    val density = context.resources.displayMetrics.density
+    fun dp(value: Int) = (value * density).roundToInt()
+    lateinit var tab: CollapsiblePagerNativeTabBarView
+    lateinit var row: HorizontalScrollView
+    lateinit var content: ViewGroup
+    lateinit var track: View
+    lateinit var thumb: View
+    lateinit var buttons: List<TextView>
+    fun layout(width: Int = 320, height: Int = 56) {
+      tab.measure(View.MeasureSpec.makeMeasureSpec(dp(width), View.MeasureSpec.EXACTLY),
+        View.MeasureSpec.makeMeasureSpec(dp(height), View.MeasureSpec.EXACTLY))
+      tab.layout(0, 0, dp(width), dp(height))
+    }
+    try {
+      instrumentation.runOnMainSync {
+      tab = CollapsiblePagerNativeTabBarView(context)
+      activity.setContentView(tab)
+      val presses = mutableListOf<String>()
+      tab.onItemPress = { _, key -> presses.add(key) }
+      tab.updateItemsJSON("""[{"key":"recent","title":"Recents"},""" +
+        """{"key":"account","title":"Accounts"},""" +
+        """{"key":"book","title":"Address Book"}]""")
+      tab.updateStyle(56.0, "segmented", 20.0, 12.0, 0.0, 14.0, null, 2.0, 0.0)
+      tab.updateColors(Color.LTGRAY, Color.BLACK, Color.GRAY, Color.WHITE)
+      layout()
+      row = tab.getChildAt(0) as HorizontalScrollView
+      content = row.getChildAt(0) as ViewGroup
+      track = content.getChildAt(0)
+      thumb = content.getChildAt(1)
+      buttons = (0 until content.childCount).map(content::getChildAt).filterIsInstance<TextView>()
+      assertEquals(3, buttons.size)
+      assertEquals(dp(20), track.left)
+      assertTrue(kotlin.math.abs(dp(32) - track.height) <= 1)
+      assertEquals(0, row.scrollX)
+      assertTrue(kotlin.math.abs(buttons[0].width - buttons[1].width) <= 1)
+      tab.setProgress(0f)
+      val firstX = thumb.left
+      tab.setProgress(1f)
+      val secondX = thumb.left
+      tab.setProgress(0.25f)
+      assertTrue(kotlin.math.abs(thumb.left - (firstX + (secondX - firstX) * 0.25f)) <= 1)
+      tab.setProgress(0.5f)
+      assertTrue(kotlin.math.abs(thumb.left - (firstX + secondX) / 2f) <= 1)
+      tab.setProgress(0f)
+      assertEquals(firstX, thumb.left)
+      buttons[1].performClick()
+      assertEquals(listOf("account"), presses)
+
+      tab.layoutDirection = View.LAYOUT_DIRECTION_RTL
+      }
+      instrumentation.waitForIdleSync()
+      instrumentation.runOnMainSync {
+      layout()
+      assertEquals(View.LAYOUT_DIRECTION_RTL, row.layoutDirection)
+      val rtlFirst = buttons[0].layoutParams as android.widget.FrameLayout.LayoutParams
+      val rtlSecond = buttons[1].layoutParams as android.widget.FrameLayout.LayoutParams
+      assertTrue(rtlFirst.leftMargin > rtlSecond.leftMargin)
+      val rtlGeometry = "rowDir=${row.layoutDirection} contentDir=${content.layoutDirection} " +
+        buttons.mapIndexed { index, button ->
+          val params = button.layoutParams as android.widget.FrameLayout.LayoutParams
+          "$index:${button.left}-${button.right} margin=${params.leftMargin}/${params.rightMargin} gravity=${params.gravity}"
+        }.joinToString(" ")
+      assertTrue(rtlGeometry, buttons[0].left >= buttons[1].right)
+      assertEquals(dp(20), track.left)
+      tab.setProgress(0f)
+      val rtlFirstX = thumb.left
+      tab.setProgress(1f)
+      val rtlSecondX = thumb.left
+      assertTrue(rtlFirstX > rtlSecondX)
+      tab.setProgress(0.5f)
+      assertTrue(kotlin.math.abs(thumb.left - (rtlFirstX + rtlSecondX) / 2f) <= 1)
+      tab.layoutDirection = View.LAYOUT_DIRECTION_LTR
+      }
+      instrumentation.waitForIdleSync()
+      instrumentation.runOnMainSync {
+      layout()
+      assertTrue(buttons[0].right <= buttons[1].left)
+      tab.updateItemsJSON("""[{"key":"recent","title":"Recents (8)"},""" +
+        """{"key":"account","title":"Accounts"}]""")
+      layout()
+      val twoButtons = (0 until content.childCount).map(content::getChildAt).filterIsInstance<TextView>()
+      assertEquals(2, twoButtons.size)
+      assertTrue(kotlin.math.abs(twoButtons[0].width - track.width / 2) <= 1)
+      layout(width = 30)
+      assertEquals(dp(15), track.left)
+      assertEquals(0, track.width)
+      tab.updateStyle(56.0, "segmented", 20.0, 40.0, 0.0, 14.0, null, 2.0, 0.0)
+      layout(width = 30)
+      assertTrue(kotlin.math.abs(dp(28) - track.top) <= 1)
+      assertEquals(0, track.height)
+      assertEquals(View.GONE, thumb.visibility)
+      tab.updateItemsJSON("[]")
+      assertEquals(View.GONE, tab.visibility)
+      tab.updateItemsJSON("""[{"key":"recent","title":"Recents"}]""")
+      tab.updateStyle(44.0, "underline", 20.0, 0.0, 8.0, 16.0, null, 2.0, 0.0)
+      layout(height = 44)
+      assertEquals(View.GONE, track.visibility)
+      assertEquals(dp(2), thumb.height)
+      }
+    } finally {
+      instrumentation.runOnMainSync { activity.finish() }
+    }
+  }
+
   fun testTabViewportToolbarHitAndResetInBothDirections() {
     val context = instrumentation.targetContext
     assertTrue(context.applicationInfo.flags and ApplicationInfo.FLAG_SUPPORTS_RTL != 0)

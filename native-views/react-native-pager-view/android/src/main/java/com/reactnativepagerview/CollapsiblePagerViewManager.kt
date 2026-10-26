@@ -239,6 +239,13 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
     view.applyNativeHeaderStyle()
   }
 
+  @ReactProp(name = "nativeTabBarVariant")
+  override fun setNativeTabBarVariant(view: CollapsiblePagerHost?, value: String?) {
+    view ?: return
+    view.nativeTabBarVariant = if (value == "segmented") "segmented" else "underline"
+    view.applyNativeHeaderStyle()
+  }
+
   @ReactProp(name = "nativeTabBarTrailingReservedWidth", defaultDouble = 0.0)
   override fun setNativeTabBarTrailingReservedWidth(view: CollapsiblePagerHost?, value: Double) {
     view?.nativeTabBarTrailingReservedWidth = value
@@ -251,6 +258,13 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
   ) {
     view ?: return
     view.nativeTabBarContentPaddingHorizontal = value
+    view.applyNativeHeaderStyle()
+  }
+
+  @ReactProp(name = "nativeTabBarContentPaddingVertical")
+  override fun setNativeTabBarContentPaddingVertical(view: CollapsiblePagerHost?, value: Double) {
+    view ?: return
+    view.nativeTabBarContentPaddingVertical = if (value.isFinite()) value.coerceAtLeast(0.0) else 0.0
     view.applyNativeHeaderStyle()
   }
 
