@@ -284,6 +284,26 @@ not establish visual acceptance. Acceptance includes two independent runtimes,
 two list instances, changed/reset mappings, invalid configuration without partial
 state, all templates and container text, and retained selection/scroll behavior.
 
+### Trailing text accessory hit area (OK-65494)
+
+Status: implemented on iOS and Android. iOS XCTest
+(`NativeListAccessoryStackTests`) checks the control state and hit test, Android
+a JVM policy test (`NativeListPressPolicyTest`); iOS Simulator acceptance on the
+app's network selector is recorded in the changelog entry (2026-10-26). Android
+device acceptance pending.
+
+A trailing text accessory (`value`, `valuePair`, `progress`, and a `radio` or
+`switch` without an action key) is display only. It MUST NOT own touches: a tap
+on it is a row press, so the whole row, including its value column, is the hit
+area on iOS, Android and Web. Only a text accessory that carries an action key
+(`radio`, `switch`) handles its own tap and emits that action instead of the row
+press. Icon, chevron, menu, drag and checkbox accessories keep their existing
+ownership. iOS implements this by disabling user interaction on the shared
+accessory button when it has no action and restoring it on reset; Android keeps
+the trailing `TextView` non-clickable unless `showTrailing` binds an action
+(`setOnClickListener(null)` alone leaves a view clickable). Web already renders
+an action-less accessory as a `span`, so its click reaches the row.
+
 ## Failures, fallback and limits
 
 Snapshot validation rejects malformed/duplicate-key input without partial

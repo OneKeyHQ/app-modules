@@ -45,6 +45,14 @@ All notable changes to this project will be documented in this file.
 - Stop tracking `nitrogen/generated` for `react-native-image` and `react-native-native-list`. Every other Nitro package already ignores `nitrogen/` and regenerates it from the spec at release time; these two were missing a package `.gitignore`, so 117 generated files rode along in every diff that touched a prop. `react-native-native-list` now runs `yarn nitrogen` in its `release` script like the other view packages, and local builds need `yarn nitrogen` in the package before the first native build.
 - No version bump here; these changes ship with the next release. Note that 3.0.157 was published from this branch before the review fixes landed and should not be used.
 
+## [6.7.0-13] - 2026-10-26
+
+### Bug Fixes
+- **native-list (iOS, Android)**: Make a row's trailing value part of its hit area (OK-65494). iOS rendered every trailing text accessory as an enabled `UIButton`, and Android's `reset()` left the trailing `TextView` clickable after `setOnClickListener(null)`, so a tap on the balance column of the mobile network selector was swallowed and the network did not switch. Text accessories without an action (`value`, `valuePair`, `progress`) no longer own touches; radio and switch accessories with an action key still handle their own tap. Web already routed that click to the row. Verified on an iPhone 17 Pro Simulator (iOS 26.5) with the app's single-network selector: tapping the balance column selects the row, both for the already selected network (selector closes) and for another network (home switches to it); with the keyboard up, the first tap on either column only dismisses the keyboard, as before.
+
+### Chores
+- Bump all 43 publishable packages to 6.7.0-13.
+
 ## [3.0.156] - 2026-09-21
 
 ### Features

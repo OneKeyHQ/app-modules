@@ -188,6 +188,11 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
       v.text = ""
       v.layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
       v.setOnClickListener(null)
+      // setOnClickListener(null) leaves the view clickable, and a clickable
+      // child consumes the touch, so a tap on a row value such as a network
+      // balance never reached the row click (OK-65494). showTrailing enables
+      // the click again only for a text accessory that carries an action.
+      v.isClickable = false
       v.background = null
       v.setPadding(0, 0, 0, 0)
       // Legacy trailing text: END gravity, one line, no ellipsis.
@@ -410,11 +415,13 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
     TextViewCompat.setLineHeight(view, dp(if (primary) 24 else 20))
     textColor?.let(view::setTextColor)
     view.visibility = VISIBLE
-    if (!actionKey.isNullOrEmpty()) {
+    val clickActionKey = actionKey?.takeIf(::isNativeListTrailingTextClickable)
+    view.isClickable = clickActionKey != null
+    if (clickActionKey != null) {
       view.setOnClickListener {
         (tag as? NativeListItem)
           ?.takeUnless { item -> item.json.optBoolean("disabled", false) }
-          ?.let { item -> emitAction(item, actionKey, null, view, "trailingAccessory", index) }
+          ?.let { item -> emitAction(item, clickActionKey, null, view, "trailingAccessory", index) }
       }
     }
   }
