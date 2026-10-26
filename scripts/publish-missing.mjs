@@ -112,6 +112,9 @@ async function main() {
     ]);
   }
   if (missing.some(({ name }) => name === nativeListName)) {
+    // A recovery runner may skip the already-published Image workspace, but
+    // NativeList still needs its generated declarations during the build.
+    runYarn(["workspace", "@onekeyfe/react-native-image", "prepare"]);
     runYarn(["workspace", nativeListName, "release", "--tag", distTag]);
   }
   for (const { name, version } of retags) {
