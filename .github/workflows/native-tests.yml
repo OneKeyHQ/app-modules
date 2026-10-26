@@ -249,7 +249,12 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
           xcodebuild -version | grep -F 'Xcode 26.6'
           xcrun simctl list devices available | grep -F 'iOS 26.5'
-          xcrun simctl list devices available | grep -F 'iPhone 17 Pro ('
+          sim_line=$(xcrun simctl list devices available | grep -F 'iPhone 17 Pro (' | head -n 1)
+          echo "$sim_line"
+          sim_udid=$(echo "$sim_line" | grep -Eo '[0-9A-F]{8}-([0-9A-F]{4}-){3}[0-9A-F]{12}')
+          test -n "$sim_udid"
+          echo "SIMULATOR_UDID=$sim_udid" >> "$GITHUB_ENV"
+          xcrun simctl boot "$sim_udid" || true
           df -h .
       - name: Install and generate native bindings
         run: |
@@ -291,47 +296,50 @@ jobs:
           end
           puts 'Podfile.lock matches: only the Hermes checksum and Specs CDN URL may differ'
           RUBY
-      - name: Compile native overlay pod on iOS Simulator
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p artifacts/ios
-          xcodebuild build -workspace example/react-native/ios/example.xcworkspace \
-            -scheme NativeOverlay -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath "$RUNNER_TEMP/native-tests-derived-data" \
-            -jobs 2 CODE_SIGNING_ALLOWED=NO IPHONEOS_DEPLOYMENT_TARGET=16.4 \
-            'OTHER_LDFLAGS=$(inherited) -lc++' \
-            2>&1 | tee artifacts/ios/NativeOverlay-build.log
-      - name: Run nine pod XCTest suites on iOS Simulator
+      - name: Compile native overlay pod and run nine pod XCTest suites on iOS Simulator
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p artifacts/ios
           workspace=example/react-native/ios/example.xcworkspace
           schemes=(react-native-pager-view-Unit-Tests OneKeyTextInput-Unit-Tests OneKeyImage-Unit-Tests react-native-native-list-Unit-Tests PerpDepthBar-Unit-Tests ReactNativeBundleCrypto-Unit-Tests ReactNativeImageCropPicker-Unit-Tests ReactNativeCaptureProtection-Unit-Tests ReactNativePhotoLibrary-Unit-Tests)
-          # Plan and build the shared pod dependencies once for all nine bundles.
+          # Plan and build NativeOverlay plus shared pod dependencies once for all nine bundles.
           BUNDLE_GEMFILE="$PWD/example/react-native/Gemfile" bundle exec ruby - "${schemes[@]}" <<'RUBY'
           require 'xcodeproj'
 
           project_path = 'example/react-native/ios/Pods/Pods.xcodeproj'
           project = Xcodeproj::Project.open(project_path)
           scheme = Xcodeproj::XCScheme.new
+          overlay = project.targets.find { |candidate| candidate.name == 'NativeOverlay' }
+          abort 'Missing pod target: NativeOverlay' unless overlay
+          scheme.add_build_target(overlay, false)
           ARGV.each do |name|
             target = project.targets.find { |candidate| candidate.name == name }
             abort "Missing unit test target: #{name}" unless target && target.product_type == 'com.apple.product-type.bundle.unit-test'
+            target.dependencies.reject! do |dep|
+              dep.name&.start_with?('AppHost-') || dep.target&.name&.start_with?('AppHost-')
+            end
+            target.build_configurations.each do |config|
+              config.build_settings.delete('TEST_HOST')
+              config.build_settings.delete('BUNDLE_LOADER')
+            end
             scheme.add_build_target(target, false)
             scheme.add_test_target(target)
           end
+          project.save
           scheme.save_as(project_path, 'AppModulesNativeTests', true)
           RUBY
           xcodebuild -list -workspace "$workspace" > artifacts/ios/schemes.log
           grep -Fxq '        AppModulesNativeTests' artifacts/ios/schemes.log
+          jobs=$(sysctl -n hw.ncpu 2>/dev/null || echo 4)
           # shellcheck disable=SC2016
           xcodebuild test -workspace "$workspace" -scheme AppModulesNativeTests \
-            -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5' \
+            -destination "platform=iOS Simulator,id=${SIMULATOR_UDID}" \
             -derivedDataPath "$RUNNER_TEMP/native-tests-derived-data" \
             -resultBundlePath "$PWD/artifacts/ios/AppModulesNativeTests.xcresult" \
-            -parallel-testing-enabled NO -jobs 2 CODE_SIGNING_ALLOWED=NO \
+            -parallel-testing-enabled NO -jobs "$jobs" CODE_SIGNING_ALLOWED=NO \
+            COMPILER_INDEX_STORE_ENABLE=NO ONLY_ACTIVE_ARCH=YES ARCHS=arm64 \
+            DEBUG_INFORMATION_FORMAT=dwarf \
             IPHONEOS_DEPLOYMENT_TARGET=16.4 \
             'OTHER_LDFLAGS=$(inherited) -lc++' \
             2>&1 | tee artifacts/ios/AppModulesNativeTests.log
