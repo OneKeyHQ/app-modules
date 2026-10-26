@@ -27,6 +27,13 @@ internal fun isNativeListWholeRowInteractive(
   pressDisabled = pressDisabled,
 )
 
+/**
+ * A trailing text accessory (value, value pair, progress, radio, switch) owns its
+ * tap only when it carries an action key; otherwise the touch belongs to the row
+ * press, so a value such as a network balance is part of the row's hit area.
+ */
+internal fun isNativeListTrailingTextClickable(actionKey: String?): Boolean = !actionKey.isNullOrEmpty()
+
 internal fun resolveNativeListSelectorBackgroundColor(
   rowType: String,
   styleBackgroundColor: String?,
