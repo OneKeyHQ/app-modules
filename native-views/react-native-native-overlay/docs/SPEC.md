@@ -41,15 +41,12 @@ attribution in source comments.
 
 ### Release boundary
 
-The earlier `3.0.162-alpha.272` release remains immutable. This branch is
-prepared at `6.7.0-9`: the repository's release validator requires all 43
-publishable workspace manifests and exact internal pins to use the same
-version. Publish only `@onekeyfe/react-native-native-overlay` through the
-manual `package-publish` workflow with `npm_dist_tag=latest` and
-`only_workspace=@onekeyfe/react-native-native-overlay`; verify that exact
-registry tarball before the App pins it and refreshes its dependency and native
-locks. The other workspace version changes are release metadata, not a request
-to publish their packages in this run. Leave the source PR open for review.
+The `6.7.0-10` batch adds the Catalyst compile-time sheet background guard.
+All 43 publishable workspace manifests and exact internal pins use the same
+version, as required by the release validator. Publish the synchronized batch
+through `package-publish` with `npm_dist_tag=latest`, verify the registry
+versions, and refresh the App dependency and native locks before acceptance.
+The source PR remains open for review.
 
 ## 5.1 Purpose, scope, and non-goals
 
@@ -299,6 +296,14 @@ their existing values and does not publish a release.
 - `replaceKey` is the only identity shared across entries.
 
 ## 5.6 Platform contract
+
+### Mac Catalyst sheet background
+
+Implemented; Catalyst build and runtime verification pending. Global sheets
+retain their configured surface color on Mac Catalyst and MUST NOT call
+`UISheetPresentationController.backgroundEffect` or the matching detent API,
+which are unavailable there. iOS 26.1 and later retain their existing color
+effect. Presentation, sizing, motion, and lifecycle contracts are unchanged.
 
 ### Web keyboard focus containment
 
