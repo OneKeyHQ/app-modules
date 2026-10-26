@@ -632,6 +632,30 @@ final class SniConnectValidationTests: XCTestCase {
     }
   }
 
+  func testReadUploadFileAcceptsExactLimitBinaryData() throws {
+    let root = try makeUploadRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("exact.zip")
+    let expected = Data(repeating: 0xFF, count: SniConnectValidation.maxUploadFileBytes)
+    try expected.write(to: file)
+    XCTAssertEqual(try SniConnectValidation.readUploadFile(file), expected)
+  }
+
+  func testReadUploadFileRejectsGrowthAndTruncationAfterValidation() throws {
+    let root = try makeUploadRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("changing.zip")
+    try Data([1]).write(to: file)
+    let validated = try SniConnectValidation.resolveUploadFile(file.path, allowedRoots: [root])
+    let handle = try FileHandle(forWritingTo: file)
+    defer { try? handle.close() }
+    // A sparse file exercises the consumption bound without a large fixture.
+    try handle.truncate(atOffset: UInt64(SniConnectValidation.maxUploadFileBytes * 4))
+    XCTAssertThrowsError(try SniConnectValidation.readUploadFile(validated.url))
+    try handle.truncate(atOffset: 0)
+    XCTAssertThrowsError(try SniConnectValidation.readUploadFile(validated.url))
+  }
+
   private func makeUploadRoot() throws -> URL {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("sni-upload-\(UUID().uuidString)", isDirectory: true)

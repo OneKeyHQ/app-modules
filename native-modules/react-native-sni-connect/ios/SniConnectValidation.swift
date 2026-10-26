@@ -148,6 +148,17 @@ enum SniConnectValidation {
     return (URL(fileURLWithPath: resolvedPath), sizeBytes)
   }
 
+  /// Bound the actual read as well as the earlier path/metadata validation.
+  static func readUploadFile(_ url: URL) throws -> Data {
+    let handle = try FileHandle(forReadingFrom: url)
+    defer { try? handle.close() }
+    let data = try handle.read(upToCount: maxUploadFileBytes + 1) ?? Data()
+    guard !data.isEmpty, data.count <= maxUploadFileBytes else {
+      throw ValidationError.invalidUploadFile("File size is out of range")
+    }
+    return data
+  }
+
   /// Validate and uppercase the HTTP method.
   static func normalizeMethod(_ method: String) throws -> String {
     if containsControlCharacters(method) {

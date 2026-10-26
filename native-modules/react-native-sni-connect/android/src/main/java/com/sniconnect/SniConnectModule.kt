@@ -17,7 +17,6 @@ import okhttp3.Headers
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.ResponseBody
@@ -607,8 +606,8 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
       .firstOrNull { it.key.equals("Content-Type", ignoreCase = true) }
       ?.value
       ?.toMediaTypeOrNull()
-    // OkHttp streams file bodies from disk instead of buffering them in memory.
-    val requestBody = config.bodyFile?.asRequestBody(mediaType)
+    // Enforce the body bound when OkHttp consumes the file, after admission.
+    val requestBody = config.bodyFile?.let { SniUploadFileRequestBody(it, mediaType) }
       ?: config.body?.toRequestBody(mediaType)
 
     when (method) {

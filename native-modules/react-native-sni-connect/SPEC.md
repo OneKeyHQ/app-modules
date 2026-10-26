@@ -209,6 +209,9 @@ export type SniConnectResponse = {
 - `request(config): Promise<SniConnectResponse>`
 - `uploadFile(config): Promise<SniConnectResponse>` (native React Native only;
   older native binaries lack it, so callers MUST feature-detect before use)
+- `isUploadFileSupported(): boolean` (React Native JS capability probe; see
+  [native upload contract](docs/SPEC.md) for unsupported Promise rejection and
+  consumption-time file bounds)
 - `cancelRequest(requestId): Promise<{ success: boolean }>`
 - `cancelAllRequests(): Promise<{ success: boolean }>`
 - `clearDNSCache(): Promise<{ success: boolean }>`

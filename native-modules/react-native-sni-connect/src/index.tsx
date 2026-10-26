@@ -12,9 +12,18 @@ export function request(
   return NativeSniConnect.request(config);
 }
 
-export function uploadFile(
+export function isUploadFileSupported(): boolean {
+  return typeof NativeSniConnect.uploadFile === 'function';
+}
+
+export async function uploadFile(
   config: SniConnectUploadFileRequest
 ): Promise<SniConnectResponse> {
+  if (!isUploadFileSupported()) {
+    throw Object.assign(new Error('Native SNI file upload is not supported'), {
+      code: 'SNI_UNSUPPORTED',
+    });
+  }
   return NativeSniConnect.uploadFile(config);
 }
 

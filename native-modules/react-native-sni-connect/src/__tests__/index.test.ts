@@ -17,6 +17,7 @@ import {
   clearDNSCache,
   getDebugSnapshot,
   isProxyActiveForUrl,
+  isUploadFileSupported,
   request,
   uploadFile,
 } from '../index';
@@ -72,6 +73,31 @@ describe('react-native-sni-connect public API', () => {
 
     await expect(uploadFile(config)).resolves.toBe(response);
     expect(mockNativeModule.uploadFile).toHaveBeenCalledWith(config);
+  });
+
+  it('detects native upload capability and rejects asynchronously when absent', async () => {
+    const nativeUpload = mockNativeModule.uploadFile;
+    expect(isUploadFileSupported()).toBe(true);
+    try {
+      // Simulate updated JS running against an older native binary.
+      Reflect.deleteProperty(mockNativeModule, 'uploadFile');
+      expect(isUploadFileSupported()).toBe(false);
+      const result = uploadFile({} as SniConnectUploadFileRequest);
+      expect(result).toBeInstanceOf(Promise);
+      await expect(result).rejects.toMatchObject({ code: 'SNI_UNSUPPORTED' });
+    } finally {
+      mockNativeModule.uploadFile = nativeUpload;
+    }
+  });
+
+  it('returns a rejected Promise when a native upload call throws', async () => {
+    const error = new Error('native upload failed');
+    mockNativeModule.uploadFile.mockImplementationOnce(() => {
+      throw error;
+    });
+    await expect(uploadFile({} as SniConnectUploadFileRequest)).rejects.toBe(
+      error
+    );
   });
 
   it('forwards cancelRequest() with the request id', async () => {

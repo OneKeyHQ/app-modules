@@ -776,14 +776,10 @@ final class SniConnectClient {
     if let bodyFileURL = config.bodyFileURL {
       let fileData: Data
       do {
-        // Read eagerly instead of memory-mapping so a concurrent delete of the
-        // file cannot fault the upload mid-send.
-        fileData = try Data(contentsOf: bodyFileURL)
+        // Bound consumption even if the file grew while waiting for admission.
+        fileData = try SniConnectValidation.readUploadFile(bodyFileURL)
       } catch {
         throw SniConnectError.invalidConfig("Upload file is not readable")
-      }
-      if fileData.isEmpty || fileData.count > SniConnectValidation.maxUploadFileBytes {
-        throw SniConnectError.invalidConfig("Upload file size is out of range")
       }
       mutableRequest.httpBody = fileData
       bodyBytes = fileData.count
