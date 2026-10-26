@@ -13,7 +13,13 @@ if File.directory?(File.join(catalyst_framework, 'Versions/A'))
   end
   links.each do |entry, target|
     destination = File.join(catalyst_framework, entry)
-    FileUtils.ln_s(target, destination) unless File.exist?(destination) || File.symlink?(destination)
+    if File.symlink?(destination)
+      next if File.readlink(destination) == target
+      File.unlink(destination)
+    elsif File.exist?(destination)
+      next
+    end
+    FileUtils.ln_s(target, destination)
   end
 end
 

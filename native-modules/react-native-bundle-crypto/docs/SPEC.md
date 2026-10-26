@@ -29,12 +29,15 @@ runtime acceptance remains pending. The Catalyst
 Gopenpgp slice uses a versioned macOS framework. npm does not preserve its
 framework symlinks, so podspec evaluation MUST restore missing `Versions/Current`
 and the binary, Headers, Modules, and Resources links before CocoaPods selects
-the slice. Targets stay inside the packaged framework. This repair MUST NOT
+the slice. Existing symbolic links with a different target MUST be replaced,
+including dangling links; correct links and materialized files or directories
+MUST be preserved. Targets stay inside the packaged framework. This repair MUST NOT
 modify the versioned binary or headers, verification behavior, or iOS/Android
 runtime behavior, and repeated Pod installation MUST be idempotent.
 
 ## Conformance and acceptance
 
+- Framework packaging regression: `ruby native-modules/react-native-bundle-crypto/ios/tests/PodspecFrameworkLinksTest.rb` evaluates the podspec against temporary framework layouts, covering missing, dangling, stale, and correct links, materialized entries, and an absent Catalyst slice. These checks do not prove a consumer build or cryptographic operation.
 - Android implementation: `android/src/main/java/com/margelo/nitro/reactnativebundlecrypto/BundleCryptoCore.kt`. JVM tests: `android/src/test/java/com/margelo/nitro/reactnativebundlecrypto/BundleCryptoCoreTest.kt`.
 - iOS implementation: `ios/BundleCryptoCore.swift`. XCTest: `ios/tests/BundleCryptoCoreTests.swift`.
 - Focused tests exercise the real native cores on both Android JVM and iOS XCTest for valid signed metadata acceptance, signed-message tampering/unsigned rejection, wrong-body ASC rejection, directory hash matching and failure, invalid expected paths, and extracted symlink rejection.
