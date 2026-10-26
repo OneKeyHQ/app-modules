@@ -41,6 +41,26 @@ final class SniConnectImpl: NSObject {
     }
   }
 
+  @objc
+  public func uploadFile(
+    _ config: NSDictionary,
+    resolve: @escaping RCTPromiseResolveBlock,
+    reject: @escaping RCTPromiseRejectBlock
+  ) {
+    do {
+      let parsed = try Self.parseUploadFileDictionary(config)
+      handleRequest(config: parsed, resolve: resolve, reject: reject)
+    } catch {
+      SniConnectLog.error(SniConnectLog.event("sni_request_result", [
+        ("result", "error"),
+        ("code", "SNI_INVALID_CONFIG"),
+        ("nativeErrorClass", String(describing: type(of: error))),
+        ("stage", "parse_upload_config"),
+      ]))
+      reject("SNI_INVALID_CONFIG", "\(error)", error)
+    }
+  }
+
   private func handleRequest(
     config: SniConnectClient.RequestConfig,
     resolve: @escaping RCTPromiseResolveBlock,
@@ -213,6 +233,45 @@ final class SniConnectImpl: NSObject {
     )
   }
 
+  /// Uploads may only read files from this app's own container.
+  private static var uploadFileAllowedRoots: [URL] {
+    [
+      URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true),
+      URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true),
+    ]
+  }
+
+  private static func parseUploadFileDictionary(
+    _ dictionary: NSDictionary
+  ) throws -> SniConnectClient.RequestConfig {
+    guard dictionary["body"] == nil || dictionary["body"] is NSNull else {
+      throw SniConnectError.invalidConfig("uploadFile does not accept body")
+    }
+    guard let filePath = dictionary["filePath"] as? String, !filePath.isEmpty else {
+      throw SniConnectError.invalidConfig("Missing filePath")
+    }
+    let base = try parseDictionary(dictionary)
+    let method = try SniConnectValidation.normalizeMethod(base.method)
+    try SniConnectValidation.validateUploadMethod(method)
+    let resolvedFile = try SniConnectValidation.resolveUploadFile(
+      filePath,
+      allowedRoots: uploadFileAllowedRoots
+    )
+    return SniConnectClient.RequestConfig(
+      requestId: base.requestId,
+      ip: base.ip,
+      hostname: base.hostname,
+      method: method,
+      path: base.path,
+      headers: base.headers,
+      body: nil,
+      timeout: base.timeout,
+      bodyFileURL: resolvedFile.url,
+      connectTimeout: base.connectTimeout,
+      totalTimeout: base.totalTimeout
+    )
+  }
+
   private static func validate(_ config: SniConnectClient.RequestConfig) throws {
     try SniConnectValidation.validatePublicIP(config.ip)
     try SniConnectValidation.validateHostname(config.hostname)
@@ -221,6 +280,10 @@ final class SniConnectImpl: NSObject {
     _ = try SniConnectValidation.normalizePath(config.path)
     try SniConnectValidation.validateRequestId(config.requestId)
     try SniConnectValidation.validateTimeout(config.effectiveTotalTimeout)
+    if config.bodyFileURL != nil {
+      try SniConnectValidation.validateUploadMethod(method)
+      return
+    }
     try SniConnectValidation.validateBody(config.body)
     try SniConnectValidation.validateMethodBody(method: method, body: config.body)
   }

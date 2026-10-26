@@ -28,6 +28,23 @@ type NativeSniConnectRequest = SniConnectRequestBase & {
   body?: string | null;
 };
 
+type NativeSniConnectUploadFileRequest = SniConnectRequestBase & {
+  method: string;
+  filePath: string;
+};
+
+export type SniConnectUploadFileMethod = 'POST' | 'PUT';
+
+/**
+ * Sends the raw bytes of an app-sandbox file as the request body over the same
+ * pinned-IP/SNI transport as `request()`. Set `content-type` in `headers`.
+ */
+export type SniConnectUploadFileRequest = SniConnectRequestBase & {
+  method: SniConnectUploadFileMethod;
+  /** Absolute path or `file://` URL inside the app sandbox, at most 20 MiB. */
+  filePath: string;
+};
+
 export type SniConnectBodylessMethod = 'GET' | 'HEAD';
 export type SniConnectRequiredBodyMethod = 'POST' | 'PUT' | 'PATCH';
 export type SniConnectOptionalBodyMethod = 'DELETE' | 'OPTIONS';
@@ -74,6 +91,9 @@ export type SniConnectDebugSnapshot = {
 
 export interface Spec extends TurboModule {
   request(config: NativeSniConnectRequest): Promise<SniConnectResponse>;
+  uploadFile(
+    config: NativeSniConnectUploadFileRequest
+  ): Promise<SniConnectResponse>;
   cancelRequest(requestId: string): Promise<{ success: boolean }>;
   cancelAllRequests(): Promise<{ success: boolean }>;
   clearDNSCache(): Promise<{ success: boolean }>;

@@ -46,6 +46,7 @@ target 'example' do
   pod 'react-native-pager-view', :path => '../../../node_modules/@onekeyfe/react-native-pager-view', :testspecs => ['Tests']
   pod 'OneKeyTextInput', :path => '../../../node_modules/@onekeyfe/react-native-text-input', :testspecs => ['Tests']
   pod 'react-native-native-list', :path => '../../../node_modules/@onekeyfe/react-native-native-list', :testspecs => ['Tests']
+  pod 'PerpDepthBar', :path => '../../../node_modules/@onekeyfe/react-native-perp-depth-bar', :testspecs => ['Tests']
   pod 'ReactNativeBundleCrypto', :path => '../../../node_modules/@onekeyfe/react-native-bundle-crypto', :testspecs => ['Tests']
   pod 'ReactNativeCaptureProtection', :path => '../../../node_modules/@onekeyfe/react-native-capture-protection', :testspecs => ['Tests']
   pod 'ReactNativePhotoLibrary', :path => '../../../node_modules/@onekeyfe/react-native-photo-library', :testspecs => ['Tests']

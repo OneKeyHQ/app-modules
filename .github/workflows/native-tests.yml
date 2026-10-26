@@ -302,14 +302,14 @@ jobs:
             -jobs 2 CODE_SIGNING_ALLOWED=NO IPHONEOS_DEPLOYMENT_TARGET=16.4 \
             'OTHER_LDFLAGS=$(inherited) -lc++' \
             2>&1 | tee artifacts/ios/NativeOverlay-build.log
-      - name: Run eight pod XCTest suites on iOS Simulator
+      - name: Run nine pod XCTest suites on iOS Simulator
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p artifacts/ios
           workspace=example/react-native/ios/example.xcworkspace
-          schemes=(react-native-pager-view-Unit-Tests OneKeyTextInput-Unit-Tests OneKeyImage-Unit-Tests react-native-native-list-Unit-Tests ReactNativeBundleCrypto-Unit-Tests ReactNativeImageCropPicker-Unit-Tests ReactNativeCaptureProtection-Unit-Tests ReactNativePhotoLibrary-Unit-Tests)
-          # Plan and build the shared pod dependencies once for all eight bundles.
+          schemes=(react-native-pager-view-Unit-Tests OneKeyTextInput-Unit-Tests OneKeyImage-Unit-Tests react-native-native-list-Unit-Tests PerpDepthBar-Unit-Tests ReactNativeBundleCrypto-Unit-Tests ReactNativeImageCropPicker-Unit-Tests ReactNativeCaptureProtection-Unit-Tests ReactNativePhotoLibrary-Unit-Tests)
+          # Plan and build the shared pod dependencies once for all nine bundles.
           BUNDLE_GEMFILE="$PWD/example/react-native/Gemfile" bundle exec ruby - "${schemes[@]}" <<'RUBY'
           require 'xcodeproj'
 

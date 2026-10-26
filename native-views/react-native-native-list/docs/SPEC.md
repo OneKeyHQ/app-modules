@@ -229,6 +229,16 @@ Existing geometry/typography differences are recorded in
 them. iOS uses UICollectionView, Android RecyclerView, and Web a windowed DOM
 engine. See [DESIGN.md](DESIGN.md) for their current ownership boundaries.
 
+### Android section-index attachment
+
+When `sectionIndex.centeredInWindow` is enabled, the Android index rail moves
+between the list container and the window host as list visibility and attachment
+change. Before adding that same rail to its new parent, the previous parent MUST
+finish any pending view transition for it. Hiding the list returns the rail to
+the list container; detaching still uses the existing posted return so that a
+window traversal is not interrupted. Re-showing or reattaching MUST retain one
+rail instance with one current parent.
+
 ### Font resource ownership and runtime configuration
 
 Status: implemented; JavaScript regression tests, Android compilation/JVM tests
