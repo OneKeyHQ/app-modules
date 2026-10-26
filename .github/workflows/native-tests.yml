@@ -89,7 +89,7 @@ jobs:
           yarn install --immutable
           # shellcheck disable=SC2016
           find native-modules native-views -mindepth 2 -maxdepth 2 -name nitro.json -print0 |
-            xargs -0 -n1 -P4 bash -c 'cd "$(dirname "$0")" && yarn nitrogen > /dev/null'
+            xargs -0 -n1 -P4 bash -c 'yarn --cwd "$(dirname "$0")" nitrogen > /dev/null'
       - name: Run ten Android unit test suites and build capture protection and photo saving
         working-directory: example/react-native/android
         run: |
@@ -254,7 +254,6 @@ jobs:
           sim_udid=$(echo "$sim_line" | grep -Eo '[0-9A-F]{8}-([0-9A-F]{4}-){3}[0-9A-F]{12}')
           test -n "$sim_udid"
           echo "SIMULATOR_UDID=$sim_udid" >> "$GITHUB_ENV"
-          xcrun simctl boot "$sim_udid" || true
           df -h .
       - name: Install and generate native bindings
         run: |
@@ -262,7 +261,7 @@ jobs:
           yarn install --immutable
           # shellcheck disable=SC2016
           find native-modules native-views -mindepth 2 -maxdepth 2 -name nitro.json -print0 |
-            xargs -0 -n1 -P4 bash -c 'cd "$(dirname "$0")" && yarn nitrogen > /dev/null'
+            xargs -0 -n1 -P4 bash -c 'yarn --cwd "$(dirname "$0")" nitrogen > /dev/null'
       - name: Install CocoaPods test specs and verify lockfile
         working-directory: example/react-native/ios
         run: |
