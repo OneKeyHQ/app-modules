@@ -125,7 +125,11 @@ class NativeOverlayView(
 
   fun removeReactChild(child: View) {
     if (contentChild !== child) return
-    (child.parent as? ViewGroup)?.removeView(child)
+    (child.parent as? ViewGroup)?.let { previous ->
+      previous.removeOnLayoutChangeListener(contentLayoutListener)
+      previous.removeView(child)
+      previous.endViewTransition(child)
+    }
     contentChild = null
   }
 

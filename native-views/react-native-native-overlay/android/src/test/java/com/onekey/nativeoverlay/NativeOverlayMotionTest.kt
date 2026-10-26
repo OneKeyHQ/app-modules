@@ -4,6 +4,7 @@ import android.animation.ValueAnimator
 import android.graphics.Color
 import android.os.Looper
 import android.view.View
+import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.coordinatorlayout.widget.CoordinatorLayout
 import com.facebook.react.bridge.BridgeReactContext
@@ -12,6 +13,7 @@ import com.google.android.material.bottomsheet.BottomSheetBehavior
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -169,5 +171,67 @@ class NativeOverlayMotionTest {
     assertSame(child, entry.contentView.getChildAt(0))
     overlay.endViewTransition(child)
     assertSame(entry.contentView, child.parent)
+  }
+
+  @Test
+  fun removingTransitioningStagedContentReleasesItsParentAndLayoutListener() {
+    val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible().get()
+    val reactContext = BridgeReactContext(activity)
+    reactContext.onHostResume(activity)
+    val context = ThemedReactContext(reactContext, activity, "OverlayMotionTest", 1)
+    val child = View(context)
+    val overlay = NativeOverlayView(context).apply { addReactChild(child) }
+    activity.setContentView(overlay)
+
+    overlay.startViewTransition(child)
+    overlay.removeReactChild(child)
+
+    assertNull(child.parent)
+    assertEquals(0, overlay.childCount)
+    assertEquals(0, overlay.getReactChildCount())
+    assertNoContentLayoutListener(overlay, overlay)
+    overlay.endViewTransition(child)
+    assertNull(child.parent)
+  }
+
+  @Test
+  fun replacingTransitioningPresentedContentReleasesTheRemovedChild() {
+    val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible().get()
+    val reactContext = BridgeReactContext(activity)
+    reactContext.onHostResume(activity)
+    val context = ThemedReactContext(reactContext, activity, "OverlayMotionTest", 1)
+    val child = View(context)
+    val overlay = NativeOverlayView(context).apply { addReactChild(child) }
+    activity.setContentView(overlay)
+    overlay.visible = true
+    overlay.commitConfiguration()
+    val container = child.parent as ViewGroup
+    container.startViewTransition(child)
+
+    val replacement = View(context)
+    overlay.addReactChild(replacement)
+
+    assertNull(child.parent)
+    assertSame(replacement, overlay.getReactChildAt(0))
+    assertSame(container, replacement.parent)
+    assertEquals(1, container.childCount)
+    container.endViewTransition(child)
+    assertSame(container, replacement.parent)
+
+    overlay.removeReactChild(replacement)
+    assertNoContentLayoutListener(container, overlay)
+  }
+
+  private fun assertNoContentLayoutListener(container: View, overlay: NativeOverlayView) {
+    val listener = NativeOverlayView::class.java.getDeclaredField("contentLayoutListener").apply {
+      isAccessible = true
+    }.get(overlay)
+    val listenerInfo = View::class.java.getDeclaredField("mListenerInfo").apply {
+      isAccessible = true
+    }.get(container) ?: return
+    val layoutListeners = listenerInfo.javaClass.getDeclaredField("mOnLayoutChangeListeners").apply {
+      isAccessible = true
+    }.get(listenerInfo) as? Collection<*>
+    assertFalse(layoutListeners?.contains(listener) == true)
   }
 }
