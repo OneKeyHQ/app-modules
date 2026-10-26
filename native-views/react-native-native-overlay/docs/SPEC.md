@@ -50,6 +50,13 @@ through `package-publish` with `npm_dist_tag=latest`, verify the registry
 versions, and refresh the App dependency and native locks before acceptance.
 The source PR remains open for review.
 
+The `6.7.0-14` batch incorporates the review fixes for framework-link
+self-repair, Android overlay transition cleanup, native list/depth ownership,
+and bounded SNI file uploads, together with main's row accessory press fix.
+It supersedes the source snapshots in the previously published `6.7.0-12`
+and `6.7.0-13` batches. Version and lockfile synchronization do not introduce
+additional public behavior; registry verification remains required after publish.
+
 ## 5.1 Purpose, scope, and non-goals
 
 The package owns **where an overlay is drawn, which overlay is on top, and how
