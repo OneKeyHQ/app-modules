@@ -2,6 +2,7 @@
 apply plugin: 'com.android.library'
 
 android {
+    namespace 'com.cancue.RNWebViewCleaner'
     compileSdkVersion(rootProject.ext.has('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 30)
     buildToolsVersion "23.0.1"
 
