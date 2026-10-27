@@ -386,6 +386,16 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
       if (item.json.optString("presentation") == "accountSelector" && item.hasExplicitHeight) 8
       else 10
     leadingFrame.bind(descriptor, style, item.key, currentTheme, false, sourceScale)
+    // The leading badges (overlay, cornerIcon, token network image) hang past the
+    // leading frame, and Android clips a child to its own bounds while its parent
+    // clips children: with the row's default clipping the account selector's
+    // bottom-right network badge was cut flat on Android only (OK-65694); iOS and
+    // Web let it overflow. Stop clipping the row, as the Market and Message
+    // renderers do for their network badges.
+    if (leadingFrame.requestsUnclippedHost) {
+      clipChildren = false
+      clipToPadding = false
+    }
     leadingFallback.typeface = fonts.bold(context)
     leadingFallback.textSize = sp(13f)
     leadingFallback.setLineSpacing(0f, 1f)

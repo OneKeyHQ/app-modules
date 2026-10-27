@@ -43,6 +43,15 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
    */
   var walletTextOverlays = false
 
+  /**
+   * True once the bound visual lays a badge past this frame (see
+   * [nativeListLeadingVisualOverhangsFrame]). This view never clips its children,
+   * but a host that clips children clips this view to its own bounds, so such a
+   * host must stop clipping or the badge is cut flat (OK-65694).
+   */
+  var requestsUnclippedHost = false
+    private set
+
   private fun isWalletText(data: JSONObject) =
     walletTextOverlays &&
       data.optString("text").isNotEmpty() &&
@@ -260,6 +269,13 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
         .optJSONArray("overlays")
         ?.let { values -> (0 until minOf(2, values.length())).map { values.getJSONObject(it) } }
         .orEmpty()
+    requestsUnclippedHost =
+      nativeListLeadingVisualOverhangsFrame(
+        kind = kind,
+        sourceCount = sources.size,
+        hasCornerIcon = badge != null,
+        overlayCount = descriptors.size,
+      )
     while (overlaySlots.size < descriptors.size) overlaySlots.add(NativeListImageSlot(reactContext))
     while (overlayFallbackIcons.size < descriptors.size)
       overlayFallbackIcons.add(OneKeyIconView(context))

@@ -34,6 +34,20 @@ internal fun isNativeListWholeRowInteractive(
  */
 internal fun isNativeListTrailingTextClickable(actionKey: String?): Boolean = !actionKey.isNullOrEmpty()
 
+/**
+ * A leading visual lays these badges past its own frame: the token network image
+ * with its backdrop, a `cornerIcon`, and every overlay (their default offset
+ * already overhangs; iOS stops clipping for the same descriptors). Android clips
+ * a child to its own bounds whenever its parent clips children, so the host row
+ * must stop clipping, or the badge is cut flat (OK-65694).
+ */
+internal fun nativeListLeadingVisualOverhangsFrame(
+  kind: String,
+  sourceCount: Int,
+  hasCornerIcon: Boolean,
+  overlayCount: Int,
+): Boolean = kind == "token" && sourceCount > 1 || hasCornerIcon || overlayCount > 0
+
 internal fun resolveNativeListSelectorBackgroundColor(
   rowType: String,
   styleBackgroundColor: String?,
