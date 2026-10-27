@@ -917,6 +917,51 @@ fallback debounce, including replacement-state restoration. Other collection
 fallbacks keep that safety delay. Caller insets and retained logical offsets
 remain governed by the existing restoration policy.
 
+When the active scroll owner is removed before its replacement becomes usable,
+the pager MUST retain bounded recovery (at most 12 retries per recovery round,
+spaced 100 ms apart). Clearing the completed mount's reattachment flag MUST NOT
+cancel that recovery. A replacement that becomes usable during that round,
+without another Fabric insertion, MUST receive the observer, shared headers,
+insets and retained collapse state. Page selection changes and recycling
+invalidate stale retry callbacks. Repeated mount attempts MUST NOT reset the
+retry budget. Once all 12 retries have been scheduled, an Insert whose parent is
+in the current page subtree MUST reopen recovery if that page retains a released
+scroll owner, including when the final retry callback is still pending. Reopening
+invalidates the old callback before clearing its scheduled state. The Insert
+MUST be recorded during a horizontal drag or transition, while observer and shared
+header attachment remain deferred until selection settles. Cancelling the drag
+on the same page MUST retain the reopened recovery round. Empty transactions,
+removals and inserts outside the current page MUST NOT reopen the budget. Owned
+`NativeScroller` and `NativeList` hosts additionally emit push readiness
+notifications when their scroll views attach and obtain positive bounds so late
+replacements recover immediately even without another Fabric insertion or after
+the retry budget expires; static pages with neither an unready scroll host nor a
+released scroll owner do not schedule retry timers.
+
+Status of transition-time and pending-final-retry recovery: implemented and
+UIKit regression verified on iOS 26.5 (2026-10-27). Both new regressions fail
+before the fix and pass afterward. Cancellation settles on the source page
+before the replacement becomes usable; the pending-final-retry case makes the
+replacement usable after the old timer's deadline. Observer and shared header
+ownership stay detached during the drag, then recover with the retained collapse.
+The full Pager suite executes 85 tests, with one iOS-27-only skip and no failures.
+
+Status of exhausted-budget recovery: implemented and UIKit regression verified
+on iOS 26.5 (2026-10-27). The regression exhausts the initial round, checks that
+empty transactions, removals and offscreen inserts do not reopen it, then inserts
+a current-page replacement whose scroller appears after did-mount. It fails
+before the fix and passes afterward, including preservation of an active round
+and restoration of the observer, shared headers and retained collapse. The full
+Pager suite executes 83 tests, with one iOS-27-only skip and no failures.
+
+Status of replacement recovery: implemented and runtime verified on iOS 26.5
+(2026-10-23). The late-replacement UIKit regression fails before the fix and
+passes afterward; the full Pager suite executes 82 tests, with one iOS-27-only
+skip and no failures. In the consuming app based on x at b0789571d8 with SDK
+6.7.0-9 and this local native change, two empty Favorites-to-Wallet-add-to-Market
+cycles and a Trending/Favorites round trip keep the first row aligned with the
+sticky header. The previously observed 212-point gap is absent.
+
 This is a UI-thread, main-runtime native coordination change with no new props,
 events, background-runtime work, persistence or retained strong view cache.
 Android already prepares discovered scroll children before draw and is unchanged;

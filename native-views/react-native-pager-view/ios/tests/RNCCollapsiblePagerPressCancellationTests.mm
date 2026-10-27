@@ -668,6 +668,7 @@ typedef struct __IOHIDEvent *RNCTestHIDEventRef;
 @property (nonatomic, strong) RNCSynthesizedTouchDriver *driver;
 @property (nonatomic, strong) UIView *firstPage;
 @property (nonatomic) NSUInteger longPressBegins;
+@property (nonatomic, strong) XCTestExpectation *longPressExpectation;
 @property (nonatomic) NSUInteger pagerPanBegins;
 @end
 
@@ -1066,7 +1067,10 @@ typedef struct __IOHIDEvent *RNCTestHIDEventRef;
 
 - (void)nestedLongPress:(UILongPressGestureRecognizer *)recognizer
 {
-  if (recognizer.state == UIGestureRecognizerStateBegan) self.longPressBegins += 1;
+  if (recognizer.state == UIGestureRecognizerStateBegan) {
+    self.longPressBegins += 1;
+    [self.longPressExpectation fulfill];
+  }
 }
 
 - (CGPoint)pressPointInNestedScrollView:(UIScrollView *)scroll
@@ -1087,14 +1091,12 @@ typedef struct __IOHIDEvent *RNCTestHIDEventRef;
   [pager addGestureRecognizer:longPress];
   // Exercise production wiring after a root recognizer is attached.
   ((void (*)(id, SEL))objc_msgSend)(self.pager, NSSelectorFromString(@"connectVerticalPagerGuard"));
+  self.longPressExpectation = [self expectationWithDescription:@"root long press recognized before finger-up"];
   UITouch *touch = [self.driver beginAt:[self pressPoint]];
   UIGestureRecognizer *guard = [self.pager valueForKey:@"verticalPagerGesture"];
   XCTAssertEqual(guard.state, UIGestureRecognizerStatePossible);
   XCTAssertEqual(pager.panGestureRecognizer.minimumNumberOfTouches, 2);
-  XCTestExpectation *hold = [self expectationWithDescription:@"root stationary finger held"];
-  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
-                 dispatch_get_main_queue(), ^{ [hold fulfill]; });
-  [self waitForExpectations:@[hold] timeout:2];
+  [self waitForExpectations:@[self.longPressExpectation] timeout:2];
   NSLog(@"[PagerPressDelivery] rootLongPress begins=%lu state=%ld touchPhase=%ld guardState=%ld pagerPanMinTouches=%lu",
         (unsigned long)self.longPressBegins, (long)longPress.state, (long)touch.phase,
         (long)guard.state, (unsigned long)pager.panGestureRecognizer.minimumNumberOfTouches);
@@ -1110,14 +1112,12 @@ typedef struct __IOHIDEvent *RNCTestHIDEventRef;
 - (void)testNestedStationaryNativeLongPressRecognizesBeforeFingerUp
 {
   UIScrollView *scroll = [self mountNestedHorizontalScrollView];
+  self.longPressExpectation = [self expectationWithDescription:@"nested long press recognized before finger-up"];
   UITouch *touch = [self.driver beginAt:[self pressPointInNestedScrollView:scroll]];
   UIGestureRecognizer *guard = [self.pager valueForKey:@"verticalPagerGesture"];
   XCTAssertEqual(guard.state, UIGestureRecognizerStatePossible);
   XCTAssertEqual(scroll.panGestureRecognizer.minimumNumberOfTouches, 2);
-  XCTestExpectation *hold = [self expectationWithDescription:@"stationary finger held"];
-  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
-                 dispatch_get_main_queue(), ^{ [hold fulfill]; });
-  [self waitForExpectations:@[hold] timeout:2];
+  [self waitForExpectations:@[self.longPressExpectation] timeout:2];
   // The real UIKit target action must arrive while the finger is still down.
   XCTAssertEqual(self.longPressBegins, 1);
   XCTAssertEqual(touch.phase, UITouchPhaseBegan);

@@ -459,6 +459,138 @@ using namespace facebook::react;
   XCTAssertTrue([[pager valueForKey:@"pendingPageRestoreKeys"] containsObject:@"page-1"]);
 }
 
+- (void)testReleasedOwnerRecoversReplacementWithoutAnotherFabricInsertion
+{
+  RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:1];
+  // The fixture mounts page 0 directly; UIKit must not select it again.
+  [pager setValue:@YES forKey:@"hasAppliedInitialPage"];
+  RNCNativeScrollerComponentView *source = [self addScrollerToPager:pager atIndex:0];
+  source.tag = 91001;
+  [pager.window layoutIfNeeded];
+  [pager layoutIfNeeded];
+  [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.15]];
+  [pager setValue:@120 forKey:@"headerOffset"];
+  [pager attachScrollObserverForCurrentPage];
+  XCTAssertEqual([pager valueForKey:@"observedScrollView"], source.scrollView);
+
+  // Finish the old owner's removal before the replacement becomes available.
+  ShadowView removedView;
+  removedView.tag = (Tag)source.tag;
+  MountingTransaction removal(1, 1, {ShadowViewMutation::RemoveMutation(1, removedView, 0)}, {});
+  SurfaceTelemetry telemetry;
+  [pager mountingTransactionWillMount:removal withSurfaceTelemetry:telemetry];
+  [source removeFromSuperview];
+  [self finishMount:pager];
+  XCTAssertNil([pager valueForKey:@"observedScrollView"]);
+
+  RNCNativeScrollerComponentView *replacement = [self addScrollerToPager:pager atIndex:0];
+  [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.3]];
+  XCTAssertEqual([pager valueForKey:@"observedScrollView"], replacement.scrollView);
+  XCTAssertEqual([pager valueForKey:@"sharedHeaderScrollView"], replacement.scrollView);
+  XCTAssertEqualWithAccuracy(replacement.scrollView.contentOffset.y + replacement.scrollView.contentInset.top,
+                            120, 0.01);
+  XCTAssertEqualWithAccuracy([[pager valueForKey:@"headerOffset"] doubleValue], 120, 0.01);
+}
+
+- (void)testCurrentPageInsertionRestartsExhaustedReplacementRecovery
+{
+  [self assertReplacementRecoveryWithCancelledDrag:NO finalRetryPending:NO];
+}
+
+- (void)testCancelledDragRetainsReplacementRecoveryFromInsertion
+{
+  [self assertReplacementRecoveryWithCancelledDrag:YES finalRetryPending:NO];
+}
+
+- (void)testInsertionInvalidatesPendingFinalReplacementRetry
+{
+  [self assertReplacementRecoveryWithCancelledDrag:NO finalRetryPending:YES];
+}
+
+- (void)assertReplacementRecoveryWithCancelledDrag:(BOOL)cancelDrag
+                                finalRetryPending:(BOOL)finalRetryPending
+{
+  RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:2];
+  [pager setValue:@YES forKey:@"hasAppliedInitialPage"];
+  RNCNativeScrollerComponentView *source = [self addScrollerToPager:pager atIndex:0];
+  source.tag = 91001;
+  UIView *page = source.superview;
+  page.tag = 92001;
+  UIViewController *otherPage = [pager valueForKey:@"pageControllers"][1];
+  otherPage.view.tag = 92002;
+  [pager.window layoutIfNeeded];
+  [pager layoutIfNeeded];
+  [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.15]];
+  [pager setValue:@120 forKey:@"headerOffset"];
+  [pager attachScrollObserverForCurrentPage];
+  XCTAssertEqual([pager valueForKey:@"observedScrollView"], source.scrollView);
+
+  ShadowView removedView;
+  removedView.tag = (Tag)source.tag;
+  MountingTransaction removal(1, 1, {ShadowViewMutation::RemoveMutation((Tag)page.tag, removedView, 0)}, {});
+  SurfaceTelemetry telemetry;
+  [pager mountingTransactionWillMount:removal withSurfaceTelemetry:telemetry];
+  [source removeFromSuperview];
+  [self finishMount:pager];
+  NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:3];
+  while (([[pager valueForKey:@"scrollResolveRetryAttempt"] integerValue] < 12 ||
+          (!finalRetryPending && [[pager valueForKey:@"scrollResolveRetryScheduled"] boolValue])) &&
+         deadline.timeIntervalSinceNow > 0) {
+    [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+  }
+  XCTAssertEqualObjects([pager valueForKey:@"scrollResolveRetryAttempt"], @12);
+  XCTAssertEqualObjects([pager valueForKey:@"scrollResolveRetryScheduled"], @(finalRetryPending));
+  XCTAssertNotNil([pager valueForKey:@"releasedPageScrollStates"][@"page-0"]);
+
+  // Only a new insertion in the current page can reopen the exhausted budget.
+  [self finishMount:pager];
+  [pager mountingTransactionDidMount:removal withSurfaceTelemetry:telemetry];
+  UIView *replacementHost = [UIView new];
+  replacementHost.tag = 93001;
+  [otherPage.view addSubview:replacementHost];
+  ShadowView insertedView;
+  insertedView.tag = (Tag)replacementHost.tag;
+  MountingTransaction unrelated(1, 2, {ShadowViewMutation::InsertMutation((Tag)otherPage.view.tag, insertedView, 0)}, {});
+  [pager mountingTransactionDidMount:unrelated withSurfaceTelemetry:telemetry];
+  XCTAssertEqualObjects([pager valueForKey:@"scrollResolveRetryAttempt"], @12);
+  XCTAssertEqualObjects([pager valueForKey:@"scrollResolveRetryScheduled"], @(finalRetryPending));
+
+  if (cancelDrag) {
+    [pager beginPageStateTransition];
+    [pager setValue:@YES forKey:@"transitioning"];
+    [pager setValue:@YES forKey:@"isPagerDragging"];
+  }
+  [page addSubview:replacementHost];
+  MountingTransaction insertion(1, 3, {ShadowViewMutation::InsertMutation((Tag)page.tag, insertedView, 0)}, {});
+  [pager mountingTransactionDidMount:insertion withSurfaceTelemetry:telemetry];
+  XCTAssertNil([pager valueForKey:@"observedScrollView"]);
+  NSNumber *retryToken = [pager valueForKey:@"scrollResolveRetryToken"];
+  [pager mountingTransactionDidMount:insertion withSurfaceTelemetry:telemetry];
+  XCTAssertEqualObjects([pager valueForKey:@"scrollResolveRetryToken"], retryToken);
+  if (cancelDrag) {
+    XCTAssertNil([pager valueForKey:@"sharedHeaderScrollView"]);
+    XCTAssertFalse([[pager valueForKey:@"scrollResolveRetryScheduled"] boolValue]);
+    // Settle on the source page while the replacement is still unavailable.
+    [pager attachScrollObserverForCurrentPageAfterTransition:YES];
+    [pager setValue:@NO forKey:@"isPagerDragging"];
+    [pager setValue:@NO forKey:@"transitioning"];
+    [pager attachScrollObserverForCurrentPage];
+    XCTAssertEqualObjects([pager valueForKey:@"currentIndex"], @0);
+  }
+  __block RNCNativeScrollerComponentView *replacement;
+  int64_t replacementDelay = finalRetryPending ? 150 : 50;
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, replacementDelay * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+    replacement = [self addScrollerToPager:pager atIndex:0];
+    [replacementHost addSubview:replacement];
+  });
+  [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.3]];
+  XCTAssertEqual([pager valueForKey:@"observedScrollView"], replacement.scrollView);
+  XCTAssertEqual([pager valueForKey:@"sharedHeaderScrollView"], replacement.scrollView);
+  XCTAssertEqualWithAccuracy(replacement.scrollView.contentOffset.y + replacement.scrollView.contentInset.top,
+                            120, 0.01);
+  XCTAssertEqualWithAccuracy([[pager valueForKey:@"headerOffset"] doubleValue], 120, 0.01);
+}
+
 - (void)testRenamedPageDoesNotResurrectPrunedObserverCache
 {
   RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:1];
@@ -601,6 +733,60 @@ using namespace facebook::react;
   [removed addObject:scroller.scrollView];
   [pager prepareForRecycle];
   XCTAssertEqual(removed.count, 0u);
+}
+
+- (void)testEmptyPageWithoutReleasedOwnerOrScrollHostDoesNotScheduleRetry
+{
+  RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:1];
+  [pager attachScrollObserverForCurrentPage];
+  XCTAssertNil([pager valueForKey:@"observedScrollView"]);
+  XCTAssertFalse([[pager valueForKey:@"scrollResolveRetryScheduled"] boolValue]);
+  XCTAssertEqual([[pager valueForKey:@"scrollResolveRetryAttempt"] integerValue], 0);
+}
+
+- (void)testLateReplacementRecoversImmediatelyOnReadinessEvenAfterRetryBudgetExpires
+{
+  RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:1];
+  RNCNativeScrollerComponentView *previous = [self addScrollerToPager:pager atIndex:0];
+  previous.tag = 91003;
+  [pager attachScrollObserverForCurrentPage];
+  UIView *sharedHeader = [pager valueForKey:@"sharedHeaderHostView"];
+  XCTAssertEqual([pager valueForKey:@"observedScrollView"], previous.scrollView);
+
+  ShadowView removedView;
+  removedView.tag = (Tag)previous.tag;
+  MountingTransaction removal(1, 1, {ShadowViewMutation::RemoveMutation(1, removedView, 0)}, {});
+  SurfaceTelemetry telemetry;
+  [pager mountingTransactionWillMount:removal withSurfaceTelemetry:telemetry];
+  [previous removeFromSuperview];
+  [self finishMount:pager];
+  XCTAssertNil([pager valueForKey:@"observedScrollView"]);
+
+  // Simulate retry budget exhaustion before the replacement becomes ready.
+  [pager setValue:@12 forKey:@"scrollResolveRetryAttempt"];
+  [pager setValue:@NO forKey:@"scrollResolveRetryScheduled"];
+  NSUInteger oldToken = [[pager valueForKey:@"scrollResolveRetryToken"] unsignedIntegerValue];
+  [pager setValue:@(oldToken + 1) forKey:@"scrollResolveRetryToken"];
+
+  UIViewController *page = [pager valueForKey:@"pageControllers"][0];
+  UICollectionView *lateList = [[UICollectionView alloc]
+    initWithFrame:CGRectMake(0, 0, 320, 600)
+    collectionViewLayout:[UICollectionViewFlowLayout new]];
+  [page.view addSubview:lateList];
+
+  // Readiness notification triggers immediate reconcile even after retry budget expired.
+  [[NSNotificationCenter defaultCenter]
+    postNotificationName:@"OneKeyNativeScrollViewDidBecomeReady"
+                  object:lateList];
+  XCTAssertEqualObjects([pager valueForKey:@"pendingFallbackScrollView"], lateList);
+
+  // Explicit scroller readiness attaches synchronously with zero debounce delay.
+  [lateList removeFromSuperview];
+  RNCNativeScrollerComponentView *lateScroller = [self addScrollerToPager:pager atIndex:0];
+  XCTAssertEqual([pager valueForKey:@"observedScrollView"], lateScroller.scrollView);
+  XCTAssertEqual(sharedHeader.superview, lateScroller.scrollView);
+  XCTAssertEqualWithAccuracy(lateScroller.scrollView.contentInset.top, 164, 0.01);
+  XCTAssertNil([pager valueForKey:@"releasedPageScrollStates"][@"page-0"]);
 }
 
 @end

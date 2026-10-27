@@ -13,6 +13,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)nativeScrollerWillReceiveScrollCommand:(RNCNativeScrollerComponentView *)scroller;
 - (void)nativeScroller:(RNCNativeScrollerComponentView *)scroller
     callerInsetChangedFrom:(UIEdgeInsets)previous to:(UIEdgeInsets)next;
+@optional
+- (void)nativeScrollViewDidBecomeReady:(UIScrollView *)scrollView;
 @end
 
 NS_ASSUME_NONNULL_END
