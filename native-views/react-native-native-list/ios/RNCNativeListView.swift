@@ -527,13 +527,27 @@ final class NativeListView: UIView {
     super.willMove(toWindow: newWindow)
   }
 
+  private func notifyPagerScrollViewReadyIfNeeded() {
+    guard !disposed,
+          window != nil,
+          collectionView.delegate === self,
+          collectionView.bounds.width > 0,
+          collectionView.bounds.height > 0 else { return }
+    NotificationCenter.default.post(
+      name: Notification.Name("OneKeyNativeScrollViewDidBecomeReady"),
+      object: collectionView
+    )
+  }
+
   override func didMoveToWindow() {
     super.didMoveToWindow()
     updateTopScrollEdge()
     updateSectionIndexAttachment()
+    notifyPagerScrollViewReadyIfNeeded()
   }
 
   override func layoutSubviews() {
+    let hadUsableBounds = (lastLayoutSize?.width ?? 0) > 0 && (lastLayoutSize?.height ?? 0) > 0
     super.layoutSubviews()
     topOverlayHost.frame = CGRect(x: 0, y: 0, width: collectionView.bounds.width,
                                   height: requestedTopOverlayHeight)
@@ -550,6 +564,9 @@ final class NativeListView: UIView {
     }
     performPendingScrollIfNeeded()
     layoutContainerSlots()
+    if !hadUsableBounds && collectionView.bounds.width > 0 && collectionView.bounds.height > 0 {
+      notifyPagerScrollViewReadyIfNeeded()
+    }
   }
 
   // A layout-direction change may arrive without a layout pass (semantic attribute or trait).
@@ -630,6 +647,7 @@ final class NativeListView: UIView {
     dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
       guard let self else { return }
       self.collectionView.layoutIfNeeded()
+      self.notifyPagerScrollViewReadyIfNeeded()
       self.performPendingScrollIfNeeded()
       self.emitVisibleRangeIfNeeded()
       self.checkEndReached()

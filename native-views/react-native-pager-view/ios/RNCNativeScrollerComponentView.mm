@@ -298,10 +298,23 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
   }
 }
 
+- (void)notifyCoordinatorScrollViewReadyIfNeeded
+{
+  if (_recycled || self.window == nil ||
+      CGRectGetWidth(_scrollView.bounds) <= 0 || CGRectGetHeight(_scrollView.bounds) <= 0) return;
+  for (UIView *owner = self.superview; owner != nil; owner = owner.superview) {
+    if ([owner conformsToProtocol:@protocol(RNCNativeScrollerInsetCoordinator)] &&
+        [owner respondsToSelector:@selector(nativeScrollViewDidBecomeReady:)]) {
+      [(id<RNCNativeScrollerInsetCoordinator>)owner nativeScrollViewDidBecomeReady:_scrollView];
+    }
+  }
+}
+
 - (void)didMoveToSuperview
 {
   [super didMoveToSuperview];
   [self updateTopScrollEdge];
+  [self notifyCoordinatorScrollViewReadyIfNeeded];
 }
 
 - (void)updateLayoutMetrics:(const LayoutMetrics &)layoutMetrics
@@ -314,6 +327,10 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
   if (!CGSizeEqualToSize(previous, _scrollView.bounds.size)) {
     _needsContentClamp = YES;
     [self scheduleContentClamp];
+    if ((previous.width <= 0 || previous.height <= 0) &&
+        _scrollView.bounds.size.width > 0 && _scrollView.bounds.size.height > 0) {
+      [self notifyCoordinatorScrollViewReadyIfNeeded];
+    }
   }
 }
 
@@ -574,6 +591,7 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
     const auto &props = *std::static_pointer_cast<const RNCNativeScrollerProps>(_props);
     if (props.refreshing) [_refreshControl beginRefreshing];
     [self scheduleContentClamp];
+    [self notifyCoordinatorScrollViewReadyIfNeeded];
   }
 }
 

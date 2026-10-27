@@ -831,7 +831,12 @@ invalidates the old callback before clearing its scheduled state. The Insert
 MUST be recorded during a horizontal drag or transition, while observer and shared
 header attachment remain deferred until selection settles. Cancelling the drag
 on the same page MUST retain the reopened recovery round. Empty transactions,
-removals and inserts outside the current page MUST NOT reopen the budget.
+removals and inserts outside the current page MUST NOT reopen the budget. Owned
+`NativeScroller` and `NativeList` hosts additionally emit push readiness
+notifications when their scroll views attach and obtain positive bounds so late
+replacements recover immediately even without another Fabric insertion or after
+the retry budget expires; static pages with neither an unready scroll host nor a
+released scroll owner do not schedule retry timers.
 
 Status of transition-time and pending-final-retry recovery: implemented and
 UIKit regression verified on iOS 26.5 (2026-10-27). Both new regressions fail

@@ -735,4 +735,58 @@ using namespace facebook::react;
   XCTAssertEqual(removed.count, 0u);
 }
 
+- (void)testEmptyPageWithoutReleasedOwnerOrScrollHostDoesNotScheduleRetry
+{
+  RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:1];
+  [pager attachScrollObserverForCurrentPage];
+  XCTAssertNil([pager valueForKey:@"observedScrollView"]);
+  XCTAssertFalse([[pager valueForKey:@"scrollResolveRetryScheduled"] boolValue]);
+  XCTAssertEqual([[pager valueForKey:@"scrollResolveRetryAttempt"] integerValue], 0);
+}
+
+- (void)testLateReplacementRecoversImmediatelyOnReadinessEvenAfterRetryBudgetExpires
+{
+  RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:1];
+  RNCNativeScrollerComponentView *previous = [self addScrollerToPager:pager atIndex:0];
+  previous.tag = 91003;
+  [pager attachScrollObserverForCurrentPage];
+  UIView *sharedHeader = [pager valueForKey:@"sharedHeaderHostView"];
+  XCTAssertEqual([pager valueForKey:@"observedScrollView"], previous.scrollView);
+
+  ShadowView removedView;
+  removedView.tag = (Tag)previous.tag;
+  MountingTransaction removal(1, 1, {ShadowViewMutation::RemoveMutation(1, removedView, 0)}, {});
+  SurfaceTelemetry telemetry;
+  [pager mountingTransactionWillMount:removal withSurfaceTelemetry:telemetry];
+  [previous removeFromSuperview];
+  [self finishMount:pager];
+  XCTAssertNil([pager valueForKey:@"observedScrollView"]);
+
+  // Simulate retry budget exhaustion before the replacement becomes ready.
+  [pager setValue:@12 forKey:@"scrollResolveRetryAttempt"];
+  [pager setValue:@NO forKey:@"scrollResolveRetryScheduled"];
+  NSUInteger oldToken = [[pager valueForKey:@"scrollResolveRetryToken"] unsignedIntegerValue];
+  [pager setValue:@(oldToken + 1) forKey:@"scrollResolveRetryToken"];
+
+  UIViewController *page = [pager valueForKey:@"pageControllers"][0];
+  UICollectionView *lateList = [[UICollectionView alloc]
+    initWithFrame:CGRectMake(0, 0, 320, 600)
+    collectionViewLayout:[UICollectionViewFlowLayout new]];
+  [page.view addSubview:lateList];
+
+  // Readiness notification triggers immediate reconcile even after retry budget expired.
+  [[NSNotificationCenter defaultCenter]
+    postNotificationName:@"OneKeyNativeScrollViewDidBecomeReady"
+                  object:lateList];
+  XCTAssertEqualObjects([pager valueForKey:@"pendingFallbackScrollView"], lateList);
+
+  // Explicit scroller readiness attaches synchronously with zero debounce delay.
+  [lateList removeFromSuperview];
+  RNCNativeScrollerComponentView *lateScroller = [self addScrollerToPager:pager atIndex:0];
+  XCTAssertEqual([pager valueForKey:@"observedScrollView"], lateScroller.scrollView);
+  XCTAssertEqual(sharedHeader.superview, lateScroller.scrollView);
+  XCTAssertEqualWithAccuracy(lateScroller.scrollView.contentInset.top, 164, 0.01);
+  XCTAssertNil([pager valueForKey:@"releasedPageScrollStates"][@"page-0"]);
+}
+
 @end
