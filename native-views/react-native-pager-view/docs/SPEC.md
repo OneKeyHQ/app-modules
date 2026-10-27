@@ -818,13 +818,24 @@ fallbacks keep that safety delay. Caller insets and retained logical offsets
 remain governed by the existing restoration policy.
 
 When the active scroll owner is removed before its replacement becomes usable,
-the pager MUST retain its existing bounded recovery (at most 12 retries, spaced
-100 ms apart). Clearing the completed mount's reattachment flag MUST NOT cancel
-that recovery. A replacement that becomes usable without another Fabric
-insertion MUST receive the observer, shared headers, insets and retained collapse
-state. Page selection changes and recycling invalidate stale retry callbacks.
-While no usable candidate is found, repeated mount attempts MUST NOT reset
-this retry budget.
+the pager MUST retain bounded recovery (at most 12 retries per recovery round,
+spaced 100 ms apart). Clearing the completed mount's reattachment flag MUST NOT
+cancel that recovery. A replacement that becomes usable during that round,
+without another Fabric insertion, MUST receive the observer, shared headers,
+insets and retained collapse state. Page selection changes and recycling
+invalidate stale retry callbacks. Repeated mount attempts MUST NOT reset an
+active retry budget. Once the budget is exhausted and no retry is pending, an
+Insert whose parent is in the current page subtree MUST reopen recovery if that
+page retains a released scroll owner. Empty transactions, removals and inserts
+outside the current page MUST NOT reopen the exhausted budget.
+
+Status of exhausted-budget recovery: implemented and UIKit regression verified
+on iOS 26.5 (2026-10-27). The regression exhausts the initial round, checks that
+empty transactions, removals and offscreen inserts do not reopen it, then inserts
+a current-page replacement whose scroller appears after did-mount. It fails
+before the fix and passes afterward, including preservation of an active round
+and restoration of the observer, shared headers and retained collapse. The full
+Pager suite executes 83 tests, with one iOS-27-only skip and no failures.
 
 Status of replacement recovery: implemented and runtime verified on iOS 26.5
 (2026-10-23). The late-replacement UIKit regression fails before the fix and

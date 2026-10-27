@@ -2876,13 +2876,28 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   }
   if (_transitioning || _isPagerDragging) return;
 
+  UIView *page = _pageControllers[_currentIndex].view;
+  if (_scrollResolveRetryAttempt >= 12 && !_scrollResolveRetryScheduled &&
+      _releasedPageScrollStates[self.currentPageKey] != nil) {
+    for (const auto &mutation : transaction.getMutations()) {
+      if (mutation.type == ShadowViewMutation::Insert && mutation.parentTag > 0 &&
+          [page viewWithTag:mutation.parentTag] != nil) {
+        // A new current-page insertion starts a bounded recovery round after
+        // the previous replacement search has exhausted its retry budget.
+        _scrollResolveRetryToken += 1;
+        _scrollResolveRetryScheduled = NO;
+        _scrollResolveRetryAttempt = 0;
+        break;
+      }
+    }
+  }
+
   // OneKey patch: a release must recover even when the changed parent is above
   // the page subtree. Missing lists keep their identity for a later insertion.
   if (_needsScrollObserverReattachAfterMount) {
     [self attachScrollObserverForCurrentPage];
     return;
   }
-  UIView *page = _pageControllers[_currentIndex].view;
   BOOL headerIsAttached = [_sharedHeaderHostView isDescendantOfView:self];
   BOOL currentListIsAttached = _observedScrollView != nil &&
     [_observedScrollView isDescendantOfView:page] && headerIsAttached;
