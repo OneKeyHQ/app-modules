@@ -4,6 +4,7 @@ import {
   type ColorValue,
   type DimensionValue,
   Image,
+  type ImageSourcePropType,
   Platform,
   type StyleProp,
   StyleSheet,
@@ -19,7 +20,13 @@ import NativeBottomTabs, {
   type BottomTabsItems,
 } from './BottomTabsNativeComponent';
 import useLatestCallback from 'use-latest-callback';
-import type { AppleIcon, BaseRoute, NavigationState, TabRole } from './types';
+import type {
+  AppleIcon,
+  BaseRoute,
+  NavigationState,
+  TabBarPlacement,
+  TabRole,
+} from './types';
 import DelayedFreeze from './DelayedFreeze';
 import {
   BottomAccessoryView,
@@ -215,6 +222,24 @@ interface Props<Route extends BaseRoute> {
    * original delayed behavior.
    */
   delayedFreeze?: boolean;
+  /**
+   * Called when the system moves the tab bar between the bottom edge and a
+   * vertical bar on the leading or trailing edge (iPhone Duo). iOS only.
+   */
+  onTabBarPlacementChange?: (placement: TabBarPlacement) => void;
+  /**
+   * Icon of a round button shown above a vertical tab bar. The button only
+   * appears while the tab bar is vertical and visible. iOS only.
+   */
+  sideAccessoryIcon?: ImageSourcePropType;
+  /**
+   * Accessibility label of the side accessory button.
+   */
+  sideAccessoryLabel?: string;
+  /**
+   * Called when the side accessory button is pressed.
+   */
+  onSideAccessoryPress?: () => void;
 }
 
 const ANDROID_MAX_TABS = 100;
@@ -257,6 +282,10 @@ const BottomTabs = <Route extends BaseRoute>({
   androidBottomBlurEnabled = Platform.OS === 'android' &&
     Number(Platform.Version) >= 36,
   delayedFreeze = false,
+  onTabBarPlacementChange,
+  sideAccessoryIcon,
+  sideAccessoryLabel,
+  onSideAccessoryPress,
   ...props
 }: Props<Route>) => {
   // @ts-ignore
@@ -448,6 +477,33 @@ const BottomTabs = <Route extends BaseRoute>({
     [setMeasuredDimensions]
   );
 
+  const handleTabBarPlacementChange = React.useCallback(
+    (event: NativeSyntheticEvent<{ placement: string }>) => {
+      onTabBarPlacementChange?.(event.nativeEvent.placement as TabBarPlacement);
+    },
+    [onTabBarPlacementChange]
+  );
+
+  const handleSideAccessoryPress = React.useCallback(() => {
+    onSideAccessoryPress?.();
+  }, [onSideAccessoryPress]);
+
+  const resolvedSideAccessoryIcon = React.useMemo(() => {
+    if (!isIOS || !sideAccessoryIcon) {
+      return undefined;
+    }
+    // @ts-ignore - resolveAssetSource accepts ImageSourcePropType
+    const resolved = Image.resolveAssetSource(sideAccessoryIcon);
+    return resolved?.uri
+      ? {
+          uri: resolved.uri,
+          width: resolved.width ?? 0,
+          height: resolved.height ?? 0,
+          scale: resolved.scale ?? 1,
+        }
+      : undefined;
+  }, [sideAccessoryIcon]);
+
   useLayoutEffect(() => {
     if (renderCustomTabBar && customTabBarWrapperRef.current) {
       customTabBarWrapperRef.current.measure((_x: number, _y: number, _width: number, height: number) => {
@@ -474,6 +530,10 @@ const BottomTabs = <Route extends BaseRoute>({
         onPageSelected={handlePageSelected}
         onTabBarMeasured={handleTabBarMeasured}
         onNativeLayout={handleNativeLayout}
+        onTabBarPlacementChange={handleTabBarPlacementChange}
+        sideAccessoryIcon={renderCustomTabBar ? undefined : resolvedSideAccessoryIcon}
+        sideAccessoryLabel={sideAccessoryLabel}
+        onSideAccessoryPress={handleSideAccessoryPress}
         hapticFeedbackEnabled={hapticFeedbackEnabled}
         activeTintColor={activeTintColor}
         inactiveTintColor={inactiveTintColor}

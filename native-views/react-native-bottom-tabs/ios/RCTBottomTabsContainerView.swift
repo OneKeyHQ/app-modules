@@ -70,6 +70,14 @@ class RCTBottomTabsContainerView: UIView {
   private var lastPressedTabTime: CFTimeInterval = 0
   /// Cached view controllers keyed by tab key to avoid unnecessary reparenting
   private var cachedViewControllers: [String: UIViewController] = [:]
+  // Vertical tab bar (iPhone Duo side strip): last reported placement and the
+  // round accessory button drawn above the bar.
+  private var reportedTabBarPlacement: String?
+  private var sideAccessoryButton: UIButton?
+  private var loadedSideAccessoryIcon: UIImage?
+  private var isSideAccessoryLayoutScheduled = false
+  private static let sideAccessorySize: CGFloat = 48
+  private static let sideAccessorySpacing: CGFloat = 12
 
   // MARK: - Props (set by Fabric ComponentView via KVC)
 
@@ -128,7 +136,11 @@ class RCTBottomTabsContainerView: UIView {
 
   @objc var inactiveTintColor: UIColor? {
     // Rebuild so the baked unselected-image tint follows theme changes.
-    didSet { updateTabBarAppearance(); rebuildViewControllers() }
+    didSet {
+      updateTabBarAppearance()
+      rebuildViewControllers()
+      sideAccessoryButton?.tintColor = inactiveTintColor
+    }
   }
 
   @objc var rippleColor: UIColor? // Android only
@@ -147,12 +159,22 @@ class RCTBottomTabsContainerView: UIView {
     didSet { updateTabBarAppearance() }
   }
 
+  @objc var sideAccessoryIcon: NSDictionary? {
+    didSet { loadSideAccessoryIcon() }
+  }
+
+  @objc var sideAccessoryLabel: String? {
+    didSet { sideAccessoryButton?.accessibilityLabel = sideAccessoryLabel }
+  }
+
   // MARK: - Events (RCTDirectEventBlock)
 
   @objc var onPageSelected: RCTDirectEventBlock?
   @objc var onTabDoublePress: RCTDirectEventBlock?
   @objc var onTabBarMeasured: RCTDirectEventBlock?
   @objc var onNativeLayout: RCTDirectEventBlock?
+  @objc var onTabBarPlacementChange: RCTDirectEventBlock?
+  @objc var onSideAccessoryPress: RCTDirectEventBlock?
 
   // MARK: - Init
 
@@ -188,6 +210,161 @@ class RCTBottomTabsContainerView: UIView {
     // TODO: Re-enable when UITabBar.bottomAccessoryView is available in the SDK
   }
 
+  // MARK: - Vertical tab bar (iOS 27.1+)
+
+  /// Where the system draws the tab bar: "bottom", or "leading"/"trailing" for
+  /// the vertical bar some devices (iPhone Duo) place in a side strip.
+  private func currentTabBarPlacement() -> String {
+    #if compiler(>=6.4)
+    if #available(iOS 27.1, *), let tbc = tabBarController {
+      switch tbc.traitCollection.verticalBarEdge {
+      case .leading: return "leading"
+      case .trailing: return "trailing"
+      default: break
+      }
+    }
+    #endif
+    return "bottom"
+  }
+
+  private func registerVerticalBarTraitChanges(_ tbc: UITabBarController) {
+    #if compiler(>=6.4)
+    if #available(iOS 27.1, *) {
+      tbc.registerForTraitChanges(
+        UITraitCollection.systemTraitsAffectingVerticalBarEdge
+      ) { [weak self] (_: UITabBarController, _: UITraitCollection) in
+        self?.scheduleSideAccessoryLayout()
+      }
+    }
+    #endif
+  }
+
+  /// Coalesces requests and runs after UIKit has laid out the bar, whose
+  /// floating platter is positioned in UIKit's own layout pass.
+  private func scheduleSideAccessoryLayout() {
+    guard !isSideAccessoryLayoutScheduled else { return }
+    isSideAccessoryLayoutScheduled = true
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      self.isSideAccessoryLayoutScheduled = false
+      self.updateTabBarPlacementAndSideAccessory()
+    }
+  }
+
+  private func updateTabBarPlacementAndSideAccessory() {
+    guard let tbc = tabBarController else { return }
+    let placement = currentTabBarPlacement()
+    if placement != reportedTabBarPlacement {
+      reportedTabBarPlacement = placement
+      onTabBarPlacementChange?(["placement": placement])
+    }
+
+    guard placement != "bottom",
+          !tabBarHidden,
+          let icon = loadedSideAccessoryIcon,
+          let platterFrame = verticalTabBarPlatterFrame(in: tbc) else {
+      sideAccessoryButton?.isHidden = true
+      return
+    }
+
+    let button = ensureSideAccessoryButton(in: tbc.view)
+    button.configuration?.image = icon
+    let size = RCTBottomTabsContainerView.sideAccessorySize
+    button.frame = CGRect(
+      x: platterFrame.midX - size / 2,
+      y: platterFrame.minY - RCTBottomTabsContainerView.sideAccessorySpacing - size,
+      width: size,
+      height: size
+    )
+    button.isHidden = false
+    tbc.view.bringSubviewToFront(button)
+  }
+
+  /// UIKit draws the vertical bar items in a floating platter it does not
+  /// expose. Read that view's frame (no private API is called) and return nil
+  /// when it cannot be found, so the accessory hides instead of misplacing.
+  private func verticalTabBarPlatterFrame(in tbc: UITabBarController) -> CGRect? {
+    let root = tbc.view!
+    // Tab content can hold large React trees; the bar lives outside them.
+    let contentViews = Set((tbc.viewControllers ?? []).compactMap { vc in
+      vc.isViewLoaded ? ObjectIdentifier(vc.view) : nil
+    })
+    var queue: [UIView] = root.subviews
+    var index = 0
+    while index < queue.count {
+      let view = queue[index]
+      index += 1
+      if view === sideAccessoryButton || contentViews.contains(ObjectIdentifier(view)) {
+        continue
+      }
+      if NSStringFromClass(type(of: view)).contains("TabBarItemPlatterView") {
+        guard !view.isHidden, view.window != nil else { return nil }
+        let frame = view.convert(view.bounds, to: root)
+        return frame.isEmpty ? nil : frame
+      }
+      queue.append(contentsOf: view.subviews)
+    }
+    return nil
+  }
+
+  private func ensureSideAccessoryButton(in parent: UIView) -> UIButton {
+    if let button = sideAccessoryButton {
+      if button.superview !== parent { parent.addSubview(button) }
+      return button
+    }
+    var configuration: UIButton.Configuration
+    #if compiler(>=6.2)
+    if #available(iOS 26.0, *) {
+      configuration = .glass()
+    } else {
+      configuration = .gray()
+    }
+    #else
+    configuration = .gray()
+    #endif
+    configuration.cornerStyle = .capsule
+    configuration.contentInsets = .zero
+    let button = UIButton(configuration: configuration)
+    button.tintColor = inactiveTintColor
+    button.accessibilityLabel = sideAccessoryLabel
+    button.addAction(UIAction { [weak self] _ in
+      self?.onSideAccessoryPress?([:])
+    }, for: .primaryActionTriggered)
+    parent.addSubview(button)
+    sideAccessoryButton = button
+    return button
+  }
+
+  private func loadSideAccessoryIcon() {
+    let source = sideAccessoryIcon.map { IconSource(dict: $0) }
+    guard let source, let url = URL(string: source.uri) else {
+      loadedSideAccessoryIcon = nil
+      scheduleSideAccessoryLayout()
+      return
+    }
+    // The image loader arrives with the first state update; setImageLoader
+    // calls this again.
+    guard let imageLoader else { return }
+    imageLoader.loadImage(
+      with: URLRequest(url: url),
+      size: CGSize(width: source.width, height: source.height),
+      scale: CGFloat(source.scale),
+      clipped: true,
+      resizeMode: RCTResizeMode.contain,
+      progressBlock: { _, _ in },
+      partialLoad: { _ in },
+      completionBlock: { [weak self] error, image in
+        guard error == nil, let image else { return }
+        DispatchQueue.main.async {
+          guard let self else { return }
+          self.loadedSideAccessoryIcon = image
+            .resizeImageTo(size: self.iconSize)?
+            .withRenderingMode(.alwaysTemplate)
+          self.scheduleSideAccessoryLayout()
+        }
+      })
+  }
+
   // MARK: - Lifecycle
 
   private func handleLayout() {
@@ -197,6 +374,7 @@ class RCTBottomTabsContainerView: UIView {
     setupTabBarControllerIfNeeded()
     tabBarController?.view.frame = bounds
     onNativeLayout?(["width": Double(bounds.width), "height": Double(bounds.height)])
+    scheduleSideAccessoryLayout()
   }
 
   private func setupTabBarControllerIfNeeded() {
@@ -215,6 +393,7 @@ class RCTBottomTabsContainerView: UIView {
     tbc.didMove(toParent: parentVC)
 
     self.tabBarController = tbc
+    registerVerticalBarTraitChanges(tbc)
 
     rebuildViewControllers()
     updateTabBarAppearance()
@@ -358,6 +537,8 @@ class RCTBottomTabsContainerView: UIView {
     }
 
     updateSelectedTab()
+    // The platter height follows the number of visible tabs.
+    scheduleSideAccessoryLayout()
   }
 
   // MARK: - Selection
@@ -502,6 +683,7 @@ class RCTBottomTabsContainerView: UIView {
     if !tabBarHidden {
       onTabBarMeasured?(["height": Double(tbc.tabBar.frame.size.height)])
     }
+    scheduleSideAccessoryLayout()
   }
 
   private func updateSidebarAdaptable() {
@@ -573,6 +755,7 @@ class RCTBottomTabsContainerView: UIView {
     self.imageLoader = loader
     loadIconsFromSources()
     loadSelectedIconsFromSources()
+    loadSideAccessoryIcon()
   }
 
   private func loadIconsFromSources() {

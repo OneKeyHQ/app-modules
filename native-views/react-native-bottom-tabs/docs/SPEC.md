@@ -142,6 +142,35 @@ boundary; `BottomTabsView.kt` owns scene geometry, appearance, and disposal;
 and runner instructions are in `native-tests/android`. The example's settings
 page exposes the switch and its scrolling scene reserves the reported bar height.
 
+## iOS vertical tab bar placement and side accessory
+
+Status: Implemented. Runtime results are in Conformance.
+
+On iOS 27.1+, devices such as iPhone Duo can place the `UITabBarController`
+bar vertically in a side strip next to the status bar. The view reports that
+placement and can draw one round accessory button above the vertical bar.
+
+- **Placement:** `onTabBarPlacementChange({ placement })` fires with `bottom`,
+  `leading`, or `trailing`, read from `traitCollection.verticalBarEdge` of the
+  tab bar controller. It fires once after the bar is created and again on every
+  change (rotation, folding, window resizing). Builds without the iOS 27.1 SDK
+  and earlier systems always report `bottom`. Android never fires it.
+- **Side accessory:** `sideAccessoryIcon` (an image source, loaded with the
+  React image loader and drawn as a template tinted with `inactiveTintColor`),
+  `sideAccessoryLabel` (accessibility label), and `onSideAccessoryPress`. The
+  button is 48 pt, a Liquid Glass capsule on iOS 26+, centered horizontally on
+  the vertical bar's item platter and 12 pt above it.
+- The button shows only when all hold: the placement is `leading` or
+  `trailing`, the tab bar is not hidden, the icon has loaded, and the platter
+  is found. Otherwise it is hidden; a bottom bar never shows it.
+- UIKit does not expose the platter frame. The view finds the platter by its
+  view class name below the tab bar controller (skipping tab content views),
+  reads its frame, and calls no private API. If a later system renames or
+  restructures it, the accessory hides; no other behavior depends on it.
+- Layout re-runs, coalesced on the next main-queue turn, after container
+  layout, tab rebuilds, tab bar hiding, icon loads, and changes to the traits
+  affecting `verticalBarEdge`.
+
 ## Threading and ownership
 
 All gesture handling, animations, and timers run on the platform UI thread in
@@ -166,3 +195,10 @@ non-selected tab lifts the lens there; drag crossing tab centers does not change
 pages; release selects the nearest tab once; cancel restores; hidden bar, dark
 mode, and 3-button navigation insets lay out correctly. Source compilation is
 recorded separately from runtime acceptance.
+
+Vertical tab bar: `RCTBottomTabsContainerView.swift` (`currentTabBarPlacement`,
+`updateTabBarPlacementAndSideAccessory`, `verticalTabBarPlatterFrame`).
+Required iOS runtime cases on iPhone Duo: the outer display and landscape inner
+display report `trailing` and show the accessory above the platter; the
+portrait inner display reports `bottom` and hides it; hiding the tab bar hides
+it; a press emits `onSideAccessoryPress` once.
