@@ -1050,8 +1050,8 @@ mod tests {
     }
 }
 
-/// Recipients of transactions stored the way the wallet really stores them:
-/// decrypted by enhancement, or recorded by a local send.
+/// Recipients and fees of transactions stored the way the wallet really stores
+/// them: decrypted by enhancement, or recorded by a local send.
 #[cfg(test)]
 mod recipient_tests {
     use std::collections::HashMap;
@@ -1325,6 +1325,55 @@ mod recipient_tests {
         builder
             .add_output(None, recipient, NoteValue::from_raw(20_000), [0; 512])
             .unwrap();
+        let (bundle, meta) = authorize_placeholder(builder);
+        (bundle, meta.output_action_index(0).unwrap())
+    }
+
+    /// An Ironwood bundle in which a stranger spends a 30_000 note to pay
+    /// `recipient` 20_000, leaving 10_000 as the fee.
+    fn stranger_ironwood_payment(
+        recipient: orchard::Address,
+    ) -> orchard::Bundle<OrchardAuthorized, ZatBalance> {
+        use incrementalmerkletree::{Hashable, Level};
+        use orchard::keys::{FullViewingKey, Scope, SpendingKey};
+        use orchard::note::{RandomSeed, Rho};
+        use orchard::tree::{MerkleHashOrchard, MerklePath};
+
+        let version = BundleVersion::ironwood_v3();
+        let fvk = FullViewingKey::from(&SpendingKey::from_bytes([8; 32]).unwrap());
+        let rho = Rho::from_bytes(&[0; 32]).unwrap();
+        let note = orchard::Note::from_parts(
+            fvk.address_at(0u32, Scope::External),
+            NoteValue::from_raw(30_000),
+            rho,
+            RandomSeed::from_bytes([1; 32], &rho).unwrap(),
+            version.note_version(),
+        )
+        .unwrap();
+        let path = MerklePath::from_parts(
+            0,
+            std::array::from_fn(|level| MerkleHashOrchard::empty_root(Level::from(level as u8))),
+        );
+        let mut builder = OrchardBuilder::new(
+            BundleType::DEFAULT,
+            version,
+            version.default_flags(),
+            path.root(note.commitment().into()),
+        )
+        .unwrap();
+        builder.add_spend(fvk, note, path).unwrap();
+        builder
+            .add_output(None, recipient, NoteValue::from_raw(20_000), [0; 512])
+            .unwrap();
+        authorize_placeholder(builder).0
+    }
+
+    fn authorize_placeholder(
+        builder: OrchardBuilder,
+    ) -> (
+        orchard::Bundle<OrchardAuthorized, ZatBalance>,
+        orchard::builder::BundleMetadata,
+    ) {
         let mut rng = ChaCha20Rng::from_seed([3; 32]);
         let (bundle, meta) = builder.build::<ZatBalance>(&mut rng).unwrap().unwrap();
         let proof_len = Proof::expected_proof_size(bundle.actions().len());
@@ -1338,7 +1387,24 @@ mod recipient_tests {
                 )
             },
         );
-        (bundle, meta.output_action_index(0).unwrap())
+        (bundle, meta)
+    }
+
+    /// A transaction with no transparent part.
+    fn shielded_transaction(
+        ironwood: orchard::Bundle<OrchardAuthorized, ZatBalance>,
+    ) -> Transaction {
+        TransactionData::<zcash_primitives::transaction::Authorized>::from_parts_v6(
+            BranchId::Nu6_3,
+            0,
+            BlockHeight::from_u32(MINED + 40),
+            None,
+            None,
+            None,
+            Some(ironwood),
+        )
+        .freeze()
+        .unwrap()
     }
 
     fn transaction(
@@ -1490,6 +1556,32 @@ mod recipient_tests {
         let row = wallet.row(0, &tx);
         assert_eq!(row["externalOutputCount"], 2);
         assert_eq!(row["recipient"], first.encode(&NET));
+    }
+
+    #[test]
+    fn an_enhanced_shielded_receive_reports_the_fee_its_sender_paid() {
+        let mut wallet = Wallet::new(1);
+        let receive = receive_address(&wallet.accounts[0].1);
+        let tx = shielded_transaction(stranger_ironwood_payment(*receive.orchard().unwrap()));
+        wallet.enhance(&tx);
+
+        let row = wallet.row(0, &tx);
+        assert_eq!(row["totalReceivedZat"], 20_000);
+        assert_eq!(row["feeZat"], 10_000);
+    }
+
+    #[test]
+    fn a_receive_spending_an_unknown_transparent_input_has_no_fee() {
+        let mut wallet = Wallet::new(1);
+        let receive = receive_address(&wallet.accounts[0].1);
+        let (bundle, _) = ironwood_payment(*receive.orchard().unwrap());
+        // Not the wallet's output: its value, and so the fee, is unknown.
+        let tx = transaction(OutPoint::new([6; 32], 0), vec![], Some(bundle));
+        wallet.enhance(&tx);
+
+        let row = wallet.row(0, &tx);
+        assert_eq!(row["totalReceivedZat"], 20_000);
+        assert_eq!(row["feeZat"], json!(null));
     }
 
     #[test]
