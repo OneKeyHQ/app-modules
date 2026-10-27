@@ -1,24 +1,16 @@
-//! Host-facing key API.
-//!
-//! No seed or mnemonic crosses this boundary. Spending keys enter only as
-//! account-scoped inputs and never cross it outward.
+//! Host-facing key API. No seed or mnemonic crosses this boundary; spending keys only enter, never leave.
 
 use wasm_bindgen::prelude::*;
 use zeroize::Zeroizing;
 
 use crate::{account_keys, keys, review, sign, transparent_prevouts, transparent_send};
 
-/// Check recipient encoding, network, and supported receivers locally.
 #[wasm_bindgen(js_name = validateAddress)]
 pub fn validate_address(network: &str, address: &str) -> Result<bool, JsValue> {
     Ok(keys::validate_address(network, address)?)
 }
 
-/// Derive the Unified Address from a UFVK. Public material only.
-///
-/// `receiverPolicy` selects the receivers: `"all"` / `"orchard"`.
-/// It is a host privacy decision with no default: a transparent receiver links
-/// the user's transparent and shielded activity.
+/// `receiverPolicy` (`"all"` / `"orchard"`) has no default: a transparent receiver links transparent and shielded activity.
 #[wasm_bindgen(js_name = unifiedAddress)]
 pub fn unified_address(
     network: &str,
@@ -28,8 +20,7 @@ pub fn unified_address(
     Ok(keys::unified_address_with(network, ufvk, receiver_policy)?)
 }
 
-/// Derive a mainnet UFVK from the 32-byte Orchard account spending key
-/// (`m/32'/133'/account'`) and the transparent account xpub (`m/44'/133'/account'`).
+/// Mainnet UFVK from the 32-byte Orchard account spending key and the transparent account xpub.
 #[wasm_bindgen(js_name = ufvkFromAccountKeys)]
 pub fn ufvk_from_account_keys(
     network: &str,
@@ -37,8 +28,7 @@ pub fn ufvk_from_account_keys(
     account_xpub: &str,
     account_index: u32,
 ) -> Result<String, JsValue> {
-    // Own and wipe the original bindgen allocation, including on validation errors.
-    // Wiping another copy would leave the JS-to-WASM input in freed linear memory.
+    // Wipe the original bindgen allocation, including on validation errors; a copy would leave it in freed memory.
     let orchard_sk = Zeroizing::new(orchard_sk);
     Ok(account_keys::ufvk_from_account_keys(
         network,
@@ -48,10 +38,8 @@ pub fn ufvk_from_account_keys(
     )?)
 }
 
-/// Sign a mainnet PCZT with the Orchard account spending key and the transparent
-/// account xprv, after checking that they control the reviewed UFVK and that the
-/// PCZT matches the reviewed payment. The caller wipes its own copies; this side
-/// cannot wipe the JS heap.
+/// Signs only after checking the keys control the reviewed UFVK and the PCZT matches the reviewed
+/// payment. The caller wipes its own copies; this side cannot wipe the JS heap.
 #[wasm_bindgen(js_name = pcztSignWithAccountKeys)]
 pub fn pczt_sign_with_account_keys(
     network: &str,
@@ -73,19 +61,17 @@ pub fn pczt_sign_with_account_keys(
     )?)
 }
 
-/// The copy of a PCZT to send to a hardware signer; keep the original for combining.
+/// PCZT copy for a hardware signer; keep the original for combining.
 #[wasm_bindgen(js_name = pcztRedactForHardwareSigner)]
 pub fn pczt_redact_for_hardware_signer(pczt_bytes: Vec<u8>) -> Result<Vec<u8>, JsValue> {
     Ok(sign::redact_for_hardware_signer(&pczt_bytes)?)
 }
 
-/// Verify a private payment before showing its confirmation or contacting a signer.
 #[wasm_bindgen(js_name = pcztVerifyReview)]
 pub fn pczt_verify_review(pczt_bytes: Vec<u8>, review_json: &str) -> Result<(), JsValue> {
     Ok(review::verify_json(&pczt_bytes, review_json)?)
 }
 
-/// Derive the transparent receiving address (t-address) from a UFVK, offline.
 #[wasm_bindgen(js_name = transparentAddressFromUfvk)]
 pub fn transparent_address_from_ufvk(network: &str, ufvk: &str) -> Result<String, JsValue> {
     Ok(keys::transparent_address(network, ufvk)?)
@@ -97,19 +83,16 @@ pub fn transparent_account_pubkey_from_ufvk(network: &str, ufvk: &str) -> Result
     Ok(keys::transparent_account_pubkey(network, ufvk)?)
 }
 
-/// Parses and verifies previous transactions without loading wallet state.
 #[wasm_bindgen(js_name = parseTransparentTransactions)]
 pub fn parse_transparent_transactions(request_json: &str) -> Result<String, JsValue> {
     Ok(transparent_prevouts::parse_json(request_json)?)
 }
 
-/// Quotes a mainnet V6 transparent transaction without loading wallet state.
 #[wasm_bindgen(js_name = transparentTxQuote)]
 pub fn transparent_tx_quote(request_json: &str) -> Result<String, JsValue> {
     Ok(transparent_send::quote_json(request_json)?)
 }
 
-/// Builds and signs using an account xprv at `m/44'/133'/account'`.
 #[wasm_bindgen(js_name = transparentTxBuildWithAccountXprv)]
 pub fn transparent_tx_build_with_account_xprv(
     request_json: &str,
@@ -122,8 +105,7 @@ pub fn transparent_tx_build_with_account_xprv(
     )?)
 }
 
-/// What the keys side can sign. Combine with the runtime's `capabilities()`:
-/// a bundle is usable only if both proving and signing support it.
+/// What the keys side can sign; a bundle is usable only if the runtime's `capabilities()` also supports it.
 #[wasm_bindgen(js_name = keysCapabilities)]
 pub fn keys_capabilities() -> String {
     serde_json::json!({
@@ -154,7 +136,6 @@ pub fn keys_capabilities() -> String {
     .to_string()
 }
 
-/// Creates a device-signable PCZT from public account material without wallet storage.
 #[wasm_bindgen(js_name = transparentTxCreateWithAccountXpub)]
 pub fn transparent_tx_create_with_account_xpub(
     request_json: &str,
@@ -168,7 +149,6 @@ pub fn transparent_tx_create_with_account_xpub(
     )?)
 }
 
-/// Validates and finalizes device signatures against the approved transaction.
 #[wasm_bindgen(js_name = transparentTxCombineHardwareSigned)]
 pub fn transparent_tx_combine_hardware_signed(
     request_json: &str,
@@ -184,13 +164,11 @@ pub fn transparent_tx_combine_hardware_signed(
     )?)
 }
 
-/// Pinned upstream dependency versions.
 #[wasm_bindgen(js_name = keysDependencyVersions)]
 pub fn dependency_versions() -> String {
     crate::dependency_versions().to_string()
 }
 
-/// Creates a shielding PCZT with an account-level transparent key.
 #[wasm_bindgen(js_name = transparentShieldCreateWithAccountXprv)]
 pub fn transparent_shield_create_with_account_xprv(
     request_json: &str,
@@ -203,7 +181,6 @@ pub fn transparent_shield_create_with_account_xprv(
     )?)
 }
 
-/// Signs a proved shielding PCZT with an account-level transparent key.
 #[wasm_bindgen(js_name = transparentShieldSignWithAccountXprv)]
 pub fn transparent_shield_sign_with_account_xprv(
     request_json: &str,

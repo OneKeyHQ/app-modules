@@ -1,8 +1,6 @@
-//! Clock.
-//!
-//! `zcash_client_sqlite` timestamps records through a `Clock`. The upstream
-//! `SystemClock` calls `std::time::SystemTime::now()`, which panics on
-//! wasm32-unknown-unknown, so the browser needs its own.
+//! Clock for `zcash_client_sqlite`: upstream's `SystemClock` calls
+//! `SystemTime::now()`, which panics on wasm32-unknown-unknown, so the browser
+//! uses its own.
 
 use std::time::{Duration, SystemTime};
 use zcash_client_sqlite::util::Clock;
@@ -19,7 +17,6 @@ impl Clock for HostClock {
 
 #[cfg(target_arch = "wasm32")]
 fn now_millis() -> u64 {
-    // Milliseconds since the epoch, as f64.
     let ms = js_sys::Date::now();
     if ms.is_finite() && ms > 0.0 {
         ms as u64

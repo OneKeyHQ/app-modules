@@ -1,8 +1,7 @@
 //! Stateless transparent transaction quoting, construction, and signing.
 //!
-//! This module deliberately has no wallet database, scanner, or network client. The host supplies
-//! a complete UTXO catalog plus an explicit set of outpoints to spend. Every selected coin is
-//! revalidated against its exact BIP-44 path before a transaction is signed.
+//! The host supplies the UTXO catalog and the outpoints to spend; every selected coin is
+//! revalidated against its exact BIP-44 path before signing.
 
 use std::collections::{HashMap, HashSet};
 
@@ -156,10 +155,7 @@ struct TransactionPlan {
     send_amount: Zatoshis,
 }
 
-/// Authorization marker for a transaction whose only unauthorized component is transparent.
-///
-/// `zcash_primitives::transaction::Unauthorized` is gated behind its `circuits` feature. Using a
-/// local marker keeps the stateless transparent signer free of Sapling and Orchard proving code.
+/// Local marker because upstream `Unauthorized` is gated behind `circuits` (proving code).
 struct TransparentUnauthorized;
 
 impl Authorization for TransparentUnauthorized {
@@ -175,11 +171,8 @@ pub fn quote_json(request_json: &str) -> Result<String> {
         .map_err(|e| KeysError::new(ErrorCode::TransactionBuildFailed).detail(e))
 }
 
-/// Builds with an account-level BIP-44 xprv at `m/44'/133'/account'`.
-///
-/// An account xprv cannot prove its ancestor path. The encoded key metadata is therefore checked
-/// for depth 3 and the expected hardened account index, while the host remains responsible for
-/// obtaining it from the exact `m/44'/133'/account'` path.
+/// An account xprv cannot prove its ancestor path: only depth 3 and the hardened account index are
+/// checked, so the host must derive it from exactly `m/44'/133'/account'`.
 pub fn build_with_account_xprv_json(request_json: &str, account_xprv: &str) -> Result<String> {
     let request = parse_request(request_json)?;
     let plan = plan_transaction(request)?;
@@ -408,16 +401,14 @@ fn plan_transaction(request: TransparentTxRequest) -> Result<TransactionPlan> {
         }
         let change_path =
             parse_derivation_path(&change_request.derivation_path, request.account_index)?;
-        // External-scope change must be the default receive address (/0/0);
-        // internal-scope change is still accepted.
+        // External-scope change must be /0/0.
         if change_path.scope == 0 && change_path.index != 0 {
             return Err(KeysError::with(
                 ErrorCode::InvalidDerivationPath,
                 serde_json::json!({ "field": "change.derivationPath", "reason": "defaultReceiveAddressRequired" }),
             ));
         }
-        // The change index must be within the signer's scan range
-        // (`TRANSPARENT_SCAN_GAP`); change beyond it could never be signed.
+        // Change beyond `TRANSPARENT_SCAN_GAP` could never be signed.
         if change_path.index >= crate::sign::TRANSPARENT_SCAN_GAP {
             return Err(KeysError::with(
                 ErrorCode::InvalidDerivationPath,
@@ -437,12 +428,8 @@ fn plan_transaction(request: TransparentTxRequest) -> Result<TransactionPlan> {
             .ok_or_else(|| amount_error("recipientTotal"))?;
         let change_raw = input_total_raw.saturating_sub(needed_with_change);
 
-        // If change cannot pay for its own output, add it to the fee and send
-        // without change (like upstream `DustAction::AddDustToFee`).
-        //
-        // input_total > send_total + fee_without_change holds here, so the
-        // subtraction cannot underflow and the fee meets the minimum. Overpayment
-        // is bounded by fee_with_change + MARGINAL_FEE.
+        // Dust change goes to the fee (like upstream `AddDustToFee`). The subtraction cannot underflow
+        // because input_total > send_total + fee_without_change here.
         if input_total_raw < needed_with_change || change_raw < MARGINAL_FEE.into_u64() {
             let fee_raw = input_total_raw - send_total_raw;
             (parse_zatoshis_u64(fee_raw, "fee")?, None)
@@ -770,9 +757,7 @@ pub(crate) fn parse_account_xpub(encoded: &str, expected_account: u32) -> Result
         .map_err(|_| invalid())
 }
 
-/// Parses straight from the base58 string: bip32 decodes into a stack buffer it wipes, and
-/// `ExtendedKey` wipes its key bytes on drop. Upstream `AccountPrivKey::from_bytes` is avoided
-/// because it re-encodes the key into a heap string and buffer that are freed unwiped.
+/// Parses straight from base58 so every buffer is wiped; upstream `AccountPrivKey::from_bytes` re-encodes into unwiped heap memory.
 pub(crate) fn parse_account_xprv(
     encoded: &str,
     expected_account: u32,
@@ -1136,7 +1121,6 @@ mod tests {
             );
         }
         request["change"]["derivationPath"] = "m/44'/133'/0'/0/0".into();
-        // The existing internal address is not the declared receive address.
         assert_eq!(
             build_with_account_xprv_json(&request.to_string(), &xprv())
                 .unwrap_err()
@@ -1145,11 +1129,7 @@ mod tests {
         );
     }
 
-    /// Sub-dust change is added to the fee instead of failing.
-    ///
-    /// Sending 88,000 from a 100,000 UTXO: the fee is 10,000 with or without
-    /// change (ZIP-317, 1-in stays within grace 2), and the 2,000 surplus cannot
-    /// fund a change output.
+    /// 88,000 from a 100,000 UTXO: fee is 10,000 either way (ZIP-317 grace), the 2,000 surplus is too small for change.
     #[test]
     fn sub_dust_change_goes_into_the_fee_instead_of_failing() {
         let mut request: serde_json::Value =
@@ -1168,10 +1148,7 @@ mod tests {
         assert_eq!(built.fee_zat, "12000");
     }
 
-    /// A surplus between the two fee tiers is not insufficient funds.
-    ///
-    /// 1-in/3-out: fee_without_change=15,000, fee_with_change=20,000. A 17,000
-    /// surplus cannot fund change, but the no-change transaction is valid.
+    /// 1-in/3-out: fee_without_change=15,000, fee_with_change=20,000; a 17,000 surplus cannot fund change.
     #[test]
     fn surplus_between_the_two_fee_tiers_is_not_reported_as_insufficient_funds() {
         let mut request: serde_json::Value =
@@ -1189,7 +1166,6 @@ mod tests {
         assert_eq!(quote.fee_zat, "17000");
     }
 
-    /// The change index must be within the signer's scan range.
     #[test]
     fn rejects_change_index_outside_the_signing_scan_range() {
         let mut request: serde_json::Value =
@@ -1198,7 +1174,6 @@ mod tests {
         let e = quote_json(&request.to_string()).unwrap_err();
         assert_eq!(e.code, ErrorCode::InvalidDerivationPath);
 
-        // In range is still accepted.
         request["change"]["derivationPath"] = "m/44'/133'/0'/1/39".into();
         assert!(quote_json(&request.to_string()).is_ok());
     }
@@ -1348,13 +1323,11 @@ fn require_transparent(address: RecipientAddress) -> Result<TransparentAddress> 
 fn parse_recipient_address(encoded: &str) -> Result<RecipientAddress> {
     match crate::keys::supported_recipient(&MAIN_NETWORK, encoded) {
         Some(Address::Transparent(address)) => Ok(RecipientAddress::Transparent(address)),
-        // ZIP-320: a TEX address is a P2PKH hash that only accepts transparent
-        // inputs, which is all this builder spends.
+        // ZIP-320 TEX: only accepts transparent inputs, which is all this builder spends.
         Some(Address::Tex(hash)) => Ok(RecipientAddress::Transparent(
             TransparentAddress::PublicKeyHash(hash),
         )),
-        // Unified Orchard receivers receive Ironwood notes after NU6.3. Never silently
-        // fall back to a public receiver when a Unified Address lacks this receiver.
+        // Orchard receivers get Ironwood notes after NU6.3; never fall back to a public receiver.
         Some(Address::Unified(address)) => address
             .orchard()
             .copied()

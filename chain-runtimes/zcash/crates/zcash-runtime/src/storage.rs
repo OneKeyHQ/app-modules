@@ -1,8 +1,5 @@
-//! Shared SQLite storage for every App carrier.
-//!
-//! WASM runs in a dedicated Worker and uses the same OPFS synchronous-access
-//! VFS on desktop, web, extension, and mobile WebEmbed, so SQLite reads pages
-//! on demand. Native builds are for Rust tests and diagnostics.
+//! Shared SQLite storage: an OPFS sync-access VFS in a Worker for every browser
+//! carrier. Native builds are for Rust tests and diagnostics.
 
 use crate::error::{ErrorCode, Result, RuntimeError};
 use serde_json::json;
@@ -33,9 +30,8 @@ fn persistent_vfs() -> Result<std::rc::Rc<sqlite_wasm_vfs::sahpool::OpfsSAHPoolU
     })
 }
 
-/// The OPFS API the pool needs, checked before installing it: on an outdated
-/// WebView the install would otherwise throw a bare TypeError from inside the
-/// bindings, which the host cannot tell apart from any other failure.
+/// The OPFS API the pool needs, checked before install: an outdated WebView would
+/// otherwise throw a bare TypeError the host cannot tell apart from other failures.
 #[cfg(target_arch = "wasm32")]
 fn missing_opfs_api() -> Option<&'static str> {
     use wasm_bindgen::JsValue;
@@ -95,9 +91,8 @@ pub async fn install_persistent_vfs() -> Result<()> {
         // Two network databases plus their rollback journals and spare handles.
         initial_capacity: 6,
     };
-    // Worker termination is asynchronous in browsers. Retry only acquiring
-    // ownership, before opening SQLite or dispatching any wallet operation.
-    // A live owner still fails after the bounded handoff window.
+    // Worker termination is asynchronous: retry only acquiring ownership, before
+    // opening SQLite. A live owner still fails after the bounded handoff window.
     let mut retries = 20;
     let util = loop {
         match install::<ffi::WasmOsCallback>(&cfg, true).await {
@@ -141,8 +136,7 @@ pub async fn install_persistent_vfs() -> Result<()> {
 }
 
 /// COMMIT already syncs through the VFS under synchronous=FULL, so there is no
-/// write queue to drain; this only checks the storage is still usable before
-/// finalization and broadcast.
+/// write queue to drain; this only checks the storage is still usable.
 pub async fn durability_barrier() -> Result<()> {
     if requires_worker_restart() {
         return Err(RuntimeError::with(
@@ -215,8 +209,7 @@ pub const RECLAIM_PAGES_PER_STEP: u32 = 512;
 pub const RECLAIM_PAGES_AFTER_DELETE: u32 = 4096;
 
 /// Hands up to `max_pages` free pages back to the file system and returns how
-/// many it reclaimed. Rescans and removals otherwise leave a file that only
-/// grows. Databases created before auto_vacuum was set report 0.
+/// many it reclaimed. Databases created before auto_vacuum was set report 0.
 pub fn reclaim_free_pages(conn: &rusqlite::Connection, max_pages: u32) -> Result<u32> {
     let mode: i64 = conn.query_row("PRAGMA auto_vacuum", [], |r| r.get(0))?;
     // 2 = INCREMENTAL.
@@ -248,7 +241,6 @@ pub async fn database_exists(db_name: &str) -> Result<bool> {
     Ok(std::path::Path::new(db_name).exists())
 }
 
-/// Delete a closed database.
 #[cfg(target_arch = "wasm32")]
 pub async fn delete_database(db_name: &str) -> Result<bool> {
     persistent_vfs()?
@@ -298,7 +290,6 @@ mod tests {
         (pages, free)
     }
 
-    /// A rescan or removal frees pages that only a reclaim gives back.
     #[test]
     fn reclaims_freed_pages_in_bounded_batches() {
         let path = std::env::temp_dir().join("zr-reclaim-free-pages.sqlite");
@@ -326,7 +317,6 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
-    /// Too few free pages to be worth a write transaction.
     #[test]
     fn leaves_a_small_freelist_alone() {
         let path = std::env::temp_dir().join("zr-reclaim-small-freelist.sqlite");
@@ -356,8 +346,7 @@ mod tests {
         let _ = std::fs::remove_file(&path);
         let name = path.to_str().unwrap();
 
-        // Same steps as wallet::open_and_migrate, keeping the connection so it
-        // can be asked afterwards: migrations must not turn the pragma off.
+        // Same steps as wallet::open_and_migrate; migrations must not turn the pragma off.
         for _ in 0..2 {
             let mut conn = open_connection(name).expect("open");
             {

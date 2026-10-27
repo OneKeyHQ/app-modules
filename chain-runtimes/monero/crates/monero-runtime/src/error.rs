@@ -11,7 +11,6 @@ use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorCode {
-    // ── Input validation ────────────────────────────────────────────────────────
     /// Network name is not mainnet/stagenet/testnet. Params: `{ value }`
     InvalidNetwork,
     /// Address does not parse or belongs to another network. Params: `{ field }`
@@ -25,7 +24,6 @@ pub enum ErrorCode {
     /// Malformed JSON from the host. Params: `{ field, reason }`
     InvalidRequest,
 
-    // ── Lifecycle ────────────────────────────────────────────────────────
     /// `openWallet` has not been called.
     WalletNotOpen,
     /// An async operation is in flight; wallet-switching calls are refused. Params: `{ operation }`
@@ -39,21 +37,16 @@ pub enum ErrorCode {
     /// Account not in the database. Params: `{ accountId }`
     AccountNotFound,
 
-    // ── Scanning ────────────────────────────────────────────────────────────
     /// Node blocks do not chain onto local records: a reorg or a lying node.
     /// Params: `{ atHeight, suggestedRewindHeight }`
     ReorgDetected,
-    /// **Node-reported RingCT output index differs from the locally derived one.**
-    ///
-    /// Upstream warns this field is unverifiable and clients must track and
-    /// compare it themselves; a mismatch means the node serves a false view,
-    /// so disconnect rather than keep scanning.
+    /// Node-reported RingCT output index differs from the locally derived one:
+    /// the node serves a false view, so disconnect rather than keep scanning.
     /// Params: `{ height, claimed, expected }`
     RingCtIndexMismatch,
     /// Scanner rejected the block (upstream `ScanError`). Params: `{ height }`
     ScanFailed,
 
-    // ── External ────────────────────────────────────────────────────────
     /// No node URL configured.
     NodeNotConfigured,
     /// Node is on a different network than the wallet (by genesis block), or
@@ -67,7 +60,6 @@ pub enum ErrorCode {
     /// Node explicitly rejected the transaction (double spend, low fee, ...). The fresh record is undone and its inputs released.
     BroadcastRejected,
 
-    // ── Storage ────────────────────────────────────────────────────────────
     /// SQLite operation failed. Params: `{ operation }`
     DatabaseError,
     /// Database migrated by a newer runtime; preserve it and update the app.
@@ -179,8 +171,7 @@ pub fn net_err(operation: &str, e: impl fmt::Display) -> RuntimeError {
 #[cfg(target_arch = "wasm32")]
 impl From<RuntimeError> for wasm_bindgen::JsValue {
     fn from(e: RuntimeError) -> Self {
-        // A JSON string rather than an Error object: the host always
-        // `JSON.parse`s it to get code/params, with a single code path.
+        // A JSON string, not an Error object: the host always `JSON.parse`s it.
         wasm_bindgen::JsValue::from_str(&e.to_json().to_string())
     }
 }

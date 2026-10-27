@@ -1,19 +1,9 @@
 //! Spend path: key image import, transaction construction, signing, broadcast.
 //!
-//! ## The private spend key appears only here
-//!
-//! The host passes the account's BIP-32 key per call and the spend key is
-//! reduced from it here; both are zeroized after use, never persisted, and
-//! never returned across the wasm boundary.
-//!
-//! ## Why key images are imported
-//!
-//! A view-only wallet cannot tell whether its outputs were spent: that needs
-//! the key image `(spend key + output offset) × H(output key)`, which requires
-//! the private spend key.
-//!
-//! Scanning records outputs only; spend state is complete once the host calls
-//! [`import_key_images`] on unlock. Until then the balance may be overstated.
+//! The private spend key is reduced from the host-supplied BIP-32 key per call,
+//! zeroized after use, and never persisted or returned across the wasm boundary.
+//! Spend state is complete only after `import_key_images` on unlock; until then the
+//! balance may be overstated.
 
 use std::collections::HashMap;
 
@@ -33,19 +23,12 @@ use crate::keys;
 use crate::query;
 use crate::wallet::Db;
 
-/// Ring size. Current consensus is 16, including the real member.
-///
-/// Hardcoded rather than asked of the node: a smaller value weakens privacy
-/// and may be rejected. It changes with hard forks via our releases.
+/// Ring size, including the real member. Hardcoded: a smaller value weakens privacy.
 pub const RING_LEN: u8 = 16;
 
 /// Computes an output's key image from the private spend key.
 ///
-/// Same formula as upstream `SignableTransaction::sign`:
-/// `key_image = (spend + key_offset) × biased_hash(output_key)`.
-///
-/// Also checks that the key owns the output. A mismatch (wrong account seed)
-/// errors instead of storing a meaningless key image that would never match a spend.
+/// Errors if the key does not own the output (wrong account seed).
 fn key_image_for(output: &WalletOutput, spend: &Zeroizing<Scalar>) -> Result<[u8; 32]> {
     use core::ops::Deref;
 
@@ -73,10 +56,8 @@ fn key_image_for(output: &WalletOutput, spend: &Zeroizing<Scalar>) -> Result<[u8
 
 /// Fills in key images for outputs that lack one, enabling spend detection.
 ///
-/// Earlier spends are confirmed from possible spends recorded while scanning:
-/// if the computed key image appears in one of the output's possible spends,
-/// that is the real spend. Later spends are caught by normal scanning, so the
-/// output's possible spends are then cleared.
+/// A computed image found in the output's possible spends confirms an earlier spend
+/// and clears them; later spends come from normal scanning.
 pub fn import_key_images(
     db: &mut Db,
     identity_id: i64,
@@ -111,8 +92,7 @@ type PendingOutput = (i64, Vec<u8>, Vec<u8>, i64);
 /// `(output id, key image, txid, index in tx)`.
 type ComputedKeyImage = (i64, [u8; 32], Vec<u8>, i64);
 
-// Separate frame so `scrub_stack` can overwrite what the key-image math left
-// on the stack.
+// Separate frame so `scrub_stack` can clear the key-image math's stack.
 #[inline(never)]
 fn compute_key_images(
     pending: Vec<PendingOutput>,
@@ -128,7 +108,6 @@ fn compute_key_images(
 }
 
 /// Stores computed key images and confirms earlier spends from possible spends.
-/// Separate from computation so the matching can be tested without real outputs.
 fn apply_key_images(
     db: &mut Db,
     identity_id: i64,
@@ -215,24 +194,19 @@ fn parse_spend_key(bytes: &[u8]) -> Result<Zeroizing<Scalar>> {
     Ok(Zeroizing::new(scalar))
 }
 
-/// A payment in a pending transaction.
 #[derive(Debug, Clone)]
 pub struct Payment {
     pub address: MoneroAddress,
     pub amount_atomic: u64,
 }
 
-/// Input selection result.
 #[derive(Debug, Clone)]
 pub struct Selection {
     pub output_ids: Vec<i64>,
     pub total_atomic: u64,
 }
 
-/// Selects inputs largest first until `needed` is covered.
-///
-/// Fees are by weight, so fewer inputs are cheaper, at the cost of breaking up
-/// large outputs sooner; this matches wallet2's default.
+/// Selects inputs largest first until `needed` is covered; fewer inputs mean a lower fee.
 pub fn select_inputs(
     db: &Db,
     identity_id: i64,
@@ -274,7 +248,6 @@ pub fn select_inputs(
     })
 }
 
-/// A constructed transaction awaiting signature.
 pub struct Prepared {
     pub signable: SignableTransaction,
     pub output_ids: Vec<i64>,
@@ -294,9 +267,8 @@ fn is_double_spend(error: &RuntimeError) -> bool {
 
 /// Shares one RingCT output distribution across all inputs of a construction.
 ///
-/// Upstream fetches the full-chain distribution (about 18MB) per decoy
-/// selection, N times for N inputs, which easily times out when relayed through
-/// the host on mobile. Same range is reused, so the node is asked once.
+/// Upstream fetches the full-chain distribution (about 18MB) per input, which times out
+/// easily when relayed through the host on mobile.
 struct CachedDecoys<'a, P> {
     inner: &'a P,
     distributions:
@@ -376,10 +348,8 @@ impl<P: monero_wallet::interface::ProvidesDecoys>
     }
 }
 
-/// Picks a ring of decoys for one output.
-///
-/// Decoys must be selected at the current height; a stale height skews the
-/// ring distribution into a statistical fingerprint.
+/// Picks a ring of decoys for one output at the current height; a stale height
+/// skews the ring distribution into a fingerprint.
 async fn ring_for<R: RngCore + CryptoRng + Send + Sync>(
     db: &Db,
     decoy_source: &impl monero_wallet::interface::ProvidesDecoys,
@@ -400,8 +370,6 @@ async fn ring_for<R: RngCore + CryptoRng + Send + Sync>(
 }
 
 /// Rings for a set of outputs, reusing ones already fetched.
-///
-/// Each ring costs a dozen or more network round trips.
 async fn rings_for<R: RngCore + CryptoRng + Send + Sync>(
     db: &Db,
     decoy_source: &impl monero_wallet::interface::ProvidesDecoys,
@@ -432,8 +400,7 @@ fn assemble<R: RngCore + CryptoRng>(
 ) -> std::result::Result<SignableTransaction, monero_wallet::send::SendError> {
     let change = Change::new(identity.view_pair.clone(), None);
 
-    // `outgoing_view_key` seeds this transaction's deterministic RNG. Never reuse
-    // it across transactions (upstream: reuse repeats ephemeral secrets).
+    // `outgoing_view_key` seeds this transaction's RNG; never reuse it across transactions.
     let mut ovk = Zeroizing::new([0u8; 32]);
     rng.fill_bytes(ovk.as_mut());
 
@@ -455,14 +422,8 @@ fn build_error(e: monero_wallet::send::SendError) -> RuntimeError {
 
 /// Selects inputs and constructs a transaction; no private spend key needed.
 ///
-/// `Prepared` carries the actual fee, which the host shows on the confirm
-/// screen, so the displayed fee is the one charged.
-///
-/// ## Why iterate
-///
-/// The fee depends on weight, weight on input count, and input count on the
-/// fee. The first round covers the amount only; upstream reports the real fee
-/// in `NotEnoughFunds`, and selection repeats with the new target. Converges in two rounds in practice.
+/// `Prepared` carries the actual fee shown on the confirm screen. Fee depends on weight,
+/// weight on input count: selection repeats with the fee upstream reports in `NotEnoughFunds`.
 #[allow(clippy::too_many_arguments)]
 pub async fn prepare<R: RngCore + CryptoRng + Send + Sync>(
     db: &Db,
@@ -486,8 +447,7 @@ pub async fn prepare<R: RngCore + CryptoRng + Send + Sync>(
     let mut cache: HashMap<i64, OutputWithDecoys> = HashMap::new();
     let mut needed = out_total;
 
-    // Three rounds: without fee, with the real fee, and once more in case the
-    // added inputs raised the fee. Not converging means insufficient funds.
+    // Three rounds: without fee, with the real fee, and once more if added inputs raised it.
     for _ in 0..3 {
         let selection = select_inputs(db, identity_id, chain_tip, needed)?;
         let inputs = rings_for(
@@ -538,13 +498,10 @@ pub async fn prepare<R: RngCore + CryptoRng + Send + Sync>(
     Err(insufficient(0, needed))
 }
 
-/// Sends all currently spendable outputs to one address.
+/// Sends all spendable outputs to one address.
 ///
-/// Omitting the change output would, per upstream, add the remainder to the
-/// fee. Instead the real fee is obtained first and the amount derived.
-///
-/// Amounts do not affect weight (RingCT amounts are fixed-size), so a probe
-/// with 1 piconero gives the fee, then `total - fee` is built with the same weight.
+/// Probes with 1 piconero to get the fee (amounts do not affect weight), then builds
+/// `total - fee`; omitting change would fold the remainder into the fee.
 #[allow(clippy::too_many_arguments)]
 pub async fn prepare_max<R: RngCore + CryptoRng + Send + Sync>(
     db: &Db,
@@ -646,9 +603,7 @@ fn insufficient(available: u64, needed: u64) -> RuntimeError {
     )
 }
 
-/// Signs a constructed transaction. No network or database access.
-///
-/// `spend_private` is zeroized after use. Returns broadcastable bytes and the txid.
+/// Signs a constructed transaction. No network or database access; `spend_private` is zeroized after use.
 pub fn sign_prepared<R: RngCore + CryptoRng>(
     signable: SignableTransaction,
     rng: &mut R,
@@ -1354,18 +1309,10 @@ mod tests {
     }
 }
 
-// ── End-to-end send ─────────────────────────────────────────────────────
-
 /// Fee rate cap per priority (piconero / weight).
 ///
-/// Upstream `fee_rate` requires a cap because the rate comes from the node,
-/// which may lie; an absurd rate could spend the balance on fees.
-///
-/// monerod's four tiers are fixed multiples of the base fee, currently 20,000 /
-/// 80,000 / 320,000 / 4,000,000 on mainnet. The base fee derives from block
-/// reward and median block size: busier blocks lower it, and tail emission
-/// fixes the reward. Caps leave 5x headroom over current values. Hitting a cap
-/// fails the send at that tier; it never overpays.
+/// The rate comes from the node, which may lie. Caps leave 5x headroom over current
+/// mainnet tiers (20,000 / 80,000 / 320,000 / 4,000,000); hitting one fails the send.
 pub fn max_fee_per_weight(priority: monero_wallet::interface::FeePriority) -> u64 {
     use monero_wallet::interface::FeePriority;
     match priority {
@@ -1378,14 +1325,12 @@ pub fn max_fee_per_weight(priority: monero_wallet::interface::FeePriority) -> u6
 
 /// Fee quantization mask (piconero).
 ///
-/// A monerod constant (`PER_KB_FEE_QUANTIZATION_DECIMALS = 8`, i.e.
-/// 10^(12-8)), not a price. Upstream rounds the fee up to a multiple of the
-/// node-supplied mask with no cap, so a large mask would multiply the fee;
-/// only this value is accepted.
+/// A monerod constant (`PER_KB_FEE_QUANTIZATION_DECIMALS = 8`), not a price.
+/// Upstream rounds the fee up to a node-supplied mask, so only this value is accepted.
 pub const FEE_QUANTIZATION_MASK: u64 = 10_000;
 
-/// Upstream `FeeRate` does not expose the mask; read it from the serialization
-/// (per_weight then mask, 8 bytes LE each). The layout is pinned by a test.
+/// `FeeRate` does not expose the mask; read from the serialization (per_weight then
+/// mask, 8 bytes LE each), pinned by a test.
 fn fee_mask(rate: &monero_wallet::interface::FeeRate) -> Option<u64> {
     let bytes = rate.serialize();
     Some(u64::from_le_bytes(bytes.get(8..16)?.try_into().ok()?))
@@ -1427,25 +1372,15 @@ pub fn parse_priority(name: &str) -> Result<monero_wallet::interface::FeePriorit
     })
 }
 
-/// Constructs a transaction to sign. No private spend key needed; does not
-/// broadcast.
+/// Constructs a transaction to sign. No private spend key needed; does not broadcast.
 ///
-/// ## `signableHex` contains the private view key
+/// `signableHex` contains the private view key (upstream writes the view pair into the
+/// change; the keyless variant is documented as harming privacy), so it is equivalent
+/// to a view key and must be treated as one.
 ///
-/// Upstream writes the full view pair into the change (`ChangeEnum::Standard`)
-/// so the sender can see its own change. The keyless variant
-/// `Change::fingerprintable` is documented upstream as "You MUST assume this
-/// will harm your privacy", so it is not used.
-///
-/// The output is therefore equivalent to a view key: whoever holds it can see
-/// every payment this account received. Any export-to-sign design must treat it so.
-///
-/// `recipients` are `(address, piconero amount)`. Exactly one is accepted: the
-/// review contract covers a single recipient. With `max_send`, the amount is
-/// spendable total minus fee; the given amount is ignored.
-///
-/// The returned `feeAtomic` is the fee actually paid and does not change at
-/// signing; `amountAtomic` is what the recipient actually receives under max-send.
+/// `recipients` are `(address, piconero amount)`; exactly one is accepted. With `max_send`
+/// the amount is spendable total minus fee and the given amount is ignored. `feeAtomic`
+/// is the fee actually paid; `amountAtomic` is what the recipient receives.
 #[allow(clippy::too_many_arguments)]
 pub async fn prepare_for_host(
     db: &Db,
@@ -1474,8 +1409,7 @@ pub async fn prepare_for_host(
         })?;
     check_fee_rate(&rate)?;
 
-    // Current consensus: CLSAG + Bulletproofs+. Set by our releases per hard
-    // fork, not by the node; a wrong type is rejected network-wide.
+    // CLSAG + Bulletproofs+ per current consensus; set per hard fork, a wrong type is rejected.
     let rct_type = monero_wallet::ringct::RctType::ClsagBulletproofPlus;
     let mut rng = rand_core::OsRng;
     let decoys = CachedDecoys::new(daemon);
@@ -1589,7 +1523,7 @@ pub(crate) fn sign_for_host_with_rng<R: RngCore + CryptoRng>(
     }))
 }
 
-// Separate frame so `scrub_stack` can overwrite what signing left on the stack.
+// Separate frame so `scrub_stack` can clear signing's stack.
 #[inline(never)]
 fn verify_and_sign<R: RngCore + CryptoRng>(
     signable_hex: &str,
@@ -1661,14 +1595,11 @@ pub fn reviewed_broadcast_amounts(
     })
 }
 
-/// Pre-broadcast bookkeeping in one transaction: mark inputs spent and record a
-/// pending send.
+/// Pre-broadcast bookkeeping in one transaction: mark inputs spent and record a pending send.
 ///
-/// Returns whether the record is fresh. An existing record means the same
-/// transaction was sent before (a retry), which the node may have accepted.
-///
-/// A fresh record must spend only this account's outputs that no other
-/// transaction spent; otherwise nothing is recorded and nothing is sent.
+/// Returns whether the record is fresh; an existing record means a retry the node may have accepted.
+/// A fresh record must spend only this account's outputs not spent by another transaction;
+/// otherwise nothing is recorded and nothing is sent.
 fn record_broadcast(
     db: &Db,
     identity_id: i64,
@@ -1791,10 +1722,8 @@ fn undo_recorded_broadcast(db: &Db, identity_id: i64, txid: &[u8; 32]) -> Result
 
 /// Records, then broadcasts a signed transaction. Irreversible.
 ///
-/// Recording first marks inputs spent and creates a pending record, so an
-/// interruption (worker killed, response lost) leaves the send visible and its
-/// inputs unselectable. Otherwise the next send could use other inputs and both
-/// would confirm, paying twice.
+/// Recording first keeps an interrupted send visible and its inputs unselectable;
+/// otherwise a later send could use other inputs and both would confirm.
 pub async fn broadcast_signed(
     db: &Db,
     daemon: &crate::network::Daemon,
@@ -1814,7 +1743,6 @@ pub async fn broadcast_signed(
         .map_err(|e| db_err("parseSignedTransaction", e))?;
     let txid = tx.hash();
 
-    // Mark by the transaction's own key images.
     let key_images: Vec<[u8; 32]> = tx
         .prefix()
         .inputs
@@ -1832,13 +1760,9 @@ pub async fn broadcast_signed(
     // inputs selectable again while the transaction is in flight.
     crate::storage::durability_barrier().await?;
 
-    // An explicit rejection means it will not confirm: undo the fresh record
-    // and release the inputs. Other errors are uncertain: keep the record so the
-    // inputs are not reselected; the pending check fails it after the
-    // propagation window if the node never got it.
-    // "double spend" may be this transaction already mined (lost response,
-    // retried signature), so it is uncertain too, as is a rejection of a
-    // non-fresh record, which the node may have accepted earlier.
+    // Only an explicit rejection of a fresh record is undone. Other errors are uncertain:
+    // the record stays so inputs are not reselected. "double spend" may be this
+    // transaction already mined, and a non-fresh record may have been accepted earlier.
     let unknown = match broadcast(daemon, &raw).await {
         Ok(()) => None,
         Err(e) if e.code == ErrorCode::BroadcastRejected && !is_double_spend(&e) && fresh => {
@@ -1891,7 +1815,6 @@ mod cached_decoys_tests {
         }
     }
 
-    // Every input's decoy selection asks for the same range; the node is asked once.
     #[test]
     fn one_distribution_download_per_prepare() {
         let source = CountingSource(AtomicUsize::new(0));

@@ -9,9 +9,7 @@ edition = "2021"
 license = "Apache-2.0"
 rust-version = "1.85"
 
-# monero-oxide over wallet2: one small wasm build for all platforms, no
-# cross-origin isolation, no C++ cross toolchain. It has no storage layer;
-# this workspace persists wallet state to SQLite.
+# monero-oxide has no storage layer; this workspace persists wallet state to SQLite.
 [workspace.dependencies]
 monero-wallet = { version = "0.2", default-features = false, features = ["std"] }
 monero-address = { version = "0.1", default-features = false, features = ["std"] }
@@ -20,9 +18,7 @@ monero-interface = { version = "0.2", default-features = false, features = ["std
 # get_blocks.bin request and parsing (blocks_bin.rs); same version as monero-daemon-rpc uses.
 monero-epee = { version = "0.2", default-features = false }
 
-# SQLite on wasm, same setup as the Zcash runtime. rusqlite without "bundled"
-# (wasm32 has no libc sysroot for SQLite's C sources); sqlite-wasm-rs provides
-# the sqlite3 symbols.
+# rusqlite without "bundled" (no libc sysroot on wasm32); sqlite-wasm-rs provides the symbols.
 rusqlite = { version = "0.37", default-features = false }
 sqlite-wasm-rs = "0.5"
 # OPFS sync-access VFS, patched with the Zcash runtime's patch (see

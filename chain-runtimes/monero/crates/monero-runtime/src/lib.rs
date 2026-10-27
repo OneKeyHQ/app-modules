@@ -1,18 +1,6 @@
-//! # OneKey Monero Runtime
+//! OneKey Monero runtime: monero-oxide scanning and signing with SQLite persistence.
 //!
-//! monero-oxide provides cryptography, scanning, and transaction construction but
-//! no storage. This crate adds it: scanned outputs are persisted to SQLite and queryable.
-//!
-//! ## Why not monero-ts
-//!
-//! monero-ts keeps the whole wallet in wasm memory and persists by serializing it
-//! all via `getData()`, so saves grow with history and a crash mid-write loses
-//! everything. This crate uses incremental transactional writes, like the Zcash runtime.
-//!
-//! ## Boundary
-//!
-//! Rust owns cryptography and protocol, platform glue (storage VFS, clock), and
-//! conversion to JSON. Scheduling (when and what range to scan) belongs to the host.
+//! Rust owns cryptography, protocol and storage; the host owns scan scheduling.
 
 pub mod blocks_bin;
 pub mod error;

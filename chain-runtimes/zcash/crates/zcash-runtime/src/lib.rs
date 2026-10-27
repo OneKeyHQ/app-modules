@@ -1,28 +1,11 @@
 //! # OneKey Zcash Runtime
 //!
-//! A thin binding layer over the official `librustzcash`.
-//!
-//! ## Scope
-//!
-//! Only three things live on this side:
-//!
-//! 1. **Cryptography and protocol**: trial decryption, witness and commitment
-//!    tree maintenance, transaction building and note selection. Costly to move
-//!    across the boundary, and mistakes lose funds.
-//! 2. **Platform glue**: clock, randomness, storage VFS, which std lacks on wasm32.
-//! 3. **Shape conversion**: Rust types to JSON for the host.
-//!
-//! Scheduling, account and birthday management, caching, progress and retries
-//! belong to the host.
-//!
-//! ## Interface
-//!
-//! Few verbs, simple data. Each call is a full round trip; apart from the
-//! database, wasm holds no state across calls.
+//! A thin binding layer over `librustzcash`: cryptography and protocol (trial
+//! decryption, trees, transaction building, note selection), platform glue
+//! (clock, randomness, storage VFS) and Rust-to-JSON shape conversion.
+//! Scheduling, accounts, caching, progress and retries belong to the host. Apart
+//! from the database, wasm holds no state across calls.
 
-// ── All platforms: wallet core ─────────────────────────────────────────
-// Builds on wasm32, aarch64-apple-ios and Android, so mobile can run the full
-// wallet, not just keys.
 pub mod account;
 pub mod blockcache;
 mod circuit_keys;
@@ -35,7 +18,6 @@ pub mod storage;
 pub mod tx_state;
 pub mod wallet;
 
-// Network and sync: gRPC-web in browsers, tonic transport natively.
 pub mod network;
 pub mod sync;
 

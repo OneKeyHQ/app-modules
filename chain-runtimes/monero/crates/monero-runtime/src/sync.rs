@@ -1,14 +1,8 @@
 //! Sync orchestration: fetch blocks, scan, record progress. Bounded; never runs to completion.
 //!
-//! One call processes at most `max_blocks` blocks and returns progress; the host
-//! decides whether to call again. A run-to-completion call cannot be interrupted,
-//! report progress, or yield on browsers and mobile, so the page would freeze.
-//!
-//! ## Scan progress is tracked per identity
-//!
-//! `scan_ranges` is keyed by `identity_id`. Unlike Zcash, Monero has no commitment
-//! tree that forces wallet-wide contiguous scanning, so each identity tracks its
-//! own progress and a paused account never loses a span scanned for another.
+//! One call processes at most `max_blocks` blocks; the host decides whether to continue.
+//! `scan_ranges` is keyed by `identity_id` (no wallet-wide contiguity as in Zcash), so a
+//! paused account never loses a span scanned for another.
 
 use futures_util::stream::{self, StreamExt, TryStreamExt};
 use monero_daemon_rpc::prelude::*;
@@ -21,18 +15,14 @@ use crate::perf::now_ms;
 use crate::scan::{self, ScanOutcome};
 use crate::wallet::Db;
 
-/// Per-call block cap.
-///
-/// A hang guard, not a tuning knob: a huge value would make one call run for
-/// minutes with no way to interrupt it. The host sizes batches from measured throughput.
+/// Per-call block cap: a hang guard; a huge value would run for minutes uninterruptibly.
 pub const MAX_BLOCKS_PER_CALL: u64 = 1_000;
 
 /// Limit per-block fallback requests to three, leaving the host's fourth
 /// stream slot available for a chain-tip probe or another privacy chain.
 pub const FETCH_CONCURRENCY: usize = 3;
 
-/// Fetch the chain tip without touching the wallet DB: account creation needs it
-/// for the birthday before the DB exists.
+/// Fetch the chain tip without touching the wallet DB (account creation needs it first).
 pub async fn chain_tip(daemon: &Daemon) -> Result<u64> {
     let n = daemon
         .latest_block_number()
@@ -68,9 +58,8 @@ pub fn update_chain_tip(db: &mut Db, identity_id: i64, tip: u64) -> Result<()> {
 
 /// Highest height this identity has scanned contiguously (inclusive); `None` if nothing scanned.
 ///
-/// Reads `identities.scanned_to_height`, not `max` over the global `blocks` table:
-/// that would let a caught-up identity push a backfilling identity's progress to
-/// the tip, permanently skipping that history.
+/// Reads `identities.scanned_to_height`, not `max` over the global `blocks` table, which
+/// would let a caught-up identity skip a backfilling identity's history.
 pub fn scanned_to_height(db: &Db, identity_id: i64) -> Result<Option<u64>> {
     Ok(db
         .conn()
@@ -113,10 +102,9 @@ fn next_range(db: &Db, identity_id: i64) -> Result<Option<(u64, u64)>> {
 
 /// Remove the scanned span `[start, scanned_through]` from the pending ranges.
 ///
-/// Pending ranges can overlap (`rewind_and_requeue` queues from the rewind height
-/// while the old tail range is still queued), so the span is subtracted from every
-/// overlapping range and remainders are upserted (same start keeps the farther end);
-/// a plain INSERT would collide on the primary key and stall scanning.
+/// Ranges can overlap (`rewind_and_requeue` queues while the old tail is still queued), so
+/// the span is subtracted from every overlapping range and remainders are upserted; a plain
+/// INSERT would collide on the primary key and stall scanning.
 fn consume_range(db: &mut Db, identity_id: i64, start: u64, scanned_through: u64) -> Result<()> {
     let tx = db
         .conn_mut()
@@ -189,12 +177,11 @@ fn blocks_bin_skipped_for(node: Option<&str>, now: f64) -> bool {
     })
 }
 
-/// Try the batch path (`get_blocks.bin`, one round trip per batch) first; fall back
-/// to concurrent per-block fetches if the node does not cooperate.
+/// Try the batch path (`get_blocks.bin`, one round trip per batch) first; fall back to
+/// concurrent per-block fetches.
 ///
-/// Only protocol failures (unsupported, malformed, count mismatch) skip the batch
-/// path for this node (see `BLOCKS_BIN_RETRY_AFTER_MS`). Network failures propagate
-/// and the next step retries; one timeout must not downgrade a good node.
+/// Only protocol failures (unsupported, malformed, count mismatch) skip the batch path for
+/// this node (see `BLOCKS_BIN_RETRY_AFTER_MS`); network failures propagate and are retried.
 async fn fetch_blocks(
     daemon: &Daemon,
     start: u64,
@@ -237,15 +224,9 @@ async fn fetch_blocks(
 
 /// Fetch scannable blocks for `[start, last]`, ordered by height.
 ///
-/// Fallback when the batch path (`blocks_bin`) is unusable.
-///
-/// Does not use `contiguous_scannable_blocks`; see `blocks_bin` for why its batch
-/// path always fails against released monerod.
-///
-/// Instead fetch per block with N-way concurrency. Upstream still validates each
-/// block (number, transactions match the block's tx list); cross-block continuity
-/// (heights, previous hash, RingCT cursor) is checked by `scan::scan_blocks`.
-/// `buffered` preserves order, so results are sorted by height.
+/// Fallback when the batch path (`blocks_bin`) is unusable: fetches per block with N-way
+/// concurrency. Upstream validates each block; cross-block continuity is checked by
+/// `scan::scan_blocks`. `buffered` preserves order.
 async fn fetch_scannable_blocks(
     daemon: &Daemon,
     start: u64,
@@ -263,10 +244,7 @@ async fn fetch_scannable_blocks(
         .await
 }
 
-/// One bounded step.
-///
-/// Returns progress JSON; `done` means no pending ranges remain. Never loops to
-/// completion; the host decides whether to call again.
+/// One bounded step; returns progress JSON, `done` means no pending ranges remain.
 pub async fn step(
     db: &mut Db,
     daemon: &Daemon,
@@ -297,8 +275,7 @@ pub async fn step(
         return Ok(progress(db, identity_id, &ScanOutcome::default(), true)?);
     }
 
-    // Time download and scan separately: both look the same in a browser (a frozen
-    // UI), and public-node latency would otherwise be misread as CPU cost.
+    // Time download and scan separately so node latency is not misread as CPU cost.
     let t0 = now_ms();
 
     let (blocks, fetched_via, fetch_note, prefetch_hit) = fetch_blocks(daemon, start, last).await?;
@@ -317,8 +294,7 @@ pub async fn step(
     let t_downloaded = now_ms();
 
     if blocks.is_empty() {
-        // Zero blocks for a non-empty range violates the protocol. Advancing as if
-        // scanned would skip this span forever.
+        // Zero blocks for a non-empty range violates the protocol; advancing would skip it forever.
         return Err(RuntimeError::with(
             ErrorCode::MalformedNodeResponse,
             json!({ "operation": "contiguousScannableBlocks", "from": start, "to": last }),
@@ -327,9 +303,8 @@ pub async fn step(
 
     db.ensure_subaddress_lookahead(identity_id)?;
     let mut outcome = scan::scan_blocks(db, identity_id, &blocks)?;
-    // Funds near the end of the subaddress window grow it; rescan the same batch with
-    // the new window (blocks in hand, writes idempotent) so later funds to the newly
-    // registered subaddresses are not missed.
+    // Funds near the end of the subaddress window grow it; rescan the same batch with the new
+    // window (writes are idempotent) so funds to newly registered subaddresses are not missed.
     while outcome.outputs_found > 0 && db.ensure_subaddress_lookahead(identity_id)? > 0 {
         outcome = scan::scan_blocks(db, identity_id, &blocks)?;
     }
@@ -642,8 +617,7 @@ mod tests {
         assert!(next_range(&db, id).unwrap().is_none());
     }
 
-    /// The per-call block cap is hard: a huge value would run for minutes with no
-    /// way to interrupt it, freezing the page.
+    /// The per-call block cap is hard: a huge value would freeze the page.
     #[test]
     fn max_blocks_is_clamped_and_zero_is_rejected() {
         assert_eq!(u64::MAX.min(MAX_BLOCKS_PER_CALL), MAX_BLOCKS_PER_CALL);

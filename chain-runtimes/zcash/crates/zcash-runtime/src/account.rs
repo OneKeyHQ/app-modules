@@ -1,5 +1,4 @@
-//! Account import and reads: UFVK import and balances. No private keys,
-//! address derivation or signing on this path.
+//! Account import and reads (UFVK import, balances); no private keys or signing.
 
 use incrementalmerkletree::{frontier::Frontier, Hashable};
 use incrementalmerkletree::{Marking, Retention};
@@ -18,10 +17,7 @@ use crate::network::{self, LightClient};
 use crate::wallet::Db;
 use serde_json::json;
 
-/// Imports an account from a UFVK.
-///
-/// `birthday_height` is the earliest height the account can have received a
-/// note; scanning starts there. Fetches the tree state of the block before it.
+/// Imports an account from a UFVK; scanning starts at `birthday_height`.
 pub async fn import_ufvk(
     db: &mut Db,
     client: &mut LightClient,
@@ -35,10 +31,9 @@ pub async fn import_ufvk(
     let ufvk = UnifiedFullViewingKey::decode(&params, ufvk_str)
         .map_err(|e| RuntimeError::new(ErrorCode::InvalidUfvk).detail(e))?;
 
-    // With a seed fingerprint and account index the account is imported as
-    // spending: upstream then puts zip32_derivation on PCZT spends, and
-    // send::mark_wallet_outputs puts it on change outputs (upstream does not),
-    // so signers can find the key and verify change returns to the wallet.
+    // A seed fingerprint plus account index imports the account as spending, so
+    // zip32_derivation is set on PCZT spends and (by send::mark_wallet_outputs) on
+    // change outputs; signers can then verify change returns to the wallet.
     let purpose = match derivation {
         Some((fingerprint_hex, account_index)) => AccountPurpose::Spending {
             derivation: Some(parse_zip32_derivation(fingerprint_hex, account_index)?),
@@ -371,7 +366,6 @@ fn parse_zip32_derivation(fingerprint_hex: &str, account_index: u32) -> Result<Z
     ))
 }
 
-/// Account balance as JSON.
 pub fn balance_json(db: &Db, account_uuid: &str, policy: ConfirmationsPolicy) -> Result<String> {
     let account_id = parse_account_id(db, account_uuid)?;
 
@@ -383,8 +377,7 @@ pub fn balance_json(db: &Db, account_uuid: &str, policy: ConfirmationsPolicy) ->
         .detail(e)
     })?;
 
-    // No summary before any block is scanned; reported as an error code, with
-    // user-facing text left to the host.
+    // No summary before any block is scanned; reported as an error code, text left to the host.
     let Some(summary) = summary else {
         return Err(RuntimeError::new(ErrorCode::NotSynced));
     };
@@ -404,18 +397,15 @@ pub fn balance_json(db: &Db, account_uuid: &str, policy: ConfirmationsPolicy) ->
     .to_string())
 }
 
-/// `total` (per pool and overall) is upstream's `Balance::total`, which leaves
-/// out notes worth at most the ZIP-317 marginal fee. That value is reported
-/// beside it as `uneconomic`, so a host can show it without changing what
-/// `total` or `spendable` mean.
+/// `total` is upstream's `Balance::total`, which leaves out notes worth at most
+/// the ZIP-317 marginal fee; those are reported separately as `uneconomic`.
 fn balance_value(
     chain_tip: u32,
     fully_scanned_height: u32,
     balances: &AccountBalance,
 ) -> serde_json::Value {
-    // Each pool reports its values with no cross-pool merging: which pools
-    // count as spendable is wallet policy, not chain fact, and per-pool detail is
-    // shown in the UI. The host computes any totals it needs.
+    // Per-pool values, no cross-pool merging: which pools count as spendable is
+    // wallet policy; the host computes any totals.
     let pool = |b: &Balance| {
         serde_json::json!({
             "spendable": u64::from(b.spendable_value()),
@@ -480,11 +470,8 @@ pub fn remove_account(db: &mut Db, account_uuid: &str) -> Result<()> {
     })
 }
 
-/// Finds the account with this UFVK, or returns `"null"`.
-///
-/// This is how to locate an account in the shared database: it holds every
-/// wallet's accounts, and runtime UUIDs change after a purge. The UFVK is the
-/// host's stable unique key.
+/// Finds the account with this UFVK, or returns `"null"`. The UFVK is the host's
+/// stable key; runtime UUIDs change after a purge.
 pub fn account_by_ufvk(db: &Db, ufvk_str: &str) -> Result<String> {
     let params = *db.params();
     let target = UnifiedFullViewingKey::decode(&params, ufvk_str)
@@ -515,7 +502,6 @@ pub fn account_by_ufvk(db: &Db, ufvk_str: &str) -> Result<String> {
     Ok("null".to_string())
 }
 
-/// Local account UUIDs as a JSON array.
 pub fn list_accounts_json(db: &Db) -> Result<String> {
     let ids = db.get_account_ids().map_err(|e| {
         RuntimeError::with(

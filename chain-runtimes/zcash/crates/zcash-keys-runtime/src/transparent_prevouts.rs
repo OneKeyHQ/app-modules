@@ -41,8 +41,7 @@ pub fn parse_json(request_json: &str) -> Result<String> {
         .map(|previous| {
             let bytes = hex::decode(&previous.raw_tx).map_err(|_| invalid())?;
             let mut reader = &bytes[..];
-            // The legacy branch metadata is unused for txids and transparent outputs.
-            // V5 and later read the branch from the transaction itself. Never sign this object.
+            // Branch is unused for txids and transparent outputs; never sign this object.
             let tx = Transaction::read(&mut reader, BranchId::Sprout)
                 .map_err(|e| invalid().detail(e))?;
             let txid = tx.txid().to_string();
@@ -110,7 +109,6 @@ mod tests {
     fn recognizes_coinbase_instead_of_assuming_regular_inputs() {
         let mut request = request();
         let mut bytes = hex::decode(request["transactions"][0]["rawTx"].as_str().unwrap()).unwrap();
-        // The V4 fixture has one transparent input after its eight-byte header.
         bytes[9..41].fill(0);
         bytes[41..45].fill(0xff);
         let tx = Transaction::read(&bytes[..], BranchId::Nu6_2).unwrap();

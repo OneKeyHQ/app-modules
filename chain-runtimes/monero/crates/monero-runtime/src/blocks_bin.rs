@@ -1,28 +1,11 @@
 //! Batch block fetch via `get_blocks.bin`, using wallet2's trust model.
 //!
-//! One request returns a whole batch of blocks with their transactions and the
-//! output indices scanning needs, instead of 3-4 round trips per block.
+//! The header's transaction hash list is trusted and content is not re-hashed against it,
+//! because released monerod sends zeroed `prunable_hash` values for pruned transactions.
+//! Transaction counts, output index lists and height contiguity are still checked;
+//! cross-block continuity is checked by `scan::scan_blocks`.
 //!
-//! ## Why not monero-oxide's built-in path
-//!
-//! It also uses `get_blocks.bin` but recomputes transaction hashes from content and
-//! checks them against the block header's hash list. Pruned transactions need the
-//! node's `prunable_hash` for that, and released monerod (through v0.18.5.1) sends
-//! it as all zeros (monero-project/monero#10120; fix #10652 is master-only), so it
-//! always drops the batch and falls back to per-block JSON.
-//!
-//! ## Trust model (same as wallet2)
-//!
-//! The header's transaction hash list is trusted; content is not re-hashed against
-//! it, as in `wallet2::process_new_blockchain_entry` (`b.tx_hashes[idx]`).
-//!
-//! Still checked: transaction count matches the header list, each block's output
-//! index lists match its transaction outputs, and heights are contiguous from the
-//! requested start. Cross-block continuity (previous hash, RingCT cursor) is
-//! checked by `scan::scan_blocks`.
-//!
-//! Request format and parser skeleton follow monero-oxide's `monero-daemon-rpc`
-//! (`src/bin_rpc/blocks_bin.rs`, `epee.rs`, MIT).
+//! Request format and parser skeleton follow monero-oxide's `monero-daemon-rpc` (MIT).
 
 use std::{
     cell::{Cell, RefCell},
@@ -60,13 +43,7 @@ fn epee_err(e: EpeeError) -> BlocksBinError {
     protocol(format!("epee: {e:?}"))
 }
 
-// ── Batch size: adaptive, capped as in wallet2 ─────────────────────────────
-//
-// wallet2 sends `getblocks.bin` uncapped; the node returns at most 1000 blocks /
-// 20k transactions. That is fastest on a good link, but a multi-MB request may never
-// finish on a tunneled or jittery one. So the size adapts: double when fast, up to
-// 1000; halve when slow or failed, down to 10. Each step sends one request and scans
-// and stores what it gets, so a slow later request never discards earlier blocks.
+// Batch size adapts: double when fast up to 1000, halve when slow or failed down to 10.
 
 /// Per-request cap of wallet2 / monerod (`COMMAND_RPC_GET_BLOCKS_FAST_MAX_BLOCK_COUNT`).
 pub const MAX_BATCH_BLOCKS: u64 = 1000;
@@ -103,14 +80,10 @@ fn record_failure() {
     BATCH_BLOCKS.with(|size| size.set((size.get() / 2).max(MIN_BATCH_BLOCKS)));
 }
 
-// ── Requests and pipelining ────────────────────────────────────────────────
-//
-// One request at a time, as in wallet2. Concurrent requests to a public node are
-// served one after another (monerod holds the blockchain DB lock while building
-// `get_blocks.bin`, and nodes may limit per-IP concurrency). The speedup comes from
-// pipelining (`prefetch`): the next batch is in flight while this one is scanned.
+// One request at a time: monerod serializes concurrent `get_blocks.bin` requests.
+// `prefetch` pipelines the next batch while the current one is scanned.
 
-/// A request's result and its duration from send to completion (from send time for a prefetch).
+/// A request's result and its duration from send to completion.
 type RequestOutcome = (Result<Vec<ScannableBlock>, BlocksBinError>, f64);
 type RequestFuture = Pin<Box<dyn Future<Output = RequestOutcome>>>;
 
@@ -137,8 +110,7 @@ fn request_future(url: &str, start: u64, count: u64) -> RequestFuture {
     })
 }
 
-/// Take the prefetched result only if it matches this span exactly. Otherwise (node
-/// changed, rewind, range changed) drop it: refetching beats using the wrong data.
+/// Take the prefetched result only if it matches this span exactly; otherwise drop it.
 fn take_prefetched(url: &str, start: u64, count: u64) -> Option<RequestFuture> {
     PREFETCH.with(|slot| match slot.borrow_mut().take() {
         Some(p) if p.url == url && p.start == start && p.count == count => Some(p.future),
@@ -152,9 +124,7 @@ pub struct Fetched {
     pub prefetch_hit: bool,
 }
 
-/// Backoff (ms) before retrying a network failure; the length is the number of extra
-/// retries. Each retry halves the request, since a smaller one often completes where a
-/// large one cannot. Protocol errors are not retried.
+/// Backoff (ms) before each network-failure retry, each with a halved request. Protocol errors are not retried.
 const RETRY_BACKOFF_MS: [u32; 2] = [500, 1500];
 
 async fn backoff(ms: u32) {
@@ -168,8 +138,7 @@ async fn backoff(ms: u32) {
 /// nonzero: monerod ignores `start_height` when it is zero.
 ///
 /// Sends one request (retried smaller on failure) and accepts however many blocks
-/// the node returns; it may return fewer due to the 20k-transaction cap, and the
-/// next step requests the rest.
+/// the node returns, which may be fewer than asked.
 pub async fn fetch(base_url: &str, start: u64, limit: u64) -> Result<Fetched, BlocksBinError> {
     if start == 0 {
         return Err(protocol("get_blocks.bin cannot start at the genesis block"));
@@ -212,11 +181,7 @@ pub async fn fetch(base_url: &str, start: u64, limit: u64) -> Result<Fetched, Bl
 /// Send the request from `start` now, sized by the current batch (at most `limit`),
 /// and keep the result for the next step.
 ///
-/// As in `wallet2::refresh` ("pull the next set of blocks while we're processing
-/// the current one"). wasm needs no thread: once sent, the browser / host receives
-/// the response whether or not we are scanning. This polls once to send it and the
-/// next step awaits it, so scanning, the return to the host and DB writes all
-/// overlap the download.
+/// Polls once to send the request without a thread; the next step awaits it.
 pub async fn prefetch(base_url: &str, start: u64, limit: u64) {
     let count = batch_blocks().min(limit);
     if start == 0 || count == 0 {
@@ -278,7 +243,7 @@ fn build_request(start_height: u64, max_block_count: u64) -> Vec<u8> {
     let mut request = Vec::with_capacity(64);
     request.extend(HEADER);
     request.push(VERSION);
-    // Three fields. The low two bits of an epee varint mark its length; 00 means one byte.
+    // Three fields; the low two bits of an epee varint give its length (00 = one byte).
     request.push(3 << 2);
 
     push_key(&mut request, "prune");
@@ -438,7 +403,6 @@ pub(crate) fn parse_response(
                 "expected block {expected}, node sent {height}"
             )));
         }
-        // Check against the header's transaction hash list, which is what we trust.
         if raw.transactions.len() != raw.block.transactions.len() {
             return Err(protocol(format!(
                 "block {height}: header lists {} transactions, node sent {}",
@@ -454,8 +418,7 @@ pub(crate) fn parse_response(
             )));
         }
 
-        // Global index of this block's first RingCT output: the first index of the first
-        // non-V1 transaction with outputs.
+        // First RingCT output index: the first index of the first non-V1 transaction with outputs.
         let miner = raw.block.miner_transaction();
         let mut first_ringct = None;
         let shapes = std::iter::once((
@@ -493,21 +456,17 @@ pub(crate) fn parse_response(
 mod tests {
     use super::*;
 
-    /// Request bytes must match monero-oxide's byte for byte; nodes are known to accept that layout.
     #[test]
     fn the_request_matches_the_upstream_layout() {
         let request = build_request(3_000_000, 50);
         assert_eq!(&request[..8], &HEADER);
         assert_eq!(request[8], VERSION);
         assert_eq!(request[9], 3 << 2);
-        // header(8) + version(1) + count(1)
-        // + prune: 1+5+1+1 + start_height: 1+12+1+8 + max_block_count: 1+15+1+8
         assert_eq!(request.len(), 10 + 8 + 22 + 25);
         assert!(request.windows(5).any(|w| w == b"prune"));
         assert!(request.ends_with(&50u64.to_le_bytes()));
     }
 
-    /// Doubles up to 1000 when fast; halves down to 10 when slow or failed.
     #[test]
     fn the_batch_grows_on_fast_requests_and_shrinks_on_slow_or_failed_ones() {
         BATCH_BLOCKS.with(|b| b.set(INITIAL_BATCH_BLOCKS));
@@ -526,7 +485,6 @@ mod tests {
         BATCH_BLOCKS.with(|b| b.set(INITIAL_BATCH_BLOCKS));
     }
 
-    /// A prefetch is taken only by an exact match; a mismatch discards it and clears the slot.
     #[test]
     fn a_prefetch_is_taken_only_by_the_exact_same_request() {
         let park = |url: &str, start: u64, count: u64| {
@@ -568,8 +526,7 @@ mod tests {
         assert!(matches!(e, BlocksBinError::Protocol(_)));
     }
 
-    /// A real mainnet node response (start_height=3768621, max_block_count=2). Covers
-    /// the full parse: blocks, pruned transactions, output indices, first RingCT index.
+    /// A real mainnet response (start_height=3768621, max_block_count=2).
     #[test]
     fn parses_a_real_node_response() {
         let bytes = include_bytes!("../tests/fixtures/get_blocks_bin_3768621.bin");
@@ -590,14 +547,12 @@ mod tests {
         for (i, b) in blocks.iter().enumerate() {
             assert_eq!(b.block.number() as u64, 3_768_621 + i as u64);
             assert_eq!(b.transactions.len(), b.block.transactions.len());
-            // Every block has miner outputs, so a first RingCT index always exists.
             assert!(b.output_index_for_first_ringct_output.is_some());
         }
-        // Previous hashes chain: the blocks really are contiguous.
         for pair in blocks.windows(2) {
             assert_eq!(pair[1].block.header.previous, pair[0].block.hash());
         }
-        // RingCT cursor chains: next first index = this first index + this block's output count.
+        // Next first index = this first index + this block's output count.
         for pair in blocks.windows(2) {
             let outputs: u64 =
                 std::iter::once(pair[0].block.miner_transaction().prefix().outputs.len())
@@ -618,8 +573,7 @@ mod tests {
         }
     }
 
-    /// Scan cost benchmark (native; release is more accurate). The fixture is too large
-    /// to commit; capture it on demand:
+    /// Scan cost benchmark; the fixture is too large to commit, so capture it on demand:
     /// `XMR_BLOCKS_BIN=/path/to/get_blocks.bin XMR_BLOCKS_BIN_START=3767000 \
     ///  cargo test --release --lib scan_cost -- --nocapture`
     #[test]

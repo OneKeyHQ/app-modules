@@ -1,7 +1,4 @@
-//! Timing.
-//!
-//! Fetch and scan time are measured separately: public node RPC round trips can
-//! reach ~490 ms, which would otherwise read as slow decryption.
+//! Timing. Fetch and scan time are measured separately; node round trips can reach ~490 ms.
 
 #[cfg(target_arch = "wasm32")]
 pub fn now_ms() -> f64 {

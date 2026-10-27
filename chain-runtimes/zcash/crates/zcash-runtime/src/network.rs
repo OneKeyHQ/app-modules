@@ -1,7 +1,4 @@
-//! lightwalletd network layer.
-//!
-//! Browsers have no raw HTTP/2, so wasm uses gRPC-web: `tonic-web-wasm-client`
-//! runs the tonic-generated client over fetch.
+//! lightwalletd network layer: gRPC-web on wasm, tonic transport on native.
 //!
 //! Requires `tonic-web-wasm-client` >= 0.9.1; 0.8.0 drops gRPC trailers at stream
 //! end, so streaming calls like `get_block_range` never complete.
@@ -24,8 +21,7 @@ pub fn set_request_handler(handler: Option<js_sys::Function>) {
     REQUEST_HANDLER.with(|slot| *slot.borrow_mut() = handler);
 }
 
-// wasm uses gRPC-web; native uses tonic's own transport. `LightClient` has the
-// same signature on both, so `chain_tip` / `tree_state` etc. need no cfg split.
+// `LightClient` has the same signature on both transports, so callers need no cfg split.
 #[cfg(target_arch = "wasm32")]
 pub type Transport = tonic_web_wasm_client::Client;
 
@@ -39,11 +35,8 @@ fn net_err(operation: &str, e: impl std::fmt::Display) -> RuntimeError {
     RuntimeError::with(ErrorCode::NetworkError, json!({ "operation": operation })).detail(e)
 }
 
-/// Wrap a network future in a timeout.
-///
-/// In wasm the host cannot cancel a hung call (no thread to interrupt, the
-/// Promise never rejects), so a gRPC call that never returns would wedge the
-/// wallet silently. `get_block_range` can hang this way.
+/// Wrap a network future in a timeout; in wasm the host cannot cancel a hung call
+/// (the Promise never rejects), which would wedge the wallet silently.
 #[cfg(target_arch = "wasm32")]
 pub async fn with_timeout<T>(
     fut: impl std::future::Future<Output = Result<T>>,
@@ -61,7 +54,6 @@ pub async fn with_timeout<T>(
     }
 }
 
-/// Native targets use the tokio timer.
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn with_timeout<T>(
     fut: impl std::future::Future<Output = Result<T>>,
@@ -85,7 +77,6 @@ fn timeout_err(operation: &str, timeout_ms: u32) -> RuntimeError {
 pub const DEFAULT_TIMEOUT_MS: u32 = 30_000;
 
 /// Build a lightwalletd client. `base_url` looks like `https://host:port`.
-///
 /// No network round trip; the connection happens on the first call.
 #[cfg(target_arch = "wasm32")]
 pub fn connect(base_url: &str) -> Result<LightClient> {
@@ -95,9 +86,7 @@ pub fn connect(base_url: &str) -> Result<LightClient> {
             json!({ "reason": "emptyUrl" }),
         ));
     }
-    // Plaintext would expose which addresses this wallet queries to anyone on the
-    // path. Require https so a custom node or mistyped fallback URL cannot
-    // silently downgrade.
+    // Require https: plaintext would expose which addresses this wallet queries.
     if !base_url.starts_with("https://") {
         return Err(RuntimeError::with(
             ErrorCode::LightwalletdNotConfigured,
@@ -138,7 +127,6 @@ pub async fn connect_native(base_url: &str) -> Result<LightClient> {
     Ok(CompactTxStreamerClient::new(channel))
 }
 
-/// Current chain tip height.
 pub async fn chain_tip(client: &mut LightClient) -> Result<u32> {
     let block = with_timeout(
         async {
@@ -162,12 +150,9 @@ pub async fn chain_tip(client: &mut LightClient) -> Result<u32> {
 
 /// Submit a signed transaction to lightwalletd.
 ///
-/// `SendTransaction` does not signal node errors via gRPC status: the call
-/// succeeds but `SendResponse.error_code != 0` means the node did not accept the
-/// transaction.
-///
-/// Definite rejections return `BROADCAST_REJECTED` (not retryable), other node
-/// errors `BROADCAST_OUTCOME_UNKNOWN`, transport failures `NETWORK_ERROR`.
+/// Node rejections arrive as `SendResponse.error_code != 0`, not a gRPC status.
+/// Definite rejections return `BROADCAST_REJECTED`, other node errors
+/// `BROADCAST_OUTCOME_UNKNOWN`, transport failures `NETWORK_ERROR`.
 pub async fn broadcast(client: &mut LightClient, tx_bytes: Vec<u8>) -> Result<()> {
     use zcash_client_backend::proto::service::RawTransaction;
 
@@ -189,8 +174,7 @@ pub async fn broadcast(client: &mut LightClient, tx_bytes: Vec<u8>) -> Result<()
     .await?;
 
     if resp.error_code != 0 {
-        // Nodes report a transaction they already hold as an error; the node
-        // having the tx is the outcome we want.
+        // A node that already holds the tx is the outcome we want.
         if broadcast_already_known(&resp.error_message) {
             return Ok(());
         }
@@ -211,9 +195,9 @@ pub async fn broadcast(client: &mut LightClient, tx_bytes: Vec<u8>) -> Result<()
     Ok(())
 }
 
-/// A rejection that a node also gives for a transaction it already mined or
-/// holds: its inputs are spent, possibly by this very transaction. Marking it
-/// rejected would show a failed send for a payment that went through.
+/// Replies a node also gives for a tx it already mined or holds (inputs spent,
+/// possibly by this very tx); treating them as rejected would show a failed send
+/// for a payment that went through.
 fn broadcast_outcome_ambiguous(message: &str) -> bool {
     let message = message.to_lowercase();
     [
@@ -237,19 +221,15 @@ fn broadcast_outcome_ambiguous(message: &str) -> bool {
 
 /// Only replies proving these bytes can never be mined count as a rejection.
 ///
-/// A rejection makes the host show a failure and the user resend with other
-/// notes (the stored original holds its notes until expiry). If the original
-/// actually propagated, both would be mined. So this is an allowlist:
-/// consensus-invalid (proof, signature, value, branch) or expired. Transient or
-/// policy replies (busy, mempool full, lagging, non-standard) are an unknown
-/// outcome: the tx stays pending until mined or expired.
+/// A rejection lets the user resend with other notes, and both could be mined if
+/// the original propagated. So this is an allowlist (consensus-invalid or expired);
+/// transient or policy replies stay an unknown outcome.
 fn broadcast_definitely_invalid(message: &str) -> bool {
     if broadcast_outcome_ambiguous(message) {
         return false;
     }
     let message = message.to_lowercase();
-    // zcashd: consensus reject reasons from main.cpp. `tx-expiring-soon` is policy
-    // (other nodes may still mine it) and is excluded.
+    // zcashd consensus reject reasons; `tx-expiring-soon` is policy and excluded.
     ["bad-txns-", "bad-tx-", "tx-overwinter-expired"]
         .iter()
         .any(|needle| message.contains(needle))
@@ -271,10 +251,7 @@ fn broadcast_already_known(message: &str) -> bool {
     .any(|needle| message.contains(needle))
 }
 
-/// Fetch the treestate at `height`.
-///
-/// Needed for account import: `AccountBirthday` requires the commitment tree state
-/// preceding the birthday height to compute witnesses for notes received later.
+/// Fetch the treestate at `height`; `AccountBirthday` needs the tree state preceding the birthday.
 pub async fn tree_state(client: &mut LightClient, height: u32) -> Result<TreeState> {
     let ts = with_timeout(
         async {
@@ -302,8 +279,7 @@ mod tests {
     };
     use crate::error::{ErrorCode, RuntimeError};
 
-    // A node gives these for our own tx once it is mined, as well as for a real
-    // conflict; they must stay "unknown" so scanning decides (mined or expired).
+    // A node also gives these for our own mined tx; they must stay unknown so scanning decides.
     #[test]
     fn spent_input_rejections_are_an_unknown_outcome_not_a_rejection() {
         for message in [
@@ -328,8 +304,6 @@ mod tests {
         }
     }
 
-    // Rejection is an allowlist: any uncertain reply is an unknown outcome and
-    // the tx stays pending until mined or expired.
     #[test]
     fn only_consensus_invalid_or_expired_replies_count_as_a_rejection() {
         for message in [
@@ -361,7 +335,6 @@ mod tests {
             "txn-already-known",
             "Transaction already in mempool",
             "transaction already in block chain",
-            // Zebra's wording (zebrad/src/components/mempool/error.rs).
             "transaction already exists in mempool",
             "transaction dropped because it is already queued for download",
         ] {

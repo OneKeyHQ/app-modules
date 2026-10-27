@@ -1,8 +1,5 @@
-//! In-memory compact block cache.
-//!
-//! `zcash_client_backend::sync::run` needs a `BlockCache`; upstream's `FsBlockDb`
-//! needs a filesystem. Compact blocks are transient (download, scan, discard);
-//! scan results are persisted by `zcash_client_sqlite`. Memory is bounded by the
+//! In-memory compact block cache for `zcash_client_backend::sync::run` (upstream's
+//! `FsBlockDb` needs a filesystem). Blocks are transient; memory is bounded by the
 //! `sync::run` batch size.
 
 use std::collections::BTreeMap;
@@ -96,14 +93,13 @@ impl BlockSource for MemoryBlockCache {
     where
         F: FnMut(CompactBlock) -> Result<(), error::Error<WalletErrT, Self::Error>>,
     {
-        // Hand out only a contiguous prefix starting at from_height; short reads
-        // are allowed. A gap would surface upstream as `BlockHeightDiscontinuity`,
-        // which `is_continuity_error()` treats as a reorg, so a block missing on
-        // the server would trigger a destructive rewind that hits the same gap again.
+        // Hand out only a contiguous prefix starting at from_height; short reads are
+        // allowed. A gap would surface upstream as `BlockHeightDiscontinuity`, which is
+        // treated as a reorg and would trigger a destructive rewind that hits the same gap.
         //
-        // Collect under the lock and release it before calling back: the callback
-        // writes the wallet and upstream may read this cache again on that path.
-        // `std::sync::Mutex` is not reentrant, so that would deadlock on wasm.
+        // Collect under the lock and release it before calling back: the callback writes
+        // the wallet and upstream may read this cache again, and `std::sync::Mutex` is
+        // not reentrant (deadlock on wasm).
         let selected: Vec<CompactBlock> = {
             let blocks = self
                 .blocks
@@ -129,9 +125,8 @@ impl BlockSource for MemoryBlockCache {
                 expect = next;
             }
 
-            // A missing start is an error, not an empty batch: upstream treats an
-            // empty batch as success without advancing the queue, so the caller
-            // would re-download the same range until it runs out of batches.
+            // A missing start is an error, not an empty batch: upstream treats an empty
+            // batch as success without advancing, so the range would be re-downloaded forever.
             if out.is_empty() && cap > 0 && !blocks.is_empty() {
                 return Err(error::Error::BlockSource(CacheError(format!(
                     "cache is missing start block {start}; cannot scan from later blocks"
@@ -214,7 +209,6 @@ mod tests {
         );
     }
 
-    /// A missing start must error; an empty batch would read as a successful scan.
     #[test]
     fn missing_start_is_an_error_not_an_empty_batch() {
         let c = MemoryBlockCache::new();

@@ -4,7 +4,7 @@ Rust chain libraries compiled to wasm. Each chain owns its Cargo workspace,
 lockfile, toolchain, patches and build outputs. These are not React Native packages
 and are not part of the root Yarn workspaces or their version/publish commands.
 
-- [Zcash](./zcash/README.md) ([release process](./zcash/RELEASING.md))
+- [Zcash](./zcash/README.md)
 - [Monero](./monero/README.md)
 
 Root shortcuts for Zcash (the direct commands in its README need no Node install):

@@ -1,17 +1,6 @@
-//! Transport to monerod.
+//! Transport to monerod: implements upstream's `HttpTransport` and only moves bytes.
 //!
-//! Upstream `monero-daemon-rpc` abstracts the network as a trait with one method,
-//! `post(route, body, size_limit) -> Vec<u8>`. Binary RPC and epee parsing stay
-//! upstream; this module only moves bytes.
-//!
-//! ## `Send`
-//!
-//! Upstream requires `post` to return `impl Send + Future`, but a browser `fetch`
-//! future is not `Send` (it holds JS values bound to their thread).
-//!
-//! Our wasm32-unknown-unknown build has no atomics or threads and runs in a single
-//! Worker, so `Send` has nothing to violate there. An asserting wrapper is sound on
-//! that target only; see the safety note on [`SingleThreaded`].
+//! A browser `fetch` future is not `Send`; `SingleThreaded` asserts it on wasm32, which is sound only without threads.
 
 use monero_daemon_rpc::{HttpTransport, MoneroDaemon};
 use monero_interface::InterfaceError;
@@ -19,19 +8,13 @@ use serde_json::json;
 
 use crate::error::{net_err, ErrorCode, Result, RuntimeError};
 
-/// Default per-request timeout.
-///
-/// A stall timeout, not a whole-batch deadline: a block stream that keeps progressing survives.
+/// Default per-request timeout; a stall timeout, not a whole-batch deadline.
 pub const DEFAULT_TIMEOUT_MS: u32 = 30_000;
 
-/// Response body cap, so a malicious node cannot exhaust the wasm heap with an
-/// oversized response. 32 MB: a batch in the spam-wall range can reach tens of MB.
+/// Response body cap (32 MB) so a malicious node cannot exhaust the wasm heap.
 pub const MAX_RESPONSE_BYTES: usize = 32 * 1024 * 1024;
 
-/// monerod expects a Content-Type per route.
-///
-/// `/json_rpc` rejects `application/octet-stream`, which surfaces as an unexplained
-/// connect failure. Binary routes end in `.bin`; the rest are JSON.
+/// monerod expects a Content-Type per route: `.bin` routes are binary, the rest JSON.
 fn content_type_for(route: &str) -> &'static str {
     if route.ends_with(".bin") {
         "application/octet-stream"
@@ -44,12 +27,8 @@ fn content_type_for(route: &str) -> &'static str {
 ///
 /// # Safety
 ///
-/// Compiled only for wasm32. This project builds that target without atomics or
-/// threads: the module runs in a single Worker, so no second thread can observe
-/// the future and `Send` constrains nothing.
-///
-/// If this crate ever supports wasm threads (atomics + SharedArrayBuffer), this
-/// wrapper must be removed first; otherwise it is a real data race.
+/// Compiled only for wasm32, built without atomics or threads, so no second thread
+/// can observe the future. Remove this wrapper before ever enabling wasm threads.
 #[cfg(target_arch = "wasm32")]
 struct SingleThreaded<F>(F);
 
@@ -69,11 +48,7 @@ impl<F: core::future::Future> core::future::Future for SingleThreaded<F> {
     }
 }
 
-/// Response size check shared by the host channel and in-wasm fetch.
-///
-/// Guards the wasm heap against oversized responses from a malicious node. Neither
-/// path can truncate while streaming, so this runs after receipt, but before the
-/// parser would double the footprint.
+/// Response size check shared by the host channel and in-wasm fetch; runs after receipt, before parsing.
 #[cfg(target_arch = "wasm32")]
 fn cap_response(
     bytes: Vec<u8>,
@@ -86,13 +61,8 @@ fn cap_response(
     Ok(bytes)
 }
 
-// Request handler supplied by the host.
-//
-// In-wasm `fetch` is subject to mixed-content blocking (plain-HTTP nodes) and CORS
-// (monerod sends no `Access-Control-Allow-Origin` by default), so few public nodes
-// are reachable from it. The extension background (with `host_permissions`), the
-// Electron main process and React Native native code are not bound by those rules.
-// Without a host handler, requests fall back to in-wasm fetch.
+// Request handler supplied by the host. In-wasm `fetch` is subject to mixed-content
+// blocking and CORS, which the host's own network stack is not.
 #[cfg(target_arch = "wasm32")]
 thread_local! {
     static HOST_HANDLER: std::cell::RefCell<Option<js_sys::Function>> =
@@ -152,10 +122,7 @@ async fn post_via_host(
     Ok(bytes.to_vec())
 }
 
-/// Reduce a JS exception to a readable message.
-///
-/// `JsValue`'s Debug output is useless for diagnosis; `Error.message` is where the
-/// browser puts the real cause (DNS failure, CORS rejection, connection reset).
+/// Reduce a JS exception to its `Error.message`; `JsValue`'s Debug output is not useful.
 #[cfg(target_arch = "wasm32")]
 fn describe_js(value: &wasm_bindgen::JsValue) -> String {
     use wasm_bindgen::JsValue;
@@ -166,12 +133,10 @@ fn describe_js(value: &wasm_bindgen::JsValue) -> String {
         .unwrap_or_else(|| format!("{value:?}"))
 }
 
-/// Per-request cap. A full batch can take over ten seconds on a slow node.
 #[cfg(target_arch = "wasm32")]
 const REQUEST_TIMEOUT_MS: u32 = 45_000;
 
-// The host enforces a per-chunk idle limit. Its backstop must allow a large
-// response to keep progressing on a slow link, matching the Worker relay.
+// Backstop only: the host enforces its own per-chunk idle limit.
 #[cfg(target_arch = "wasm32")]
 const HOST_REQUEST_TIMEOUT_MS: u32 = 10 * 60 * 1000;
 
@@ -190,8 +155,7 @@ impl FetchTransport {
         }
     }
 
-    /// Await one request with a cap. A stuck request holds the wallet DB, so every later
-    /// call gets WALLET_BUSY; on timeout it is abandoned to finish in the background.
+    /// Await one request with a cap; a stuck request holds the wallet DB (later calls get WALLET_BUSY).
     async fn post_inner(
         base_url: String,
         route: String,
@@ -235,8 +199,7 @@ impl FetchTransport {
             return cap_response(bytes, limit);
         }
 
-        // Tag each failure with its stage: a down node, missing CORS, a bad URL and an
-        // unreadable body need different fixes from the user.
+        // Tag each failure with its stage so the cause is identifiable.
         let fail = |stage: &str, detail: String| {
             InterfaceError::InterfaceError(format!("{url}: {stage}: {detail}"))
         };
@@ -268,8 +231,7 @@ impl FetchTransport {
 
         let response = JsFuture::from(promise)
             .await
-            // Usually the network is down or the node sent no CORS headers; the browser
-            // does not say which, so name both.
+            // The browser does not say whether the network is down or CORS headers are missing.
             .map_err(|e| {
                 fail(
                     "await response",
@@ -316,7 +278,7 @@ impl HttpTransport for FetchTransport {
     }
 }
 
-/// Native transport for local tests and diagnostics; reproduces browser issues under a debugger.
+/// Native transport for local tests and diagnostics.
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone, Debug)]
 pub struct NativeTransport {
@@ -333,8 +295,7 @@ impl NativeTransport {
                 let builder = reqwest::Client::builder().timeout(std::time::Duration::from_millis(
                     u64::from(DEFAULT_TIMEOUT_MS),
                 ));
-                // reqwest uses the macOS system proxy by default; curl and Node do not. Set this
-                // to rule out the proxy when a node answers curl instantly but times out here.
+                // reqwest uses the macOS system proxy by default; this rules it out.
                 let builder = if std::env::var_os("XMR_NATIVE_NO_PROXY").is_some() {
                     builder.no_proxy()
                 } else {
@@ -359,7 +320,6 @@ impl HttpTransport for NativeTransport {
         let content_type = content_type_for(route);
         let client = self.client.clone();
         async move {
-            // Keep the real cause: refused, 404, timeout and TLS failure otherwise look identical.
             let response = client
                 .post(&url)
                 .header("Content-Type", content_type)
@@ -367,8 +327,7 @@ impl HttpTransport for NativeTransport {
                 .send()
                 .await
                 .map_err(|e| {
-                    // reqwest's top-level message is just "error sending request"; the cause
-                    // (timeout, TLS, reset, DNS) is in the source chain.
+                    // The cause (timeout, TLS, reset, DNS) is in the source chain.
                     let mut chain = e.to_string();
                     let mut source = std::error::Error::source(&e);
                     while let Some(inner) = source {
@@ -411,8 +370,7 @@ pub type Daemon = MoneroDaemon<Transport>;
 
 /// Connect to a monerod node and return it with the network its genesis block identifies.
 ///
-/// The host supplies the URL; there is no built-in default. A default would decide for
-/// the user who sees their IP and queries, a privacy choice the runtime must not make.
+/// The host supplies the URL; there is no built-in default node, which would be a privacy choice for the user.
 pub async fn connect(base_url: &str) -> Result<(Daemon, monero_wallet::address::Network)> {
     if base_url.trim().is_empty() {
         return Err(RuntimeError::new(ErrorCode::NodeNotConfigured));
@@ -430,11 +388,8 @@ pub async fn connect(base_url: &str) -> Result<(Daemon, monero_wallet::address::
     Ok((daemon, network))
 }
 
-/// Genesis block hash per network.
-///
-/// The same keys derive the same output keys on all three networks: a testnet wallet
-/// on a mainnet node would scan and send real XMR. Address prefixes cannot catch
-/// this; the node's chain must be checked.
+/// Genesis block hash per network. The same keys work on all three networks, so the
+/// node's chain must be checked: a testnet wallet on a mainnet node would spend real XMR.
 const GENESIS_HASHES: [(monero_wallet::address::Network, &str); 3] = [
     (
         monero_wallet::address::Network::Mainnet,
@@ -458,8 +413,7 @@ pub(crate) fn network_for_genesis(hash: &[u8; 32]) -> Option<monero_wallet::addr
         .map(|(network, _)| *network)
 }
 
-/// Identify the node's chain by its genesis block. Unknown chains are refused: no
-/// node is better than one on an unknown chain.
+/// Identify the node's chain by its genesis block; unknown chains are refused.
 async fn node_network(daemon: &Daemon) -> Result<monero_wallet::address::Network> {
     use monero_daemon_rpc::prelude::*;
 
@@ -476,8 +430,7 @@ async fn node_network(daemon: &Daemon) -> Result<monero_wallet::address::Network
 }
 
 thread_local! {
-    /// URL of the connected node. The batch block fetch (blocks_bin) sends its own
-    /// requests, and `MoneroDaemon` does not expose its transport.
+    /// URL of the connected node, for `blocks_bin`, which sends its own requests.
     static CURRENT_NODE_URL: std::cell::RefCell<Option<String>> =
         const { std::cell::RefCell::new(None) };
 }
@@ -510,7 +463,6 @@ mod tests {
         assert_ne!(Network::Mainnet, Network::Stagenet);
     }
 
-    /// No built-in default node: it would decide for the user who sees their IP and queries.
     #[test]
     fn an_empty_node_url_is_refused_not_defaulted() {
         let e = futures_lite::future::block_on(connect("")).unwrap_err();
@@ -519,8 +471,6 @@ mod tests {
         assert_eq!(e.code, ErrorCode::NodeNotConfigured);
     }
 
-    /// The scheme must be explicit: `1.2.3.4:18081` would be treated as a relative path
-    /// and yield a malformed URL that fails far from the cause.
     #[test]
     fn the_node_url_must_carry_a_scheme() {
         for bad in ["1.2.3.4:18081", "node.example.com", "ftp://x"] {
@@ -529,8 +479,6 @@ mod tests {
         }
     }
 
-    /// The route decides Content-Type. The wrong one makes `/json_rpc` reject at
-    /// connect time, far from the cause.
     #[test]
     fn json_and_binary_routes_get_different_content_types() {
         assert_eq!(content_type_for("json_rpc"), "application/json");
@@ -544,7 +492,6 @@ mod tests {
 
     #[test]
     fn response_cap_never_exceeds_the_hard_limit() {
-        // A host value above the hard cap is clamped to it
         let requested = MAX_RESPONSE_BYTES * 4;
         assert_eq!(requested.min(MAX_RESPONSE_BYTES), MAX_RESPONSE_BYTES);
     }

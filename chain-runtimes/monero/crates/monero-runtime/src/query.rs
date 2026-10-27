@@ -1,7 +1,6 @@
 //! Balance, history and spendable-output queries.
 //!
-//! Paging, height filters and per-subaddress aggregation are indexed SQLite
-//! queries, so long histories are never loaded into memory.
+//! Paging and aggregation run as indexed SQLite queries.
 
 use monero_wallet::address::Network;
 use monero_wallet::WalletOutput;
@@ -11,10 +10,7 @@ use serde_json::{json, Value};
 use crate::error::{db_err, ErrorCode, Result, RuntimeError};
 use crate::wallet::Db;
 
-/// Consensus lock on **all** outputs: 10 confirmations.
-///
-/// Younger outputs cannot be used in a ring; nodes reject them.
-/// `additional_timelock` applies on top of this.
+/// Consensus lock on all outputs: 10 confirmations. `additional_timelock` applies on top.
 pub const COINBASE_AND_STANDARD_LOCK: u64 = 10;
 
 /// `CRYPTONOTE_MAX_BLOCK_NUMBER`: unlock values at or above it are Unix timestamps.
@@ -33,21 +29,17 @@ pub struct Balance {
     pub total_atomic: u128,
     /// Spendable now: past the 10-block lock and any extra timelock.
     pub unlocked_atomic: u128,
-    /// Outputs without a key image that appear in some ring. **May already be
-    /// spent** until the host supplies key images; outputs never seen in a ring
-    /// are certainly unspent and excluded.
+    /// Outputs without a key image that appear in some ring; may already be spent.
     pub unverifiable_atomic: u128,
     /// Change from own unconfirmed sends. Counted in total but locked, as in wallet2.
     pub pending_change_atomic: u128,
-    /// Unspent outputs lacking a key image. If > 0, compute key images before
-    /// sending (selection only uses outputs with one).
+    /// Unspent outputs lacking a key image; selection only uses outputs with one.
     pub outputs_without_key_image: u64,
 }
 
 impl Balance {
     pub fn to_json(&self) -> Value {
-        // Amounts cross the boundary as strings: piconero values exceed JS
-        // Number.MAX_SAFE_INTEGER.
+        // Strings: piconero values exceed JS Number.MAX_SAFE_INTEGER.
         json!({
             "totalAtomic": self.total_atomic.to_string(),
             "unlockedAtomic": self.unlocked_atomic.to_string(),
@@ -96,8 +88,7 @@ pub fn balance(db: &Db, identity_id: i64, chain_tip: Option<u64>) -> Result<Bala
         if no_key_image {
             b.outputs_without_key_image += 1;
         }
-        // Only outputs seen in a ring and lacking a key image are unverifiable;
-        // they may be spent, so they are not counted as unlocked.
+        // May be spent, so not counted as unlocked.
         if no_key_image && maybe_spent {
             b.unverifiable_atomic += amount;
             continue;
@@ -108,7 +99,7 @@ pub fn balance(db: &Db, identity_id: i64, chain_tip: Option<u64>) -> Result<Bala
             }
         }
     }
-    // Pending change is not in `outputs` until scanned, but belongs to the user.
+    // Pending change is not in `outputs` until scanned.
     let change: Vec<Option<String>> = db
         .conn()
         .prepare(
@@ -131,10 +122,8 @@ pub fn balance(db: &Db, identity_id: i64, chain_tip: Option<u64>) -> Result<Bala
 
 /// Whether an output is spendable now, as wallet2's `is_transfer_unlocked`.
 ///
-/// Requires both the 10-block lock and any additional timelock to have passed.
-/// `chain_tip` is the top block number. `additional_timelock` is raw: below 500M
-/// it is a height, otherwise a Unix timestamp compared against `now` (see
-/// `adjusted_time`); with no chain time (`None`) timestamp locks stay locked.
+/// `chain_tip` is the top block number. `additional_timelock` is raw: below 500M a
+/// height, otherwise a Unix timestamp compared against `now`; with `None` timestamp locks stay locked.
 pub fn is_unlocked(
     height: u64,
     additional_timelock: u64,
@@ -175,11 +164,8 @@ fn timestamp_lock_leeway(network: Network, height: u64) -> u64 {
     }
 }
 
-/// "Now" for timestamp locks.
-///
-/// wallet2 uses the node's `get_info.adjusted_time`; this recomputes it from the
-/// identity's latest stored block timestamps. With fewer than 60 stored there is
-/// no chain time (`None`): the local clock is never trusted for an unlock.
+/// "Now" for timestamp locks, recomputed from the latest 60 stored block timestamps.
+/// With fewer stored it is `None`: the local clock is never trusted for an unlock.
 pub fn adjusted_time(db: &Db, identity_id: i64) -> Result<Option<u64>> {
     let mut timestamps: Vec<u64> = db
         .conn()
@@ -217,10 +203,7 @@ fn daemon_adjusted_time(timestamps: &mut [u64]) -> u64 {
     current_ts.min(median_ts)
 }
 
-/// Spendable output **metadata**, without the deserialized crypto object.
-///
-/// Enough for selection and display; blobs are deserialized only when building
-/// the transaction.
+/// Spendable output metadata; blobs are deserialized only when building the transaction.
 #[derive(Debug, Clone)]
 pub struct SpendableRow {
     pub id: i64,
@@ -231,8 +214,7 @@ pub struct SpendableRow {
 
 /// Currently spendable outputs, largest first (fewer inputs, lower fee).
 ///
-/// Only outputs **with a key image**: without one we cannot tell whether it is
-/// already spent, and the node would reject a double spend.
+/// Only outputs with a key image: without one it may already be spent.
 pub fn spendable_rows(db: &Db, identity_id: i64, chain_tip: u64) -> Result<Vec<SpendableRow>> {
     let now = adjusted_time(db, identity_id)?;
     let network = db.network();
@@ -280,11 +262,8 @@ pub fn spendable_rows(db: &Db, identity_id: i64, chain_tip: u64) -> Result<Vec<S
 
 /// Deserializes an output blob into the monero-oxide object.
 ///
-/// **All cryptographic use goes through here.** The extracted columns on
-/// `outputs` are for filtering and display only, not a second source of truth.
-///
-/// An unreadable blob means a corrupt database; error out rather than skip,
-/// which would make funds silently vanish.
+/// All cryptographic use goes through the blob; the other `outputs` columns are for filtering and display.
+/// An unreadable blob errors out rather than being skipped, which would hide funds.
 pub fn load_output(db: &Db, output_id: i64) -> Result<WalletOutput> {
     let blob: Vec<u8> = db
         .conn()
@@ -310,7 +289,6 @@ pub fn load_output(db: &Db, output_id: i64) -> Result<WalletOutput> {
 
 /// Transaction history, paged, newest height first.
 pub fn history(db: &Db, identity_id: i64, limit: u32, offset: u32) -> Result<Value> {
-    // Cap the page size so a huge limit cannot load the whole history.
     let limit = limit.clamp(1, 500);
 
     let mut stmt = db
@@ -444,7 +422,6 @@ mod tests {
     ) -> i64 {
         let ki: Option<Vec<u8>> = with_key_image.then(|| {
             let mut k = vec![0u8; 32];
-            // Distinct key image per output so uniqueness issues do not mask bugs
             k[0] = (amount % 251) as u8;
             k[1] = (height % 251) as u8;
             k
@@ -469,8 +446,6 @@ mod tests {
 
     const MAIN: Network = Network::Mainnet;
 
-    /// wallet2::is_transfer_unlocked: locked while `height + 10 > current_height`,
-    /// where current_height is the chain length (tip + 1).
     #[test]
     fn the_ten_block_lock_is_enforced() {
         assert!(
@@ -488,8 +463,6 @@ mod tests {
         assert!(is_unlocked(100, 0, 110, None, MAIN));
     }
 
-    /// wallet2::is_tx_spendtime_unlocked: unlocked once
-    /// `current_height - 1 + 1 >= unlock_time`, i.e. tip + 1 >= unlock_time.
     #[test]
     fn additional_block_timelock_is_honoured() {
         assert!(!is_unlocked(100, 200, 150, None, MAIN));
@@ -502,15 +475,12 @@ mod tests {
             "unlocked at wallet2's unlock height"
         );
         assert!(is_unlocked(100, 200, 200, None, MAIN));
-        // Height locks ignore the clock
         assert!(!is_unlocked(100, 200, 198, Some(u64::MAX), MAIN));
-        // The 10-block lock still applies when the height lock is already past
         assert!(!is_unlocked(100, 50, 108, None, MAIN));
         assert!(is_unlocked(100, 50, 109, None, MAIN));
     }
 
-    /// wallet2::is_tx_spendtime_unlocked: `now + leeway >= unlock_time`, with a
-    /// 120 s leeway after the v2 fork and 60 s before it.
+    /// `now + leeway >= unlock_time`, with a 120 s leeway after the v2 fork and 60 s before it.
     #[test]
     fn timestamp_timelocks_unlock_at_the_leeway_boundary() {
         let t = 1_700_000_000;
@@ -550,26 +520,21 @@ mod tests {
             Some(t - 120),
             Network::Testnet
         ));
-        // The 10-block lock still applies to an expired timestamp lock
         assert!(!is_unlocked(h, t, h + 8, Some(t + 1), MAIN));
         assert!(is_unlocked(h, t, h + 9, Some(t + 1), MAIN));
-        // Timestamp boundary is unchanged at wallet2's first unlocked tip
         assert!(!is_unlocked(h, t, h + 9, Some(t - 121), MAIN));
         assert!(is_unlocked(h, t, h + 9, Some(t - 120), MAIN));
-        // Without chain time a timestamp lock stays locked, however old
         assert!(!is_unlocked(h, 500_000_000, h + 10, None, MAIN));
     }
 
     /// Matches monerod's `get_adjusted_time`: min(max ts + 120, median + 3660).
     #[test]
     fn adjusted_time_follows_monerod() {
-        // Regular 120 s blocks: the max-timestamp projection wins
         let mut regular: Vec<u64> = (0..60).map(|i| 1_000_000 + i * 120).collect();
         assert_eq!(
             daemon_adjusted_time(&mut regular),
             1_000_000 + 59 * 120 + 120
         );
-        // A far-future outlier is capped by the median projection
         let mut outlier: Vec<u64> = (0..60).map(|i| 1_000_000 + i * 120).collect();
         outlier[59] = 9_000_000;
         let median = (1_000_000 + 29 * 120) / 2 + (1_000_000 + 30 * 120) / 2;
@@ -603,7 +568,6 @@ mod tests {
         }
     }
 
-    /// Too few stored blocks for a median: no chain time, and no local clock.
     #[test]
     fn adjusted_time_needs_sixty_stored_blocks() {
         let (db, id) = db_with_identity();
@@ -613,8 +577,6 @@ mod tests {
         assert_eq!(adjusted_time(&db, id).unwrap(), Some(1_000_240));
     }
 
-    /// Fewer than 60 stored blocks: a long-expired timestamp lock stays locked
-    /// in balance and selection, while height locks still unlock.
     #[test]
     fn timestamp_locked_outputs_stay_locked_without_chain_time() {
         let (db, id) = db_with_identity();
@@ -643,7 +605,6 @@ mod tests {
         assert_eq!(spendable_rows(&db, id, 1_100).unwrap().len(), 2);
     }
 
-    /// Balance and selection judge timestamp locks against the chain's adjusted time.
     #[test]
     fn timestamp_locked_outputs_unlock_in_balance_and_selection() {
         let (db, id) = db_with_identity();
@@ -669,7 +630,6 @@ mod tests {
         assert_eq!(spendable_rows(&db, id, 1_100).unwrap().len(), 1);
     }
 
-    /// With an unknown chain tip the unlocked balance must be 0.
     #[test]
     fn unknown_chain_tip_means_nothing_is_spendable() {
         let (db, id) = db_with_identity();
@@ -679,9 +639,6 @@ mod tests {
         assert_eq!(b.unlocked_atomic, 0);
     }
 
-    /// Outputs without a key image seen in a ring **may be spent** and are
-    /// reported separately; never-ringed ones are certainly unspent (spending
-    /// requires a ring).
     #[test]
     fn only_outputs_seen_in_a_ring_are_pending_verification() {
         let (db, id) = db_with_identity();
@@ -705,7 +662,6 @@ mod tests {
         );
     }
 
-    /// Spent outputs drop out of every balance figure.
     #[test]
     fn spent_outputs_leave_the_balance() {
         let (db, id) = db_with_identity();
@@ -717,8 +673,6 @@ mod tests {
         assert_eq!(b.total_atomic, 0);
     }
 
-    /// An unconfirmed own send reports its broadcast time (not "now"), the
-    /// recorded amount, and failure.
     #[test]
     fn a_pending_send_reports_its_broadcast_time_amount_and_failure() {
         let (db, id) = db_with_identity();
@@ -736,7 +690,6 @@ mod tests {
         assert_eq!(item["outgoingAtomic"], "1234");
     }
 
-    /// History page size has a hard cap.
     #[test]
     fn history_limit_is_clamped() {
         let (db, id) = db_with_identity();

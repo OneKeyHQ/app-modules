@@ -1,16 +1,8 @@
 #!/usr/bin/env bash
 # Build the browser wasm packages.
 #
-# Prerequisites:
-#   1. wasm32-unknown-unknown target: rustup target add wasm32-unknown-unknown
-#   2. A clang that targets wasm32. Apple clang does not ("No available targets
-#      are compatible with triple wasm32-unknown-unknown"); use brew install llvm.
-#      (secp256k1-sys ships its own wasm sysroot; it only needs the compiler.)
-#   3. wasm-pack: cargo install wasm-pack
-#
-# Usage:
-#   bash scripts/build-wasm.sh            # release
-#   PROFILE=dev bash scripts/build-wasm.sh
+# Needs the wasm32-unknown-unknown target, wasm-pack, and a wasm32-capable clang (not Apple clang; brew install llvm).
+# Usage: bash scripts/build-wasm.sh, or PROFILE=dev bash scripts/build-wasm.sh
 
 set -euo pipefail
 
@@ -25,7 +17,6 @@ fi
 RUST_TOOLCHAIN="$(python3 -c 'import sys, tomllib; print(tomllib.load(open(sys.argv[1], "rb"))["toolchain"]["channel"])' "${ROOT}/rust-toolchain.toml")"
 rustup run "${RUST_TOOLCHAIN}" rustc --version
 
-# Find a clang that can compile for wasm32.
 pick_clang() {
   for c in "${CC_wasm32_unknown_unknown:-}" \
            /opt/homebrew/opt/llvm/bin/clang \
@@ -51,8 +42,7 @@ export AR_wasm32_unknown_unknown="${AR_wasm32_unknown_unknown:-$(dirname "${CLAN
 
 bash "${ROOT}/scripts/vendor-deps.sh" "$@"
 
-# With --mode no-install a missing wasm-opt is only an INFO line and the output
-# silently doubles in size. Release requires it.
+# With --mode no-install a missing wasm-opt is only an INFO line and the output doubles in size.
 if [ "${PROFILE}" = "release" ] && ! command -v wasm-opt >/dev/null 2>&1; then
   echo "✗ wasm-opt (Binaryen) not found; release output would be unoptimized" >&2
   exit 1
@@ -62,8 +52,7 @@ echo "==> wasm-pack build (${PROFILE})"
 cd "${ROOT}/crates/zcash-runtime"
 case "${PROFILE}" in
   release) rustup run "${RUST_TOOLCHAIN}" wasm-pack build --mode no-install --locked --target web --out-dir "${OUT}" --release ;;
-  # Optimized but keeps the name section, which wasm panic stacks need.
-  # --dev would make Halo2 proving unusably slow.
+  # Keeps the name section for panic stacks; --dev makes Halo2 proving unusably slow.
   profiling) rustup run "${RUST_TOOLCHAIN}" wasm-pack build --mode no-install --locked --target web --out-dir "${OUT}" --profiling ;;
   *) rustup run "${RUST_TOOLCHAIN}" wasm-pack build --mode no-install --locked --target web --out-dir "${OUT}" --dev ;;
 esac
@@ -71,8 +60,7 @@ esac
 echo "==> Artifacts"
 ls -lh "${OUT}"/*.wasm | awk '{print "   ", $9, $5}'
 
-# Always rebuild the keys package too, so the host never pairs a fresh runtime
-# with a stale keys build.
+# Rebuild keys too so the host never pairs a fresh runtime with a stale keys build.
 echo "==> Building onekey-zcash-keys"
 (cd "${ROOT}/crates/zcash-keys-runtime" && rustup run "${RUST_TOOLCHAIN}" wasm-pack build --mode no-install --locked --target web --out-dir "${ROOT}/pkg-keys" --release)
 echo "Artifacts: $(du -h "${ROOT}"/pkg/*.wasm "${ROOT}"/pkg-keys/*.wasm | tr '\n' ' ')"

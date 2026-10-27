@@ -1,12 +1,9 @@
 //! OneKey-owned record of node rejections.
 //!
-//! Everything else about a sent transaction lives in `zcash_client_sqlite`:
-//! the signed transaction is stored before broadcast, and stays in
-//! `v_transactions` as unmined (holding its notes) until it is mined or
-//! expires. The one fact the wallet schema cannot hold is that the trusted node
-//! definitively rejected it; that must stop any resend and show the send as
-//! failed. An unmined send that was not rejected stays pending until mined or
-//! expired; the host does not resubmit it.
+//! The wallet schema cannot hold that the trusted node definitively rejected a
+//! send; that must stop any resend and show the send as failed. An unmined send
+//! that was not rejected stays pending until mined or expired; the host does not
+//! resubmit it.
 
 use std::collections::HashSet;
 
@@ -26,13 +23,12 @@ const LIFECYCLE_MIGRATION_ID: Uuid = Uuid::from_u128(0x5be0af90_63f4_43ea_ae65_8
 const REJECTIONS_MIGRATION_ID: Uuid = Uuid::from_u128(0x0d3b6f2e_9a41_4c8e_b7d5_3e1f6a2c9b70);
 pub(crate) const TABLE: &str = "ext_onekey_tx_state";
 
-/// External migrations, in dependency order.
 pub fn migrations() -> Vec<Box<dyn RusqliteMigration<Error = WalletMigrationError>>> {
     vec![Box::new(LifecycleMigration), Box::new(RejectionsMigration)]
 }
 
-/// The original lifecycle table. Kept so databases that already applied it
-/// keep a consistent migration graph; `RejectionsMigration` replaces it.
+/// The original lifecycle table, kept so databases that applied it keep a
+/// consistent migration graph; `RejectionsMigration` replaces it.
 struct LifecycleMigration;
 
 impl schemerz::Migration<Uuid> for LifecycleMigration {

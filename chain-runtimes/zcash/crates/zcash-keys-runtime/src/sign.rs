@@ -1,6 +1,4 @@
 //! PCZT signing with host-supplied account keys.
-//!
-//! This crate also handles spending keys in `account_keys` and `transparent_send`.
 
 use pczt::roles::signer::Signer;
 use pczt::roles::verifier::{TransparentError, Verifier};
@@ -11,31 +9,21 @@ use crate::{
     error::{ErrorCode, KeysError, Result},
 };
 
-/// Whether a transparent input's signature commits to all outputs.
-///
-/// A non-`SIGHASH_ALL` signature lets anyone holding the signed transaction
-/// rewrite the recipients. All signing and verification paths share this check.
+/// Whether a transparent input is `SIGHASH_ALL`; any other type lets a holder of the signed tx rewrite recipients.
 pub(crate) fn is_sighash_all(input: &transparent::pczt::Input) -> bool {
     *input.sighash_type() == SighashType::ALL
 }
 
-/// Bundle types this crate can sign. Kept next to the implementation so they change together.
 pub const SIGN_ORCHARD: bool = true;
 pub const SIGN_SAPLING: bool = false;
 pub const SIGN_TRANSPARENT: bool = true;
 pub const SIGN_IRONWOOD: bool = true;
 
-/// Address indices to try when signing transparent inputs.
-///
-/// `pczt` does not expose each input's BIP-32 derivation path, so indices are
-/// tried in order. Upstream `sign` checks the derived pubkey against
-/// `script_pubkey`, so a wrong key fails instead of producing a bad signature.
-///
-/// Covers twice the default gap limit (20). It also bounds change address
-/// indices (see `transparent_send`): change beyond this range could not be signed.
+/// Address indices tried per input, since `pczt` hides derivation paths; upstream rejects a key that does
+/// not match `script_pubkey`. Also bounds change indices in `transparent_send`.
 pub(crate) const TRANSPARENT_SCAN_GAP: u32 = 40;
 
-/// Sign all transparent inputs; returns (signed count, last failure).
+/// Returns (signed count, last failure).
 fn sign_transparent_inputs(
     signer: &mut Signer,
     account_key: &AccountPrivKey,
@@ -48,7 +36,6 @@ fn sign_transparent_inputs(
 
     for index in 0..input_count {
         let mut done = false;
-        // Inputs may belong to the external or the internal scope; try both.
         for scope in [TransparentKeyScope::EXTERNAL, TransparentKeyScope::INTERNAL] {
             for i in 0..TRANSPARENT_SCAN_GAP {
                 let Some(child) = NonHardenedChildIndex::from_index(i) else {
@@ -75,11 +62,8 @@ fn sign_transparent_inputs(
     (signed, last_err)
 }
 
-/// Sign a PCZT with the account's Orchard spending key and transparent account key.
-///
-/// Signs Orchard/Ironwood spends and transparent inputs only. Sapling spends are
-/// unsupported (the ~50 MB Groth16 parameters are not shipped). Callers verify the
-/// PCZT against the reviewed payment first (`account_keys::sign_reviewed_pczt`).
+/// Signs Orchard/Ironwood spends and transparent inputs; Sapling is unsupported.
+/// Callers verify the PCZT against the reviewed payment first (`account_keys::sign_reviewed_pczt`).
 pub fn sign_pczt_with_account_keys(
     keys: &AccountSigningKeys,
     pczt_bytes: &[u8],
@@ -87,8 +71,7 @@ pub fn sign_pczt_with_account_keys(
     let pczt = pczt::Pczt::parse(pczt_bytes)
         .map_err(|e| KeysError::new(ErrorCode::PcztParseFailed).detail(format!("{e:?}")))?;
 
-    // Upstream `Signer::sign_*` leaves semantic checks to the caller. Require
-    // `SIGHASH_ALL` on every transparent input so signatures commit to all outputs.
+    // Require `SIGHASH_ALL` on every transparent input; upstream does not check.
     let pczt = Verifier::new(pczt)
         .with_transparent(|bundle| {
             match bundle
@@ -112,13 +95,10 @@ pub fn sign_pczt_with_account_keys(
     let mut signer = Signer::new(pczt)
         .map_err(|e| KeysError::new(ErrorCode::PcztSignFailed).detail(format!("{e:?}")))?;
 
-    // Orchard spend authorizing key, derived from the spending key.
     let ask = orchard::keys::SpendAuthorizingKey::from(keys.orchard());
 
-    // Shielded actions are signed best-effort: upstream rejects actions not owned
-    // by this account, and it is an error only if nothing is signed. Both pools are
-    // signed: post-NU6.3 spends use Ironwood, while migrations out of Orchard use
-    // Orchard, and one transaction can have both.
+    // Shielded actions are signed best-effort (upstream rejects foreign actions); error only if
+    // nothing is signed. Both pools are signed since one transaction can have Ironwood and Orchard.
     let (orchard_count, ironwood_count, transparent_count) = bundle_counts(pczt_bytes)?;
     let mut signed_any = false;
     let mut last_err: Option<String> = None;
@@ -171,14 +151,8 @@ pub fn sign_pczt_with_account_keys(
         .map_err(|e| KeysError::new(ErrorCode::PcztSignFailed).detail(format!("{e:?}")))
 }
 
-/// The copy of a PCZT sent to a hardware signer.
-///
-/// A subset of upstream `redact_pczt_for_signer`'s compact-view redaction:
-/// clears the Sapling `bsk` (the IO Finalizer sets it even on an empty bundle)
-/// and, in Orchard and Ironwood, the proof, `bsk`, spend witnesses and dummy
-/// spend keys. Wallet metadata, anchors and resolvable fields are kept as is.
-/// The host keeps the original and combines the device's result into it, so
-/// proving and extraction still have them.
+/// PCZT copy for a hardware signer: clears Sapling and Orchard/Ironwood `bsk`, proofs, spend
+/// witnesses and dummy spend keys. The host keeps the original to combine the device result into.
 pub fn redact_for_hardware_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>> {
     fn redact_orchard_protocol(mut bundle: pczt::roles::redactor::orchard::OrchardRedactor<'_>) {
         bundle.clear_zkproof();
@@ -199,9 +173,7 @@ pub fn redact_for_hardware_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>> {
         .map_err(|e| KeysError::new(ErrorCode::PcztParseFailed).detail(format!("{e:?}")))
 }
 
-/// Count signable items per bundle: (orchard, ironwood, transparent).
-///
-/// Ironwood and Orchard share Rust types but are separate PCZT bundles.
+/// Signable items per bundle: (orchard, ironwood, transparent).
 fn bundle_counts(pczt_bytes: &[u8]) -> Result<(usize, usize, usize)> {
     let pczt = pczt::Pczt::parse(pczt_bytes)
         .map_err(|e| KeysError::new(ErrorCode::PcztParseFailed).detail(format!("{e:?}")))?;

@@ -1,19 +1,7 @@
-//! # OneKey Zcash Keys
+//! Zcash key derivation, signing, and export of public viewing material. No storage, scanning, or network.
 //!
-//! Key derivation, signing, and export of public viewing material (UFVK /
-//! addresses). No storage, chain scanning, or network, so mobile builds avoid
-//! SQLite and the scan engine.
-//!
-//! ## Key handling
-//!
-//! - No seed or mnemonic crosses the wasm boundary. Software signing takes only
-//!   account-scoped keys: the 32-byte Orchard spending key (`m/32'/133'/account'`)
-//!   and the transparent account xprv (`m/44'/133'/account'`). Mainnet only.
-//! - Spending keys never cross the boundary outward; JS receives UFVKs, addresses,
-//!   and signed transactions.
-//! - Secret inputs, including the bindgen copies, are wrapped in `Zeroizing` and wiped after use.
-//! - The xprv is parsed without heap copies, and the parsed account keys are wiped on
-//!   drop (`account_keys::Wiped`). The host wipes the wasm stack after each call.
+//! No seed or mnemonic crosses the wasm boundary: software signing takes only the Orchard spending
+//! key and transparent account xprv. Secrets are zeroized and never returned to JS. Mainnet only.
 
 pub mod account_keys;
 pub mod error;
@@ -28,7 +16,6 @@ pub mod bindgen;
 
 pub use error::{ErrorCode, KeysError, Result};
 
-/// Pinned upstream dependency versions.
 pub fn dependency_versions() -> serde_json::Value {
     serde_json::json!({
         "zcash_keys": "0.16.1",

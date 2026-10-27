@@ -1,15 +1,9 @@
 //! Transaction history.
 //!
-//! Upstream `WalletRead::get_tx_history` is test-only (its return type lives in
-//! `testing`), so this reads the `v_transactions` view maintained by
-//! `zcash_client_sqlite`, as the official Android / iOS SDKs do.
+//! Reads the `v_transactions` view maintained by `zcash_client_sqlite`, as the official SDKs do.
 //!
-//! Column names are not checked at compile time: run the `history_smoke` test
-//! after upgrading `zcash_client_sqlite`. Failures are `DATABASE_ERROR` with
-//! `params.operation = "history"`.
-//!
-//! Returns neutral facts (deltas, change, note counts, timestamps); classifying
-//! and labelling transactions is up to the host.
+//! Column names are not checked at compile time; run `history_smoke` after upgrading
+//! `zcash_client_sqlite`. Failures are `DATABASE_ERROR` with `params.operation = "history"`.
 
 use serde_json::json;
 use zcash_address::unified::{self, Container, Encoding};
@@ -20,8 +14,7 @@ use crate::error::{ErrorCode, Result, RuntimeError};
 
 /// Account UUIDs are 16-byte BLOBs in the upstream schema, not text.
 ///
-/// Binding the hyphenated string matches no rows without any error, which is
-/// indistinguishable from an empty wallet.
+/// Binding the hyphenated string silently matches no rows.
 pub(crate) fn uuid_blob(account_uuid: &str) -> Result<Vec<u8>> {
     uuid::Uuid::parse_str(account_uuid)
         .map(|u| u.as_bytes().to_vec())
@@ -40,8 +33,7 @@ fn db_err(e: impl std::fmt::Display) -> RuntimeError {
     RuntimeError::with(ErrorCode::DatabaseError, json!({ "operation": "history" })).detail(e)
 }
 
-// List and detail share one projection: `row_to_json` has one shape, so a column
-// added to only one query would fail at runtime in the other.
+// List and detail share one projection because `row_to_json` has one shape.
 const HISTORY_ROW_SELECT: &str = "SELECT
          tx_summary.txid,
          tx_summary.mined_height,
@@ -243,22 +235,16 @@ fn row_to_json(row: &rusqlite::Row<'_>) -> rusqlite::Result<serde_json::Value> {
         "receivedNoteCount": row.get::<_, Option<i64>>(9)?.unwrap_or(0),
         "memoCount": row.get::<_, Option<i64>>(10)?.unwrap_or(0),
         "isShielding": row.get::<_, Option<bool>>(11)?.unwrap_or(false),
-        // Account-side amounts. Hosts show sends as spent - received - fee and
-        // self-transfers/shielding as received; balance_delta would show a
-        // shielding transaction as just its fee.
+        // Account-side amounts; balance_delta would show a shielding transaction as just its fee.
         "totalSpentZat": row.get::<_, Option<i64>>(12)?,
         "totalReceivedZat": row.get::<_, Option<i64>>(13)?,
-        // Exact upstream pool identifiers; the host aggregates as it needs.
         "poolIds": pool_ids,
-        // Signed account-owned value change for each exact pool. This cannot be
-        // recovered from the aggregate row after an Orchard-to-Ironwood move.
+        // Signed value change per pool; not recoverable from the aggregate after an Orchard-to-Ironwood move.
         "perPoolBalanceDeltaZat": per_pool_balance_delta_zat,
         // The trusted node definitively rejected it; it can never be mined.
         "rejected": row.get::<_, bool>(15)?,
         "recipient": recipient,
-        // Outputs sent to addresses outside this account. Zero with spends means
-        // an internal transfer, whether or not the fee is known; inferring from
-        // spent - received misreads self-transfers as sends when the fee is unknown.
+        // Outputs sent outside this account. Zero with spends means an internal transfer.
         "externalOutputCount": row.get::<_, i64>(17)?,
     }))
 }
@@ -294,7 +280,7 @@ pub fn details(conn: &rusqlite::Connection, account_uuid: &str, txid: &str) -> R
 /// Per-output breakdown of one transaction: outputs this account spent,
 /// received, and sent externally.
 ///
-/// Reads `v_tx_outputs`, the per-output view the official SDKs also use:
+/// Reads `v_tx_outputs`:
 ///
 /// - `received`: `to_account_uuid` is this account (`is_change` marks change)
 /// - `external`: sent by this account to an unknown or different account,
@@ -346,9 +332,7 @@ pub fn details_outputs(
             let from_acct: Option<Vec<u8>> = row.get(6).map_err(db_err)?;
             let payment_address: Option<String> = row.get(7).map_err(db_err)?;
             let created_locally: bool = row.get(8).map_err(db_err)?;
-            // Compact scanning also marks explicit self-payments as change.
-            // A recorded shielded recipient identifies a payment; actual change
-            // has no sent-note recipient address. Keep the scan flags intact.
+            // Compact scanning also marks explicit self-payments as change; real change has no recipient address.
             let is_change = is_change && (pool == 0 || payment_address.is_none());
             let address = payment_address.or(address);
 
@@ -386,9 +370,7 @@ pub fn details_outputs(
 
     let mut spent = Vec::new();
     {
-        // This account's received outputs spent by this transaction. Join on
-        // (pool, id_within_pool_table) = (pool, received_output_id);
-        // `v_received_output_spends` has no output_index.
+        // Join on (pool, id_within_pool_table) = (pool, received_output_id); `v_received_output_spends` has no output_index.
         let mut stmt = conn
             .prepare(
                 "SELECT ro.pool, ro.value, addr.address

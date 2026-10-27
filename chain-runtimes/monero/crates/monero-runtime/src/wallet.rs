@@ -1,12 +1,7 @@
 //! Wallet database handle and identity management.
 //!
-//! One identity = one view key pair = one host account. Identities **share** a
-//! SQLite file, each with its own scan progress.
-//!
-//! Unlike Zcash, whose scan queue is database-wide (the commitment tree needs
-//! contiguous scanning), Monero has no commitment tree, so **scan progress is
-//! per identity** (`scan_ranges.identity_id`) and a paused account never misses
-//! ranges scanned for another.
+//! One identity = one view key pair = one host account. Identities share a
+//! SQLite file; scan progress is per identity (`scan_ranges.identity_id`).
 
 use monero_wallet::{address::Network, ViewPair};
 use rusqlite::{params, Connection, OptionalExtension};

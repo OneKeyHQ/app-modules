@@ -9,10 +9,6 @@
 //! XMR_SPEND_PUB=<64 hex chars> XMR_VIEW_PRIV=<64 hex chars> XMR_BIRTHDAY=3000000 \
 //!   cargo test --test live_node -- --nocapture
 //! ```
-//!
-//! Unit tests use synthetic data; these exercise the scan loop checks and
-//! RingCT index derivation on the real chain, where bugs show up as missing
-//! funds or spurious reorgs rather than compile errors.
 
 use onekey_monero_runtime::{keys, network, scan, sync, wallet};
 
@@ -55,15 +51,8 @@ fn connects_and_reads_the_chain_tip() {
     });
 }
 
-/// **The key live test.** Scans a short range of real blocks and checks:
-///
-/// - blocks download and upstream accepts them as `ScannableBlock`
-/// - continuity checks raise no false reorgs on a valid chain
-/// - our independently derived RingCT cursor matches the node's claim
-///
-/// Upstream says the last field is unverifiable and clients must compute and
-/// compare it. A `RINGCT_INDEX_MISMATCH` here means **our** derivation is
-/// wrong, not a malicious node.
+/// Scans a short range of real blocks: no false reorgs, and the derived RingCT
+/// cursor matches the node's claim (a mismatch here means our derivation is wrong).
 #[test]
 fn scans_real_blocks_without_false_alarms() {
     let Some(url) = node() else {

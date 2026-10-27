@@ -45,8 +45,7 @@ futures-util.workspace = true
 sapling.workspace = true
 uuid.workspace = true
 
-# Native targets: add tonic transport (features are additive; wasm is unaffected)
-# so browser issues can be reproduced natively under a debugger.
+# Native only: tonic transport, to reproduce browser issues under a debugger.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tonic = { workspace = true, features = ["transport", "tls-ring", "tls-webpki-roots"] }
 tokio = { workspace = true }
@@ -77,8 +76,7 @@ time = { version = "0.3", features = ["wasm-bindgen"] }
 [dev-dependencies]
 futures = "0.3"
 
-# wasm-pack defaults to `wasm-opt -O`; -Oz shrinks further at the cost of build
-# time, with negligible runtime impact on this IO-bound workload.
+# -Oz shrinks further than wasm-pack's default -O, with negligible runtime impact.
 [package.metadata.wasm-pack.profile.release]
 # No --enable-simd: the curve libraries have no SIMD paths, so there is no
 # measurable gain, and it breaks old WebViews.

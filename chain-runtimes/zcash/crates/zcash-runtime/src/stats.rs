@@ -1,12 +1,9 @@
-//! Storage usage stats. Read-only, fixed SQL.
-//!
-//! Reports bytes per data group.
+//! Storage usage stats: read-only, fixed SQL, bytes per data group.
 //!
 //! There is deliberately no arbitrary-SQL entry point: one bad statement could
-//! delete anchors still needed for proving.
-//!
-//! Table and column names must match the migrated `zcash_client_sqlite` schema.
-//! A wrong column name can yield NULL under some aggregates instead of an error.
+//! delete anchors still needed for proving. Table and column names must match the
+//! migrated `zcash_client_sqlite` schema; a wrong column can yield NULL under some
+//! aggregates instead of an error.
 
 use crate::error::{ErrorCode, Result, RuntimeError};
 use rusqlite::Connection;
@@ -83,8 +80,7 @@ pub fn storage_stats(conn: &Connection) -> Result<String> {
         "scan": {
             "minHeight": opt_i64(conn, "SELECT MIN(height) FROM blocks", "minHeight")?,
             "maxHeight": opt_i64(conn, "SELECT MAX(height) FROM blocks", "maxHeight")?,
-            // Grows linearly with scanned blocks. Rows hold height/hash/time and
-            // per-pool tree sizes and action counts, not compact blocks.
+            // Grows linearly with scanned blocks; rows are small block metadata, not compact blocks.
             "blockRows": count(conn, "SELECT COUNT(*) FROM blocks", "blockRows")?,
             "rangeRows": count(conn, "SELECT COUNT(*) FROM scan_queue", "rangeRows")?,
         },
@@ -218,7 +214,6 @@ mod tests {
         let out = storage_stats(&conn).expect("storage stats");
         let v: Value = serde_json::from_str(&out).expect("valid JSON");
 
-        // An empty database still reports every field.
         for group in [
             "sqlite",
             "scan",

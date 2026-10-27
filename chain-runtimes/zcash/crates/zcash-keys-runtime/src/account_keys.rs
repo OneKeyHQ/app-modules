@@ -1,8 +1,6 @@
 //! Account-scoped software keys supplied by the host.
 //!
-//! The host derives the ZIP-32 Orchard account spending key (`m/32'/133'/account'`)
-//! and the BIP-44 transparent account key (`m/44'/133'/account'`) from its seed;
-//! no seed or mnemonic crosses this boundary. Mainnet only.
+//! Orchard key at `m/32'/133'/account'`, transparent key at `m/44'/133'/account'`; no seed crosses the boundary. Mainnet only.
 
 use std::ops::Deref;
 
@@ -22,15 +20,12 @@ use crate::{
 ///
 /// # Safety
 ///
-/// Implementors must be flat: no drop glue, pointers, or niches, so all-zero bytes
-/// are a valid value. `SpendingKey` is `[u8; 32]`; `AccountPrivKey` is a bip32
-/// `ExtendedPrivateKey` of `secp256k1::SecretKey([u8; 32])` and plain attributes.
+/// Implementors must be flat (no drop glue, pointers, or niches) so all-zero bytes are valid.
 pub(crate) unsafe trait FlatKey {}
 unsafe impl FlatKey for SpendingKey {}
 unsafe impl FlatKey for AccountPrivKey {}
 
-/// Wipes an upstream key that lacks `ZeroizeOnDrop` when dropped. Copies the
-/// compiler leaves in moved-from stack slots are outside its reach.
+/// Wipes a key lacking `ZeroizeOnDrop` on drop; moved-from stack copies are out of reach.
 pub(crate) struct Wiped<T: FlatKey>(T);
 
 impl<T: FlatKey> Wiped<T> {
@@ -55,8 +50,7 @@ impl<T: FlatKey> Drop for Wiped<T> {
     }
 }
 
-/// Spending keys for one account, wiped on drop. Only the xprv carries account
-/// metadata; `review::verify_signer` binds both keys to the reviewed UFVK.
+/// Spending keys for one account, wiped on drop. `review::verify_signer` binds both keys to the reviewed UFVK.
 pub struct AccountSigningKeys {
     params: Network,
     orchard: Wiped<SpendingKey>,
@@ -93,7 +87,6 @@ impl AccountSigningKeys {
         &self.transparent
     }
 
-    /// The UFVK these keys control, encoded exactly like `ufvkFromAccountKeys`.
     pub fn ufvk(&self) -> Result<String> {
         ufvk_from_parts(
             self.params,
@@ -103,7 +96,6 @@ impl AccountSigningKeys {
     }
 }
 
-/// The account-key APIs reject testnet.
 fn parse_mainnet(network: &str) -> Result<Network> {
     match keys::parse_network(network)? {
         Network::MainNetwork => Ok(Network::MainNetwork),
@@ -123,7 +115,6 @@ fn account_id(account_index: u32) -> Result<AccountId> {
     })
 }
 
-/// Parse a raw 32-byte Orchard spending key, rejecting keys upstream deems invalid.
 pub(crate) fn parse_orchard_sk(bytes: &[u8]) -> Result<Wiped<SpendingKey>> {
     let bytes: Zeroizing<[u8; 32]> = Zeroizing::new(bytes.try_into().map_err(|_| {
         KeysError::with(
@@ -136,10 +127,7 @@ pub(crate) fn parse_orchard_sk(bytes: &[u8]) -> Result<Wiped<SpendingKey>> {
         .ok_or_else(|| KeysError::new(ErrorCode::InvalidSpendingKey))
 }
 
-/// Transparent + Orchard UFVK, the same items the OneKey firmware returns.
-///
-/// Sapling is left out: this runtime can neither scan for nor spend it.
-/// Ironwood keys derive from the Orchard item.
+/// Transparent + Orchard UFVK, the same items the firmware returns. Sapling is omitted.
 pub(crate) fn ufvk_from_parts(
     params: Network,
     fvk: &FullViewingKey,
@@ -155,9 +143,7 @@ pub(crate) fn ufvk_from_parts(
     Ok(container.encode(&params.network_type()))
 }
 
-/// UFVK from the Orchard account spending key and the transparent account xpub.
-///
-/// Account setup needs no transparent secret: the xpub is public account material.
+/// Needs no transparent secret: the xpub is public.
 pub fn ufvk_from_account_keys(
     network: &str,
     orchard_sk: &[u8],
@@ -171,7 +157,6 @@ pub fn ufvk_from_account_keys(
     ufvk_from_parts(params, &FullViewingKey::from(&*orchard), &transparent)
 }
 
-/// Verify a PCZT against the reviewed payment and the signer's own UFVK, then sign it.
 pub fn sign_reviewed_pczt(
     network: &str,
     orchard_sk: &[u8],
@@ -185,7 +170,6 @@ pub fn sign_reviewed_pczt(
     sign::sign_pczt_with_account_keys(&keys, pczt_bytes)
 }
 
-/// Test-only key material derived from a seed, mirroring the host derivation.
 #[cfg(test)]
 pub(crate) mod test_keys {
     use super::*;
@@ -206,7 +190,6 @@ pub(crate) mod test_keys {
         state.finalize().as_bytes().try_into().unwrap()
     }
 
-    /// ZIP-32 Orchard hardened derivation, written out the way the host computes it.
     pub(crate) fn orchard_sk_at(seed: &[u8], path: &[u32]) -> [u8; 32] {
         let i = blake2b_512(b"ZcashIP32Orchard", &[seed]);
         let (mut sk, mut chain): ([u8; 32], [u8; 32]) =
@@ -220,7 +203,6 @@ pub(crate) mod test_keys {
         sk
     }
 
-    /// `m/32'/133'/account'`.
     pub(crate) fn orchard_sk(seed: &[u8], account: u32) -> [u8; 32] {
         orchard_sk_at(seed, &[32, 133, account])
     }
@@ -242,7 +224,6 @@ pub(crate) mod test_keys {
 
     pub(crate) fn account_xpub(seed: &[u8], account: u32) -> String {
         let key = account_priv_key(seed, account);
-        // depth || parent fingerprint || child number, then chain code || pubkey.
         let header = key.to_bytes()[..9].to_vec();
         let mut payload = XPUB_VERSION.to_vec();
         payload.extend(header);
@@ -250,7 +231,6 @@ pub(crate) mod test_keys {
         bs58::encode(payload).with_check().into_string()
     }
 
-    /// Oracle: the upstream seed-based USK, which this crate does not accept.
     pub(crate) fn usk(seed: &[u8], account: u32) -> UnifiedSpendingKey {
         UnifiedSpendingKey::from_seed(&MAIN_NETWORK, seed, AccountId::try_from(account).unwrap())
             .unwrap()
@@ -283,11 +263,9 @@ mod tests {
             .to_vec()
     }
 
-    /// Deterministic seeds of both lengths the transparent and Orchard derivations accept.
     fn deterministic_seeds(count: u32) -> Vec<Vec<u8>> {
         (0..count)
             .map(|i| {
-                // BIP-32 (transparent) accepts 16, 32 or 64 bytes; BIP-39 seeds are 64.
                 let len = [64usize, 32][i as usize % 2];
                 let mut seed = Vec::new();
                 let mut block = 0u32;
@@ -335,7 +313,6 @@ mod tests {
             new_fvk.to_bytes() == oracle_fvk.to_bytes(),
             "Orchard full viewing key must match the seed oracle"
         );
-        // ak, the SpendValidatingKey encoding, is the first 32 bytes of the FVK encoding.
         assert!(
             new_fvk.to_bytes()[..32] == oracle_fvk.to_bytes()[..32],
             "Spend validating key encoding must match the seed oracle"
@@ -386,8 +363,7 @@ mod tests {
         });
     }
 
-    /// ZIP-32 Orchard test vectors (orchard `test_vectors::zip32`, seed 0x00..0x1f):
-    /// pin the hand-written derivation the host mirrors.
+    /// ZIP-32 Orchard test vectors (seed 0x00..0x1f).
     #[test]
     fn orchard_derivation_matches_zip32_vectors() {
         let seed = (0u8..32).collect::<Vec<_>>();
@@ -423,7 +399,6 @@ mod tests {
             assert_eq!(e.params["byteLen"], len);
         }
 
-        // The xpub/xprv metadata must name the requested account.
         let e = ufvk_from_account_keys("main", &sk, &xpub, 1).unwrap_err();
         assert_eq!(e.code, ErrorCode::InvalidAccountXpub);
         let e = AccountSigningKeys::parse("main", &sk, &xprv, 1)
@@ -496,8 +471,7 @@ mod tests {
         }
     }
 
-    /// Hardware parity vectors from the independent firmware implementation:
-    /// fingerprint, Orchard FVK (96B), transparent pubkey (65B), and both receivers.
+    /// Parity vectors from the firmware implementation.
     #[test]
     fn hardware_parity_vectors() {
         use zcash_address::unified::{Container, Encoding, Fvk, Receiver, Ufvk};

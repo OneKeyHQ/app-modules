@@ -1,8 +1,7 @@
 //! Session state across calls.
 //!
-//! The wasm side holds no session state except the database connection and
-//! node client, which are too costly to reopen per call (migration checks).
-//! No caches, timers or background tasks: each host call runs to completion.
+//! Holds only the database connection and node client; no caches, timers or
+//! background tasks.
 
 use std::cell::{Cell, RefCell};
 
@@ -24,9 +23,8 @@ thread_local! {
     static BUSY: Cell<bool> = const { Cell::new(false) };
     static GENERATION: Cell<u64> = const { Cell::new(0) };
 
-    // The node client has its **own** generation. Switching nodes leaves DB
-    // and GENERATION untouched, so without it an in-flight tip fetch would
-    // restore the old node and route all later requests there.
+    // Separate from GENERATION: switching nodes leaves DB untouched, and an in-flight
+    // fetch must not restore the old node.
     static DAEMON_GENERATION: Cell<u64> = const { Cell::new(0) };
 }
 

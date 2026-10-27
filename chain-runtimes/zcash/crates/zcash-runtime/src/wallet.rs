@@ -1,7 +1,4 @@
-//! Opening and initializing the wallet database.
-//!
-//! Connects storage, builds the `WalletDb` and runs schema migrations. All
-//! wallet protocol logic comes from `zcash_client_sqlite` / `zcash_client_backend`.
+//! Opening and initializing the wallet database: storage, `WalletDb` and schema migrations.
 
 use std::collections::{BTreeSet, HashSet};
 
@@ -18,7 +15,6 @@ use crate::error::{ErrorCode, Result, RuntimeError};
 use crate::storage;
 use serde_json::json;
 
-/// The concrete `WalletDb` used by this runtime.
 pub type Db = WalletDb<rusqlite::Connection, Network, HostClock, ChaCha20Rng>;
 
 /// Parses the network name passed across the wasm boundary.
@@ -239,7 +235,6 @@ mod tests {
         assert_eq!(error.code, ErrorCode::DatabaseTooNew);
         assert_eq!(error.params["unknownMigrations"], 1);
         assert_eq!(error.detail.as_deref(), Some(newer.to_string().as_str()));
-        // No migration ran against the newer schema.
         let conn = rusqlite::Connection::open(&path).unwrap();
         assert_eq!(schema(&conn), before);
         drop(conn);

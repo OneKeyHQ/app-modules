@@ -1,11 +1,7 @@
 //! Error contract.
 //!
-//! The Rust side produces no user-facing text. The host receives a stable error
-//! code plus structured params and renders copy and i18n from the code. Text baked
-//! into wasm would need a rebuild and release (and an app-store review on mobile)
-//! for every wording change.
-//!
-//! ## Host usage
+//! No user-facing text: the host gets a stable error code plus structured params
+//! and renders copy from them.
 //!
 //! ```js
 //! try {
@@ -22,10 +18,7 @@
 //! }
 //! ```
 //!
-//! ## Evolution
-//!
-//! Error codes and param fields are append-only: never change the meaning of or
-//! remove an existing one, since host branching depends on them.
+//! Error codes and param fields are append-only; host branching depends on them.
 
 use serde_json::{json, Map, Value};
 use std::fmt;
@@ -33,7 +26,6 @@ use std::fmt;
 /// Stable error code. Hosts branch on this, never on `detail` text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorCode {
-    // ── Lifecycle ──
     /// `init()` not called; storage layer not installed.
     NotInitialized,
     /// The browser lacks the OPFS API the storage needs (an outdated WebView,
@@ -45,7 +37,6 @@ pub enum ErrorCode {
     /// `setLightwalletdUrl()` not called.
     LightwalletdNotConfigured,
 
-    // ── Input validation ──
     /// Network name is not "main" / "test". Params: `{ value }`
     InvalidNetwork,
     /// Database name is empty or contains a path separator. Params: `{ value }`
@@ -68,7 +59,6 @@ pub enum ErrorCode {
     /// Block height out of range. Params: `{ value }`
     InvalidBlockHeight,
 
-    // ── Wallet state ──
     /// Account not found. Params: `{ accountId }`
     AccountNotFound,
     /// No blocks synced yet; wallet summary unavailable.
@@ -76,7 +66,6 @@ pub enum ErrorCode {
     /// Insufficient funds. Params: `{ requiredZat, availableZat }` (when available)
     InsufficientFunds,
 
-    // ── External dependencies ──
     /// lightwalletd network error. Params: `{ operation }`
     NetworkError,
     /// Wallet database error (including schema migration failure). Params: `{ operation }`
@@ -86,16 +75,14 @@ pub enum ErrorCode {
     DatabaseTooNew,
     /// Chain reorg detected. Params: `{ atHeight, suggestedRewindHeight }`
     ///
-    /// A normal event, not a failure: blocks near the tip were replaced. The host
-    /// should `rewindTo` the suggested height and resume syncing.
+    /// Not a failure: the host should `rewindTo` the suggested height and resume.
     ReorgDetected,
     /// An async operation is in flight; the wallet cannot be switched or closed now.
     /// Params: `{ operation }`. With `reason: "pendingSend"`, `rescanAccount` waits
     /// for the account's unmined send before starting over at a later birthday.
     ///
-    /// Concurrency guard: swapping databases mid-operation would silently write
-    /// results to the wrong wallet. Hosts should serialize calls to one runtime or
-    /// retry after the current operation finishes.
+    /// Guards against swapping databases mid-operation, which would write results
+    /// to the wrong wallet.
     WalletBusy,
     /// Invalid scan priority name. Params: `{ value }`
     InvalidScanPriority,
@@ -112,8 +99,7 @@ pub enum ErrorCode {
     /// The node definitively judged the transaction consensus-invalid or expired; it
     /// can never be mined. Params: `{ errorCode }`; `detail` holds the node's message.
     ///
-    /// Unlike `NETWORK_ERROR`, this must not be retried as-is. The transaction is
-    /// already stored; its spent notes return only at the expiry height.
+    /// Unlike `NETWORK_ERROR`, do not retry as-is; the spent notes return only at the expiry height.
     BroadcastRejected,
     /// The node returned an error that does not prove the transaction can never be
     /// mined: it may already be mined or in the mempool (double spend, duplicate
@@ -236,8 +222,7 @@ pub type Result<T> = std::result::Result<T, RuntimeError>;
 
 /// JS shape: an `Error` carrying `code` / `params` / `detail`.
 ///
-/// `message` is just the error code; it is not user-facing text. Hosts map `code`
-/// through their own i18n table.
+/// `message` is the error code, not user-facing text.
 #[cfg(target_arch = "wasm32")]
 impl From<RuntimeError> for wasm_bindgen::JsValue {
     fn from(e: RuntimeError) -> Self {
@@ -260,12 +245,7 @@ impl From<RuntimeError> for wasm_bindgen::JsValue {
             set("detail", wasm_bindgen::JsValue::from_str(d));
         }
 
-        // Duplicate the same fields under `payload`.
-        //
-        // When the host forwards errors across processes or WebViews, its serializer
-        // only passes a fixed field allowlist that includes `payload` but not `params`
-        // or `detail`. The flat fields are this crate's contract for direct calls;
-        // `payload` carries them across that boundary.
+        // The host's cross-process serializer only passes `payload`, not `params`/`detail`.
         let payload = js_sys::Object::new();
         let pset = |k: &str, v: wasm_bindgen::JsValue| {
             let _ = js_sys::Reflect::set(&payload, &wasm_bindgen::JsValue::from_str(k), &v);

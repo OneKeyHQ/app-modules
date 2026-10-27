@@ -1,11 +1,8 @@
 //! Links the wasm SQLite build.
 //!
-//! `rusqlite` is used without `bundled` (wasm32 has no libc sysroot to compile
-//! SQLite's C sources), so libsqlite3-sys emits `-l sqlite3`. On wasm32 the library
-//! comes from `sqlite-wasm-rs` as `libwsqlite3.a`; this script copies it into
-//! OUT_DIR as `libsqlite3.a` and adds that to the search path, so no RUSTFLAGS are needed.
-//!
-//! Duplicate of `chain-runtimes/zcash/crates/zcash-runtime/build.rs`; keep them in sync.
+//! rusqlite is built without `bundled` on wasm32, so libsqlite3-sys emits `-l sqlite3`.
+//! This script copies `sqlite-wasm-rs`'s `libwsqlite3.a` into OUT_DIR as `libsqlite3.a`
+//! and adds it to the search path. Keep in sync with the zcash-runtime build.rs.
 
 use std::path::{Path, PathBuf};
 

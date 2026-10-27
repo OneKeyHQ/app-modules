@@ -1,35 +1,11 @@
 //! Scanning: feeds blocks to the monero-oxide `Scanner` and persists results to SQLite.
 //!
-//! ## Bounded steps
-//!
-//! Never loops to full sync. The caller passes a batch and gets one result; the
-//! host decides whether to continue, since a run-to-completion call cannot be
-//! interrupted, report progress, or yield the main thread on web and mobile.
-//!
-//! ## Three checks
-//!
-//! 1. **Block continuity**: `header.previous` must equal the recorded previous
-//!    hash. A mismatch is a reorg (or a lying node), reported as
-//!    `REORG_DETECTED` with the exact height.
-//!
-//! 2. **RingCT output index**: upstream `ScannableBlock` documents that
-//!    `output_index_for_first_ringct_output` cannot be verified and the client
-//!    must track and compare it. The cursor advances by the block's v2 output
-//!    count and the next block is checked against it. A wrong index picks the
-//!    wrong ring members and the transaction is rejected.
-//!
-//! 3. **Increasing heights within a batch**: out-of-order blocks are rejected,
-//!    not sorted, because an out-of-order peer is untrusted.
-//!
-//! ## Spend detection limits
-//!
-//! A view-only wallet cannot tell whether its outputs were spent: that needs
-//! key images, which need the private spend key. This is a protocol property.
-//!
-//! The host fills `outputs.key_image` via [`crate::spend::import_key_images`]
-//! on unlock; scanning matches known key images against transaction inputs.
-//! Outputs without a key image cannot be detected as spent, so the balance may
-//! be overstated; see [`ScanOutcome::outputs_without_key_image`].
+//! Each call scans one bounded batch; the host decides whether to continue. Checks:
+//! block continuity (`header.previous` vs the recorded hash, else `REORG_DETECTED`), the
+//! RingCT output index cursor (upstream cannot verify it; a wrong index picks wrong ring
+//! members), and strictly increasing heights (out-of-order blocks are rejected, not sorted).
+//! Outputs without a key image cannot be detected as spent; see
+//! [`ScanOutcome::outputs_without_key_image`].
 
 use std::collections::{HashMap, HashSet};
 
@@ -46,10 +22,7 @@ use crate::error::{db_err, ErrorCode, Result, RuntimeError};
 use crate::schema::REORG_WINDOW_BLOCKS;
 use crate::wallet::Db;
 
-/// Suggested rewind depth on a detected reorg.
-///
-/// Monero reorgs rarely exceed a few blocks. Too deep forces a long rescan; too
-/// shallow may not pass the fork point. The host should increase it on repeated failures.
+/// Suggested rewind depth on a detected reorg; the host should increase it on repeated failures.
 pub const REORG_REWIND_BLOCKS: u64 = 10;
 
 #[derive(Debug, Default, Clone)]
@@ -99,10 +72,7 @@ impl ScanOutcome {
     }
 }
 
-/// Number of RingCT outputs in the block.
-///
-/// Only v2 transactions produce RingCT outputs; the miner transaction counts
-/// and comes first. Used to derive global output indices independently of the node.
+/// Number of RingCT outputs in the block (v2 transactions only; the miner transaction counts and comes first).
 fn ringct_output_count(block: &ScannableBlock) -> u64 {
     fn count(tx: &Transaction<impl monero_wallet::transaction::PotentiallyPruned>) -> u64 {
         match tx {
@@ -115,15 +85,9 @@ fn ringct_output_count(block: &ScannableBlock) -> u64 {
 
 /// Key images of all inputs in the block, with the txid of their transaction.
 ///
-/// Txids come from `block.block.transactions`, which matches
-/// `block.transactions` one to one and in order (upstream
-/// `expand_to_scannable_block` fetches bodies from that list).
-///
-/// Not `Transaction::hash()`: these are `Pruned` transactions, and a V2 hash
-/// needs the prunable hash that was pruned.
-///
-/// A length mismatch means an inconsistent block and is rejected; misalignment
-/// would attribute spends to the wrong transaction.
+/// Txids come from `block.block.transactions`, which matches `block.transactions` one to one;
+/// `Transaction::hash()` is unavailable on pruned V2 transactions. A length mismatch is
+/// rejected: misalignment would attribute spends to the wrong transaction.
 fn key_images_in(block: &ScannableBlock) -> Result<Vec<([u8; 32], [u8; 32])>> {
     if block.block.transactions.len() != block.transactions.len() {
         return Err(RuntimeError::with(
@@ -153,9 +117,7 @@ fn key_images_in(block: &ScannableBlock) -> Result<Vec<([u8; 32], [u8; 32])>> {
     Ok(out)
 }
 
-/// Fee of each transaction in the block, from its RingCT data. Pre-RingCT
-/// (V1) transactions are skipped: no OneKey account predates RingCT.
-///
+/// Fee of each transaction from its RingCT data; pre-RingCT (V1) transactions are skipped.
 /// Length mismatches are reported by `key_images_in`; skip here.
 fn tx_fees_in(block: &ScannableBlock) -> Vec<([u8; 32], u64)> {
     block
@@ -278,18 +240,9 @@ fn ring_matches<'a>(
 
 /// Transaction public keys `(R, additional)` by txid.
 ///
-/// ## Why kept separately
-///
-/// monero-oxide folds the R + output index + subaddress derivation into a
-/// `key_offset` scalar on `WalletOutput` and drops R. Software signing only
-/// needs `spend + key_offset`.
-///
-/// Firmware does not accept `key_offset`; it derives the one-time key and key
-/// image from `real_out_tx_key` itself, since accepting a host-computed offset
-/// would let a malicious host make the device sign with any key.
-///
-/// R is only available at scan time; recovering it later needs a full rescan
-/// or asking the node for the transaction by txid, which leaks interest in it.
+/// monero-oxide folds R into `key_offset` and drops it. Firmware does not accept a
+/// host-computed `key_offset` (a malicious host could make it sign with any key), so R is
+/// kept; recovering it later needs a rescan or a txid query that leaks interest.
 fn tx_public_keys_in(block: &ScannableBlock) -> Vec<([u8; 32], Vec<u8>, Option<Vec<u8>>)> {
     // Length mismatches are reported by `key_images_in`; skip here.
     let mut out = Vec::new();
@@ -307,9 +260,7 @@ fn tx_public_keys_in(block: &ScannableBlock) -> Vec<([u8; 32], Vec<u8>, Option<V
 }
 
 /// Extracts `(R, additional)` from a transaction `extra`, each as concatenated 32-byte keys.
-///
-/// A pure function so it can be tested against real chain data without
-/// building a full `ScannableBlock`.
+/// Pure, so it can be tested against real chain data.
 fn tx_public_keys_from_extra(extra: &[u8]) -> Option<(Vec<u8>, Option<Vec<u8>>)> {
     fn flatten(points: &[monero_wallet::ed25519::Point]) -> Vec<u8> {
         let mut out = Vec::with_capacity(points.len() * 32);
@@ -422,8 +373,7 @@ pub fn scan_blocks(
                 RuntimeError::with(ErrorCode::ScanFailed, json!({ "height": height }))
                     .detail(format!("{e:?}"))
             })?
-            // Timelocks are evaluated by the query layer against the current
-            // height; dropping locked outputs here would lose them for good.
+            // Timelocks are checked by the query layer; dropping locked outputs here would lose them.
             .ignore_additional_timelock();
 
         if !outputs.is_empty() {
@@ -472,9 +422,8 @@ pub fn scan_blocks(
             spend_fees.extend(tx_fees_in(block));
         }
 
-        // Cursor base: the previous block's cursor, else the node's claimed
-        // start. With neither, stay unknown; falling back to 0 would raise a
-        // false RINGCT_INDEX_MISMATCH on the next block.
+        // Cursor base: the previous block's cursor, else the node's claimed start. Never fall
+        // back to 0: it raises a false RINGCT_INDEX_MISMATCH on the next block.
         let next_ringct = prev
             .and_then(|(_, _, n)| n)
             .or(block.output_index_for_first_ringct_output)
@@ -746,9 +695,8 @@ fn persist(
     tx.commit().map_err(|e| db_err("commitScan", e))
 }
 
-/// Burning bug: the same one-time key in another output. Only one is spendable,
-/// so only the first seen is counted, never overstating the balance. A rescan
-/// of the same output is not a duplicate.
+/// Burning bug: the same one-time key in another output. Only one is spendable, so only
+/// the first seen counts. A rescan of the same output is not a duplicate.
 fn is_burning_duplicate(
     conn: &rusqlite::Connection,
     identity_id: i64,
@@ -1031,12 +979,8 @@ mod tests {
         assert!(tx_public_keys_from_extra(&[]).is_none());
     }
 
-    /// An unknown RingCT cursor is stored as NULL, not 0.
-    ///
-    /// Starting mid-chain at a block without RingCT outputs leaves
-    /// `output_index_for_first_ringct_output` as None. Storing 0 would raise a
-    /// false `RINGCT_INDEX_MISMATCH` against an honest node on the next block;
-    /// NULL skips the check until a real anchor is known.
+    /// An unknown RingCT cursor is stored as NULL, not 0; 0 would raise a false
+    /// `RINGCT_INDEX_MISMATCH` against an honest node on the next block.
     #[test]
     fn an_unknown_ringct_cursor_is_stored_as_null_not_zero() {
         let (db, id) = db_with_identity();

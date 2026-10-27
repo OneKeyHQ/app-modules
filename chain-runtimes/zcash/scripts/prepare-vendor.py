@@ -25,7 +25,6 @@ def file_hashes(directory):
 
 def extract_crate(archive, temporary, identity):
     # Accept only ordinary files/directories under the expected crate root.
-    # This also works on macOS Python versions without tarfile's data filter.
     with tarfile.open(archive) as contents:
         for member in contents:
             path = PurePosixPath(member.name)

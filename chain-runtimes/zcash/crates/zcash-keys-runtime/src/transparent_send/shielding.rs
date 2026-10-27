@@ -14,10 +14,7 @@ use zcash_primitives::transaction::builder::{BuildConfig, Builder, BundlePadding
 use zcash_primitives::transaction::fees::fixed::FeeRule as FixedFeeRule;
 use zcash_protocol::memo::MemoBytes;
 
-/// Entry points this module provides, kept next to the implementation.
-///
-/// Hosts must check these capabilities before calling: older wasm builds lack
-/// the exports entirely, so a direct call fails with `undefined is not a function`.
+/// Hosts check these before calling: older wasm builds lack the exports entirely.
 pub const SHIELD_CREATE_WITH_ACCOUNT_XPRV: bool = true;
 pub const SHIELD_SIGN_WITH_ACCOUNT_XPRV: bool = true;
 
@@ -38,7 +35,7 @@ fn create_with_public_key(plan: &TransactionPlan, key: &AccountPubKey) -> Result
         BuildConfig::Standard {
             sapling_anchor: None,
             orchard_anchor: None,
-            // No shielded spends: the empty anchor needs no scanned commitment tree.
+            // No shielded spends, so the empty anchor needs no commitment tree.
             ironwood_anchor: plan
                 .recipients
                 .iter()
@@ -88,9 +85,7 @@ fn create_with_public_key(plan: &TransactionPlan, key: &AccountPubKey) -> Result
             .add_transparent_output(&address, output.value)
             .map_err(failure)?;
     }
-    // The plan's fee, not a recomputed ZIP-317 one: change below the dust
-    // threshold is folded into the fee at quote time, and the ZIP-317 rule
-    // rejects that surplus as ChangeRequired after the user has approved it.
+    // Use the plan's fee: sub-dust change was folded into it at quote time, and ZIP-317 would reject that with ChangeRequired.
     let parts = builder
         .build_for_pczt(rand::rngs::OsRng, &FixedFeeRule::non_standard(plan.fee))
         .map_err(failure)?;
@@ -145,8 +140,7 @@ fn create_with_public_key(plan: &TransactionPlan, key: &AccountPubKey) -> Result
         .map_err(failure)
 }
 
-/// Builds an unproved PCZT from an account xpub. Device derivation metadata
-/// covers every selected input and the transparent change output.
+/// Unproved PCZT with device derivation metadata on every input and the change output.
 pub fn create_with_account_xpub(
     request_json: &str,
     account_xpub: &str,
@@ -219,8 +213,7 @@ pub fn create_with_account_xpub(
     updated.serialize().map_err(failure)
 }
 
-/// Combines a device's redacted signatures with the approved original, verifies
-/// every signature against the exact request, then finalizes transparent spends.
+/// Verifies the device's signatures against the exact request before finalizing.
 pub fn combine_hardware_signed(
     request_json: &str,
     account_xpub: &str,
@@ -349,8 +342,7 @@ fn validate_ironwood(bundle: &orchard::pczt::Bundle, plan: &TransactionPlan) -> 
                 .ok_or_else(mismatch)?;
             approved_memo = expected.remove(index).2;
         }
-        // A matching commitment alone does not ensure the recipient can decrypt the note.
-        // Dummy output ciphertexts may be randomized by the upstream builder.
+        // A matching commitment does not prove the recipient can decrypt the note; dummy outputs are skipped.
         if value.inner() != 0 {
             let note = orchard::Note::from_parts(
                 recipient,
@@ -498,7 +490,7 @@ fn sign_with_key(
         pczt::Pczt::parse(original).map_err(failure)?,
     )?;
     let pczt = pczt::Pczt::parse(pczt).map_err(failure)?;
-    // V6 deliberately excludes anchors from the effects hash (ZIP 374).
+    // V6 excludes anchors from the effects hash (ZIP 374).
     if pczt.ironwood().anchor() != original.ironwood().anchor()
         || pczt.transparent().inputs().len() != plan.inputs.len()
     {
@@ -647,8 +639,7 @@ mod tests {
             .unwrap()
     }
 
-    // 100000 in, 83000/88000 out leaves sub-dust change that the quote folds into
-    // the fee; building must keep that fee instead of failing with ChangeRequired.
+    // 100000 in, 83000/88000 out: sub-dust change folds into the fee instead of ChangeRequired.
     #[test]
     fn a_quote_with_sub_dust_change_folded_into_the_fee_still_builds() {
         let fingerprint = "00".repeat(32);
@@ -878,9 +869,6 @@ mod tests {
         }
     }
 
-    // The device signs a copy without Sapling `bsk` (set by the IO Finalizer
-    // even on the empty bundle) or proving fields, which signing doesn't need;
-    // combining its result into the original gives the same transaction.
     #[test]
     fn hardware_signs_a_copy_without_sapling_or_proving_fields() {
         for transparent_destination in [false, true] {
@@ -954,7 +942,6 @@ mod tests {
         for send_max in [false, true] {
             let request = request(send_max).to_string();
             let original = create(&request).unwrap();
-            // Proof generation is independent of the transparent signing authorization.
             sign(&request, &original, &original).unwrap();
         }
     }
@@ -990,11 +977,7 @@ mod tests {
         }
     }
 
-    /// `pcztSignWithAccountKeys` signs host-supplied PCZTs, and upstream `Signer`
-    /// leaves semantic checks to the caller, so it must enforce `SIGHASH_ALL` itself.
-    ///
-    /// The positive case also pins that a pool with nothing signable is fine: the
-    /// shielding PCZT's Ironwood actions are outputs only.
+    /// Upstream `Signer` does not check semantics, so the generic signer must enforce `SIGHASH_ALL`.
     #[test]
     fn generic_signer_requires_sighash_all_on_transparent_inputs() {
         let keys = crate::account_keys::test_keys::signing_keys(&SEED, 0);
@@ -1035,8 +1018,6 @@ mod tests {
         all
     }
 
-    /// The xprv path and the seed-derived USK produce identical transparent
-    /// signatures (RFC 6979), each valid for its input's sighash.
     #[test]
     fn account_keys_and_seed_oracle_sign_the_same_transparent_inputs() {
         use crate::account_keys::test_keys;

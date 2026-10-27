@@ -1,7 +1,6 @@
 name: runtime-checks
 
-# Runs each runtime's scripts/ci.sh on pull requests. Checks only; publishing
-# stays manual in publish-runtime-packages.yml, whose build tools this mirrors.
+# Runs each runtime's scripts/ci.sh on pull requests; mirrors the build tools of publish-runtime-packages.yml.
 on:
   pull_request:
     paths:

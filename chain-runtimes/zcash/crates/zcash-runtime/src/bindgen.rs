@@ -1,20 +1,10 @@
 //! Host-facing JS/TS interface.
 //!
-//! ## Conventions
-//!
 //! - Parameters and return values are only string / number / boolean / JSON string.
-//! - No Rust object handles are handed to JS for lifetime management.
-//! - A thrown `Error` carries `code` / `params` / `detail`.
-//!   Branch on `code` (stable error code); fill i18n placeholders from `params`;
-//!   `detail` is for logs only. No user-facing text is produced here; that belongs to the host.
+//! - A thrown `Error` carries `code` / `params` / `detail`; see `error`.
 //! - Every call is a complete round trip: no background tasks, no timers.
 
-// ── Stable contract vs diagnostics ──────────────────────────────────────
-//
-// `diag*` methods are debugging tools, not a stable contract: their signatures may
-// change or they may disappear. The prefix makes dependence on them visible at the call site.
-//
-// All other methods form the wallet contract; changes require a version bump.
+// `diag*` methods are not a stable contract; all others are, and changes require a version bump.
 
 use wasm_bindgen::prelude::*;
 
@@ -29,8 +19,6 @@ use crate::{
 pub fn set_request_handler(handler: Option<js_sys::Function>) {
     network::set_request_handler(handler);
 }
-
-// ── Lifecycle ───────────────────────────────────────────────────────────
 
 /// Installs the storage layer. Must be awaited once before any other call. Idempotent.
 #[wasm_bindgen(js_name = init)]
@@ -105,7 +93,6 @@ pub fn close_wallet() -> Result<(), JsValue> {
 
 /// Configures the lightwalletd endpoint, e.g. `https://host:port`.
 ///
-/// The host chooses the endpoint; this runtime hardcodes no server address.
 /// The endpoint must support gRPC-web. CORS is required only without a host transport.
 #[wasm_bindgen(js_name = setLightwalletdUrl)]
 pub fn set_lightwalletd_url(base_url: &str) -> Result<(), JsValue> {
@@ -113,11 +100,8 @@ pub fn set_lightwalletd_url(base_url: &str) -> Result<(), JsValue> {
     Ok(())
 }
 
-// ── Chain info ──────────────────────────────────────────────────────────
-
 /// Current chain tip height. Requires only `setLightwalletdUrl`, not an open wallet.
 ///
-/// Lets the host pick a new account's birthday before the database exists.
 #[wasm_bindgen(js_name = chainTip)]
 pub async fn chain_tip() -> Result<u32, JsValue> {
     Ok(runtime::with_client(|mut client| async move {
@@ -135,8 +119,6 @@ pub async fn chain_tip_at(base_url: String) -> Result<u32, JsValue> {
     let mut client = network::connect(&base_url)?;
     Ok(network::chain_tip(&mut client).await?)
 }
-
-// ── Accounts ────────────────────────────────────────────────────────────
 
 /// Imports a view-only account (UFVK) and returns its UUID.
 ///
@@ -191,7 +173,6 @@ pub fn account_by_ufvk(ufvk: String) -> Result<String, JsValue> {
 
 /// Per-account sync status, derived from the account birthday and the database's remaining scan ranges.
 ///
-/// Global progress misleads in a shared database: adding an account makes all accounts look unsynced.
 ///
 /// Returns block heights, not a percentage: the upstream progress ratio is over notes in a moving
 /// window and never reaches 100%.
@@ -224,8 +205,6 @@ pub fn account_balance(
         account::balance_json(db, &account_uuid, policy)
     })?)
 }
-
-// ── Scanning ────────────────────────────────────────────────────────────
 
 /// One-time sync preparation: downloads subtree roots for all three pools and updates the chain tip.
 ///
@@ -364,8 +343,6 @@ pub async fn sync_step(
     Ok(progress)
 }
 
-// ── Transaction history ─────────────────────────────────────────────────
-
 /// Paged transaction history as a JSON array. Unmined first, then by height descending.
 ///
 /// Returns neutral facts (value delta, change flag, note counts, timestamps), no
@@ -383,17 +360,13 @@ pub fn transaction_history(
     })?)
 }
 
-// ── Rescan ──────────────────────────────────────────────────────────────
-
 /// Rewinds the wallet to a height so later syncs rescan that range.
 ///
 /// Destructive: scan results above the height are discarded. Returns the actual height
 /// rewound to (upstream may go further back to a commitment tree checkpoint).
 #[wasm_bindgen(js_name = rewindTo)]
 pub fn rewind_to(height: u32) -> Result<u32, JsValue> {
-    // No idle gate: this is how the wallet follows a reorg, and refusing because a
-    // transaction is unmined would pin the account to an abandoned chain.
-    // User-triggered rescans use `queueRescanFrom`, which only requeues ranges.
+    // No idle gate: refusing while a transaction is unmined would pin the account to an abandoned chain.
     let rewound = runtime::with_db(|db| sync::rewind_to(db, height))?;
     runtime::reclaim_storage(storage::RECLAIM_PAGES_AFTER_DELETE);
     Ok(rewound)
@@ -431,8 +404,6 @@ pub async fn rescan_account(account_uuid: String, from_height: u32) -> Result<St
     )
 }
 
-// ── Send ────────────────────────────────────────────────────────────────
-//
 // Flow: pcztCreate → pcztProve → (keys package) pcztSign → pcztSubmit
 //
 // Proving and signing may happen in either order (they touch different PCZT parts),
@@ -498,9 +469,8 @@ pub fn pczt_combine(original: Vec<u8>, signed: Vec<u8>) -> Result<Vec<u8>, JsVal
 
 /// Durability barrier after an irreversible step.
 ///
-/// A barrier failure means persistence is unconfirmed, not that the step failed. Both callers
-/// are past the point of no return, so the outcome travels in `params` instead of being replaced
-/// by a generic storage error that would make the host retry or show an on-chain tx as failed.
+/// A failure means persistence is unconfirmed, not that the step failed; callers are past the
+/// point of no return, so a generic storage error would make the host retry or show a sent tx as failed.
 async fn barrier_after_irreversible(params: serde_json::Value) -> Result<(), crate::RuntimeError> {
     storage::durability_barrier().await.map_err(|error| {
         crate::RuntimeError::with(crate::ErrorCode::FinalizeOutcomeUnknown, params).detail(error)
@@ -603,12 +573,9 @@ pub async fn broadcast_transaction(txid: String) -> Result<(), JsValue> {
     Ok(result?)
 }
 
-// ── Storage and diagnostics ─────────────────────────────────────────────
-
 /// Deletes a wallet database file. Irreversible.
 ///
-/// The database is a derived cache: UFVKs and birthdays are kept by the host, so deleting
-/// only forces a rescan. Pending transactions do not block deletion.
+/// The database is a derived cache; deleting only forces a rescan.
 ///
 /// Closes the database first if it is the one currently open.
 /// Returns `true` if deleted, `false` if it did not exist.

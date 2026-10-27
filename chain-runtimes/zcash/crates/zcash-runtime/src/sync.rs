@@ -1,13 +1,9 @@
 //! Chain scanning with bounded progress.
 //!
-//! `zcash_client_backend::sync::run` loops until fully synced (`batch_size` only
-//! sizes each batch), so callers cannot interrupt, observe progress, or yield the
-//! main thread. This module drives the upstream public APIs in two parts:
+//! Upstream `sync::run` loops until fully synced, so this module drives the upstream APIs in two parts:
 //!
 //! - [`prepare`]: one-off setup (subtree roots, chain tip). Slow; once per sync.
 //! - [`step`]: scans at most `max_batches` batches, then returns progress.
-//!
-//! The host decides whether to call again.
 
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
@@ -37,14 +33,12 @@ use crate::network::LightClient;
 use crate::wallet::Db;
 
 /// Bound speculative scanning to the earlier Ironwood / Orchard tail, capped at 30 days.
-/// `pick_range` also floors the cut at the upstream ChainTip start. Note-shard
-/// completion and reorg safety can extend this window.
+/// Note-shard completion and reorg safety can extend this window.
 const FAST_WINDOW_MAX_BLOCKS: u32 = 34_560;
 const FAST_WINDOW_REORG_MARGIN: u32 = 200;
 
-/// Keep upstream Verify / FoundNote / OpenAdjacent handling. Only partition ChainTip:
-/// its suffix runs in the fast lane, its prefix joins Historic in ascending order.
-/// Keep the original priority on returned ranges for progress attribution.
+/// Keeps upstream Verify / FoundNote / OpenAdjacent handling; only ChainTip is split into a
+/// fast-lane suffix and a Historic prefix. Returned ranges keep their original priority.
 fn pick_range(
     suggested: &[ScanRange],
     preferred: Option<ScanPriority>,
@@ -84,8 +78,7 @@ fn pick_range(
             }
         })
         .min_by_key(|r| {
-            // Upstream orders equal-priority ranges by height as well. In particular,
-            // Historic and demoted ChainTip ranges must share one ascending lane.
+            // Historic and demoted ChainTip ranges share one ascending lane.
             r.block_range().start
         })
 }
@@ -120,10 +113,8 @@ fn window_start(db: &mut Db) -> Result<BlockHeight> {
             .max(tip.saturating_sub(FAST_WINDOW_MAX_BLOCKS))
             .min(tip.saturating_sub(FAST_WINDOW_REORG_MARGIN));
 
-        // A newly discovered note can span the cut. Complete its entire shard before
-        // moving on, even when its below-window ranges still have ChainTip priority
-        // and therefore cannot be promoted to FoundNote by upstream. Repeat because
-        // extending one pool's window can expose an overlapping shard in the other.
+        // A new note can span the cut: complete its shard, repeating because extending
+        // one pool's window can expose an overlapping shard in the other.
         loop {
             let before = start;
             for pool in ["orchard", "ironwood"] {
@@ -182,8 +173,7 @@ fn roots_cover(db: &mut Db, state: &ChainState) -> Result<bool> {
     .map_err(|e: rusqlite::Error| db_err("fastWindowRoots", e))
 }
 
-/// When the server's roots lag, use upstream's original ChainTip start until
-/// sequential scanning has filled the gap. Never retry the impossible jump forever.
+/// When the server's roots lag, fall back to upstream's ChainTip start until sequential scanning fills the gap.
 fn guard_fast_range(
     db: &mut Db,
     suggested: &[ScanRange],
@@ -251,7 +241,6 @@ pub fn parse_priority(name: &str) -> Result<Option<ScanPriority>> {
 /// Suggested rewind depth on reorg.
 ///
 /// Too deep forces a long rescan, too shallow may not pass the fork point.
-/// Hosts may increase it on repeated failures.
 const REORG_REWIND_BLOCKS: u32 = 10;
 
 fn net_err(operation: &str, e: impl std::fmt::Display) -> RuntimeError {
@@ -393,7 +382,6 @@ pub async fn step(
 
     let mut batches_done = 0u32;
     let mut blocks_scanned = 0u64;
-    // Per-phase timings: in the browser slow download and slow scan look identical.
     let (mut ms_download, mut ms_treestate, mut ms_scan) = (0.0f64, 0.0f64, 0.0f64);
     let (mut scanned_from, mut scanned_to) = (None::<u32>, None::<u32>);
     let mut scanned_priority: Option<String> = None;
@@ -438,11 +426,8 @@ pub async fn step(
 
         let t_start = now_ms();
 
-        // Download: on failure retry the same batch once, then halve, down to 32 blocks.
-        //
-        // In the 2022 spam range (heights ~1.71M-1.95M) a 500-block batch can be
-        // tens of MB and never finish on slow links. The successful size is
-        // remembered across calls and grown back after successes.
+        // On failure retry the same batch once, then halve down to 32 blocks (500 blocks
+        // can be tens of MB in the 2022 spam range). The working size is remembered.
         const MIN_DOWNLOAD_BATCH: u32 = 32;
         thread_local! {
             static DOWNLOAD_BATCH_HINT: std::cell::Cell<u32> =
@@ -479,8 +464,7 @@ pub async fn step(
                 }
             }
         };
-        // Grow one step only after three consecutive full batches at the remembered
-        // size, so the hint does not oscillate back into timeouts.
+        // Grow only after three consecutive full batches, to avoid oscillating back into timeouts.
         if attempt_len < initial_len {
             DOWNLOAD_BATCH_HINT.with(|h| h.set(attempt_len));
             DOWNLOAD_BATCH_STREAK.with(|s| s.set(0));
@@ -524,15 +508,14 @@ pub async fn step(
         batches_done += 1;
     }
 
-    // Compact blocks lack full outgoing amounts, fees and memos. Enrich only on
-    // historic or lane-less steps to keep the per-turn network budget bounded.
+    // Compact blocks lack outgoing amounts, fees and memos; enrich only on historic or
+    // lane-less steps to bound the per-turn network budget.
     let enhancement = if preferred.is_none() || preferred == Some(ScanPriority::Historic) {
         enhance_transactions(db, client, active_ufvks).await
     } else {
         Ok(0)
     };
 
-    // Re-query to report remaining work for the host progress bar.
     let remaining = db
         .suggest_scan_ranges()
         .map_err(|e| db_err("suggestScanRanges", e))?;
@@ -547,7 +530,6 @@ pub async fn step(
         "blocksScanned": blocks_scanned,
         "remainingBlocks": remaining_blocks,
         "remainingRanges": remaining.len(),
-        // Range and priority actually scanned, so the host attributes progress to the right lane.
         "scannedFrom": scanned_from,
         "scannedTo": scanned_to,
         "scannedPriority": scanned_priority,
@@ -558,8 +540,7 @@ pub async fn step(
     .to_string())
 }
 
-// Decrypts with active identities only; upstream decrypt_and_store_transaction
-// would try every stored UFVK, including paused accounts.
+// Decrypts with active identities only; upstream would try every stored UFVK, including paused accounts.
 
 async fn enhance_transactions(
     db: &mut Db,
@@ -696,10 +677,8 @@ fn parse_enhancement(data: &[u8], branch: BranchId, expected: TxId) -> Result<Tr
 /// Scans a batch of blocks inline and stores the results, without upstream
 /// `scan_cached_blocks`.
 ///
-/// `scan_cached_blocks` hands trial decryption to rayon (`Tasks for ()` does not
-/// override `run_task`). On single-threaded wasm32 the pool has no workers, so
-/// `BatchReceiver::into_results()` blocks forever at the first block with shielded
-/// outputs. `scanning::scan_block` decrypts inline without forking upstream.
+/// `scan_cached_blocks` uses rayon, which has no workers on single-threaded wasm32 and
+/// blocks forever at the first block with shielded outputs; `scanning::scan_block` decrypts inline.
 fn scan_blocks_inline<IvkTag>(
     params: &zcash_protocol::consensus::Network,
     cache: &MemoryBlockCache,
@@ -819,9 +798,7 @@ fn orchard_only_ufvk(
 
 /// Sync completeness for a single account. No network requests.
 ///
-/// All accounts in a shared database share one scan queue, so whole-database
-/// progress is misleading per account. Only pending ranges above this account's
-/// birthday count; ranges below it belong to other accounts' history.
+/// Only pending ranges above this account's birthday count; the scan queue is shared.
 pub fn account_status(db: &Db, account_uuid: &str) -> Result<String> {
     let account_id = crate::account::parse_account_id(db, account_uuid)?;
     let birthday = u32::from(
@@ -847,7 +824,6 @@ pub fn account_status(db: &Db, account_uuid: &str) -> Result<String> {
 
     let (chain_tip, fully_scanned) = scan_heights(db)?;
 
-    // Scanned height = lowest pending height for this account, else the chain tip.
     let scanned_to = lowest_pending.or(chain_tip);
 
     Ok(json!({
@@ -923,8 +899,7 @@ fn now_ms() -> f64 {
 
 /// Anchor at `start - 1`, but not below Sapling activation.
 ///
-/// lightwalletd has no treestate below it, and its error reply hangs the wasm
-/// gRPC call forever instead of failing, so clamp before requesting.
+/// lightwalletd has no treestate below it and its error reply hangs the wasm gRPC call.
 fn anchor_height(params: &zcash_protocol::consensus::Network, start: BlockHeight) -> u32 {
     let sapling = params
         .activation_height(NetworkUpgrade::Sapling)
@@ -940,9 +915,8 @@ const DOWNLOAD_SOFT_BUDGET_MS: f64 = 30_000.0;
 /// Stream a block range into the cache; returns the number of blocks stored
 /// (a contiguous prefix).
 ///
-/// Each stream item has its own DEFAULT_TIMEOUT_MS stall timeout. A stall before
-/// any block arrives is an error (caller retries or halves); a later stall, like
-/// the budget, truncates.
+/// Each stream item has its own DEFAULT_TIMEOUT_MS stall timeout. A stall before any block
+/// is an error; a later stall, like the budget, truncates.
 
 async fn download_batch(
     client: &mut LightClient,
@@ -1041,12 +1015,9 @@ fn check_block_sequence(
 
 /// Rewind the wallet to `height` so later syncs rescan above it.
 ///
-/// Destructive: scan results above the height (notes, witnesses, commitment tree
-/// checkpoints) are discarded. Broadcast transactions are unaffected on chain,
-/// but local unconfirmed records may be lost.
-///
-/// Returns the actual height, which may be lower than requested because of
-/// checkpoint positions.
+/// Destructive: notes, witnesses and commitment tree checkpoints above the height are
+/// discarded, and local unconfirmed records may be lost. Returns the actual height,
+/// which may be lower because of checkpoint positions.
 pub fn rewind_to(db: &mut Db, height: u32) -> Result<u32> {
     let target = BlockHeight::from_u32(height);
     let actual = db
@@ -1057,9 +1028,8 @@ pub fn rewind_to(db: &mut Db, height: u32) -> Result<u32> {
 
 /// Re-queues an inclusive block range without truncating cached wallet state.
 ///
-/// Used when a paused UFVK becomes active again: the shared scan queue may have advanced
-/// past its pause point. The host passes the first height to trial-decrypt again, with a
-/// reorg margin applied.
+/// Used when a paused UFVK becomes active again, since the shared scan queue may have
+/// advanced past its pause point.
 pub fn queue_rescan_from(db: &mut Db, from_height: u32) -> Result<String> {
     let Some(tip) = db
         .chain_height()
@@ -1185,10 +1155,8 @@ mod tests {
     fn anchor_never_precedes_sapling_activation() {
         for net in [Network::MainNetwork, Network::TestNetwork] {
             let sapling = u32::from(net.activation_height(NetworkUpgrade::Sapling).unwrap());
-            // Far below Sapling: must clamp to activation or gRPC hangs
             assert_eq!(anchor_height(&net, BlockHeight::from_u32(1)), sapling);
             assert_eq!(anchor_height(&net, BlockHeight::from_u32(sapling)), sapling);
-            // Normally start - 1
             let h = sapling + 1000;
             assert_eq!(anchor_height(&net, BlockHeight::from_u32(h)), h - 1);
         }

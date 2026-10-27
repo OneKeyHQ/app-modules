@@ -456,13 +456,11 @@ mod tests {
         assert!(signer_account_mismatch(sign_with(
             &[8; 32], 0, &bytes, &json
         )));
-        // Wrong-account keys, each self-consistent with their own account index.
         for account in [1, (1 << 31) - 1] {
             assert!(signer_account_mismatch(sign_with(
                 &seed, account, &bytes, &json
             )));
         }
-        // Mixed accounts: the Orchard key of account 0 with the transparent key of account 1.
         for (orchard_account, transparent_account) in [(0, 1), (1, 0)] {
             let mixed = account_keys::AccountSigningKeys::parse(
                 "main",
@@ -509,9 +507,7 @@ mod tests {
         )));
     }
 
-    /// Re-applies each spend authorization signature to the unsigned PCZT, where
-    /// upstream verifies it against the action's randomized key `rk`. Returns the
-    /// signed (pool, action) positions.
+    /// Verifies each spend auth signature against the action's `rk`; returns signed (pool, action) positions.
     fn verified_signatures(unsigned: &[u8], signed: &pczt::Pczt) -> Vec<(bool, usize)> {
         let signatures = extract_orchard_spend_auth_signatures(signed);
         let mut signer = Signer::new(pczt::Pczt::parse(unsigned).unwrap()).unwrap();
@@ -531,7 +527,6 @@ mod tests {
             .collect()
     }
 
-    /// Account keys and the upstream seed-derived USK authorize the same spends.
     #[test]
     fn account_keys_and_seed_oracle_sign_the_same_reviewed_pczt() {
         let seed = [7u8; 32];

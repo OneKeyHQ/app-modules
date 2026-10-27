@@ -1,21 +1,10 @@
 //! Host-facing wasm interface.
 //!
-//! ## Conventions
-//!
-//! - Every return value is a JSON string for the host to `JSON.parse`. Errors are
-//!   JSON too (`{ code, params, detail }`), so the host needs no separate Error path.
-//! - Amounts are always strings: piconero values exceed JS `Number.MAX_SAFE_INTEGER`,
-//!   and numbers would silently lose precision.
-//! - Key material goes in, never out: the BIP-32 key and the view key may be
-//!   passed in but are never returned. The spend key is reduced from the BIP-32
-//!   key inside each export that needs it, so it never crosses this boundary.
-//! - Secret parameters are owned `String`s wrapped in `Zeroizing`, wiping the
-//!   bindgen allocation itself; a `&str` would leave the input in freed memory.
-//!
-//! ## No scheduling here
-//!
-//! When to scan, how much, and how to back off on failure belong to the host. Each
-//! export is one complete round trip and never loops.
+//! Returns are JSON strings, errors included (`{ code, params, detail }`). Amounts are
+//! strings: piconero values exceed `Number.MAX_SAFE_INTEGER`. Key material goes in, never
+//! out; the spend key is reduced from the BIP-32 key inside each export that needs it, and
+//! secret parameters are `Zeroizing` owned `String`s so the bindgen allocation is wiped.
+//! Scheduling belongs to the host; each export is one round trip and never loops.
 
 use wasm_bindgen::prelude::*;
 
@@ -62,24 +51,19 @@ pub fn close_wallet() -> std::result::Result<(), JsValue> {
     Ok(())
 }
 
-/// Set the node URL; an empty string disables it. No built-in default: one would
-/// decide for the user who sees their IP and queries.
+/// Set the node URL; an empty string disables it. There is no built-in default.
 ///
-/// The old node is dropped before connecting the new one: a replaced or disabled
-/// node must receive no further requests, even if the new one fails to connect.
-/// If calls overlap, the last one wins.
+/// The old node is dropped before connecting the new one, so a replaced node gets no
+/// further requests. If calls overlap, the last one wins.
 #[wasm_bindgen(js_name = setNodeUrl)]
 pub async fn set_node_url(url: &str) -> std::result::Result<(), JsValue> {
     runtime::select_node(url).await?;
     Ok(())
 }
 
-/// Fetch the chain tip. Does not require an open wallet DB: account creation needs
-/// it for the birthday before the DB exists.
+/// Fetch the chain tip. Does not require an open wallet DB (account creation needs the birthday first).
 ///
-/// Returns `{ height, network }`, where `network` is the node's chain (by genesis
-/// block). There is no wallet DB to compare against yet, so the host must check it
-/// matches the wallet being created before setting the birthday.
+/// Returns `{ height, network }`; the host must check `network` matches the wallet being created.
 #[wasm_bindgen(js_name = chainTip)]
 pub async fn chain_tip() -> std::result::Result<String, JsValue> {
     let tip: u64 = runtime::with_daemon(|daemon| async move {
@@ -151,8 +135,7 @@ pub fn remove_account(uuid: &str) -> std::result::Result<String, JsValue> {
 
 /// Delete the whole wallet DB file (app reset, storage rebuild). Irreversible.
 ///
-/// Does not open the DB, so unsupported-version or corrupt DBs can still be deleted.
-/// Closes the DB first if it is the one currently open.
+/// Does not open the DB, so unsupported or corrupt DBs can be deleted; closes it first if open.
 #[wasm_bindgen(js_name = deleteWallet)]
 pub async fn delete_wallet(db_name: String) -> std::result::Result<String, JsValue> {
     if runtime::open_db_name().as_deref() == Some(db_name.as_str()) {
@@ -184,8 +167,6 @@ pub fn update_chain_tip(account_id: i64, tip: u64) -> std::result::Result<String
 }
 
 /// One bounded step: scan at most `maxBlocks` blocks and return progress.
-///
-/// Never loops to completion; the host decides whether to call again.
 #[wasm_bindgen(js_name = syncStep)]
 pub async fn sync_step(account_id: i64, max_blocks: u64) -> std::result::Result<String, JsValue> {
     let progress = runtime::with_db_and_daemon(|mut db, daemon| async move {
@@ -242,12 +223,9 @@ pub fn transaction_details(
 
 /// Import key images so spend detection works.
 ///
-/// Call as early as possible after unlock. Until then the balance is too high: a
-/// view-only wallet cannot detect spends, so spent outputs still look unspent. This
-/// only affects blocks scanned afterwards; earlier spends need a rewind and rescan.
-///
-/// Takes the account's BIP-32 key (as `deriveAccount`); the spend key is reduced
-/// here and wiped after use.
+/// Call as early as possible after unlock: until then the balance is too high, and spends
+/// in earlier blocks need a rewind and rescan. Takes the account's BIP-32 key (as
+/// `deriveAccount`); the spend key is reduced here and wiped after use.
 #[wasm_bindgen(js_name = importKeyImagesWithBip32Key)]
 pub fn import_key_images_with_bip32_key(
     account_id: i64,
@@ -265,11 +243,8 @@ pub fn import_key_images_with_bip32_key(
 
 /// Derive Monero view material and the primary address from a BIP-32-derived private key.
 ///
-/// Pure derivation: no DB, no node, so an address can exist before any scanning.
-///
-/// Matches OneKey V4 (`spend = sc_reduce32(key)`, `view = keccak(spend)`). Changing
-/// it would show existing users an empty wallet after importing the same mnemonic.
-///
+/// Pure derivation (no DB, no node). Matches OneKey V4 (`spend = sc_reduce32(key)`,
+/// `view = keccak(spend)`); changing it would show existing users an empty wallet.
 /// Does not return the spend private key.
 #[wasm_bindgen(js_name = deriveAccount)]
 pub fn derive_account(
@@ -314,11 +289,8 @@ pub fn validate_address(network: &str, address: &str) -> std::result::Result<boo
 
 /// Hand network requests to the host instead of `fetch`ing in wasm.
 ///
-/// `handler` is `(url, contentType, body: Uint8Array) => Promise<Uint8Array>`;
-/// `undefined` uninstalls it.
-///
-/// Lets nodes that in-wasm fetch cannot reach (mixed content, no CORS headers) be
-/// used through the extension background, desktop main process or mobile native code.
+/// `handler` is `(url, contentType, body: Uint8Array) => Promise<Uint8Array>`; `undefined`
+/// uninstalls it. Reaches nodes that in-wasm fetch cannot (mixed content, no CORS).
 #[wasm_bindgen(js_name = setRequestHandler)]
 pub fn set_request_handler(handler: Option<js_sys::Function>) {
     crate::network::set_host_handler(handler);
@@ -344,8 +316,7 @@ pub fn diag_database() -> std::result::Result<String, JsValue> {
                 .map_err(|e| crate::error::db_err("diagCount", e))?;
             counts.insert(table.to_owned(), serde_json::json!(n));
         }
-        // Logical size (pages x page size); the backing store's physical footprint
-        // can differ (free pages, storage-layer overhead).
+        // Logical size (pages x page size); the physical footprint can differ.
         let pragma = |name: &str| -> Result<i64> {
             db.conn()
                 .query_row(&format!("PRAGMA {name}"), [], |r| r.get(0))
@@ -386,22 +357,15 @@ fn decode_secret_hex(value: &str, field: &str) -> Result<Zeroizing<Vec<u8>>> {
     Ok(out)
 }
 
-// ── Spend path ─────────────────────────────────────────────────────────────
-
 /// Select inputs and build. Needs no spend private key; does not broadcast.
 ///
-/// `recipientsJson` is `[{ "address": "...", "amountAtomic": "1000000000000" }]`.
-///
-/// With `maxSend`, exactly one recipient is accepted and its amount is computed as
-/// spendable total minus fee; the passed amount is ignored. Merely omitting change
-/// would fold the remainder into the fee.
+/// `recipientsJson` is `[{ "address": "...", "amountAtomic": "1000000000000" }]`. With
+/// `maxSend`, exactly one recipient is accepted and its amount is spendable total minus fee.
 ///
 /// Returns `{ signableHex, feeAtomic, amountAtomic, changeAtomic, inputsAtomic,
-/// inputCount }`. `feeAtomic` and `amountAtomic` are what the
-/// transaction will use: the confirmation page shows them and signing keeps them.
-///
-/// Inputs are not reserved: a second prepare before broadcast may select the same
-/// ones, and broadcast then refuses the later transaction as `inputAlreadySpent`.
+/// inputCount }`; the confirmation page shows `feeAtomic`/`amountAtomic` and signing keeps them.
+/// Inputs are not reserved: a later prepare may select the same ones, and broadcast then
+/// refuses the later transaction as `inputAlreadySpent`.
 #[wasm_bindgen(js_name = prepareTransaction)]
 pub async fn prepare_transaction(
     account_id: i64,
@@ -452,10 +416,9 @@ pub async fn prepare_transaction(
 
 /// Sign a prepared transaction. No network, no DB, no broadcast.
 ///
-/// Takes the account's BIP-32 key (as `deriveAccount`); the spend key is reduced
-/// here, and both are wiped after use, never stored or returned.
-/// Returns `{ txid, rawHex, sizeBytes }`; the txid is fixed at signing, so the host
-/// can record the pending transaction before broadcasting.
+/// Takes the account's BIP-32 key (as `deriveAccount`); the spend key is reduced here and
+/// both are wiped after use. Returns `{ txid, rawHex, sizeBytes }`; the txid is fixed at
+/// signing so the host can record the pending transaction before broadcasting.
 #[wasm_bindgen(js_name = signTransactionWithBip32Key)]
 pub fn sign_transaction_with_bip32_key(
     signable_hex: &str,

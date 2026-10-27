@@ -1,8 +1,5 @@
-//! Cross-call runtime state.
-//!
-//! Only the database connection and the lightwalletd client are kept, since
-//! reopening per call would rerun migration checks. No caches, timers or
-//! background tasks.
+//! Cross-call runtime state: the database connection and lightwalletd client
+//! only (reopening per call would rerun migration checks).
 
 use std::cell::{Cell, RefCell};
 
@@ -17,10 +14,8 @@ thread_local! {
     // v_transactions open a separate read connection by name (same VFS, same data).
     static DB_NAME: RefCell<Option<String>> = const { RefCell::new(None) };
 
-    // Async operations hold DB across awaits. If another wallet were opened
-    // meanwhile, putting the old DB back would make later calls hit the wrong
-    // wallet. BUSY refuses wallet switches during an operation; GENERATION
-    // catches any path that awaits without holding BUSY.
+    // Async operations hold DB across awaits. BUSY refuses wallet switches during one;
+    // GENERATION catches any path that awaits without holding BUSY.
     static BUSY: Cell<bool> = const { Cell::new(false) };
     static GENERATION: Cell<u64> = const { Cell::new(0) };
 
@@ -29,8 +24,8 @@ thread_local! {
     static CLIENT_GENERATION: Cell<u64> = const { Cell::new(0) };
 }
 
-/// Sampled before taking the client and compared before putting it back; a
-/// mismatch means the endpoint changed or closed, so the stale client is dropped.
+/// Compared against the value sampled before taking the client; a mismatch means
+/// the endpoint changed or closed, so the stale client is dropped.
 fn client_generation() -> u64 {
     CLIENT_GENERATION.with(Cell::get)
 }
@@ -52,14 +47,10 @@ fn assert_idle(operation: &str) -> Result<()> {
     Ok(())
 }
 
-/// Sets BUSY while held and always clears it on drop, including early returns
-/// and panic unwinds.
+/// Sets BUSY while held and always clears it on drop, including panic unwinds.
 ///
-/// A wasm-bindgen `async fn` body starts after the current synchronous block,
-/// so an `openWallet` before it runs is not refused and the operation runs on
-/// the new wallet; the host serializes that window. During awaits BUSY blocks
-/// switching or closing, and the generation check keeps a stale wallet from
-/// overwriting the current one.
+/// A wasm-bindgen `async fn` body starts after the current synchronous block, so
+/// an `openWallet` before it runs is not refused; the host serializes that window.
 struct BusyGuard {
     generation: u64,
 }
@@ -69,13 +60,11 @@ impl BusyGuard {
         assert_idle(operation)?;
         BUSY.with(|b| b.set(true));
         Ok(Self {
-            // Sampled when DB is taken: a switch before this is not stale (the
-            // operation just runs on the new wallet); one after is.
+            // Sampled when DB is taken: a switch after this makes the operation stale.
             generation: GENERATION.with(Cell::get),
         })
     }
 
-    /// Whether the wallet was switched or closed since the operation started.
     fn stale(&self) -> bool {
         self.generation != GENERATION.with(Cell::get)
     }
@@ -147,10 +136,8 @@ pub fn set_client(client: LightClient) {
     bump_client_generation();
 }
 
-/// Lends the database for a synchronous operation.
-///
-/// Take, use, put back rather than holding a `RefCell` borrow, so reentry from
-/// `f` does not panic.
+/// Lends the database for a synchronous operation: take, use, put back rather
+/// than hold a `RefCell` borrow, so reentry from `f` does not panic.
 pub fn with_db<T>(f: impl FnOnce(&mut Db) -> Result<T>) -> Result<T> {
     let mut db = DB
         .with(|c| c.borrow_mut().take())
@@ -161,15 +148,12 @@ pub fn with_db<T>(f: impl FnOnce(&mut Db) -> Result<T>) -> Result<T> {
 }
 
 /// Lends the database and client for an async operation (sync, account import).
-///
-/// No `RefCell` borrow is held across awaits.
 pub async fn with_db_and_client<T, F, Fut>(f: F) -> Result<T>
 where
     F: FnOnce(Db, LightClient) -> Fut,
     Fut: std::future::Future<Output = (Db, LightClient, Result<T>)>,
 {
-    // No await between acquiring the guard and taking DB, so the generation is
-    // sampled at the moment DB is taken; staleness relies on this.
+    // No await between acquiring the guard and taking DB: staleness relies on it.
     let guard = BusyGuard::acquire("walletOperation")?;
     let client_gen = client_generation();
     let db = DB.with(|c| c.borrow_mut().take()).ok_or_else(not_open)?;
@@ -196,9 +180,7 @@ where
 
 /// Lends only the client; no wallet needs to be open.
 ///
-/// New accounts need the chain tip for their birthday before the database
-/// exists. Requiring an open wallet here would fall back to the Sapling
-/// activation birthday and force a full scan.
+/// New accounts need the chain tip for their birthday before the database exists.
 pub async fn with_client<T, F, Fut>(f: F) -> Result<T>
 where
     F: FnOnce(LightClient) -> Fut,
@@ -218,10 +200,8 @@ pub fn open_db_name() -> Option<String> {
     DB_NAME.with(|c| c.borrow().clone())
 }
 
-/// Closes the wallet, releasing the database and client (account removal,
-/// network switch).
-///
-/// Refused during an async operation, which holds DB and would put it back.
+/// Closes the wallet, releasing the database and client. Refused during an async
+/// operation, which holds DB and would put it back.
 pub fn close() -> Result<()> {
     assert_idle("closeWallet")?;
     DB.with(|c| *c.borrow_mut() = None);

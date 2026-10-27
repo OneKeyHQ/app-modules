@@ -1,17 +1,7 @@
 //! Wallet database schema and migrations.
 //!
-//! ## Why hand-written
-//!
-//! monero-oxide provides cryptography and a scanner but no storage; there is
-//! no counterpart to `zcash_client_sqlite`.
-//!
-//! ## Narrower than Zcash
-//!
-//! Monero has a single output type (no sapling/orchard/ironwood pools), no
-//! transparent pool, and before FCMP++ no commitment tree, so no witnesses or
-//! checkpoints. The schema can stay small.
-//!
-//! Writes are incremental and transactional; see the crate docs for why.
+//! Monero has no pools and (before FCMP++) no commitment tree, so no witnesses
+//! or checkpoints. Writes are incremental and transactional.
 
 use rusqlite::Connection;
 
@@ -21,11 +11,7 @@ use crate::error::{db_err, ErrorCode, Result, RuntimeError};
 /// and bump this; before that, V1 is edited in place.
 pub const SCHEMA_VERSION: i64 = 1;
 
-/// Reorg safety window: `blocks` keeps hashes only for this many blocks below the tip.
-///
-/// Real Monero reorgs rarely exceed a few blocks, but a malicious node is not
-/// bound by that. 720 blocks (about a day) covers any realistic reorg without
-/// letting the table grow with chain height.
+/// Reorg safety window: `blocks` keeps hashes only for this many blocks below the tip (about a day).
 pub const REORG_WINDOW_BLOCKS: u64 = 720;
 
 /// Creates the tables. Idempotent: safe to call on every open.
@@ -259,13 +245,8 @@ mod tests {
         conn
     }
 
-    /// Transaction public keys must round-trip byte for byte.
-    ///
-    /// Hardware signing derives the one-time key from these bytes; corruption
-    /// would not error, it would yield an unspendable signed transaction.
-    ///
-    /// Uses `db_with_identity` rather than a separate identity fixture that
-    /// could drift from the table constraints.
+    /// Transaction public keys must round-trip byte for byte: corruption would
+    /// yield an unspendable signed transaction without an error.
     #[test]
     fn transaction_public_keys_round_trip() {
         let (db, identity_id) = crate::wallet::testing::db_with_identity();

@@ -1,18 +1,13 @@
 //! SQLite storage shared by all platforms.
 //!
-//! The wasm side runs in a dedicated Worker; desktop, web, extension and mobile
-//! WebEmbed all use the same OPFS sync-access VFS, so SQLite reads and writes
-//! pages directly instead of preloading the database into wasm memory.
-//!
-//! The native build is kept for Rust tests and local diagnostics.
+//! wasm runs in a dedicated Worker on the OPFS sync-access VFS; native is for tests and diagnostics.
 
 use rusqlite::Connection;
 use serde_json::json;
 
 use crate::error::{db_err, ErrorCode, Result, RuntimeError};
 
-// Force linking: an unreferenced crate is not linked, which would fail with
-// `undefined symbol: sqlite3_*`.
+// Force linking, or `undefined symbol: sqlite3_*`.
 #[cfg(target_arch = "wasm32")]
 use sqlite_wasm_rs as _;
 
@@ -22,7 +17,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(target_arch = "wasm32")]
 static VFS_READY: AtomicBool = AtomicBool::new(false);
 
-// Installed pool handle; lets us delete databases that cannot be opened (unknown version, corruption).
+// Pool handle, used to delete databases that cannot be opened.
 #[cfg(target_arch = "wasm32")]
 thread_local! {
     static VFS_UTIL: std::cell::RefCell<Option<std::rc::Rc<sqlite_wasm_vfs::sahpool::OpfsSAHPoolUtil>>> =
@@ -41,20 +36,11 @@ pub fn is_ready() -> bool {
     }
 }
 
-/// Installs the persistent VFS in the browser carrier. Call once before opening
-/// any database.
+/// Installs the persistent VFS in the browser carrier. Call once before opening any database.
 ///
-/// The pool holds file handles exclusively until its Worker terminates, so two
-/// Workers cannot open the same database; the host must serialize.
-///
-/// A dedicated name instead of the default `.opfs-sahpool` keeps the pool from
-/// sharing a directory and handles with other pools on the same origin (e.g.
-/// Zcash's `.onekey-zcash-opfs`).
-///
-/// Worker termination is **asynchronous**: after a carrier reset, reload or hot
-/// update, the old Worker briefly keeps its SAH handles and install fails with
-/// `NoModificationAllowedError`. Only that error is retried, with a bound; a
-/// live second holder still fails, which is correct.
+/// The pool holds file handles exclusively until its Worker terminates, so the host must serialize.
+/// A dedicated pool name avoids sharing a directory with other pools on the same origin.
+/// A just-reset Worker briefly keeps its handles (`NoModificationAllowedError`); only that error is retried, bounded.
 #[cfg(target_arch = "wasm32")]
 pub async fn install_persistent_vfs() -> Result<()> {
     use sqlite_wasm_vfs::sahpool::{install, OpfsSAHError, OpfsSAHPoolCfg};
@@ -72,16 +58,13 @@ pub async fn install_persistent_vfs() -> Result<()> {
     let cfg = OpfsSAHPoolCfg {
         vfs_name: "onekey-xmr-opfs".to_owned(),
         directory: ".onekey-xmr-opfs".to_owned(),
-        // Never true: it wipes the pool on every start, forcing a full rescan.
+        // Never true: it wipes the pool on every start.
         clear_on_init: false,
-        // One database per network, plus rollback journals and spare handles.
         initial_capacity: 4,
     };
 
     let mut retries = 20;
     loop {
-        // `WasmOsCallback` is sqlite-wasm-rs's implementation of the VFS crate's
-        // trait; the type parameter cannot be inferred.
         match install::<sqlite_wasm_rs::WasmOsCallback>(&cfg, true).await {
             Ok(util) => {
                 VFS_UTIL.with(|slot| *slot.borrow_mut() = Some(std::rc::Rc::new(util)));
@@ -122,9 +105,7 @@ pub async fn install_persistent_vfs() -> Result<()> {
     }
 }
 
-/// The OPFS API the pool needs, checked before installing it: on an outdated
-/// WebView the install would otherwise throw a bare TypeError from inside the
-/// bindings, which the host cannot tell apart from any other failure.
+/// The OPFS API the pool needs, checked up front so an outdated WebView gives a clear error instead of a bare TypeError.
 #[cfg(target_arch = "wasm32")]
 fn missing_opfs_api() -> Option<&'static str> {
     use wasm_bindgen::JsValue;
@@ -169,8 +150,7 @@ pub async fn install_persistent_vfs() -> Result<()> {
 
 /// Database name must be non-empty with no path separators.
 ///
-/// **Checked on every target**: on wasm the name is an opaque VFS key, but on
-/// native it becomes a file path, where traversal actually matters.
+/// Checked on every target: on native the name becomes a file path.
 fn validate_db_name(db_name: &str) -> Result<()> {
     let bad = db_name.is_empty()
         || db_name.contains('/')
@@ -191,7 +171,6 @@ fn validate_db_name(db_name: &str) -> Result<()> {
 pub fn open_connection(db_name: &str) -> Result<Connection> {
     if db_name == ":memory:" {
         let conn = Connection::open_in_memory().map_err(|e| db_err("openInMemory", e))?;
-        // Match real databases so cascade-delete tests are meaningful
         conn.execute_batch("PRAGMA foreign_keys = ON;")
             .map_err(|e| db_err("pragmaForeignKeys", e))?;
         return Ok(conn);
@@ -205,13 +184,11 @@ pub fn open_connection(db_name: &str) -> Result<Connection> {
 
     let conn = Connection::open(db_name).map_err(|e| db_err("open", e))?;
 
-    // Only takes effect before the first table exists, so every database
-    // created from here on can hand freed pages back; see reclaim_free_pages.
+    // Only takes effect before the first table exists; see reclaim_free_pages.
     conn.execute_batch("PRAGMA auto_vacuum = INCREMENTAL;")
         .map_err(|e| db_err("pragmaAutoVacuum", e))?;
 
-    // Foreign keys are off by default; without them identity cascades fail and
-    // deleting a wallet leaves readable orphan rows.
+    // Off by default; without it deleting a wallet leaves readable orphan rows.
     conn.execute_batch("PRAGMA foreign_keys = ON;")
         .map_err(|e| db_err("pragmaForeignKeys", e))?;
     // Zero deleted rows (view keys, receipts) instead of leaving them in free pages.
@@ -220,8 +197,7 @@ pub fn open_connection(db_name: &str) -> Result<Connection> {
 
     #[cfg(target_arch = "wasm32")]
     {
-        // SAH pool uses a rollback journal, no cross-context WAL.
-        // **Never weaken durability for scan throughput.**
+        // SAH pool uses a rollback journal, no cross-context WAL. Never weaken durability for scan throughput.
         conn.execute_batch("PRAGMA journal_mode = DELETE; PRAGMA synchronous = FULL;")
             .map_err(|e| db_err("pragmaDurability", e))?;
     }
@@ -231,7 +207,6 @@ pub fn open_connection(db_name: &str) -> Result<Connection> {
 
 /// Free pages below which a reclaim is not worth its write transaction.
 const RECLAIM_MIN_FREE_PAGES: i64 = 256;
-/// Per sync step: small enough never to hold the step up noticeably.
 pub const RECLAIM_PAGES_PER_STEP: u32 = 512;
 /// After removing or rewinding an identity; later steps take the rest.
 pub const RECLAIM_PAGES_AFTER_DELETE: u32 = 4096;
@@ -244,7 +219,6 @@ pub fn reclaim_free_pages(conn: &Connection, max_pages: u32) -> Result<u32> {
         conn.query_row(sql, [], |r| r.get(0))
             .map_err(|e| db_err("reclaimFreePages", e))
     };
-    // 2 = INCREMENTAL.
     if read("PRAGMA auto_vacuum")? != 2 {
         return Ok(0);
     }
@@ -266,7 +240,7 @@ pub fn reclaim_free_pages(conn: &Connection, max_pages: u32) -> Result<u32> {
     Ok(u32::try_from(before - after).unwrap_or(0))
 }
 
-/// Deletes a closed database **without opening it**, so unopenable ones can be deleted.
+/// Deletes a closed database without opening it, so unopenable ones can be deleted.
 /// Returns `true` if deleted, `false` if it did not exist.
 #[cfg(target_arch = "wasm32")]
 pub async fn delete_database(db_name: &str) -> Result<bool> {
@@ -300,10 +274,8 @@ pub async fn delete_database(db_name: &str) -> Result<bool> {
 /// Durability barrier: fails if committed transactions may not have reached
 /// durable storage.
 ///
-/// SQLite commits synchronously through the VFS, so commit errors already
-/// surface from the statement. This catches the rest: a metadata I/O failure
-/// (e.g. deleting the rollback journal) poisons the patched pool, and nothing
-/// written since can be trusted until the Worker restarts.
+/// Commit errors already surface from the statement; this catches a metadata I/O failure
+/// that poisons the pool, after which nothing written can be trusted until the Worker restarts.
 pub async fn durability_barrier() -> Result<()> {
     if requires_worker_restart() {
         return Err(RuntimeError::with(
@@ -341,7 +313,6 @@ mod tests {
             .unwrap()
     }
 
-    // A rewind or removal frees pages that only a reclaim gives back.
     #[test]
     fn reclaims_freed_pages_in_bounded_batches() {
         let name = format!("xmr-reclaim-test-{}.db", std::process::id());
@@ -366,7 +337,6 @@ mod tests {
         let _ = std::fs::remove_file(&name);
     }
 
-    // Deletion does not open the file, so even a non-SQLite file is deleted.
     #[test]
     fn deletes_a_database_it_cannot_open() {
         let name = format!("xmr-delete-test-{}.db", std::process::id());
@@ -376,8 +346,6 @@ mod tests {
         assert!(!delete().unwrap());
     }
 
-    // Native storage has no pool to poison, so the restart signal stays clear
-    // and the barrier passes.
     #[test]
     fn healthy_storage_needs_no_worker_restart() {
         assert!(!requires_worker_restart());
@@ -389,8 +357,6 @@ mod tests {
         assert!(open_connection(":memory:").is_ok());
     }
 
-    /// Path traversal is dangerous on **native** (the name becomes a file
-    /// path), so the check must not be wasm-only.
     #[test]
     fn path_separators_are_rejected_on_every_target() {
         for bad in ["", "a/b", "a\\b", "../escape", "x/../y"] {
@@ -402,7 +368,7 @@ mod tests {
     #[test]
     fn foreign_keys_are_on() {
         let conn = open_connection(":memory:").unwrap();
-        // The in-memory branch is special; set it explicitly to verify the pragma itself
+        // The in-memory branch is special; set it explicitly to verify the pragma.
         conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
         let on: i64 = conn
             .query_row("PRAGMA foreign_keys", [], |r| r.get(0))

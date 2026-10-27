@@ -1,6 +1,6 @@
 //! Sending: PCZT construction and broadcast.
 //!
-//! Four stages; signing is not in this crate:
+//! Signing is not in this crate:
 //!
 //! ```text
 //!   runtime.pcztCreate()          build (needs wallet state: note selection, witness, anchor)
@@ -9,12 +9,7 @@
 //!   runtime.pcztSubmit()          extract, store, broadcast once (sync does not rebroadcast)
 //! ```
 //!
-//! Key separation: build and broadcast need the wallet database, signing needs
-//! the spending keys; the two never live in the same crate.
-//!
-//! Note selection, ZIP-317 fees, anchors and witnesses stay in the upstream
-//! implementation; policy knobs (change pool, confirmations, bundle padding)
-//! come from the host.
+//! Build and broadcast need the wallet database, signing needs the spending keys; they never share a crate.
 
 use zcash_client_backend::data_api::wallet::{
     create_pczt_from_proposal, extract_and_store_transaction_from_pczt,
@@ -39,11 +34,8 @@ fn build_err(stage: &str, e: impl std::fmt::Display) -> RuntimeError {
 
 /// Maps proposal failures to error codes the host can branch on.
 ///
-/// Upstream reports insufficient funds from two places:
-///
-/// - `Error::InsufficientFunds`: selection cannot cover the amount (transfers)
-/// - `Error::Change(ChangeError::InsufficientFunds)`: selection succeeded but
-///   change plus fee does not fit (shielding)
+/// Upstream reports insufficient funds from `Error::InsufficientFunds` (selection) and
+/// `Error::Change(ChangeError::InsufficientFunds)` (change plus fee does not fit).
 fn propose_err<DE, CT, SE, FE, CHE, NR>(
     stage: &str,
     e: zcash_client_backend::data_api::error::Error<DE, CT, SE, FE, CHE, NR>,
@@ -66,7 +58,6 @@ where
             json!({
                 "availableZat": have,
                 "requiredZat": need,
-                // Precomputed so the host does not subtract in the wrong direction.
                 "shortfallZat": need.saturating_sub(have),
                 "stage": stage,
             }),
@@ -128,19 +119,16 @@ pub struct SendPolicy {
     pub untrusted: u32,
     /// Shielded pool for change when the transaction is fully transparent.
     pub fallback_change_pool: ShieldedPool,
-    /// Pad the Orchard bundle to a fixed action count (hides the real count at
-    /// the cost of a larger transaction and higher fee).
+    /// Pad the Orchard bundle to hide the real action count (larger transaction, higher fee).
     pub pad_orchard_bundle: bool,
     /// Allow spending zero-conf outputs of our own shielding (ZIP-315 recommends it).
     ///
-    /// Must match the balance query's setting, or the balance shows funds that
-    /// selection refuses to spend.
+    /// Must match the balance query's setting.
     pub allow_zero_conf_shielding: bool,
     /// Select notes only from this shielded pool. Required: `None` is rejected at build.
     ///
-    /// Excludes Sapling, which upstream `SpendPolicy::default()` would select
-    /// first for old accounts and then fail to prove. If the pool cannot cover the
-    /// amount the result is `InsufficientFunds`; pools are never crossed.
+    /// Excludes Sapling, which upstream `SpendPolicy::default()` would select and then fail to prove.
+    /// Pools are never crossed: an uncovered amount is `InsufficientFunds`.
     pub spend_source: Option<ShieldedPool>,
 }
 
@@ -519,9 +507,8 @@ fn circuit_version_for(
     }
 }
 
-/// The transaction's own branch decides, not our tip: around an upgrade the two
-/// disagree, and a proof under the wrong circuit is rejected. The tip is only
-/// the fallback for a branch id this build does not know.
+/// The transaction's own branch decides, not the tip: around an upgrade they disagree and a
+/// proof under the wrong circuit is rejected. The tip is only the fallback for an unknown branch id.
 fn circuit_version_for_branch(
     params: &zcash_protocol::consensus::Network,
     consensus_branch_id: u32,
@@ -1358,8 +1345,7 @@ mod combine_tests {
         );
     }
 
-    // Hardware signers get a copy without the Sapling `bsk` (see the keys
-    // runtime's `redact_for_hardware_signer`); the original keeps it.
+    // Hardware signers get a copy without the Sapling `bsk`; the original keeps it.
     #[test]
     fn combine_restores_sapling_bsk_from_the_original() {
         let original = transparent_pczt(90_000, 0xaa, false);
@@ -1866,7 +1852,6 @@ mod owned_output_tests {
             let parsed = pczt::Pczt::parse(&bytes).unwrap();
             assert_eq!(parsed.clone().serialize().unwrap(), bytes);
 
-            // Same loop as zcash-keys-runtime sign_pczt_with_account_keys.
             let ask = SpendAuthorizingKey::from(&spending_key(&SEED, ACCOUNT));
             let actions = parsed.orchard().actions().len();
             let mut signer = Signer::new(parsed).unwrap();

@@ -1,10 +1,6 @@
-//! Links the wasm SQLite build.
-//!
-//! With rusqlite's `bundled` feature removed (see scripts/vendor-deps.sh),
-//! `libsqlite3-sys` emits `-l sqlite3` instead of compiling C sources. On wasm32
-//! the library comes from `sqlite-wasm-rs` as `libwsqlite3.a`; this script copies
-//! it to OUT_DIR as `libsqlite3.a` and adds that to the search path, so no manual
-//! RUSTFLAGS are needed.
+//! Links the wasm SQLite build. With rusqlite's `bundled` feature removed (see
+//! scripts/vendor-deps.sh), `libsqlite3-sys` emits `-l sqlite3`; on wasm32 this
+//! script copies `sqlite-wasm-rs`'s `libwsqlite3.a` to OUT_DIR as `libsqlite3.a`.
 
 use std::path::{Path, PathBuf};
 

@@ -12,12 +12,8 @@ edition = "2021"
 license = "Apache-2.0"
 rust-version = "1.85"
 
-# ── Zcash dependencies: official stable releases ─────────────────────────
-#
-# The storage layer uses unmodified crates.io releases. The only change is a
-# Cargo.toml edit to zcash_client_sqlite (scripts/vendor-deps.sh, patches/) that
-# drops rusqlite's "bundled" feature, which needs a libc sysroot wasm32 lacks.
-# No Zcash Rust source is modified. All patches: patches/manifest.json.
+# Unmodified crates.io releases, except zcash_client_sqlite's Cargo.toml drops rusqlite "bundled"
+# (needs a libc sysroot wasm32 lacks). See patches/manifest.json.
 [workspace.dependencies]
 blake2b_simd = "1"
 zcash_client_backend = { version = "0.24.0", default-features = false, features = ["orchard", "transparent-inputs", "lightwalletd-tonic", "sync", "pczt"] }
@@ -25,13 +21,12 @@ zcash_client_backend = { version = "0.24.0", default-features = false, features 
 zcash_client_sqlite = { version = "0.22.0", default-features = false, features = ["orchard", "transparent-inputs", "serde"] }
 zcash_keys = { version = "0.16.1", features = ["orchard", "sapling", "transparent-inputs"] }
 zcash_protocol = "0.10"
-# default-features = false is required: the default multicore feature makes
-# halo2_proofs compile_error on wasm32 without atomics.
+# default-features = false: multicore makes halo2_proofs compile_error on wasm32 without atomics.
 zcash_primitives = { version = "0.30", default-features = false }
 transparent = { package = "zcash_transparent", version = "0.10" }
 zcash_address = "0.13"
 zip321 = "0.9.0"
-# Same as zcash_client_backend: default features off. They pull the yanked core2 0.3.
+# Default features pull the yanked core2 0.3.
 pczt = { version = "0.9.3", default-features = false }
 orchard = { version = "0.15", default-features = false }
 
@@ -45,8 +40,7 @@ js-sys = "0.3"
 gloo-timers = { version = "0.3", features = ["futures"] }
 tracing = "0.1"
 
-# Must match zcash_client_sqlite's rand_core major (0.6), or RngCore does not
-# unify and init_wallet_db's bounds fail.
+# Must match zcash_client_sqlite's rand_core major (0.6) so RngCore unifies.
 rand = "0.8"
 rand_chacha = "0.3"
 serde = { version = "1", features = ["derive"] }
@@ -59,26 +53,22 @@ schemerz-rusqlite = "0.370"
 futures-util = { version = "0.3", default-features = false }
 sapling = { package = "sapling-crypto", version = "0.7", default-features = false }
 
-# lightwalletd uses gRPC-web; browsers cannot speak native gRPC.
-# tonic-web-wasm-client must be >= 0.9.1: 0.8.0 drops gRPC trailers.
+# tonic-web-wasm-client >= 0.9.1: 0.8.0 drops gRPC trailers.
 hex = "0.4"
 prost = "0.14"
 tonic = { version = "0.14", default-features = false, features = ["codegen"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
 tonic-web-wasm-client = "0.9.1"
 
-# Upstream releases plus the patches in patches/manifest.json.
 # Run `bash scripts/vendor-deps.sh` first to create vendor/.
 [patch.crates-io]
 zcash_client_sqlite = { path = "vendor/zcash_client_sqlite-0.22.0" }
 tonic-web-wasm-client = { path = "vendor/tonic-web-wasm-client-0.9.1" }
 
 [profile.release]
-# opt-level = 3 is no faster on mainnet scans but makes the wasm ~30% larger.
+# opt-level 3 is no faster but ~30% larger.
 opt-level = "s"
 lto = true
 codegen-units = 1
-# Do not use panic = "abort": on wasm it kills the instance silently and the
-# caller sees a Promise that never settles. unwind surfaces as a JS exception
-# with a message that the host can catch and report.
+# Not "abort": on wasm it kills the instance silently and the caller's Promise never settles.
 panic = "unwind"

@@ -1,7 +1,5 @@
-//! Error contract, same shape as `onekey-zcash-runtime`: stable error codes plus
-//! structured params. Rust never produces user-facing text.
-//!
-//! The two crates' code sets do not overlap, so hosts can share one handler.
+//! Stable error codes plus structured params; Rust never produces user-facing text.
+//! Same shape as `onekey-zcash-runtime`; the code sets do not overlap.
 
 use serde_json::{json, Map, Value};
 use std::fmt;
@@ -17,50 +15,32 @@ pub enum ErrorCode {
     InvalidSeed,
     /// Account index out of range. Params: `{ value }`
     InvalidAccountIndex,
-    /// UFVK cannot be parsed.
     InvalidUfvk,
-    /// Key derivation failed.
     DeriveFailed,
-    /// PCZT cannot be parsed.
     PcztParseFailed,
     /// PCZT signing failed. Params: `{ orchardActions }` when available.
     PcztSignFailed,
-    /// The stateless transparent transaction request is malformed.
     InvalidTransactionRequest,
-    /// The requested target height is not valid for the supported V6 mainnet branch.
     InvalidTargetHeight,
-    /// A destination or change address is invalid or belongs to another network.
     InvalidAddress,
-    /// An outpoint is malformed or reserved.
     InvalidOutpoint,
-    /// A selected outpoint is not present in the supplied UTXO catalog.
     UnknownInput,
-    /// An outpoint appears more than once.
     DuplicateInput,
-    /// Coinbase inputs are intentionally unsupported by transparent send.
+    /// Unsupported by transparent send.
     CoinbaseInput,
-    /// Unconfirmed transparent inputs are intentionally unsupported.
+    /// Unsupported by transparent send.
     UnconfirmedInput,
     /// Only regular P2PKH inputs are supported.
     UnsupportedInputScript,
-    /// The supplied BIP-44 path is outside the exact Zcash account path.
     InvalidDerivationPath,
-    /// A selected coin or change address does not match its derived key.
     KeyMismatch,
-    /// A zatoshi amount is malformed or outside the consensus range.
     InvalidAmount,
-    /// Selected inputs cannot cover outputs and the ZIP-317 fee.
     InsufficientFunds,
-    /// An account-level BIP-44 xprv is malformed or has unexpected metadata.
     InvalidAccountXprv,
-    /// An account-level BIP-44 xpub is malformed or has unexpected metadata.
     InvalidAccountXpub,
-    /// Transparent transaction construction or signing failed.
     TransactionBuildFailed,
-    /// The signed transaction could not be serialized.
     TransactionSerializeFailed,
-    /// An Orchard spending key is not 32 bytes or is rejected by ZIP-32 validity rules.
-    /// Params: `{ byteLen, expected }` for a length error.
+    /// Orchard spending key is not 32 bytes or fails ZIP-32 validity. Params: `{ byteLen, expected }` for a length error.
     InvalidSpendingKey,
 }
 
@@ -101,12 +81,9 @@ impl ErrorCode {
 #[derive(Debug)]
 pub struct KeysError {
     pub code: ErrorCode,
-    /// Structured params for host i18n placeholders. Always a JSON object.
+    /// Always a JSON object.
     pub params: Value,
-    /// Raw upstream error, for logs only.
-    ///
-    /// Must never contain seeds, spending keys, or anything derived from them. Upstream
-    /// errors describe structure and do not echo input, so passing them through is safe.
+    /// Raw upstream error, for logs only. Must never contain seeds, spending keys, or anything derived from them.
     pub detail: Option<String>,
 }
 
@@ -151,7 +128,6 @@ impl std::error::Error for KeysError {}
 
 pub type Result<T> = std::result::Result<T, KeysError>;
 
-/// Thrown to JS as an `Error` carrying `code` / `params` / `detail`.
 #[cfg(target_arch = "wasm32")]
 impl From<KeysError> for wasm_bindgen::JsValue {
     fn from(e: KeysError) -> Self {

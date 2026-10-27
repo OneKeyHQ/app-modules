@@ -1,9 +1,6 @@
-//! Offline regression tests through the production scanner and wallet database.
-//! Deterministic synthetic chain, generated in memory without network, files or
-//! proving parameters. The layout and compact-note construction are adapted from
-//! the upstream TestBuilder experiment that produced the former binary fixtures.
-//! There are 501 blocks, three accounts, both Orchard and Ironwood receives and
-//! spends, a completed shard in each pool (including Sapling), and a 35-block fork.
+//! Offline regression tests through the production scanner and wallet database,
+//! on a deterministic in-memory synthetic chain (501 blocks, three accounts,
+//! Orchard and Ironwood, a completed shard per pool, a 35-block fork).
 
 use super::*;
 use std::collections::BTreeMap;
@@ -63,9 +60,9 @@ fn random_hash<H: HashSer>(rng: &mut ChaCha20Rng) -> H {
     }
 }
 
-/// Like TestBuilder's random_with_prior_subtree_roots, construct a pruned
-/// frontier with distinct completed roots and matching high-level ommers.
-/// Only O(depth + completed shards) hashes are needed for the historical tree.
+/// Builds a pruned frontier with distinct completed roots and matching ommers
+/// (like TestBuilder's random_with_prior_subtree_roots); only O(depth + completed
+/// shards) hashes are needed.
 fn initial_tree<H: Hashable + HashSer + Clone>(
     rng: &mut ChaCha20Rng,
     size: u32,
@@ -1076,9 +1073,8 @@ fn add_account_rewind_and_pause_resume_match_a_fresh_scan() {
     finish(&mut reference, f, Order::Ascending, 53, &f.keys);
     let expected = snapshot(&mut reference, f);
     let mut db = wallet(f, &[0]);
-    // Isolate rewind/resume from upstream's separate sparse-checkpoint failure
-    // on consecutive old-account imports (also reproduced with the original
-    // order and 53-block batches); one-block checkpoints permit both imports.
+    // Isolates rewind/resume from upstream's sparse-checkpoint failure on consecutive
+    // old-account imports; one-block checkpoints permit both imports.
     finish(&mut db, f, Order::Window, 1, &f.keys[..1]);
     import(&mut db, f, 1, 20);
     import(&mut db, f, 2, 30);
@@ -1251,7 +1247,6 @@ fn safe_birthday_rescan_retains_pending_raw_rejections_and_other_identities() {
 
 #[test]
 fn a_later_birthday_starts_the_account_over_at_that_height() {
-    // Notes of one account, independent of internal ids.
     fn notes_of(db: &mut Db, account: &str) -> Vec<String> {
         let uuid = account.replace('-', "");
         ["orchard", "ironwood"]
@@ -1421,8 +1416,8 @@ fn deep_reorg_and_verify_converge_to_the_new_chain() {
         db.update_chain_tip(height(fork.tip)).unwrap();
         let error = scan(&mut db, &fork, f.tip + 1, 1, &f.keys).unwrap_err();
         assert_eq!(error.code, ErrorCode::ReorgDetected);
-        // The fork is 35 blocks below the old tip: repeated host rewinds must
-        // reach it without the old shardtree Insert(Conflict) failure.
+        // The fork is 35 blocks below the old tip: repeated rewinds must reach it
+        // without the shardtree Insert(Conflict) failure.
         let mut at = error.params["suggestedRewindHeight"].as_u64().unwrap() as u32;
         loop {
             let actual = rewind_to(&mut db, at).unwrap();

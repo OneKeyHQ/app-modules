@@ -1,6 +1,4 @@
 //! Public key material: networks, recipients, UFVK-derived addresses.
-//!
-//! Account UFVKs are built from host-supplied account keys in `account_keys`.
 
 use zcash_keys::keys::UnifiedFullViewingKey;
 #[cfg(test)]
@@ -31,7 +29,7 @@ pub(crate) fn supported_recipient(
     encoded: &str,
 ) -> Option<zcash_keys::address::Address> {
     use zcash_keys::address::Address;
-    // Host routing uses canonical lowercase Unified Address prefixes.
+    // Only lowercase UA prefixes are canonical.
     if encoded.starts_with("U") {
         return None;
     }
@@ -42,15 +40,12 @@ pub(crate) fn supported_recipient(
     }
 }
 
-/// Validate a recipient locally without storage, scanning, or network access.
 pub fn validate_address(network: &str, encoded: &str) -> Result<bool> {
     let params = parse_network(network)?;
     Ok(supported_recipient(&params, encoded).is_some())
 }
 
 /// Test-only: derive a UFVK from a mnemonic.
-///
-/// Shipped builds never take a mnemonic or seed.
 #[cfg(test)]
 pub(crate) fn ufvk_from_mnemonic(
     network: &str,
@@ -64,8 +59,7 @@ pub(crate) fn ufvk_from_mnemonic(
     ufvk_from_seed_bytes(params, seed.as_ref(), account_index)
 }
 
-/// Test-only oracle: the upstream seed-based UFVK, reduced to the transparent and
-/// Orchard items. Parity tests compare `account_keys` against it.
+/// Test-only oracle for parity tests: upstream seed-based UFVK reduced to transparent and Orchard items.
 #[cfg(test)]
 pub(crate) fn ufvk_from_seed_bytes(
     params: Network,
@@ -110,16 +104,12 @@ pub(crate) fn without_sapling(params: Network, ufvk: &UnifiedFullViewingKey) -> 
     Ok(container.encode(&network))
 }
 
-/// Receivers to include in a UA. This is a privacy policy chosen by the host:
-/// a transparent receiver links the user's transparent and shielded activity.
-/// The runtime only checks that the combination is valid.
-///
-/// No policy includes a Sapling receiver: this runtime cannot spend Sapling, so
-/// Sapling-only senders would pay into an unspendable pool.
+/// Receivers to include in a UA, chosen by the host: a transparent receiver links transparent and
+/// shielded activity. No policy includes Sapling, which this runtime cannot spend.
 fn receiver_policy(name: &str) -> Result<zcash_keys::keys::UnifiedAddressRequest> {
     use zcash_keys::keys::{ReceiverRequirement::*, UnifiedAddressRequest as R};
     match name {
-        // No default: an empty policy must not silently select the least private option.
+        // No default: an empty policy must not select the least private option.
         "all" => Ok(R::unsafe_custom(Require, Omit, Allow)),
         "orchard" => Ok(R::ORCHARD),
         other => Err(KeysError::with(
@@ -129,8 +119,6 @@ fn receiver_policy(name: &str) -> Result<zcash_keys::keys::UnifiedAddressRequest
     }
 }
 
-/// Derive the Unified Address from a UFVK. No spending key involved.
-///
 /// `policy` selects the receivers: `"all"` / `"orchard"`.
 pub fn unified_address_with(network: &str, ufvk_str: &str, policy: &str) -> Result<String> {
     let params = parse_network(network)?;
@@ -144,17 +132,12 @@ pub fn unified_address_with(network: &str, ufvk_str: &str, policy: &str) -> Resu
     Ok(addr.encode(&params))
 }
 
-/// Derive the transparent receiving address (t-address) from a UFVK. No
-/// spending key or wallet database involved.
-///
-/// This is the transparent receiver of the `"all"` UA, encoded on its own for
-/// counterparties that only accept t-addresses.
+/// The transparent receiver of the `"all"` UA, encoded as a t-address.
 pub fn transparent_address(network: &str, ufvk_str: &str) -> Result<String> {
     let params = parse_network(network)?;
     let ufvk = UnifiedFullViewingKey::decode(&params, ufvk_str)
         .map_err(|e| KeysError::new(ErrorCode::InvalidUfvk).detail(e))?;
 
-    // Same address as `"all"`, so this matches the UA's transparent receiver.
     let (addr, _) = ufvk
         .default_address(receiver_policy("all")?)
         .map_err(|e| KeysError::new(ErrorCode::DeriveFailed).detail(format!("{e:?}")))?;
@@ -171,9 +154,7 @@ pub fn transparent_address(network: &str, ufvk_str: &str) -> Result<String> {
     ))
 }
 
-/// Transparent account public key from the UFVK at the BIP32 account level
-/// (m/44'/133'/account'), hex of 32-byte chain code || 33-byte compressed key.
-/// The host builds the xpub from it without asking a hardware device again.
+/// Transparent account pubkey at m/44'/133'/account': hex of 32-byte chain code || 33-byte compressed key.
 pub fn transparent_account_pubkey(network: &str, ufvk_str: &str) -> Result<String> {
     let params = parse_network(network)?;
     let ufvk = UnifiedFullViewingKey::decode(&params, ufvk_str)
@@ -191,8 +172,7 @@ pub fn transparent_account_pubkey(network: &str, ufvk_str: &str) -> Result<Strin
 mod tests {
     use super::*;
 
-    /// Same items as the firmware's UFVK, so a device and a software account on
-    /// one seed agree.
+    /// Same items as the firmware's UFVK.
     #[test]
     fn ufvk_holds_only_transparent_and_orchard() {
         use crate::account_keys::{test_keys, ufvk_from_account_keys};
@@ -252,7 +232,6 @@ mod tests {
                     "{network}/{policy}"
                 );
             }
-            // The transparent receiver in "all" must be the standalone t-address (/0/0).
             let params = parse_network(network).unwrap();
             let all = unified_address_with(network, &ufvk, "all").unwrap();
             let Some(zcash_keys::address::Address::Unified(all)) =
@@ -270,7 +249,7 @@ mod tests {
         }
     }
 
-    // Public test vector; never use for real funds.
+    // Public test vector.
     const TEST_MNEMONIC: &str =
         "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 
@@ -319,7 +298,6 @@ mod tests {
         );
     }
 
-    /// An omitted or empty receiver policy must not default to `"all"`.
     #[test]
     fn receiver_policy_has_no_default() {
         assert!(receiver_policy("all").is_ok());
