@@ -112,14 +112,14 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
     }
 
     public func isDualScreenDevice() throws -> Bool {
-        return false
+        return DualScreenDetector.shared.isDualScreenDevice
     }
 
     public func initEventListeners() throws -> Void {
     }
-    
+
     public func isSpanning() throws -> Bool {
-        return false
+        return DualScreenDetector.shared.isSpanning
     }
     
     public func getWindowRects() throws -> Promise<[DualScreenInfoRect]> {
@@ -132,10 +132,11 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
 
    
     func addSpanningChangedListener(callback: @escaping (Bool) -> Void) throws -> Double {
-        return 0
+        return DualScreenDetector.shared.addSpanningChangedListener(callback)
     }
 
     func removeSpanningChangedListener(id: Double) throws -> Void {
+        DualScreenDetector.shared.removeSpanningChangedListener(id)
     }
     
     

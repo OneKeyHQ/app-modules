@@ -178,3 +178,79 @@ size.
 - Acceptance is rendered-pixel inspection in the OneKey app with
   `edgeToEdgeEnabled`; see Status for the covered cases. Android 15+ without a
   navigation bar could not be produced on stock emulators.
+
+# DeviceUtils: iOS dual-screen detection
+
+## Status and scope
+
+This section covers the iOS implementation of the existing dual-screen API:
+`isDualScreenDevice()`, `isSpanning()`, `addSpanningChangedListener()`, and
+`removeSpanningChangedListener()`. It targets foldable iPhones (iPhone Duo).
+The TypeScript contract is unchanged; before this change iOS returned `false`
+and `0` and ignored listeners. The behavior below is Implemented.
+
+Runtime verified on the iPhone Duo simulator (iOS 27.1, app built with
+Xcode 27.1): `isDualScreenDevice()` returns `true` synchronously at launch via
+the model identifier, on both the outer and the inner display. Unverified: the
+hinge path (status values, spanning callbacks, detection of an unlisted model),
+behavior on hardware, and builds with an iOS 27.0 SDK.
+
+`getWindowRects()` and `getHingeBounds()` keep their existing iOS results (an
+empty array and a zero rect). Detecting the fold region is a non-goal here.
+
+## Definitions and ownership
+
+- **Dual-screen device:** hardware with a hinge between displays.
+- **Spanning (iOS):** the hinge is partially or fully open, so the app runs on
+  the inner display. This differs from Android, where spanning means a window
+  across both screens of a dual-screen device.
+
+One process-wide native detector owns the result, the hinge observer, and the
+listener table. The main and background JS runtimes share it through their
+DeviceUtils HybridObjects; listener IDs are unique per process.
+
+## Detection and persistence
+
+1. At first use, the model identifier is matched against known foldable
+   iPhones (`iPhone19,4`). The simulator reads `SIMULATOR_MODEL_IDENTIFIER`;
+   devices read `utsname.machine`.
+2. On iOS 27.1+ in builds with the iOS 27.1 SDK (Swift 6.4), a
+   `UIHingeInteraction` is attached to the key window on the main thread. If no
+   key window exists yet, it waits for `UIWindow.didBecomeKeyNotification`. A
+   non-nil hinge marks the device as dual-screen; a nil hinge keeps the last
+   known state.
+3. A positive result is written to `UserDefaults` key
+   `1k_is_dual_screen_device` and read synchronously on later launches. It is
+   never written as `false` and has no invalidation; reinstalling the app clears
+   it.
+
+Builds without the iOS 27.1 SDK compile only steps 1 and 3. An iOS 27.0 SDK
+toolchain that also reports Swift 6.4 is not supported by this guard.
+
+## Lifecycle and callbacks
+
+`isDualScreenDevice()` and `isSpanning()` are synchronous and lock-protected.
+`isSpanning()` is `false` until the first hinge update. Listeners fire on the
+main thread when spanning changes, and once with the current spanning value
+when the hinge first confirms a device that steps 1 and 3 did not. Callers
+must re-read `isDualScreenDevice()` in the callback instead of assuming
+spanning implies detection. Removing an unknown ID is a no-op. The hinge
+observer lives for the process.
+
+## Platform contract
+
+| Concern | iOS | Android |
+| --- | --- | --- |
+| Device detection | Model identifier, then `UIHingeInteraction` | `ReactNativeDeviceUtils.kt` (existing) |
+| Spanning meaning | Hinge partially or fully open | Window spans both screens |
+| Persistence | `UserDefaults`, positive results only | None |
+| Window rects / hinge bounds | Empty / zero (unchanged) | Implemented (existing) |
+
+## Conformance and acceptance
+
+- iOS: `ios/DualScreenDetector.swift`, forwarded by
+  `ios/ReactNativeDeviceUtils.swift`.
+- No automated native test covers this API; the standalone Swift runner cannot
+  link UIKit. Remaining acceptance: a hinge-only detection with the model list
+  emptied, spanning callbacks on fold and unfold, the cached result on the next
+  launch, and a regular iPhone returning `false`.
