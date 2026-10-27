@@ -69,13 +69,10 @@ private class NativeListGridLayoutManager(
   var onChildLaidOut: ((View, Int) -> Unit)? = null
   var onLayoutPassCompleted: (() -> Unit)? = null
   var onBeforeDataLayout: (() -> Unit)? = null
-  var onDiagnosticLayout: ((String, RecyclerView.State) -> Unit)? = null
 
   override fun onLayoutChildren(recycler: RecyclerView.Recycler, state: RecyclerView.State) {
-    onDiagnosticLayout?.invoke("layout-children-before", state)
     if (!state.isPreLayout) onBeforeDataLayout?.invoke()
     super.onLayoutChildren(recycler, state)
-    onDiagnosticLayout?.invoke("layout-children-after", state)
   }
 
   // Scroll fills and layout passes both place children here, including rows that a
@@ -87,7 +84,6 @@ private class NativeListGridLayoutManager(
 
   override fun onLayoutCompleted(state: RecyclerView.State) {
     super.onLayoutCompleted(state)
-    onDiagnosticLayout?.invoke("layout-completed", state)
     onLayoutPassCompleted?.invoke()
   }
 
@@ -445,47 +441,6 @@ class NativeListView(
     footerSlotAdapter, sidecarSpacerAdapter,
   )
 
-  private val homeOffsetDiagnosticEnabled =
-    context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
-  private var homeOffsetDiagnosticSequence = 0L
-
-  private fun homeOffsetDiagnostic(phase: String, state: RecyclerView.State? = null) {
-    if (!homeOffsetDiagnosticEnabled) return
-    try {
-      val first = layoutManager.findFirstVisibleItemPosition()
-      val firstView = layoutManager.findViewByPosition(first)
-      val holder = firstView?.let { recyclerView.getChildViewHolder(it) }
-      val lastView = layoutManager.findViewByPosition(layoutManager.findLastVisibleItemPosition())
-      val lastHolder = lastView?.let { recyclerView.getChildViewHolder(it) }
-      fun adapterOrdinal(value: RecyclerView.Adapter<*>?): Int = when (value) {
-        headerSlotAdapter -> 0
-        adapter -> 1
-        emptySlotAdapter -> 2
-        structuralSpacerAdapter -> 3
-        footerSlotAdapter -> 4
-        else -> -1
-      }
-      val focused = recyclerView.findFocus()
-      val focusChild = focused?.let { recyclerView.findContainingItemView(it) }
-      val focusHolder = focusChild?.let { recyclerView.getChildViewHolder(it) }
-      OneKeyLog.debug("NativeList", "[HOME-OFFSET-DIAG] listPhase=$phase " +
-        "seq=${++homeOffsetDiagnosticSequence} wallMs=${System.currentTimeMillis()} monoMs=${SystemClock.uptimeMillis()} " +
-        "list=${System.identityHashCode(this)} view=${System.identityHashCode(recyclerView)} tag=$id " +
-        "generation=${config?.generation} configuredCount=${config?.items?.size} " +
-        "counts=${headerSlotAdapter.itemCount},${adapter.itemCount},${emptySlotAdapter.itemCount},${structuralSpacerAdapter.itemCount},${footerSlotAdapter.itemCount} " +
-        "total=${scrollContentAdapter.itemCount} pendingCommand=${pendingScrollRequest?.javaClass?.simpleName ?: "none"} " +
-        "stateCount=${state?.itemCount} preLayout=${state?.isPreLayout} structureChanged=${state?.didStructureChange()} predictive=${state?.willRunPredictiveAnimations()} " +
-        "first=$first last=${layoutManager.findLastVisibleItemPosition()} " +
-        "adapterOrdinal=${adapterOrdinal(holder?.bindingAdapter)} layout=${holder?.layoutPosition} absolute=${holder?.absoluteAdapterPosition} binding=${holder?.bindingAdapterPosition} lastAdapterOrdinal=${adapterOrdinal(lastHolder?.bindingAdapter)} lastLayout=${lastHolder?.layoutPosition} lastAbsolute=${lastHolder?.absoluteAdapterPosition} lastBinding=${lastHolder?.bindingAdapterPosition} " +
-        "anchorTop=${firstView?.let(layoutManager::getDecoratedTop)} paddingTop=${recyclerView.paddingTop} " +
-        "childHeight=${firstView?.height} height=${recyclerView.height} range=${recyclerView.computeVerticalScrollRange()} extent=${recyclerView.computeVerticalScrollExtent()} " +
-        "canUp=${recyclerView.canScrollVertically(-1)} canDown=${recyclerView.canScrollVertically(1)} " +
-        "focusClass=${focused?.javaClass?.simpleName ?: "none"} focusId=${focused?.id} focusAdapterOrdinal=${adapterOrdinal(focusHolder?.bindingAdapter)} focusLayout=${focusHolder?.layoutPosition} focusPosition=${focusHolder?.absoluteAdapterPosition} focusBinding=${focusHolder?.bindingAdapterPosition}")
-    } catch (_: Exception) {
-      // Diagnostic reads must not affect layout or command delivery.
-    }
-  }
-
   fun mountContainerSlot(view: View, index: Int) {
     containerSlots.add(index.coerceIn(0, containerSlots.size), view)
     updateContainerSlots()
@@ -797,7 +752,6 @@ class NativeListView(
   }
 
   private fun updateContainerSlots() {
-    homeOffsetDiagnostic("slots-before")
     val headerWasAbsent = headerSlotAdapter.itemCount == 0
     val firstVisible = layoutManager.findFirstVisibleItemPosition()
     val firstView = layoutManager.findViewByPosition(firstVisible)
@@ -820,7 +774,6 @@ class NativeListView(
         layoutManager.scrollToPositionWithOffset(0, 0)
       }
     }
-    homeOffsetDiagnostic("slots-after")
     layoutManager.spanSizeLookup.invalidateSpanIndexCache()
     recyclerView.requestLayout()
   }
@@ -2103,7 +2056,6 @@ class NativeListView(
   private var dispatchingScrollRequest: ScrollRequest? = null
   private var commandLayoutRequest: ScrollRequest? = null
   private var commandAlignmentRequest: ScrollRequest? = null
-  private var commandFinishDiagnosticReason: String? = null
   private var readingIntentEpoch = 0L
   private var pendingBodyStartEpoch: Long? = null
   private val actionAnchorInstanceId = UUID.randomUUID().toString()
@@ -2138,12 +2090,10 @@ class NativeListView(
     // OneKey patch: full-width selector header backgrounds do not change row content insets.
     recyclerView.addItemDecoration(SelectorBackgroundDecoration(adapter))
     recyclerView.addItemDecoration(ContainerSlotInsetDecoration { slotInsetPx to slotRightInsetPx })
-    if (homeOffsetDiagnosticEnabled) layoutManager.onDiagnosticLayout = ::homeOffsetDiagnostic
     layoutManager.onBeforeDataLayout = {
       if (pendingBodyStartEpoch == readingIntentEpoch && adapter.itemCount > 0 && pendingScrollRequest == null) {
         layoutManager.scrollToPositionWithOffset(0, 0)
         pendingBodyStartEpoch = null
-        homeOffsetDiagnostic("first-fill-body-start")
       }
       pendingStructuralTransition?.let(::alignPendingStructuralAnchor)
     }
@@ -2437,7 +2387,6 @@ class NativeListView(
     } catch (_: Exception) {
       return
     }
-    homeOffsetDiagnostic("snapshot-before-nextCount=${next.items.size}")
     invalidateActionAnchor("snapshot")
     val previous = config
     val transition = next.structuralTransition
@@ -2560,7 +2509,6 @@ class NativeListView(
       if (previous.listStyle?.toString() != next.listStyle?.toString()) bindFooter(next)
       adapter.submitList(next.items) {
         val committed: () -> Unit = {
-          homeOffsetDiagnostic("snapshot-stable-submit-commit")
           // OneKey patch: DiffUtil has dispatched its payloads; release the old serialized rows.
           next.items.forEach { it.selectionUpdateFromContent = null }
           recyclerView.post {
@@ -2647,7 +2595,6 @@ class NativeListView(
           pendingStructuralTransition = it.copy(spacerInserted = true)
           pendingStructuralTransition?.let(::alignPendingStructuralAnchor)
         }
-        homeOffsetDiagnostic("snapshot-submit-commit-marketAnchor=${marketStartOffset != null}")
         if (marketStartOffset != null) {
           layoutManager.scrollToPositionWithOffset(scrollPositionForRow(0), marketStartOffset)
         }
@@ -3058,7 +3005,6 @@ class NativeListView(
     commandLayoutRequest = null
     commandAlignmentRequest = null
     acceptedScrollRequest = request
-    commandFinishDiagnosticReason = null
     readingIntentEpoch++
     pendingBodyStartEpoch = null
     val explicitTop = when (request) {
@@ -3100,15 +3046,6 @@ class NativeListView(
 
   private fun finishScrollCommandIfSettled() {
     val request = acceptedScrollRequest ?: return
-    if (homeOffsetDiagnosticEnabled && executingScrollCommand) {
-      val reason = "pendingOwn=${pendingScrollRequest === request}-dispatchOwn=${dispatchingScrollRequest === request}" +
-        "-layoutOwn=${commandLayoutRequest === request}-alignOwn=${commandAlignmentRequest === request}" +
-        "-computing=${recyclerView.isComputingLayout}-scrollState=${recyclerView.scrollState}-smooth=${layoutManager.isSmoothScrolling}"
-      if (commandFinishDiagnosticReason != reason) {
-        commandFinishDiagnosticReason = reason
-        homeOffsetDiagnostic("command-finish-gates-$reason")
-      }
-    }
     if (
       !executingScrollCommand || pendingScrollRequest === request ||
       dispatchingScrollRequest === request || commandLayoutRequest === request ||
@@ -3124,7 +3061,6 @@ class NativeListView(
   private fun requestScroll(request: ScrollRequest) {
     acceptScrollRequest(request)
     if (config != null && acceptedScrollRequest !== request) return
-    homeOffsetDiagnostic("command-request-kind=${request.javaClass.simpleName}")
     if (performScroll(request)) {
       pendingScrollRequest = null
       finishScrollCommandIfSettled()
@@ -3140,7 +3076,6 @@ class NativeListView(
       if (pendingScrollRequest === request) pendingScrollRequest = null
       return
     }
-    homeOffsetDiagnostic("command-pending-kind=${request.javaClass.simpleName}")
     if (performScroll(request)) {
       pendingScrollRequest = null
       finishScrollCommandIfSettled()
@@ -3148,7 +3083,6 @@ class NativeListView(
   }
 
   private fun performScroll(request: ScrollRequest): Boolean {
-    homeOffsetDiagnostic("command-perform-kind=${request.javaClass.simpleName}")
     val current = config ?: return false
     if (adapter.itemCount != current.items.size) return false
     if (recyclerView.width <= 0 || recyclerView.height <= 0) return false
@@ -3329,13 +3263,11 @@ class NativeListView(
       val startView = manager.findViewByPosition(0)
       val paddingStart = if (manager.orientation == RecyclerView.VERTICAL) manager.paddingTop else manager.paddingLeft
       val relativeStart = startView?.let { decoratedStart(manager, it) - paddingStart }
-      homeOffsetDiagnostic("command-top-dispatch-first=${manager.findFirstVisibleItemPosition()}-relativeStart=$relativeStart-smooth=${manager.isSmoothScrolling}")
       if (
         startView != null && manager.findFirstVisibleItemPosition() == 0 && relativeStart == 0 &&
         recyclerView.scrollState == RecyclerView.SCROLL_STATE_IDLE &&
         !recyclerView.isComputingLayout && !manager.isSmoothScrolling
       ) {
-        homeOffsetDiagnostic("command-top-noop")
         return
       }
       recyclerView.smoothScrollToPosition(0)
@@ -3511,7 +3443,6 @@ class NativeListView(
     visibleEventScheduled = false
     layoutManager.onChildLaidOut = null
     layoutManager.onLayoutPassCompleted = null
-    layoutManager.onDiagnosticLayout = null
     layoutManager.onBeforeDataLayout = null
     pendingBodyStartEpoch = null
     executingScrollCommand = false

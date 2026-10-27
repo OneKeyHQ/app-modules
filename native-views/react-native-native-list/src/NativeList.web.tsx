@@ -139,10 +139,16 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
         }) ?? 0,
       [inputStickyInset]
     );
-    const preparedSnapshot = useMemo(
-      () => containNativeListInput(() => validateSnapshot(inputSnapshot)),
-      [inputSnapshot]
-    );
+    // Freshness is limited to this component invocation; later renders revalidate.
+    let freshlyValidatedSnapshot: NativeListSnapshot | undefined;
+    const preparedSnapshot = useMemo(() => {
+      const prepared = containNativeListInput(() =>
+        validateSnapshot(inputSnapshot)
+      );
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- The value is intentionally render-local.
+      freshlyValidatedSnapshot = prepared;
+      return prepared;
+    }, [inputSnapshot]);
     const snapshot = preparedSnapshot ?? acceptedSnapshotRef.current;
     const fontFamiliesJson = useNativeListFontFamiliesJson();
     const fontFamiliesJsonRef = useRef(fontFamiliesJson);
@@ -155,16 +161,18 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     const normalizeWebSnapshot = (
       next: NativeListSnapshot,
       hasReactEmpty = hasEmptySlotRef.current,
-      hasSlotLayout = useSlotLayoutRef.current
+      hasSlotLayout = useSlotLayoutRef.current,
+      validatedInThisRender = false
     ) => {
       if (hasSlotLayout && next.layout.orientation === 'horizontal')
         throw new Error(
           'Web parent scrolling and container slots support vertical lists only'
         );
       const emptySlot = hasReactEmpty && next.rows.length === 0;
-      const validated = validateSnapshot(
-        emptySlot ? { ...next, emptyState: undefined } : next
-      );
+      const normalized = emptySlot ? { ...next, emptyState: undefined } : next;
+      const validated = validatedInThisRender
+        ? normalized
+        : validateSnapshot(normalized);
       return emptySlot
         ? {
             ...validated,
@@ -218,8 +226,15 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
             )
               throw new Error('Invalid NativeList sidecar layout');
           }
-          return normalizeWebSnapshot(snapshot, hasEmptySlot, useSlotLayout);
+          return normalizeWebSnapshot(
+            snapshot,
+            hasEmptySlot,
+            useSlotLayout,
+            preparedSnapshot !== undefined &&
+              preparedSnapshot === freshlyValidatedSnapshot
+          );
         }) ?? acceptedSnapshotRef.current,
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- Preserve the existing memo dependencies; freshness is render-local.
       [snapshot, hasEmptySlot, useSlotLayout, listSidecar, sidecarLayout]
     );
     const [slotState, setSlotState] = useState(() => ({

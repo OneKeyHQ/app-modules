@@ -4,6 +4,7 @@ import TestRenderer, { act } from 'react-test-renderer';
 import { View } from 'react-native';
 
 import { NativeList } from '../NativeList.web';
+import * as validation from '../validation';
 import type { NativeListRef } from '../NativeList.types';
 import type { NativeListSnapshot } from '../models';
 
@@ -21,6 +22,209 @@ const snapshot: NativeListSnapshot = {
   layout: { kind: 'linear' },
   rows: [],
 };
+
+it('validates a snapshot once while preparing React empty-slot layout', () => {
+  const validate = jest.spyOn(validation, 'validateSnapshot');
+  try {
+    renderToStaticMarkup(
+      <NativeList snapshot={snapshot} listEmpty={<span>Empty</span>} />
+    );
+    expect(validate).toHaveBeenCalledTimes(1);
+  } finally {
+    validate.mockRestore();
+  }
+});
+
+it.each([true, false])(
+  'rejects an invalid empty state before React empty-slot normalization (development=%s)',
+  (development) => {
+    const environment = globalThis as typeof globalThis & { __DEV__: boolean };
+    const previous = environment.__DEV__;
+    environment.__DEV__ = development;
+    const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const rejected: NativeListSnapshot = {
+      ...snapshot,
+      emptyState: {
+        type: 'system',
+        key: 'space',
+        variant: 'spacer',
+        height: -1,
+      },
+    };
+    try {
+      const markup = renderToStaticMarkup(
+        <NativeList snapshot={rejected} listEmpty={<span>Empty</span>} />
+      );
+      expect(warning).toHaveBeenCalledWith(
+        expect.stringContaining('emptyState.height')
+      );
+      expect(markup).toContain('Empty');
+    } finally {
+      warning.mockRestore();
+      environment.__DEV__ = previous;
+    }
+  }
+);
+
+it('keeps the accepted rows when a new invalid input adds an empty slot', async () => {
+  const ref = React.createRef<NativeListRef>();
+  const accepted: NativeListSnapshot = {
+    ...snapshot,
+    rows: [
+      {
+        type: 'identity',
+        key: 'wallet',
+        title: 'Accepted',
+        leading: { kind: 'icon', name: 'wallet' },
+      },
+    ],
+  };
+  const rejected: NativeListSnapshot = {
+    ...snapshot,
+    generation: 2,
+    emptyState: { type: 'system', key: 'space', variant: 'spacer', height: -1 },
+  };
+  const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  const failed = jest.fn();
+  let renderer!: TestRenderer.ReactTestRenderer;
+  try {
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <NativeList
+          ref={ref}
+          snapshot={accepted}
+          onScrollToIndexFailed={failed}
+        />
+      );
+    });
+    await act(async () =>
+      renderer.update(
+        <NativeList
+          ref={ref}
+          snapshot={rejected}
+          listEmpty={<span>Empty</span>}
+          onScrollToIndexFailed={failed}
+        />
+      )
+    );
+    expect(warning).toHaveBeenCalledWith(
+      expect.stringContaining('emptyState.height')
+    );
+    expect(renderer.root.findAllByType('span')).toHaveLength(0);
+    act(() => ref.current?.scrollToIndex(0));
+    expect(failed).not.toHaveBeenCalled();
+  } finally {
+    if (renderer) await act(async () => renderer.unmount());
+    warning.mockRestore();
+  }
+});
+
+it('keeps an imperative patch when only the sidecar layout object changes', async () => {
+  const ref = React.createRef<NativeListRef>();
+  const input: NativeListSnapshot = {
+    ...snapshot,
+    rows: [
+      {
+        type: 'identity',
+        key: 'wallet',
+        title: 'A',
+        leading: { kind: 'icon', name: 'wallet' },
+        style: { title: { token: '$bodySm' } },
+      },
+    ],
+  };
+  const sidecar = <span>Sidecar</span>;
+  const firstLayout = { width: 400, gap: 24, maxContentWidth: 1140 };
+  const nextLayout = { ...firstLayout };
+  const patch = jest.spyOn(validation, 'applyRowPatches');
+  let renderer!: TestRenderer.ReactTestRenderer;
+  try {
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <NativeList
+          ref={ref}
+          snapshot={input}
+          listSidecar={sidecar}
+          sidecarLayout={firstLayout}
+        />
+      );
+    });
+    act(() =>
+      ref.current?.applyPatches([
+        { type: 'identity', key: 'wallet', changes: { title: 'Patched' } },
+      ])
+    );
+    await act(async () =>
+      renderer.update(
+        <NativeList
+          ref={ref}
+          snapshot={input}
+          listSidecar={sidecar}
+          sidecarLayout={nextLayout}
+        />
+      )
+    );
+    act(() =>
+      ref.current?.applyPatches([
+        { type: 'identity', key: 'wallet', changes: { subtitle: 'After' } },
+      ])
+    );
+    expect(patch).toHaveBeenCalledTimes(2);
+    expect(patch.mock.calls[1][0].rows[0]).toMatchObject({ title: 'Patched' });
+  } finally {
+    patch.mockRestore();
+    if (renderer) await act(async () => renderer.unmount());
+  }
+});
+
+it('rejects mutated raw layout on an empty-slot rerender and keeps the imperative rows', async () => {
+  const ref = React.createRef<NativeListRef>();
+  const rawLayout = { kind: 'linear' as const, contentPaddingBottom: 24 };
+  const raw: NativeListSnapshot = { ...snapshot, layout: rawLayout };
+  const imperative: NativeListSnapshot = {
+    ...snapshot,
+    generation: 2,
+    rows: [
+      {
+        type: 'identity',
+        key: 'wallet',
+        title: 'Accepted',
+        leading: { kind: 'icon', name: 'wallet' },
+      },
+    ],
+  };
+  const failed = jest.fn();
+  const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  let renderer!: TestRenderer.ReactTestRenderer;
+  try {
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <NativeList ref={ref} snapshot={raw} onScrollToIndexFailed={failed} />
+      );
+    });
+    act(() => ref.current?.applySnapshot(imperative));
+    rawLayout.contentPaddingBottom = -1;
+    await act(async () =>
+      renderer.update(
+        <NativeList
+          ref={ref}
+          snapshot={raw}
+          listEmpty={<span>Empty slot</span>}
+          onScrollToIndexFailed={failed}
+        />
+      )
+    );
+    expect(warning).toHaveBeenCalledWith(
+      expect.stringContaining('snapshot.layout.contentPaddingBottom')
+    );
+    expect(renderer.root.findAllByType('span')).toHaveLength(0);
+    act(() => ref.current?.scrollToIndex(0));
+    expect(failed).not.toHaveBeenCalled();
+  } finally {
+    if (renderer) await act(async () => renderer.unmount());
+    warning.mockRestore();
+  }
+});
 
 it('marks the React footer slot in the rendered Web DOM', () => {
   const markup = renderToStaticMarkup(
