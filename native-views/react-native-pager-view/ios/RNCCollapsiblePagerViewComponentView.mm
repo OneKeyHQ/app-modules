@@ -2874,16 +2874,14 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
       [self applyInsetsToScrollView:scrollView pageIndex:index restore:YES];
     }
   }
-  if (_transitioning || _isPagerDragging) return;
-
   UIView *page = _pageControllers[_currentIndex].view;
-  if (_scrollResolveRetryAttempt >= 12 && !_scrollResolveRetryScheduled &&
+  if (_scrollResolveRetryAttempt >= 12 &&
       _releasedPageScrollStates[self.currentPageKey] != nil) {
     for (const auto &mutation : transaction.getMutations()) {
       if (mutation.type == ShadowViewMutation::Insert && mutation.parentTag > 0 &&
           [page viewWithTag:mutation.parentTag] != nil) {
         // A new current-page insertion starts a bounded recovery round after
-        // the previous replacement search has exhausted its retry budget.
+        // the previous replacement search has scheduled its final retry.
         _scrollResolveRetryToken += 1;
         _scrollResolveRetryScheduled = NO;
         _scrollResolveRetryAttempt = 0;
@@ -2891,6 +2889,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
       }
     }
   }
+
+  // Record recovery during transitions; ownership still waits for settlement.
+  if (_transitioning || _isPagerDragging) return;
 
   // OneKey patch: a release must recover even when the changed parent is above
   // the page subtree. Missing lists keep their identity for a later insertion.

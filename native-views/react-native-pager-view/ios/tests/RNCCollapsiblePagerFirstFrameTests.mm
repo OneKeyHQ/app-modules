@@ -494,6 +494,22 @@ using namespace facebook::react;
 
 - (void)testCurrentPageInsertionRestartsExhaustedReplacementRecovery
 {
+  [self assertReplacementRecoveryWithCancelledDrag:NO finalRetryPending:NO];
+}
+
+- (void)testCancelledDragRetainsReplacementRecoveryFromInsertion
+{
+  [self assertReplacementRecoveryWithCancelledDrag:YES finalRetryPending:NO];
+}
+
+- (void)testInsertionInvalidatesPendingFinalReplacementRetry
+{
+  [self assertReplacementRecoveryWithCancelledDrag:NO finalRetryPending:YES];
+}
+
+- (void)assertReplacementRecoveryWithCancelledDrag:(BOOL)cancelDrag
+                                finalRetryPending:(BOOL)finalRetryPending
+{
   RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:2];
   [pager setValue:@YES forKey:@"hasAppliedInitialPage"];
   RNCNativeScrollerComponentView *source = [self addScrollerToPager:pager atIndex:0];
@@ -516,9 +532,14 @@ using namespace facebook::react;
   [pager mountingTransactionWillMount:removal withSurfaceTelemetry:telemetry];
   [source removeFromSuperview];
   [self finishMount:pager];
-  [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:1.35]];
+  NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:3];
+  while (([[pager valueForKey:@"scrollResolveRetryAttempt"] integerValue] < 12 ||
+          (!finalRetryPending && [[pager valueForKey:@"scrollResolveRetryScheduled"] boolValue])) &&
+         deadline.timeIntervalSinceNow > 0) {
+    [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+  }
   XCTAssertEqualObjects([pager valueForKey:@"scrollResolveRetryAttempt"], @12);
-  XCTAssertFalse([[pager valueForKey:@"scrollResolveRetryScheduled"] boolValue]);
+  XCTAssertEqualObjects([pager valueForKey:@"scrollResolveRetryScheduled"], @(finalRetryPending));
   XCTAssertNotNil([pager valueForKey:@"releasedPageScrollStates"][@"page-0"]);
 
   // Only a new insertion in the current page can reopen the exhausted budget.
@@ -532,8 +553,13 @@ using namespace facebook::react;
   MountingTransaction unrelated(1, 2, {ShadowViewMutation::InsertMutation((Tag)otherPage.view.tag, insertedView, 0)}, {});
   [pager mountingTransactionDidMount:unrelated withSurfaceTelemetry:telemetry];
   XCTAssertEqualObjects([pager valueForKey:@"scrollResolveRetryAttempt"], @12);
-  XCTAssertFalse([[pager valueForKey:@"scrollResolveRetryScheduled"] boolValue]);
+  XCTAssertEqualObjects([pager valueForKey:@"scrollResolveRetryScheduled"], @(finalRetryPending));
 
+  if (cancelDrag) {
+    [pager beginPageStateTransition];
+    [pager setValue:@YES forKey:@"transitioning"];
+    [pager setValue:@YES forKey:@"isPagerDragging"];
+  }
   [page addSubview:replacementHost];
   MountingTransaction insertion(1, 3, {ShadowViewMutation::InsertMutation((Tag)page.tag, insertedView, 0)}, {});
   [pager mountingTransactionDidMount:insertion withSurfaceTelemetry:telemetry];
@@ -541,8 +567,19 @@ using namespace facebook::react;
   NSNumber *retryToken = [pager valueForKey:@"scrollResolveRetryToken"];
   [pager mountingTransactionDidMount:insertion withSurfaceTelemetry:telemetry];
   XCTAssertEqualObjects([pager valueForKey:@"scrollResolveRetryToken"], retryToken);
+  if (cancelDrag) {
+    XCTAssertNil([pager valueForKey:@"sharedHeaderScrollView"]);
+    XCTAssertFalse([[pager valueForKey:@"scrollResolveRetryScheduled"] boolValue]);
+    // Settle on the source page while the replacement is still unavailable.
+    [pager attachScrollObserverForCurrentPageAfterTransition:YES];
+    [pager setValue:@NO forKey:@"isPagerDragging"];
+    [pager setValue:@NO forKey:@"transitioning"];
+    [pager attachScrollObserverForCurrentPage];
+    XCTAssertEqualObjects([pager valueForKey:@"currentIndex"], @0);
+  }
   __block RNCNativeScrollerComponentView *replacement;
-  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 50 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+  int64_t replacementDelay = finalRetryPending ? 150 : 50;
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, replacementDelay * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
     replacement = [self addScrollerToPager:pager atIndex:0];
     [replacementHost addSubview:replacement];
   });

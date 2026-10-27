@@ -823,11 +823,23 @@ spaced 100 ms apart). Clearing the completed mount's reattachment flag MUST NOT
 cancel that recovery. A replacement that becomes usable during that round,
 without another Fabric insertion, MUST receive the observer, shared headers,
 insets and retained collapse state. Page selection changes and recycling
-invalidate stale retry callbacks. Repeated mount attempts MUST NOT reset an
-active retry budget. Once the budget is exhausted and no retry is pending, an
-Insert whose parent is in the current page subtree MUST reopen recovery if that
-page retains a released scroll owner. Empty transactions, removals and inserts
-outside the current page MUST NOT reopen the exhausted budget.
+invalidate stale retry callbacks. Repeated mount attempts MUST NOT reset the
+retry budget. Once all 12 retries have been scheduled, an Insert whose parent is
+in the current page subtree MUST reopen recovery if that page retains a released
+scroll owner, including when the final retry callback is still pending. Reopening
+invalidates the old callback before clearing its scheduled state. The Insert
+MUST be recorded during a horizontal drag or transition, while observer and shared
+header attachment remain deferred until selection settles. Cancelling the drag
+on the same page MUST retain the reopened recovery round. Empty transactions,
+removals and inserts outside the current page MUST NOT reopen the budget.
+
+Status of transition-time and pending-final-retry recovery: implemented and
+UIKit regression verified on iOS 26.5 (2026-10-27). Both new regressions fail
+before the fix and pass afterward. Cancellation settles on the source page
+before the replacement becomes usable; the pending-final-retry case makes the
+replacement usable after the old timer's deadline. Observer and shared header
+ownership stay detached during the drag, then recover with the retained collapse.
+The full Pager suite executes 85 tests, with one iOS-27-only skip and no failures.
 
 Status of exhausted-budget recovery: implemented and UIKit regression verified
 on iOS 26.5 (2026-10-27). The regression exhausts the initial round, checks that
