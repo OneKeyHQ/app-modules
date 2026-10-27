@@ -917,7 +917,6 @@ const DOWNLOAD_SOFT_BUDGET_MS: f64 = 30_000.0;
 ///
 /// Each stream item has its own DEFAULT_TIMEOUT_MS stall timeout. A stall before any block
 /// is an error; a later stall, like the budget, truncates.
-
 async fn download_batch(
     client: &mut LightClient,
     cache: &MemoryBlockCache,
@@ -1279,7 +1278,7 @@ mod tests {
         assert!(ranges.iter().any(|range| {
             range.priority() == ScanPriority::Historic
                 && u32::from(range.block_range().start) <= resume_from
-                && u32::from(range.block_range().end) >= tip + 1
+                && u32::from(range.block_range().end) > tip
         }));
 
         let resumed_keys = ScanningKeys::from_account_ufvks(

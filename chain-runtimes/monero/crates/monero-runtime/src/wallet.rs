@@ -287,8 +287,8 @@ impl Db {
         Ok(address)
     }
 
-    /// Ensures account 0 has subaddresses registered up to the highest used minor
-    /// + SUBADDRESS_LOOKAHEAD; returns how many were added. Cost is one scalar
+    /// Ensures account 0 has subaddresses registered up to the highest used minor plus
+    /// SUBADDRESS_LOOKAHEAD; returns how many were added. Cost is one scalar
     /// multiplication per registration; scanning is a table lookup.
     pub fn ensure_subaddress_lookahead(&mut self, identity_id: i64) -> Result<u32> {
         let (highest_used, highest_registered): (i64, i64) = self

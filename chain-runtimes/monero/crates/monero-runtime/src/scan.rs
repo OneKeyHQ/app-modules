@@ -193,6 +193,13 @@ struct RingReference {
 /// Only these need possible spends; outputs with a key image use normal spend detection.
 type RingCandidates = HashMap<u64, Vec<([u8; 32], u64, u64)>>;
 
+/// A transaction's public key R and its additional keys.
+type TxKeys = (Vec<u8>, Option<Vec<u8>>);
+/// `(txid, R, additional)` for one transaction.
+type TxPublicKeys = ([u8; 32], Vec<u8>, Option<Vec<u8>>);
+/// `(height, hash, RingCT cursor)` of a stored block.
+type BlockState = (u64, [u8; 32], Option<u64>);
+
 fn load_ring_candidates(db: &Db, identity_id: i64) -> Result<RingCandidates> {
     let mut stmt = db
         .conn()
@@ -243,7 +250,7 @@ fn ring_matches<'a>(
 /// monero-oxide folds R into `key_offset` and drops it. Firmware does not accept a
 /// host-computed `key_offset` (a malicious host could make it sign with any key), so R is
 /// kept; recovering it later needs a rescan or a txid query that leaks interest.
-fn tx_public_keys_in(block: &ScannableBlock) -> Vec<([u8; 32], Vec<u8>, Option<Vec<u8>>)> {
+fn tx_public_keys_in(block: &ScannableBlock) -> Vec<TxPublicKeys> {
     // Length mismatches are reported by `key_images_in`; skip here.
     let mut out = Vec::new();
     for (txid, tx) in block
@@ -284,9 +291,10 @@ pub fn scan_blocks(
     blocks: &[ScannableBlock],
 ) -> Result<ScanOutcome> {
     if blocks.is_empty() {
-        let mut outcome = ScanOutcome::default();
-        outcome.outputs_without_key_image = count_outputs_without_key_image(db, identity_id)?;
-        return Ok(outcome);
+        return Ok(ScanOutcome {
+            outputs_without_key_image: count_outputs_without_key_image(db, identity_id)?,
+            ..ScanOutcome::default()
+        });
     }
 
     let identity = db.identity_by_id(identity_id)?;
@@ -310,7 +318,7 @@ pub fn scan_blocks(
     let mut outcome = ScanOutcome::default();
     let mut found: Vec<(u64, WalletOutput)> = Vec::new();
     // txid -> (R, additional), only for transactions that paid us.
-    let mut tx_pub_keys: HashMap<[u8; 32], (Vec<u8>, Option<Vec<u8>>)> = HashMap::new();
+    let mut tx_pub_keys: HashMap<[u8; 32], TxKeys> = HashMap::new();
     let mut spends: Vec<(u64, [u8; 32], [u8; 32])> = Vec::new(); // (height, key_image, txid)
 
     // Fees of transactions that spend ours: history needs them to tell the payment from the fee.
@@ -461,11 +469,7 @@ pub fn scan_blocks(
 }
 
 /// (height, hash, RingCT cursor after it) of the block before `height`.
-fn previous_block_state(
-    db: &Db,
-    identity_id: i64,
-    height: u64,
-) -> Result<Option<(u64, [u8; 32], Option<u64>)>> {
+fn previous_block_state(db: &Db, identity_id: i64, height: u64) -> Result<Option<BlockState>> {
     if height == 0 {
         return Ok(None);
     }
@@ -535,7 +539,7 @@ fn persist(
     db: &mut Db,
     identity_id: i64,
     found: &[(u64, WalletOutput)],
-    tx_pub_keys: &HashMap<[u8; 32], (Vec<u8>, Option<Vec<u8>>)>,
+    tx_pub_keys: &HashMap<[u8; 32], TxKeys>,
     spends: &[(u64, [u8; 32], [u8; 32])],
     known_key_images: &HashMap<[u8; 32], i64>,
     block_rows: &[(u64, [u8; 32], Option<u64>, u64)],

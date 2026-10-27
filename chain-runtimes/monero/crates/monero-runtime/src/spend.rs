@@ -49,8 +49,8 @@ fn key_image_for(output: &WalletOutput, spend: &Zeroizing<Scalar>) -> Result<[u8
     }
 
     let generator = Point::biased_hash(output.key().compress().to_bytes());
-    let image =
-        Point::from(input_key.deref() * curve25519_dalek::EdwardsPoint::from(generator.into()));
+    let generator: curve25519_dalek::EdwardsPoint = generator.into();
+    let image = Point::from(input_key.deref() * generator);
     Ok(image.compress().to_bytes())
 }
 
@@ -125,13 +125,20 @@ fn apply_key_images(
         )
         .map_err(|e| db_err("updateKeyImage", e))?;
 
-        let spent: Option<(Vec<u8>, i64, Option<i64>, Option<i64>)> = tx
+        let spent = tx
             .query_row(
                 "SELECT spend_txid, height, timestamp, fee_atomic FROM possible_spends
                  WHERE identity_id = ?1 AND out_txid = ?2 AND out_index = ?3 AND key_image = ?4
                  ORDER BY height LIMIT 1",
                 params![identity_id, txid, index, image.as_slice()],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                |r| {
+                    Ok((
+                        r.get::<_, Vec<u8>>(0)?,
+                        r.get::<_, i64>(1)?,
+                        r.get::<_, Option<i64>>(2)?,
+                        r.get::<_, Option<i64>>(3)?,
+                    ))
+                },
             )
             .optional()
             .map_err(|e| db_err("matchPossibleSpend", e))?;
@@ -269,10 +276,11 @@ fn is_double_spend(error: &RuntimeError) -> bool {
 ///
 /// Upstream fetches the full-chain distribution (about 18MB) per input, which times out
 /// easily when relayed through the host on mobile.
+type DistributionCache = HashMap<(std::ops::Bound<usize>, std::ops::Bound<usize>), Vec<u64>>;
+
 struct CachedDecoys<'a, P> {
     inner: &'a P,
-    distributions:
-        std::sync::Mutex<HashMap<(std::ops::Bound<usize>, std::ops::Bound<usize>), Vec<u64>>>,
+    distributions: std::sync::Mutex<DistributionCache>,
 }
 
 impl<'a, P> CachedDecoys<'a, P> {

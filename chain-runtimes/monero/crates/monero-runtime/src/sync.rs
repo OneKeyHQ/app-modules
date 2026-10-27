@@ -17,6 +17,8 @@ use crate::wallet::Db;
 
 /// Per-call block cap: a hang guard; a huge value would run for minutes uninterruptibly.
 pub const MAX_BLOCKS_PER_CALL: u64 = 1_000;
+// 0 would underflow `start + max_blocks - 1`.
+const _: () = assert!(MAX_BLOCKS_PER_CALL > 0);
 
 /// Limit per-block fallback requests to three, leaving the host's fourth
 /// stream slot available for a chain-tip probe or another privacy chain.
@@ -272,7 +274,7 @@ pub async fn step(
     // Ranges are half-open (`end` is exclusive); upstream takes a closed range.
     let last = (start + max_blocks - 1).min(end.saturating_sub(1));
     if last < start {
-        return Ok(progress(db, identity_id, &ScanOutcome::default(), true)?);
+        return progress(db, identity_id, &ScanOutcome::default(), true);
     }
 
     // Time download and scan separately so node latency is not misread as CPU cost.
@@ -615,14 +617,6 @@ mod tests {
         update_chain_tip(&mut db, id, 120).unwrap();
         consume_range(&mut db, id, 100, 120).unwrap();
         assert!(next_range(&db, id).unwrap().is_none());
-    }
-
-    /// The per-call block cap is hard: a huge value would freeze the page.
-    #[test]
-    fn max_blocks_is_clamped_and_zero_is_rejected() {
-        assert_eq!(u64::MAX.min(MAX_BLOCKS_PER_CALL), MAX_BLOCKS_PER_CALL);
-        // 0 would underflow `start + max_blocks - 1`; it is rejected at the entry
-        assert!(MAX_BLOCKS_PER_CALL > 0);
     }
 
     /// A caught-up identity must not push a backfilling identity's progress to the

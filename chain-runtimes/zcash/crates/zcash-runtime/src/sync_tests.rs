@@ -1526,7 +1526,7 @@ fn earlier_tail_from_either_pool_defines_the_capped_fast_window() {
         let upstream = range(expected + 100, tip + 1, ScanPriority::ChainTip);
         assert_eq!(
             pick_range(
-                &[upstream.clone()],
+                std::slice::from_ref(&upstream),
                 Some(ScanPriority::ChainTip),
                 height(expected)
             ),
@@ -1633,7 +1633,13 @@ fn missing_completed_roots_fall_back_in_each_pool_including_sapling() {
         let mut db = planning_db(Some(f.tip), &sql);
         assert!(!roots_cover(&mut db, state).unwrap());
         assert_eq!(
-            guard_fast_range(&mut db, &[original.clone()], fast.clone(), state).unwrap(),
+            guard_fast_range(
+                &mut db,
+                std::slice::from_ref(&original),
+                fast.clone(),
+                state
+            )
+            .unwrap(),
             original
         );
     }
@@ -1696,7 +1702,7 @@ fn missing_root_guard_prevents_a_real_subtree_discontinuity_retry_loop() {
     let original = range(f.birthday, f.tip + 1, ScanPriority::ChainTip);
     let guarded = guard_fast_range(
         &mut db,
-        &[original.clone()],
+        std::slice::from_ref(&original),
         range(start, f.tip + 1, ScanPriority::ChainTip),
         &state,
     )

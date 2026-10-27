@@ -124,7 +124,7 @@ pub fn verify(
                             return Err(std::io::Error::other("unapproved change"));
                         }
                         if let Some(key) = spend_key {
-                            let scalar = Zeroizing::new(Scalar::read(&mut key.as_ref())?);
+                            let scalar = Zeroizing::new(Scalar::read(&mut &key[..])?);
                             let public = Point::from(
                                 (*scalar).into()
                                     * curve25519_dalek::constants::ED25519_BASEPOINT_POINT,
@@ -635,7 +635,8 @@ mod tests {
             )
         };
         let to_other_account = |_| Change::new(other_account(3), None);
-        let cases: [(&str, Box<dyn FnOnce(ViewPair) -> Change>); 2] = [
+        type ChangeFor = Box<dyn FnOnce(ViewPair) -> Change>;
+        let cases: [(&str, ChangeFor); 2] = [
             ("subaddress", Box::new(to_subaddress)),
             ("other account", Box::new(to_other_account)),
         ];
