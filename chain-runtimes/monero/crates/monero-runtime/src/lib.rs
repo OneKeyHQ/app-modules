@@ -4,6 +4,7 @@
 
 pub mod blocks_bin;
 pub mod device_key_images;
+pub mod device_sign;
 pub mod error;
 pub mod keys;
 pub mod network;

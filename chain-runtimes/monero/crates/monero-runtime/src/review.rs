@@ -26,14 +26,14 @@ pub struct ReviewRequest {
     pub is_max_send: bool,
 }
 
-fn mismatch(field: &str) -> RuntimeError {
+pub(crate) fn mismatch(field: &str) -> RuntimeError {
     RuntimeError::with(
         ErrorCode::InvalidRequest,
         serde_json::json!({"field": field, "reason": "transactionDoesNotMatchReview"}),
     )
 }
 
-fn amount(value: &str) -> Result<u64> {
+pub(crate) fn amount(value: &str) -> Result<u64> {
     let parsed = value.parse::<u64>().map_err(|_| mismatch("amount"))?;
     if parsed.to_string() != value {
         return Err(mismatch("amount"));
@@ -174,13 +174,26 @@ pub fn verify(
     Ok(signable)
 }
 
+/// [`verify`] without signing, for a software signable or a hardware device plan.
+pub fn verify_unsigned(signable_or_plan: &str, request: &ReviewRequest) -> Result<()> {
+    if crate::device_sign::is_device_plan(signable_or_plan) {
+        return crate::device_sign::verify_unsigned(signable_or_plan, request);
+    }
+    verify(signable_or_plan, request, None).map(|_| ())
+}
+
 /// Bind the reviewed outputs to the actual signed transaction without changing
 /// signing or scanning. Eventuality validates output keys, commitments and ciphertexts.
+///
+/// A hardware device plan in place of `signable_hex` is checked by `device_sign` instead.
 pub fn verify_signed(
     signable_hex: &str,
     request: &ReviewRequest,
     raw_hex: &str,
 ) -> Result<Transaction> {
+    if crate::device_sign::is_device_plan(signable_hex) {
+        return crate::device_sign::verify_signed(signable_hex, request, raw_hex);
+    }
     let signable = verify(signable_hex, request, None)?;
     if raw_hex.len() > 8 * 1024 * 1024 {
         return Err(mismatch("rawHex"));

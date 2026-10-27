@@ -258,10 +258,21 @@ pub fn select_inputs(
 pub struct Prepared {
     pub signable: SignableTransaction,
     pub output_ids: Vec<i64>,
+    /// The signable's inputs with their rings, in `output_ids` order (hardware signing needs them).
+    pub inputs: Vec<OutputWithDecoys>,
     pub inputs_atomic: u64,
     /// Total received by recipients. For max-send it is derived, not the host's input.
     pub amount_atomic: u64,
     pub fee_atomic: u64,
+}
+
+impl Prepared {
+    /// Returned to the primary address; 0 for a max send.
+    pub fn change_atomic(&self) -> u64 {
+        self.inputs_atomic
+            .saturating_sub(self.amount_atomic)
+            .saturating_sub(self.fee_atomic)
+    }
 }
 
 /// monerod joins rejection reasons by flag; a double spend reads "double spend".
@@ -472,7 +483,7 @@ pub async fn prepare<R: RngCore + CryptoRng + Send + Sync>(
             &identity,
             rng,
             rct_type,
-            inputs,
+            inputs.clone(),
             recipients.clone(),
             fee_rate,
         ) {
@@ -481,6 +492,7 @@ pub async fn prepare<R: RngCore + CryptoRng + Send + Sync>(
                 return Ok(Prepared {
                     signable,
                     output_ids: selection.output_ids,
+                    inputs,
                     inputs_atomic: selection.total_atomic,
                     amount_atomic: out_total,
                     fee_atomic,
@@ -567,7 +579,7 @@ pub async fn prepare_max<R: RngCore + CryptoRng + Send + Sync>(
         &identity,
         rng,
         rct_type,
-        inputs,
+        inputs.clone(),
         vec![(recipient, amount_atomic)],
         fee_rate,
     )
@@ -576,6 +588,7 @@ pub async fn prepare_max<R: RngCore + CryptoRng + Send + Sync>(
     Ok(Prepared {
         signable,
         output_ids,
+        inputs,
         inputs_atomic,
         amount_atomic,
         fee_atomic,
@@ -1399,6 +1412,39 @@ pub async fn prepare_for_host(
     chain_tip: u64,
     priority: monero_wallet::interface::FeePriority,
 ) -> Result<Value> {
+    let (prepared, _, _) = prepare_selection(
+        db,
+        daemon,
+        identity_id,
+        recipients,
+        max_send,
+        chain_tip,
+        priority,
+    )
+    .await?;
+
+    Ok(json!({
+        "signableHex": hex::encode(prepared.signable.serialize()),
+        "feeAtomic": prepared.fee_atomic.to_string(),
+        "amountAtomic": prepared.amount_atomic.to_string(),
+        "inputsAtomic": prepared.inputs_atomic.to_string(),
+        "changeAtomic": prepared.change_atomic().to_string(),
+        "inputCount": prepared.output_ids.len(),
+    }))
+}
+
+/// Fee rate, input selection, rings and fee shared by software and hardware sends.
+///
+/// Returns the prepared transaction, the parsed recipient and the node's fee rate.
+pub(crate) async fn prepare_selection(
+    db: &Db,
+    daemon: &crate::network::Daemon,
+    identity_id: i64,
+    recipients: &[(&str, &str)],
+    max_send: bool,
+    chain_tip: u64,
+    priority: monero_wallet::interface::FeePriority,
+) -> Result<(Prepared, MoneroAddress, monero_wallet::interface::FeeRate)> {
     use monero_daemon_rpc::prelude::*;
 
     if recipients.len() != 1 {
@@ -1422,9 +1468,9 @@ pub async fn prepare_for_host(
     let mut rng = rand_core::OsRng;
     let decoys = CachedDecoys::new(daemon);
 
-    let prepared = if max_send {
+    if max_send {
         let address = keys::parse_address(network, recipients[0].0, "recipient.address")?;
-        prepare_max(
+        let prepared = prepare_max(
             db,
             &decoys,
             &mut rng,
@@ -1434,13 +1480,14 @@ pub async fn prepare_for_host(
             chain_tip,
             rct_type,
         )
-        .await?
+        .await?;
+        Ok((prepared, address, rate))
     } else {
         let payments = recipients
             .iter()
             .map(|(addr, amount)| parse_payment(network, addr, amount))
             .collect::<Result<Vec<_>>>()?;
-        prepare(
+        let prepared = prepare(
             db,
             &decoys,
             &mut rng,
@@ -1450,22 +1497,9 @@ pub async fn prepare_for_host(
             chain_tip,
             rct_type,
         )
-        .await?
-    };
-
-    let change_atomic = prepared
-        .inputs_atomic
-        .saturating_sub(prepared.amount_atomic)
-        .saturating_sub(prepared.fee_atomic);
-
-    Ok(json!({
-        "signableHex": hex::encode(prepared.signable.serialize()),
-        "feeAtomic": prepared.fee_atomic.to_string(),
-        "amountAtomic": prepared.amount_atomic.to_string(),
-        "inputsAtomic": prepared.inputs_atomic.to_string(),
-        "changeAtomic": change_atomic.to_string(),
-        "inputCount": prepared.output_ids.len(),
-    }))
+        .await?;
+        Ok((prepared, payments[0].address, rate))
+    }
 }
 
 /// Signs a constructed transaction. No network or database access.

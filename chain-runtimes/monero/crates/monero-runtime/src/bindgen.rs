@@ -11,7 +11,7 @@ use wasm_bindgen::prelude::*;
 use crate::error::{ErrorCode, Result, RuntimeError};
 use zeroize::Zeroizing;
 
-use crate::{device_key_images, keys, query, runtime, spend, storage, sync, wallet};
+use crate::{device_key_images, device_sign, keys, query, runtime, spend, storage, sync, wallet};
 
 fn json(value: serde_json::Value) -> std::result::Result<String, JsValue> {
     Ok(value.to_string())
@@ -403,23 +403,7 @@ pub async fn prepare_transaction(
     chain_tip: u64,
     priority: &str,
 ) -> std::result::Result<String, JsValue> {
-    let recipients: Vec<RecipientJson> = serde_json::from_str(recipients_json).map_err(|e| {
-        JsValue::from(
-            RuntimeError::with(
-                ErrorCode::InvalidRequest,
-                serde_json::json!({ "field": "recipientsJson" }),
-            )
-            .detail(e),
-        )
-    })?;
-    if recipients.is_empty() {
-        return Err(RuntimeError::with(
-            ErrorCode::InvalidRequest,
-            serde_json::json!({ "field": "recipientsJson", "reason": "empty" }),
-        )
-        .into());
-    }
-
+    let recipients = parse_recipients(recipients_json)?;
     let fee_priority = spend::parse_priority(priority)?;
 
     let v = runtime::with_db_and_daemon(move |db, daemon| async move {
@@ -443,6 +427,61 @@ pub async fn prepare_transaction(
     json(v)
 }
 
+/// Select inputs and build the plan a hardware wallet signs. Same arguments, selection and
+/// fee as `prepareTransaction`; every selected output needs a key image (sync them from the
+/// device first), else `INVALID_REQUEST` with `reason: keyImageRequired`.
+///
+/// Returns `{ devicePlan, feeAtomic, amountAtomic, changeAtomic, inputsAtomic, inputCount }`.
+/// `devicePlan` is a JSON string `{ version, networkType, tsxData, inputs, expected }`: the
+/// device gets `tsxData` and `inputs`; the whole plan goes to `assembleDeviceTransaction` and,
+/// in place of `signableHex`, to `verifySignedTransaction` and `broadcastTransaction`. It holds
+/// the private view key, the real ring members and the masks: never log or persist it.
+#[wasm_bindgen(js_name = prepareDeviceTransaction)]
+pub async fn prepare_device_transaction(
+    account_id: i64,
+    recipients_json: &str,
+    max_send: bool,
+    chain_tip: u64,
+    priority: &str,
+) -> std::result::Result<String, JsValue> {
+    let recipients = parse_recipients(recipients_json)?;
+    let fee_priority = spend::parse_priority(priority)?;
+
+    let v = runtime::with_db_and_daemon(move |db, daemon| async move {
+        let r = device_sign::prepare_for_host(
+            &db,
+            &daemon,
+            account_id,
+            &recipients
+                .iter()
+                .map(|r| (r.address.as_str(), r.amount_atomic.as_str()))
+                .collect::<Vec<_>>(),
+            max_send,
+            chain_tip,
+            fee_priority,
+        )
+        .await;
+        (db, daemon, r)
+    })
+    .await?;
+
+    json(v)
+}
+
+/// Rebuild and verify the transaction a hardware wallet signed from `devicePlanJson`.
+///
+/// `signedJson` is the device result with its CLSAGs opened (`clsags`). Checks the device's
+/// prefix and message hashes, the range proof, every CLSAG against its planned ring and
+/// stored key image, the balance, the fee against the weight, and the change against the
+/// plan with the view key. No DB or network. Returns `{ txid, rawHex }`.
+#[wasm_bindgen(js_name = assembleDeviceTransaction)]
+pub fn assemble_device_transaction(
+    device_plan_json: &str,
+    signed_json: &str,
+) -> std::result::Result<String, JsValue> {
+    json(device_sign::assemble(device_plan_json, signed_json)?)
+}
+
 /// Sign a prepared transaction. No network, no DB, no broadcast.
 ///
 /// Takes the account's BIP-32 key (as `deriveAccount`); the spend key is reduced here and
@@ -464,16 +503,21 @@ pub fn sign_transaction_with_bip32_key(
 }
 
 /// Validate actual payment effects before the host presents its confirmation.
+/// `signableHex` may be a device plan instead.
 #[wasm_bindgen(js_name = verifyTransaction)]
 pub fn verify_transaction(
     signable_hex: &str,
     review_json: &str,
 ) -> std::result::Result<(), JsValue> {
     let request = crate::review::parse_request(review_json)?;
-    crate::review::verify(signable_hex, &request, None)?;
+    crate::review::verify_unsigned(signable_hex, &request)?;
     Ok(())
 }
 
+/// Check a signed transaction against what was reviewed; returns its txid.
+///
+/// `signableHex` may be a device plan (a JSON object) from `prepareDeviceTransaction`; the
+/// device-built transaction is then checked as in `assembleDeviceTransaction`.
 #[wasm_bindgen(js_name = verifySignedTransaction)]
 pub fn verify_signed_transaction(
     signable_hex: &str,
@@ -490,6 +534,7 @@ pub fn verify_signed_transaction(
 /// Accepted and uncertain (network error) outcomes are both recorded: spent outputs
 /// are marked, the transaction goes in flight, and `broadcast: accepted | unknown` is
 /// returned. Only an explicit node rejection errors and releases the inputs.
+/// `signableHex` may be a device plan, as in `verifySignedTransaction`.
 #[wasm_bindgen(js_name = broadcastTransaction)]
 pub async fn broadcast_transaction(
     account_id: i64,
@@ -528,6 +573,23 @@ pub async fn broadcast_transaction(
     })
     .await?;
     json(v)
+}
+
+fn parse_recipients(recipients_json: &str) -> Result<Vec<RecipientJson>> {
+    let recipients: Vec<RecipientJson> = serde_json::from_str(recipients_json).map_err(|e| {
+        RuntimeError::with(
+            ErrorCode::InvalidRequest,
+            serde_json::json!({ "field": "recipientsJson" }),
+        )
+        .detail(e)
+    })?;
+    if recipients.is_empty() {
+        return Err(RuntimeError::with(
+            ErrorCode::InvalidRequest,
+            serde_json::json!({ "field": "recipientsJson", "reason": "empty" }),
+        ));
+    }
+    Ok(recipients)
 }
 
 #[derive(serde::Deserialize)]

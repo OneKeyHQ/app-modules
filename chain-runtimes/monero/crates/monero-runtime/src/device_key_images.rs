@@ -78,27 +78,21 @@ pub fn export_sync_data(db: &Db, identity_id: i64) -> Result<Value> {
         let major = u32::try_from(major.unwrap_or(0)).map_err(|_| corrupt("bad subaddress"))?;
         let minor = u32::try_from(minor.unwrap_or(0)).map_err(|_| corrupt("bad subaddress"))?;
 
-        let first = &tx_keys[..32];
-        let tx_pub_key = if tx_keys.len() == 32 {
-            first
-        } else {
-            let spend = receiving_spend_key(db, &identity, major, minor);
-            // None matching means the output was received via its additional key.
-            tx_keys
-                .chunks_exact(32)
-                .find(|r| derives_output_key(&view, r, index, spend, &output_key))
-                .unwrap_or(first)
-        };
-        let additional = additional
-            .as_deref()
-            .and_then(|a| a.chunks_exact(32).nth(index as usize))
-            .map(hex::encode);
+        let spend = receiving_spend_key(db, &identity, major, minor);
+        let (tx_pub_key, additional) = real_tx_keys(
+            &view,
+            spend,
+            &tx_keys,
+            additional.as_deref(),
+            index,
+            &output_key,
+        );
 
         items.push(json!({
             "outputId": id,
             "outKey": hex::encode(output_key),
             "txPubKey": hex::encode(tx_pub_key),
-            "additionalTxPubKey": additional,
+            "additionalTxPubKey": additional.map(hex::encode),
             "internalOutputIndex": index,
             "subAddrMajor": major,
             "subAddrMinor": minor,
@@ -107,7 +101,35 @@ pub fn export_sync_data(db: &Db, identity_id: i64) -> Result<Value> {
     Ok(json!({ "items": items }))
 }
 
-fn view_scalar(db: &Db, identity_id: i64) -> Result<Zeroizing<curve25519_dalek::Scalar>> {
+/// The R a device derives output `index` from, and that output's additional key if any.
+///
+/// Among several R the one deriving `output_key` is chosen; when none does, the output
+/// was received via its additional key and the first R is returned.
+pub(crate) fn real_tx_keys<'a>(
+    view: &curve25519_dalek::Scalar,
+    spend: EdwardsPoint,
+    tx_keys: &'a [u8],
+    additional: Option<&'a [u8]>,
+    index: u32,
+    output_key: &[u8; 32],
+) -> (&'a [u8], Option<&'a [u8]>) {
+    let first = &tx_keys[..32];
+    let tx_pub_key = if tx_keys.len() == 32 {
+        first
+    } else {
+        tx_keys
+            .chunks_exact(32)
+            .find(|r| derives_output_key(view, r, index, spend, output_key))
+            .unwrap_or(first)
+    };
+    let additional = additional.and_then(|a| a.chunks_exact(32).nth(index as usize));
+    (tx_pub_key, additional)
+}
+
+pub(crate) fn view_scalar(
+    db: &Db,
+    identity_id: i64,
+) -> Result<Zeroizing<curve25519_dalek::Scalar>> {
     let bytes: Zeroizing<Vec<u8>> = Zeroizing::new(
         db.conn()
             .query_row(
@@ -121,7 +143,12 @@ fn view_scalar(db: &Db, identity_id: i64) -> Result<Zeroizing<curve25519_dalek::
     Ok(Zeroizing::new(scalar.into()))
 }
 
-fn receiving_spend_key(db: &Db, identity: &Identity, major: u32, minor: u32) -> EdwardsPoint {
+pub(crate) fn receiving_spend_key(
+    db: &Db,
+    identity: &Identity,
+    major: u32,
+    minor: u32,
+) -> EdwardsPoint {
     match SubaddressIndex::new(major, minor) {
         Some(index) => identity
             .view_pair
@@ -133,7 +160,7 @@ fn receiving_spend_key(db: &Db, identity: &Identity, major: u32, minor: u32) -> 
 }
 
 /// Whether `Hs(8·a·R || index)·G + spend` is the output key.
-fn derives_output_key(
+pub(crate) fn derives_output_key(
     view: &curve25519_dalek::Scalar,
     r: &[u8],
     index: u32,
