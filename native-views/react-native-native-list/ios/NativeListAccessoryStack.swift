@@ -523,6 +523,11 @@ final class NativeListAccessoryStack: UIStackView {
     guard accessoryButtons.indices.contains(index), !value.isEmpty else { return }
     let button = accessoryButtons[index]
     button.isHidden = false
+    // A text accessory without an action is display only. As an enabled
+    // UIControl it still claimed the touch, so a tap on a row value such as
+    // a network balance never reached the cell and the row did not select
+    // (OK-65494). Let those touches fall through to the row press.
+    button.isUserInteractionEnabled = action != nil
     button.setTitle(value, for: .normal)
     button.setContentHuggingPriority(.required, for: .horizontal)
     button.setContentCompressionResistancePriority(.required, for: .horizontal)
@@ -545,6 +550,8 @@ final class NativeListAccessoryStack: UIStackView {
       ? accessory.string("secondary") : secondarySegments.map { $0.string("text") }.joined()
     guard !primary.isEmpty || !secondary.isEmpty else { return }
     let button = accessoryButtons[index]
+    // Value pairs never carry an action; the row owns their touches.
+    button.isUserInteractionEnabled = false
     let text = NSMutableAttributedString()
     let primaryParagraph = NSMutableParagraphStyle()
     primaryParagraph.alignment = .right

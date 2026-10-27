@@ -1,5 +1,6 @@
 package com.margelo.nitro.nativelist
 
+import android.graphics.PointF
 import android.graphics.drawable.GradientDrawable
 import android.text.Spannable
 import android.text.SpannableStringBuilder
@@ -8,6 +9,7 @@ import android.text.style.AbsoluteSizeSpan
 import android.text.style.ForegroundColorSpan
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
@@ -40,7 +42,28 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
   private var walletBadgeLine: View? = null
   private var currentItem: NativeListItem? = null
   private var currentTheme: JSONObject? = null
+  private var longPressPoint: PointF? = null
+  private var longPressPointEpoch = -1L
   private val paintDefaults = mutableMapOf<TextView, Int>()
+
+  override fun onRowTouch(event: MotionEvent) {
+    when (event.actionMasked) {
+      MotionEvent.ACTION_DOWN -> {
+        longPressPoint = if (currentItem?.isRowPressEnabled == true) PointF(event.x, event.y) else null
+        longPressPointEpoch = bindingEpoch
+      }
+      MotionEvent.ACTION_MOVE -> {
+        if (longPressPointEpoch == bindingEpoch && longPressPoint != null &&
+          event.x >= 0 && event.y >= 0 && event.x < width && event.y < height
+        ) longPressPoint?.set(event.x, event.y)
+        else longPressPoint = null
+      }
+      MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+        longPressPoint = null
+        longPressPointEpoch = -1L
+      }
+    }
+  }
 
   override fun backgroundGroupPosition(
     item: NativeListItem,
@@ -139,14 +162,30 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
     layout: String,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
   ) {
+    cancelLongPress()
+    longPressPoint = null
+    longPressPointEpoch = -1L
     currentItem = item
     val longPressActionKey = item.json.optString("longPressActionKey")
+    val boundEpoch = bindingEpoch
     setOnLongClickListener(
       if (longPressActionKey.isNotEmpty())
         OnLongClickListener {
-          if (!isEnabled || !item.isRowPressEnabled || currentItem?.key != item.key) false
+          val point = longPressPoint
+          if (!isEnabled || !item.isRowPressEnabled || currentItem?.key != item.key ||
+            bindingEpoch != boundEpoch ||
+            (longPressPointEpoch == boundEpoch && point == null)) false
           else {
-            emitAction(longPressActionKey, this, "row")
+            val windowPoint = point?.takeIf { longPressPointEpoch == boundEpoch }?.let {
+              val location = IntArray(2)
+              getLocationInWindow(location)
+              PointF(location[0] + it.x, location[1] + it.y)
+            }
+            onAction?.invoke(item, longPressActionKey, null,
+              NativeListActionOrigin(this, this, bindingEpoch, "row",
+                windowPointPixels = windowPoint))
+            longPressPoint = null
+            longPressPointEpoch = -1L
             true
           }
         }
@@ -502,6 +541,9 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
   }
 
   override fun recycleContent() {
+    cancelLongPress()
+    longPressPoint = null
+    longPressPointEpoch = -1L
     leadingFrame.recycle()
     trailingColumn.reset()
     currentItem = null

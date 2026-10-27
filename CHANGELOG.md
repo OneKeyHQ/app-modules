@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Features
+- **sni-connect**: Add `uploadFile()`, which sends a binary file from app-owned storage over the pinned-IP/SNI transport (POST/PUT, up to 20 MiB). `request()` bodies are UTF-8 strings capped at 1 MiB, so binary payloads such as log archives could not use the SNI path. Older native binaries lack the method, so callers must feature-detect it. See `native-modules/react-native-sni-connect/SPEC.md` §3.1a.
 - **image-crop-picker**: Add byte-preserving single-image selection through the system picker without full-library read authorization. Preserve cropping and sanitize native failure messages.
 - **photo-library**: Add a minimal add-only image-saving module. iOS uses addOnly authorization; Android 29+ saves with MediaStore, and legacy write authorization is capped at API 28 by the consuming App.
 - **capture-protection**: Migrate screenshot protection into a OneKey Nitro module with upstream acknowledgements and no broad media-read permission requirement.
@@ -43,6 +44,14 @@ All notable changes to this project will be documented in this file.
 - **native-list (Web)**: Remove dead duplicated rules from `WEB_LIST_CSS`. Four blocks (`.ok-native-list-footer`/`-sticky`/`-index-rail`/`-index-button`, `-refresh`, `-warning`, `-subtitle-segments`) were emitted twice and a `prefers-reduced-motion` block three times; every property of the earlier copies was redeclared by the later ones, so removing them changes no rendering.
 - Stop tracking `nitrogen/generated` for `react-native-image` and `react-native-native-list`. Every other Nitro package already ignores `nitrogen/` and regenerates it from the spec at release time; these two were missing a package `.gitignore`, so 117 generated files rode along in every diff that touched a prop. `react-native-native-list` now runs `yarn nitrogen` in its `release` script like the other view packages, and local builds need `yarn nitrogen` in the package before the first native build.
 - No version bump here; these changes ship with the next release. Note that 3.0.157 was published from this branch before the review fixes landed and should not be used.
+
+## [6.7.0-13] - 2026-10-26
+
+### Bug Fixes
+- **native-list (iOS, Android)**: Make a row's trailing value part of its hit area (OK-65494). iOS rendered every trailing text accessory as an enabled `UIButton`, and Android's `reset()` left the trailing `TextView` clickable after `setOnClickListener(null)`, so a tap on the balance column of the mobile network selector was swallowed and the network did not switch. Text accessories without an action (`value`, `valuePair`, `progress`) no longer own touches; radio and switch accessories with an action key still handle their own tap. Web already routed that click to the row. Verified on an iPhone 17 Pro Simulator (iOS 26.5) with the app's single-network selector: tapping the balance column selects the row, both for the already selected network (selector closes) and for another network (home switches to it); with the keyboard up, the first tap on either column only dismisses the keyboard, as before.
+
+### Chores
+- Bump all 43 publishable packages to 6.7.0-13.
 
 ## [3.0.156] - 2026-09-21
 

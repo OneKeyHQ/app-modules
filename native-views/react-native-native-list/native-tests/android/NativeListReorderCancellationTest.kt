@@ -59,6 +59,87 @@ class NativeListReorderCancellationTest : InstrumentationTestCase() {
     super.tearDown()
   }
 
+  fun testIdentityLongPressKeepsGesturePointAndProgrammaticAnchor() {
+    val actions = mutableListOf<JSONObject>()
+    fun fixture(key: String, generation: Int) = JSONObject()
+      .put("schemaVersion", 1)
+      .put("generation", generation)
+      .put("layout", JSONObject().put("kind", "linear"))
+      .put("rows", JSONArray().put(JSONObject()
+        .put("key", key).put("type", "identity").put("title", key)
+        .put("longPressActionKey", "menu"))).toString()
+
+    onMain {
+      list.onRowAction = { actions.add(JSONObject(it)) }
+      list.applySnapshot(fixture("first", 2))
+    }
+    awaitRows(listOf("first"))
+    onMain {
+      val row = holder(0).rowView
+      assertTrue(row.performLongClick())
+      assertEquals("first", actions.last().getString("rowKey"))
+      assertFalse(actions.last().getJSONObject("anchor").has("windowPoint"))
+
+      val time = SystemClock.uptimeMillis()
+      val down = android.view.MotionEvent.obtain(time, time,
+        android.view.MotionEvent.ACTION_DOWN, 21f, 23f, 0)
+      row.dispatchTouchEvent(down)
+      down.recycle()
+      assertTrue(row.performLongClick())
+      val windowPoint = actions.last().getJSONObject("anchor").getJSONObject("windowPoint")
+      val location = IntArray(2)
+      row.getLocationInWindow(location)
+      val density = activity.resources.displayMetrics.density
+      assertEquals((location[0] + 21f) / density, windowPoint.getDouble("x").toFloat(), 0.1f)
+      assertEquals((location[1] + 23f) / density, windowPoint.getDouble("y").toFloat(), 0.1f)
+      val cancel = android.view.MotionEvent.obtain(time, time + 1,
+        android.view.MotionEvent.ACTION_CANCEL, 21f, 23f, 0)
+      row.dispatchTouchEvent(cancel)
+      cancel.recycle()
+      list.applySnapshot(fixture("second", 3))
+    }
+    awaitRows(listOf("second"))
+    onMain {
+      assertTrue(holder(0).rowView.performLongClick())
+      assertEquals("second", actions.last().getString("rowKey"))
+      assertFalse(actions.last().getJSONObject("anchor").has("windowPoint"))
+    }
+  }
+
+  fun testStructuralTransitionFromGridOrHorizontalCommitsWithoutAnimation() {
+    fun fixture(
+      count: Int, generation: Int, kind: String, orientation: String,
+      transitionId: String? = null,
+    ): String {
+      val root = JSONObject(tailSnapshot(count, transitionId, durationMs = 2000))
+        .put("generation", generation)
+      root.getJSONObject("layout").put("kind", kind).put("orientation", orientation)
+      if (kind == "grid") root.getJSONObject("layout").put("gridColumns", 2)
+      return root.toString()
+    }
+
+    onMain { list.applySnapshot(fixture(6, 2, "grid", "vertical")) }
+    awaitAdapterCount(6)
+    onMain {
+      list.applySnapshot(fixture(8, 3, "linear", "vertical", "from-grid"))
+    }
+    awaitAdapterCount(8)
+    onMain {
+      assertNull(field<ValueAnimator?>(list, "structuralAnimator"))
+      assertNull(field<Any?>(list, "structuralTail"))
+    }
+    onMain { list.applySnapshot(fixture(6, 4, "linear", "horizontal")) }
+    awaitAdapterCount(6)
+    onMain {
+      list.applySnapshot(fixture(8, 5, "table", "vertical", "from-horizontal"))
+    }
+    awaitAdapterCount(8)
+    onMain {
+      assertNull(field<ValueAnimator?>(list, "structuralAnimator"))
+      assertNull(field<Any?>(list, "structuralTail"))
+    }
+  }
+
   fun testStructuralCancellationDoesNotCommitPreviousMove() {
     onMain {
       val old = helper()

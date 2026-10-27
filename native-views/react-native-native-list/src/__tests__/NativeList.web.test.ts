@@ -6463,7 +6463,14 @@ describe('DeFi position Web controls', () => {
   });
 
   it('keeps valuePair help on its primary line', () => {
-    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const { window } = new JSDOM('<!doctype html><body></body>');
+    const { document } = window;
+    const domWindow = window as unknown as {
+      Element: typeof Element;
+      Node: typeof Node;
+      HTMLElement: typeof HTMLElement;
+      KeyboardEvent: typeof KeyboardEvent;
+    };
     const host = document.createElement('div');
     document.body.appendChild(host);
     const onRowAction = jest.fn();
@@ -6493,23 +6500,65 @@ describe('DeFi position Web controls', () => {
       false
     );
     const previousElement = global.Element;
-    global.Element = document.defaultView!.Element;
+    const previousNode = global.Node;
+    const previousHTMLElement = global.HTMLElement;
+    global.Element = domWindow.Element;
+    global.Node = domWindow.Node;
+    global.HTMLElement = domWindow.HTMLElement;
     try {
       const pair = host.querySelector<HTMLElement>('.ok-native-list-amounts')!;
       const primary = pair.firstElementChild as HTMLElement;
       const secondary = pair.lastElementChild as HTMLElement;
       expect(primary.style.textDecoration).toBe('underline dashed');
+      expect(primary.tabIndex).toBe(0);
+      expect(primary.getAttribute('role')).toBe('button');
       secondary.click();
       expect(onRowAction).not.toHaveBeenCalled();
-      primary.click();
+      primary.focus();
+      primary.dispatchEvent(
+        new domWindow.KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+      );
       expect(onRowAction.mock.calls[0]![0]).toMatchObject({
         rowKey: 'asset',
         actionKey: 'partial',
         anchor: { source: 'trailingAccessory' },
       });
+      primary.dispatchEvent(
+        new domWindow.KeyboardEvent('keydown', { key: ' ', bubbles: true })
+      );
+      expect(onRowAction).toHaveBeenCalledTimes(2);
+
+      engine.applySnapshot(
+        snap({
+          ...row,
+          trailing: [
+            {
+              kind: 'valuePair',
+              primary: '$1',
+              secondary: '2 ETH',
+              primaryHelp: { actionKey: 'tip', presentation: 'tooltip' },
+            },
+          ],
+        })
+      );
+      const tooltip = host.querySelector<HTMLElement>(
+        '.ok-native-list-amounts'
+      )!.firstElementChild as HTMLElement;
+      expect(tooltip.tabIndex).toBe(0);
+      tooltip.focus();
+      expect(onRowAction.mock.calls[2]![0].actionKey).toBe('tip');
+      const token = onRowAction.mock.calls[2]![0].anchor.token;
+      engine.setActionAnchorState({ token, open: true });
+      tooltip.dispatchEvent(
+        new domWindow.KeyboardEvent('keydown', { key: ' ', bubbles: true })
+      );
+      expect(onRowAction).toHaveBeenCalledTimes(3);
+      tooltip.blur();
     } finally {
       engine.destroy();
       global.Element = previousElement;
+      global.Node = previousNode;
+      global.HTMLElement = previousHTMLElement;
     }
   });
 });

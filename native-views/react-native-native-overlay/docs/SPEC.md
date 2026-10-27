@@ -41,15 +41,21 @@ attribution in source comments.
 
 ### Release boundary
 
-The earlier `3.0.162-alpha.272` release remains immutable. This branch is
-prepared at `6.7.0-9`: the repository's release validator requires all 43
-publishable workspace manifests and exact internal pins to use the same
-version. Publish only `@onekeyfe/react-native-native-overlay` through the
-manual `package-publish` workflow with `npm_dist_tag=latest` and
-`only_workspace=@onekeyfe/react-native-native-overlay`; verify that exact
-registry tarball before the App pins it and refreshes its dependency and native
-locks. The other workspace version changes are release metadata, not a request
-to publish their packages in this run. Leave the source PR open for review.
+The `6.7.0-11` batch adds the Catalyst compile-time sheet background guard
+and restores the npm-packaged Gopenpgp framework links. The incomplete
+`6.7.0-10` candidate is superseded.
+All 43 publishable workspace manifests and exact internal pins use the same
+version, as required by the release validator. Publish the synchronized batch
+through `package-publish` with `npm_dist_tag=latest`, verify the registry
+versions, and refresh the App dependency and native locks before acceptance.
+The source PR remains open for review.
+
+The `6.7.0-14` batch incorporates the review fixes for framework-link
+self-repair, Android overlay transition cleanup, native list/depth ownership,
+and bounded SNI file uploads, together with main's row accessory press fix.
+It supersedes the source snapshots in the previously published `6.7.0-12`
+and `6.7.0-13` batches. Version and lockfile synchronization do not introduce
+additional public behavior; registry verification remains required after publish.
 
 ## 5.1 Purpose, scope, and non-goals
 
@@ -232,6 +238,15 @@ request ─► queued ─► active ─► (enter anim) presented
 - Content stays mounted until `finalize`. This replaces today's hardcoded
   timers: the Dialog 300 ms portal destroy, the ColorPicker 300 ms, the
   ActionList and Select 150 ms waits, and the DialogLoading 50 ms delays.
+- On Android, moving the same React child between its hidden staging view and
+  the entry host must release an in-progress transition held by the previous
+  parent before the new parent adds it. Completing that previous transition
+  later must not detach the child from its new parent. Animated closing moves
+  the child back after exit completion; reopening during exit keeps the same
+  child and entry without reporting a completed dismissal. Fabric removal or
+  replacement of the React child must also release the old container's layout
+  listener and in-progress transition, leaving the removed child without a
+  parent; a later transition completion must not affect replacement content.
 - A queued entry is promoted only after the previous entry in its lane is
   finalized, so exit and enter never overlap. `replace` is the exception: the
   new entry enters while the replaced one exits.
@@ -299,6 +314,14 @@ their existing values and does not publish a release.
 - `replaceKey` is the only identity shared across entries.
 
 ## 5.6 Platform contract
+
+### Mac Catalyst sheet background
+
+Implemented; Catalyst build and runtime verification pending. Global sheets
+retain their configured surface color on Mac Catalyst and MUST NOT call
+`UISheetPresentationController.backgroundEffect` or the matching detent API,
+which are unavailable there. iOS 26.1 and later retain their existing color
+effect. Presentation, sizing, motion, and lifecycle contracts are unchanged.
 
 ### Web keyboard focus containment
 
@@ -407,6 +430,11 @@ Automated (P0):
   blockers, input readiness, canceled key-up, global/page precedence,
   suspension and blocking-only accessibility isolation. It also checks live
   host reuse, Activity isolation and rebuilding after a cleared weak value.
+- `NativeOverlayMotionTest` exercises the production Android view's transition
+  reparenting in both directions, including the exit-completion staging path,
+  old-parent transition completion after the move, and reopen during exit.
+  It also covers Fabric removal of staged content and replacement of presented
+  content during a transition, including layout-listener cleanup.
 - `src/__tests__/pageIsolation.web.test.ts` mounts a real React portal in a
   DOM host and verifies late suspension, level ordering and restoration after
   the blocking entry is removed.

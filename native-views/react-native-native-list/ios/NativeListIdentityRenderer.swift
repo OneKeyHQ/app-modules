@@ -4,6 +4,51 @@ final class NativeListIdentityCell: NativeListRendererCell {
   override class func appliesSizePreset(_ item: NativeListItem) -> Bool {
     !["walletSidebar", "networkSelector"].contains(item.data.string("presentation"))
   }
+  private class func configureTrailingStack(
+    _ stack: NativeListAccessoryStack, descriptors: [[String: Any]]
+  ) {
+    stack.axis = .vertical
+    stack.alignment = .trailing
+    stack.spacing = 2
+    if descriptors.contains(where: { $0.string("kind") == "checkbox" })
+      && descriptors.contains(where: { $0.string("kind") == "value" })
+    {
+      stack.axis = .horizontal
+      stack.alignment = .center
+      stack.spacing = 12
+    } else if descriptors.count == 2,
+      descriptors[0].string("kind") == "valuePair",
+      (descriptors[1].string("kind") == "menu"
+        || (descriptors[1].string("kind") == "icon"
+          && descriptors[1].string("name") == "DotVerSolid"
+          && descriptors[1].string("actionKey") == "menu"))
+    {
+      stack.axis = .horizontal
+      stack.alignment = .center
+      stack.spacing = 8
+    } else if descriptors.count == 2,
+      (descriptors[0].string("kind") == "valuePair"
+        && descriptors[1].string("kind") == "chevron")
+        || (descriptors[0].string("kind") == "icon"
+          && descriptors[0].string("name") == "RefreshCcwOutline"
+          && descriptors[0].string("actionKey").isEmpty
+          && descriptors[1].string("kind") == "chevron")
+    {
+      stack.axis = .horizontal
+      stack.alignment = .center
+      stack.spacing = 12
+    } else if descriptors.count == 2,
+      descriptors[0].string("kind") == "icon",
+      descriptors[0].string("name") == "PencilOutline",
+      descriptors[1].string("kind") == "icon",
+      descriptors[1].string("name") == "DragOutline"
+    {
+      stack.axis = .horizontal
+      stack.alignment = .center
+      // Source 36-point icon frames with -7 margins need a 10-point gap.
+      stack.spacing = 10
+    }
+  }
   override class func measure(
     _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String,
     fonts: NativeListFontFamilies
@@ -19,8 +64,20 @@ final class NativeListIdentityCell: NativeListRendererCell {
       let imageWidth = CGFloat(style.dictionary("image")?.double("width", default: 40) ?? 40)
       let imageHeight = CGFloat(style.dictionary("image")?.double("height", default: 40) ?? 40)
       let leadingGap = CGFloat(style.double("leadingGap", default: 12))
-      let trailingWidth: CGFloat = item.data.dictionaries("trailing").isEmpty ? 0 : 48
-      let textWidth = max(1, width - horizontalPadding * 2 - imageWidth - leadingGap - trailingWidth - 12)
+      let accessories = item.data.dictionaries("trailing")
+      let trailing = NativeListAccessoryStack(frame: .zero)
+      configureTrailingStack(trailing, descriptors: accessories)
+      trailing.bind(
+        item, descriptors: accessories, theme: theme, style: style,
+        defaultSpacing: trailing.spacing, checkboxState: { _, _, fallback in fallback }, fonts: fonts)
+      trailing.isHidden = false
+      let trailingSize = trailing.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
+      let rightInset = style["horizontalPadding"] != nil
+        ? horizontalPadding : trailing.endInset ?? horizontalPadding
+      let contentGap = trailing.contentGap ?? 12
+      let textWidth = max(1,
+        width - horizontalPadding - rightInset - imageWidth - leadingGap
+          - trailingSize.width - contentGap)
       let title = NativeListResolvedText(
         item.data.string("title"), style: style.dictionary("title"), size: 16,
         weight: .medium, color: .black, lineHeight: 24,
@@ -39,7 +96,7 @@ final class NativeListIdentityCell: NativeListRendererCell {
         + tertiary.measure(width: textWidth)
         + (item.data.string("subtitle").isEmpty ? 0 : CGFloat(style.double("lineGap", default: 0)))
       return max(item.data.string("subtitle").isEmpty ? 56 : 60,
-        verticalPadding * 2 + max(imageHeight, textHeight))
+        verticalPadding * 2 + max(imageHeight, textHeight, trailingSize.height))
     }
     return !item.data.string("tertiary").isEmpty
       ? 72 : !item.data.string("subtitle").isEmpty ? 60 : 56
@@ -659,46 +716,7 @@ final class NativeListIdentityCell: NativeListRendererCell {
     }
     root.addArrangedSubview(trailingStack)
     let accessories = item.data.dictionaries("trailing")
-    if accessories.contains(where: { $0.string("kind") == "checkbox" })
-      && accessories.contains(where: { $0.string("kind") == "value" })
-    {
-      trailingStack.axis = .horizontal
-      trailingStack.alignment = .center
-      trailingStack.spacing = 12
-    } else if accessories.count == 2,
-      accessories[0].string("kind") == "valuePair",
-      (accessories[1].string("kind") == "menu"
-        || (accessories[1].string("kind") == "icon"
-          && accessories[1].string("name") == "DotVerSolid"
-          && accessories[1].string("actionKey") == "menu"))
-    {
-      trailingStack.axis = .horizontal
-      trailingStack.alignment = .center
-      trailingStack.spacing = 8
-    } else if accessories.count == 2,
-      (accessories[0].string("kind") == "valuePair"
-        && accessories[1].string("kind") == "chevron")
-        || (accessories[0].string("kind") == "icon"
-          && accessories[0].string("name") == "RefreshCcwOutline"
-          && accessories[0].string("actionKey").isEmpty
-          && accessories[1].string("kind") == "chevron")
-    {
-      trailingStack.axis = .horizontal
-      trailingStack.alignment = .center
-      trailingStack.spacing = 12
-    } else if accessories.count == 2,
-      accessories[0].string("kind") == "icon",
-      accessories[0].string("name") == "PencilOutline",
-      accessories[1].string("kind") == "icon",
-      accessories[1].string("name") == "DragOutline"
-    {
-      trailingStack.axis = .horizontal
-      trailingStack.alignment = .center
-      // Each source IconButton has a 36-point frame and m=-7. XStack gap=$6
-      // therefore places the physical frames 10 points apart (46-point
-      // center distance), not 24 points apart.
-      trailingStack.spacing = 10
-    }
+    Self.configureTrailingStack(trailingStack, descriptors: accessories)
     trailingStack.bind(
       item, descriptors: accessories, theme: theme, style: item.data.dictionary("style") ?? [:],
       defaultSpacing: trailingStack.spacing, checkboxState: checkboxState, fonts: fonts)

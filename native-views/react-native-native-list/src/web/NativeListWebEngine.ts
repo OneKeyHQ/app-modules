@@ -2108,12 +2108,13 @@ function createAccessory(
         applyTextWeight(primary, 500);
       if (accessory.primaryHelp) {
         const help = accessory.primaryHelp;
+        primary.tabIndex = 0;
+        primary.setAttribute('role', 'button');
         if (help.presentation === 'tooltip') {
           setData(primary, 'nativeListHoverAction', help.actionKey);
           setData(primary, 'nativeListIconHelp', true);
         } else {
           setData(primary, 'nativeListAction', help.actionKey);
-          primary.setAttribute('role', 'button');
         }
         if (help.underline === 'dashed') {
           primary.style.textDecoration = 'underline dashed';
@@ -2727,6 +2728,9 @@ export class NativeListWebEngine {
       this.hasAppliedSnapshot &&
       isNewTransition &&
       changedKeys &&
+      (this.snapshot.layout.kind === 'linear' ||
+        this.snapshot.layout.kind === 'table') &&
+      this.snapshot.layout.orientation !== 'horizontal' &&
       (validated.layout.kind === 'linear' ||
         validated.layout.kind === 'table') &&
       validated.layout.orientation !== 'horizontal' &&
@@ -5062,6 +5066,19 @@ export class NativeListWebEngine {
   };
 
   private handleKeyDown = (event: KeyboardEvent) => {
+    if (
+      (event.key === 'Enter' || event.key === ' ') &&
+      event.target instanceof HTMLElement &&
+      event.target.matches('[role="button"][data-native-list-hover-action]')
+    ) {
+      event.preventDefault();
+      if (
+        this.actionAnchor?.actionElement !== event.target ||
+        !this.actionAnchor.open
+      )
+        this.emitHoverAction(event.target);
+      return;
+    }
     // OneKey patch: non-button title help supports keyboard activation.
     if (
       (event.key === 'Enter' || event.key === ' ') &&

@@ -41,4 +41,13 @@ class NativeListPressPolicyTest {
       },
     )
   }
+
+  // OK-65494: a row value such as a network balance is part of the row's hit
+  // area; only a text accessory with an action key handles its own tap.
+  @Test
+  fun trailingTextOwnsItsTapOnlyWithAnAction() {
+    assertEquals(false, isNativeListTrailingTextClickable(null))
+    assertEquals(false, isNativeListTrailingTextClickable(""))
+    assertEquals(true, isNativeListTrailingTextClickable("network.edit"))
+  }
 }

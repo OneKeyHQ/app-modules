@@ -227,6 +227,7 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
       v.text = ""
       v.layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
       v.setOnClickListener(null)
+      // A clickable value consumes the row press; reset it until an action binds.
       v.setOnTouchListener(null)
       v.isPressed = false
       v.isClickable = false
@@ -553,11 +554,13 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
     TextViewCompat.setLineHeight(view, dp(if (primary) 24 else 20))
     textColor?.let(view::setTextColor)
     view.visibility = VISIBLE
-    if (!actionKey.isNullOrEmpty()) {
+    val clickActionKey = actionKey?.takeIf(::isNativeListTrailingTextClickable)
+    view.isClickable = clickActionKey != null
+    if (clickActionKey != null) {
       view.setOnClickListener {
         (tag as? NativeListItem)
           ?.takeUnless { item -> item.json.optBoolean("disabled", false) }
-          ?.let { item -> emitAction(item, actionKey, null, view, "trailingAccessory", index) }
+          ?.let { item -> emitAction(item, clickActionKey, null, view, "trailingAccessory", index) }
       }
     }
   }

@@ -13,13 +13,17 @@ static dispatch_semaphore_t OneKeyTestReleaseRead;
 
 - (BOOL)onekey_test_hasImages
 {
-  dispatch_semaphore_t releaseRead;
-  dispatch_semaphore_t readStarted;
-  @synchronized (UIPasteboard.class) {
-    releaseRead = OneKeyTestReleaseRead;
-    readStarted = OneKeyTestReadStarted;
+  dispatch_semaphore_t releaseRead = nil;
+  dispatch_semaphore_t readStarted = nil;
+  if (!NSThread.isMainThread) {
+    @synchronized (UIPasteboard.class) {
+      releaseRead = OneKeyTestReleaseRead;
+      readStarted = OneKeyTestReadStarted;
+      OneKeyTestReleaseRead = nil;
+      OneKeyTestReadStarted = nil;
+    }
   }
-  if (!NSThread.isMainThread && releaseRead != nil) {
+  if (releaseRead != nil && readStarted != nil) {
     dispatch_semaphore_signal(readStarted);
     dispatch_semaphore_wait(releaseRead, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC));
   }
@@ -39,6 +43,8 @@ static dispatch_semaphore_t OneKeyTestReleaseRead;
   NSArray<NSDictionary<NSString *, id> *> *previousItems = pasteboard.items;
   RCTUITextField *field = [[RCTUITextField alloc] initWithFrame:CGRectZero];
   SEL paste = @selector(paste:);
+  dispatch_semaphore_t readStarted = dispatch_semaphore_create(0);
+  dispatch_semaphore_t releaseRead = dispatch_semaphore_create(0);
 
   @try {
     pasteboard.items = @[];
@@ -49,8 +55,8 @@ static dispatch_semaphore_t OneKeyTestReleaseRead;
     XCTAssertFalse([field canPerformAction:paste withSender:nil]);
 
     @synchronized (UIPasteboard.class) {
-      OneKeyTestReadStarted = dispatch_semaphore_create(0);
-      OneKeyTestReleaseRead = dispatch_semaphore_create(0);
+      OneKeyTestReadStarted = readStarted;
+      OneKeyTestReleaseRead = releaseRead;
     }
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
@@ -60,25 +66,22 @@ static dispatch_semaphore_t OneKeyTestReleaseRead;
     });
 
     UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(1, 1)];
-    pasteboard.image = [renderer imageWithActions:^(UIGraphicsImageRendererContext *context) {
+    UIImage *image = [renderer imageWithActions:^(UIGraphicsImageRendererContext *context) {
       [UIColor.blackColor setFill];
       UIRectFill(CGRectMake(0, 0, 1, 1));
     }];
+    [pasteboard setData:UIImagePNGRepresentation(image) forPasteboardType:@"public.png"];
     [NSNotificationCenter.defaultCenter postNotificationName:UIPasteboardChangedNotification object:pasteboard];
-    XCTAssertEqual(dispatch_semaphore_wait(OneKeyTestReadStarted, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)), 0L);
+    XCTAssertEqual(dispatch_semaphore_wait(readStarted, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)), 0L);
 
     [NSNotificationCenter.defaultCenter postNotificationName:name object:field];
     XCTAssertTrue([field canPerformAction:paste withSender:nil]);
   } @finally {
-    dispatch_semaphore_t releaseRead;
     @synchronized (UIPasteboard.class) {
-      releaseRead = OneKeyTestReleaseRead;
       OneKeyTestReleaseRead = nil;
       OneKeyTestReadStarted = nil;
     }
-    if (releaseRead != nil) {
-      dispatch_semaphore_signal(releaseRead);
-    }
+    dispatch_semaphore_signal(releaseRead);
     pasteboard.items = previousItems;
   }
 }

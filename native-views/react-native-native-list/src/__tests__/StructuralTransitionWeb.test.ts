@@ -31,6 +31,33 @@ function snapshot(keys: readonly string[], id?: string): NativeListSnapshot {
 }
 
 describe('NativeList Web structural transition', () => {
+  it('commits grid and horizontal source layouts without a structural frame', () => {
+    for (const [source, target] of [
+      [{ kind: 'grid', gridColumns: 2 }, { kind: 'linear' }],
+      [{ kind: 'linear', orientation: 'horizontal' }, { kind: 'table' }],
+    ] as const) {
+      const { window } = new JSDOM('<!doctype html><body></body>');
+      const frames = jest.fn(() => 1);
+      window.requestAnimationFrame = frames;
+      const host = window.document.createElement('div');
+      window.document.body.appendChild(host);
+      const old = { ...snapshot(['a', 'b']), layout: source };
+      const engine = new NativeListWebEngine(host, old, {}, false);
+      try {
+        frames.mockClear();
+        engine.applySnapshot({
+          ...snapshot(['a', 'b', 'c'], 'change-layout'),
+          generation: 2,
+          layout: target,
+        });
+        expect(frames).not.toHaveBeenCalled();
+        expect(engine.currentSnapshot().rows).toHaveLength(3);
+      } finally {
+        engine.destroy();
+      }
+    }
+  });
+
   it('keeps viewport-near retiring tail rows at full height along a shared-owner collapse', async () => {
     const { window } = new JSDOM('<!doctype html><body></body>');
     let reduceMotion = false;

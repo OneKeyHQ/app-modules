@@ -1002,7 +1002,9 @@ final class NativeListView: UIView {
       // A target change without a new command cannot settle the previous target.
       pendingDisclosureSettlement = nil
     }
-    let wantsStructure = config != nil && isNewTransition && logicalOldKeys != newKeys
+    let wantsStructure = config?.orientation == "vertical"
+      && (config?.layout == "linear" || config?.layout == "table")
+      && isNewTransition && logicalOldKeys != newKeys
       && next.orientation == "vertical" && (next.layout == "linear" || next.layout == "table")
       && !UIAccessibility.isReduceMotionEnabled
       && (transition?.duration ?? 0) > 0

@@ -817,6 +817,59 @@ final class NativeListLifecycleTests: XCTestCase {
     XCTAssertTrue(spacing == UIStackView.spacingUseDefault || spacing == cell.root.spacing)
   }
 
+  func testAutoHeightIdentityReservesMeasuredTrailingWidth() throws {
+    let subtitle = "A long recipient address that must wrap within the space left beside its values and controls"
+    func item(
+      trailing: [[String: Any]], horizontalPadding: Double? = nil,
+      presentation: String = ""
+    ) throws -> NativeListItem {
+      var style: [String: Any] = ["image": ["width": 40, "height": 40]]
+      if let horizontalPadding { style["horizontalPadding"] = horizontalPadding }
+      return try NativeListItem(data: [
+        "key": "recipient", "type": "identity", "title": "Recipient", "subtitle": subtitle,
+        "subtitleLines": 0, "contentHeight": "auto", "style": style,
+        "presentation": presentation,
+        "trailing": trailing,
+      ])
+    }
+    func height(width: CGFloat, item: NativeListItem) throws -> CGFloat {
+      return try XCTUnwrap(NativeListIdentityCell.measure(
+        item, width: width, theme: nil, layout: "linear", fonts: NativeListFontFamilies()))
+    }
+
+    let pair: [[String: Any]] = [[
+      "kind": "valuePair", "primary": "$123,456.78", "secondary": "12345 TOKEN",
+    ]]
+    let pairAndMenu = pair + [["kind": "menu", "actionKey": "menu"]]
+    let pairItem = try item(trailing: pair)
+    let pairHeight = try height(width: 240, item: pairItem)
+    XCTAssertGreaterThan(pairHeight, try height(width: 240, item: item(trailing: [])))
+    XCTAssertGreaterThanOrEqual(try height(width: 240, item: item(trailing: pairAndMenu)),
+      pairHeight)
+    let cell = NativeListIdentityCell(frame: CGRect(x: 0, y: 0, width: 240, height: pairHeight))
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 240, height: pairHeight))
+    window.addSubview(cell)
+    cell.bind(item: pairItem, theme: nil, layout: "linear", selected: false,
+      checkboxState: { _, _, fallback in fallback }, fonts: NativeListFontFamilies())
+    window.layoutIfNeeded()
+    cell.layoutIfNeeded()
+    let subtitleLabel = try XCTUnwrap(Mirror(reflecting: cell).children.first {
+      $0.label == "subtitleLabel"
+    }?.value as? UILabel)
+    XCTAssertGreaterThan(subtitleLabel.bounds.width, 0.5)
+    XCTAssertGreaterThanOrEqual(subtitleLabel.bounds.height + 0.5,
+      subtitleLabel.sizeThatFits(CGSize(
+        width: subtitleLabel.bounds.width, height: .greatestFiniteMagnitude)).height)
+    let accountIcon: [[String: Any]] = [[
+      "kind": "icon", "name": "DotHorOutline", "actionKey": "menu",
+    ]]
+    XCTAssertGreaterThanOrEqual(
+      try height(width: 220, item: item(trailing: accountIcon,
+        horizontalPadding: 28, presentation: "accountSelector")),
+      try height(width: 220, item: item(trailing: accountIcon,
+        presentation: "accountSelector")))
+  }
+
   func testFixedFooterReplacesRendererAndKeepsActionRouting() throws {
     let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
     var actions: [[String: Any]] = []
@@ -1071,6 +1124,7 @@ final class NativeListLifecycleTests: XCTestCase {
     let view = NativeListView(frame: window.bounds)
     controller.view.addSubview(view)
     window.isHidden = false
+    let list = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
     defer {
       view.dispose()
       view.removeFromSuperview()
@@ -1371,6 +1425,38 @@ final class NativeListLifecycleTests: XCTestCase {
       XCTAssertEqual(list.contentSize.height, testCase.height, accuracy: 1, testCase.name)
       XCTAssertEqual(list.contentOffset.y, expectedOffset, accuracy: 1, testCase.name)
     }
+  }
+
+  func testStructuralTransitionFromGridOrHorizontalCommitsAtomically() throws {
+    try requireStructuralAnimation()
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 400, height: 600))
+    let controller = UIViewController()
+    window.rootViewController = controller
+    let view = NativeListView(frame: window.bounds)
+    controller.view.addSubview(view)
+    window.isHidden = false
+    let list = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+    defer {
+      view.dispose()
+      view.removeFromSuperview()
+      window.isHidden = true
+      window.rootViewController = nil
+    }
+    view.applySnapshotJson(try structuralRowsSnapshot(
+      count: 6, generation: 1, layoutKind: "grid"))
+    view.layoutIfNeeded()
+    view.applySnapshotJson(try structuralRowsSnapshot(
+      count: 8, generation: 2, transitionID: "from-grid", layoutKind: "linear"))
+    XCTAssertNil(Mirror(reflecting: view).descendant("structuralDisplayLink") as? CADisplayLink)
+    XCTAssertEqual(list.numberOfItems(inSection: 0), 8)
+
+    view.applySnapshotJson(try structuralRowsSnapshot(
+      count: 6, generation: 3, orientation: "horizontal"))
+    view.layoutIfNeeded()
+    view.applySnapshotJson(try structuralRowsSnapshot(
+      count: 8, generation: 4, transitionID: "from-horizontal", layoutKind: "table"))
+    XCTAssertNil(Mirror(reflecting: view).descendant("structuralDisplayLink") as? CADisplayLink)
+    XCTAssertEqual(list.numberOfItems(inSection: 0), 8)
   }
 
   func testVisibleNativeCellsRemainBoundedAsRowsGrowTenfold() throws {
@@ -2581,7 +2667,7 @@ final class NativeListLifecycleTests: XCTestCase {
   private func structuralRowsSnapshot(
     count: Int, generation: Int? = nil, transitionID: String? = nil,
     durationMs: Int = 80, dataRows: Bool = false, firstRowHeight: Int? = nil,
-    uniformHeight: Int = 60, orientation: String = "vertical",
+    uniformHeight: Int = 60, orientation: String = "vertical", layoutKind: String = "linear",
     disclosureExpanded: Bool? = nil, disclosureInset: Int = 20
   ) throws -> String {
     let rows: [[String: Any]] = (0..<count).map {
@@ -2593,9 +2679,11 @@ final class NativeListLifecycleTests: XCTestCase {
       }
       return ["key": "row-\($0)", "type": "action", "title": "Row", "height": height]
     }
+    var layout: [String: Any] = ["kind": layoutKind, "orientation": orientation]
+    if layoutKind == "grid" { layout["gridColumns"] = 2 }
     var value: [String: Any] = [
       "schemaVersion": 1, "generation": generation ?? count + 1,
-      "layout": ["kind": "linear", "orientation": orientation], "rows": rows,
+      "layout": layout, "rows": rows,
     ]
     if let transitionID {
       value["structuralTransition"] = [

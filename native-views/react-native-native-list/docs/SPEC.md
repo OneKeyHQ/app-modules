@@ -44,8 +44,9 @@ a stale prior width's measurement. The existing 4096 UTF-16-code-unit bound per
 text field still applies; zero is not an unlimited data-size allowance.
 
 An `identity` row may set `longPressActionKey` to a nonempty action key. A valid
-long press on an enabled row emits one `onRowAction` with its current row key,
-action key, `row` anchor source and window press point. It suppresses the
+touch long press on an enabled row emits one `onRowAction` with its current row key,
+action key, `row` anchor source and window press point. An accessibility long-click
+without a physical touch retains the row anchor without a press point. It suppresses the
 ordinary press for that gesture. Motion cancellation, row rebind/recycle,
 disabled state and disposal cancel pending recognition. Trailing accessory
 actions remain independent. Omission preserves existing tap behavior.
@@ -116,6 +117,8 @@ or event. `popover` on all platforms toggles only on click/press and does not
 open from hover. These help targets do not activate their row. Presentation
 change, departure, scroll, rebind, replacement by another anchor and disposal
 invalidate the old anchor.
+On Web, the value-pair primary help target is keyboard focusable; focus opens
+tooltip help and Enter/Space activates popover help without pressing the row.
 The consuming app owns Tooltip/Popover content. Missing help fields keep
 the original noninteractive text. All additions use snapshot JSON and do not
 change the Nitro ABI.
@@ -462,6 +465,16 @@ Existing geometry/typography differences are recorded in
 them. iOS uses UICollectionView, Android RecyclerView, and Web a windowed DOM
 engine. See [DESIGN.md](DESIGN.md) for their current ownership boundaries.
 
+### Android section-index attachment
+
+When `sectionIndex.centeredInWindow` is enabled, the Android index rail moves
+between the list container and the window host as list visibility and attachment
+change. Before adding that same rail to its new parent, the previous parent MUST
+finish any pending view transition for it. Hiding the list returns the rail to
+the list container; detaching still uses the existing posted return so that a
+window traversal is not interrupted. Re-showing or reattaching MUST retain one
+rail instance with one current parent.
+
 ### Font resource ownership and runtime configuration
 
 Status: implemented; JavaScript regression tests, Android compilation/JVM tests
@@ -506,6 +519,26 @@ rows, truncation and numeric alignment on each platform; source/unit checks do
 not establish visual acceptance. Acceptance includes two independent runtimes,
 two list instances, changed/reset mappings, invalid configuration without partial
 state, all templates and container text, and retained selection/scroll behavior.
+
+### Trailing text accessory hit area (OK-65494)
+
+Status: implemented on iOS and Android. iOS XCTest
+(`NativeListAccessoryStackTests`) checks the control state and hit test, Android
+a JVM policy test (`NativeListPressPolicyTest`); iOS Simulator acceptance on the
+app's network selector is recorded in the changelog entry (2026-10-26). Android
+device acceptance pending.
+
+A trailing text accessory (`value`, `valuePair`, `progress`, and a `radio` or
+`switch` without an action key) is display only. It MUST NOT own touches: a tap
+on it is a row press, so the whole row, including its value column, is the hit
+area on iOS, Android and Web. Only a text accessory that carries an action key
+(`radio`, `switch`) handles its own tap and emits that action instead of the row
+press. Icon, chevron, menu, drag and checkbox accessories keep their existing
+ownership. iOS implements this by disabling user interaction on the shared
+accessory button when it has no action and restoring it on reset; Android keeps
+the trailing `TextView` non-clickable unless `showTrailing` binds an action
+(`setOnClickListener(null)` alone leaves a view clickable). Web already renders
+an action-less accessory as a `span`, so its click reaches the row.
 
 ## Failures, fallback and limits
 
@@ -1610,7 +1643,7 @@ Changing the source set retains the existing rebuild/disposal behavior.
 
 ## Opt-in structural snapshot transition (Home assets)
 
-`NativeListSnapshot.structuralTransition?: { id: string; durationMs?: number; anchorKey?: string }` is an update command carried by a validated complete snapshot. It applies only after the initial mount, when `id` differs from the last consumed transition id and the row-key sequence changes in a vertical, single-column `linear` or `table` layout. Grid, sectioned, and horizontal lists apply the snapshot without this animation. The default duration is 220 ms; explicit values must be finite and in the 0–2000 ms range. Reusing an id on price, balance, selection, or theme snapshots is inert. `applyPatches` never starts a structural transition. A newer id supersedes an in-flight transition from its current visual geometry; host disposal cancels it. Reduced-motion settings disable animation while preserving final rows and scroll position.
+`NativeListSnapshot.structuralTransition?: { id: string; durationMs?: number; anchorKey?: string }` is an update command carried by a validated complete snapshot. It applies only after the initial mount, when `id` differs from the last consumed transition id and the row-key sequence changes while both the previous and next layouts are vertical, single-column `linear` or `table`. Grid, sectioned, and horizontal source or target layouts apply the snapshot without this animation. The default duration is 220 ms; explicit values must be finite and in the 0–2000 ms range. Reusing an id on price, balance, selection, or theme snapshots is inert. `applyPatches` never starts a structural transition. A newer id supersedes an in-flight transition from its current visual geometry; host disposal cancels it. Reduced-motion settings disable animation while preserving final rows and scroll position.
 
 The host captures the first visible row whose key survives the update and keeps its viewport offset where feasible. If none survives, an off-screen `anchorKey` supplies a fallback target. The host never teleports the fallback into view before animation. A collapse that makes the prior absolute offset unreachable must ease the final clamp over the same transition instead of jumping. The React footer slot's old/new height difference is compensated inside that same transition so its button and following content remain continuous while the slot changes. The header/footer slots remain in the one list scroll owner. Web external-scroll-host mode must suppress conflicting browser scroll anchoring during the transition. A failed or unsupported animation still applies the final snapshot and anchor atomically. Row geometry, footer position, and scroll offset share one platform timeline; Pager observes native offset changes as list-owned scroll commands. iOS and Android hosts drive interpolation on the native UI thread without JavaScript bridge frames; Web uses one animation frame timeline for height and offset.
 

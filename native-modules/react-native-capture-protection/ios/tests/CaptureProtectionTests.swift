@@ -1,10 +1,36 @@
+import Darwin
 import NitroModules
 import UIKit
 import XCTest
 @testable import ReactNativeCaptureProtection
 
+private final class CaptureProtectionTestAppDelegate: UIResponder, UIApplicationDelegate {
+  var window: UIWindow? = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+}
+
 @MainActor
 final class CaptureProtectionTests: XCTestCase {
+  private static var retainedDelegate: CaptureProtectionTestAppDelegate?
+
+  override func setUp() {
+    super.setUp()
+    Self.ensureApplicationWindow()
+  }
+
+  private static func ensureApplicationWindow() {
+    if (UIApplication.value(forKey: "sharedApplication") as? UIApplication) == nil,
+      let sym = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "UIApplicationInstantiateSingleton")
+    {
+      typealias InstantiateFn = @convention(c) (AnyClass) -> Void
+      unsafeBitCast(sym, to: InstantiateFn.self)(UIApplication.self)
+    }
+    if (UIApplication.shared.delegate?.window ?? nil) == nil {
+      let delegate = CaptureProtectionTestAppDelegate()
+      retainedDelegate = delegate
+      UIApplication.shared.delegate = delegate
+    }
+  }
+
   func testNativeSubscriptionsRemainScopedToTheirObjects() throws {
     let first = ReactNativeCaptureProtection()
     let second = ReactNativeCaptureProtection()

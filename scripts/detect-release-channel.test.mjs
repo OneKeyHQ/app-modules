@@ -22,13 +22,33 @@ test("uses latest when a package version changes", () => {
   );
 });
 
-test("uses latest when a publishable package is added", () => {
+test("uses latest when an existing package version changes alongside an added package", () => {
   assert.equal(
     detectReleaseChannel(release, [
       ...release.map((workspace) => ({ ...workspace, version: "6.7.0-3" })),
       { name: "@onekeyfe/module-c", version: "6.7.0-3" },
     ]),
     "latest"
+  );
+});
+
+test("uses next when only a publishable package is added at the current version", () => {
+  assert.equal(
+    detectReleaseChannel(release, [
+      ...release,
+      { name: "@onekeyfe/module-c", version: "6.7.0-2" },
+    ]),
+    "next"
+  );
+});
+
+test("uses next when a newly added package has no version at the base ref", () => {
+  assert.equal(
+    detectReleaseChannel(
+      [...release, { name: "@onekeyfe/module-c", version: undefined }],
+      [...release, { name: "@onekeyfe/module-c", version: "6.7.0-2" }]
+    ),
+    "next"
   );
 });
 
