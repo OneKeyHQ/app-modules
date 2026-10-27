@@ -254,3 +254,96 @@ observer lives for the process.
   link UIKit. Remaining acceptance: a hinge-only detection with the model list
   emptied, spanning callbacks on fold and unfold, the cached result on the next
   launch, and a regular iPhone returning `false`.
+
+# DeviceUtils: window controls insets
+
+## Status and scope
+
+This section covers `getWindowControlsInsets()`,
+`addWindowControlsInsetsChangedListener()`, and
+`removeWindowControlsInsetsChangedListener()`. They tell JS how much room the
+system window controls take in the app's main window, so a custom header row
+can keep its content beside them. The behavior below is Implemented.
+
+Runtime verified on an iPad Pro 11-inch (M5) simulator (iOS 27.0, app built
+with Xcode 27.1) in a resizable window at 375 x 486 pt and 743 x 1146 pt: the
+tracking view is installed, and the consumer header clears the window controls
+after resizes. Unverified: listener timing during rapid resizes, iOS 26,
+Stage Manager on external displays, multiple windows of one app, iPhone (zero
+expected), and builds with an iOS 18 SDK.
+
+Non-goals: positioning content for the controls (consumers own layout), the
+vertical corner adaptation, and Android desktop windowing.
+
+## Definitions and ownership
+
+- **Window controls:** system controls drawn inside the app window, such as
+  the iPadOS close, minimize, and tile buttons in the top-leading corner of a
+  resizable window.
+- **Window controls insets:** per edge, UIKit's safe area with horizontal
+  corner adaptation minus the plain safe area, clamped at zero. The value is
+  in points and excludes the plain safe area, which callers already apply.
+
+One process-wide native observer owns the value, the tracking view, and the
+listener table. The main and background JS runtimes share it through their
+DeviceUtils HybridObjects; listener IDs are unique per process.
+
+## Public API and defaults
+
+```ts
+interface WindowControlsInsets { top: number; left: number; bottom: number; right: number }
+
+getWindowControlsInsets(): WindowControlsInsets;
+addWindowControlsInsetsChangedListener(callback: (insets: WindowControlsInsets) => void): number;
+removeWindowControlsInsetsChangedListener(id: number): void;
+```
+
+- All edges are zero until the observer measures the window, when no controls
+  are shown, on iOS before 26, and on Android.
+- The getter is synchronous and returns the last measured value.
+- Removing an unknown ID is a no-op.
+
+## Lifecycle and callbacks
+
+1. The first call to any of the three methods creates the observer. It installs
+   on the main thread; if no key window exists yet it waits for
+   `UIWindow.didBecomeKeyNotification`.
+2. It inserts an invisible, non-interactive view spanning the key window,
+   behind the root view controller's view. That view recomputes the insets on
+   every `layoutSubviews` and `safeAreaInsetsDidChange`, which covers window
+   resizes and entering or leaving full screen.
+3. Listeners fire on the main thread, once per changed value, after the stored
+   value is updated. Equal values do not notify.
+
+The observer, the tracking view, and the listeners live for the process.
+Callers must read the getter after subscribing, because the first measurement
+can land before a listener is added.
+
+## Platform contract
+
+| Concern | iOS 26+ | iOS < 26 | Android |
+| --- | --- | --- | --- |
+| Source | `UIView.edgeInsets(for: .safeArea(cornerAdaptation: .horizontal))` minus `safeAreaInsets` | None | None |
+| Value | Measured | All zero | All zero |
+| Listeners | Fire on change | Never fire | Accepted, never fire |
+
+The UIKit API requires the iOS 26 SDK (Swift 6.2); older toolchains compile the
+all-zero path.
+
+## Performance and resource budget
+
+The work per layout pass is two inset reads and a comparison on the main
+thread. Retained state is one view, one value, and the listener table.
+
+## Conformance and acceptance
+
+- iOS: `ios/WindowControlsInsetsObserver.swift`, forwarded by
+  `ios/ReactNativeDeviceUtils.swift`.
+- Android: `ReactNativeDeviceUtils.kt` (`getWindowControlsInsets`).
+- Measured in the simulator: a 375 x 486 pt window has safe area
+  `{10, 0, 10, 0}` and horizontally adapted `{10, 66, 10, 9.5}`; a 743 x 1146 pt
+  window has `{32, 0, 10, 0}` and `{32, 66, 10, 9.5}`. Both give insets of
+  `{0, 66, 0, 9.5}`.
+- No automated native test covers this API; the standalone Swift runner cannot
+  host a UIKit window. Remaining acceptance: values after rapid window resizes,
+  iOS 26, and an iPhone returning zero.

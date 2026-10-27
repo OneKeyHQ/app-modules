@@ -26,6 +26,18 @@ export interface DualScreenInfoRect {
   height: number;
 }
 
+/**
+ * Extra room, in points beyond the safe area, that content near the window
+ * corners must leave for system window controls (the iPadOS window controls in
+ * the top-leading corner, for example). All zero when no controls are shown.
+ */
+export interface WindowControlsInsets {
+  top: number;
+  left: number;
+  bottom: number;
+  right: number;
+}
+
 export interface LaunchOptions {
   launchType: string;
   deepLink?: string;
@@ -67,6 +79,17 @@ export interface ReactNativeDeviceUtils
   addSpanningChangedListener(callback: (isSpanning: boolean) => void): number;
   removeSpanningChangedListener(id: number): void;
   setUserInterfaceStyle(style: UserInterfaceStyle): void;
+  /**
+   * Window-controls insets of the app's main window, for content that adapts
+   * horizontally (a header row beside the controls). iOS 26+ reads UIKit's
+   * safe area with horizontal corner adaptation; Android and older iOS return
+   * all zeros. Listeners fire on the main thread when the value changes.
+   */
+  getWindowControlsInsets(): WindowControlsInsets;
+  addWindowControlsInsetsChangedListener(
+    callback: (insets: WindowControlsInsets) => void
+  ): number;
+  removeWindowControlsInsetsChangedListener(id: number): void;
 
   // LaunchOptionsManager
   getLaunchOptions(): Promise<LaunchOptions>;

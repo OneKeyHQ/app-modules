@@ -138,6 +138,18 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
     func removeSpanningChangedListener(id: Double) throws -> Void {
         DualScreenDetector.shared.removeSpanningChangedListener(id)
     }
+
+    func getWindowControlsInsets() throws -> WindowControlsInsets {
+        return WindowControlsInsetsObserver.shared.currentInsets
+    }
+
+    func addWindowControlsInsetsChangedListener(callback: @escaping (WindowControlsInsets) -> Void) throws -> Double {
+        return WindowControlsInsetsObserver.shared.addListener(callback)
+    }
+
+    func removeWindowControlsInsetsChangedListener(id: Double) throws -> Void {
+        WindowControlsInsetsObserver.shared.removeListener(id)
+    }
     
     
     public func setUserInterfaceStyle(style: UserInterfaceStyle) throws -> Void {
