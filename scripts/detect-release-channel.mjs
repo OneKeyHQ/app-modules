@@ -16,7 +16,10 @@ export function detectReleaseChannel(before, after) {
   const beforeVersions = new Map(
     before.map(({ name, version }) => [name, version])
   );
-  return after.some(({ name, version }) => beforeVersions.get(name) !== version)
+  return after.some(({ name, version }) => {
+    const previousVersion = beforeVersions.get(name);
+    return previousVersion !== undefined && previousVersion !== version;
+  })
     ? sourceChannel
     : "next";
 }
