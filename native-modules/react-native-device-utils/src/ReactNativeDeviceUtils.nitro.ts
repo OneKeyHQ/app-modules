@@ -38,6 +38,25 @@ export interface WindowControlsInsets {
   right: number;
 }
 
+/** App commands in the iPadOS menu bar that JS performs. */
+export type MainMenuCommand = 'about' | 'preferences' | 'lockNow';
+
+export interface MainMenuLink {
+  title: string;
+  url: string;
+}
+
+/**
+ * Localized content of the custom main menu (the iPadOS menu bar). Help links
+ * open in the system browser natively; the other items notify JS.
+ */
+export interface MainMenuConfig {
+  aboutTitle: string;
+  preferencesTitle: string;
+  lockNowTitle: string;
+  helpLinks: MainMenuLink[];
+}
+
 export interface LaunchOptions {
   launchType: string;
   deepLink?: string;
@@ -90,6 +109,16 @@ export interface ReactNativeDeviceUtils
     callback: (insets: WindowControlsInsets) => void
   ): number;
   removeWindowControlsInsetsChangedListener(id: number): void;
+  /**
+   * Replaces the custom main menu content and rebuilds the menu bar. The menu
+   * only shows on iPadOS (and in windows with a menu bar); Android ignores it.
+   */
+  setMainMenuConfig(config: MainMenuConfig): void;
+  /** Listeners fire on the main thread when the user picks an app command. */
+  addMainMenuCommandListener(
+    callback: (command: MainMenuCommand) => void
+  ): number;
+  removeMainMenuCommandListener(id: number): void;
 
   // LaunchOptionsManager
   getLaunchOptions(): Promise<LaunchOptions>;

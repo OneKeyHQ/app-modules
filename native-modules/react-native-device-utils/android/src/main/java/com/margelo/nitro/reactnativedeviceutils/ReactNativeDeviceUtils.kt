@@ -780,6 +780,20 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
 
   override fun removeWindowControlsInsetsChangedListener(id: Double) {}
 
+  // Android has no app-owned main menu bar: the config is ignored, and
+  // listeners are accepted but never called.
+  override fun setMainMenuConfig(config: MainMenuConfig) {}
+
+  override fun addMainMenuCommandListener(
+    callback: (command: MainMenuCommand) -> Unit
+  ): Double = synchronized(this) {
+    val id = nextListenerId
+    nextListenerId++
+    return@synchronized id
+  }
+
+  override fun removeMainMenuCommandListener(id: Double) {}
+
   private fun startObservingLayoutChanges() {
     if (isObservingLayoutChanges) {
       return

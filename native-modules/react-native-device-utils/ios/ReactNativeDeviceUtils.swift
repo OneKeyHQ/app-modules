@@ -150,6 +150,18 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
     func removeWindowControlsInsetsChangedListener(id: Double) throws -> Void {
         WindowControlsInsetsObserver.shared.removeListener(id)
     }
+
+    func setMainMenuConfig(config: MainMenuConfig) throws -> Void {
+        MainMenuController.shared.setConfig(config)
+    }
+
+    func addMainMenuCommandListener(callback: @escaping (MainMenuCommand) -> Void) throws -> Double {
+        return MainMenuController.shared.addListener(callback)
+    }
+
+    func removeMainMenuCommandListener(id: Double) throws -> Void {
+        MainMenuController.shared.removeListener(id)
+    }
     
     
     public func setUserInterfaceStyle(style: UserInterfaceStyle) throws -> Void {

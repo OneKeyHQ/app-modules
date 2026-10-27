@@ -347,3 +347,87 @@ thread. Retained state is one view, one value, and the listener table.
 - No automated native test covers this API; the standalone Swift runner cannot
   host a UIKit window. Remaining acceptance: values after rapid window resizes,
   iOS 26, and an iPhone returning zero.
+
+# DeviceUtils: main menu
+
+## Status and scope
+
+This section covers `setMainMenuConfig()`, `addMainMenuCommandListener()`, and
+`removeMainMenuCommandListener()`, which let JS give the iPadOS menu bar
+localized app commands and Help links. The behavior below is Implemented;
+runtime status is in Conformance.
+
+Non-goals: Edit, View, and Window commands (the system owns them), menus of
+secondary windows, and context menus.
+
+## Definitions and ownership
+
+- **Main menu:** the `UIMenuSystem.main` menu, shown as the iPadOS menu bar
+  when the app runs in a window with one.
+- **App command:** an item JS performs: `about`, `preferences`, or `lockNow`.
+
+One process-wide controller owns the last config and the listener table. The
+host app's delegate MUST forward `buildMenu(with:)` to
+`MainMenuController.buildMenu(withBuilder:)` (Objective-C selector
+`buildMenuWithBuilder:`); app targets that cannot import Nitro modules reach
+it through `NSClassFromString("ReactNativeDeviceUtils.MainMenuController")`.
+
+## Public API and defaults
+
+```ts
+type MainMenuCommand = 'about' | 'preferences' | 'lockNow';
+interface MainMenuLink { title: string; url: string }
+interface MainMenuConfig {
+  aboutTitle: string; preferencesTitle: string; lockNowTitle: string;
+  helpLinks: MainMenuLink[];
+}
+
+setMainMenuConfig(config: MainMenuConfig): void;
+addMainMenuCommandListener(callback: (command: MainMenuCommand) => void): number;
+removeMainMenuCommandListener(id: number): void;
+```
+
+The built main menu:
+
+| Menu | Content |
+| --- | --- |
+| App | About (`aboutTitle`), then Preferences (`preferencesTitle`, Command-Comma) and Lock Now (`lockNowTitle`, Command-Shift-L). Preferences replaces the system item that opens the app's page in the Settings app. System Hide items stay. |
+| File, Format | Removed. |
+| Edit, View, Window | System content, unchanged. |
+| Help | One item per help link, in order; each opens its URL with `UIApplication.open`. |
+
+- Before the first config, File and Format are removed and the app and Help
+  menus keep their system content.
+- A later config replaces the previous one and rebuilds the menu.
+- A help link whose URL does not parse is dropped and logged; an empty link
+  list keeps the system Help menu.
+- Removing an unknown listener ID is a no-op.
+
+## Lifecycle and callbacks
+
+`setMainMenuConfig` stores the config under a lock and asks
+`UIMenuSystem.main` to rebuild on the main thread. App commands are
+`UICommand`/`UIKeyCommand`s whose action, `onekeyPerformMainMenuCommand:`, is
+added to `UIApplication` (always in the responder chain); it notifies every
+listener on the main thread with the command. Commands picked while no
+listener is registered are dropped.
+
+## Platform contract
+
+| Concern | iOS | Android |
+| --- | --- | --- |
+| Menu | `UIMenuBuilder` in `buildMenu(with:)` | None |
+| `setMainMenuConfig` | Stores and rebuilds | Ignored |
+| Listeners | Fire on app commands | Accepted, never fire |
+
+The menu bar is visible only where iPadOS shows one (resizable windows); the
+config is harmless elsewhere.
+
+## Conformance and acceptance
+
+- iOS: `ios/MainMenuController.swift`, forwarded by
+  `ios/ReactNativeDeviceUtils.swift`; the host app forwards `buildMenu(with:)`.
+- Android: `ReactNativeDeviceUtils.kt` (`setMainMenuConfig`).
+- No automated native test covers this API. Runtime acceptance: see the
+  consumer verification; remaining: localization switches at runtime,
+  keyboard shortcuts with a hardware keyboard, and iOS 26.
