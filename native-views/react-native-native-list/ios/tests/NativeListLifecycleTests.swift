@@ -4,6 +4,81 @@ import XCTest
 
 @MainActor
 final class NativeListLifecycleTests: XCTestCase {
+  func testAcceptedRowIndexReusesStableShapeAndRejectsLateInvalidPatch() throws {
+    let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+    func snapshot(_ keys: [String], generation: Int, title: String = "Old") throws -> String {
+      let rows: [[String: Any]] = keys.map { key in
+        ["key": key, "type": "action", "title": title, "actionKey": "open"]
+      }
+      let value: [String: Any] = ["schemaVersion": 1, "generation": generation,
+        "layout": ["kind": "linear"], "rows": rows]
+      return String(decoding: try JSONSerialization.data(withJSONObject: value), as: UTF8.self)
+    }
+    func index() throws -> (ObjectIdentifier, [String: Int]) {
+      let optional = try XCTUnwrap(Mirror(reflecting: view).descendant("acceptedRowIndex"))
+      let value = try XCTUnwrap(Mirror(reflecting: optional).children.first?.value)
+      let byKey = try XCTUnwrap(Mirror(reflecting: value).descendant("byKey") as? [String: Int])
+      return (ObjectIdentifier(value as AnyObject), byKey)
+    }
+    func title(_ key: String) throws -> String {
+      let items = try XCTUnwrap(Mirror(reflecting: view).descendant("itemsByKey")
+        as? [String: NativeListItem])
+      return try XCTUnwrap(items[key]?.data["title"] as? String)
+    }
+    func patch(_ rows: [[String: Any]]) throws {
+      view.applyPatchesJson(String(decoding: try JSONSerialization.data(withJSONObject: rows),
+        as: UTF8.self))
+    }
+
+    view.applySnapshotJson(try snapshot(["alpha", "beta"], generation: 1))
+    let initial = try index()
+    XCTAssertEqual(initial.1, ["alpha": 0, "beta": 1])
+    view.applySnapshotJson(try snapshot(["alpha", "beta"], generation: 1, title: "New"))
+    XCTAssertEqual(try index().0, initial.0)
+    try patch([["key": "alpha", "type": "action", "changes": ["title": "Patched"]],
+      ["key": "missing", "type": "action", "changes": ["title": "Invalid"]]])
+    XCTAssertEqual(try title("alpha"), "New")
+    XCTAssertEqual(try title("beta"), "New")
+    XCTAssertEqual(try index().0, initial.0)
+    try patch([["key": "alpha", "type": "action", "changes": ["title": "Patched"]]])
+    XCTAssertEqual(try title("alpha"), "Patched")
+    XCTAssertEqual(try index().0, initial.0)
+
+    view.applySnapshotJson(try snapshot(["beta", "alpha"], generation: 1))
+    let reordered = try index()
+    XCTAssertNotEqual(reordered.0, initial.0)
+    XCTAssertEqual(reordered.1, ["beta": 0, "alpha": 1])
+    try patch([["key": "alpha", "type": "action", "changes": ["title": "After reorder"]]])
+    XCTAssertEqual(try title("alpha"), "After reorder")
+    view.applySnapshotJson(try snapshot(["beta", "gamma", "alpha"], generation: 1))
+    let inserted = try index()
+    XCTAssertNotEqual(inserted.0, reordered.0)
+    XCTAssertEqual(inserted.1, ["beta": 0, "gamma": 1, "alpha": 2])
+    try patch([["key": "alpha", "type": "action", "changes": ["title": "After insert"]]])
+    XCTAssertEqual(try title("alpha"), "After insert")
+    view.applySnapshotJson(try snapshot(["beta", "alpha"], generation: 1))
+    let deleted = try index()
+    XCTAssertNotEqual(deleted.0, inserted.0)
+    XCTAssertEqual(deleted.1, ["beta": 0, "alpha": 1])
+    try patch([["key": "alpha", "type": "action", "changes": ["title": "After delete"]]])
+    XCTAssertEqual(try title("alpha"), "After delete")
+    view.applySnapshotJson(try snapshot(["beta", "alpha"], generation: 2))
+    XCTAssertNotEqual(try index().0, deleted.0)
+    let beforeTypeChange = try index().0
+    let typeChanged: [String: Any] = ["schemaVersion": 1, "generation": 2,
+      "layout": ["kind": "linear"], "rows": [
+        ["key": "beta", "type": "identity", "title": "Beta",
+          "leading": ["kind": "icon", "name": "coin"]],
+        ["key": "alpha", "type": "action", "title": "Alpha", "actionKey": "open"],
+      ]]
+    view.applySnapshotJson(String(decoding: try JSONSerialization.data(withJSONObject: typeChanged),
+      as: UTF8.self))
+    XCTAssertNotEqual(try index().0, beforeTypeChange)
+    view.dispose()
+    XCTAssertEqual(Mirror(reflecting: try XCTUnwrap(Mirror(reflecting: view)
+      .descendant("acceptedRowIndex"))).children.count, 0)
+  }
+
   func testScrollEdgeStylesPreserveOverlayGeometryAndRestoreOriginalStyle() throws {
     guard #available(iOS 26.0, *) else {
       throw XCTSkip("Scroll-edge styles require iOS 26 or newer")
@@ -1557,6 +1632,73 @@ final class NativeListLifecycleTests: XCTestCase {
     }
   }
 
+  func testHybridSettlementListenerFollowsRegistration() throws {
+    let hybrid = HybridNativeList()
+    let host = try XCTUnwrap(hybrid.view as? NativeListView)
+    var first: [String] = []
+    var second: [String] = []
+    XCTAssertNil(host.onStructuralTransitionSettled)
+
+    hybrid.onStructuralTransitionSettled = { first.append($0) }
+    host.onStructuralTransitionSettled?("first")
+    XCTAssertEqual(first, ["first"])
+
+    hybrid.onStructuralTransitionSettled = { second.append($0) }
+    host.onStructuralTransitionSettled?("second")
+    XCTAssertEqual(first, ["first"])
+    XCTAssertEqual(second, ["second"])
+
+    hybrid.onStructuralTransitionSettled = nil
+    XCTAssertNil(host.onStructuralTransitionSettled)
+    hybrid.dispose()
+  }
+
+  func testDisclosureWithoutListenerStillSettlesWithoutReplay() throws {
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 600))
+    let controller = UIViewController()
+    window.rootViewController = controller
+    let view = NativeListView(frame: window.bounds)
+    controller.view.addSubview(view)
+    window.isHidden = false
+    defer {
+      view.dispose()
+      view.removeFromSuperview()
+      window.isHidden = true
+      window.rootViewController = nil
+    }
+    for index in 0..<6 { view.mountContainerSlot(UIView(), atIndex: index) }
+    view.setContainerSlotHeightsJson("[0,0,60,0,100,40]")
+    view.applySnapshotJson(try structuralRowsSnapshot(count: 6, generation: 1,
+      disclosureExpanded: false))
+    view.layoutIfNeeded()
+
+    let first = try structuralRowsSnapshot(count: 6, generation: 2,
+      transitionID: "without-listener", durationMs: 0, disclosureExpanded: true)
+    view.applySnapshotJson(first)
+    drainMainQueue()
+    XCTAssertEqual(Mirror(reflecting: view).descendant("pendingDisclosureSettlement")
+      .map { Mirror(reflecting: $0).children.count }, 0)
+
+    var settlements: [[String: Any]] = []
+    view.onStructuralTransitionSettled = { payload in
+      guard let data = payload.data(using: .utf8),
+            let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        return
+      }
+      settlements.append(value)
+    }
+    view.applySnapshotJson(first)
+    drainMainQueue()
+    XCTAssertTrue(settlements.isEmpty)
+
+    view.applySnapshotJson(try structuralRowsSnapshot(count: 6, generation: 3,
+      transitionID: "with-listener", durationMs: 0, disclosureExpanded: false))
+    drainMainQueue()
+    XCTAssertEqual(settlements.count, 1)
+    XCTAssertEqual(settlements.first?["transitionId"] as? String, "with-listener")
+    XCTAssertEqual(settlements.first?["status"] as? String, "completed")
+  }
+
   func testDisclosureInitialEndpoints() throws {
     let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 600))
     let controller = UIViewController()
@@ -2552,6 +2694,13 @@ final class NativeListLifecycleTests: XCTestCase {
     XCTAssertGreaterThan(heightBeforePatch, 1500)
     let retiring = try XCTUnwrap(list.cellForItem(at: IndexPath(item: 25, section: 0)) as? NativeListRowHost)
     XCTAssertEqual(retiring.bounds.height, 60, accuracy: 1)
+    func storedContent(_ key: String) throws -> String {
+      let items = try XCTUnwrap(Mirror(reflecting: view).descendant("itemsByKey")
+        as? [String: NativeListItem])
+      return try XCTUnwrap(items[key]).content
+    }
+    let oldAcceptedContent = try storedContent("row-20")
+    let retiredContent = try storedContent("row-25")
     let patch: [[String: Any]] = [[
       "key": "row-20", "type": "dataRow", "changes": [
         "revision": 2,
@@ -2559,8 +2708,16 @@ final class NativeListLifecycleTests: XCTestCase {
           ["key": "price", "text": "$123.45"]],
       ],
     ]]
+    let invalidRetiredPatch: [String: Any] = ["key": "row-25", "type": "dataRow",
+      "changes": ["revision": 2]]
+    view.applyPatchesJson(String(decoding: try JSONSerialization.data(
+      withJSONObject: patch + [invalidRetiredPatch]), as: UTF8.self))
+    XCTAssertEqual(try storedContent("row-20"), oldAcceptedContent)
+    XCTAssertEqual(try storedContent("row-25"), retiredContent)
     view.applyPatchesJson(String(decoding: try JSONSerialization.data(withJSONObject: patch),
       as: UTF8.self))
+    XCTAssertNotEqual(try storedContent("row-20"), oldAcceptedContent)
+    XCTAssertEqual(try storedContent("row-25"), retiredContent)
     list.layoutIfNeeded()
     let patched = try XCTUnwrap(list.cellForItem(at: IndexPath(item: 20, section: 0)))
     XCTAssertTrue(labels(in: patched).contains { $0.text == "$123.45" })

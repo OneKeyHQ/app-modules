@@ -654,7 +654,16 @@ final class NativeListView: UIView {
   private var sectionIndexHostHeightConstraint: NSLayoutConstraint?
   private var footerHeightConstraint: NSLayoutConstraint!
   private var dataSource: UICollectionViewDiffableDataSource<Int, String>!
+  private final class AcceptedRowIndex {
+    let byKey: [String: Int]
+
+    init(items: [NativeListItem]) {
+      byKey = Dictionary(uniqueKeysWithValues: items.enumerated().map { ($1.key, $0) })
+    }
+  }
+
   private var config: NativeListConfig?
+  private var acceptedRowIndex: AcceptedRowIndex?
   private var itemsByKey: [String: NativeListItem] = [:]
   private var endReachedGeneration: Int?
   private var lastVisibleRange: (first: Int, last: Int, firstKey: String?, lastKey: String?)?
@@ -996,6 +1005,18 @@ final class NativeListView: UIView {
     }
   }
 
+  private func acceptRowIndex(for next: NativeListConfig, replacing previous: NativeListConfig?) {
+    if let previous, acceptedRowIndex != nil,
+       previous.generation == next.generation,
+       previous.items.count == next.items.count,
+       zip(previous.items, next.items).allSatisfy({ old, new in
+         old.key == new.key && old.type == new.type
+       }) {
+      return
+    }
+    acceptedRowIndex = AcceptedRowIndex(items: next.items)
+  }
+
   func applySnapshotJson(_ json: String) {
     guard let next = try? NativeListConfig.parse(json: json) else { return }
     let transition = next.structuralTransition
@@ -1140,6 +1161,7 @@ final class NativeListView: UIView {
     if let current = config, !newDisclosureCommand,
        structuralRemovedItems.isEmpty, structuralTail == nil,
        isControlledSelectionSnapshotUpdate(from: current, to: next) {
+      acceptRowIndex(for: next, replacing: current)
       config = next
       itemsByKey = Dictionary(uniqueKeysWithValues: next.items.map { ($0.key, $0) })
       // OneKey patch: A controlled selection echo is fully handled by the
@@ -1178,6 +1200,7 @@ final class NativeListView: UIView {
         }
     } ?? false
     if config?.generation != next.generation { endReachedGeneration = nil }
+    acceptRowIndex(for: next, replacing: config)
     config = next
     if structuralTail == nil {
       disclosureCVisibleHeight = next.disclosure?.expanded == true ? containerSlotHeights[4] : 0
@@ -1367,7 +1390,8 @@ final class NativeListView: UIView {
           consumedStructuralTransitionID == pending.id,
           config?.disclosure?.expanded == pending.expanded else { return }
     pendingDisclosureSettlement = nil
-    emit(onStructuralTransitionSettled, [
+    guard let callback = onStructuralTransitionSettled else { return }
+    emit(callback, [
       "transitionId": pending.id,
       "status": status,
       "settledExpanded": pending.expanded,
@@ -1479,14 +1503,16 @@ final class NativeListView: UIView {
 
   func applyPatchesJson(_ json: String) {
     guard var current = config,
+          let indexByKey = acceptedRowIndex?.byKey,
           let bytes = json.data(using: .utf8),
           let patches = try? JSONSerialization.jsonObject(with: bytes) as? [[String: Any]] else { return }
-    let indexByKey = Dictionary(uniqueKeysWithValues: current.items.enumerated().map { ($1.key, $0) })
     var seen = Set<String>()
     var pending: [(Int, [String: Any])] = []
     for patch in patches {
       let key = patch.string("key")
       guard let index = indexByKey[key],
+            current.items.indices.contains(index),
+            current.items[index].key == key,
             seen.insert(key).inserted,
             patch.string("type") == current.items[index].type,
             let changes = patch.dictionary("changes") else { return }
@@ -1535,12 +1561,9 @@ final class NativeListView: UIView {
       cancelInteractiveReorderForStructuralUpdate()
     }
     config = current
-    itemsByKey = Dictionary(uniqueKeysWithValues: current.items.map { ($0.key, $0) })
-    itemsByKey.merge(structuralRemovedItems) { current, _ in current }
-    if let tail = structuralTail, !tail.retiringKeys.isEmpty {
-      itemsByKey.merge(Dictionary(uniqueKeysWithValues: tail.items.map { ($0.key, $0) })) {
-        current, _ in current
-      }
+    for (index, _) in pending {
+      let item = current.items[index]
+      itemsByKey[item.key] = item
     }
     if let tail = structuralTail {
       for key in changedKeys.union(marketQuoteKeys) {
@@ -2150,6 +2173,7 @@ final class NativeListView: UIView {
           let toIndex = keys.firstIndex(of: source.key),
           items.count == keys.count else { return }
     current.items = items
+    acceptedRowIndex = AcceptedRowIndex(items: items)
     config = current
     guard source.index != toIndex else { return }
     var payload: [String: Any] = [
@@ -2841,6 +2865,7 @@ final class NativeListView: UIView {
     let selectionChanged = current.selectionMode != next.selectionMode ||
       current.selectedKeys != next.selectedKeys
     if current.generation != next.generation { endReachedGeneration = nil }
+    acceptRowIndex(for: next, replacing: current)
     config = next
     itemsByKey = Dictionary(uniqueKeysWithValues: next.items.map { ($0.key, $0) })
     let changedKeys = next.items.compactMap { item -> String? in
@@ -3041,6 +3066,7 @@ final class NativeListView: UIView {
     dataSource = nil
 
     config = nil
+    acceptedRowIndex = nil
     pagerStickyHeights.removeAllObjects()
     for slot in reactContainerSlots { slot.host.layer.mask = nil }
     stopStructuralAnimation()
@@ -3457,6 +3483,7 @@ extension NativeListView: UICollectionViewDragDelegate, UICollectionViewDropDele
     guard sourceItem.isReorderable, targetItem.isReorderable, sourceItem.sectionKey == targetItem.sectionKey else { return }
     current.items.remove(at: source.item)
     current.items.insert(sourceItem, at: destination.item)
+    acceptedRowIndex = AcceptedRowIndex(items: current.items)
     config = current
     itemsByKey = Dictionary(uniqueKeysWithValues: current.items.map { ($0.key, $0) })
     var snapshot = NSDiffableDataSourceSnapshot<Int, String>()

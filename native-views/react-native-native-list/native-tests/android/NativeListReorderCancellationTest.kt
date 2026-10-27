@@ -242,7 +242,73 @@ class NativeListReorderCancellationTest : InstrumentationTestCase() {
       assertEquals(1, events.single().getInt("fromIndex"))
       assertEquals(2, events.single().getInt("toIndex"))
       assertEquals(listOf("a", "c", "b"), order())
+      assertEquals(mapOf("a" to 0, "c" to 1, "b" to 2), field<Map<String, Int>>(list, "acceptedKeyIndex"))
+      list.applyPatches(JSONArray().put(JSONObject().put("key", "b").put("type", "identity")
+        .put("changes", JSONObject().put("title", "After drag"))).toString())
+      assertEquals("After drag", field<NativeListConfig>(list, "config").items[2].json.optString("title"))
       assertEquals(1, events.size)
+    }
+  }
+
+  fun testAcceptedKeyIndexReusesStableShapeAndRejectsLateInvalidPatch() {
+    fun snapshot(keys: List<String>, generation: Int, title: String = "Old") = JSONObject()
+      .put("schemaVersion", 1).put("generation", generation)
+      .put("layout", JSONObject().put("kind", "linear"))
+      .put("rows", JSONArray().apply {
+        keys.forEach { key -> put(JSONObject().put("key", key).put("type", "identity")
+          .put("title", title)) }
+      }).toString()
+    fun patch(key: String, title: String) = JSONObject()
+      .put("key", key).put("type", "identity")
+      .put("changes", JSONObject().put("title", title))
+    onMain {
+      list.applySnapshot(snapshot(listOf("alpha", "beta"), 9))
+      val first = field<Map<String, Int>>(list, "acceptedKeyIndex")
+      assertEquals(mapOf("alpha" to 0, "beta" to 1), first)
+      list.applySnapshot(snapshot(listOf("alpha", "beta"), 9, "New"))
+      assertSame(first, field<Map<String, Int>>(list, "acceptedKeyIndex"))
+      list.applyPatches(JSONArray().put(patch("alpha", "Patched"))
+        .put(patch("missing", "Invalid")).toString())
+      assertSame(first, field<Map<String, Int>>(list, "acceptedKeyIndex"))
+      assertEquals("New", field<NativeListConfig>(list, "config").items[0].json.optString("title"))
+      list.applyPatches(JSONArray().put(patch("alpha", "Patched")).toString())
+      assertSame(first, field<Map<String, Int>>(list, "acceptedKeyIndex"))
+      assertEquals("Patched", field<NativeListConfig>(list, "config").items[0].json.optString("title"))
+      list.applySnapshot(snapshot(listOf("beta", "alpha"), 9))
+      val reordered = field<Map<String, Int>>(list, "acceptedKeyIndex")
+      assertNotSame(first, reordered)
+      assertEquals(mapOf("beta" to 0, "alpha" to 1), reordered)
+      list.applyPatches(JSONArray().put(patch("alpha", "After reorder")).toString())
+      assertEquals("After reorder", field<NativeListConfig>(list, "config").items[1].json.optString("title"))
+      list.applySnapshot(snapshot(listOf("beta", "gamma", "alpha"), 9))
+      val inserted = field<Map<String, Int>>(list, "acceptedKeyIndex")
+      assertNotSame(reordered, inserted)
+      assertEquals(mapOf("beta" to 0, "gamma" to 1, "alpha" to 2), inserted)
+      list.applyPatches(JSONArray().put(patch("alpha", "After insert")).toString())
+      assertEquals("After insert", field<NativeListConfig>(list, "config").items[2].json.optString("title"))
+      list.applySnapshot(snapshot(listOf("beta", "alpha"), 9))
+      val deleted = field<Map<String, Int>>(list, "acceptedKeyIndex")
+      assertNotSame(inserted, deleted)
+      assertEquals(mapOf("beta" to 0, "alpha" to 1), deleted)
+      list.applyPatches(JSONArray().put(patch("alpha", "After delete")).toString())
+      assertEquals("After delete", field<NativeListConfig>(list, "config").items[1].json.optString("title"))
+      list.applySnapshot(snapshot(listOf("beta", "alpha"), 10))
+      assertNotSame(deleted, field<Map<String, Int>>(list, "acceptedKeyIndex"))
+      val beforeTypeChange = field<Map<String, Int>>(list, "acceptedKeyIndex")
+      val typeChanged = JSONObject(snapshot(listOf("beta", "alpha"), 10))
+      typeChanged.getJSONArray("rows").getJSONObject(0).put("type", "action")
+        .put("actionKey", "open")
+      list.applySnapshot(typeChanged.toString())
+      assertNotSame(beforeTypeChange, field<Map<String, Int>>(list, "acceptedKeyIndex"))
+      val indexField = list.javaClass.getDeclaredField("acceptedKeyIndex").apply { isAccessible = true }
+      val accepted = indexField.get(list)
+      indexField.set(list, mapOf("alpha" to 0, "beta" to 1))
+      list.applyPatches(JSONArray().put(patch("alpha", "Wrong row")).toString())
+      assertEquals("Old", field<NativeListConfig>(list, "config").items[0].json.optString("title"))
+      assertEquals("Old", field<NativeListConfig>(list, "config").items[1].json.optString("title"))
+      indexField.set(list, accepted)
+      list.dispose()
+      assertNull(field<Map<String, Int>?>(list, "acceptedKeyIndex"))
     }
   }
 
@@ -262,6 +328,8 @@ class NativeListReorderCancellationTest : InstrumentationTestCase() {
       val layer = field<FrameLayout>(list, "structuralTailLayer")
       val animator = field<Any>(list, "structuralAnimator")
       assertEquals(6, field<NativeListConfig>(list, "config").items.size)
+      assertEquals(6, field<Map<String, Int>>(list, "acceptedKeyIndex").size)
+      assertFalse(field<Map<String, Int>>(list, "acceptedKeyIndex").containsKey("row-25"))
       assertEquals(44, field<List<*>>(tail, "items").size)
       assertTrue(layer.childCount in 1..128)
       assertTrue(layer.height > 0)
@@ -309,6 +377,7 @@ class NativeListReorderCancellationTest : InstrumentationTestCase() {
       val tail = field<Any>(list, "structuralTail")
       val animator = field<Any>(list, "structuralAnimator")
       assertEquals(50, field<NativeListConfig>(list, "config").items.size)
+      assertEquals(8, field<Map<String, Int>>(list, "acceptedKeyIndex")["row-8"])
       assertTrue(field<Map<*, *>>(tail, "hosts").size <= 128)
       list.applyPatches(JSONArray().put(JSONObject().put("key", "row-8")
         .put("type", "identity").put("changes", JSONObject().put("title", "new quote"))).toString())
@@ -316,12 +385,65 @@ class NativeListReorderCancellationTest : InstrumentationTestCase() {
       assertEquals("new quote", field<List<NativeListItem>>(tail, "items")[2].json.optString("title"))
       list.applySnapshot(tailSnapshot(6, "collapse-b", 600))
       assertEquals(6, field<NativeListConfig>(list, "config").items.size)
+      assertFalse(field<Map<String, Int>>(list, "acceptedKeyIndex").containsKey("row-25"))
     }
     awaitTailFinished(6)
     onMain {
       assertEquals(0, field<Int>(list, "structuralSpacerHeightPx"))
       assertEquals(0, field<FrameLayout>(list, "structuralTailLayer").childCount)
     }
+  }
+
+  fun testDisclosureListenerChangesDoNotReplaySettledCommands() {
+    val first = mutableListOf<JSONObject>()
+    val second = mutableListOf<JSONObject>()
+    fun awaitSettled(id: String) {
+      repeat(100) {
+        var settled = false
+        onMain { settled = field<String?>(list, "settledDisclosureTransitionId") == id }
+        if (settled) return
+        SystemClock.sleep(20)
+      }
+      fail("Disclosure command $id did not settle")
+    }
+
+    onMain {
+      repeat(6) { index -> list.mountContainerSlot(View(activity), index) }
+      list.setContainerSlotHeightsJson("[0,0,56,0,100,48]")
+      assertNull(list.onStructuralTransitionSettled)
+      list.applySnapshot(disclosureSnapshot(6, false))
+    }
+    awaitAdapterCount(6)
+    onMain { list.applySnapshot(disclosureSnapshot(6, true, "without-listener", 0)) }
+    awaitSettled("without-listener")
+    onMain {
+      assertNull(field<String?>(list, "activeDisclosureTransitionId"))
+      list.onStructuralTransitionSettled = { first.add(JSONObject(it)) }
+      list.applySnapshot(disclosureSnapshot(6, true, "without-listener", 0))
+      assertTrue(first.isEmpty())
+      list.applySnapshot(disclosureSnapshot(6, false, "first-listener", 0))
+    }
+    awaitDisclosureSettlement(first, "first-listener")
+    onMain {
+      assertEquals(1, first.size)
+      list.onStructuralTransitionSettled = { second.add(JSONObject(it)) }
+      list.applySnapshot(disclosureSnapshot(6, true, "second-listener", 0))
+    }
+    awaitDisclosureSettlement(second, "second-listener")
+    onMain {
+      assertEquals(1, first.size)
+      assertEquals(1, second.size)
+      list.onStructuralTransitionSettled = null
+      list.applySnapshot(disclosureSnapshot(6, false, "removed-listener", 0))
+    }
+    awaitSettled("removed-listener")
+    onMain {
+      assertEquals(1, second.size)
+      list.onStructuralTransitionSettled = { second.add(JSONObject(it)) }
+      list.applySnapshot(disclosureSnapshot(6, false, "removed-listener", 0))
+    }
+    instrumentation.waitForIdleSync()
+    onMain { assertEquals(1, second.size) }
   }
 
   fun testDisclosureKeepsMountedContentUntilLatestCollapseSettles() {

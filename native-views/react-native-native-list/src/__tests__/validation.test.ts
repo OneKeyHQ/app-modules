@@ -16,6 +16,7 @@ import {
   applyRowPatches,
   captureNativeListInput,
   ownValidatedNativeSnapshot,
+  planNativeListPatches,
   serializePatches,
   serializeSnapshot,
   validatePatches,
@@ -96,6 +97,185 @@ const snapshot = (
   layout: { kind: 'linear' },
   rows,
   selection: { mode: 'multiple', selectedKeys: [], rowPressToggles: true },
+});
+
+describe('public NativeList patch planner', () => {
+  it('shares an empty batch for equal JSON values regardless of property order or omitted undefined', () => {
+    const oldRow = row('btc');
+    const previous = snapshot([oldRow]);
+    const equal = snapshot([
+      {
+        ...oldRow,
+        leading: {
+          name: 'coin',
+          tintColor: undefined,
+          kind: 'icon',
+        },
+      },
+    ]);
+    expect(planNativeListPatches(previous, equal)).toBe(
+      planNativeListPatches(previous, previous)
+    );
+    expect(planNativeListPatches(previous, equal)).toEqual([]);
+    expect(planNativeListPatches(previous, { ...previous })).toBe(
+      planNativeListPatches(previous, previous)
+    );
+    expect(
+      planNativeListPatches(previous, { ...previous, generation: 2 })
+    ).toBeUndefined();
+  });
+
+  it('plans only present identity and non-asset dataRow value changes', () => {
+    const identity = { ...row('btc'), subtitle: '$1', trailing: undefined };
+    const data: DataRow = {
+      type: 'dataRow',
+      key: 'data',
+      columns: [
+        { key: 'asset', text: 'BTC' },
+        { key: 'balance', text: '$1' },
+      ],
+    };
+    const nextIdentity = {
+      ...identity,
+      subtitle: '$2',
+      trailing: [{ kind: 'value' as const, text: '$2' }],
+    };
+    const nextData: DataRow = {
+      ...data,
+      columns: [data.columns[0], { key: 'balance', text: '$2' }],
+    };
+    const previous = snapshot([identity, data]);
+    const next = snapshot([nextIdentity, nextData]);
+    expect(planNativeListPatches(previous, next)).toBeUndefined();
+    const withExistingTrailing = snapshot([
+      { ...identity, trailing: [{ kind: 'value', text: '$1' }] },
+      data,
+    ]);
+    expect(planNativeListPatches(withExistingTrailing, next)).toEqual([
+      {
+        type: 'identity',
+        key: 'btc',
+        changes: {
+          subtitle: '$2',
+          subtitleSegments: undefined,
+          trailing: nextIdentity.trailing,
+        },
+      },
+      {
+        type: 'dataRow',
+        key: 'data',
+        changes: { columns: nextData.columns, trailing: undefined },
+      },
+    ]);
+    expect(previous.rows[0]).toBe(identity);
+    expect(next.rows[0]).toBe(nextIdentity);
+  });
+
+  it('requires a snapshot for top-level, row identity, asset and optional-field changes', () => {
+    const identity = { ...row('btc'), subtitle: '$1' };
+    const data: DataRow = {
+      type: 'dataRow',
+      key: 'data',
+      columns: [
+        { key: 'asset', text: 'BTC' },
+        { key: 'balance', text: '$1' },
+      ],
+    };
+    const previous = snapshot([identity, data]);
+    expect(
+      planNativeListPatches(previous, { ...previous, generation: 2 })
+    ).toBeUndefined();
+    expect(
+      planNativeListPatches(previous, {
+        ...previous,
+        selection: { mode: 'multiple', selectedKeys: ['btc'] },
+      })
+    ).toBeUndefined();
+    expect(
+      planNativeListPatches(previous, {
+        ...previous,
+        listStyle: { groupCornerRadius: 8 },
+      })
+    ).toBeUndefined();
+    expect(
+      planNativeListPatches(previous, {
+        ...previous,
+        fixedFooter: {
+          type: 'action',
+          key: 'footer',
+          title: 'Done',
+          actionKey: 'done',
+        },
+      })
+    ).toBeUndefined();
+    expect(
+      planNativeListPatches(previous, {
+        ...previous,
+        rows: [identity, { ...data, key: 'other' }],
+      })
+    ).toBeUndefined();
+    expect(
+      planNativeListPatches(previous, {
+        ...previous,
+        rows: [
+          identity,
+          {
+            ...data,
+            columns: [{ key: 'asset', text: 'ETH' }, data.columns[1]],
+          },
+        ],
+      })
+    ).toBeUndefined();
+    expect(
+      planNativeListPatches(previous, {
+        ...previous,
+        rows: [{ ...identity, subtitle: undefined }, data],
+      })
+    ).toBeUndefined();
+  });
+
+  it('uses array order and rejects changed metadata in one batch', () => {
+    const identity = {
+      ...row('btc'),
+      subtitle: '$1',
+      subtitleSegments: [{ text: 'first' }, { text: 'second' }],
+    };
+    const previous = snapshot([identity, row('eth')]);
+    expect(
+      planNativeListPatches(previous, snapshot([row('eth'), identity]))
+    ).toBeUndefined();
+    expect(
+      planNativeListPatches(
+        previous,
+        snapshot([
+          {
+            ...identity,
+            subtitleSegments: [...identity.subtitleSegments].reverse(),
+          },
+          row('eth'),
+        ])
+      )
+    ).toEqual([
+      {
+        type: 'identity',
+        key: 'btc',
+        changes: {
+          subtitle: '$1',
+          subtitleSegments: [...identity.subtitleSegments].reverse(),
+          trailing: identity.trailing,
+        },
+      },
+    ]);
+    expect(
+      planNativeListPatches(
+        previous,
+        snapshot([
+          { ...identity, subtitle: '$2' },
+          { ...row('eth'), title: 'Changed metadata' },
+        ])
+      )
+    ).toBeUndefined();
+  });
 });
 
 describe('native owned snapshot patch boundary', () => {

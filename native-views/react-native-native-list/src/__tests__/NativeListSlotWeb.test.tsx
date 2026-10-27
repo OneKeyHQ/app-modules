@@ -1,8 +1,10 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import TestRenderer, { act } from 'react-test-renderer';
 import { View } from 'react-native';
 
 import { NativeList } from '../NativeList.web';
+import type { NativeListRef } from '../NativeList.types';
 import type { NativeListSnapshot } from '../models';
 
 jest.mock('react-native', () => ({
@@ -28,20 +30,145 @@ it('marks the React footer slot in the rendered Web DOM', () => {
   expect(markup).toContain('Show more');
 });
 
-it('keeps native disclosure slots out of the Web footer and DOM props', () => {
+it('keeps disclosure content and toggle in one ordered Web footer band', () => {
   const markup = renderToStaticMarkup(
     <NativeList
-      snapshot={snapshot}
+      snapshot={{
+        ...snapshot,
+        disclosure: { expanded: false, expandedTrailingInset: 20 },
+      }}
       listFooter={<span>Web footer</span>}
-      listExpandedContent={<span>Native expanded content</span>}
-      listStructureToggle={<span>Native toggle</span>}
+      listExpandedContent={<button>Expanded content</button>}
+      listStructureToggle={<button>Toggle</button>}
       onStructuralTransitionSettled={() => {}}
     />
   );
+  expect(markup.match(/data-testid="native-list-footer-slot"/g)).toHaveLength(
+    1
+  );
+  expect(markup.indexOf('Expanded content')).toBeLessThan(
+    markup.indexOf('Toggle')
+  );
+  expect(markup.indexOf('Toggle')).toBeLessThan(
+    markup.indexOf('native-list-trailing-inset-slot')
+  );
+  expect(markup.indexOf('native-list-trailing-inset-slot')).toBeLessThan(
+    markup.indexOf('Web footer')
+  );
+  expect(markup).toContain('data-testid="native-list-expanded-content-slot"');
+  expect(markup).toContain('aria-hidden="true"');
+  expect(markup).toContain('display:none');
   expect(markup).toContain('Web footer');
-  expect(markup).not.toContain('Native expanded content');
-  expect(markup).not.toContain('Native toggle');
   expect(markup).not.toContain('onStructuralTransitionSettled');
+});
+
+it('keeps one expanded subtree across collapse and follows accepted snapshots', async () => {
+  const ref = React.createRef<NativeListRef>();
+  const mount = jest.fn();
+  const unmount = jest.fn();
+  const Expanded = () => {
+    React.useEffect(() => {
+      mount();
+      return unmount;
+    }, []);
+    return <span>Expanded content</span>;
+  };
+  const expandedContent = <Expanded />;
+  const expanded: NativeListSnapshot = {
+    ...snapshot,
+    layout: { ...snapshot.layout, contentPaddingHorizontal: 8 },
+    disclosure: { expanded: true, expandedTrailingInset: 20 },
+  };
+  const collapsed: NativeListSnapshot = {
+    ...expanded,
+    disclosure: { expanded: false, expandedTrailingInset: 20 },
+  };
+  const renderList = (next: NativeListSnapshot) => (
+    <NativeList
+      ref={ref}
+      snapshot={next}
+      listExpandedContent={expandedContent}
+      listStructureToggle={<button>Toggle</button>}
+    />
+  );
+  let renderer!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = TestRenderer.create(renderList(expanded));
+  });
+  const content = () =>
+    renderer.root.findByProps({
+      testID: 'native-list-expanded-content-slot',
+    });
+  const inset = () =>
+    renderer.root.findByProps({ testID: 'native-list-trailing-inset-slot' });
+  const toggle = () =>
+    renderer.root.findByProps({ testID: 'native-list-structure-toggle-slot' });
+  const footerBand = () =>
+    renderer.root.findByProps({ testID: 'native-list-footer-slot' });
+  expect(mount).toHaveBeenCalledTimes(1);
+  expect(footerBand().props.style.paddingHorizontal).toBe(8);
+  expect(content().props['aria-hidden']).toBe(false);
+  expect(inset().props.style.height).toBe(20);
+
+  await act(async () => renderer.update(renderList(collapsed)));
+  expect(mount).toHaveBeenCalledTimes(1);
+  expect(unmount).not.toHaveBeenCalled();
+  expect(content().props['aria-hidden']).toBe(true);
+  expect(content().props.pointerEvents).toBe('none');
+  expect(content().props.style.display).toBe('none');
+  expect(inset().props.style.height).toBe(0);
+
+  await act(async () => ref.current?.applySnapshot(expanded));
+  expect(content().props['aria-hidden']).toBe(false);
+  expect(inset().props.style.height).toBe(20);
+  const rejected: NativeListSnapshot = {
+    ...collapsed,
+    disclosure: { expanded: false, expandedTrailingInset: -1 },
+  };
+  await act(async () => renderer.update(renderList(rejected)));
+  expect(content().props['aria-hidden']).toBe(false);
+  expect(inset().props.style.height).toBe(20);
+  expect(mount).toHaveBeenCalledTimes(1);
+
+  await act(async () => ref.current?.applySnapshot(snapshot));
+  expect(content().props.style.display).toBe('none');
+  expect(content().props['aria-hidden']).toBe(true);
+  expect(toggle().props.style.display).toBe('none');
+  expect(toggle().props['aria-hidden']).toBe(true);
+  expect(toggle().props.pointerEvents).toBe('none');
+  expect(mount).toHaveBeenCalledTimes(1);
+  await act(async () => ref.current?.applySnapshot(expanded));
+  expect(content().props['aria-hidden']).toBe(false);
+  expect(toggle().props['aria-hidden']).toBe(false);
+  await act(async () => renderer.unmount());
+  expect(unmount).toHaveBeenCalledTimes(1);
+});
+
+it('hides supplied disclosure slots when the accepted snapshot has no disclosure', () => {
+  const markup = renderToStaticMarkup(
+    <NativeList
+      snapshot={snapshot}
+      listExpandedContent={<button>Expanded content</button>}
+      listStructureToggle={<button>Toggle</button>}
+    />
+  );
+  expect(markup.match(/aria-hidden="true"/g)).toHaveLength(2);
+  expect(markup.match(/display:none/g)).toHaveLength(2);
+  expect(markup).toContain('data-testid="native-list-footer-slot"');
+});
+
+it('uses the sole footer band for a toggle without a caller footer', () => {
+  const markup = renderToStaticMarkup(
+    <NativeList
+      snapshot={{ ...snapshot, disclosure: { expanded: false } }}
+      listStructureToggle={<button>Toggle</button>}
+    />
+  );
+  expect(markup.match(/data-testid="native-list-footer-slot"/g)).toHaveLength(
+    1
+  );
+  expect(markup).toContain('data-testid="native-list-structure-toggle-slot"');
+  expect(markup).toContain('Toggle');
 });
 
 it('keeps the sidecar and left footer in one scroll content tree', () => {

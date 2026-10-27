@@ -418,6 +418,16 @@ section index titles retain their separate development-only
 no-surrounding-whitespace assertion.
 The 256-code-unit key limit is a development assertion, not a production limit.
 
+Each iOS and Android host retains an index from accepted logical row keys to
+row positions. An accepted complete snapshot reuses that index only when its
+generation and ordered `(key, type)` sequence match the prior accepted
+snapshot; otherwise it replaces the index. Reorder commits rebuild it and
+disposal clears it. Patch batches reuse the index and never include retiring
+presentation rows in it. They validate the whole batch against the current
+accepted row models before changing config or presentation; invalid batches
+leave both unchanged. iOS updates only changed accepted entries in its
+presentation lookup after a valid patch, preserving any retiring rows.
+
 ### Validation environments and rejected input
 
 Development builds (`__DEV__ === true`) run the complete snapshot and patch
@@ -444,6 +454,24 @@ validators or Web behavior.
 An `undefined` value in an eligible field stays on the changed-row path only
 when that field was already `undefined`; clearing a present value uses the
 complete-snapshot path.
+
+`planNativeListPatches(previous, next)` is an explicit, pure public helper for
+callers that own two valid, immutable snapshots. It returns a readonly empty
+batch for equal snapshots, value-only `identity` or `dataRow` row patches when
+only eligible values change, and `undefined` when the caller must deliver a
+complete snapshot. It never dispatches, accepts or validates an update, and
+does not deep-copy, freeze or cache caller input. Returned patches may refer
+to `next`'s immutable values; the caller retains baseline and commit ownership.
+The component does not automatically invoke this planner for prop snapshots. Any
+change outside `rows`, including generation, selection, layout, list style, empty state or
+footer, requires a complete snapshot. Row keys, order and types must match.
+`identity` may patch `subtitle`, `subtitleSegments` and `trailing`; `dataRow`
+may patch non-asset columns and `trailing` while preserving the first asset
+column. Changes to other row fields or to the presence of optional patch
+fields require a complete snapshot. Comparison is by JSON value, ignores
+object property order and properties whose value is `undefined`, and keeps
+array order significant.
+
 Rejection emits a diagnostic without including row keys, text or image URLs.
 Explicit calls to the exported validation functions still throw on rejected
 input, so development tooling can inspect the full contract failure. Rejection
@@ -1040,7 +1068,7 @@ data adapter; adapter binding indices stay local while layout-manager positions
 are explicitly translated. Slots span all grid columns, do not select/reorder,
 and do not emit row actions, visible-row indices, or image-prefetch work.
 
-### Native disclosure slots and settlement (source implemented; limited runtime verification)
+### Disclosure slots and settlement (source implemented; limited runtime verification)
 
 Native callers may opt in with `snapshot.disclosure: { expanded: boolean,
 expandedTrailingInset?: number }`, `listExpandedContent`, and
@@ -1048,9 +1076,18 @@ expandedTrailingInset?: number }`, `listExpandedContent`, and
 row count, the expanded slot's measured height, and the one-shot structural
 transition command. `expandedTrailingInset` defaults to zero and must be a
 finite, non-negative number of logical pixels. Without `disclosure`, the
-existing four-slot and structural-transition behavior is unchanged. Web,
-Desktop, and extension retain their existing structural presentation; these
-native slots do not change the Web scroll-owner contract.
+existing four-slot and structural-transition behavior is unchanged. On Web,
+`C` and `T` occupy the existing single React footer band after the list rows,
+followed by the expanded trailing inset and the caller's footer `F`. `C` is
+mounted on first expansion and may remain mounted for that scope after collapse.
+Without an accepted `disclosure`, supplied `C` and `T` are hidden and inert.
+At the collapsed endpoint `C` has zero layout height and is hidden from pointer,
+keyboard, and accessibility interaction; `T` remains mounted and interactive
+through rapid reversals. Web does not use the native settlement callback to
+release `C`. The Web engine continues to measure that one footer band and to
+own its existing structural-tail animation and external scroll-host correction;
+its per-frame presentation need not match the native clip geometry. Desktop
+and extension retain their existing structural presentation.
 
 The native slot order is 0 header, 1 empty, 2 existing footer `F`, 3 sidecar,
 4 expanded content `C`, and 5 stable structure toggle `T`; the optional iOS
@@ -1097,8 +1134,14 @@ structural transition. An initial collapsed snapshot may omit or mount an
 empty `C` root; later collapse keeps its mounted instance through settlement.
 
 For each newly consumed `structuralTransition.id` with `disclosure`, native
-emits `onStructuralTransitionSettled` once for the latest non-superseded id,
-with JSON `{ transitionId: string, status: 'completed' | 'interrupted',
+emits `onStructuralTransitionSettled` once for the latest non-superseded id
+when a listener is registered. Without a listener, native still settles the
+command and releases its pending transition state, but does not serialize or
+cross the callback boundary. Adding or replacing a listener does not replay a
+settled id; removing it stops delivery for subsequent settlements. The caller
+may keep `C` mounted after settlement; native still controls its visibility,
+interaction, and accessibility. The callback carries JSON
+`{ transitionId: string, status: 'completed' | 'interrupted',
 settledExpanded: boolean }`. `settledExpanded` describes the accepted target
 after native geometry and scroll ownership have reached that state, never a
 guess from measured `C` height. Natural animation completion, reduced motion,
@@ -1112,8 +1155,9 @@ The caller guards the callback by its latest id and current list/account/network
 owner; a matching numeric id from a prior owner must not unmount current `C`.
 An already settled id
 does not re-emit on a same-id patch. Disposal drops the callback with its
-owner. An unsupported or immediately settled new id must still acknowledge;
-otherwise a caller could retain `C` indefinitely after collapse.
+owner. An unsupported or immediately settled new id must still acknowledge
+when a listener is registered; otherwise a caller could retain `C`
+indefinitely after collapse.
 
 On Android, mounting/unmounting a slot or changing its actual rounded native
 height MUST request one coalesced RecyclerView measurement/layout repair. The

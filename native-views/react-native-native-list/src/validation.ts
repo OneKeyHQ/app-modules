@@ -3186,6 +3186,116 @@ function normalizePatchStyles(
   return changed ? next : patches;
 }
 
+const EMPTY_ROW_PATCHES: readonly RowPatch[] = Object.freeze([]);
+
+function sameJsonValue(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (left === null || right === null) return false;
+  if (typeof left !== 'object' || typeof right !== 'object') return false;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => sameJsonValue(value, right[index]))
+    );
+  }
+  const leftObject = left as Record<string, unknown>;
+  const rightObject = right as Record<string, unknown>;
+  const leftKeys = Object.keys(leftObject).filter(
+    (key) => leftObject[key] !== undefined
+  );
+  const rightKeys = Object.keys(rightObject).filter(
+    (key) => rightObject[key] !== undefined
+  );
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every((key) => sameJsonValue(leftObject[key], rightObject[key]))
+  );
+}
+
+function sameOptionalPresence(left: unknown, right: unknown): boolean {
+  return (left === undefined) === (right === undefined);
+}
+
+/** Plan value-only patches; callers own valid immutable snapshots and commit state. */
+export function planNativeListPatches(
+  previous: NativeListSnapshot,
+  next: NativeListSnapshot
+): readonly RowPatch[] | undefined {
+  if (previous === next) return EMPTY_ROW_PATCHES;
+  const { rows: previousRows, ...previousMetadata } = previous;
+  const { rows: nextRows, ...nextMetadata } = next;
+  if (
+    previousRows.length !== nextRows.length ||
+    !sameJsonValue(previousMetadata, nextMetadata)
+  )
+    return undefined;
+  if (previousRows === nextRows) return EMPTY_ROW_PATCHES;
+
+  const patches: RowPatch[] = [];
+  for (let index = 0; index < nextRows.length; index += 1) {
+    const oldRow = previousRows[index];
+    const row = nextRows[index];
+    if (oldRow.key !== row.key || oldRow.type !== row.type) return undefined;
+    if (oldRow === row) continue;
+
+    if (oldRow.type === 'identity' && row.type === 'identity') {
+      const {
+        subtitle: oldSubtitle,
+        subtitleSegments: oldSubtitleSegments,
+        trailing: oldTrailing,
+        ...oldMetadata
+      } = oldRow;
+      const { subtitle, subtitleSegments, trailing, ...metadata } = row;
+      if (
+        !sameOptionalPresence(oldSubtitle, subtitle) ||
+        !sameOptionalPresence(oldSubtitleSegments, subtitleSegments) ||
+        !sameOptionalPresence(oldTrailing, trailing) ||
+        !sameJsonValue(oldMetadata, metadata)
+      )
+        return undefined;
+      if (
+        !sameJsonValue(oldSubtitle, subtitle) ||
+        !sameJsonValue(oldSubtitleSegments, subtitleSegments) ||
+        !sameJsonValue(oldTrailing, trailing)
+      ) {
+        patches.push({
+          type: 'identity',
+          key: row.key,
+          changes: { subtitle, subtitleSegments, trailing },
+        });
+      }
+    } else if (oldRow.type === 'dataRow' && row.type === 'dataRow') {
+      const {
+        columns: oldColumns,
+        trailing: oldTrailing,
+        ...oldMetadata
+      } = oldRow;
+      const { columns, trailing, ...metadata } = row;
+      if (
+        !sameOptionalPresence(oldTrailing, trailing) ||
+        !sameJsonValue(oldMetadata, metadata) ||
+        !sameJsonValue(oldColumns[0], columns[0])
+      )
+        return undefined;
+      if (
+        !sameJsonValue(oldColumns.slice(1), columns.slice(1)) ||
+        !sameJsonValue(oldTrailing, trailing)
+      ) {
+        patches.push({
+          type: 'dataRow',
+          key: row.key,
+          changes: { columns, trailing },
+        });
+      }
+    } else if (!sameJsonValue(oldRow, row)) {
+      return undefined;
+    }
+  }
+  return patches.length === 0 ? EMPTY_ROW_PATCHES : patches;
+}
+
 export function applyRowPatches(
   snapshot: NativeListSnapshot,
   patches: readonly RowPatch[]

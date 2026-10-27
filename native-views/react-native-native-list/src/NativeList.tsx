@@ -82,6 +82,7 @@ const NativeListHost = getHostComponent<
   NativeListNativeProps,
   NativeListMethods
 >('NativeList', () => NativeListConfig);
+const clearedStructuralTransitionSettled = { f: undefined } as const;
 const disclosureSlotMeasurementStyle = { alignSelf: 'stretch' } as const;
 
 export function preloadNativeListAvatarImages(
@@ -795,6 +796,11 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
           viewProps.onLayout?.(event);
         }}
         {...nativeCallbacks}
+        onStructuralTransitionSettled={
+          onStructuralTransitionSettled
+            ? nativeCallbacks.onStructuralTransitionSettled
+            : clearedStructuralTransitionSettled
+        }
         fontFamiliesJson={fontFamiliesJson}
         snapshotJson={snapshotJson}
         containerSlotHeightsJson={containerSlotHeightsJson}

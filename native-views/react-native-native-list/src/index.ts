@@ -19,6 +19,7 @@ export type {
 export type * from './models';
 export {
   applyRowPatches,
+  planNativeListPatches,
   serializePatches,
   serializeSnapshot,
   validatePatches,

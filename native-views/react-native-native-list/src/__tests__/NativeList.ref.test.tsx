@@ -21,6 +21,7 @@ let mockOnReorder: (payloadJson: string) => void;
 let mockOnRowAction: (payloadJson: string) => void;
 const mockFontRenders = jest.fn();
 let mockRenderNativeChildren = false;
+let mockWrapNativeCallbacks = false;
 const mockWebEngine = {
   setStickyInset: jest.fn(),
   currentSnapshot: jest.fn(() => snapshot),
@@ -63,10 +64,13 @@ jest.mock('@onekeyfe/react-native-image', () => ({
 }));
 
 jest.mock('react-native-nitro-modules', () => ({
-  callback: (value: unknown) => value,
+  callback: (value: unknown) =>
+    mockWrapNativeCallbacks ? { f: value } : value,
   getHostComponent: () =>
     function MockNativeListHost(props: {
-      hybridRef: (ref: typeof mockNativeMethods) => void;
+      hybridRef:
+        | ((ref: typeof mockNativeMethods) => void)
+        | { f: (ref: typeof mockNativeMethods) => void };
       testID?: string;
       fontFamiliesJson: string;
       snapshotJson: string;
@@ -80,7 +84,13 @@ jest.mock('react-native-nitro-modules', () => ({
       mockOnReorder = props.onReorder;
       mockOnRowAction = props.onRowAction;
       const ReactForMock = require('react') as typeof React;
-      ReactForMock.useEffect(() => props.hybridRef(mockNativeMethods), [props]);
+      ReactForMock.useEffect(() => {
+        const setRef =
+          typeof props.hybridRef === 'function'
+            ? props.hybridRef
+            : props.hybridRef.f;
+        setRef(mockNativeMethods);
+      }, [props]);
       return mockRenderNativeChildren
         ? ReactForMock.createElement('native-host', null, props.children)
         : null;
@@ -134,6 +144,73 @@ describe('NativeList imperative ref', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockRenderNativeChildren = false;
+    mockWrapNativeCallbacks = false;
+  });
+
+  it('registers a settlement bridge only while a listener is present', async () => {
+    const { NativeList } = jest.requireActual(
+      '../NativeList'
+    ) as typeof import('../NativeList');
+    mockWrapNativeCallbacks = true;
+    const first = jest.fn();
+    const second = jest.fn();
+    const props = () => mockFontRenders.mock.calls.at(-1)?.[0];
+    const payload = JSON.stringify({
+      transitionId: 'first',
+      status: 'completed',
+      settledExpanded: true,
+    });
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<NativeList snapshot={snapshot} />);
+    });
+    const cleared = props()?.onStructuralTransitionSettled as {
+      f: undefined;
+    };
+    expect(cleared).toEqual({ f: undefined });
+
+    await act(async () =>
+      renderer.update(
+        <NativeList snapshot={snapshot} onStructuralTransitionSettled={first} />
+      )
+    );
+    const bridge = props()?.onStructuralTransitionSettled as {
+      f: (payloadJson: string) => void;
+    };
+    expect(bridge.f).toEqual(expect.any(Function));
+    act(() => bridge.f(payload));
+    expect(first).toHaveBeenCalledTimes(1);
+
+    await act(async () =>
+      renderer.update(
+        <NativeList
+          snapshot={snapshot}
+          onStructuralTransitionSettled={second}
+        />
+      )
+    );
+    expect(props()?.onStructuralTransitionSettled).toBe(bridge);
+    act(() => bridge.f(payload));
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledTimes(1);
+
+    await act(async () => renderer.update(<NativeList snapshot={snapshot} />));
+    expect(props()?.onStructuralTransitionSettled).toBe(cleared);
+    expect(() => bridge.f('{invalid json')).not.toThrow();
+    expect(second).toHaveBeenCalledTimes(1);
+
+    await act(async () =>
+      renderer.update(
+        <NativeList
+          snapshot={snapshot}
+          onStructuralTransitionSettled={second}
+        />
+      )
+    );
+    expect(props()?.onStructuralTransitionSettled).toBe(bridge);
+    expect(second).toHaveBeenCalledTimes(1);
+    await act(async () => renderer.unmount());
+    mockWrapNativeCallbacks = false;
   });
 
   it('patches owned selector value rows with an unchanged undefined segment field', async () => {

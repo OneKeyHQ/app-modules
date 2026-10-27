@@ -1609,6 +1609,7 @@ class NativeListView(
     structuralScrollInterrupted = false
     structuralFooterCompensatedHeightPx = null
     recyclerView.itemAnimator = null
+    acceptRowIndex(next, previous)
     config = next
     pruneMeasuredRowExtents(next.items)
     updateContainerSlots()
@@ -1705,7 +1706,11 @@ class NativeListView(
     }
   }
 
-  private fun updatePrefixTailSnapshot(previous: NativeListConfig, next: NativeListConfig): Boolean {
+  private fun updatePrefixTailSnapshot(
+    previous: NativeListConfig,
+    next: NativeListConfig,
+    acceptIndex: Boolean = false,
+  ): Boolean {
     val tail = structuralTail ?: return false
     if (structuralTailPreparing || structuralTailFinalizing ||
       structuralTailRowsInAdapterPx > 0 ||
@@ -1728,6 +1733,7 @@ class NativeListView(
           explicitTailRowSpacingPx(after, next.itemSpacing))
         return false
     }
+    if (acceptIndex) acceptRowIndex(next, previous)
     config = next
     adapter.selectedKeys = next.selectedKeys
     adapter.submitList(next.items.take(tail.prefixCount)) {
@@ -2109,6 +2115,17 @@ class NativeListView(
   private var lastMarketPaginationAnchorLogAtMs = 0L
   private var disposed = false
   private var resourcesDisposed = false
+  private var acceptedKeyIndex: Map<String, Int>? = null
+
+  private fun acceptRowIndex(next: NativeListConfig, previous: NativeListConfig?) {
+    if (previous != null && acceptedKeyIndex != null &&
+      previous.generation == next.generation && previous.items.size == next.items.size &&
+      previous.items.indices.all { index ->
+        previous.items[index].key == next.items[index].key &&
+          previous.items[index].type == next.items[index].type
+      }) return
+    acceptedKeyIndex = next.items.withIndex().associate { it.value.key to it.index }
+  }
 
   init {
     orientation = VERTICAL
@@ -2469,7 +2486,9 @@ class NativeListView(
     if (structuralTail != null) {
       if (!disclosureGeometryInvalid && !animateStructure && oldKeys == nextKeys &&
         (Build.VERSION.SDK_INT < 26 || ValueAnimator.areAnimatorsEnabled()) &&
-        previous != null && updatePrefixTailSnapshot(previous, next)) return
+        previous != null && updatePrefixTailSnapshot(previous, next, acceptIndex = true)) {
+        return
+      }
       heldTailEpoch = holdStructuralTailUntilListCommit()
       // Keep the accepted presentation until the full adapter list has committed.
       animateStructure = false
@@ -2522,6 +2541,7 @@ class NativeListView(
           previous.items[index].content != next.items[index].content
         }
       }.toSet()
+      acceptRowIndex(next, previous)
       config = next
       if (heldTailEpoch == null) {
         disclosureFraction = if (next.disclosure?.expanded == true) 1f else 0f
@@ -2580,6 +2600,7 @@ class NativeListView(
         layoutManager.getDecoratedTop(it) - recyclerView.paddingTop
       }
     } else null
+    acceptRowIndex(next, previous)
     config = next
     if (heldTailEpoch == null) {
       disclosureFraction = if (next.disclosure?.expanded == true) 1f else 0f
@@ -2914,20 +2935,22 @@ class NativeListView(
 
   fun applyPatches(patchesJson: String) {
     val current = config ?: return
+    val indexByKey = acceptedKeyIndex ?: return
     val patches = try {
       JSONArray(patchesJson)
     } catch (_: Exception) {
       return
     }
-    val indexByKey = current.items.withIndex().associate { it.value.key to it.index }
     val pending = ArrayList<Pair<Int, JSONObject>>(patches.length())
     val seen = HashSet<String>()
     for (index in 0 until patches.length()) {
       val patch = patches.optJSONObject(index) ?: return
       val key = patch.optString("key")
       val itemIndex = indexByKey[key] ?: return
+      val item = current.items.getOrNull(itemIndex) ?: return
+      if (item.key != key) return
       if (!seen.add(key)) return
-      if (patch.optString("type") != current.items[itemIndex].type) return
+      if (patch.optString("type") != item.type) return
       val changes = patch.optJSONObject("changes") ?: return
       pending.add(itemIndex to changes)
     }
@@ -3465,6 +3488,7 @@ class NativeListView(
   fun dispose() {
     if (disposed) return
     disposed = true
+    acceptedKeyIndex = null
     if (structuralTail != null) discardStructuralTail()
     val cancelTag = R.id.onekey_native_scroll_coordinator_command_cancel_listener
     if (recyclerView.getTag(cancelTag) === coordinatorCommandCancelListener) recyclerView.setTag(cancelTag, null)
@@ -4501,6 +4525,7 @@ class NativeListView(
         if (from != RecyclerView.NO_POSITION && to != RecyclerView.NO_POSITION && from != to && reordered != null) {
           val moved = reordered.getOrNull(to)
           if (moved != null) {
+            acceptedKeyIndex = reordered.withIndex().associate { it.value.key to it.index }
             config = config?.copy(items = reordered)
             val payload = JSONObject()
               .put("key", moved.key)

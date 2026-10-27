@@ -119,7 +119,14 @@ final class HybridNativeList: HybridNativeListSpec {
   var onSelectionDelta: ((_ payloadJson: String) -> Void)?
   var onReorder: ((_ payloadJson: String) -> Void)?
   var onEndReached: ((_ payloadJson: String) -> Void)?
-  var onStructuralTransitionSettled: ((_ payloadJson: String) -> Void)?
+  var onStructuralTransitionSettled: ((_ payloadJson: String) -> Void)? {
+    didSet {
+      runOnMain { [weak self] in
+        guard let self else { return }
+        self.hostView?.onStructuralTransitionSettled = self.onStructuralTransitionSettled
+      }
+    }
+  }
   var onVisibleRangeChanged: ((_ payloadJson: String) -> Void)? {
     didSet {
       runOnMain { [weak self] in
@@ -136,9 +143,6 @@ final class HybridNativeList: HybridNativeListSpec {
     hostView?.onSelectionDelta = { [weak self] in self?.onSelectionDelta?($0) }
     hostView?.onReorder = { [weak self] in self?.onReorder?($0) }
     hostView?.onEndReached = { [weak self] in self?.onEndReached?($0) }
-    hostView?.onStructuralTransitionSettled = { [weak self] in
-      self?.onStructuralTransitionSettled?($0)
-    }
   }
 
   func applySnapshot(snapshotJson: String) throws {

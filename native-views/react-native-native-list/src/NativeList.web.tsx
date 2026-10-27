@@ -37,6 +37,8 @@ import {
   canonicalNativeListAvatarUri,
 } from './web/NativeListWebAvatarCache';
 
+const collapsedExpandedContentStyle = { display: 'none' } as const;
+
 export type { NativeListProps, NativeListRef } from './NativeList.types';
 export type {
   ActionAnchorState,
@@ -93,8 +95,8 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       listHeader,
       listEmpty,
       listFooter,
-      listExpandedContent: _listExpandedContent,
-      listStructureToggle: _listStructureToggle,
+      listExpandedContent,
+      listStructureToggle,
       listSidecar,
       sidecarLayout,
       topOverlay: _topOverlay,
@@ -148,37 +150,8 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     const hasEmptySlot = listEmpty !== undefined;
     const hasEmptySlotRef = useRef(hasEmptySlot);
     hasEmptySlotRef.current = hasEmptySlot;
-    const [slotState, setSlotState] = useState(() => ({
-      hasRows: snapshot.rows.length > 0,
-      emptyBottomPadding:
-        !snapshot.rows.length && hasEmptySlot
-          ? snapshot.layout.contentPaddingBottom ??
-            snapshot.layout.contentPadding ??
-            0
-          : 0,
-      padding:
-        snapshot.layout.contentPaddingHorizontal ??
-        snapshot.layout.contentPadding ??
-        0,
-    }));
     const [viewportWidth, setViewportWidth] = useState(0);
     const [sidecarHeight, setSidecarHeight] = useState(0);
-    const synchronizeSlots = (next: NativeListSnapshot) => {
-      const hasRows = next.rows.length > 0;
-      const padding =
-        next.layout.contentPaddingHorizontal ?? next.layout.contentPadding ?? 0;
-      const emptyBottomPadding =
-        !hasRows && hasEmptySlotRef.current
-          ? next.layout.contentPaddingBottom ?? next.layout.contentPadding ?? 0
-          : 0;
-      setSlotState((previous) =>
-        previous.hasRows === hasRows &&
-        previous.padding === padding &&
-        previous.emptyBottomPadding === emptyBottomPadding
-          ? previous
-          : { hasRows, padding, emptyBottomPadding }
-      );
-    };
     const normalizeWebSnapshot = (
       next: NativeListSnapshot,
       hasReactEmpty = hasEmptySlotRef.current,
@@ -213,6 +186,8 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       listEmpty !== undefined ||
       listFooter !== undefined;
     useSlotLayoutRef.current ||= listSidecar !== undefined;
+    useSlotLayoutRef.current ||=
+      listExpandedContent !== undefined || listStructureToggle !== undefined;
     const useSlotLayout = useSlotLayoutRef.current;
     const resolvedScrollHost =
       webScrollHost === undefined
@@ -247,6 +222,52 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
         }) ?? acceptedSnapshotRef.current,
       [snapshot, hasEmptySlot, useSlotLayout, listSidecar, sidecarLayout]
     );
+    const [slotState, setSlotState] = useState(() => ({
+      hasRows: validatedSnapshot.rows.length > 0,
+      emptyBottomPadding:
+        !validatedSnapshot.rows.length && hasEmptySlot
+          ? validatedSnapshot.layout.contentPaddingBottom ??
+            validatedSnapshot.layout.contentPadding ??
+            0
+          : 0,
+      padding:
+        validatedSnapshot.layout.contentPaddingHorizontal ??
+        validatedSnapshot.layout.contentPadding ??
+        0,
+      disclosurePresent: validatedSnapshot.disclosure !== undefined,
+      disclosureExpanded: validatedSnapshot.disclosure?.expanded === true,
+      expandedTrailingInset:
+        validatedSnapshot.disclosure?.expandedTrailingInset ?? 0,
+    }));
+    const synchronizeSlots = (next: NativeListSnapshot) => {
+      const hasRows = next.rows.length > 0;
+      const padding =
+        next.layout.contentPaddingHorizontal ?? next.layout.contentPadding ?? 0;
+      const emptyBottomPadding =
+        !hasRows && hasEmptySlotRef.current
+          ? next.layout.contentPaddingBottom ?? next.layout.contentPadding ?? 0
+          : 0;
+      const disclosurePresent = next.disclosure !== undefined;
+      const disclosureExpanded = next.disclosure?.expanded === true;
+      const expandedTrailingInset = next.disclosure?.expandedTrailingInset ?? 0;
+      setSlotState((previous) =>
+        previous.hasRows === hasRows &&
+        previous.padding === padding &&
+        previous.emptyBottomPadding === emptyBottomPadding &&
+        previous.disclosurePresent === disclosurePresent &&
+        previous.disclosureExpanded === disclosureExpanded &&
+        previous.expandedTrailingInset === expandedTrailingInset
+          ? previous
+          : {
+              hasRows,
+              padding,
+              emptyBottomPadding,
+              disclosurePresent,
+              disclosureExpanded,
+              expandedTrailingInset,
+            }
+      );
+    };
     const snapshotRef = useRef(validatedSnapshot);
     const snapshotPropRef = useRef(validatedSnapshot);
     // An imperative snapshot survives host mounting until the snapshot prop changes.
@@ -254,7 +275,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       snapshotPropRef.current = validatedSnapshot;
       snapshotRef.current = validatedSnapshot;
       acceptedSnapshotRef.current = validatedSnapshot;
-      synchronizeSlots(snapshot);
+      synchronizeSlots(validatedSnapshot);
     }
     if (!initializedSnapshot.current) {
       acceptedSnapshotRef.current = validatedSnapshot;
@@ -523,6 +544,16 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     );
     if (!useSlotLayout) return <View {...viewProps} ref={setHostRef} />;
     const padding = slotState.padding;
+    const footerBandStyle = { paddingHorizontal: padding };
+    const trailingInsetStyle = {
+      height: slotState.disclosureExpanded
+        ? slotState.expandedTrailingInset
+        : 0,
+    };
+    const hasFooterBand =
+      listFooter !== undefined ||
+      listExpandedContent !== undefined ||
+      listStructureToggle !== undefined;
     const content = (
       <View
         ref={sidecarLayout ? undefined : setBoundsRef}
@@ -542,11 +573,44 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
             {listEmpty}
           </View>
         ) : null}
-        {listFooter !== undefined ? (
-          <View
-            testID="native-list-footer-slot"
-            style={{ paddingHorizontal: padding }}
-          >
+        {hasFooterBand ? (
+          <View testID="native-list-footer-slot" style={footerBandStyle}>
+            {listExpandedContent !== undefined ? (
+              <View
+                testID="native-list-expanded-content-slot"
+                aria-hidden={!slotState.disclosureExpanded}
+                pointerEvents={slotState.disclosureExpanded ? 'auto' : 'none'}
+                style={
+                  slotState.disclosureExpanded
+                    ? undefined
+                    : collapsedExpandedContentStyle
+                }
+              >
+                {listExpandedContent}
+              </View>
+            ) : null}
+            {listStructureToggle !== undefined ? (
+              <View
+                testID="native-list-structure-toggle-slot"
+                aria-hidden={!slotState.disclosurePresent}
+                pointerEvents={slotState.disclosurePresent ? 'auto' : 'none'}
+                style={
+                  slotState.disclosurePresent
+                    ? undefined
+                    : collapsedExpandedContentStyle
+                }
+              >
+                {listStructureToggle}
+              </View>
+            ) : null}
+            {slotState.expandedTrailingInset > 0 &&
+            (listExpandedContent !== undefined ||
+              listStructureToggle !== undefined) ? (
+              <View
+                testID="native-list-trailing-inset-slot"
+                style={trailingInsetStyle}
+              />
+            ) : null}
             {listFooter}
           </View>
         ) : null}
