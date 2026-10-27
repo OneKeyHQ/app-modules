@@ -326,6 +326,17 @@ overhanging badge (`requestsUnclippedHost`, decided by
 already do for their network badges; a visual without such a badge keeps the
 row's default clipping.
 
+The row's own shape still clips on every platform: iOS masks the cell to its
+corner radius (`masksToBounds`), Web keeps the row `overflow: hidden`, and
+Android keeps `clipToOutline` for a `style.container.cornerRadius` row (its
+parent also clips each row to its bounds). A badge is therefore whole only while
+it stays inside the row's rounded outline, which every app descriptor does: the
+account badge hangs 4 units towards the row's centre and the wallet top-left
+badge (`offsetY` 4) starts inside a 12-unit corner radius with the default
+padding. The example `NativeListRowStylePage` row `identity-badge-rounded`
+combines both badges with `container.cornerRadius` as the rendering check for
+that combination.
+
 ## Failures, fallback and limits
 
 Snapshot validation rejects malformed/duplicate-key input without partial
