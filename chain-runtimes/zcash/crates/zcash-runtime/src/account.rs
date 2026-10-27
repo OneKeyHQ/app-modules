@@ -4,6 +4,7 @@ use incrementalmerkletree::{frontier::Frontier, Hashable};
 use incrementalmerkletree::{Marking, Retention};
 use shardtree::{error::ShardTreeError, store::ShardStore, ShardTree};
 use zcash_client_backend::data_api::chain::ChainState;
+use zcash_client_backend::data_api::scanning::ScanPriority;
 use zcash_client_backend::data_api::wallet::ConfirmationsPolicy;
 use zcash_client_backend::data_api::{
     Account as _, AccountBalance, AccountBirthday, AccountPurpose, AccountSource, Balance,
@@ -466,6 +467,26 @@ pub fn remove_account(db: &mut Db, account_uuid: &str) -> Result<()> {
             )
             .detail(e)
         })?;
+        // delete_account leaves the scan queue alone, so ranges queued only for
+        // this account's earlier birthday would still be scanned for nobody.
+        let birthday = wallet.get_wallet_birthday().map_err(|e| {
+            RuntimeError::with(
+                ErrorCode::DatabaseError,
+                json!({ "operation": "getWalletBirthday" }),
+            )
+            .detail(e)
+        })?;
+        if let Some(birthday) = birthday {
+            wallet
+                .prune_scan_queue_below(birthday, Some(ScanPriority::OpenAdjacent))
+                .map_err(|e| {
+                    RuntimeError::with(
+                        ErrorCode::DatabaseError,
+                        json!({ "operation": "pruneScanQueue" }),
+                    )
+                    .detail(e)
+                })?;
+        }
         crate::tx_state::prune_orphaned_rows(ext)
     })
 }
@@ -477,7 +498,22 @@ pub fn account_by_ufvk(db: &Db, ufvk_str: &str) -> Result<String> {
     let target = UnifiedFullViewingKey::decode(&params, ufvk_str)
         .map_err(|e| RuntimeError::new(ErrorCode::InvalidUfvk).detail(e))?
         .encode(&params);
+    find_account(db, |acct| {
+        acct.ufvk().map(|k| k.encode(&params)).as_deref() == Some(target.as_str())
+    })
+}
 
+/// Finds the account the host named at import (its viewing key fingerprint), or
+/// returns `"null"`. Names survive a purge, and need no viewing key to match.
+pub fn account_by_name(db: &Db, name: &str) -> Result<String> {
+    find_account(db, |acct| acct.name() == Some(name))
+}
+
+/// `{ uuid }` of the first account `matches` accepts, or `"null"`.
+fn find_account(
+    db: &Db,
+    matches: impl Fn(&<Db as WalletRead>::Account) -> bool,
+) -> Result<String> {
     for id in db.get_account_ids().map_err(|e| {
         RuntimeError::with(
             ErrorCode::DatabaseError,
@@ -495,7 +531,7 @@ pub fn account_by_ufvk(db: &Db, ufvk_str: &str) -> Result<String> {
         else {
             continue;
         };
-        if acct.ufvk().map(|k| k.encode(&params)).as_deref() == Some(target.as_str()) {
+        if matches(&acct) {
             return Ok(json!({ "uuid": acct.id().expose_uuid().to_string() }).to_string());
         }
     }
@@ -781,5 +817,83 @@ mod derivation_tests {
             assert_eq!(err.code, ErrorCode::InvalidAccountId);
             assert_eq!(err.params["reason"], "incomplete");
         }
+    }
+}
+
+#[cfg(test)]
+mod remove_account_tests {
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha20Rng;
+    use zcash_client_sqlite::wallet::init::WalletMigrator;
+    use zcash_client_sqlite::WalletDb;
+    use zcash_keys::keys::UnifiedSpendingKey;
+    use zcash_primitives::block::BlockHash;
+    use zcash_protocol::consensus::{BlockHeight, Network};
+
+    use super::*;
+    use crate::clock::HostClock;
+
+    const NET: Network = Network::MainNetwork;
+    const TIP: u32 = 3_525_600;
+
+    fn wallet() -> Db {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        rusqlite::vtab::array::load_module(&conn).unwrap();
+        let mut db = WalletDb::from_connection(conn, NET, HostClock, ChaCha20Rng::from_seed([7; 32]));
+        WalletMigrator::new()
+            .with_external_migrations(crate::tx_state::migrations())
+            .init_or_migrate(&mut db)
+            .unwrap();
+        db
+    }
+
+    fn import(db: &mut Db, name: &str, index: u32, birthday: u32) -> String {
+        let ufvk = UnifiedSpendingKey::from_seed(&NET, &[9; 32], index.try_into().unwrap())
+            .unwrap()
+            .to_unified_full_viewing_key();
+        let birthday = AccountBirthday::from_parts(
+            ChainState::empty(BlockHeight::from_u32(birthday), BlockHash([0; 32])),
+            None,
+        );
+        db.import_account_ufvk(name, &ufvk, &birthday, AccountPurpose::ViewOnly, None)
+            .unwrap()
+            .id()
+            .expose_uuid()
+            .to_string()
+    }
+
+    fn lowest_queued(db: &Db) -> u32 {
+        db.suggest_scan_ranges()
+            .unwrap()
+            .iter()
+            .map(|range| u32::from(range.block_range().start))
+            .min()
+            .unwrap()
+    }
+
+    #[test]
+    fn removing_the_earliest_account_stops_scanning_below_the_rest() {
+        let mut db = wallet();
+        let early = import(&mut db, "fp-early", 0, 3_500_000);
+        import(&mut db, "fp-late", 1, 3_520_000);
+        db.update_chain_tip(BlockHeight::from_u32(TIP)).unwrap();
+        assert!(lowest_queued(&db) < 3_520_000);
+
+        remove_account(&mut db, &early).unwrap();
+
+        assert!(lowest_queued(&db) >= 3_520_000);
+    }
+
+    #[test]
+    fn finds_an_account_by_the_name_it_was_imported_under() {
+        let mut db = wallet();
+        let uuid = import(&mut db, "fp-a", 0, 3_520_000);
+        import(&mut db, "fp-b", 1, 3_520_000);
+
+        assert_eq!(
+            account_by_name(&db, "fp-a").unwrap(),
+            json!({ "uuid": uuid }).to_string()
+        );
+        assert_eq!(account_by_name(&db, "fp-missing").unwrap(), "null");
     }
 }

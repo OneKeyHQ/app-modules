@@ -171,6 +171,14 @@ pub fn account_by_ufvk(ufvk: String) -> Result<String, JsValue> {
     Ok(runtime::with_db(|db| account::account_by_ufvk(db, &ufvk))?)
 }
 
+/// Finds the account the host named at import, returning `{ uuid }` or `"null"`.
+///
+/// The host names each account by its viewing key fingerprint, so it can drop one without the key.
+#[wasm_bindgen(js_name = accountByName)]
+pub fn account_by_name(name: String) -> Result<String, JsValue> {
+    Ok(runtime::with_db(|db| account::account_by_name(db, &name))?)
+}
+
 /// Per-account sync status, derived from the account birthday and the database's remaining scan ranges.
 ///
 ///
