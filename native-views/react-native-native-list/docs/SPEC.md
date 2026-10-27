@@ -304,6 +304,28 @@ the trailing `TextView` non-clickable unless `showTrailing` binds an action
 (`setOnClickListener(null)` alone leaves a view clickable). Web already renders
 an action-less accessory as a `span`, so its click reaches the row.
 
+### Leading badge overhang (OK-65694)
+
+Status: implemented on Android, the only platform that clipped. Android JVM
+policy test (`NativeListLeadingVisualClipPolicyTest`); Android emulator
+acceptance on the example account selector (API 36, 2026-10-27) is recorded in
+the changelog entry. iOS and Web are unchanged.
+
+A leading visual lays these badges past its own frame: a token `networkImage`
+with its backdrop, a `cornerIcon`, and every `overlays` entry, whose default
+`offset` of 2 already overhangs (the app's account selector hangs its
+single-network badge 4 units past the 32-unit avatar). Such a badge MUST render
+in full on every platform. iOS stops clipping the visual (`clipsToBounds`) once
+one of those descriptors is bound, and Web keeps the visual `overflow: visible`.
+Android clips a child to its own bounds whenever its parent clips children, so a
+host row that keeps the default `clipChildren` cuts the overhang flat even
+though the visual itself never clips. The Identity renderer therefore stops
+clipping children and padding exactly when the bound leading visual reports an
+overhanging badge (`requestsUnclippedHost`, decided by
+`nativeListLeadingVisualOverhangsFrame`), as the Market and Message renderers
+already do for their network badges; a visual without such a badge keeps the
+row's default clipping.
+
 ## Failures, fallback and limits
 
 Snapshot validation rejects malformed/duplicate-key input without partial
