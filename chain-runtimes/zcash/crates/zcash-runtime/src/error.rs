@@ -90,7 +90,8 @@ pub enum ErrorCode {
     /// should `rewindTo` the suggested height and resume syncing.
     ReorgDetected,
     /// An async operation is in flight; the wallet cannot be switched or closed now.
-    /// Params: `{ operation }`
+    /// Params: `{ operation }`. With `reason: "pendingSend"`, `rescanAccount` waits
+    /// for the account's unmined send before starting over at a later birthday.
     ///
     /// Concurrency guard: swapping databases mid-operation would silently write
     /// results to the wrong wallet. Hosts should serialize calls to one runtime or

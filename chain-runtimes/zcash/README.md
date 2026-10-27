@@ -43,6 +43,10 @@ bash scripts/vendor-deps.sh --offline   # verify vendor against recorded upstrea
    strings only; no Rust object handles reach JS.
 4. **Rust owns key security, large data and consensus correctness;** the host owns
    scheduling, accounts, persistence policy, retries and display.
+5. **A rescan follows the new birthday.** An earlier start lowers the stored
+   birthday and keeps what is known; a later start deletes the account and imports
+   it again at that height, so nothing found before it remains. A later start
+   waits (`WALLET_BUSY`, reason `pendingSend`) while the account has an unmined send.
 
 ## API
 
@@ -64,6 +68,8 @@ importAccountUfvk(name, ufvk, birthday, seedFingerprintHex?, accountIndex?)
                                          → UUID; the server's tree state must be
                                          exactly the block before birthday
 removeAccount(uuid)                     pending transactions do not block removal
+rescanAccount(uuid, fromHeight)          earlier: rewind and keep; later: start over there
+                                         (new UUID; look the account up by UFVK)
 accountByUfvk(ufvk) / listAccounts() / accountSyncStatus(uuid)
 accountBalance(uuid, trusted, untrusted, allowZeroConfShielding)
                                          per pool: spendable, pendingChange,
@@ -73,6 +79,9 @@ accountBalance(uuid, trusted, untrusted, allowZeroConfShielding)
                                          which are uneconomic instead
 
 syncPrepare() / syncTip() / syncPeek()   prepare (subtree roots + tip), read-only progress
+                                         syncPeek/accountSyncStatus include nullable
+                                         chainTip and fullyScannedHeight without
+                                         computing wallet balances
 syncStep(batchSize, maxBatches, priority, activeUfvksJson)
                                          bounded step, only for UFVKs the host enabled
 queueRescanFrom(fromHeight)              non-destructive requeue of [fromHeight, tip]
@@ -98,6 +107,14 @@ pcztProveAtHeight(height, pczt)          prove without a wallet
 pcztExtractStateless(pczt)               verify and extract without a wallet
 capabilities() / dependencyVersions()
 ```
+
+### Consecutive old-birthday imports
+
+`DATABASE_ERROR` with `params.operation = "importAccount"` and
+`params.reason = "checkpointsDiverged"` is upstream rejecting mismatched pool
+checkpoints. The import rolls back and the database stays usable: keep the account
+pending and retry the import after further scanning; it succeeds once the pending
+scan finishes.
 
 ### `onekey-zcash-keys`
 

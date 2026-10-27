@@ -259,7 +259,7 @@ pub async fn sync_tip() -> Result<String, JsValue> {
 }
 
 /// Read-only view of pending scan ranges; no network requests. Returns
-/// `{ ranges: [{ start, end, len, priority }], totalBlocks }`.
+/// `{ ranges: [{ start, end, len, priority }], totalBlocks, chainTip, fullyScannedHeight }`.
 #[wasm_bindgen(js_name = syncPeek)]
 pub fn sync_peek() -> Result<String, JsValue> {
     Ok(runtime::with_db(|db| sync::peek(db))?)
@@ -408,6 +408,27 @@ pub fn queue_rescan_from(from_height: u32) -> Result<String, JsValue> {
     Ok(runtime::with_db(|db| {
         sync::queue_rescan_from(db, from_height)
     })?)
+}
+
+/// Rescans one account from a new birthday; see `account::rescan_account`.
+#[wasm_bindgen(js_name = rescanAccount)]
+pub async fn rescan_account(account_uuid: String, from_height: u32) -> Result<String, JsValue> {
+    let has_pending_send =
+        !runtime::with_read_conn(|conn| tx_state::pending_txids(conn, &account_uuid))?.is_empty();
+    Ok(
+        runtime::with_db_and_client(move |mut db, mut client| async move {
+            let result = account::rescan_account(
+                &mut db,
+                &mut client,
+                &account_uuid,
+                from_height,
+                has_pending_send,
+            )
+            .await;
+            (db, client, result)
+        })
+        .await?,
+    )
 }
 
 // ── Send ────────────────────────────────────────────────────────────────

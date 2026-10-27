@@ -1,11 +1,16 @@
 //! Account import and reads: UFVK import and balances. No private keys,
 //! address derivation or signing on this path.
 
+use incrementalmerkletree::{frontier::Frontier, Hashable};
+use incrementalmerkletree::{Marking, Retention};
+use shardtree::{error::ShardTreeError, store::ShardStore, ShardTree};
+use zcash_client_backend::data_api::chain::ChainState;
 use zcash_client_backend::data_api::wallet::ConfirmationsPolicy;
 use zcash_client_backend::data_api::{
-    Account as _, AccountBalance, AccountBirthday, AccountPurpose, Balance, WalletRead,
-    WalletWrite, Zip32Derivation,
+    Account as _, AccountBalance, AccountBirthday, AccountPurpose, AccountSource, Balance,
+    WalletCommitmentTrees, WalletRead, WalletWrite, Zip32Derivation,
 };
+use zcash_client_sqlite::error::SqliteClientError;
 use zcash_keys::keys::UnifiedFullViewingKey;
 
 use crate::error::{ErrorCode, Result, RuntimeError};
@@ -54,17 +59,275 @@ pub async fn import_ufvk(
         .detail(format!("{e:?}"))
     })?;
 
-    let account = db
-        .import_account_ufvk(account_name, &ufvk, &birthday, purpose, None)
-        .map_err(|e| {
-            RuntimeError::with(
-                ErrorCode::DatabaseError,
-                json!({ "operation": "importAccount" }),
+    match import_with_birthday(db, account_name, &ufvk, &birthday, purpose.clone()) {
+        Err(error) if error.params["reason"] == "checkpointsDiverged" => {
+            let height = error.params["checkpointHeight"].as_u64().ok_or(error)? as u32;
+            let treestate = network::tree_state(client, height).await?;
+            check_birthday_tree_state(&treestate, height, &params)?;
+            let checkpoint = AccountBirthday::from_treestate(treestate, None).map_err(|e| {
+                RuntimeError::new(ErrorCode::InvalidBlockHeight).detail(format!("{e:?}"))
+            })?;
+            import_with_checkpoint(
+                db,
+                account_name,
+                &ufvk,
+                &birthday,
+                purpose,
+                checkpoint.prior_chain_state(),
             )
-            .detail(e)
-        })?;
+            .map_err(|mut error| {
+                if error.params["reason"] == "checkpointsDiverged" {
+                    error.params["reason"] = json!("checkpointRecoveryStalled");
+                }
+                error
+            })
+        }
+        result => result,
+    }
+}
 
-    Ok(account.id().expose_uuid().to_string())
+fn missing_checkpoint_height(error: &SqliteClientError) -> Option<u32> {
+    let SqliteClientError::CorruptedData(message) = error else {
+        return None;
+    };
+    [
+        "the Sapling note commitment tree retains checkpoints both above and below height ",
+        "the Orchard note commitment tree retains checkpoints both above and below height ",
+        "the Ironwood note commitment tree retains checkpoints both above and below height ",
+    ]
+    .iter()
+    .find_map(|prefix| message.strip_prefix(prefix))
+    .and_then(|rest| rest.split_once(',').map(|(height, _)| height))
+    .and_then(|height| height.parse().ok())
+}
+
+pub(crate) fn import_with_checkpoint(
+    db: &mut Db,
+    name: &str,
+    ufvk: &UnifiedFullViewingKey,
+    birthday: &AccountBirthday,
+    purpose: AccountPurpose,
+    checkpoint: &ChainState,
+) -> Result<String> {
+    db.transactionally(|wallet| {
+        insert_missing_checkpoints(wallet, checkpoint)?;
+        wallet
+            .import_account_ufvk(name, ufvk, birthday, purpose, None)
+            .map(|account| account.id().expose_uuid().to_string())
+    })
+    .map_err(import_error)
+}
+
+fn insert_missing_checkpoints<W>(
+    wallet: &mut W,
+    checkpoint: &ChainState,
+) -> std::result::Result<(), SqliteClientError>
+where
+    W: WalletRead<Error = SqliteClientError>
+        + WalletCommitmentTrees<Error = zcash_client_sqlite::wallet::commitment_tree::Error>,
+{
+    let height = checkpoint.block_height();
+    if wallet
+        .get_block_hash(height)?
+        .is_some_and(|hash| hash != checkpoint.block_hash())
+    {
+        return Err(SqliteClientError::BlockConflict(height));
+    }
+    // Do not mark blocks scanned or replace existing checkpoint marks.
+    wallet.with_sapling_tree_mut(|tree| {
+        insert_checkpoint(tree, checkpoint.final_sapling_tree().clone(), height)
+    })?;
+    wallet.with_orchard_tree_mut(|tree| {
+        insert_checkpoint(tree, checkpoint.final_orchard_tree().clone(), height)
+    })?;
+    wallet.with_ironwood_tree_mut(|tree| {
+        insert_checkpoint(tree, checkpoint.final_ironwood_tree().clone(), height)
+    })?;
+    Ok(())
+}
+
+/// Rescans one account from `from`. An earlier start rewinds and keeps what is
+/// already known; a later one starts the account over at that height.
+pub async fn rescan_account(
+    db: &mut Db,
+    client: &mut LightClient,
+    uuid: &str,
+    from: u32,
+    has_pending_send: bool,
+) -> Result<String> {
+    let id = parse_account_id(db, uuid)?;
+    let current = u32::from(db.get_account_birthday(id).map_err(import_error)?);
+    let params = *db.params();
+    if from > current {
+        refuse_restart_with_pending_send(has_pending_send)?;
+        let birthday = chain_state_at(client, from.saturating_sub(1), &params).await?;
+        let uuid = match restart_with_birthday(db, id, &birthday, None) {
+            Ok(uuid) => uuid,
+            Err(error) => {
+                let Some(height) = error.params["checkpointHeight"].as_u64() else {
+                    return Err(error);
+                };
+                let checkpoint = chain_state_at(client, height as u32, &params).await?;
+                restart_with_birthday(db, id, &birthday, Some(checkpoint.prior_chain_state()))?
+            }
+        };
+        return Ok(json!({ "fromHeight": from, "accountUuid": uuid }).to_string());
+    }
+    if from < current {
+        let birthday = chain_state_at(client, from.saturating_sub(1), &params).await?;
+        if let Err(error) = rescan_with_birthday(db, id, &birthday, None) {
+            let Some(height) = error.params["checkpointHeight"].as_u64() else {
+                return Err(error);
+            };
+            let checkpoint = chain_state_at(client, height as u32, &params).await?;
+            rescan_with_birthday(db, id, &birthday, Some(checkpoint.prior_chain_state()))?;
+        }
+    } else if db.chain_height().map_err(import_error)?.is_some() {
+        crate::sync::queue_rescan_from(db, from)?;
+    }
+    Ok(json!({ "fromHeight": from, "accountUuid": uuid }).to_string())
+}
+
+/// Starting over drops the notes a pending send spends; it waits until the send settles.
+fn refuse_restart_with_pending_send(has_pending_send: bool) -> Result<()> {
+    if has_pending_send {
+        return Err(RuntimeError::with(
+            ErrorCode::WalletBusy,
+            json!({ "operation": "rescanAccount", "reason": "pendingSend" }),
+        ));
+    }
+    Ok(())
+}
+
+async fn chain_state_at(
+    client: &mut LightClient,
+    height: u32,
+    params: &zcash_protocol::consensus::Network,
+) -> Result<AccountBirthday> {
+    let state = network::tree_state(client, height).await?;
+    check_birthday_tree_state(&state, height, params)?;
+    AccountBirthday::from_treestate(state, None)
+        .map_err(|e| RuntimeError::new(ErrorCode::InvalidBlockHeight).detail(format!("{e:?}")))
+}
+
+/// Deletes the account and imports it again at `birthday` in one transaction,
+/// so nothing it found before the new birthday is kept.
+pub(crate) fn restart_with_birthday(
+    db: &mut Db,
+    id: zcash_client_sqlite::AccountUuid,
+    birthday: &AccountBirthday,
+    checkpoint: Option<&ChainState>,
+) -> Result<String> {
+    let account = db
+        .get_account(id)
+        .map_err(import_error)?
+        .ok_or_else(|| RuntimeError::new(ErrorCode::AccountNotFound))?;
+    let name = account.name().unwrap_or_default().to_owned();
+    let ufvk = account
+        .ufvk()
+        .cloned()
+        .ok_or_else(|| RuntimeError::new(ErrorCode::InvalidUfvk))?;
+    let AccountSource::Imported { purpose, .. } = account.source().clone() else {
+        return Err(RuntimeError::new(ErrorCode::InvalidAccountId));
+    };
+    db.transactionally_with_extension(|wallet, ext| {
+        if let Some(checkpoint) = checkpoint {
+            insert_missing_checkpoints(wallet, checkpoint).map_err(import_error)?;
+        }
+        wallet.delete_account(id).map_err(import_error)?;
+        let uuid = wallet
+            .import_account_ufvk(&name, &ufvk, birthday, purpose, None)
+            .map_err(import_error)?
+            .id()
+            .expose_uuid()
+            .to_string();
+        crate::tx_state::prune_orphaned_rows(ext)?;
+        Ok(uuid)
+    })
+    .map_err(|mut error: RuntimeError| {
+        error.params["operation"] = json!("rescanAccount");
+        error
+    })
+}
+
+pub(crate) fn rescan_with_birthday(
+    db: &mut Db,
+    id: zcash_client_sqlite::AccountUuid,
+    birthday: &AccountBirthday,
+    checkpoint: Option<&ChainState>,
+) -> Result<()> {
+    use std::collections::HashSet;
+    use zcash_client_backend::data_api::error::RewindError;
+    db.transactionally(|wallet| {
+        if let Some(checkpoint) = checkpoint {
+            insert_missing_checkpoints(wallet, checkpoint).map_err(import_error)?;
+        }
+        wallet
+            .rewind_to_chain_state(birthday.prior_chain_state().clone(), HashSet::from([id]))
+            .map_err(|error| match error {
+                RewindError::DataSource(error) => import_error(error),
+                error => RuntimeError::new(ErrorCode::DatabaseError).detail(format!("{error:?}")),
+            })
+    })
+    .map_err(|mut error: RuntimeError| {
+        error.params["operation"] = json!("rescanAccount");
+        error
+    })
+}
+
+fn insert_checkpoint<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
+    tree: &mut ShardTree<S, DEPTH, SHARD_HEIGHT>,
+    frontier: Frontier<S::H, DEPTH>,
+    height: zcash_protocol::consensus::BlockHeight,
+) -> std::result::Result<(), SqliteClientError>
+where
+    S: ShardStore<
+        CheckpointId = zcash_protocol::consensus::BlockHeight,
+        Error = zcash_client_sqlite::wallet::commitment_tree::Error,
+    >,
+    S::H: Hashable + Clone + PartialEq,
+{
+    let existing = tree
+        .store()
+        .get_checkpoint(&height)
+        .map_err(|error| SqliteClientError::from(ShardTreeError::Storage(error)))?;
+    if let Some(existing) = existing {
+        if existing.position() != frontier.value().map(|frontier| frontier.position()) {
+            return Err(SqliteClientError::CorruptedData(
+                "checkpoint position mismatch".into(),
+            ));
+        }
+        return Ok(());
+    }
+    tree.insert_frontier(
+        frontier,
+        Retention::Checkpoint {
+            id: height,
+            marking: Marking::None,
+        },
+    )
+    .map_err(SqliteClientError::from)
+}
+
+pub(crate) fn import_with_birthday(
+    db: &mut Db,
+    name: &str,
+    ufvk: &UnifiedFullViewingKey,
+    birthday: &AccountBirthday,
+    purpose: AccountPurpose,
+) -> Result<String> {
+    db.import_account_ufvk(name, ufvk, birthday, purpose, None)
+        .map(|account| account.id().expose_uuid().to_string())
+        .map_err(import_error)
+}
+
+pub(crate) fn import_error(error: SqliteClientError) -> RuntimeError {
+    let mut params = json!({ "operation": "importAccount" });
+    if let Some(height) = missing_checkpoint_height(&error) {
+        params["reason"] = json!("checkpointsDiverged");
+        params["checkpointHeight"] = json!(height);
+    }
+    RuntimeError::with(ErrorCode::DatabaseError, params).detail(error)
 }
 
 /// Pairs the spending derivation fields; half a pair is refused, not imported view-only.
@@ -335,6 +598,62 @@ fn check_birthday_tree_state(
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod import_error_tests {
+    use super::*;
+
+    #[test]
+    fn diverged_checkpoints_have_a_structured_reason_and_keep_the_detail() {
+        for pool in ["Sapling", "Orchard", "Ironwood"] {
+            let error = SqliteClientError::CorruptedData(format!(
+                "the {pool} note commitment tree retains checkpoints both above and below \
+                 height 4135105, but none at that height to truncate to"
+            ));
+            let detail = error.to_string();
+            assert_eq!(
+                import_error(error).to_json(),
+                json!({
+                    "code": "DATABASE_ERROR",
+                    "params": { "operation": "importAccount", "reason": "checkpointsDiverged", "checkpointHeight": 4135105 },
+                    "detail": detail,
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn a_later_birthday_waits_for_a_pending_send() {
+        assert!(refuse_restart_with_pending_send(false).is_ok());
+        let error = refuse_restart_with_pending_send(true).unwrap_err();
+        assert_eq!(error.to_json()["code"], "WALLET_BUSY");
+        assert_eq!(error.params["reason"], "pendingSend");
+    }
+
+    #[test]
+    fn other_import_errors_keep_their_params_and_detail() {
+        let prefix = "the Orchard note commitment tree retains checkpoints both above and below height 4135105";
+        for error in [
+            SqliteClientError::CorruptedData("invalid stored note".into()),
+            SqliteClientError::CorruptedData(format!("other failure: {prefix}")),
+            SqliteClientError::DbError(rusqlite::Error::InvalidParameterName(prefix.into())),
+            SqliteClientError::RequestedRewindInvalid {
+                safe_rewind_height: None,
+                requested_height: 4_135_029_u32.into(),
+            },
+        ] {
+            let detail = error.to_string();
+            assert_eq!(
+                import_error(error).to_json(),
+                json!({
+                    "code": "DATABASE_ERROR",
+                    "params": { "operation": "importAccount" },
+                    "detail": detail,
+                })
+            );
+        }
+    }
 }
 
 #[cfg(test)]

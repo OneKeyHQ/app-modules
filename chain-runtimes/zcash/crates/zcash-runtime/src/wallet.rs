@@ -7,7 +7,9 @@ use std::collections::{BTreeSet, HashSet};
 
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
+use schemerz_rusqlite::RusqliteAdapter;
 use uuid::Uuid;
+use zcash_client_sqlite::wallet::init::WalletMigrationError;
 use zcash_client_sqlite::{wallet::init::WalletMigrator, WalletDb};
 use zcash_protocol::consensus::Network;
 
@@ -35,8 +37,9 @@ pub fn parse_network(s: &str) -> Result<Network> {
 /// current schema. Migration is idempotent and runs on every open.
 pub fn open_and_migrate(network: &str, db_name: &str) -> Result<Db> {
     let params = parse_network(network)?;
-    let conn = storage::open_connection(db_name)?;
+    let mut conn = storage::open_connection(db_name)?;
     reject_newer_schema(&conn, params)?;
+    initialize_migration_table(&mut conn)?;
 
     // Used only for non-key purposes inside the library (migration ids, nonces).
     // No key material passes through it or through this crate.
@@ -54,6 +57,16 @@ pub fn open_and_migrate(network: &str, db_name: &str) -> Result<Db> {
 
 fn migrator() -> WalletMigrator {
     WalletMigrator::new().with_external_migrations(crate::tx_state::migrations())
+}
+
+fn initialize_migration_table(conn: &mut rusqlite::Connection) -> Result<()> {
+    // Upstream expects this initialization to succeed; storage failures must remain errors.
+    RusqliteAdapter::<'_, WalletMigrationError>::new(conn, Some("schemer_migrations".to_string()))
+        .init()
+        .map_err(|error| {
+            RuntimeError::with(ErrorCode::DatabaseError, json!({ "operation": "migrate" }))
+                .detail(error)
+        })
 }
 
 /// Refuses a database migrated by a newer runtime. Upstream migration skips
@@ -158,6 +171,25 @@ fn random_seed() -> Result<[u8; 32]> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn migration_table_storage_failures_are_errors_without_a_panic() {
+        for pragma in ["PRAGMA max_page_count = 1", "PRAGMA query_only = ON"] {
+            let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+            conn.execute_batch(pragma).unwrap();
+            let error = initialize_migration_table(&mut conn).unwrap_err();
+            assert_eq!(error.code, ErrorCode::DatabaseError);
+            assert_eq!(error.params["operation"], "migrate");
+            let tables: i64 = conn
+                .query_row(
+                    "SELECT count(*) FROM sqlite_master WHERE name = 'schemer_migrations'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(tables, 0);
+        }
+    }
 
     #[test]
     fn network_parsing() {

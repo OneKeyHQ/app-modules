@@ -36,15 +36,198 @@ use crate::error::{ErrorCode, Result, RuntimeError};
 use crate::network::LightClient;
 use crate::wallet::Db;
 
-/// Pick a range from the upstream suggestions by priority.
-///
-/// `None` means any, in upstream order (ChainTip before Historic). With a priority,
-/// only that lane is considered, so host progress stays attributed to it.
-fn pick_range(suggested: &[ScanRange], preferred: Option<ScanPriority>) -> Option<ScanRange> {
+/// Bound speculative scanning to the earlier Ironwood / Orchard tail, capped at 30 days.
+/// `pick_range` also floors the cut at the upstream ChainTip start. Note-shard
+/// completion and reorg safety can extend this window.
+const FAST_WINDOW_MAX_BLOCKS: u32 = 34_560;
+const FAST_WINDOW_REORG_MARGIN: u32 = 200;
+
+/// Keep upstream Verify / FoundNote / OpenAdjacent handling. Only partition ChainTip:
+/// its suffix runs in the fast lane, its prefix joins Historic in ascending order.
+/// Keep the original priority on returned ranges for progress attribution.
+fn pick_range(
+    suggested: &[ScanRange],
+    preferred: Option<ScanPriority>,
+    window_start: BlockHeight,
+) -> Option<ScanRange> {
+    let Some(lane) = preferred else {
+        return [
+            ScanPriority::Verify,
+            ScanPriority::ChainTip,
+            ScanPriority::FoundNote,
+            ScanPriority::OpenAdjacent,
+            ScanPriority::Historic,
+        ]
+        .into_iter()
+        .find_map(|lane| pick_range(suggested, Some(lane), window_start));
+    };
     suggested
         .iter()
-        .find(|r| !r.is_empty() && preferred.is_none_or(|p| r.priority() == p))
-        .cloned()
+        .filter(|r| !r.is_empty())
+        .filter_map(|r| {
+            let bounds = r.block_range();
+            match (lane, r.priority()) {
+                (ScanPriority::ChainTip, ScanPriority::ChainTip) if bounds.end > window_start => {
+                    Some(ScanRange::from_parts(
+                        bounds.start.max(window_start)..bounds.end,
+                        r.priority(),
+                    ))
+                }
+                (ScanPriority::Historic, ScanPriority::ChainTip) if bounds.start < window_start => {
+                    Some(ScanRange::from_parts(
+                        bounds.start..bounds.end.min(window_start),
+                        r.priority(),
+                    ))
+                }
+                (p, q) if p == q && p != ScanPriority::ChainTip => Some(r.clone()),
+                _ => None,
+            }
+        })
+        .min_by_key(|r| {
+            // Upstream orders equal-priority ranges by height as well. In particular,
+            // Historic and demoted ChainTip ranges must share one ascending lane.
+            r.block_range().start
+        })
+}
+
+fn window_start(db: &mut Db) -> Result<BlockHeight> {
+    let Some(tip) = db.chain_height().map_err(|e| db_err("chainHeight", e))? else {
+        return Ok(BlockHeight::from_u32(u32::MAX));
+    };
+    let ironwood_activation = db
+        .params()
+        .activation_height(NetworkUpgrade::Nu6_3)
+        .unwrap_or(BlockHeight::from_u32(0));
+    let orchard_activation = db
+        .params()
+        .activation_height(NetworkUpgrade::Nu5)
+        .unwrap_or(BlockHeight::from_u32(0));
+    db.transactionally_with_extension(|_, ext| {
+        let (ironwood, orchard): (Option<u32>, Option<u32>) = ext.query_row(
+            "SELECT (SELECT MAX(subtree_end_height) FROM ironwood_tree_shards),
+                    (SELECT MAX(subtree_end_height) FROM orchard_tree_shards)",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        let ironwood = ironwood
+            .map(BlockHeight::from_u32)
+            .unwrap_or(ironwood_activation);
+        let orchard = orchard
+            .map(BlockHeight::from_u32)
+            .unwrap_or(orchard_activation);
+        let mut start = ironwood
+            .min(orchard)
+            .max(tip.saturating_sub(FAST_WINDOW_MAX_BLOCKS))
+            .min(tip.saturating_sub(FAST_WINDOW_REORG_MARGIN));
+
+        // A newly discovered note can span the cut. Complete its entire shard before
+        // moving on, even when its below-window ranges still have ChainTip priority
+        // and therefore cannot be promoted to FoundNote by upstream. Repeat because
+        // extending one pool's window can expose an overlapping shard in the other.
+        loop {
+            let before = start;
+            for pool in ["orchard", "ironwood"] {
+                let note_start: Option<u32> = ext.query_row(
+                    &format!(
+                        "SELECT MIN(ss.subtree_start_height)
+                         FROM {pool}_received_notes rn
+                         JOIN v_{pool}_shards_scan_state ss
+                           ON rn.commitment_tree_position >= ss.start_position
+                          AND rn.commitment_tree_position < ss.end_position_exclusive
+                         WHERE ss.max_priority > 10 AND ss.subtree_start_height < ?1
+                           AND IFNULL(ss.subtree_end_height, ?2) >= ?1"
+                    ),
+                    rusqlite::params![u32::from(start), u32::from(tip)],
+                    |row| row.get(0),
+                )?;
+                if let Some(note_start) = note_start {
+                    start = start.min(BlockHeight::from_u32(note_start));
+                }
+            }
+            if start == before {
+                break;
+            }
+        }
+        Ok(start)
+    })
+    .map_err(|e: rusqlite::Error| db_err("fastWindow", e))
+}
+
+/// A frontier cannot bridge missing completed shards in SQLite's shard store.
+/// Check every pool, including Sapling whose ownership scanning is disabled.
+fn roots_cover(db: &mut Db, state: &ChainState) -> Result<bool> {
+    let sizes = [
+        ("sapling", state.final_sapling_tree().tree_size()),
+        ("orchard", state.final_orchard_tree().tree_size()),
+        ("ironwood", state.final_ironwood_tree().tree_size()),
+    ];
+    db.transactionally_with_extension(|_, ext| {
+        for (pool, size) in sizes {
+            let required = size >> 16;
+            let known: u64 = ext.query_row(
+                &format!(
+                    "SELECT COUNT(*) FROM {pool}_tree_shards
+                     WHERE shard_index >= 0 AND shard_index < ?1
+                       AND subtree_end_height IS NOT NULL AND root_hash IS NOT NULL"
+                ),
+                [required],
+                |row| row.get(0),
+            )?;
+            if known != required {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    })
+    .map_err(|e: rusqlite::Error| db_err("fastWindowRoots", e))
+}
+
+/// When the server's roots lag, use upstream's original ChainTip start until
+/// sequential scanning has filled the gap. Never retry the impossible jump forever.
+fn guard_fast_range(
+    db: &mut Db,
+    suggested: &[ScanRange],
+    range: ScanRange,
+    state: &ChainState,
+) -> Result<ScanRange> {
+    if range.priority() == ScanPriority::ChainTip {
+        if let Some(original) = suggested
+            .iter()
+            .filter(|r| !r.is_empty() && r.priority() == ScanPriority::ChainTip)
+            .min_by_key(|r| r.block_range().start)
+        {
+            if range.block_range().start > original.block_range().start && !roots_cover(db, state)?
+            {
+                return Ok(original.clone());
+            }
+        }
+    }
+    Ok(range)
+}
+
+async fn range_chain_state(
+    db: &Db,
+    client: &mut LightClient,
+    start: BlockHeight,
+) -> Result<ChainState> {
+    let anchor = anchor_height(db.params(), start);
+    crate::network::with_timeout(
+        async {
+            client
+                .get_tree_state(service::BlockId {
+                    height: u64::from(anchor),
+                    hash: Vec::new(),
+                })
+                .await
+                .map_err(|e| net_err("getTreeState", e))?
+                .into_inner()
+                .to_chain_state()
+                .map_err(|e| net_err("toChainState", e))
+        },
+        crate::network::DEFAULT_TIMEOUT_MS,
+        "getTreeState",
+    )
+    .await
 }
 
 /// Host-selectable priority, as strings so values are checkable across the boundary.
@@ -220,10 +403,31 @@ pub async fn step(
             .suggest_scan_ranges()
             .map_err(|e| db_err("suggestScanRanges", e))?;
 
-        // The host picks the priority; candidates come only from upstream suggestions.
-        let Some(range) = pick_range(&suggested, preferred) else {
+        // Special-priority and empty passes need no window/shard queries.
+        let window = if preferred
+            .is_none_or(|p| matches!(p, ScanPriority::ChainTip | ScanPriority::Historic))
+            && suggested
+                .iter()
+                .any(|r| r.priority() == ScanPriority::ChainTip)
+        {
+            window_start(db)?
+        } else {
+            BlockHeight::from_u32(0)
+        };
+        let Some(range) = pick_range(&suggested, preferred, window) else {
             break; // no pending ranges at this priority
         };
+
+        // Reuse the treestate needed by scanning to validate the jump before downloading.
+        // Only a fallback needs a second treestate request; window planning is local SQL.
+        let t_tree = now_ms();
+        let mut chain_state = range_chain_state(db, client, range.block_range().start).await?;
+        let original_start = range.block_range().start;
+        let range = guard_fast_range(db, &suggested, range, &chain_state)?;
+        if range.block_range().start != original_start {
+            chain_state = range_chain_state(db, client, range.block_range().start).await?;
+        }
+        ms_treestate += now_ms() - t_tree;
 
         // Take only this batch; the rest is left for later calls.
         let start = range.block_range().start;
@@ -298,28 +502,7 @@ pub async fn step(
         let t_downloaded = now_ms();
         ms_download += t_downloaded - t_start;
 
-        let anchor = anchor_height(&params, start);
-
-        let chain_state = crate::network::with_timeout(
-            async {
-                client
-                    .get_tree_state(service::BlockId {
-                        height: u64::from(anchor),
-                        hash: Vec::new(),
-                    })
-                    .await
-                    .map_err(|e| net_err("getTreeState", e))?
-                    .into_inner()
-                    .to_chain_state()
-                    .map_err(|e| net_err("toChainState", e))
-            },
-            crate::network::DEFAULT_TIMEOUT_MS,
-            "getTreeState",
-        )
-        .await?;
-
-        let t_treestate = now_ms();
-        ms_treestate += t_treestate - t_downloaded;
+        let t_scan = now_ms();
 
         // Reorgs surface as REORG_DETECTED with an exact atHeight.
         scan_blocks_inline(
@@ -332,7 +515,7 @@ pub async fn step(
             batch_len,
         )?;
 
-        ms_scan += now_ms() - t_treestate;
+        ms_scan += now_ms() - t_scan;
 
         blocks_scanned += batch_len as u64;
 
@@ -662,10 +845,7 @@ pub fn account_status(db: &Db, account_uuid: &str) -> Result<String> {
         lowest_pending = Some(lowest_pending.map_or(start, |cur: u32| cur.min(start)));
     }
 
-    let summary = db
-        .get_wallet_summary(zcash_client_backend::data_api::wallet::ConfirmationsPolicy::default())
-        .map_err(|e| db_err("walletSummary", e))?;
-    let chain_tip = summary.as_ref().map(|s| u32::from(s.chain_tip_height()));
+    let (chain_tip, fully_scanned) = scan_heights(db)?;
 
     // Scanned height = lowest pending height for this account, else the chain tip.
     let scanned_to = lowest_pending.or(chain_tip);
@@ -673,11 +853,29 @@ pub fn account_status(db: &Db, account_uuid: &str) -> Result<String> {
     Ok(json!({
         "birthdayHeight": birthday,
         "chainTip": chain_tip,
+        "fullyScannedHeight": fully_scanned,
         "scannedToHeight": scanned_to,
         "remainingBlocks": remaining,
         "isComplete": remaining == 0,
     })
     .to_string())
+}
+
+// Polling heights must not recompute every account's balances and subtree progress.
+fn scan_heights(db: &Db) -> Result<(Option<u32>, Option<u32>)> {
+    let chain_tip = db.chain_height().map_err(|e| db_err("chainHeight", e))?;
+    let birthday = db
+        .get_wallet_birthday()
+        .map_err(|e| db_err("walletBirthday", e))?;
+    let (Some(chain_tip), Some(birthday)) = (chain_tip, birthday) else {
+        return Ok((None, None));
+    };
+    let fully_scanned = db
+        .block_fully_scanned()
+        .map_err(|e| db_err("blockFullyScanned", e))?
+        .map(|block| u32::from(block.block_height()))
+        .unwrap_or(u32::from(birthday).saturating_sub(1));
+    Ok((Some(u32::from(chain_tip)), Some(fully_scanned)))
 }
 
 /// Read-only: the ranges the wallet currently suggests scanning. No network requests.
@@ -699,7 +897,14 @@ pub fn peek(db: &Db) -> Result<String> {
         .collect();
 
     let total: u64 = ranges.iter().map(|r| r.len() as u64).sum();
-    Ok(json!({ "ranges": items, "totalBlocks": total }).to_string())
+    let (chain_tip, fully_scanned) = scan_heights(db)?;
+    Ok(json!({
+        "ranges": items,
+        "totalBlocks": total,
+        "chainTip": chain_tip,
+        "fullyScannedHeight": fully_scanned,
+    })
+    .to_string())
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -885,6 +1090,10 @@ pub fn queue_rescan_from(db: &mut Db, from_height: u32) -> Result<String> {
     })
     .to_string())
 }
+
+#[cfg(test)]
+#[path = "sync_tests.rs"]
+mod scan_order_tests;
 
 #[cfg(test)]
 mod tests {
