@@ -11,6 +11,7 @@ use std::collections::{HashMap, HashSet};
 
 use monero_wallet::{
     address::SubaddressIndex,
+    extra::PaymentId,
     interface::ScannableBlock,
     transaction::{Input, Transaction},
     Scanner, WalletOutput,
@@ -280,6 +281,16 @@ fn tx_public_keys_from_extra(extra: &[u8]) -> Option<(Vec<u8>, Option<Vec<u8>>)>
     let extra = monero_wallet::extra::Extra::read(&mut &*extra).ok()?;
     let (keys, additional) = extra.keys()?;
     Some((flatten(&keys), additional.as_deref().map(flatten)))
+}
+
+/// Payment ID bytes worth showing: `None` when absent or all zeros, the dummy wallet2 encrypts
+/// into ordinary two-output transactions.
+fn shown_payment_id(payment_id: Option<PaymentId>) -> Option<Vec<u8>> {
+    let bytes = match payment_id? {
+        PaymentId::Encrypted(id) => id.to_vec(),
+        PaymentId::Unencrypted(id) => id.to_vec(),
+    };
+    bytes.iter().any(|b| *b != 0).then_some(bytes)
 }
 
 /// Scans and persists a batch of blocks in one transaction: all or nothing.
@@ -559,6 +570,13 @@ fn persist(
         .iter()
         .map(|(h, _, _, ts)| (*h, *ts as i64))
         .collect();
+    // First non-dummy payment ID per transaction, in output order.
+    let mut payment_ids: HashMap<[u8; 32], Vec<u8>> = HashMap::new();
+    for (_, output) in found {
+        if let Some(id) = shown_payment_id(output.payment_id()) {
+            payment_ids.entry(output.transaction()).or_insert(id);
+        }
+    }
 
     for (height, output) in found {
         let txid = output.transaction();
@@ -607,18 +625,20 @@ fn persist(
 
         if seen_txids.insert(txid) {
             tx.execute(
-                "INSERT INTO transactions (identity_id, txid, height, timestamp, direction, fee_atomic)
-                 VALUES (?1, ?2, ?3, ?4, 'in', ?5)
+                "INSERT INTO transactions (identity_id, txid, height, timestamp, direction, fee_atomic, payment_id)
+                 VALUES (?1, ?2, ?3, ?4, 'in', ?5, ?6)
                  ON CONFLICT (identity_id, txid) DO UPDATE
                    SET height = excluded.height, failed = 0, scan_valid = 1,
                        timestamp = COALESCE(excluded.timestamp, transactions.timestamp),
-                       fee_atomic = COALESCE(excluded.fee_atomic, transactions.fee_atomic)",
+                       fee_atomic = COALESCE(excluded.fee_atomic, transactions.fee_atomic),
+                       payment_id = COALESCE(excluded.payment_id, transactions.payment_id)",
                 params![
                     identity_id,
                     txid.as_slice(),
                     *height as i64,
                     block_time.get(height),
-                    tx_fees.get(&txid).map(|fee| *fee as i64)
+                    tx_fees.get(&txid).map(|fee| *fee as i64),
+                    payment_ids.get(&txid)
                 ],
             )
             .map_err(|e| db_err("insertIncomingTransaction", e))?;
@@ -1345,5 +1365,99 @@ mod tests {
         assert_eq!(outcome.blocks_scanned, 0);
         assert_eq!(outcome.outputs_found, 0);
         assert!(outcome.from_height.is_none());
+    }
+
+    #[test]
+    fn only_a_non_zero_payment_id_is_shown() {
+        assert_eq!(shown_payment_id(None), None);
+        assert_eq!(shown_payment_id(Some(PaymentId::Encrypted([0; 8]))), None);
+        assert_eq!(
+            shown_payment_id(Some(PaymentId::Unencrypted([0; 32]))),
+            None
+        );
+        assert_eq!(
+            shown_payment_id(Some(PaymentId::Encrypted([0, 0, 0, 0, 0, 0, 0, 1]))),
+            Some(vec![0, 0, 0, 0, 0, 0, 0, 1])
+        );
+        assert_eq!(
+            shown_payment_id(Some(PaymentId::Unencrypted([7; 32]))),
+            Some(vec![7; 32])
+        );
+    }
+
+    // Vector from monero-wallet 0.2.0 `src/tests/scan.rs`: a transaction paying these keys two
+    // outputs, with wallet2's dummy encrypted payment ID (it decrypts to zeros).
+    const VECTOR_SPEND_KEY: &str =
+        "ccf0ea10e1ea64354f42fa710c2b318e581969cf49046d809d1f0aadb3fc7a02";
+    const VECTOR_VIEW_KEY: &str =
+        "a28b4b2085592881df94ee95da332c16b5bb773eb8bb74730208cbb236c73806";
+    #[rustfmt::skip]
+    const VECTOR_TX: &str = "020001020003060101cf60390bb71aa15eb24037772012d59dc68cb4b6211e1c93206db09a6c346261020002ee8ca293511571c0005e1c144e49d09b8ff03046dbafb3e064a34cb9fc1994b600029e2e5cd08c8681dbcf2ce66071467e835f7e86613fbfed3c4fb170127b94e1072c01d3ce2a622c6e06ed465f81017dd6188c3a6e3d8e65a846f9c98416da0e150a82020901c553d35e54111bd001e0bbcbf289d701ce90e309ead2b487ec1d4d8af5d649543eb99a7620f6b54e532898527be29704f050e6f06de61e5967b2ddd506b4d6d36546065d6aae156ac7bec18c99580c07867fb98cb29853edbafec91af2df605c12f9aaa81a9165625afb6649f5a652012c5ba6612351140e1fb4a8463cc765d0a9bb7d999ba35750f365c5285d77230b76c7a612784f4845812a2899f2ca6a304fee61362db59b263115c27d2ce78af6b1d9e939c1f4036c7707851f41abe6458cf1c748353e593469ebf43536a939f7";
+    #[rustfmt::skip]
+    const VECTOR_BLOCK: &str = "0202e8e28efe04db09e2fc4d57854786220bd33e0169ff692440d27ae3932b9219df9ab1d7260b00000000014101ff050580d0acf30e02704972eb1878e94686b62fa4c0202f3e7e3a263073bd6edd751990ea769494ee80c0fc82aa0202edac72ab7c5745d4acaa95f76a3b76e238a55743cd51efb586f968e09821788d80d0dbc3f40202f9b4cf3141aac4203a1aaed01f09326615544997d1b68964928d9aafd07e38e580a0e5b9c29101023405e3aa75b1b7adf04e8c7faa3c3d45616ae740a8b11fb7cc1555dd8b9e4c9180c0dfda8ee90602d2b78accfe1c2ae57bed4fe3385f7735a988f160ef3bbc1f9d7a0c911c26ffd92101d2d55b5066d247a97696be4a84bf70873e4f149687f57e606eb6682f11650e1701b74773bbea995079805398052da9b69244bda034b089b50e4d9151dedb59a12f";
+    /// Extra nonce in `VECTOR_TX`: tag, length, encrypted marker, then the 8 encrypted bytes.
+    /// Encryption XORs a mask derived from the shared secret, so these bytes are the mask.
+    const VECTOR_NONCE_PREFIX: &str = "020901";
+    const VECTOR_PAYMENT_ID_MASK: [u8; 8] = [0xc5, 0x53, 0xd3, 0x5e, 0x54, 0x11, 0x1b, 0xd0];
+
+    /// Scans the vector block, its encrypted payment ID swapped for `encrypted`, into a fresh
+    /// wallet; returns the history row and the stored `payment_id`.
+    fn scan_vector_with(encrypted: [u8; 8]) -> (serde_json::Value, Option<Vec<u8>>) {
+        use monero_wallet::{block::Block, transaction::Pruned};
+
+        let spend: [u8; 32] = hex::decode(VECTOR_SPEND_KEY).unwrap().try_into().unwrap();
+        let spend_public = (curve25519_dalek::constants::ED25519_BASEPOINT_POINT
+            * curve25519_dalek::Scalar::from_bytes_mod_order(spend))
+        .compress()
+        .to_bytes();
+        let view: [u8; 32] = hex::decode(VECTOR_VIEW_KEY).unwrap().try_into().unwrap();
+        let mut db = crate::wallet::testing::db();
+        let id = db
+            .add_identity("vector", &spend_public, &view, 0)
+            .unwrap()
+            .id;
+
+        let original = format!(
+            "{VECTOR_NONCE_PREFIX}{}",
+            hex::encode(VECTOR_PAYMENT_ID_MASK)
+        );
+        assert_eq!(VECTOR_TX.matches(&original).count(), 1);
+        let tx_hex = VECTOR_TX.replace(
+            &original,
+            &format!("{VECTOR_NONCE_PREFIX}{}", hex::encode(encrypted)),
+        );
+        let block = ScannableBlock {
+            block: Block::read(&mut hex::decode(VECTOR_BLOCK).unwrap().as_slice()).unwrap(),
+            transactions: vec![Transaction::<Pruned>::read(
+                &mut hex::decode(tx_hex).unwrap().as_slice(),
+            )
+            .unwrap()],
+            output_index_for_first_ringct_output: Some(0),
+        };
+        assert_eq!(scan_blocks(&mut db, id, &[block]).unwrap().outputs_found, 2);
+
+        let stored = db
+            .conn()
+            .query_row("SELECT payment_id FROM transactions", [], |r| r.get(0))
+            .unwrap();
+        let item = crate::query::history(&db, id, 10, 0).unwrap()["items"][0].clone();
+        (item, stored)
+    }
+
+    #[test]
+    fn the_dummy_payment_id_of_a_real_transaction_is_not_stored() {
+        let (item, stored) = scan_vector_with(VECTOR_PAYMENT_ID_MASK);
+        assert_eq!(item["direction"], "in");
+        assert_eq!(stored, None);
+        assert!(item["paymentId"].is_null());
+    }
+
+    #[test]
+    fn a_receive_reports_its_decrypted_payment_id() {
+        let wanted = [0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef];
+        let encrypted: [u8; 8] = core::array::from_fn(|i| VECTOR_PAYMENT_ID_MASK[i] ^ wanted[i]);
+        let (item, stored) = scan_vector_with(encrypted);
+        assert_eq!(stored, Some(wanted.to_vec()));
+        assert_eq!(item["paymentId"], "1234567890abcdef");
     }
 }

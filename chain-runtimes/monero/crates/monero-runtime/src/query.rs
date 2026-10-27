@@ -312,7 +312,9 @@ pub fn history(db: &Db, identity_id: i64, limit: u32, offset: u32) -> Result<Val
                     t.fee_atomic,
                     EXISTS (SELECT 1 FROM outputs
                             WHERE identity_id = t.identity_id AND txid = t.txid AND scan_valid = 1
-                              AND subaddress_major IS NULL) AS received_on_primary
+                              AND subaddress_major IS NULL) AS received_on_primary,
+                    -- Change in our own send decrypts it with our key into noise; wallet2 skips it too.
+                    CASE WHEN t.direction = 'in' THEN t.payment_id END
              FROM transactions t
              LEFT JOIN blocks b ON b.identity_id = t.identity_id AND b.height = t.height
              WHERE t.identity_id = ?1
@@ -336,6 +338,7 @@ pub fn history(db: &Db, identity_id: i64, limit: u32, offset: u32) -> Result<Val
                 "feeAtomic": r.get::<_, Option<i64>>(8)?.map(|fee| fee.to_string()),
                 // Paid to the account's primary address (subaddresses are not shown as ours).
                 "receivedOnPrimary": r.get::<_, bool>(9)?,
+                "paymentId": r.get::<_, Option<Vec<u8>>>(10)?.map(hex::encode),
             }))
         })
         .map_err(|e| db_err("history", e))?;
@@ -755,6 +758,38 @@ mod tests {
         assert_eq!(primary["feeAtomic"], "30000000");
         assert_eq!(primary["receivedOnPrimary"], true);
         assert_eq!(by_txid([7u8; 32])["receivedOnPrimary"], false);
+    }
+
+    /// A send's scanned change decrypts the payment ID with our key, so only receives report it.
+    #[test]
+    fn only_receives_report_their_payment_id() {
+        let (db, id) = db_with_identity();
+        for (txid, direction, payment_id) in [
+            ([6u8; 32], "in", Some(vec![0xABu8; 8])),
+            ([7u8; 32], "out", Some(vec![0xCDu8; 8])),
+            ([8u8; 32], "in", None),
+        ] {
+            db.conn()
+                .execute(
+                    "INSERT INTO transactions (identity_id, txid, height, direction, payment_id)
+                     VALUES (?1, ?2, 100, ?3, ?4)",
+                    params![id, txid.as_slice(), direction, payment_id],
+                )
+                .unwrap();
+        }
+        let items = &history(&db, id, 10, 0).unwrap()["items"];
+        let payment_id = |txid: [u8; 32]| {
+            items
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|item| item["txid"] == hex::encode(txid))
+                .unwrap()["paymentId"]
+                .clone()
+        };
+        assert_eq!(payment_id([6u8; 32]), "abababababababab");
+        assert!(payment_id([7u8; 32]).is_null());
+        assert!(payment_id([8u8; 32]).is_null());
     }
 
     #[test]

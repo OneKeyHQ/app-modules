@@ -205,6 +205,9 @@ CREATE TABLE IF NOT EXISTS transactions (
     change_atomic   TEXT,
     -- Network fee, piconero, read from the scanned spending transaction.
     fee_atomic      INTEGER,
+    -- Payment ID decrypted with the view key when an output of the tx is scanned (8 bytes, or
+    -- 32 for a pre-v12 unencrypted one). NULL when absent or all zeros (wallet2's dummy).
+    payment_id      BLOB    CHECK (payment_id IS NULL OR length(payment_id) IN (8, 32)),
     -- 0 while a rescan or reorg re-verifies the row; shown without a height until seen again
     scan_valid      INTEGER NOT NULL DEFAULT 1 CHECK (scan_valid IN (0, 1)),
     PRIMARY KEY (identity_id, txid)
@@ -294,6 +297,22 @@ mod tests {
             })
             .unwrap();
         assert_eq!(additional, None);
+    }
+
+    /// Only an 8-byte (encrypted) or 32-byte (legacy) payment ID fits.
+    #[test]
+    fn a_payment_id_must_be_8_or_32_bytes() {
+        let (db, identity_id) = crate::wallet::testing::db_with_identity();
+        let insert = |txid: u8, payment_id: Vec<u8>| {
+            db.conn().execute(
+                "INSERT INTO transactions (identity_id, txid, direction, payment_id)
+                 VALUES (?1, ?2, 'in', ?3)",
+                rusqlite::params![identity_id, vec![txid; 32], payment_id],
+            )
+        };
+        insert(1, vec![1; 8]).expect("encrypted payment ID");
+        insert(2, vec![1; 32]).expect("legacy payment ID");
+        assert!(insert(3, vec![1; 9]).is_err());
     }
 
     #[test]
