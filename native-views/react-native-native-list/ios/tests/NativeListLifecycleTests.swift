@@ -389,29 +389,29 @@ final class NativeListLifecycleTests: XCTestCase {
     XCTAssertTrue(visibleButtons()[0].isUserInteractionEnabled)
     XCTAssertTrue(visibleButtons()[0].allTargets.contains(trailing))
     XCTAssertNotNil(trailing.onAction)
-    visibleButtons()[0].sendActions(for: .touchUpInside)
+    try dispatchAccessoryTouchUpInside(visibleButtons()[0], on: trailing)
     XCTAssertEqual(actions.last?.rowKey, "row")
     XCTAssertEqual(actions.last?.key, "second")
     XCTAssertEqual(actions.last?.source, "trailingAccessory")
     XCTAssertEqual(actions.last?.slot, 1)
     let selection = try XCTUnwrap(trailing.arrangedSubviews.compactMap { $0 as? UIButton }
       .first { !($0 is NativeListAccessoryButton) && !$0.isHidden })
-    selection.sendActions(for: .touchUpInside)
+    try dispatchAccessoryTouchUpInside(selection, on: trailing)
     XCTAssertEqual(actions.last?.key, "selection")
     XCTAssertNil(actions.last?.slot)
 
     try bind([first, second])
     XCTAssertEqual(visibleButtons().count, 2)
-    visibleButtons()[0].sendActions(for: .touchUpInside)
+    try dispatchAccessoryTouchUpInside(visibleButtons()[0], on: trailing)
     XCTAssertEqual(actions.last?.key, "first")
     XCTAssertEqual(actions.last?.slot, 0)
-    visibleButtons()[1].sendActions(for: .touchUpInside)
+    try dispatchAccessoryTouchUpInside(visibleButtons()[1], on: trailing)
     XCTAssertEqual(actions.last?.key, "second")
     XCTAssertEqual(actions.last?.slot, 1)
 
     try bind([second], key: "replacement")
     XCTAssertEqual(visibleButtons().count, 1)
-    visibleButtons()[0].sendActions(for: .touchUpInside)
+    try dispatchAccessoryTouchUpInside(visibleButtons()[0], on: trailing)
     XCTAssertEqual(actions.last?.rowKey, "replacement")
     XCTAssertEqual(actions.last?.key, "second")
     XCTAssertEqual(actions.last?.slot, 0)
@@ -461,7 +461,7 @@ final class NativeListLifecycleTests: XCTestCase {
       ["kind": "checkbox", "state": "unchecked", "actionKey": "selection"], tertiary,
     ], key: "tertiary-first")
     XCTAssertEqual(first.bounds.width, 38, accuracy: 0.5)
-    first.sendActions(for: .touchUpInside)
+    try dispatchAccessoryTouchUpInside(first, on: trailing)
     XCTAssertEqual(actions.last?.rowKey, "tertiary-first")
     XCTAssertEqual(actions.last?.source, "trailingAccessory")
     XCTAssertEqual(actions.last?.slot, 1)
@@ -471,7 +471,7 @@ final class NativeListLifecycleTests: XCTestCase {
 
     let normal = try bind([ordinary], key: "ordinary")
     XCTAssertEqual(normal.bounds.width, 36, accuracy: 0.5)
-    normal.sendActions(for: .touchUpInside)
+    try dispatchAccessoryTouchUpInside(normal, on: trailing)
     XCTAssertEqual(actions.last?.rowKey, "ordinary")
     XCTAssertEqual(actions.last?.slot, 0)
     XCTAssertEqual(actions.last?.inset, 0)
@@ -482,7 +482,7 @@ final class NativeListLifecycleTests: XCTestCase {
     XCTAssertEqual(trailing.anchorInset(for: value), 0)
 
     let rebound = try bind([tertiary], key: "tertiary-again")
-    rebound.sendActions(for: .touchUpInside)
+    try dispatchAccessoryTouchUpInside(rebound, on: trailing)
     XCTAssertEqual(actions.last?.rowKey, "tertiary-again")
     XCTAssertEqual(actions.last?.slot, 0)
     XCTAssertEqual(actions.last?.inset, 7)
@@ -491,7 +491,7 @@ final class NativeListLifecycleTests: XCTestCase {
 
     let account = try bind([ordinary], key: "account", presentation: "accountSelector")
     XCTAssertEqual(account.bounds.width, 38, accuracy: 0.5)
-    account.sendActions(for: .touchUpInside)
+    try dispatchAccessoryTouchUpInside(account, on: trailing)
     XCTAssertEqual(actions.last?.rowKey, "account")
     XCTAssertEqual(actions.last?.slot, 0)
     XCTAssertEqual(actions.last?.inset, 7)
@@ -499,7 +499,7 @@ final class NativeListLifecycleTests: XCTestCase {
     XCTAssertEqual(accountOrigin.width - 2 * accountOrigin.inset, 24, accuracy: 0.5)
 
     let finalOrdinary = try bind([ordinary], key: "ordinary-again")
-    finalOrdinary.sendActions(for: .touchUpInside)
+    try dispatchAccessoryTouchUpInside(finalOrdinary, on: trailing)
     XCTAssertEqual(actions.last?.rowKey, "ordinary-again")
     XCTAssertEqual(actions.last?.inset, 0)
     XCTAssertEqual(actions.count, 5)
@@ -720,15 +720,16 @@ final class NativeListLifecycleTests: XCTestCase {
     XCTAssertEqual(rects[1].minX - rects[0].maxX, 8, accuracy: 0.5)
     XCTAssertEqual(controls[1].bounds.height, 38, accuracy: 0.5)
     XCTAssertTrue(controls[1].isEnabled)
-    controls[1].sendActions(for: .touchUpInside)
+    try dispatchAccessoryTouchUpInside(controls[1], on: trailing)
     XCTAssertEqual(actions.count, 1)
-    XCTAssertEqual(actions[0].0, "menu")
-    XCTAssertEqual(actions[0].1, 1)
+    let action = try XCTUnwrap(actions.first)
+    XCTAssertEqual(action.0, "menu")
+    XCTAssertEqual(action.1, 1)
 
     try bind(disabled: true)
     let disabledIcon = try XCTUnwrap(trailing.arrangedSubviews.filter { !$0.isHidden }.last as? UIButton)
     XCTAssertFalse(disabledIcon.isEnabled)
-    disabledIcon.sendActions(for: .touchUpInside)
+    try dispatchAccessoryTouchUpInside(disabledIcon, on: trailing)
     XCTAssertEqual(actions.count, 1)
   }
 
@@ -2424,10 +2425,10 @@ final class NativeListLifecycleTests: XCTestCase {
     view.layoutIfNeeded()
     list.layoutIfNeeded()
     drainMainQueue()
-    list.contentOffset.y = 1000
+    list.contentOffset.y = 300
     list.layoutIfNeeded()
     view.applySnapshotJson(try structuralRowsSnapshot(count: 50, generation: 2,
-      transitionID: "interrupt-boundary", durationMs: 400))
+      transitionID: "interrupt-boundary", durationMs: 1200))
     let footerBottomBeforeResize = footer.convert(.zero, to: list).y + 60
     view.setContainerSlotHeightsJson("[0,0,80,2200]")
     XCTAssertEqual(footer.convert(.zero, to: list).y + 80,
@@ -2440,12 +2441,37 @@ final class NativeListLifecycleTests: XCTestCase {
     XCTAssertGreaterThan(hiddenTop, 0)
     XCTAssertFalse(footerHost.point(inside: CGPoint(x: 10, y: hiddenTop / 2), with: nil))
     XCTAssertTrue(footerHost.point(inside: CGPoint(x: 10, y: hiddenTop + 1), with: nil))
-    waitForStructuralFrames(0.18)
-    list.layoutIfNeeded()
-    let boundary = try XCTUnwrap(list.visibleCells.compactMap { $0 as? NativeListRowHost }
-      .first { $0.layer.mask != nil })
+    var boundaryCell: NativeListRowHost?
+    let deadline = Date().addingTimeInterval(1)
+    while boundaryCell == nil && Date() < deadline {
+      if let clip = flow.tailClip {
+        for case let cell as NativeListRowHost in list.visibleCells {
+          guard let path = list.indexPath(for: cell), path.item >= 6,
+                let mask = cell.layer.mask else { continue }
+          let visibleHeight = clip.endY - cell.frame.minY
+          if clip.endY > cell.frame.minY + 2 &&
+             clip.endY < cell.frame.maxY - 2 &&
+             mask.frame.height > 2 &&
+             mask.frame.height < cell.bounds.height - 2 &&
+             abs(mask.frame.height - visibleHeight) <= 1 {
+            boundaryCell = cell
+            break
+          }
+        }
+      }
+      if boundaryCell == nil { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+    }
+    let boundary = try XCTUnwrap(boundaryCell)
+    let displayLink = try XCTUnwrap(
+      Mirror(reflecting: view).descendant("structuralDisplayLink") as? CADisplayLink)
+    displayLink.isPaused = true
+    defer { displayLink.isPaused = false }
+    let mask = try XCTUnwrap(boundary.layer.mask)
+    XCTAssertGreaterThan(mask.frame.height, 2)
+    XCTAssertLessThan(mask.frame.height, boundary.bounds.height - 2)
     XCTAssertFalse(boundary.isUserInteractionEnabled)
     XCTAssertTrue(boundary.accessibilityElementsHidden)
+    let offsetBeforeInterruption = list.contentOffset.y
     view.scrollViewWillBeginDragging(list)
     list.layoutIfNeeded()
     XCTAssertNil(Mirror(reflecting: view).descendant("structuralDisplayLink") as? CADisplayLink)
@@ -2454,7 +2480,8 @@ final class NativeListLifecycleTests: XCTestCase {
     XCTAssertTrue(boundary.isUserInteractionEnabled)
     XCTAssertFalse(boundary.accessibilityElementsHidden)
     XCTAssertTrue(footerHost.point(inside: CGPoint(x: 10, y: 1), with: nil))
-    XCTAssertEqual(list.contentOffset.y, 1000, accuracy: 1)
+    XCTAssertEqual(list.contentOffset.y, offsetBeforeInterruption, accuracy: 1)
+    XCTAssertEqual(list.contentOffset.y, 300, accuracy: 1)
   }
 
   func testStructuralTailExplicitScrollTakesOwnershipFromExpansion() throws {
@@ -2643,6 +2670,34 @@ final class NativeListLifecycleTests: XCTestCase {
       window.isHidden = true
       window.rootViewController = nil
       return reference
+    }
+  }
+
+  private func dispatchAccessoryTouchUpInside(
+    _ control: UIButton, on stack: NativeListAccessoryStack,
+    file: StaticString = #filePath, line: UInt = #line
+  ) throws {
+    guard control.allTargets.contains(stack) else {
+      XCTFail("Accessory control is not attached to its stack", file: file, line: line)
+      return
+    }
+    let actions = try XCTUnwrap(
+      control.actions(forTarget: stack, forControlEvent: .touchUpInside),
+      file: file, line: line)
+    guard !actions.isEmpty else {
+      XCTFail("Accessory control has no touch-up action", file: file, line: line)
+      return
+    }
+    // This pod XCTest has no UIApplication to dispatch UIControl.sendActions.
+    guard control.isEnabled else { return }
+    for action in actions {
+      let selector = NSSelectorFromString(action)
+      guard stack.responds(to: selector) else {
+        XCTFail("Accessory action selector is missing: \(action)", file: file, line: line)
+        continue
+      }
+      if action.hasSuffix(":") { _ = stack.perform(selector, with: control) }
+      else { _ = stack.perform(selector) }
     }
   }
 
