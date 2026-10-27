@@ -18,6 +18,7 @@ final class NativeListDataRowCell: NativeListRendererCell {
   private let columns = UIStackView()
   private let cells = (0..<4).map { _ in NativeListTableColumnView() }
   private var rowConstraints: [NSLayoutConstraint] = []
+  private var trailingWidthConstraint: NSLayoutConstraint?
   private var columnWidthConstraints: [NSLayoutConstraint] = []
   private var columnWeights: [Int]?
   override func unselectedBackground(
@@ -97,18 +98,34 @@ final class NativeListDataRowCell: NativeListRendererCell {
       item, descriptors: trailing, theme: theme, style: style,
       checkboxState: checkboxState, fonts: fonts)
     trailingAccessories.isHidden = trailing.isEmpty
-    NSLayoutConstraint.deactivate(rowConstraints)
-    rowConstraints = [
-      favorite.widthAnchor.constraint(equalToConstant: 20),
-      favorite.heightAnchor.constraint(equalToConstant: 20),
-      visual.widthAnchor.constraint(equalToConstant: CGFloat(image.double("width", default: 40))),
-      visual.heightAnchor.constraint(equalToConstant: CGFloat(image.double("height", default: 40))),
-    ]
+    if rowConstraints.isEmpty {
+      rowConstraints = [
+        favorite.widthAnchor.constraint(equalToConstant: 20),
+        favorite.heightAnchor.constraint(equalToConstant: 20),
+        visual.widthAnchor.constraint(equalToConstant: 40),
+        visual.heightAnchor.constraint(equalToConstant: 40),
+      ]
+      NSLayoutConstraint.activate(rowConstraints)
+    }
+    let visualWidth = CGFloat(image.double("width", default: 40))
+    let visualHeight = CGFloat(image.double("height", default: 40))
+    if rowConstraints[2].constant != visualWidth { rowConstraints[2].constant = visualWidth }
+    if rowConstraints[3].constant != visualHeight { rowConstraints[3].constant = visualHeight }
     if !trailing.isEmpty {
       // UIStackView has no intrinsic width of its own. Reserve the controls' fitted
       // width so extra space goes to the weighted columns instead of this stack.
-      rowConstraints.append(trailingAccessories.widthAnchor.constraint(equalToConstant:
-        trailingAccessories.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize).width))
+      if trailingWidthConstraint == nil {
+        trailingWidthConstraint = trailingAccessories.widthAnchor.constraint(equalToConstant: 0)
+      }
+      if trailingWidthConstraint?.isActive == true { trailingWidthConstraint?.isActive = false }
+      let trailingWidth =
+        trailingAccessories.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize).width
+      if trailingWidthConstraint?.constant != trailingWidth {
+        trailingWidthConstraint?.constant = trailingWidth
+      }
+      trailingWidthConstraint?.isActive = true
+    } else {
+      if trailingWidthConstraint?.isActive == true { trailingWidthConstraint?.isActive = false }
     }
     let values = Array(data.dictionaries("columns").prefix(4))
     let weights = values.map { max(1, $0.int("weight", default: 1)) }
@@ -141,7 +158,6 @@ final class NativeListDataRowCell: NativeListRendererCell {
       cell.applySegments(values[index])
       cell.bindTitleIcons(values[index], theme: theme)
     }
-    NSLayoutConstraint.activate(rowConstraints)
     if columnsChanged {
       columnWidthConstraints = values.count > 1 ? (1..<values.count).map { index in
         cells[index].widthAnchor.constraint(equalTo: cells[0].widthAnchor,
@@ -226,7 +242,7 @@ private final class NativeListTableColumnView: UIStackView {
     fatalError("init(coder:) has not been implemented")
   }
 
-  func reset() {
+  func reset(clearPrimaryText: Bool = true) {
     linear = false
     primaryLine.alignment = .center
     for icon in [titleIconView, secondaryTitleIconView] {
@@ -247,7 +263,7 @@ private final class NativeListTableColumnView: UIStackView {
     primaryLabel.numberOfLines = 1
     secondaryLeadingLabel.numberOfLines = 1
     secondaryLabel.numberOfLines = 1
-    primaryLabel.attributedText = nil
+    if clearPrimaryText { primaryLabel.attributedText = nil }
     secondaryLeadingLabel.attributedText = nil
     secondaryLabel.attributedText = nil
     secondaryLeadingLabel.isHidden = true
@@ -365,7 +381,7 @@ private final class NativeListTableColumnView: UIStackView {
     column: [String: Any], badges: [[String: Any]], theme: [String: Any]?,
     style: [String: Any] = [:], fonts: NativeListFontFamilies
   ) {
-    reset()
+    reset(clearPrimaryText: !linear)
     linear = true
     alignment = .fill
     badgesStack.isHidden = true

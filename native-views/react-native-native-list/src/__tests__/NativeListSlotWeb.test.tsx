@@ -28,6 +28,22 @@ it('marks the React footer slot in the rendered Web DOM', () => {
   expect(markup).toContain('Show more');
 });
 
+it('keeps native disclosure slots out of the Web footer and DOM props', () => {
+  const markup = renderToStaticMarkup(
+    <NativeList
+      snapshot={snapshot}
+      listFooter={<span>Web footer</span>}
+      listExpandedContent={<span>Native expanded content</span>}
+      listStructureToggle={<span>Native toggle</span>}
+      onStructuralTransitionSettled={() => {}}
+    />
+  );
+  expect(markup).toContain('Web footer');
+  expect(markup).not.toContain('Native expanded content');
+  expect(markup).not.toContain('Native toggle');
+  expect(markup).not.toContain('onStructuralTransitionSettled');
+});
+
 it('keeps the sidecar and left footer in one scroll content tree', () => {
   const markup = renderToStaticMarkup(
     <NativeList

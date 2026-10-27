@@ -44,6 +44,8 @@ import androidx.recyclerview.widget.LinearSmoothScroller
 import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.facebook.react.uimanager.ThemedReactContext
+import com.facebook.react.uimanager.PointerEvents
+import com.facebook.react.uimanager.ReactPointerEventsView
 import com.margelo.nitro.nativelogger.OneKeyLog
 import org.json.JSONArray
 import org.json.JSONObject
@@ -110,6 +112,7 @@ class NativeListView(
 
   fun setFontFamiliesJson(json: String) {
     if (!fonts.configure(json)) return
+    if (structuralTail != null) finishStructuralTail(interrupted = true)
     invalidateActionAnchor("layout")
     measuredRowExtentsPx.clear()
     measuredRowExtentSumPx = 0L
@@ -205,6 +208,7 @@ class NativeListView(
   var onReorder: ((String) -> Unit)? = null
   var onEndReached: ((String) -> Unit)? = null
   var onVisibleRangeChanged: ((String) -> Unit)? = null
+  var onStructuralTransitionSettled: ((String) -> Unit)? = null
   var keyboardDismissMode = NativeListKeyboardDismissMode.NONE
   var keyboardShouldPersistTaps = NativeListKeyboardShouldPersistTaps.NEVER
   private val density = resources.displayMetrics.density
@@ -233,14 +237,80 @@ class NativeListView(
   private var consumedStructuralTransitionId: String? = null
   private var structuralAnimator: ValueAnimator? = null
   private var structuralSpacerHeightPx = 0
+  private var structuralTailSignedExtentPx = 0
   private var structuralStartSpacerPx = 0
   private var structuralFooterVisualStartTop: Int? = null
   private var structuralFooterVisualEndTop: Int? = null
   private var structuralFooterVisualProgress = 0f
   private var structuralFooterCompensatedHeightPx: Int? = null
+  private var structuralFooterObservedNativeHeightPx: Int? = null
+  private var acceptedFooterNaturalHeightPx: Int? = null
+  private data class PendingPreparingFooterFrame(
+    val heights: IntArray,
+    val naturalHeight: Int,
+    val observedNativeHeight: Int?,
+    val ownerOffset: Int,
+    val epoch: Int,
+    val footer: View?,
+    val handoffOnly: Boolean,
+  )
+  private var pendingPreparingFooterFrame: PendingPreparingFooterFrame? = null
+  private var preparingFooterFrameScheduled = false
   private var structuralScrollInterrupted = false
   private var structuralFooterHoldTop: Int? = null
   private var structuralTransitionEpoch = 0
+  private class StructuralTail(
+    var items: MutableList<NativeListItem>,
+    val heights: IntArray,
+    spacings: IntArray,
+    val prefixCount: Int,
+    val finalExtent: Int,
+  ) {
+    val starts = IntArray(items.size)
+    val indexByKey = items.withIndex().associate { it.value.key to it.index }
+    val hosts = mutableMapOf<Int, NativeListRowHost>()
+    var peakHosts = 0
+    val extent: Int
+    init {
+      var edge = 0
+      for (index in items.indices) {
+        starts[index] = edge
+        edge += heights[index] + spacings[index]
+      }
+      extent = edge
+    }
+  }
+  private val structuralTailLayer = object : FrameLayout(reactContext), ReactPointerEventsView {
+    override val pointerEvents: PointerEvents = PointerEvents.NONE
+    override fun dispatchTouchEvent(event: MotionEvent) = false
+  }.apply {
+    clipChildren = true
+    clipToPadding = true
+    isClickable = false
+    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+    visibility = GONE
+  }
+  private var structuralTail: StructuralTail? = null
+  private var structuralTailRowsInAdapterPx = 0
+  private var structuralTailStartExtentPx = 0
+  private var structuralTailStartProgress = 0f
+  private var structuralTailStartContentY = 0
+  private var structuralTailStartOffset = 0
+  private var structuralTailTargetOffset = 0
+  private var disclosureFraction = 0f
+  private var disclosureStartFraction = 0f
+  private var disclosurePresentedContentPx = 0
+  private var disclosurePresentedInsetPx = 0
+  private var disclosureContentStartPx = 0
+  private var disclosureContentStartProgress = 0f
+  private var disclosureTransitioning = false
+  private var activeDisclosureTransitionId: String? = null
+  private var settledDisclosureTransitionId: String? = null
+  private var directDisclosureStatus = "interrupted"
+  private var batchedDisclosureGeometryInvalid = false
+  private var structuralTailCommandActive = false
+  private var structuralTailFinalizing = false
+  private var structuralTailPreparing = false
   private data class PendingStructuralTransition(
     val transition: NativeListConfig.StructuralTransition,
     val epoch: Int,
@@ -316,7 +386,45 @@ class NativeListView(
   }
   private val adapter = NativeListAdapter(reactContext, fonts)
   private val containerSlots = mutableListOf<View>()
-  private val slotHeights = IntArray(4)
+  private val slotHeights = IntArray(6)
+  private val expandedContentHost = object : FrameLayout(context), ReactPointerEventsView {
+    var naturalHeightPx = 0
+    override val pointerEvents: PointerEvents
+      get() = if (config?.disclosure?.expanded == true &&
+        !disclosureTransitioning && disclosureFraction >= 1f) PointerEvents.AUTO
+      else PointerEvents.NONE
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+      setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec),
+        MeasureSpec.getSize(heightMeasureSpec))
+    }
+
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+      getChildAt(0)?.layout(0, 0, right - left, naturalHeightPx)
+    }
+  }.apply {
+    clipChildren = true
+    clipToPadding = true
+    isClickable = false
+    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+  }
+  private val footerPresentationHost = object : FrameLayout(context) {
+    var naturalHeightPx = 0
+    var hiddenTopPx = 0
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+      setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec),
+        MeasureSpec.getSize(heightMeasureSpec))
+    }
+
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+      val child = getChildAt(0) ?: return
+      child.layout(0, -hiddenTopPx, right - left, naturalHeightPx - hiddenTopPx)
+    }
+  }.apply {
+    clipChildren = true
+    clipToPadding = true
+  }
   private var initialHeaderInsertionHandled = false
   private var containerSlotRelayoutPending = false
   private var containerSlotRelayoutScheduled = false
@@ -324,11 +432,16 @@ class NativeListView(
   private val emptySlotAdapter = NativeListContainerSlotAdapter()
   private val structuralSpacerView = View(context)
   private val structuralSpacerAdapter = NativeListContainerSlotAdapter()
+  private val expandedContentAdapter = NativeListContainerSlotAdapter()
+  private val structureToggleAdapter = NativeListContainerSlotAdapter()
+  private val disclosureInsetView = View(context)
+  private val disclosureInsetAdapter = NativeListContainerSlotAdapter()
   private val footerSlotAdapter = NativeListContainerSlotAdapter()
   private val sidecarSpacerView = View(context)
   private val sidecarSpacerAdapter = NativeListContainerSlotAdapter()
   private val scrollContentAdapter = ConcatAdapter(
     headerSlotAdapter, adapter, emptySlotAdapter, structuralSpacerAdapter,
+    expandedContentAdapter, structureToggleAdapter, disclosureInsetAdapter,
     footerSlotAdapter, sidecarSpacerAdapter,
   )
 
@@ -388,28 +501,160 @@ class NativeListView(
     scheduleContainerSlotRelayout()
   }
 
-  fun setContainerSlotHeightsJson(json: String) {
+  fun setContainerSlotHeightsJson(json: String, upcomingSnapshotJson: String? = null) {
     val values = runCatching { JSONArray(json) }.getOrNull() ?: return
-    if (values.length() != 4) return
-    for (index in 0..3) {
+    if (values.length() != 4 && values.length() != 6) return
+    val nextHeights = IntArray(6)
+    for (index in 0 until values.length()) {
       val value = values.optDouble(index)
       if (!value.isFinite() || value < 0) return
+      nextHeights[index] = (value * density).roundToInt()
     }
-    reconcileStructuralFooterHeight((values.getDouble(2) * density).roundToInt())
+    val disclosureTail = structuralTail != null && config?.disclosure != null &&
+      !structuralTailFinalizing
+    if (disclosureTail && upcomingSnapshotJson != null &&
+      (nextHeights[2] != slotHeights[2] || nextHeights[5] != slotHeights[5] ||
+        nextHeights[4] < disclosurePresentedContentPx)) {
+      // Nitro delivers both setters in this UI turn. Let the complete new snapshot
+      // replace the old command before deciding whether its geometry is supported.
+      batchedDisclosureGeometryInvalid = true
+      for (index in 0..5) slotHeights[index] = nextHeights[index]
+      acceptedFooterNaturalHeightPx = nextHeights[2]
+      return
+    }
+    val unsupportedDisclosureGeometry = disclosureTail &&
+      (nextHeights[2] != slotHeights[2] || nextHeights[5] != slotHeights[5] ||
+        nextHeights[4] < disclosurePresentedContentPx)
+    if (unsupportedDisclosureGeometry) {
+      // A changing fixed footer/toggle or a shrinking mounted C cannot be represented
+      // by the current visual segment. Commit the accepted endpoint before ACK.
+      structuralFooterCompensatedHeightPx = null
+      acceptedFooterNaturalHeightPx = nextHeights[2]
+      for (index in 0..5) slotHeights[index] = nextHeights[index]
+      updateContainerSlots()
+      finishStructuralTail(interrupted = true)
+      return
+    }
+    if (disclosureTail && nextHeights[4] != slotHeights[4]) {
+      disclosureContentStartPx = disclosurePresentedContentPx
+      disclosureContentStartProgress =
+        (structuralAnimator?.animatedValue as? Float) ?: 0f
+    }
+    if (structuralTail != null && structuralTailRowsInAdapterPx > 0 &&
+      listOf(0, 1, 3).all { slotHeights[it] == nextHeights[it] } &&
+      (pendingPreparingFooterFrame != null ||
+        (!structuralTailFinalizing && slotHeights[2] != nextHeights[2]))) {
+      enqueuePreparingFooterFrame(nextHeights, nextHeights[2])
+      return
+    }
+    pendingPreparingFooterFrame?.takeIf {
+      structuralTailRowsInAdapterPx > 0 && it.footer === containerSlots.getOrNull(2)
+    }?.let { pending ->
+      val preservesNewerHeight = nextHeights[2] == slotHeights[2] &&
+        pending.naturalHeight != nextHeights[2]
+      pendingPreparingFooterFrame = pending.copy(
+        heights = nextHeights.copyOf(),
+        naturalHeight = if (preservesNewerHeight) pending.naturalHeight else nextHeights[2],
+        observedNativeHeight = pending.observedNativeHeight.takeIf {
+          preservesNewerHeight || pending.naturalHeight == nextHeights[2]
+        },
+      )
+    }
+    if (structuralTailPreparing && (0..3).any { index ->
+        slotHeights[index] != nextHeights[index]
+      }) invalidateTailForContainerGeometry()
+    if (structuralTail != null && listOf(0, 1, 3).any { index ->
+        slotHeights[index] != nextHeights[index]
+      }) finishStructuralTail(interrupted = true)
+    val footerHeightPx = nextHeights[2]
+    if (footerHeightPx != slotHeights[2]) {
+      containerSlots.getOrNull(2)?.measuredHeight?.takeIf { it > 0 && it != footerHeightPx }
+        ?.let { structuralFooterObservedNativeHeightPx = it }
+      reconcileStructuralFooterHeight(footerHeightPx)
+      acceptedFooterNaturalHeightPx = footerHeightPx
+    } else if (acceptedFooterNaturalHeightPx == null) {
+      acceptedFooterNaturalHeightPx = footerHeightPx
+    }
+    val hiddenDisclosureContentOnlyChange = config?.disclosure?.expanded == false &&
+      !disclosureTransitioning && structuralTail == null &&
+      !structuralTailPreparing && !structuralTailFinalizing &&
+      disclosurePresentedContentPx == 0 && disclosurePresentedInsetPx == 0 &&
+      expandedContentAdapter.itemCount == 0 &&
+      slotHeights[4] != nextHeights[4] &&
+      (0..5).all { index -> index == 4 || slotHeights[index] == nextHeights[index] }
     var changed = false
-    for (index in 0..3) {
-      val height = (values.getDouble(index) * density).roundToInt()
+    for (index in 0..5) {
+      val height = nextHeights[index]
       if (slotHeights[index] != height) changed = true
       slotHeights[index] = height
     }
+    if (hiddenDisclosureContentOnlyChange) {
+      expandedContentHost.naturalHeightPx = slotHeights[4]
+      layoutExpandedContentHostNow()
+      return
+    }
     updateContainerSlots()
+    if (structuralTail != null) updateStructuralTailTarget()
     updateSidecarGeometry()
     scheduleSidecarSpacer()
     if (changed) scheduleContainerSlotRelayout()
   }
 
+  private fun enqueuePreparingFooterFrame(
+    heights: IntArray,
+    naturalHeight: Int,
+    observedNativeHeight: Int? = null,
+  ) {
+    val footer = containerSlots.getOrNull(2)
+    val existing = pendingPreparingFooterFrame?.takeIf { it.footer === footer }
+    val preservesNewerHeight = existing != null && observedNativeHeight == null &&
+      naturalHeight == slotHeights[2] && existing.naturalHeight != naturalHeight
+    val acceptedHeight = if (preservesNewerHeight) existing.naturalHeight else naturalHeight
+    val observedHeight = observedNativeHeight ?:
+      existing?.observedNativeHeight?.takeIf { preservesNewerHeight || it == acceptedHeight }
+    pendingPreparingFooterFrame = PendingPreparingFooterFrame(
+      heights.copyOf(), acceptedHeight, observedHeight,
+      existing?.ownerOffset ?: structuralTailStartOffset,
+      structuralTransitionEpoch, footer, existing?.handoffOnly == true,
+    )
+    if (!commitPreparingFooterFrame() && pendingPreparingFooterFrame?.handoffOnly != true) {
+      schedulePreparingFooterFrame()
+    }
+  }
+
+  private fun schedulePreparingFooterFrame() {
+    if (preparingFooterFrameScheduled) return
+    preparingFooterFrameScheduled = true
+    recyclerView.post {
+      preparingFooterFrameScheduled = false
+      if (!commitPreparingFooterFrame()) recyclerView.postInvalidateOnAnimation()
+    }
+    recyclerView.postInvalidateOnAnimation()
+  }
+
   private fun reconcileStructuralFooterHeight(nextHeightPx: Int) {
-    val previousHeightPx = structuralFooterCompensatedHeightPx ?: slotHeights[2]
+    if (structuralTail != null) {
+      if (!structuralTailFinalizing) {
+        val delta = (structuralFooterCompensatedHeightPx ?:
+          acceptedFooterNaturalHeightPx ?: slotHeights[2]) - nextHeightPx
+        if (delta != 0) {
+          if (structuralTailPreparing) {
+            invalidateTailForContainerGeometry()
+            return
+          }
+          structuralFooterCompensatedHeightPx = nextHeightPx
+          val compensated = structuralTailSignedExtentPx + delta
+          structuralTailStartProgress = (structuralAnimator?.animatedValue as? Float) ?: 0f
+          structuralTailStartExtentPx = compensated
+          if (structuralTailRowsInAdapterPx == 0) structuralTailStartOffset = tailScrollExtentPx()
+          setStructuralTailExtent(compensated)
+          if (structuralTailRowsInAdapterPx == 0) updateStructuralTailWindow()
+        }
+      }
+      return
+    }
+    val previousHeightPx = structuralFooterCompensatedHeightPx ?:
+      acceptedFooterNaturalHeightPx ?: slotHeights[2]
     val footerDelta = previousHeightPx - nextHeightPx
     if (footerDelta == 0) return
     if (pendingStructuralTransition != null || structuralAnimator != null || structuralFooterHoldTop != null) {
@@ -451,6 +696,7 @@ class NativeListView(
         (maxWidth * density).roundToInt())
     }
     if (next == sidecarLayout) return
+    if (structuralTail != null) finishStructuralTail(interrupted = true)
     sidecarLayout = next
     config?.let(::updateLayout)
     updateSidecarGeometry()
@@ -495,7 +741,8 @@ class NativeListView(
 
   private fun updateSidecarPosition(resync: Boolean = false) {
     if (sidecarLayout == null) return
-    if (resync) measuredScrollDistancePx()?.let { logicalScrollDistancePx = it }
+    if (resync) (if (structuralTail == null) measuredScrollDistancePx()
+      else structuralTailMeasuredScrollDistancePx())?.let { logicalScrollDistancePx = it }
     sidecarHost.translationY = (recyclerView.paddingTop - logicalScrollDistancePx).toFloat()
   }
 
@@ -504,7 +751,7 @@ class NativeListView(
       scrollContentAdapter.itemCount - sidecarSpacerAdapter.itemCount,
       layoutManager.spanCount,
       layoutManager.spanSizeLookup::getSpanSize,
-      ::estimatedScrollExtentPx,
+      if (structuralTail == null) ::estimatedScrollExtentPx else ::structuralTailRowOrSlotExtentPx,
     ) + recyclerView.paddingTop + recyclerView.paddingBottom)
       .coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
 
@@ -514,17 +761,21 @@ class NativeListView(
     sidecarSpacerScheduled = true
     recyclerView.post {
       sidecarSpacerScheduled = false
-      if (disposed || recyclerView.width <= 0 || recyclerView.height <= 0) return@post
-      val desired = if (sidecarLayout != null) {
-        recyclerView.paddingTop + slotHeights[3] + recyclerView.paddingBottom
-      } else 0
-      val leftExtent = sidecarLeftExtentPx()
-      val next = (desired - leftExtent).coerceAtLeast(0)
-      if (abs(next - sidecarSpacerHeightPx) <= 1) return@post
-      sidecarSpacerHeightPx = next
-      sidecarSpacerAdapter.update(sidecarSpacerView, next, next > 0)
-      recyclerView.requestLayout()
+      updateSidecarSpacerNow()
     }
+  }
+
+  private fun updateSidecarSpacerNow() {
+    if (disposed || recyclerView.width <= 0 || recyclerView.height <= 0) return
+    val desired = if (sidecarLayout != null) {
+      recyclerView.paddingTop + slotHeights[3] + recyclerView.paddingBottom
+    } else 0
+    val leftExtent = sidecarLeftExtentPx()
+    val next = (desired - leftExtent).coerceAtLeast(0)
+    if (abs(next - sidecarSpacerHeightPx) <= 1) return
+    sidecarSpacerHeightPx = next
+    sidecarSpacerAdapter.update(sidecarSpacerView, next, next > 0)
+    recyclerView.requestLayout()
   }
 
   private fun scheduleContainerSlotRelayout() {
@@ -559,7 +810,8 @@ class NativeListView(
       !recyclerView.canScrollVertically(-1)
     headerSlotAdapter.update(containerSlots.getOrNull(0), slotHeights[0], true)
     emptySlotAdapter.update(containerSlots.getOrNull(1), slotHeights[1], config?.items?.isEmpty() != false)
-    footerSlotAdapter.update(containerSlots.getOrNull(2), slotHeights[2], true)
+    syncDisclosurePresentation()
+    syncFooterPresentation()
     updateSidecarGeometry()
     if (headerWasAbsent && headerSlotAdapter.itemCount > 0) {
       initialHeaderInsertionHandled = true
@@ -572,6 +824,144 @@ class NativeListView(
     layoutManager.spanSizeLookup.invalidateSpanIndexCache()
     recyclerView.requestLayout()
   }
+
+  private fun disclosureInsetExtentPx(): Int =
+    ((config?.disclosure?.expandedTrailingInset ?: 0.0) * density)
+      .coerceIn(0.0, Int.MAX_VALUE.toDouble()).roundToInt()
+
+  private fun settleDisclosureCommand(status: String) {
+    val id = activeDisclosureTransitionId ?: return
+    if (disposed || id == settledDisclosureTransitionId ||
+      config?.structuralTransition?.id != id || structuralTail != null) return
+    settledDisclosureTransitionId = id
+    activeDisclosureTransitionId = null
+    onStructuralTransitionSettled?.invoke(JSONObject().apply {
+      put("transitionId", id)
+      put("status", status)
+      put("settledExpanded", config?.disclosure?.expanded == true)
+    }.toString())
+  }
+
+  private fun presentAcceptedDisclosureEndpoint(next: NativeListConfig) {
+    val disclosure = next.disclosure ?: return
+    disclosureFraction = if (disclosure.expanded) 1f else 0f
+    disclosurePresentedContentPx = if (disclosure.expanded) slotHeights[4] else 0
+    syncDisclosurePresentation()
+  }
+
+  private fun syncDisclosurePresentation() {
+    val disclosure = config?.disclosure
+    if (disclosure == null) {
+      disclosurePresentedContentPx = 0
+      disclosurePresentedInsetPx = 0
+      expandedContentAdapter.update(null, 0, false)
+      structureToggleAdapter.update(null, 0, false)
+      disclosureInsetAdapter.update(null, 0, false)
+      return
+    }
+    val content = containerSlots.getOrNull(4)
+    if (expandedContentHost.getChildAt(0) !== content) {
+      expandedContentHost.removeAllViews()
+      if (content != null) {
+        (content.parent as? ViewGroup)?.removeView(content)
+        expandedContentHost.addView(content, FrameLayout.LayoutParams(
+          ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+      }
+    }
+    expandedContentHost.naturalHeightPx = slotHeights[4]
+    val fraction = disclosureFraction.coerceIn(0f, 1f)
+    val contentHeight = if (disclosureTransitioning) disclosurePresentedContentPx else
+      if (disclosure.expanded) slotHeights[4] else 0
+    disclosurePresentedContentPx = contentHeight
+    disclosurePresentedInsetPx = (disclosureInsetExtentPx() * fraction).roundToInt()
+    val interactive = disclosure.expanded && !disclosureTransitioning && fraction >= 1f
+    expandedContentHost.importantForAccessibility = if (interactive)
+      View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
+    else View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+    expandedContentAdapter.update(if (content == null) null else expandedContentHost,
+      contentHeight, true)
+    structureToggleAdapter.update(containerSlots.getOrNull(5), slotHeights[5], true)
+    disclosureInsetAdapter.update(disclosureInsetView,
+      disclosurePresentedInsetPx, true)
+    if (content != null) layoutExpandedContentHostNow()
+  }
+
+  private fun layoutExpandedContentHostNow() {
+    val wrapper = expandedContentHost
+    val child = wrapper.getChildAt(0) ?: return
+    val width = wrapper.width.takeIf { it > 0 } ?: wrapper.measuredWidth.takeIf { it > 0 } ?: return
+    val height = disclosurePresentedContentPx
+    if (!wrapper.isLayoutRequested && wrapper.measuredWidth == width &&
+      wrapper.measuredHeight == height && wrapper.height == height &&
+      child.left == 0 && child.top == 0 && child.right == width &&
+      child.bottom == wrapper.naturalHeightPx) return
+    wrapper.forceLayout()
+    wrapper.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+      View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY))
+    wrapper.layout(wrapper.left, wrapper.top, wrapper.left + width, wrapper.top + height)
+  }
+
+  private fun syncFooterPresentation() {
+    val footer = containerSlots.getOrNull(2)
+    if (footerPresentationHost.getChildAt(0) !== footer) {
+      invalidateTailForContainerGeometry()
+      structuralFooterCompensatedHeightPx = null
+      structuralFooterObservedNativeHeightPx = null
+      acceptedFooterNaturalHeightPx = null
+      footerPresentationHost.removeAllViews()
+      if (footer != null) {
+        (footer.parent as? ViewGroup)?.removeView(footer)
+        footerPresentationHost.addView(footer, FrameLayout.LayoutParams(
+          ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+      }
+    }
+    val naturalHeight = footerNaturalHeightPx()
+    val hiddenTop = footerHiddenTopPx()
+    if (footerPresentationHost.naturalHeightPx != naturalHeight ||
+      footerPresentationHost.hiddenTopPx != hiddenTop) {
+      footerPresentationHost.naturalHeightPx = naturalHeight
+      footerPresentationHost.hiddenTopPx = hiddenTop
+      footerPresentationHost.requestLayout()
+    }
+    footerSlotAdapter.update(if (footer == null) null else footerPresentationHost,
+      naturalHeight - hiddenTop, true)
+    if (footer != null) layoutFooterPresentationHostNow()
+  }
+
+  private fun layoutFooterPresentationHostNow() {
+    val wrapper = footerPresentationHost
+    val child = wrapper.getChildAt(0) ?: return
+    val width = wrapper.width.takeIf { it > 0 } ?: wrapper.measuredWidth.takeIf { it > 0 } ?: return
+    val height = footerPresentedHeightPx()
+    val childTop = -wrapper.hiddenTopPx
+    val childBottom = wrapper.naturalHeightPx - wrapper.hiddenTopPx
+    if (!wrapper.isLayoutRequested && wrapper.measuredWidth == width &&
+      wrapper.measuredHeight == height && wrapper.height == height &&
+      child.left == 0 && child.top == childTop && child.right == width &&
+      child.bottom == childBottom) return
+    wrapper.forceLayout()
+    wrapper.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+      View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY))
+    wrapper.layout(wrapper.left, wrapper.top, wrapper.left + width, wrapper.top + height)
+  }
+
+  private fun invalidateTailForContainerGeometry() {
+    pendingPreparingFooterFrame = null
+    if (structuralTail == null) return
+    if (!structuralTailFinalizing) finishStructuralTail(interrupted = true)
+    structuralFooterCompensatedHeightPx = null
+    structuralTailSignedExtentPx = structuralTailRowsInAdapterPx + structuralSpacerHeightPx
+  }
+
+  private fun footerNaturalHeightPx(): Int = if (structuralTail == null)
+    acceptedFooterNaturalHeightPx ?: slotHeights[2] else
+    structuralFooterCompensatedHeightPx ?: acceptedFooterNaturalHeightPx ?: slotHeights[2]
+
+  private fun footerHiddenTopPx(): Int = if (structuralTail == null) 0 else
+    (structuralTailRowsInAdapterPx - structuralTailSignedExtentPx)
+      .coerceIn(0, footerNaturalHeightPx())
+
+  private fun footerPresentedHeightPx(): Int = footerNaturalHeightPx() - footerHiddenTopPx()
 
   private fun scrollPositionForRow(index: Int): Int = index + headerSlotAdapter.itemCount
 
@@ -600,7 +990,17 @@ class NativeListView(
       return when {
         slot < emptySlotAdapter.itemCount -> slotHeights[1]
         slot < emptySlotAdapter.itemCount + structuralSpacerAdapter.itemCount -> structuralSpacerHeightPx
-        slot < emptySlotAdapter.itemCount + structuralSpacerAdapter.itemCount + footerSlotAdapter.itemCount -> slotHeights[2]
+        slot < emptySlotAdapter.itemCount + structuralSpacerAdapter.itemCount +
+          expandedContentAdapter.itemCount -> disclosurePresentedContentPx
+        slot < emptySlotAdapter.itemCount + structuralSpacerAdapter.itemCount +
+          expandedContentAdapter.itemCount + structureToggleAdapter.itemCount -> slotHeights[5]
+        slot < emptySlotAdapter.itemCount + structuralSpacerAdapter.itemCount +
+          expandedContentAdapter.itemCount + structureToggleAdapter.itemCount +
+          disclosureInsetAdapter.itemCount ->
+          disclosurePresentedInsetPx
+        slot < emptySlotAdapter.itemCount + structuralSpacerAdapter.itemCount +
+          expandedContentAdapter.itemCount + structureToggleAdapter.itemCount +
+          disclosureInsetAdapter.itemCount + footerSlotAdapter.itemCount -> footerPresentedHeightPx()
         else -> sidecarSpacerHeightPx
       }
     }
@@ -627,6 +1027,731 @@ class NativeListView(
     layoutManager.spanSizeLookup.invalidateSpanIndexCache()
   }
 
+  private fun setStructuralTailExtent(extentPx: Int) {
+    structuralTailSignedExtentPx = extentPx
+    setStructuralSpacerHeight((extentPx - structuralTailRowsInAdapterPx).coerceAtLeast(0))
+    syncFooterPresentation()
+  }
+
+  private fun prefixTailCount(old: NativeListConfig, next: NativeListConfig): Int? {
+    if (old.orientation != "vertical" || next.orientation != "vertical" ||
+      old.layout != next.layout || next.layout !in setOf("linear", "table") ||
+      old.itemSpacing != next.itemSpacing ||
+      old.contentPadding != next.contentPadding ||
+      old.contentPaddingTop != next.contentPaddingTop ||
+      old.contentPaddingBottom != next.contentPaddingBottom ||
+      old.contentPaddingHorizontal != next.contentPaddingHorizontal ||
+      old.theme?.toString() != next.theme?.toString() ||
+      old.listStyle?.toString() != next.listStyle?.toString() ||
+      old.items.size == next.items.size ||
+      old.reorderable || next.reorderable ||
+      structuralTailFinalizing || structuralTailRowsInAdapterPx > 0 ||
+      old.items.any { it.usesSelectorSourceScale } !=
+        next.items.any { it.usesSelectorSourceScale } ||
+      (structuralAnimator != null && structuralTail == null) ||
+      old.items.any { !it.hasExplicitHeight } ||
+      next.items.any { !it.hasExplicitHeight } ||
+      old.items.any { it.type !in setOf("identity", "dataRow") } ||
+      next.items.any { it.type !in setOf("identity", "dataRow") } ||
+      old.items.any { it.type == "sectionHeader" } ||
+      next.items.any { it.type == "sectionHeader" }) return null
+    val prefix = minOf(old.items.size, next.items.size)
+    if (prefix == 0) return null
+    if (structuralTail != null && prefix != structuralTail?.prefixCount) return null
+    for (index in 0 until prefix) {
+      val before = old.items[index]
+      val after = next.items[index]
+      if (before.key != after.key || before.rendererKey != after.rendererKey ||
+        explicitTailRowHeight(before) != explicitTailRowHeight(after) ||
+        explicitTailRowSpacingPx(before, old.itemSpacing) !=
+          explicitTailRowSpacingPx(after, next.itemSpacing)) return null
+    }
+    return prefix
+  }
+
+  private fun explicitTailRowHeight(item: NativeListItem): Int =
+    item.styledHeight?.let { (it * density).roundToInt() } ?: run {
+      val value = item.json.optDouble("height")
+      when (item.json.optString("heightRounding")) {
+        "floor" -> (value * density).toInt()
+        "nearest" -> (value * density).roundToInt()
+        else -> if (usesSelectorSourceScale || item.usesSelectorSourceScale)
+          (item.json.optInt("height") * density).roundToInt()
+        else NativeListScale.dp(resources, item.json.optInt("height"))
+      }
+    }
+
+  private fun explicitTailRowSpacingPx(item: NativeListItem, spacing: Int): Int {
+    if (item.type == "identity" &&
+      item.json.optString("presentation") == "walletSidebar") {
+      val height = item.styledHeight ?: item.json.optDouble("height")
+      return ((height + spacing) * density).roundToInt() -
+        (height * density).roundToInt()
+    }
+    return dp(spacing)
+  }
+
+  private fun exceedsStructuralTailHostLimit(
+    old: NativeListConfig,
+    next: NativeListConfig,
+    prefixCount: Int,
+  ): Boolean {
+    val items = (if (old.items.size > next.items.size) old.items else next.items)
+      .drop(prefixCount)
+    if (items.size <= 128) return false
+    val starts = LongArray(items.size)
+    val heights = IntArray(items.size)
+    var cursor = 0L
+    items.forEachIndexed { index, item ->
+      starts[index] = cursor
+      heights[index] = explicitTailRowHeight(item)
+      cursor += heights[index] + explicitTailRowSpacingPx(item, next.itemSpacing)
+    }
+    val window = 3L * recyclerView.height
+    return (0..(items.size - 129)).any { first ->
+      starts[first + 128] - (starts[first] + heights[first]) <= window
+    }
+  }
+
+  private fun clearStructuralTail() {
+    pendingPreparingFooterFrame = null
+    structuralTail?.hosts?.values?.forEach { host ->
+      structuralTailLayer.removeView(host)
+      host.recycle()
+      host.dispose()
+    }
+    structuralTail = null
+    structuralTailFinalizing = false
+    structuralTailPreparing = false
+    structuralFooterCompensatedHeightPx = null
+    structuralTailRowsInAdapterPx = 0
+    setStructuralTailExtent(0)
+    structuralTailLayer.removeAllViews()
+    structuralTailLayer.visibility = GONE
+    structuralTailLayer.layoutParams?.let { params ->
+      params.width = 0
+      params.height = 0
+      structuralTailLayer.layoutParams = params
+    }
+    structuralTailLayer.forceLayout()
+    structuralTailLayer.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.EXACTLY),
+      View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.EXACTLY))
+    structuralTailLayer.layout(0, 0, 0, 0)
+  }
+
+  private fun structuralTailRowOrSlotExtentPx(position: Int): Int {
+    val row = position - headerSlotAdapter.itemCount
+    val item = adapter.itemAt(row)
+    if (row < 0 || item == null || !item.hasExplicitHeight) return estimatedScrollExtentPx(position)
+    return explicitTailRowHeight(item) +
+      explicitTailRowSpacingPx(item, config?.itemSpacing ?: 0)
+  }
+
+  private fun structuralTailMeasuredScrollDistancePx(): Int? {
+    if (layoutManager.orientation != RecyclerView.VERTICAL) return null
+    val first = layoutManager.findFirstVisibleItemPosition()
+    if (first == RecyclerView.NO_POSITION) return null
+    val view = layoutManager.findViewByPosition(first) ?: return null
+    val prefix = nativeListScrollPrefixPx(first, layoutManager.spanCount,
+      layoutManager.spanSizeLookup::getSpanSize, ::structuralTailRowOrSlotExtentPx)
+    val topMargin = (view.layoutParams as? ViewGroup.MarginLayoutParams)?.topMargin ?: 0
+    val top = layoutManager.getDecoratedTop(view) - topMargin
+    return (prefix + recyclerView.paddingTop - top).coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+  }
+
+  private fun tailScrollExtentPx(): Int =
+    (if (structuralTail != null) structuralTailMeasuredScrollDistancePx()
+    else measuredScrollDistancePx()) ?: logicalScrollDistancePx
+
+  private fun updateStructuralTailWindow() {
+    val tail = structuralTail ?: return
+    if (structuralTailFinalizing || structuralTailRowsInAdapterPx > 0) return
+    val scroll = tailScrollExtentPx()
+    val viewport = recyclerView.height
+    if (viewport <= 0) return
+    val y = recyclerView.top + recyclerView.paddingTop + structuralTailStartContentY - scroll
+    val width = (recyclerView.width - recyclerView.paddingLeft - recyclerView.paddingRight).coerceAtLeast(0)
+    val params = structuralTailLayer.layoutParams as FrameLayout.LayoutParams
+    val left = recyclerView.left + recyclerView.paddingLeft
+    if (params.width != width || params.height != structuralSpacerHeightPx ||
+      params.leftMargin != left || params.topMargin != y) {
+      params.width = width
+      params.height = structuralSpacerHeightPx
+      params.leftMargin = left
+      params.topMargin = y
+      structuralTailLayer.layoutParams = params
+    }
+    structuralTailLayer.visibility = VISIBLE
+    val low = (-y - viewport).coerceAtLeast(0)
+    val high = minOf(structuralSpacerHeightPx, -y + 2 * viewport)
+    var first = 0
+    var end = tail.items.size
+    while (first < end) {
+      val middle = (first + end) / 2
+      if (tail.starts[middle] + tail.heights[middle] < low) first = middle + 1
+      else end = middle
+    }
+    var last = first
+    end = tail.items.size
+    while (last < end) {
+      val middle = (last + end) / 2
+      if (tail.starts[middle] <= high) last = middle + 1
+      else end = middle
+    }
+    if (last - first > 128) {
+      finishStructuralTail(interrupted = false)
+      return
+    }
+    tail.hosts.keys.filter { it < first || it >= last }.forEach { index ->
+      val host = tail.hosts.remove(index) ?: return@forEach
+      structuralTailLayer.removeView(host)
+      host.recycle()
+      host.dispose()
+    }
+    for (index in first until last) {
+      if (tail.hosts.containsKey(index)) continue
+      val item = tail.items[index]
+      val host = NativeListRendererRegistry.create(reactContext, item.rendererKey.ordinal, fonts)
+      host.listStyle = config?.listStyle
+      host.bind(item, config?.theme, config?.layout ?: "linear", "vertical",
+        tail.prefixCount + index, item.json.optBoolean("selected") ||
+          (config?.selectedKeys?.contains(item.key) == true), adapter.checkboxState,
+        useSourceScale = usesSelectorSourceScale)
+      host.isClickable = false
+      host.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+      structuralTailLayer.addView(host, FrameLayout.LayoutParams(width, tail.heights[index],
+        Gravity.TOP or Gravity.LEFT).apply { topMargin = tail.starts[index] })
+      tail.hosts[index] = host
+      tail.peakHosts = maxOf(tail.peakHosts, tail.hosts.size)
+    }
+    val height = structuralSpacerHeightPx
+    val needsMeasure = structuralTailLayer.isLayoutRequested ||
+      structuralTailLayer.measuredWidth != width ||
+      structuralTailLayer.measuredHeight != height ||
+      tail.hosts.values.any { it.isLayoutRequested }
+    if (needsMeasure) {
+      structuralTailLayer.measure(
+        MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+        MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY),
+      )
+    }
+    if (needsMeasure || structuralTailLayer.left != left || structuralTailLayer.top != y ||
+      structuralTailLayer.right != left + width || structuralTailLayer.bottom != y + height) {
+      structuralTailLayer.layout(left, y, left + width, y + height)
+    }
+  }
+
+  private fun updateStructuralTailTarget() {
+    val tail = structuralTail ?: return
+    val disclosure = config?.disclosure
+    val finalChrome = if (disclosure == null) 0 else
+      slotHeights[5] + if (disclosure.expanded) slotHeights[4] + disclosureInsetExtentPx() else 0
+    val leftHeight = recyclerView.paddingTop + structuralTailStartContentY + tail.finalExtent +
+      finalChrome + footerNaturalHeightPx() + recyclerView.paddingBottom
+    val sidecarHeight = if (sidecarLayout == null) 0 else
+      recyclerView.paddingTop + slotHeights[3] + recyclerView.paddingBottom
+    val maximum = (maxOf(leftHeight, sidecarHeight) - recyclerView.height).coerceAtLeast(0)
+    var target = structuralTailStartOffset.coerceIn(0, maximum)
+    if (tail.finalExtent == 0 && disclosure != null && slotHeights[5] > 0) {
+      val toggleTop = recyclerView.paddingTop + structuralTailStartContentY
+      val toggleBottom = toggleTop + slotHeights[5]
+      val sticky = stickyHeaderHost.height
+      val lower = toggleBottom - recyclerView.height + recyclerView.paddingBottom
+      val upper = toggleTop - recyclerView.paddingTop - sticky
+      target = if (lower <= upper) target.coerceIn(lower, upper) else upper
+    } else if (tail.finalExtent == 0 && footerNaturalHeightPx() > 0) {
+      val footerTop = recyclerView.paddingTop + structuralTailStartContentY
+      val footerBottom = footerTop + footerNaturalHeightPx()
+      val sticky = stickyHeaderHost.height
+      val lower = footerBottom - recyclerView.height + recyclerView.paddingBottom
+      val upper = footerTop - recyclerView.paddingTop - sticky
+      target = if (lower <= upper) target.coerceIn(lower, upper) else upper
+    }
+    structuralTailTargetOffset = target.coerceIn(0, maximum)
+  }
+
+  private fun positionSettledDisclosureToggle() {
+    if (recyclerView.width <= 0 || recyclerView.height <= 0 ||
+      structureToggleAdapter.itemCount == 0 || slotHeights[5] <= 0 ||
+      recyclerView.scrollState != RecyclerView.SCROLL_STATE_IDLE ||
+      pendingScrollRequest != null || acceptedScrollRequest != null ||
+      executingScrollCommand) return
+    val togglePosition = headerSlotAdapter.itemCount + adapter.itemCount +
+      emptySlotAdapter.itemCount + structuralSpacerAdapter.itemCount +
+      expandedContentAdapter.itemCount
+    val toggleTop = (recyclerView.paddingTop.toLong() +
+      nativeListScrollPrefixPx(togglePosition, layoutManager.spanCount,
+        layoutManager.spanSizeLookup::getSpanSize, ::structuralTailRowOrSlotExtentPx))
+      .coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+    val stickyTop = recyclerView.paddingTop + stickyHeaderHost.height
+    val lower = toggleTop + slotHeights[5] - recyclerView.height + recyclerView.paddingBottom
+    val upper = toggleTop - stickyTop
+    val sidecarBottom = if (sidecarLayout == null) 0 else
+      recyclerView.paddingTop + slotHeights[3] + recyclerView.paddingBottom
+    val leftExtent = (nativeListScrollPrefixPx(
+      scrollContentAdapter.itemCount - sidecarSpacerAdapter.itemCount,
+      layoutManager.spanCount, layoutManager.spanSizeLookup::getSpanSize,
+      ::structuralTailRowOrSlotExtentPx) +
+      recyclerView.paddingTop + recyclerView.paddingBottom)
+      .coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+    val maximum = (maxOf(leftExtent, sidecarBottom) - recyclerView.height).coerceAtLeast(0)
+    val current = structuralTailMeasuredScrollDistancePx() ?: tailScrollExtentPx()
+    val target = (if (lower <= upper) current.coerceIn(lower, upper) else upper)
+      .coerceIn(0, maximum)
+    val ownsCommand = !structuralTailCommandActive
+    if (ownsCommand) {
+      notifyScrollCommand(false, 0)
+      notifyScrollCommand(false, 1)
+    }
+    try {
+      recyclerView.scrollBy(0, target - current)
+      relayoutRecyclerViewImmediately()
+    } finally {
+      if (ownsCommand) notifyScrollCommand(false, 2)
+    }
+  }
+
+  private fun finishStructuralTail(interrupted: Boolean) {
+    val next = config ?: return
+    if (structuralTail == null || structuralTailFinalizing) return
+    structuralTailFinalizing = true
+    val epoch = ++structuralTransitionEpoch
+    pendingPreparingFooterFrame = pendingPreparingFooterFrame?.takeIf {
+      it.footer === containerSlots.getOrNull(2)
+    }?.copy(epoch = epoch, handoffOnly = true)
+    structuralAnimator?.cancel()
+    structuralAnimator = null
+    recyclerView.itemAnimator = null
+    structuralFooterHoldTop = null
+    structuralFooterVisualStartTop = null
+    structuralFooterVisualEndTop = null
+    footerSlotAdapter.setVisualTranslationY(0f)
+    if (interrupted && structuralTailCommandActive) {
+      structuralTailCommandActive = false
+      notifyScrollCommand(false, 2)
+    }
+    adapter.submitList(next.items) {
+      if (epoch != structuralTransitionEpoch || disposed) return@submitList
+      fun handoff() {
+        if (epoch != structuralTransitionEpoch || disposed) return
+        if (recyclerView.isComputingLayout) {
+          recyclerView.post { handoff() }
+          return
+        }
+        val acceptedPendingFooter = acceptPendingFooterValues(adjustTailStart = false)
+        presentAcceptedDisclosureEndpoint(next)
+        if (recyclerView.width <= 0 || recyclerView.height <= 0) {
+          clearStructuralTail()
+          if (acceptedPendingFooter) updateContainerSlots()
+          if (structuralTailCommandActive) {
+            structuralTailCommandActive = false
+            notifyScrollCommand(false, 2)
+          }
+          if (next.disclosure != null) {
+            disclosureTransitioning = false
+            syncDisclosurePresentation()
+            settleDisclosureCommand(if (interrupted) "interrupted" else "completed")
+          }
+          scheduleVisibleEvent()
+          checkEndReached()
+          return
+        }
+        structuralTailRowsInAdapterPx = 0
+        setStructuralTailExtent(0)
+        updateSidecarSpacerNow()
+        relayoutRecyclerViewImmediately()
+        if (epoch != structuralTransitionEpoch || disposed) return
+        if (!interrupted && recyclerView.scrollState == RecyclerView.SCROLL_STATE_IDLE) {
+          val sidecarBottom = if (sidecarLayout == null) 0 else
+            recyclerView.paddingTop + slotHeights[3] + recyclerView.paddingBottom
+          val maximum = (maxOf(sidecarLeftExtentPx(), sidecarBottom) -
+            recyclerView.height).coerceAtLeast(0)
+          val target = structuralTailTargetOffset.coerceIn(0, maximum)
+          recyclerView.scrollBy(0, target - tailScrollExtentPx())
+        }
+        if (epoch != structuralTransitionEpoch || disposed) return
+        clearStructuralTail()
+        if (acceptedPendingFooter) updateContainerSlots()
+        performPendingScrollIfNeeded()
+        if (structuralTailCommandActive) {
+          structuralTailCommandActive = false
+          notifyScrollCommand(false, 2)
+        }
+        if (next.disclosure != null) {
+          disclosureTransitioning = false
+          syncDisclosurePresentation()
+          settleDisclosureCommand(if (interrupted) "interrupted" else "completed")
+        }
+        scheduleVisibleEvent()
+        checkEndReached()
+      }
+      handoff()
+    }
+  }
+
+  private fun discardStructuralTail() {
+    if (structuralTail == null) return
+    structuralTransitionEpoch += 1
+    structuralAnimator?.cancel()
+    structuralAnimator = null
+    if (structuralTailCommandActive) {
+      structuralTailCommandActive = false
+      notifyScrollCommand(false, 2)
+    }
+    clearStructuralTail()
+    setStructuralSpacerHeight(0)
+  }
+
+  private fun holdStructuralTailUntilListCommit(): Int {
+    val epoch = ++structuralTransitionEpoch
+    pendingPreparingFooterFrame = pendingPreparingFooterFrame?.takeIf {
+      it.footer === containerSlots.getOrNull(2)
+    }?.copy(epoch = epoch, handoffOnly = true)
+    structuralAnimator?.cancel()
+    structuralAnimator = null
+    structuralTailFinalizing = true
+    if (structuralTailCommandActive) {
+      structuralTailCommandActive = false
+      notifyScrollCommand(false, 2)
+    }
+    return epoch
+  }
+
+  private fun completeHeldTailCommit(
+    next: NativeListConfig,
+    epoch: Int,
+    completion: () -> Unit,
+    positionToggle: Boolean,
+  ) {
+    if (epoch != structuralTransitionEpoch || disposed) return
+    if (recyclerView.isComputingLayout) {
+      recyclerView.post { completeHeldTailCommit(next, epoch, completion, positionToggle) }
+      return
+    }
+    val acceptedPendingFooter = acceptPendingFooterValues(adjustTailStart = false)
+    presentAcceptedDisclosureEndpoint(next)
+    structuralTailRowsInAdapterPx = 0
+    setStructuralTailExtent(0)
+    if (acceptedPendingFooter) updateContainerSlots()
+    updateSidecarSpacerNow()
+    relayoutRecyclerViewImmediately()
+    if (positionToggle) positionSettledDisclosureToggle()
+    if (epoch != structuralTransitionEpoch || disposed) return
+    clearStructuralTail()
+    disclosureTransitioning = false
+    syncDisclosurePresentation()
+    completion()
+  }
+
+  private fun applyStructuralTailFrame(tail: StructuralTail, epoch: Int, progress: Float): Boolean {
+    if (epoch != structuralTransitionEpoch || disposed || structuralTail !== tail ||
+      structuralTailFinalizing) return true
+    if (recyclerView.isComputingLayout) return false
+    val segmentProgress = if (structuralTailStartProgress >= 1f) 1f else
+      ((progress - structuralTailStartProgress) /
+        (1f - structuralTailStartProgress)).coerceIn(0f, 1f)
+    config?.disclosure?.let { disclosure ->
+      val target = if (disclosure.expanded) 1f else 0f
+      disclosureFraction = disclosureStartFraction +
+        (target - disclosureStartFraction) * segmentProgress
+      val contentProgress = if (disclosureContentStartProgress >= 1f) 1f else
+        ((progress - disclosureContentStartProgress) /
+          (1f - disclosureContentStartProgress)).coerceIn(0f, 1f)
+      val contentTarget = if (disclosure.expanded) slotHeights[4] else 0
+      disclosurePresentedContentPx = (disclosureContentStartPx +
+        (contentTarget - disclosureContentStartPx) * contentProgress).roundToInt()
+      syncDisclosurePresentation()
+    }
+    setStructuralTailExtent((structuralTailStartExtentPx +
+      (tail.finalExtent - structuralTailStartExtentPx) * segmentProgress).roundToInt())
+    updateSidecarSpacerNow()
+    relayoutRecyclerViewImmediately()
+    if (epoch != structuralTransitionEpoch || disposed || structuralTail !== tail) return true
+    if (!structuralScrollInterrupted && recyclerView.scrollState == RecyclerView.SCROLL_STATE_IDLE) {
+      val sidecarBottom = if (sidecarLayout == null) 0 else
+        recyclerView.paddingTop + slotHeights[3] + recyclerView.paddingBottom
+      val maximum = (maxOf(sidecarLeftExtentPx(), sidecarBottom) -
+        recyclerView.height).coerceAtLeast(0)
+      val desired = (structuralTailStartOffset +
+        (structuralTailTargetOffset - structuralTailStartOffset) * segmentProgress)
+        .roundToInt().coerceIn(0, maximum)
+      val requestedScroll = desired - tailScrollExtentPx()
+      recyclerView.scrollBy(0, requestedScroll)
+    }
+    updateStructuralTailWindow()
+    return true
+  }
+
+  private fun commitPreparingFooterFrame(): Boolean {
+    val pending = pendingPreparingFooterFrame ?: return true
+    if (structuralTail == null || structuralTailRowsInAdapterPx <= 0 ||
+      pending.epoch != structuralTransitionEpoch || disposed ||
+      pending.footer !== containerSlots.getOrNull(2)) {
+      if (pendingPreparingFooterFrame === pending) pendingPreparingFooterFrame = null
+      return true
+    }
+    if (pending.handoffOnly || recyclerView.isComputingLayout) return false
+    pendingPreparingFooterFrame = null
+    if (pending.observedNativeHeight != null) {
+      structuralFooterObservedNativeHeightPx = pending.observedNativeHeight
+    } else {
+      containerSlots.getOrNull(2)?.measuredHeight
+        ?.takeIf { it > 0 && it != pending.naturalHeight }
+        ?.let { structuralFooterObservedNativeHeightPx = it }
+    }
+    reconcileStructuralFooterHeight(pending.naturalHeight)
+    acceptedFooterNaturalHeightPx = pending.naturalHeight
+    for (index in 0..5) slotHeights[index] = pending.heights[index]
+    updateContainerSlots()
+    updateStructuralTailTarget()
+    updateSidecarGeometry()
+    updateSidecarSpacerNow()
+    relayoutRecyclerViewImmediately()
+    if (pending.epoch != structuralTransitionEpoch || disposed ||
+      pending.footer !== containerSlots.getOrNull(2)) {
+      return pendingPreparingFooterFrame == null
+    }
+    val sidecarBottom = if (sidecarLayout == null) 0 else
+      recyclerView.paddingTop + slotHeights[3] + recyclerView.paddingBottom
+    val maximum = (maxOf(sidecarLeftExtentPx(), sidecarBottom) -
+      recyclerView.height).coerceAtLeast(0)
+    val desired = pending.ownerOffset.coerceIn(0, maximum)
+    recyclerView.scrollBy(0, desired - tailScrollExtentPx())
+    relayoutRecyclerViewImmediately()
+    updateStructuralTailWindow()
+    return pendingPreparingFooterFrame == null
+  }
+
+  private fun acceptPendingFooterValues(adjustTailStart: Boolean): Boolean {
+    val pending = pendingPreparingFooterFrame ?: return false
+    if (pending.footer !== containerSlots.getOrNull(2) || disposed ||
+      pending.epoch != structuralTransitionEpoch) {
+      pendingPreparingFooterFrame = null
+      return false
+    }
+    val latestNativeHeight = if (pending.observedNativeHeight != null)
+      pending.footer?.measuredHeight?.takeIf { it > 0 } else null
+    val naturalHeight = if (latestNativeHeight != null &&
+      latestNativeHeight != pending.observedNativeHeight) {
+      (ceil(latestNativeHeight / density.toDouble()) * density).roundToInt()
+    } else pending.naturalHeight
+    if (adjustTailStart) {
+      val previousHeight = structuralFooterCompensatedHeightPx ?:
+        acceptedFooterNaturalHeightPx ?: slotHeights[2]
+      val delta = previousHeight - naturalHeight
+      structuralTailSignedExtentPx += delta
+      structuralTailStartExtentPx += delta
+    }
+    structuralFooterObservedNativeHeightPx = latestNativeHeight ?:
+      containerSlots.getOrNull(2)?.measuredHeight?.takeIf {
+        it > 0 && it != naturalHeight
+      }
+    acceptedFooterNaturalHeightPx = naturalHeight
+    structuralFooterCompensatedHeightPx = naturalHeight
+    for (index in 0..5) slotHeights[index] = pending.heights[index]
+    pendingPreparingFooterFrame = null
+    return true
+  }
+
+  private fun startPrefixTailTransition(
+    previous: NativeListConfig,
+    next: NativeListConfig,
+    transition: NativeListConfig.StructuralTransition,
+    prefixCount: Int,
+  ) {
+    val previousTail = structuralTail
+    val carriedExtent = previousTail?.let { structuralTailSignedExtentPx }
+    val startOffset = structuralTailMeasuredScrollDistancePx() ?: tailScrollExtentPx()
+    if (previousTail == null) {
+      cancelStructuralTransition()
+    } else {
+      structuralTransitionEpoch += 1
+      structuralAnimator?.cancel()
+      structuralAnimator = null
+      if (structuralTailCommandActive) {
+        structuralTailCommandActive = false
+        notifyScrollCommand(false, 2)
+      }
+      // The old presentation remains visible until the new prefix and spacer commit together.
+      structuralTailPreparing = true
+    }
+    val epoch = structuralTransitionEpoch
+    val collapsing = previous.items.size > next.items.size
+    val items = (if (collapsing) previous.items else next.items)
+      .drop(prefixCount).toMutableList()
+    val heights = IntArray(items.size) { explicitTailRowHeight(items[it]) }
+    val spacings = IntArray(items.size) {
+      explicitTailRowSpacingPx(items[it], next.itemSpacing)
+    }
+    val tail = StructuralTail(items, heights, spacings, prefixCount,
+      if (collapsing) 0 else heights.sum() + spacings.sum())
+    val startExtent = carriedExtent ?: if (collapsing) tail.extent else 0
+    disclosureStartFraction = disclosureFraction
+    if (next.disclosure != null) {
+      disclosureContentStartPx = disclosurePresentedContentPx
+      disclosureContentStartProgress = 0f
+      disclosureTransitioning = true
+    }
+    val startContentY = (if (headerSlotAdapter.itemCount > 0) slotHeights[0] else 0) +
+      next.items.take(prefixCount).sumOf {
+        explicitTailRowHeight(it) + explicitTailRowSpacingPx(it, next.itemSpacing)
+      }
+    if (previousTail == null) {
+      structuralTail = tail
+      structuralTailRowsInAdapterPx = if (collapsing) tail.extent else 0
+      structuralTailStartExtentPx = startExtent
+      structuralTailStartProgress = 0f
+      structuralTailStartContentY = startContentY
+      structuralTailStartOffset = startOffset
+      structuralTailTargetOffset = startOffset
+      setStructuralTailExtent(startExtent)
+    }
+    structuralScrollInterrupted = false
+    structuralFooterCompensatedHeightPx = null
+    recyclerView.itemAnimator = null
+    config = next
+    pruneMeasuredRowExtents(next.items)
+    updateContainerSlots()
+    usesSelectorSourceScale = next.items.any { it.usesSelectorSourceScale }
+    adapter.usesSelectorSourceScale = usesSelectorSourceScale
+    adapter.theme = next.theme
+    adapter.listStyle = next.listStyle
+    adapter.layout = next.layout
+    adapter.orientation = next.orientation
+    adapter.selectedKeys = next.selectedKeys
+    if (previous.generation != next.generation) endReachedGeneration = null
+    configureSectionIndex(next)
+    updateLayout(next)
+    bindFooter(next)
+    updateReordering(next)
+    refreshLayout.isEnabled = next.pullToRefresh
+    refreshLayout.setDistanceToTriggerSync(
+      next.refreshTriggerDistance?.let { (it * density).roundToInt() }
+        ?: defaultRefreshTriggerDistancePx,
+    )
+    refreshLayout.isRefreshing = next.refreshing
+    structuralTailCommandActive = true
+    notifyScrollCommand(false, 0)
+    notifyScrollCommand(false, 1)
+    adapter.submitList(next.items.take(prefixCount)) {
+      fun commitPrefix() {
+        if (epoch != structuralTransitionEpoch || disposed ||
+          structuralTail !== (previousTail ?: tail) || structuralTailFinalizing) return
+        if (recyclerView.isComputingLayout) {
+          recyclerView.post { commitPrefix() }
+          return
+        }
+        if (previousTail != null) {
+          clearStructuralTail()
+          structuralTail = tail
+          structuralTailStartExtentPx = startExtent
+          structuralTailStartProgress = 0f
+          structuralTailStartContentY = startContentY
+          structuralTailStartOffset = startOffset
+          structuralTailTargetOffset = startOffset
+        }
+        acceptPendingFooterValues(adjustTailStart = true)
+        structuralTailPreparing = false
+        structuralTailRowsInAdapterPx = 0
+        setStructuralTailExtent(structuralTailStartExtentPx)
+        updateStructuralTailTarget()
+        if (recyclerView.width <= 0 || recyclerView.height <= 0) {
+          finishStructuralTail(interrupted = false)
+          return
+        }
+        applyStructuralTailFrame(tail, epoch, 0f)
+        if (epoch != structuralTransitionEpoch || disposed || structuralTail !== tail ||
+          structuralTailFinalizing) return
+        var lastAppliedProgress = 0f
+        var frameScheduled = false
+        fun applyProgress(progress: Float) {
+          if (epoch != structuralTransitionEpoch || disposed || structuralTail !== tail ||
+            structuralTailFinalizing) return
+          val nextProgress = maxOf(progress, lastAppliedProgress)
+          if (!applyStructuralTailFrame(tail, epoch, nextProgress)) {
+            if (!frameScheduled) {
+              frameScheduled = true
+              recyclerView.post {
+                frameScheduled = false
+                val current = structuralAnimator?.animatedValue as? Float ?: nextProgress
+                applyProgress(current)
+              }
+            }
+            return
+          }
+          lastAppliedProgress = nextProgress
+        }
+        structuralAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+          duration = transition.durationMs
+          interpolator = android.view.animation.AccelerateDecelerateInterpolator()
+          addUpdateListener { animation ->
+            if (epoch != structuralTransitionEpoch || disposed || structuralTail !== tail) return@addUpdateListener
+            if (Build.VERSION.SDK_INT >= 26 && !ValueAnimator.areAnimatorsEnabled()) {
+              finishStructuralTail(interrupted = false)
+              return@addUpdateListener
+            }
+            applyProgress(animation.animatedValue as Float)
+          }
+          addListener(object : AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: Animator) {
+              if (epoch == structuralTransitionEpoch && structuralTail === tail)
+                finishStructuralTail(interrupted = structuralScrollInterrupted)
+            }
+          })
+          start()
+        }
+      }
+      commitPrefix()
+    }
+  }
+
+  private fun updatePrefixTailSnapshot(previous: NativeListConfig, next: NativeListConfig): Boolean {
+    val tail = structuralTail ?: return false
+    if (structuralTailPreparing || structuralTailFinalizing ||
+      structuralTailRowsInAdapterPx > 0 ||
+      previous.items.size != next.items.size ||
+      previous.disclosure != next.disclosure ||
+      previous.layout != next.layout || previous.orientation != next.orientation ||
+      previous.theme?.toString() != next.theme?.toString() ||
+      previous.listStyle?.toString() != next.listStyle?.toString() ||
+      previous.itemSpacing != next.itemSpacing ||
+      previous.contentPadding != next.contentPadding ||
+      previous.contentPaddingTop != next.contentPaddingTop ||
+      previous.contentPaddingBottom != next.contentPaddingBottom ||
+      previous.contentPaddingHorizontal != next.contentPaddingHorizontal) return false
+    for (index in next.items.indices) {
+      val before = previous.items[index]
+      val after = next.items[index]
+      if (before.key != after.key || before.rendererKey != after.rendererKey ||
+        !after.hasExplicitHeight || explicitTailRowHeight(before) != explicitTailRowHeight(after) ||
+        explicitTailRowSpacingPx(before, previous.itemSpacing) !=
+          explicitTailRowSpacingPx(after, next.itemSpacing))
+        return false
+    }
+    config = next
+    adapter.selectedKeys = next.selectedKeys
+    adapter.submitList(next.items.take(tail.prefixCount)) {
+      if (structuralTail !== tail || disposed) return@submitList
+      scheduleVisibleEvent()
+    }
+    if (tail.finalExtent > 0) {
+      for (index in tail.items.indices) {
+        val item = next.items[tail.prefixCount + index]
+        if (tail.items[index].content == item.content) continue
+        tail.items[index] = item
+        tail.hosts[index]?.let { host ->
+          host.bind(item, next.theme, next.layout, "vertical", tail.prefixCount + index,
+            item.json.optBoolean("selected") || next.selectedKeys.contains(item.key),
+            adapter.checkboxState, useSourceScale = usesSelectorSourceScale)
+          host.isClickable = false
+        }
+      }
+    }
+    bindFooter(next)
+    updateStructuralTailTarget()
+    return true
+  }
+
   private fun updateStructuralFooterHoldPosition() {
     val targetTop = structuralFooterHoldTop ?: return
     if (footerSlotAdapter.itemCount == 0) return
@@ -648,6 +1773,7 @@ class NativeListView(
   }
 
   private fun cancelStructuralTransition() {
+    if (structuralTail != null) discardStructuralTail()
     structuralTransitionEpoch += 1
     pendingStructuralTransition = null
     pendingStructuralStartScheduled = false
@@ -893,14 +2019,39 @@ class NativeListView(
     override fun onDetachedFromWindow() { down?.recycle(); down = null; super.onDetachedFromWindow() }
   }
   private val stickyPreDraw = android.view.ViewTreeObserver.OnPreDrawListener {
-    if (pendingStructuralTransition != null || structuralAnimator != null) {
-      val measuredHeightPx = footerSlotAdapter.contentView()?.measuredHeight ?: 0
-      if (measuredHeightPx > 0) {
+    if (!commitPreparingFooterFrame()) {
+      if (pendingPreparingFooterFrame?.handoffOnly != true) schedulePreparingFooterFrame()
+      return@OnPreDrawListener false
+    }
+    if (pendingStructuralTransition != null || structuralAnimator != null || structuralTail != null) {
+      val measuredHeightPx = containerSlots.getOrNull(2)?.measuredHeight ?: 0
+      if (measuredHeightPx > 0 && measuredHeightPx != structuralFooterObservedNativeHeightPx) {
         // React layout can change the footer's contents before its onLayout height reaches JS.
         val roundedDip = ceil(measuredHeightPx / density.toDouble())
-        reconcileStructuralFooterHeight((roundedDip * density).roundToInt())
+        val naturalHeight = (roundedDip * density).roundToInt()
+        if (structuralTail != null && config?.disclosure != null &&
+          naturalHeight != footerNaturalHeightPx()) {
+          structuralFooterObservedNativeHeightPx = measuredHeightPx
+          acceptedFooterNaturalHeightPx = naturalHeight
+          structuralFooterCompensatedHeightPx = null
+          finishStructuralTail(interrupted = true)
+          return@OnPreDrawListener false
+        }
+        if (structuralTail != null && structuralTailRowsInAdapterPx > 0 &&
+          !structuralTailFinalizing) {
+          enqueuePreparingFooterFrame(slotHeights.copyOf(), naturalHeight,
+            observedNativeHeight = measuredHeightPx)
+          if (pendingPreparingFooterFrame != null) return@OnPreDrawListener false
+        } else {
+          structuralFooterObservedNativeHeightPx = measuredHeightPx
+          reconcileStructuralFooterHeight(naturalHeight)
+          acceptedFooterNaturalHeightPx = naturalHeight
+          if (structuralTail == null || structuralTailFinalizing) syncFooterPresentation()
+        }
       }
     }
+    if (structuralTail != null && !structuralTailFinalizing) layoutFooterPresentationHostNow()
+    if (config?.disclosure != null) layoutExpandedContentHostNow()
     updateStickyHeader()
     finishScrollCommandIfSettled()
     true
@@ -1014,6 +2165,7 @@ class NativeListView(
         FrameLayout.LayoutParams.MATCH_PARENT,
       ),
     )
+    contentContainer.addView(structuralTailLayer, FrameLayout.LayoutParams(0, 0, Gravity.TOP or Gravity.LEFT))
     contentContainer.addView(sidecarHost,
       FrameLayout.LayoutParams(0, 0, Gravity.TOP or Gravity.RIGHT))
     stickyHeaderHost.visibility = GONE
@@ -1080,6 +2232,7 @@ class NativeListView(
     recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
       override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
         if (newState == RecyclerView.SCROLL_STATE_DRAGGING) {
+          if (structuralTail != null) finishStructuralTail(interrupted = true)
           if (structuralAnimator != null || pendingStructuralTransition != null)
             structuralScrollInterrupted = true
           cancelExecutingScrollCommand()
@@ -1120,6 +2273,7 @@ class NativeListView(
           }
         }
         updateSidecarPosition()
+        if (structuralTail != null) updateStructuralTailWindow()
         emitScrollPositionThresholdIfNeeded(resync = dx == 0 && dy == 0)
         if (dx != 0 || dy != 0) invalidateActionAnchor("scroll")
         syncSectionIndexToVisibleRows()
@@ -1179,6 +2333,9 @@ class NativeListView(
     val nextHeight = bottom - top
     val widthChanged = lastLayoutWidth != nextWidth
     val directionChanged = layoutDirection != lastLayoutDirection
+    if (structuralTail != null && lastLayoutWidth >= 0 &&
+      (widthChanged || lastLayoutHeight != nextHeight || directionChanged))
+      finishStructuralTail(interrupted = true)
     if (
       lastLayoutWidth >= 0 &&
       (nextWidth != lastLayoutWidth || nextHeight != lastLayoutHeight || layoutDirection != lastLayoutDirection)
@@ -1222,6 +2379,27 @@ class NativeListView(
   }
 
   override fun onDetachedFromWindow() {
+    val disclosureId = activeDisclosureTransitionId
+    if (structuralTail != null) {
+      discardStructuralTail()
+      val epoch = structuralTransitionEpoch
+      config?.let { accepted ->
+        adapter.submitList(accepted.items) {
+          if (!disposed && epoch == structuralTransitionEpoch &&
+            activeDisclosureTransitionId == disclosureId && disclosureId != null) {
+            disclosureFraction = if (accepted.disclosure?.expanded == true) 1f else 0f
+            disclosureTransitioning = false
+            syncDisclosurePresentation()
+            settleDisclosureCommand("interrupted")
+          }
+        }
+      }
+    } else if (disclosureId != null && !disposed) {
+      disclosureFraction = if (config?.disclosure?.expanded == true) 1f else 0f
+      disclosureTransitioning = false
+      syncDisclosurePresentation()
+      settleDisclosureCommand("interrupted")
+    }
     val cancelTag = R.id.onekey_native_scroll_coordinator_command_cancel_listener
     if (recyclerView.getTag(cancelTag) === coordinatorCommandCancelListener) recyclerView.setTag(cancelTag, null)
     cancelExecutingScrollCommand()
@@ -1248,13 +2426,52 @@ class NativeListView(
     val transition = next.structuralTransition
     val isNewTransition = transition != null && transition.id != consumedStructuralTransitionId
     if (transition != null) consumedStructuralTransitionId = transition.id
+    val disclosureGeometryInvalid = batchedDisclosureGeometryInvalid ||
+      (!isNewTransition && structuralTail != null &&
+        previous?.disclosure != next.disclosure)
+    batchedDisclosureGeometryInvalid = false
+    if (!isNewTransition &&
+      (next.disclosure == null || previous?.disclosure?.expanded != next.disclosure.expanded)) {
+      activeDisclosureTransitionId = null
+    }
     val oldKeys = previous?.items?.map { it.key } ?: emptyList()
     val nextKeys = next.items.map { it.key }
-    val animateStructure = previous != null && isNewTransition && oldKeys != nextKeys &&
+    if (next.disclosure != null && isNewTransition && previous != null) {
+      activeDisclosureTransitionId = transition?.id
+      directDisclosureStatus = if (oldKeys == nextKeys || nextKeys.isEmpty() ||
+        transition?.durationMs == 0L ||
+        (Build.VERSION.SDK_INT >= 26 && !ValueAnimator.areAnimatorsEnabled()))
+        "completed" else "interrupted"
+    } else if (next.disclosure == null) {
+      activeDisclosureTransitionId = null
+    }
+    val positionDirectCollapse = isNewTransition && !disclosureGeometryInvalid &&
+      next.disclosure?.expanded == false && directDisclosureStatus == "completed"
+    var animateStructure = !disclosureGeometryInvalid && previous != null &&
+      isNewTransition && oldKeys != nextKeys &&
       next.orientation == "vertical" && (next.layout == "linear" || next.layout == "table") &&
       (transition?.durationMs ?: 0) > 0 &&
       (if (Build.VERSION.SDK_INT >= 26) ValueAnimator.areAnimatorsEnabled() else
         android.provider.Settings.Global.getFloat(context.contentResolver, "animator_duration_scale", 1f) > 0f)
+    val prefixCount = if (animateStructure && previous != null && recyclerView.width > 0 &&
+      recyclerView.height > 0) prefixTailCount(previous, next) else null
+    val exceedsTailHostLimit = prefixCount != null && previous != null &&
+      exceedsStructuralTailHostLimit(previous, next, prefixCount)
+    if (exceedsTailHostLimit) animateStructure = false
+    if (next.disclosure != null && prefixCount == null) animateStructure = false
+    if (prefixCount != null && !exceedsTailHostLimit && previous != null && transition != null) {
+      startPrefixTailTransition(previous, next, transition, prefixCount)
+      return
+    }
+    var heldTailEpoch: Int? = null
+    if (structuralTail != null) {
+      if (!disclosureGeometryInvalid && !animateStructure && oldKeys == nextKeys &&
+        (Build.VERSION.SDK_INT < 26 || ValueAnimator.areAnimatorsEnabled()) &&
+        previous != null && updatePrefixTailSnapshot(previous, next)) return
+      heldTailEpoch = holdStructuralTailUntilListCommit()
+      // Keep the accepted presentation until the full adapter list has committed.
+      animateStructure = false
+    }
     val nextKeySet = nextKeys.toHashSet()
     val visibleAnchor = if (animateStructure) {
       val first = layoutManager.findFirstVisibleItemPosition()
@@ -1280,7 +2497,7 @@ class NativeListView(
     val addedExtent = if (animateStructure) next.items.sumOf { item ->
       if (oldKeySet.contains(item.key)) 0 else estimatedItemExtentPx(item)
     } else 0
-    if (!animateStructure && oldKeys != nextKeys) cancelStructuralTransition()
+    if (!animateStructure && oldKeys != nextKeys && heldTailEpoch == null) cancelStructuralTransition()
     if (previous?.items?.isEmpty() == true && next.items.isNotEmpty() && adapter.itemCount == 0 &&
       pendingScrollRequest == null && recyclerView.scrollState != RecyclerView.SCROLL_STATE_DRAGGING &&
       !recyclerView.canScrollVertically(-1) && layoutManager.findFirstVisibleItemPosition() == 0) {
@@ -1304,6 +2521,10 @@ class NativeListView(
         }
       }.toSet()
       config = next
+      if (heldTailEpoch == null) {
+        disclosureFraction = if (next.disclosure?.expanded == true) 1f else 0f
+        disclosureTransitioning = false
+      }
     updateContainerSlots()
     usesSelectorSourceScale = next.items.any { it.usesSelectorSourceScale }
     adapter.usesSelectorSourceScale = usesSelectorSourceScale
@@ -1316,16 +2537,29 @@ class NativeListView(
       // outside the adapter, so a listStyle-only snapshot must rebind it here.
       if (previous.listStyle?.toString() != next.listStyle?.toString()) bindFooter(next)
       adapter.submitList(next.items) {
-        homeOffsetDiagnostic("snapshot-stable-submit-commit")
-        // OneKey patch: DiffUtil has dispatched its payloads; release the old serialized rows.
-        next.items.forEach { it.selectionUpdateFromContent = null }
-        recyclerView.post {
-          scheduleSidecarSpacer()
-          startPendingStructuralTransition()
-          bindVisibleSelection(changedSummaryKeys)
-          bindFooterSelection()
-          performPendingScrollIfNeeded()
+        val committed: () -> Unit = {
+          homeOffsetDiagnostic("snapshot-stable-submit-commit")
+          // OneKey patch: DiffUtil has dispatched its payloads; release the old serialized rows.
+          next.items.forEach { it.selectionUpdateFromContent = null }
+          recyclerView.post {
+            scheduleSidecarSpacer()
+            startPendingStructuralTransition()
+            bindVisibleSelection(changedSummaryKeys)
+            bindFooterSelection()
+            performPendingScrollIfNeeded()
+            if (next.disclosure != null && (isNewTransition || disclosureGeometryInvalid) &&
+              transition != null && activeDisclosureTransitionId == transition.id) {
+              relayoutRecyclerViewImmediately()
+              if (positionDirectCollapse && heldTailEpoch == null)
+                positionSettledDisclosureToggle()
+              settleDisclosureCommand(if (disclosureGeometryInvalid) "interrupted" else
+                directDisclosureStatus)
+            }
+          }
         }
+        if (heldTailEpoch != null) completeHeldTailCommit(next, heldTailEpoch, committed,
+          positionDirectCollapse)
+        else committed()
       }
       return
     }
@@ -1345,6 +2579,10 @@ class NativeListView(
       }
     } else null
     config = next
+    if (heldTailEpoch == null) {
+      disclosureFraction = if (next.disclosure?.expanded == true) 1f else 0f
+      disclosureTransitioning = false
+    }
     pruneMeasuredRowExtents(next.items)
     updateContainerSlots()
     usesSelectorSourceScale = next.items.any { it.usesSelectorSourceScale }
@@ -1380,22 +2618,39 @@ class NativeListView(
       }
     }
     adapter.submitList(next.items) {
-      pendingStructuralTransition?.takeIf { it.epoch == structuralTransitionEpoch }?.let {
-        setStructuralSpacerHeight(it.heldHeightPx)
-        pendingStructuralTransition = it.copy(spacerInserted = true)
-        pendingStructuralTransition?.let(::alignPendingStructuralAnchor)
+      val committed: () -> Unit = {
+        pendingStructuralTransition?.takeIf { it.epoch == structuralTransitionEpoch }?.let {
+          setStructuralSpacerHeight(it.heldHeightPx)
+          pendingStructuralTransition = it.copy(spacerInserted = true)
+          pendingStructuralTransition?.let(::alignPendingStructuralAnchor)
+        }
+        homeOffsetDiagnostic("snapshot-submit-commit-marketAnchor=${marketStartOffset != null}")
+        if (marketStartOffset != null) {
+          layoutManager.scrollToPositionWithOffset(scrollPositionForRow(0), marketStartOffset)
+        }
+        relayoutContents(preserveMarketPaginationAnchor)
+        scheduleSidecarSpacer()
+        startPendingStructuralTransition()
+        performPendingScrollIfNeeded()
+        syncSectionIndexToVisibleRows()
+        scheduleVisibleEvent()
+        if (next.items.isNotEmpty()) checkEndReached()
+        if (next.disclosure != null && (isNewTransition || disclosureGeometryInvalid) &&
+          transition != null && activeDisclosureTransitionId == transition.id) {
+          recyclerView.post {
+            if (!disposed && activeDisclosureTransitionId == transition.id) {
+              relayoutRecyclerViewImmediately()
+              if (positionDirectCollapse && heldTailEpoch == null)
+                positionSettledDisclosureToggle()
+              settleDisclosureCommand(if (disclosureGeometryInvalid) "interrupted" else
+                directDisclosureStatus)
+            }
+          }
+        }
       }
-      homeOffsetDiagnostic("snapshot-submit-commit-marketAnchor=${marketStartOffset != null}")
-      if (marketStartOffset != null) {
-        layoutManager.scrollToPositionWithOffset(scrollPositionForRow(0), marketStartOffset)
-      }
-      relayoutContents(preserveMarketPaginationAnchor)
-      scheduleSidecarSpacer()
-      startPendingStructuralTransition()
-      performPendingScrollIfNeeded()
-      syncSectionIndexToVisibleRows()
-      scheduleVisibleEvent()
-      if (next.items.isNotEmpty()) checkEndReached()
+      if (heldTailEpoch != null) completeHeldTailCommit(next, heldTailEpoch, committed,
+        positionDirectCollapse)
+      else committed()
     }
     refreshLayout.isEnabled = next.pullToRefresh
     refreshLayout.setDistanceToTriggerSync(next.refreshTriggerDistance?.let { (it * density).roundToInt() } ?: defaultRefreshTriggerDistancePx)
@@ -1694,12 +2949,23 @@ class NativeListView(
     }
     if (!marketQuoteOnly) invalidateActionAnchor("snapshot")
     val next = current.copy(items = nextItems, selectedKeys = selected)
+    if (structuralTail != null && updatePrefixTailSnapshot(current, next)) return
+    val heldTailEpoch = if (structuralTail != null) holdStructuralTailUntilListCommit() else null
     config = next
     updateContainerSlots()
     usesSelectorSourceScale = next.items.any { it.usesSelectorSourceScale }
     adapter.usesSelectorSourceScale = usesSelectorSourceScale
     adapter.selectedKeys = selected
-    adapter.submitList(nextItems) { relayoutContents() }
+    adapter.submitList(nextItems) {
+      if (heldTailEpoch != null) {
+        if (heldTailEpoch != structuralTransitionEpoch || disposed) return@submitList
+        val acceptedPendingFooter = acceptPendingFooterValues(adjustTailStart = false)
+        clearStructuralTail()
+        if (acceptedPendingFooter) updateContainerSlots()
+        setStructuralSpacerHeight(0)
+      }
+      relayoutContents()
+    }
     bindFooter(next)
   }
 
@@ -1761,6 +3027,7 @@ class NativeListView(
       is ScrollRequest.End -> true
     }
     if (!valid) return
+    if (structuralTail != null) finishStructuralTail(interrupted = true)
     executingScrollCommand = false
     dispatchingScrollRequest = null
     commandLayoutRequest = null
@@ -1786,6 +3053,7 @@ class NativeListView(
 
   private val coordinatorCommandCancelListener = Runnable {
     if (disposed) return@Runnable
+    if (structuralTail != null) finishStructuralTail(interrupted = true)
     pendingScrollRequest = null
     readingIntentEpoch++
     pendingBodyStartEpoch = null
@@ -1900,7 +3168,7 @@ class NativeListView(
         is ScrollRequest.End -> {
           val finalSlotHeight = when {
             sidecarSpacerAdapter.itemCount > 0 -> sidecarSpacerHeightPx
-            footerSlotAdapter.itemCount > 0 -> slotHeights[2]
+            footerSlotAdapter.itemCount > 0 -> footerPresentedHeightPx()
             emptySlotAdapter.itemCount > 0 -> slotHeights[1]
             adapter.itemCount == 0 && headerSlotAdapter.itemCount > 0 -> slotHeights[0]
             else -> null
@@ -2195,6 +3463,7 @@ class NativeListView(
   fun dispose() {
     if (disposed) return
     disposed = true
+    if (structuralTail != null) discardStructuralTail()
     val cancelTag = R.id.onekey_native_scroll_coordinator_command_cancel_listener
     if (recyclerView.getTag(cancelTag) === coordinatorCommandCancelListener) recyclerView.setTag(cancelTag, null)
     containerSlotRelayoutPending = false
@@ -3407,6 +4676,7 @@ class NativeListView(
   }
 
   private fun checkEndReached() {
+    if (structuralTail != null) return
     val current = config ?: return
     if (!current.loadMore || current.generation == endReachedGeneration || adapter.itemCount == 0) return
     val manager = recyclerView.layoutManager as? LinearLayoutManager ?: return

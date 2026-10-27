@@ -92,6 +92,13 @@ final class NativeListAccessoryButton: UIButton {
     }
   }
 
+  func clearTitlesForReuse() {
+    UIView.performWithoutAnimation {
+      super.setAttributedTitle(nil, for: .normal)
+      super.setTitle(nil, for: .normal)
+    }
+  }
+
   var selectorSummaryLineHeight: CGFloat? {
     didSet {
       invalidateIntrinsicContentSize()
@@ -303,8 +310,7 @@ final class NativeListAccessoryStack: UIStackView {
     currentItem = nil
     for (index, button) in accessoryButtons.enumerated() {
       button.tag = index
-      button.setAttributedTitle(nil, for: .normal)
-      button.setTitle(nil, for: .normal)
+      button.clearTitlesForReuse()
       button.setImage(nil, for: .normal)
       button.setImage(nil, for: .disabled)
       button.titleLabel?.font = nativeListFont(

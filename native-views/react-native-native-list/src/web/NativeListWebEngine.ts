@@ -2309,6 +2309,7 @@ export class NativeListWebEngine {
   private lastStructuralTransitionId: string | undefined;
   private structuralFrame: number | undefined;
   private structuralFinish: number | undefined;
+  private structuralRevision = 0;
   private structuralAnimations: Animation[] = [];
   private structuralScrollInterrupted = false;
   private structuralRenderedHeight: number | undefined;
@@ -2324,6 +2325,18 @@ export class NativeListWebEngine {
   private structuralProgress = 0;
   private structuralAnchorStyles:
     | { owner: string; content: string }
+    | undefined;
+  private structuralContentOverflow: string | undefined;
+  private structuralPrefixTransition = false;
+  private structuralTail:
+    | {
+        snapshot: NativeListSnapshot;
+        rows: readonly RowModel[];
+        layout: WebListLayout;
+        firstIndex: number;
+        layer: HTMLElement;
+        mounted: Map<number, HTMLElement>;
+      }
     | undefined;
   private sectionIndexAlignStart = false;
   // Renderers report intrinsic height after browser text wrapping.
@@ -2700,6 +2713,16 @@ export class NativeListWebEngine {
     const changedKeys =
       this.rows.length !== nextRows.length ||
       this.rows.some((row, index) => row.key !== nextRows[index]?.key);
+    const incompatibleActivePrefix =
+      this.structuralPrefixTransition &&
+      (validated.layout.kind !== this.snapshot.layout.kind ||
+        validated.layout.orientation !== this.snapshot.layout.orientation ||
+        nextRows.some(
+          (row, index) =>
+            row.height !== this.rows[index]?.height ||
+            row.style?.container?.height !==
+              this.rows[index]?.style?.container?.height
+        ));
     const shouldAnimate =
       this.hasAppliedSnapshot &&
       isNewTransition &&
@@ -2714,13 +2737,15 @@ export class NativeListWebEngine {
     if (shouldAnimate && transition)
       this.applyStructuralSnapshot(validated, transition);
     else {
-      if (isNewTransition || changedKeys) this.cancelStructuralAnimation();
+      if (isNewTransition || changedKeys || incompatibleActivePrefix)
+        this.cancelStructuralAnimation();
       this.setSnapshot(validated);
     }
     this.hasAppliedSnapshot = true;
   }
 
   private cancelStructuralAnimation() {
+    this.structuralRevision += 1;
     if (this.structuralFrame !== undefined)
       this.document.defaultView?.cancelAnimationFrame(this.structuralFrame);
     if (this.structuralFinish !== undefined)
@@ -2729,6 +2754,16 @@ export class NativeListWebEngine {
     this.structuralFinish = undefined;
     this.structuralAnimations.forEach((animation) => animation.cancel());
     this.structuralAnimations = [];
+    if (this.structuralTail) {
+      disposeWebImageRetries(this.structuralTail.layer);
+      this.structuralTail.layer.remove();
+      this.structuralTail = undefined;
+    }
+    if (this.structuralContentOverflow !== undefined) {
+      this.content.style.overflow = this.structuralContentOverflow;
+      this.structuralContentOverflow = undefined;
+    }
+    this.structuralPrefixTransition = false;
     if (this.structuralFooterElement && this.structuralFooterStyles) {
       this.structuralFooterElement.style.marginBottom =
         this.structuralFooterStyles.marginBottom;
@@ -2761,7 +2796,59 @@ export class NativeListWebEngine {
     )
       return;
     this.structuralScrollInterrupted = true;
+    if (this.structuralPrefixTransition) {
+      this.cancelStructuralAnimation();
+      this.recomputeLayout();
+    }
   };
+
+  private updateStructuralTailWindow() {
+    const tail = this.structuralTail;
+    if (!tail) return;
+    const visible = visibleWebLayoutItems(
+      tail.layout,
+      this.currentOffset(),
+      this.viewportLength(),
+      this.viewportLength() * OVERSCAN_VIEWPORTS
+    ).filter((item) => item.index >= tail.firstIndex);
+    const desired = new Set(visible.map((item) => item.index));
+    tail.mounted.forEach((element, index) => {
+      if (desired.has(index)) return;
+      disposeWebImageRetries(element);
+      element.remove();
+      tail.mounted.delete(index);
+    });
+    visible.forEach((item) => {
+      if (tail.mounted.has(item.index)) return;
+      const row = tail.rows[item.index];
+      if (!row) return;
+      const element = createElement(
+        this.document,
+        'div',
+        'ok-native-list-item'
+      );
+      element.setAttribute('aria-hidden', 'true');
+      element.style.pointerEvents = 'none';
+      element.style.opacity = String(
+        (row.style?.container?.opacity ?? row.opacity ?? 1) *
+          (row.disabled ? 0.5 : 1)
+      );
+      const body = createRowBody(
+        {
+          document: this.document,
+          snapshot: tail.snapshot,
+          selectedKeys: selectionStateFromSnapshot(tail.snapshot).selectedKeys,
+          itemIndex: item.index,
+        },
+        row
+      );
+      applyRowStyle(body, row);
+      element.append(body);
+      this.positionElement(element, item);
+      tail.layer.append(element);
+      tail.mounted.set(item.index, element);
+    });
+  }
 
   private writeStructuralHeight(height: number) {
     if (this.externalScrollHost) this.writeExternalHeight(height);
@@ -2807,7 +2894,19 @@ export class NativeListWebEngine {
             this.structuralProgress;
     const footerDifference = oldFooterHeight - nextFooterHeight;
     const startHeight = oldHeight + Math.max(0, footerDifference);
-    const oldItems = this.layout.items;
+    const oldSnapshot = this.snapshot;
+    const oldRows = this.rows;
+    const oldLayout = this.layout;
+    const oldItems = oldLayout.items;
+    const nextRows = effectiveRows(next);
+    const prefixCount = Math.min(oldRows.length, nextRows.length);
+    const prefixTailChange =
+      oldSnapshot.layout.kind === next.layout.kind &&
+      oldSnapshot.layout.orientation === next.layout.orientation &&
+      oldRows.length !== nextRows.length &&
+      oldRows
+        .slice(0, prefixCount)
+        .every((row, index) => row.key === nextRows[index]?.key);
     const oldPositions = new Map<string, number>();
     this.mounted.forEach((element, index) => {
       const row = this.rows[index];
@@ -2827,6 +2926,8 @@ export class NativeListWebEngine {
     };
     owner.style.overflowAnchor = 'none';
     this.content.style.overflowAnchor = 'none';
+    this.structuralContentOverflow = this.content.style.overflow;
+    if (prefixTailChange) this.content.style.overflow = 'clip';
     this.structuralRenderedHeight = startHeight;
     this.structuralFooterFromHeight = oldFooterHeight;
     this.structuralFooterCompensation = Math.max(0, footerDifference);
@@ -2846,13 +2947,71 @@ export class NativeListWebEngine {
     this.setSnapshot(next);
     const newHeight = this.layout.contentHeight;
     this.structuralTargetHeight = newHeight;
+    const stablePrefixGeometry =
+      prefixTailChange &&
+      oldItems.length === oldRows.length &&
+      this.layout.items.length === nextRows.length &&
+      oldItems.slice(0, prefixCount).every((item, index) => {
+        const nextItem = this.layout.items[index];
+        return (
+          nextItem?.y === item.y &&
+          nextItem?.height === item.height &&
+          nextItem?.width === item.width
+        );
+      });
+    if (!stablePrefixGeometry) {
+      this.content.style.overflow = this.structuralContentOverflow;
+      this.structuralContentOverflow = undefined;
+    } else {
+      this.structuralPrefixTransition = true;
+    }
+    if (stablePrefixGeometry && nextRows.length < oldRows.length) {
+      const layer = createElement(
+        this.document,
+        'div',
+        'ok-native-list-structural-tail'
+      );
+      layer.setAttribute('aria-hidden', 'true');
+      layer.setAttribute('inert', '');
+      Object.assign(layer.style, {
+        position: 'absolute',
+        inset: '0',
+        pointerEvents: 'none',
+      });
+      this.content.append(layer);
+      this.structuralTail = {
+        snapshot: oldSnapshot,
+        rows: oldRows,
+        layout: oldLayout,
+        firstIndex: prefixCount,
+        layer,
+        mounted: new Map(),
+      };
+      this.updateStructuralTailWindow();
+    }
     const nextAnchor =
       anchor && this.layout.items.find((item) => item.key === anchor.key);
     const delta = nextAnchor && anchor ? nextAnchor.y - anchor.y : 0;
-    const finalScrollHeight = oldScrollHeight + newHeight - oldHeight;
+    let finalScrollHeight = oldScrollHeight + newHeight - oldHeight;
+    if (stablePrefixGeometry && this.externalScrollHost) {
+      const beforeMeasure = owner.scrollTop;
+      const tailLayer = this.structuralTail?.layer;
+      if (tailLayer) tailLayer.style.display = 'none';
+      this.writeStructuralHeight(newHeight);
+      this.applyStructuralFooterVisual(1);
+      finalScrollHeight = owner.scrollHeight;
+      this.writeStructuralHeight(startHeight);
+      this.applyStructuralFooterVisual(0);
+      if (tailLayer) tailLayer.style.display = '';
+      owner.scrollTop = beforeMeasure;
+    }
     const finalMaxOffset = Math.max(0, finalScrollHeight - owner.clientHeight);
     let targetOffset = Math.max(0, Math.min(oldOffset + delta, finalMaxOffset));
-    if (!visibleSurvivor && transition.anchorKey) {
+    if (
+      !visibleSurvivor &&
+      transition.anchorKey &&
+      !(stablePrefixGeometry && nextRows.length > oldRows.length)
+    ) {
       const fallback = this.layout.items.find(
         (item) => item.key === transition.anchorKey
       );
@@ -2872,7 +3031,28 @@ export class NativeListWebEngine {
               Math.max(0, fallback.y - this.collapsiblePagerInsets().sticky),
               this.collapsiblePagerInsets().header
             );
-        targetOffset = Math.min(targetOffset, Math.max(0, fallbackTop));
+        if (
+          stablePrefixGeometry &&
+          this.externalScrollHost &&
+          this.reactFooterHeight > 0
+        ) {
+          const footerTop = this.externalGeometry().origin + newHeight;
+          const footerStart = Math.max(
+            0,
+            footerTop + this.reactFooterHeight - owner.clientHeight
+          );
+          const footerEnd = Math.max(0, footerTop - effectiveStickyInset);
+          const nearestVisibleOffset =
+            footerStart <= footerEnd
+              ? Math.max(footerStart, Math.min(oldOffset, footerEnd))
+              : footerEnd;
+          targetOffset = Math.max(
+            0,
+            Math.min(nearestVisibleOffset, finalMaxOffset)
+          );
+        } else {
+          targetOffset = Math.min(targetOffset, Math.max(0, fallbackTop));
+        }
       }
     }
     const duration = transition.durationMs ?? 220;
@@ -2896,7 +3076,30 @@ export class NativeListWebEngine {
     });
     const startedAt =
       this.document.defaultView?.performance.now() ?? Date.now();
+    const revision = this.structuralRevision;
+    const finish = () => {
+      if (this.destroyed || revision !== this.structuralRevision) return;
+      const ownsScroll = !this.structuralScrollInterrupted;
+      this.cancelStructuralAnimation();
+      this.recomputeLayout();
+      if (stablePrefixGeometry && ownsScroll) {
+        owner.scrollTop = Math.max(
+          0,
+          Math.min(targetOffset, owner.scrollHeight - owner.clientHeight)
+        );
+      }
+    };
     const step = (time: number) => {
+      if (this.destroyed || revision !== this.structuralRevision) return;
+      if (
+        this.structuralPrefixTransition &&
+        this.document.defaultView?.matchMedia?.(
+          '(prefers-reduced-motion: reduce)'
+        ).matches
+      ) {
+        finish();
+        return;
+      }
       const progress = Math.min(1, (time - startedAt) / duration);
       const eased = progress * progress * (3 - 2 * progress);
       this.structuralProgress = eased;
@@ -2909,16 +3112,18 @@ export class NativeListWebEngine {
       this.applyStructuralFooterVisual(eased);
       if (!this.structuralScrollInterrupted)
         owner.scrollTop = oldOffset + (targetOffset - oldOffset) * eased;
+      this.externalGeometryCache = undefined;
+      this.updateStructuralTailWindow();
       if (progress < 1)
         this.structuralFrame =
           this.document.defaultView?.requestAnimationFrame(step);
     };
     this.structuralFrame =
       this.document.defaultView?.requestAnimationFrame(step);
-    this.structuralFinish = this.document.defaultView?.setTimeout(() => {
-      this.cancelStructuralAnimation();
-      this.recomputeLayout();
-    }, duration + 40);
+    this.structuralFinish = this.document.defaultView?.setTimeout(
+      finish,
+      duration + 40
+    );
   }
 
   currentContentHeight(): number {
@@ -3364,6 +3569,13 @@ export class NativeListWebEngine {
 
   private recomputeLayout = () => {
     if (this.destroyed) return;
+    if (
+      this.structuralPrefixTransition &&
+      this.lastViewportWidth > 0 &&
+      this.viewport.clientWidth > 0 &&
+      this.viewport.clientWidth !== this.lastViewportWidth
+    )
+      this.cancelStructuralAnimation();
     if (this.structuralRenderedHeight === undefined)
       this.reactFooterHeight = this.readReactFooterHeight();
     else {
@@ -3609,6 +3821,7 @@ export class NativeListWebEngine {
     }
     this.updateVisibleSelection();
     this.updateVisibleState();
+    this.updateStructuralTailWindow();
   }
 
   private positionElement(element: HTMLElement, item: WebLayoutItem) {

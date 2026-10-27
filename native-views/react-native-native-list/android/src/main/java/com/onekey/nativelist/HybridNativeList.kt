@@ -28,7 +28,7 @@ class HybridNativeList(context: ThemedReactContext) : HybridNativeListSpec() {
     set(value) {
       if (field == value) return
       field = value
-      dispatchToUi { hostView.setContainerSlotHeightsJson(value) }
+      slotHeightsChanged = true
     }
 
   override var sidecarLayoutJson: String = ""
@@ -40,6 +40,7 @@ class HybridNativeList(context: ThemedReactContext) : HybridNativeListSpec() {
 
   private var fontsChanged = false
   private var snapshotChanged = false
+  private var slotHeightsChanged = false
 
   override var fontFamiliesJson: String = "{}"
     set(value) {
@@ -51,11 +52,14 @@ class HybridNativeList(context: ThemedReactContext) : HybridNativeListSpec() {
   override fun afterUpdate() {
     super.afterUpdate()
     val fonts = if (fontsChanged) fontFamiliesJson else null
+    val slotHeights = if (slotHeightsChanged) containerSlotHeightsJson else null
     val snapshot = if (snapshotChanged) snapshotJson else null
     fontsChanged = false
+    slotHeightsChanged = false
     snapshotChanged = false
     dispatchToUi {
       fonts?.let { hostView.setFontFamiliesJson(it) }
+      slotHeights?.let { hostView.setContainerSlotHeightsJson(it, snapshot) }
       snapshot?.let { hostView.applySnapshot(it) }
     }
   }
@@ -97,6 +101,8 @@ class HybridNativeList(context: ThemedReactContext) : HybridNativeListSpec() {
     set(value) { field = value; hostView.onEndReached = value }
   override var onVisibleRangeChanged: ((payloadJson: String) -> Unit)? = null
     set(value) { field = value; hostView.onVisibleRangeChanged = value }
+  override var onStructuralTransitionSettled: ((payloadJson: String) -> Unit)? = null
+    set(value) { field = value; hostView.onStructuralTransitionSettled = value }
 
   override fun applySnapshot(snapshotJson: String) {
     dispatchToUi { hostView.applySnapshot(snapshotJson) }

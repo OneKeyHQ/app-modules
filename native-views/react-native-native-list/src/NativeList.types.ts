@@ -84,6 +84,12 @@ export type NativeListSidecarLayout = Readonly<{
   maxContentWidth: number;
 }>;
 
+export type StructuralTransitionSettledEvent = Readonly<{
+  transitionId: string;
+  status: 'completed' | 'interrupted';
+  settledExpanded: boolean;
+}>;
+
 type InitialScrollProps =
   | Readonly<{
       initialScrollIndex?: never;
@@ -137,6 +143,10 @@ export type NativeListProps = Omit<ViewProps, 'children'> &
     listHeader?: ReactNode;
     listFooter?: ReactNode;
     listEmpty?: ReactNode;
+    /** Native disclosure content, retained until its transition settles. */
+    listExpandedContent?: ReactNode;
+    /** Stable native disclosure toggle after expanded content. */
+    listStructureToggle?: ReactNode;
     /** Scrolling right column for a vertical linear list. Requires sidecarLayout. */
     listSidecar?: ReactNode;
     sidecarLayout?: NativeListSidecarLayout;
@@ -165,6 +175,9 @@ export type NativeListProps = Omit<ViewProps, 'children'> &
     onReorder?: (event: ReorderEvent) => void;
     onEndReached?: (event: EndReachedEvent) => void;
     onVisibleRangeChanged?: (event: VisibleRangeChangedEvent) => void;
+    onStructuralTransitionSettled?: (
+      event: StructuralTransitionSettledEvent
+    ) => void;
     /** Native only. Emits initial state and hysteresis transitions, not scroll frames. */
     scrollPositionThresholds?: Readonly<{
       start: number;

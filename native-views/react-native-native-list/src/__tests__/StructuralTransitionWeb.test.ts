@@ -31,6 +31,183 @@ function snapshot(keys: readonly string[], id?: string): NativeListSnapshot {
 }
 
 describe('NativeList Web structural transition', () => {
+  it('keeps viewport-near retiring tail rows at full height along a shared-owner collapse', async () => {
+    const { window } = new JSDOM('<!doctype html><body></body>');
+    let reduceMotion = false;
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: () => ({ matches: reduceMotion }),
+    });
+    const callbacks = new Map<number, FrameRequestCallback>();
+    let nextFrame = 0;
+    window.requestAnimationFrame = (callback) => {
+      const id = ++nextFrame;
+      callbacks.set(id, callback);
+      return id;
+    };
+    window.cancelAnimationFrame = (id) => {
+      if (typeof id === 'number') callbacks.delete(id);
+    };
+    const runFrame = (elapsedMs: number) => {
+      const pending = [...callbacks.values()];
+      callbacks.clear();
+      pending.forEach((callback) =>
+        callback(window.performance.now() + elapsedMs)
+      );
+    };
+    const owner = window.document.createElement('div');
+    const bounds = window.document.createElement('div');
+    const host = window.document.createElement('div');
+    const footer = window.document.createElement('div');
+    footer.dataset.testid = 'native-list-footer-slot';
+    bounds.append(host, footer);
+    owner.append(bounds);
+    window.document.body.append(owner);
+    Object.defineProperty(owner, 'clientHeight', { value: 180 });
+    Object.defineProperty(owner, 'clientWidth', { value: 320 });
+    Object.defineProperty(owner, 'scrollHeight', {
+      get: () =>
+        Math.max(
+          2200,
+          Number.parseFloat(
+            host.querySelector<HTMLElement>('.ok-native-list-content')?.style
+              .height ?? '0'
+          ) + 52
+        ),
+    });
+    owner.getBoundingClientRect = () =>
+      ({
+        top: 0,
+        bottom: 180,
+        left: 0,
+        right: 320,
+        width: 320,
+        height: 180,
+      } as DOMRect);
+    bounds.getBoundingClientRect = () =>
+      ({
+        top: -owner.scrollTop,
+        bottom: owner.scrollHeight - owner.scrollTop,
+        left: 0,
+        right: 320,
+        width: 320,
+        height: owner.scrollHeight,
+      } as DOMRect);
+    footer.getBoundingClientRect = () => {
+      const top =
+        Number.parseFloat(
+          host.querySelector<HTMLElement>('.ok-native-list-content')?.style
+            .height ?? '0'
+        ) - owner.scrollTop;
+      return { top, bottom: top + 52, height: 52 } as DOMRect;
+    };
+    const keys = Array.from({ length: 50 }, (_, index) => `row-${index}`);
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot(keys),
+      {},
+      true,
+      null,
+      '{}',
+      { scrollHost: owner, contentBounds: bounds }
+    );
+    const viewport = host.querySelector<HTMLElement>(
+      '.ok-native-list-viewport'
+    )!;
+    viewport.getBoundingClientRect = () =>
+      ({
+        top: -owner.scrollTop,
+        bottom: 3000 - owner.scrollTop,
+        left: 0,
+        right: 320,
+        width: 320,
+        height: 3000,
+      } as DOMRect);
+    const content = host.querySelector<HTMLElement>('.ok-native-list-content')!;
+    try {
+      owner.scrollTop = 2700;
+      owner.dispatchEvent(new window.Event('scroll'));
+      engine.applySnapshot({
+        ...snapshot(keys.slice(0, 6), 'collapse'),
+        structuralTransition: {
+          id: 'collapse',
+          durationMs: 220,
+          anchorKey: 'row-5',
+        },
+      });
+      expect(engine.currentSnapshot().rows).toHaveLength(6);
+      const tail = content.querySelector<HTMLElement>(
+        '.ok-native-list-structural-tail'
+      );
+      expect(tail?.getAttribute('inert')).toBe('');
+      expect(tail?.getAttribute('aria-hidden')).toBe('true');
+      expect(tail?.style.pointerEvents).toBe('none');
+      expect(content.style.overflow).toBe('clip');
+      expect(
+        tail?.querySelectorAll('.ok-native-list-item').length
+      ).toBeLessThan(20);
+
+      runFrame(110);
+      const midway = [
+        ...(tail?.querySelectorAll<HTMLElement>('.ok-native-list-item') ?? []),
+      ];
+      expect(
+        midway.some((element) => element.textContent?.includes('row-25'))
+      ).toBe(true);
+      expect(midway.every((element) => element.style.height === '60px')).toBe(
+        true
+      );
+      expect(midway.length).toBeLessThan(20);
+      expect(owner.scrollTop).toBeGreaterThan(300);
+      expect(owner.scrollTop).toBeLessThan(2700);
+
+      await new Promise((resolve) => window.setTimeout(resolve, 280));
+      expect(footer.getBoundingClientRect().top).toBeGreaterThanOrEqual(0);
+      expect(footer.getBoundingClientRect().bottom).toBeLessThanOrEqual(180);
+      expect(
+        content.querySelector('.ok-native-list-structural-tail')
+      ).toBeNull();
+      expect(content.style.overflow).toBe('');
+      expect(engine.currentSnapshot().rows).toHaveLength(6);
+
+      owner.scrollTop = 1500;
+      engine.applySnapshot({
+        ...snapshot(keys, 'expand'),
+        structuralTransition: {
+          id: 'expand',
+          durationMs: 220,
+          anchorKey: 'row-5',
+        },
+      });
+      runFrame(110);
+      expect(owner.scrollTop).toBe(1500);
+      expect(engine.currentSnapshot().rows).toHaveLength(50);
+      reduceMotion = true;
+      runFrame(160);
+      expect(owner.scrollTop).toBe(1500);
+      expect(content.style.height).toBe(`${engine.currentContentHeight()}px`);
+
+      reduceMotion = false;
+      engine.applySnapshot({
+        ...snapshot(keys.slice(0, 6), 'collapse-reduced'),
+        structuralTransition: {
+          id: 'collapse-reduced',
+          durationMs: 220,
+          anchorKey: 'row-5',
+        },
+      });
+      reduceMotion = true;
+      runFrame(20);
+      expect(footer.getBoundingClientRect().top).toBeGreaterThanOrEqual(0);
+      expect(footer.getBoundingClientRect().bottom).toBeLessThanOrEqual(180);
+      expect(
+        content.querySelector('.ok-native-list-structural-tail')
+      ).toBeNull();
+    } finally {
+      engine.destroy();
+    }
+  });
+
   it('keeps a changing React footer on the same height timeline and caps an offscreen fallback', () => {
     const { window } = new JSDOM('<!doctype html><body></body>');
     const callbacks = new Map<number, FrameRequestCallback>();
@@ -68,7 +245,18 @@ describe('NativeList Web structural transition', () => {
     const footer = window.document.createElement('div');
     footer.dataset.testid = 'native-list-footer-slot';
     let footerHeight = 244;
-    footer.getBoundingClientRect = () => ({ height: footerHeight } as DOMRect);
+    footer.getBoundingClientRect = () => {
+      const top =
+        Number.parseFloat(
+          host.querySelector<HTMLElement>('.ok-native-list-content')?.style
+            .height ?? '0'
+        ) - owner.scrollTop;
+      return {
+        top,
+        bottom: top + footerHeight,
+        height: footerHeight,
+      } as DOMRect;
+    };
     bounds.append(host, footer);
     owner.append(bounds);
     window.document.body.append(owner);
@@ -134,7 +322,8 @@ describe('NativeList Web structural transition', () => {
         midwayHeight
       );
       runNextFrame(220);
-      expect(owner.scrollTop).toBeLessThanOrEqual(248);
+      expect(footer.getBoundingClientRect().top).toBeGreaterThanOrEqual(52);
+      expect(footer.getBoundingClientRect().bottom).toBeLessThanOrEqual(180);
       const collapsedHeight = Number.parseFloat(content!.style.height);
       footerHeight = 244;
       engine.applySnapshot(snapshot(keys, 'expand'));
@@ -180,7 +369,7 @@ describe('NativeList Web structural transition', () => {
     }
   });
 
-  it('preserves the rendered height across a row patch and ResizeObserver during collapse', () => {
+  it('preserves the rendered height across a row patch and ResizeObserver during collapse', async () => {
     const { window } = new JSDOM('<!doctype html><body></body>');
     const callbacks = new Map<number, FrameRequestCallback>();
     let nextFrame = 0;
@@ -261,7 +450,10 @@ describe('NativeList Web structural transition', () => {
       expect(content!.style.height).toBe(midwayHeight);
       owner.scrollTop = 48;
       owner.dispatchEvent(new window.Event('wheel'));
-      runNextFrame(170);
+      expect(callbacks.size).toBe(0);
+      expect(content!.style.height).toBe(`${engine.currentContentHeight()}px`);
+      expect(owner.scrollTop).toBe(48);
+      await new Promise((resolve) => window.setTimeout(resolve, 280));
       expect(owner.scrollTop).toBe(48);
 
       const reverseStart = content!.style.height;

@@ -32,7 +32,11 @@ import type {
   EndReachedEvent,
   VisibleRangeChangedEvent,
 } from './models';
-import type { NativeListProps, NativeListRef } from './NativeList.types';
+import type {
+  NativeListProps,
+  NativeListRef,
+  StructuralTransitionSettledEvent,
+} from './NativeList.types';
 import { isSelectableRow } from './selection';
 import {
   normalizeIndexScroll,
@@ -52,7 +56,11 @@ import {
   validateSnapshot,
 } from './validation';
 
-export type { NativeListProps, NativeListRef } from './NativeList.types';
+export type {
+  NativeListProps,
+  NativeListRef,
+  StructuralTransitionSettledEvent,
+} from './NativeList.types';
 export type {
   ActionAnchorState,
   NativeListKeyboardDismissMode,
@@ -74,6 +82,7 @@ const NativeListHost = getHostComponent<
   NativeListNativeProps,
   NativeListMethods
 >('NativeList', () => NativeListConfig);
+const disclosureSlotMeasurementStyle = { alignSelf: 'stretch' } as const;
 
 export function preloadNativeListAvatarImages(
   sources: readonly ImageSource[]
@@ -108,6 +117,8 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       listFooter,
       listEmpty,
       listSidecar,
+      listExpandedContent,
+      listStructureToggle,
       sidecarLayout,
       topOverlay,
       topScrollEdgeEffect,
@@ -124,6 +135,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       onReorder,
       onEndReached,
       onVisibleRangeChanged,
+      onStructuralTransitionSettled,
       onScrollPositionThresholdChange,
       onRefresh,
       onScrollToIndexFailed,
@@ -136,17 +148,59 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     forwardedRef
   ) {
     const snapshotRef = useRef<NativeListSnapshot>(emptyNativeListSnapshot());
+    const renderedSnapshotRef = useRef<NativeListSnapshot | undefined>(
+      undefined
+    );
     const initializedSnapshot = useRef(false);
+    const pendingDisclosureSnapshotRef = useRef<
+      | {
+          source: 'prop' | 'imperative';
+          input: NativeListSnapshot;
+          owned: NativeListSnapshot;
+          expandedEpoch: number;
+          toggleEpoch: number;
+        }
+      | undefined
+    >(undefined);
+    const previousPropInputRef = useRef(inputSnapshot);
+    const [pendingDisclosureRevision, setPendingDisclosureRevision] =
+      useState(0);
+    const disclosureSlotMounts = useRef({
+      expandedPresent: false,
+      togglePresent: false,
+      expandedEpoch: 0,
+      toggleEpoch: 0,
+    });
+    const expandedPresent = listExpandedContent != null;
+    const togglePresent = listStructureToggle != null;
+    if (disclosureSlotMounts.current.expandedPresent !== expandedPresent) {
+      disclosureSlotMounts.current.expandedPresent = expandedPresent;
+      disclosureSlotMounts.current.expandedEpoch += 1;
+    }
+    if (disclosureSlotMounts.current.togglePresent !== togglePresent) {
+      disclosureSlotMounts.current.togglePresent = togglePresent;
+      disclosureSlotMounts.current.toggleEpoch += 1;
+    }
+    const expandedEpoch = disclosureSlotMounts.current.expandedEpoch;
+    const toggleEpoch = disclosureSlotMounts.current.toggleEpoch;
+    const [slotMeasurements, setSlotMeasurements] = useState({
+      heights: [0, 0, 0, 0, 0, 0],
+      readyEpochs: [-1, -1, -1, -1, -1, -1],
+    });
     const hasSidecar = listSidecar !== undefined;
     const sidecarWidth = sidecarLayout?.width;
     const sidecarGap = sidecarLayout?.gap;
     const sidecarMaxContentWidth = sidecarLayout?.maxContentWidth;
     const hasContainerSlots = Boolean(
-      listHeader || listEmpty || listFooter || listSidecar
+      listHeader ||
+        listEmpty ||
+        listFooter ||
+        listSidecar ||
+        listExpandedContent ||
+        listStructureToggle
     );
-    const prepareSnapshot = useCallback(
-      (next: NativeListSnapshot) => {
-        const accepted = validateSnapshot(captureNativeListInput(next));
+    const validateContainerConfiguration = useCallback(
+      (accepted: NativeListSnapshot) => {
         if (hasContainerSlots && accepted.layout.orientation === 'horizontal')
           throw new Error(
             'NativeList container slots require vertical orientation'
@@ -170,7 +224,6 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
           )
             throw new Error('Invalid NativeList sidecar layout');
         }
-        return ownValidatedNativeSnapshot(accepted);
       },
       [
         hasContainerSlots,
@@ -180,14 +233,85 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
         sidecarMaxContentWidth,
       ]
     );
-    const snapshot = useMemo(
-      () =>
-        containNativeListInput(() => prepareSnapshot(inputSnapshot)) ??
-        snapshotRef.current,
-      [inputSnapshot, prepareSnapshot]
+    const prepareSnapshot = useCallback(
+      (next: NativeListSnapshot) => {
+        const accepted = validateSnapshot(captureNativeListInput(next));
+        validateContainerConfiguration(accepted);
+        return ownValidatedNativeSnapshot(accepted);
+      },
+      [validateContainerConfiguration]
     );
+    const expandedReadyEpoch = slotMeasurements.readyEpochs[4];
+    const toggleReadyEpoch = slotMeasurements.readyEpochs[5];
+    const snapshot = useMemo(() => {
+      // Imperative pending snapshots use this revision to retry the readiness gate.
+      // eslint-disable-next-line no-void -- Reading this revision invalidates the readiness memo.
+      void pendingDisclosureRevision;
+      const propReplaced = previousPropInputRef.current !== inputSnapshot;
+      previousPropInputRef.current = inputSnapshot;
+      const pending = pendingDisclosureSnapshotRef.current;
+      const retained =
+        pending &&
+        !propReplaced &&
+        (pending.source === 'imperative' || pending.input === inputSnapshot) &&
+        pending.expandedEpoch === expandedEpoch &&
+        pending.toggleEpoch === toggleEpoch
+          ? pending
+          : undefined;
+      const candidate =
+        retained?.owned ??
+        (!propReplaced && initializedSnapshot.current
+          ? renderedSnapshotRef.current ?? snapshotRef.current
+          : containNativeListInput(() => prepareSnapshot(inputSnapshot)) ??
+            snapshotRef.current);
+      const acceptedCandidate =
+        !propReplaced && initializedSnapshot.current
+          ? containNativeListInput(() => {
+              validateContainerConfiguration(candidate);
+              return candidate;
+            })
+          : candidate;
+      if (!acceptedCandidate) {
+        pendingDisclosureSnapshotRef.current = undefined;
+        return renderedSnapshotRef.current ?? snapshotRef.current;
+      }
+      const transitionId = acceptedCandidate.structuralTransition?.id;
+      const newDisclosureCommand =
+        initializedSnapshot.current &&
+        acceptedCandidate.disclosure !== undefined &&
+        transitionId !== undefined &&
+        transitionId !== snapshotRef.current.structuralTransition?.id;
+      if (
+        newDisclosureCommand &&
+        ((expandedPresent && expandedReadyEpoch !== expandedEpoch) ||
+          (togglePresent && toggleReadyEpoch !== toggleEpoch))
+      ) {
+        pendingDisclosureSnapshotRef.current = retained ?? {
+          source: 'prop',
+          input: inputSnapshot,
+          owned: acceptedCandidate,
+          expandedEpoch,
+          toggleEpoch,
+        };
+        return snapshotRef.current;
+      }
+      pendingDisclosureSnapshotRef.current = undefined;
+      return acceptedCandidate;
+    }, [
+      inputSnapshot,
+      prepareSnapshot,
+      validateContainerConfiguration,
+      expandedPresent,
+      togglePresent,
+      expandedEpoch,
+      toggleEpoch,
+      expandedReadyEpoch,
+      toggleReadyEpoch,
+      pendingDisclosureRevision,
+    ]);
+    renderedSnapshotRef.current = snapshot;
     const fontFamiliesJson = useNativeListFontFamiliesJson();
-    const [slotHeights, setSlotHeights] = useState([0, 0, 0, 0]);
+    const slotHeights = slotMeasurements.heights;
     const [viewportWidth, setViewportWidth] = useState(0);
     const [topOverlayHeight, setTopOverlayHeight] = useState(0);
     const hasTopOverlay =
@@ -209,7 +333,35 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     const sidecarSpace = sidecarLayout
       ? sidecarLayout.width + sidecarLayout.gap
       : 0;
-    const slotContents = [listHeader, listEmpty, listFooter, listSidecar];
+    const slotContents = [
+      listHeader,
+      listEmpty,
+      listFooter,
+      listSidecar,
+      listExpandedContent,
+      listStructureToggle,
+    ];
+    const recordSlotLayout = (index: number, height: number, epoch: number) => {
+      if (
+        (index === 4 && epoch !== disclosureSlotMounts.current.expandedEpoch) ||
+        (index === 5 && epoch !== disclosureSlotMounts.current.toggleEpoch)
+      ) {
+        return;
+      }
+      setSlotMeasurements((previous) => {
+        if (
+          previous.heights[index] === height &&
+          previous.readyEpochs[index] === epoch
+        ) {
+          return previous;
+        }
+        const heights = [...previous.heights];
+        const readyEpochs = [...previous.readyEpochs];
+        heights[index] = height;
+        readyEpochs[index] = epoch;
+        return { heights, readyEpochs };
+      });
+    };
     const sidecarLayoutJson = sidecarLayout
       ? JSON.stringify(sidecarLayout)
       : '';
@@ -227,6 +379,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       onReorder,
       onEndReached,
       onVisibleRangeChanged,
+      onStructuralTransitionSettled,
       onScrollPositionThresholdChange,
       onRefresh,
       onScrollToIndexFailed,
@@ -238,6 +391,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       onReorder,
       onEndReached,
       onVisibleRangeChanged,
+      onStructuralTransitionSettled,
       onScrollPositionThresholdChange,
       onRefresh,
       onScrollToIndexFailed,
@@ -413,6 +567,26 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
           prepareSnapshot(nextSnapshot)
         );
         if (!accepted) return;
+        const transitionId = accepted.structuralTransition?.id;
+        const waitsForSlots =
+          accepted.disclosure !== undefined &&
+          transitionId !== undefined &&
+          transitionId !== snapshotRef.current.structuralTransition?.id &&
+          ((expandedPresent &&
+            slotMeasurements.readyEpochs[4] !== expandedEpoch) ||
+            (togglePresent && slotMeasurements.readyEpochs[5] !== toggleEpoch));
+        if (waitsForSlots) {
+          pendingDisclosureSnapshotRef.current = {
+            source: 'imperative',
+            input: nextSnapshot,
+            owned: accepted,
+            expandedEpoch,
+            toggleEpoch,
+          };
+          setPendingDisclosureRevision((value) => value + 1);
+          return;
+        }
+        pendingDisclosureSnapshotRef.current = undefined;
         const nextSnapshotJson = JSON.stringify(accepted);
         nativeRef.current?.applySnapshot(nextSnapshotJson);
         snapshotRef.current = accepted;
@@ -422,11 +596,22 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
         }
       },
       applyPatches(patches) {
+        const pending = pendingDisclosureSnapshotRef.current;
         const accepted = containNativeListInput(() =>
-          applyOwnedNativePatches(snapshotRef.current, patches)
+          applyOwnedNativePatches(
+            pending?.owned ?? snapshotRef.current,
+            patches
+          )
         );
         if (!accepted || accepted.patches.length === 0) return;
         const nextSnapshot = accepted.snapshot;
+        if (pending) {
+          pendingDisclosureSnapshotRef.current = {
+            ...pending,
+            owned: nextSnapshot,
+          };
+          return;
+        }
         const native = nativeRef.current;
         const dispatch = native
           ? () => {
@@ -443,8 +628,10 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       },
       reconcileSelection(selectedKeys) {
         const capturedKeys = captureNativeListInput(selectedKeys);
-        nativeRef.current?.reconcileSelection(JSON.stringify(capturedKeys));
-        const current = snapshotRef.current;
+        const pending = pendingDisclosureSnapshotRef.current;
+        if (!pending)
+          nativeRef.current?.reconcileSelection(JSON.stringify(capturedKeys));
+        const current = pending?.owned ?? snapshotRef.current;
         if (
           current.selection &&
           (current.selection.mode !== 'single' || capturedKeys.length <= 1) &&
@@ -452,10 +639,13 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
             current.rows.some((row) => row.key === key && isSelectableRow(row))
           )
         ) {
-          snapshotRef.current = {
+          const next = {
             ...current,
             selection: { ...current.selection, selectedKeys: capturedKeys },
           };
+          if (pending)
+            pendingDisclosureSnapshotRef.current = { ...pending, owned: next };
+          else snapshotRef.current = next;
         }
       },
       scrollToKey(paramsOrKey, animated, alignment) {
@@ -588,6 +778,11 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
           updateAvatarPrefetchRef.current();
           callbacksRef.current.onVisibleRangeChanged?.(payload);
         }),
+        onStructuralTransitionSettled: callback((payloadJson: string) => {
+          callbacksRef.current.onStructuralTransitionSettled?.(
+            parsePayload<StructuralTransitionSettledEvent>(payloadJson)
+          );
+        }),
       }),
       []
     );
@@ -624,17 +819,37 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
               top: 0,
             }}
             onLayout={(event) => {
-              const height = Math.ceil(event.nativeEvent.layout.height);
-              setSlotHeights((previous) =>
-                previous[index] === height
-                  ? previous
-                  : previous.map((value, slot) =>
-                      slot === index ? height : value
-                    )
-              );
+              if (index < 4) {
+                recordSlotLayout(
+                  index,
+                  Math.ceil(event.nativeEvent.layout.height),
+                  0
+                );
+              }
             }}
           >
-            {content}
+            {index >= 4 ? (
+              <View
+                key={
+                  index === 4
+                    ? `expanded-${expandedEpoch}`
+                    : `toggle-${toggleEpoch}`
+                }
+                collapsable={false}
+                style={disclosureSlotMeasurementStyle}
+                onLayout={(event) =>
+                  recordSlotLayout(
+                    index,
+                    Math.ceil(event.nativeEvent.layout.height),
+                    index === 4 ? expandedEpoch : toggleEpoch
+                  )
+                }
+              >
+                {content}
+              </View>
+            ) : (
+              content
+            )}
           </View>
         ))}
         {hasTopOverlay ? (

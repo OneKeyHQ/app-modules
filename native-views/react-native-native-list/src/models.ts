@@ -1004,6 +1004,10 @@ export type NativeListSnapshot = Readonly<{
     durationMs?: number;
     anchorKey?: string;
   }>;
+  disclosure?: Readonly<{
+    expanded: boolean;
+    expandedTrailingInset?: number;
+  }>;
   layout: Readonly<{
     kind: NativeListLayout;
     orientation?: NativeListOrientation;

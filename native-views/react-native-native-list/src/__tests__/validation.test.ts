@@ -412,6 +412,30 @@ describe('NativeList model validation', () => {
     ).toThrow('titleIcon.name');
   });
 
+  it('validates native disclosure targets independently of transition ids', () => {
+    const disclosed = {
+      ...snapshot([]),
+      disclosure: { expanded: false, expandedTrailingInset: 20 },
+    } as const;
+    expect(JSON.parse(serializeSnapshot(disclosed)).disclosure).toEqual(
+      disclosed.disclosure
+    );
+    expect(() =>
+      validateSnapshot({
+        ...disclosed,
+        disclosure: { expanded: 'yes' },
+      } as unknown as NativeListSnapshot)
+    ).toThrow('disclosure.expanded');
+    for (const inset of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() =>
+        validateSnapshot({
+          ...disclosed,
+          disclosure: { expanded: true, expandedTrailingInset: inset },
+        })
+      ).toThrow('expandedTrailingInset');
+    }
+  });
+
   it('accepts complete recipient addresses and inline warnings on snapshot and patch paths', () => {
     const recipient: IdentityRow = {
       ...row('recipient'),

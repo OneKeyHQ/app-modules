@@ -2059,6 +2059,16 @@ function assertMediaPreview(value: unknown, path: string) {
 function assertSnapshotContract(
   snapshot: NativeListSnapshot
 ): NativeListSnapshot {
+  if (snapshot.disclosure !== undefined) {
+    if (typeof snapshot.disclosure.expanded !== 'boolean')
+      fail('snapshot.disclosure.expanded', 'must be a boolean');
+    const inset = snapshot.disclosure.expandedTrailingInset;
+    if (inset !== undefined && (!Number.isFinite(inset) || inset < 0))
+      fail(
+        'snapshot.disclosure.expandedTrailingInset',
+        'must be finite and nonnegative'
+      );
+  }
   if (snapshot.structuralTransition) {
     assertKey(
       snapshot.structuralTransition.id,
@@ -2600,6 +2610,17 @@ function assertRowProtocol(row: RowModel, path: string): void {
 
 function assertSnapshotProtocol(snapshot: NativeListSnapshot): void {
   protocolObject(snapshot, 'snapshot');
+  if (snapshot.disclosure !== undefined) {
+    protocolObject(snapshot.disclosure, 'snapshot.disclosure');
+    if (typeof snapshot.disclosure.expanded !== 'boolean')
+      fail('snapshot.disclosure.expanded', 'must be a boolean');
+    const inset = snapshot.disclosure.expandedTrailingInset;
+    if (inset !== undefined && (!Number.isFinite(inset) || inset < 0))
+      fail(
+        'snapshot.disclosure.expandedTrailingInset',
+        'must be finite and nonnegative'
+      );
+  }
   if (snapshot.structuralTransition) {
     protocolObject(
       snapshot.structuralTransition,
