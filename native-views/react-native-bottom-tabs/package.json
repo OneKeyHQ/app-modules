@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-bottom-tabs",
-  "version": "6.7.0-15",
+  "version": "6.7.0-16",
   "description": "Native bottom tabs (tab bar + scene container) for React Native on iOS and Android",
   "source": "./src/index.tsx",
   "main": "./lib/module/index.js",

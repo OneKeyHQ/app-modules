@@ -45,6 +45,14 @@ All notable changes to this project will be documented in this file.
 - Stop tracking `nitrogen/generated` for `react-native-image` and `react-native-native-list`. Every other Nitro package already ignores `nitrogen/` and regenerates it from the spec at release time; these two were missing a package `.gitignore`, so 117 generated files rode along in every diff that touched a prop. `react-native-native-list` now runs `yarn nitrogen` in its `release` script like the other view packages, and local builds need `yarn nitrogen` in the package before the first native build.
 - No version bump here; these changes ship with the next release. Note that 3.0.157 was published from this branch before the review fixes landed and should not be used.
 
+## [6.7.0-16] - 2026-10-27
+
+### Bug Fixes
+- **native-list (Android)**: Render an Identity row's leading badges in full (OK-65694). The account selector's single-network badge is an overlay that hangs 4 units past the 32-unit avatar; Android clips a child to its own bounds while its parent clips children, so the row's default `clipChildren` cut the badge flat on the right and bottom while iOS and Web showed it whole. The row now stops clipping children and padding whenever the bound leading visual reports an overhanging badge (overlay, `cornerIcon` or token `networkImage`), matching the Market and Message renderers; the row's rounded outline still clips, as it does on iOS (`masksToBounds`) and Web (`overflow: hidden`), so a badge stays whole while it lies inside the row shape, which every app descriptor does. Verified on the Android emulator (API 36) with the example account selector's watch-wallet rows, which now carry the app's overlay descriptor, and with the example row-style page's `identity-badge-rounded` row (both badges inside a `container.cornerRadius` row); iOS and Web are unchanged. See `native-views/react-native-native-list/docs/SPEC.md` "Leading badge overhang".
+
+### Chores
+- Bump all 44 publishable packages to 6.7.0-16. 6.7.0-14 and 6.7.0-15 were published from the Mac Catalyst (#169) and webview cleaner (#173) branches before merge and carry no changelog section of their own.
+
 ## [6.7.0-13] - 2026-10-26
 
 ### Bug Fixes

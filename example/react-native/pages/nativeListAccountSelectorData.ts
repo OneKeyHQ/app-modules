@@ -339,30 +339,58 @@ export function buildAccountRow(
     ? watchAccountRows[accountIndex]
     : undefined;
   if (watchAccount) {
+    const avatarImage = {
+      uri: watchAccount.avatarUri,
+      width: 40,
+      height: 40,
+      cachePolicy: 'memory',
+      loadingStrategy: 'none',
+    } as const;
+    // The first row carries the single-network badge the way the app's account
+    // selector does (an overlay hanging 4 units past the frame, OK-65694); the
+    // second keeps the token network-image pair.
+    const leading: IdentityRow['leading'] =
+      accountIndex === 0
+        ? {
+            kind: 'account',
+            image: avatarImage,
+            shape: 'rounded',
+            overlays: [
+              {
+                position: 'bottomRight',
+                size: 20,
+                padding: 2,
+                offset: 4,
+                backgroundColor: '#0F0F0F',
+                image: {
+                  uri: watchAccount.networkImageUri,
+                  width: 16,
+                  height: 16,
+                  cachePolicy: 'memory-disk',
+                  loadingStrategy: 'none',
+                },
+              },
+            ],
+          }
+        : {
+            kind: 'token',
+            image: avatarImage,
+            networkImage: {
+              uri: watchAccount.networkImageUri,
+              width: 20,
+              height: 20,
+              cachePolicy: 'memory-disk',
+              loadingStrategy: 'none',
+            },
+            shape: 'rounded',
+          };
     return {
       type: 'identity',
       presentation: 'accountSelector',
       key,
       groupId: key,
       groupPosition: 'single',
-      leading: {
-        kind: 'token',
-        image: {
-          uri: watchAccount.avatarUri,
-          width: 40,
-          height: 40,
-          cachePolicy: 'memory',
-          loadingStrategy: 'none',
-        },
-        networkImage: {
-          uri: watchAccount.networkImageUri,
-          width: 20,
-          height: 20,
-          cachePolicy: 'memory-disk',
-          loadingStrategy: 'none',
-        },
-        shape: 'rounded',
-      },
+      leading,
       title: `Account #${accountIndex + 1}`,
       subtitle: watchAccount.subtitle,
       trailing: [

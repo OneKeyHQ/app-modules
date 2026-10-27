@@ -56,6 +56,48 @@ function buildRows(styled: boolean): RowModel[] {
     trailing: [{ kind: 'value' as const, text: '$64,230' }],
   } as const;
   rows.push({ ...identity, key: 'identity-plain' });
+  // OK-65694 rendering check, styled in both modes: leading badges that hang
+  // past the avatar (the app's account bottom-right and wallet top-left
+  // descriptors) inside a row with `container.cornerRadius`, as the Prime
+  // transfer preview list combines them. Both badges must render whole; only
+  // the row's rounded outline clips, as on iOS and Web.
+  rows.push({
+    ...identity,
+    key: 'identity-badge-rounded',
+    title: 'Badges in a rounded row',
+    subtitle: 'bottom-right offset 4 · top-left offsetY 4',
+    leading: {
+      kind: 'account',
+      fallbackText: 'A',
+      backgroundColor: '#8DB7E4',
+      overlays: [
+        {
+          position: 'bottomRight',
+          size: 20,
+          padding: 2,
+          offset: 4,
+          backgroundColor: '#EDF6FF',
+          name: 'AllNetworksSolid',
+          tintColor: '#1F4F82',
+        },
+        {
+          position: 'topLeft',
+          width: 18,
+          height: 16,
+          padding: 1,
+          offsetX: 0,
+          offsetY: 4,
+          backgroundColor: '#F7931A',
+          name: 'StarOutline',
+          tintColor: '#FFFFFF',
+        },
+      ],
+    },
+    style: {
+      container: { backgroundColor: '#EDF6FF', cornerRadius: 12 },
+      horizontalPadding: 12,
+    },
+  });
   rows.push({
     ...identity,
     key: 'identity-styled',
