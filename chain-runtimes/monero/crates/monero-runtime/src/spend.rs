@@ -146,17 +146,17 @@ fn apply_key_images(
         )
         .map_err(|e| db_err("updateKeyImage", e))?;
 
-        let spent: Option<(Vec<u8>, i64, Option<i64>)> = tx
+        let spent: Option<(Vec<u8>, i64, Option<i64>, Option<i64>)> = tx
             .query_row(
-                "SELECT spend_txid, height, timestamp FROM possible_spends
+                "SELECT spend_txid, height, timestamp, fee_atomic FROM possible_spends
                  WHERE identity_id = ?1 AND out_txid = ?2 AND out_index = ?3 AND key_image = ?4
                  ORDER BY height LIMIT 1",
                 params![identity_id, txid, index, image.as_slice()],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
             )
             .optional()
             .map_err(|e| db_err("matchPossibleSpend", e))?;
-        if let Some((spend_txid, height, timestamp)) = spent {
+        if let Some((spend_txid, height, timestamp, fee)) = spent {
             tx.execute(
                 "UPDATE outputs SET spent_at_height = ?1, spent_in_txid = ?2
                  WHERE id = ?3 AND spent_at_height IS NULL",
@@ -164,12 +164,13 @@ fn apply_key_images(
             )
             .map_err(|e| db_err("markPossibleSpend", e))?;
             tx.execute(
-                "INSERT INTO transactions (identity_id, txid, height, timestamp, direction)
-                 VALUES (?1, ?2, ?3, ?4, 'out')
+                "INSERT INTO transactions (identity_id, txid, height, timestamp, direction, fee_atomic)
+                 VALUES (?1, ?2, ?3, ?4, 'out', ?5)
                  ON CONFLICT (identity_id, txid) DO UPDATE
                    SET direction = 'out', height = ?3, failed = 0,
-                       timestamp = COALESCE(excluded.timestamp, transactions.timestamp)",
-                params![identity_id, spend_txid, height, timestamp],
+                       timestamp = COALESCE(excluded.timestamp, transactions.timestamp),
+                       fee_atomic = COALESCE(excluded.fee_atomic, transactions.fee_atomic)",
+                params![identity_id, spend_txid, height, timestamp, fee],
             )
             .map_err(|e| db_err("recordPossibleSpend", e))?;
             spends_found += 1;
@@ -816,6 +817,29 @@ mod tests {
             .query_row("SELECT count(*) FROM possible_spends", [], |r| r.get(0))
             .unwrap();
         assert_eq!(left, 0, "key-imaged outputs need no possible spends");
+    }
+
+    /// A confirmed possible spend carries the fee scanning read from its transaction.
+    #[test]
+    fn a_confirmed_possible_spend_keeps_its_fee() {
+        let (mut db, id) = db_with_identity();
+        let spent = add_output(&db, id, 700, 10, false);
+        add_possible_spend(&db, id, 10, 0xAA, 0x51, 30);
+        db.conn()
+            .execute("UPDATE possible_spends SET fee_atomic = 30000000", [])
+            .unwrap();
+
+        apply_key_images(&mut db, id, &[(spent, [0xAA; 32], vec![10; 32], 0)]).unwrap();
+
+        let fee: Option<i64> = db
+            .conn()
+            .query_row(
+                "SELECT fee_atomic FROM transactions WHERE txid = ?1",
+                [vec![0x51u8; 32]],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(fee, Some(30_000_000));
     }
 
     /// A serialized `WalletOutput` owned by `spend` with the given offset.
@@ -1718,18 +1742,21 @@ pub(crate) fn check_inputs_owned(
         ));
     }
     for key_image in key_images {
-        let spent_in: Option<Option<Vec<u8>>> = db
+        let owned: Option<(Option<Vec<u8>>, bool, bool)> = db
             .query_row(
-                "SELECT CASE WHEN spent_at_height IS NULL THEN NULL ELSE spent_in_txid END
+                "SELECT CASE WHEN spent_at_height IS NULL THEN NULL ELSE spent_in_txid END,
+                        scan_valid, EXISTS (SELECT 1 FROM transactions
+                          WHERE identity_id = ?1 AND txid = ?3 AND sent_at IS NOT NULL)
                  FROM outputs WHERE identity_id = ?1 AND key_image = ?2",
-                params![identity_id, key_image.as_slice()],
-                |r| r.get(0),
+                params![identity_id, key_image.as_slice(), txid.as_slice()],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional()
             .map_err(|e| db_err("checkInputOwner", e))?;
-        let reason = match spent_in {
+        let reason = match owned {
             None => "inputNotOwnedByAccount",
-            Some(Some(other)) if other.as_slice() != txid.as_slice() => "inputAlreadySpent",
+            Some((_, false, false)) => "inputNotVerified",
+            Some((Some(other), _, _)) if other.as_slice() != txid.as_slice() => "inputAlreadySpent",
             Some(_) => continue,
         };
         return Err(RuntimeError::with(

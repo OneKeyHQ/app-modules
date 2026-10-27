@@ -401,6 +401,97 @@ pub fn peek(db: &Db, identity_id: i64) -> Result<Value> {
     }))
 }
 
+/// Starts the identity over at `birthday`: rows below it are removed, rows at or
+/// above it are re-verified by the rescan, and pending sends keep their inputs.
+pub(crate) fn reset_from_birthday(db: &mut Db, identity_id: i64, birthday: u64) -> Result<()> {
+    let tx = db
+        .conn_mut()
+        .transaction()
+        .map_err(|e| db_err("beginResetScan", e))?;
+    reset_scan_in_transaction(&tx, identity_id, birthday)?;
+    tx.commit().map_err(|e| db_err("commitResetScan", e))
+}
+
+pub(crate) fn reset_scan_in_transaction(
+    tx: &rusqlite::Transaction<'_>,
+    identity_id: i64,
+    birthday: u64,
+) -> Result<()> {
+    let birthday = i64::try_from(birthday).map_err(|_| {
+        RuntimeError::with(
+            ErrorCode::InvalidBlockRange,
+            json!({ "birthdayHeight": birthday }),
+        )
+    })?;
+    let tip: Option<i64> = tx
+        .query_row(
+            "SELECT max(height) FROM (
+           SELECT scanned_to_height AS height FROM identities WHERE id = ?1
+           UNION ALL SELECT end_height - 1 FROM scan_ranges WHERE identity_id = ?1
+           UNION ALL SELECT height FROM blocks WHERE identity_id = ?1)",
+            [identity_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| db_err("resetScanTip", e))?;
+    // The new birthday drops everything found before it, except the inputs of
+    // own sends that are not mined yet.
+    tx.execute(
+        "DELETE FROM outputs WHERE identity_id = ?1 AND height < ?2
+           AND (spent_in_txid IS NULL OR spent_in_txid NOT IN (
+             SELECT txid FROM transactions
+             WHERE identity_id = ?1 AND sent_at IS NOT NULL AND height IS NULL))",
+        params![identity_id, birthday],
+    )
+    .map_err(|e| db_err("clearOutputsBeforeBirthday", e))?;
+    tx.execute(
+        "DELETE FROM transactions WHERE identity_id = ?1 AND height < ?2",
+        params![identity_id, birthday],
+    )
+    .map_err(|e| db_err("clearTransactionsBeforeBirthday", e))?;
+    tx.execute(
+        "UPDATE outputs SET scan_valid = 0,
+           spent_at_height = CASE WHEN spent_in_txid IN (
+             SELECT txid FROM transactions WHERE identity_id = ?1 AND sent_at IS NOT NULL)
+             THEN spent_at_height ELSE NULL END,
+           spent_in_txid = CASE WHEN spent_in_txid IN (
+             SELECT txid FROM transactions WHERE identity_id = ?1 AND sent_at IS NOT NULL)
+             THEN spent_in_txid ELSE NULL END
+         WHERE identity_id = ?1",
+        [identity_id],
+    )
+    .map_err(|e| db_err("invalidateScanOutputs", e))?;
+    tx.execute(
+        "DELETE FROM transactions WHERE identity_id = ?1 AND sent_at IS NULL",
+        [identity_id],
+    )
+    .map_err(|e| db_err("clearScannedTransactions", e))?;
+    tx.execute(
+        "UPDATE transactions SET scan_valid = 0 WHERE identity_id = ?1",
+        [identity_id],
+    )
+    .map_err(|e| db_err("invalidateScanTransactions", e))?;
+    for table in ["blocks", "scan_ranges", "possible_spends"] {
+        tx.execute(
+            &format!("DELETE FROM {table} WHERE identity_id = ?1"),
+            [identity_id],
+        )
+        .map_err(|e| db_err("clearScanIndexes", e))?;
+    }
+    tx.execute(
+        "UPDATE identities SET birthday_height = ?2, scanned_to_height = NULL WHERE id = ?1",
+        params![identity_id, birthday],
+    )
+    .map_err(|e| db_err("resetScanBirthday", e))?;
+    if let Some(tip) = tip.filter(|tip| *tip >= birthday) {
+        tx.execute(
+            "INSERT INTO scan_ranges (identity_id, start_height, end_height) VALUES (?1, ?2, ?3)",
+            params![identity_id, birthday, tip.saturating_add(1)],
+        )
+        .map_err(|e| db_err("resetScanRange", e))?;
+    }
+    Ok(())
+}
+
 /// Reorg recovery: rewind to `height` and requeue everything above it.
 pub fn rewind_and_requeue(db: &mut Db, identity_id: i64, height: u64, tip: u64) -> Result<Value> {
     let tx = db

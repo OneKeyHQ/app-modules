@@ -103,12 +103,19 @@ pub fn add_account(
     spend_public_key_hex: &str,
     view_private_key_hex: String,
     birthday_height: u64,
+    force_rescan: Option<bool>,
 ) -> std::result::Result<String, JsValue> {
     let view_private_key_hex = Zeroizing::new(view_private_key_hex);
     let spend = decode_hex(spend_public_key_hex, "spendPublicKeyHex")?;
     let view = decode_secret_hex(&view_private_key_hex, "viewPrivateKeyHex")?;
     let result = runtime::with_db(|db| {
-        let identity = db.add_identity(uuid, &spend, &view, birthday_height)?;
+        let identity = db.add_identity_with_rescan(
+            uuid,
+            &spend,
+            &view,
+            birthday_height,
+            force_rescan.unwrap_or(false),
+        )?;
         Ok(serde_json::json!({
             "accountId": identity.id,
             "uuid": identity.uuid,

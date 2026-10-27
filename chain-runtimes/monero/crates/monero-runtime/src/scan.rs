@@ -153,6 +153,26 @@ fn key_images_in(block: &ScannableBlock) -> Result<Vec<([u8; 32], [u8; 32])>> {
     Ok(out)
 }
 
+/// Fee of each transaction in the block, from its RingCT data. Pre-RingCT
+/// (V1) transactions are skipped: no OneKey account predates RingCT.
+///
+/// Length mismatches are reported by `key_images_in`; skip here.
+fn tx_fees_in(block: &ScannableBlock) -> Vec<([u8; 32], u64)> {
+    block
+        .block
+        .transactions
+        .iter()
+        .zip(block.transactions.iter())
+        .filter_map(|(txid, tx)| match tx {
+            Transaction::V2 {
+                proofs: Some(proofs),
+                ..
+            } => Some((*txid, proofs.base.fee)),
+            _ => None,
+        })
+        .collect()
+}
+
 /// Rings referenced by each input: `(key image, txid, amount pool, absolute global member indices)`.
 ///
 /// `key_offsets` are deltas: the first is absolute, each next is relative to the previous.
@@ -216,7 +236,7 @@ fn load_ring_candidates(db: &Db, identity_id: i64) -> Result<RingCandidates> {
         .conn()
         .prepare(
             "SELECT txid, index_in_tx, global_index, amount_atomic FROM outputs
-             WHERE identity_id = ?1 AND key_image IS NULL AND spent_at_height IS NULL",
+             WHERE identity_id = ?1 AND scan_valid = 1 AND key_image IS NULL AND spent_at_height IS NULL",
         )
         .map_err(|e| db_err("loadRingCandidates", e))?;
     let rows = stmt
@@ -341,6 +361,9 @@ pub fn scan_blocks(
     // txid -> (R, additional), only for transactions that paid us.
     let mut tx_pub_keys: HashMap<[u8; 32], (Vec<u8>, Option<Vec<u8>>)> = HashMap::new();
     let mut spends: Vec<(u64, [u8; 32], [u8; 32])> = Vec::new(); // (height, key_image, txid)
+
+    // Fees of transactions that spend ours: history needs them to tell the payment from the fee.
+    let mut spend_fees: HashMap<[u8; 32], u64> = HashMap::new();
     let mut block_rows: Vec<(u64, [u8; 32], Option<u64>, u64)> = Vec::new(); // (height, hash, ringct_next, ts)
 
     // Block before the batch start, for continuity and RingCT cursor checks.
@@ -409,6 +432,7 @@ pub fn scan_blocks(
                 tx_pub_keys.insert(txid, (keys, additional));
             }
         }
+        let spends_before = spends.len() + possible_spends.len();
         // Match inputs before adding this block's outputs as candidates: new
         // outputs are locked for at least 10 blocks and cannot be spent in the same block.
         for reference in ring_references_in(block) {
@@ -444,6 +468,9 @@ pub fn scan_blocks(
                 spends.push((height, key_image, txid));
             }
         }
+        if spends.len() + possible_spends.len() > spends_before {
+            spend_fees.extend(tx_fees_in(block));
+        }
 
         // Cursor base: the previous block's cursor, else the node's claimed
         // start. With neither, stay unknown; falling back to 0 would raise a
@@ -478,6 +505,7 @@ pub fn scan_blocks(
         &known_key_images,
         &block_rows,
         &possible_spends,
+        &spend_fees,
     )?;
     outcome.outputs_without_key_image = count_outputs_without_key_image(db, identity_id)?;
     Ok(outcome)
@@ -522,7 +550,7 @@ fn load_key_images(db: &Db, identity_id: i64) -> Result<HashMap<[u8; 32], i64>> 
             "SELECT id, key_image FROM outputs o
              WHERE o.identity_id = ?1 AND o.key_image IS NOT NULL
                AND (o.spent_at_height IS NULL OR o.spent_in_txid IN (
-                 SELECT txid FROM transactions WHERE identity_id = ?1 AND height IS NULL))",
+                 SELECT txid FROM transactions WHERE identity_id = ?1 AND (height IS NULL OR scan_valid = 0)))",
         )
         .map_err(|e| db_err("loadKeyImages", e))?;
     let rows = stmt
@@ -546,7 +574,7 @@ fn load_key_images(db: &Db, identity_id: i64) -> Result<HashMap<[u8; 32], i64>> 
 fn count_outputs_without_key_image(db: &Db, identity_id: i64) -> Result<i64> {
     db.conn()
         .query_row(
-            "SELECT count(*) FROM outputs WHERE identity_id = ?1 AND key_image IS NULL",
+            "SELECT count(*) FROM outputs WHERE identity_id = ?1 AND scan_valid = 1 AND key_image IS NULL",
             [identity_id],
             |r| r.get(0),
         )
@@ -563,6 +591,7 @@ fn persist(
     known_key_images: &HashMap<[u8; 32], i64>,
     block_rows: &[(u64, [u8; 32], Option<u64>, u64)],
     possible_spends: &[PossibleSpend],
+    spend_fees: &HashMap<[u8; 32], u64>,
 ) -> Result<()> {
     let tx = db
         .conn_mut()
@@ -590,14 +619,20 @@ fn persist(
         )? {
             continue;
         }
-        // `INSERT OR IGNORE`: rescans must be idempotent or balances double.
-        // Unique key is (identity_id, txid, index_in_tx).
+        // Revalidate the same output without losing its key image or send lock.
         tx.execute(
-            "INSERT OR IGNORE INTO outputs
+            "INSERT INTO outputs
                (identity_id, blob, txid, global_index, index_in_tx, amount_atomic,
                 subaddress_major, subaddress_minor, height, additional_timelock,
                 tx_pub_keys, tx_additional_pub_keys, output_key)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+             ON CONFLICT (identity_id, txid, index_in_tx) DO UPDATE SET
+               blob = excluded.blob, global_index = excluded.global_index,
+               amount_atomic = excluded.amount_atomic,
+               subaddress_major = excluded.subaddress_major, subaddress_minor = excluded.subaddress_minor,
+               height = excluded.height, additional_timelock = excluded.additional_timelock,
+               tx_pub_keys = excluded.tx_pub_keys, tx_additional_pub_keys = excluded.tx_additional_pub_keys,
+               output_key = excluded.output_key, scan_valid = 1",
             params![
                 identity_id,
                 output.serialize(),
@@ -621,7 +656,7 @@ fn persist(
                 "INSERT INTO transactions (identity_id, txid, height, timestamp, direction)
                  VALUES (?1, ?2, ?3, ?4, 'in')
                  ON CONFLICT (identity_id, txid) DO UPDATE
-                   SET height = COALESCE(transactions.height, excluded.height), failed = 0,
+                   SET height = excluded.height, failed = 0, scan_valid = 1,
                        timestamp = COALESCE(excluded.timestamp, transactions.timestamp)",
                 params![
                     identity_id,
@@ -641,21 +676,23 @@ fn persist(
         tx.execute(
             "UPDATE outputs SET spent_at_height = ?1, spent_in_txid = ?2
              WHERE id = ?3 AND (spent_at_height IS NULL OR spent_in_txid IN (
-               SELECT txid FROM transactions WHERE identity_id = ?4 AND height IS NULL))",
+               SELECT txid FROM transactions WHERE identity_id = ?4 AND (height IS NULL OR scan_valid = 0)))",
             params![*height as i64, txid.as_slice(), output_id, identity_id],
         )
         .map_err(|e| db_err("markOutputSpent", e))?;
         tx.execute(
-            "INSERT INTO transactions (identity_id, txid, height, timestamp, direction)
-             VALUES (?1, ?2, ?3, ?4, 'out')
+            "INSERT INTO transactions (identity_id, txid, height, timestamp, direction, fee_atomic)
+             VALUES (?1, ?2, ?3, ?4, 'out', ?5)
              ON CONFLICT (identity_id, txid) DO UPDATE
-               SET direction = 'out', height = ?3, failed = 0,
-                   timestamp = COALESCE(excluded.timestamp, transactions.timestamp)",
+               SET direction = 'out', height = ?3, failed = 0, scan_valid = 1,
+                   timestamp = COALESCE(excluded.timestamp, transactions.timestamp),
+                   fee_atomic = COALESCE(excluded.fee_atomic, transactions.fee_atomic)",
             params![
                 identity_id,
                 txid.as_slice(),
                 *height as i64,
-                block_time.get(height)
+                block_time.get(height),
+                spend_fees.get(txid).map(|fee| *fee as i64)
             ],
         )
         .map_err(|e| db_err("insertOutgoingTransaction", e))?;
@@ -665,8 +702,8 @@ fn persist(
     for ps in possible_spends {
         tx.execute(
             "INSERT OR IGNORE INTO possible_spends
-               (identity_id, out_txid, out_index, key_image, spend_txid, height, timestamp)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+               (identity_id, out_txid, out_index, key_image, spend_txid, height, timestamp, fee_atomic)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 identity_id,
                 ps.out_txid.as_slice(),
@@ -674,7 +711,8 @@ fn persist(
                 ps.key_image.as_slice(),
                 ps.spend_txid.as_slice(),
                 ps.height as i64,
-                ps.timestamp as i64
+                ps.timestamp as i64,
+                spend_fees.get(&ps.spend_txid).map(|fee| *fee as i64)
             ],
         )
         .map_err(|e| db_err("insertPossibleSpend", e))?;
@@ -720,7 +758,7 @@ fn is_burning_duplicate(
 ) -> Result<bool> {
     conn.query_row(
         "SELECT EXISTS (SELECT 1 FROM outputs
-           WHERE identity_id = ?1 AND output_key = ?2
+           WHERE identity_id = ?1 AND scan_valid = 1 AND output_key = ?2
              AND NOT (txid = ?3 AND index_in_tx = ?4))",
         params![
             identity_id,
@@ -742,22 +780,7 @@ fn timelock_to_i64(timelock: monero_wallet::transaction::Timelock) -> i64 {
     }
 }
 
-/// Rewinds to `height`, dropping all scan results above it. Destructive; used for
-/// reorg recovery and user rescans.
-///
-/// Our own broadcasts within the reorg window of `tip` revert to pending with
-/// inputs still spent: a reorged-out send usually returns to the pool and is mined
-/// again, and releasing its inputs could let a second send also confirm. Deeper
-/// sends cannot be reorged out; they are dropped and found again by the rescan.
-pub fn rewind_to(db: &mut Db, identity_id: i64, height: u64, tip: u64) -> Result<()> {
-    let tx = db
-        .conn_mut()
-        .transaction()
-        .map_err(|e| db_err("beginRewind", e))?;
-    rewind_in_transaction(&tx, identity_id, height, tip)?;
-    tx.commit().map_err(|e| db_err("commitRewind", e))
-}
-
+/// Invalidate the rewound span, retaining key images and local send evidence.
 pub(crate) fn rewind_in_transaction(
     tx: &rusqlite::Transaction<'_>,
     identity_id: i64,
@@ -767,6 +790,11 @@ pub(crate) fn rewind_in_transaction(
     // Must run before clearing spend marks: that step keeps marks for pending transactions.
     let reorgable_above = height.max(tip.saturating_sub(REORG_WINDOW_BLOCKS));
     tx.execute(
+        "UPDATE transactions SET scan_valid = 0 WHERE identity_id = ?1 AND height > ?2",
+        params![identity_id, height as i64],
+    )
+    .map_err(|e| db_err("invalidateRewoundTransactions", e))?;
+    tx.execute(
         "UPDATE transactions SET height = NULL, failed = 0, pool_checked_at = NULL
          WHERE identity_id = ?1 AND height > ?2 AND sent_at IS NOT NULL",
         params![identity_id, reorgable_above as i64],
@@ -774,24 +802,23 @@ pub(crate) fn rewind_in_transaction(
     .map_err(|e| db_err("rewindOwnSends", e))?;
 
     tx.execute(
-        "DELETE FROM outputs WHERE identity_id = ?1 AND height > ?2",
+        "UPDATE outputs SET scan_valid = 0 WHERE identity_id = ?1 AND height > ?2",
         params![identity_id, height as i64],
     )
     .map_err(|e| db_err("rewindOutputs", e))?;
 
-    // Clear spend marks above the height, except for our pending sends: their
-    // height is only the tip at broadcast, and clearing would make the inputs selectable again.
+    // Retain our own send locks until the transaction is reconciled on chain or in the pool.
     tx.execute(
         "UPDATE outputs SET spent_at_height = NULL, spent_in_txid = NULL
          WHERE identity_id = ?1 AND spent_at_height > ?2
            AND spent_in_txid NOT IN (
-             SELECT txid FROM transactions WHERE identity_id = ?1 AND height IS NULL)",
+             SELECT txid FROM transactions WHERE identity_id = ?1 AND (height IS NULL OR sent_at IS NOT NULL))",
         params![identity_id, height as i64],
     )
     .map_err(|e| db_err("rewindSpends", e))?;
 
     tx.execute(
-        "DELETE FROM transactions WHERE identity_id = ?1 AND height > ?2",
+        "DELETE FROM transactions WHERE identity_id = ?1 AND height > ?2 AND sent_at IS NULL",
         params![identity_id, height as i64],
     )
     .map_err(|e| db_err("rewindTransactions", e))?;
@@ -815,6 +842,104 @@ pub(crate) fn rewind_in_transaction(
 mod tests {
     use super::*;
     use crate::wallet::testing::db_with_identity;
+
+    #[test]
+    fn a_rescan_and_reorg_revalidate_outputs_without_losing_local_send_evidence() {
+        use monero_wallet::ed25519::{Commitment, Point, Scalar};
+        let (mut db, id) = db_with_identity();
+        let txid = [0x61; 32];
+        let own_send = [0x62; 32];
+        let image = [0x63; 32];
+        let mut blob = Vec::new();
+        blob.extend_from_slice(&txid);
+        blob.extend_from_slice(&0u64.to_le_bytes());
+        blob.extend_from_slice(&7u64.to_le_bytes());
+        let scalar = Scalar::read(&mut [1u8; 32].as_slice()).unwrap();
+        Point::from(curve25519_dalek::constants::ED25519_BASEPOINT_POINT)
+            .compress()
+            .write(&mut blob)
+            .unwrap();
+        scalar.write(&mut blob).unwrap();
+        Commitment::new(scalar, 1_000).write(&mut blob).unwrap();
+        blob.extend_from_slice(&[0, 0, 0, 0]);
+        let output = WalletOutput::read(&mut blob.as_slice()).unwrap();
+        persist(
+            &mut db,
+            id,
+            &[(990, output)],
+            &HashMap::new(),
+            &[],
+            &HashMap::new(),
+            &[],
+            &[],
+            &HashMap::new(),
+        )
+        .unwrap();
+        db.conn().execute("INSERT INTO transactions (identity_id, txid, height, direction, sent_at) VALUES (?1, ?2, 995, 'out', 1)", params![id, own_send.as_slice()]).unwrap();
+        db.conn()
+            .execute(
+                "UPDATE outputs SET key_image = ?1, spent_at_height = 995, spent_in_txid = ?2",
+                params![image.as_slice(), own_send.as_slice()],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "UPDATE identities SET scanned_to_height = 1000 WHERE id = ?1",
+                [id],
+            )
+            .unwrap();
+        crate::sync::reset_from_birthday(&mut db, id, 100).unwrap();
+        crate::sync::rewind_and_requeue(&mut db, id, 550, 600).unwrap();
+        let (valid, stored_image, lock): (i64, Vec<u8>, Vec<u8>) = db
+            .conn()
+            .query_row(
+                "SELECT scan_valid, key_image, spent_in_txid FROM outputs",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            (valid, stored_image, lock),
+            (0, image.to_vec(), own_send.to_vec())
+        );
+        assert_eq!(load_key_images(&db, id).unwrap().get(&image), Some(&1));
+        // The same output on the canonical chain replaces stale chain metadata.
+        blob[40..48].copy_from_slice(&17u64.to_le_bytes());
+        let output = WalletOutput::read(&mut blob.as_slice()).unwrap();
+        persist(
+            &mut db,
+            id,
+            &[(991, output)],
+            &HashMap::new(),
+            &[],
+            &HashMap::new(),
+            &[],
+            &[],
+            &HashMap::new(),
+        )
+        .unwrap();
+        let (valid, index, height, stored_image, lock): (i64, i64, i64, Vec<u8>, Vec<u8>) = db
+            .conn()
+            .query_row(
+                "SELECT scan_valid, global_index, height, key_image, spent_in_txid FROM outputs",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            (valid, index, height, stored_image, lock),
+            (1, 17, 991, image.to_vec(), own_send.to_vec())
+        );
+        let own_sends: i64 = db
+            .conn()
+            .query_row(
+                "SELECT count(*) FROM transactions WHERE txid = ?1 AND sent_at = 1",
+                [own_send.as_slice()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(own_sends, 1);
+    }
 
     /// On real mainnet blocks, ring offsets resolve to strictly increasing
     /// absolute indices; ring size is 16 and all inputs are RingCT.
@@ -840,6 +965,23 @@ mod tests {
         let mut candidates = RingCandidates::new();
         candidates.insert(target.members[5], vec![([7; 32], 1, 12_345)]);
         assert_eq!(ring_matches(&candidates, target).count(), 1);
+    }
+
+    /// Every RingCT transaction in a real block states a small, non-zero fee.
+    #[test]
+    fn real_transactions_state_their_fee() {
+        let blocks = crate::blocks_bin::parse_response(
+            include_bytes!("../tests/fixtures/get_blocks_bin_3768621.bin"),
+            3_768_621,
+        )
+        .expect("parse real response");
+        let fees: Vec<([u8; 32], u64)> = blocks.iter().flat_map(tx_fees_in).collect();
+        let tx_count: usize = blocks.iter().map(|b| b.transactions.len()).sum();
+        assert!(tx_count > 0);
+        assert_eq!(fees.len(), tx_count);
+        for (_, fee) in fees {
+            assert!(fee > 0 && fee < 1_000_000_000_000, "fee {fee}");
+        }
     }
 
     /// Pre-RingCT input indices are only meaningful within the same amount pool.
@@ -936,7 +1078,7 @@ mod tests {
                 .unwrap();
         }
 
-        rewind_to(&mut db, a, 50, 60).unwrap();
+        crate::sync::rewind_and_requeue(&mut db, a, 50, 60).unwrap();
 
         assert!(previous_block_state(&db, a, 101).unwrap().is_none());
         assert!(previous_block_state(&db, b, 101).unwrap().is_some());
@@ -999,6 +1141,7 @@ mod tests {
                 (tip, [8u8; 32], None, 1_700_100_000),
             ],
             &[],
+            &HashMap::new(),
         )
         .unwrap();
 
@@ -1057,6 +1200,7 @@ mod tests {
             &known,
             &[(mined_at, [7u8; 32], None, 1_700_000_000)],
             &[],
+            &HashMap::new(),
         )
         .unwrap();
 
@@ -1084,6 +1228,58 @@ mod tests {
         );
     }
 
+    /// A spend found by scanning keeps its fee, so history can tell the
+    /// payment apart from the fee; a possible spend keeps it until confirmed.
+    #[test]
+    fn a_scanned_spend_records_its_transaction_fee() {
+        let (mut db, id) = db_with_identity();
+        let key_image = [1u8; 32];
+        let (txid, possible_txid) = ([2u8; 32], [3u8; 32]);
+        db.conn()
+            .execute(
+                "INSERT INTO outputs (identity_id, blob, txid, global_index, index_in_tx,
+                                      amount_atomic, height, key_image)
+                 VALUES (?1, x'00', ?2, 1, 0, 700, 10, ?3)",
+                params![id, [9u8; 32].as_slice(), key_image.as_slice()],
+            )
+            .unwrap();
+        let known = load_key_images(&db, id).unwrap();
+        let possible = PossibleSpend {
+            out_txid: [8; 32],
+            out_index: 0,
+            key_image: [4; 32],
+            spend_txid: possible_txid,
+            height: 503,
+            timestamp: 1_700_000_000,
+        };
+        let fees = HashMap::from([(txid, 30_000_000u64), (possible_txid, 40_000_000)]);
+
+        persist(
+            &mut db,
+            id,
+            &[],
+            &HashMap::new(),
+            &[(503, key_image, txid)],
+            &known,
+            &[(503, [7u8; 32], None, 1_700_000_000)],
+            &[possible],
+            &fees,
+        )
+        .unwrap();
+
+        let history = crate::query::history(&db, id, 10, 0).unwrap();
+        assert_eq!(history["items"][0]["feeAtomic"], "30000000");
+        let possible_fee: Option<i64> = db
+            .conn()
+            .query_row(
+                "SELECT fee_atomic FROM possible_spends WHERE spend_txid = ?1",
+                [possible_txid.as_slice()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(possible_fee, Some(40_000_000));
+    }
+
     #[test]
     fn a_rewind_keeps_the_mark_on_outputs_our_pending_send_spent() {
         let (mut db, id) = db_with_identity();
@@ -1104,7 +1300,7 @@ mod tests {
             )
             .unwrap();
 
-        rewind_to(&mut db, id, 490, 505).unwrap();
+        crate::sync::rewind_and_requeue(&mut db, id, 490, 505).unwrap();
 
         let spent_in: Option<Vec<u8>> = db
             .conn()
@@ -1113,8 +1309,7 @@ mod tests {
         assert_eq!(spent_in, Some(txid.to_vec()));
     }
 
-    /// A rescan far below the reorg window drops our old send instead of
-    /// turning it pending; scanning finds it again.
+    /// A deep rewind retains old sends as unverified instead of treating them as pool transactions.
     #[test]
     fn a_deep_rewind_does_not_turn_old_sends_pending() {
         let (mut db, id) = db_with_identity();
@@ -1127,7 +1322,7 @@ mod tests {
             )
             .unwrap();
 
-        rewind_to(&mut db, id, 490, 500 + REORG_WINDOW_BLOCKS + 10).unwrap();
+        crate::sync::rewind_and_requeue(&mut db, id, 490, 500 + REORG_WINDOW_BLOCKS + 10).unwrap();
 
         let pending: i64 = db
             .conn()
@@ -1164,7 +1359,7 @@ mod tests {
             )
             .unwrap();
 
-        rewind_to(&mut db, id, 490, 505).unwrap();
+        crate::sync::rewind_and_requeue(&mut db, id, 490, 505).unwrap();
 
         let rows: Vec<(Vec<u8>, Option<i64>)> = db
             .conn()

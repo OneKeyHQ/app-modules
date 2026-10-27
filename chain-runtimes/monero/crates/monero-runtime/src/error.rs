@@ -70,6 +70,8 @@ pub enum ErrorCode {
     // ── Storage ────────────────────────────────────────────────────────────
     /// SQLite operation failed. Params: `{ operation }`
     DatabaseError,
+    /// Database migrated by a newer runtime; preserve it and update the app.
+    DatabaseTooNew,
     /// Invalid database name (empty or contains a path separator). Params: `{ value }`
     InvalidDbName,
 
@@ -102,6 +104,7 @@ impl ErrorCode {
             MalformedNodeResponse => "MALFORMED_NODE_RESPONSE",
             BroadcastRejected => "BROADCAST_REJECTED",
             DatabaseError => "DATABASE_ERROR",
+            DatabaseTooNew => "DATABASE_TOO_NEW",
             InvalidDbName => "INVALID_DB_NAME",
             Unimplemented => "UNIMPLEMENTED",
         }

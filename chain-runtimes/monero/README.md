@@ -54,6 +54,12 @@ releases to `latest`. Branches other than `main` can publish alpha versions only
 6. **Local management does not require a live tip.** Deletion needs only the local
    database. For `rewindTo`, pass the last locally observed tip; normal sync fetches
    a fresh one later. Rewind, cursor updates and range requeue commit together.
+7. **Changing an existing identity's birthday starts it over there.** `addAccount`
+   keeps the identity and subaddresses, deletes outputs and transactions below the
+   new birthday (except inputs of unmined own sends), and atomically requeues the
+   target range. Rows at or above it are re-verified by the rescan: until seen
+   again they do not count toward balance or input selection, and sends show
+   without a confirmed height.
 
 ## API
 
@@ -71,7 +77,7 @@ chainTip()                                      { height, network }
 deriveAccount(network, bip32PrivateKeyHex)
 deriveSubaddress(network, spendPub, viewPriv, major, minor)
 validateAddress(network, address)
-addAccount(uuid, spendPub, viewPriv, birthday) / listAccounts() / removeAccount(uuid)
+addAccount(uuid, spendPub, viewPriv, birthday, forceRescan?) / listAccounts() / removeAccount(uuid)
 registerSubaddress(accountId, major, minor, label?)
 importKeyImagesWithBip32Key(accountId, bip32PrivateKeyHex)
 

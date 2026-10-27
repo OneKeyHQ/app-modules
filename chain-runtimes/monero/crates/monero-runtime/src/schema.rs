@@ -15,9 +15,10 @@
 
 use rusqlite::Connection;
 
-use crate::error::{db_err, Result};
+use crate::error::{db_err, ErrorCode, Result, RuntimeError};
 
-/// Current schema version. Any schema change must add a migration and bump this.
+/// Current schema version. Once released, any schema change must add a migration
+/// and bump this; before that, V1 is edited in place.
 pub const SCHEMA_VERSION: i64 = 1;
 
 /// Reorg safety window: `blocks` keeps hashes only for this many blocks below the tip.
@@ -34,11 +35,9 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         .map_err(|e| db_err("readUserVersion", e))?;
 
     if version > SCHEMA_VERSION {
-        return Err(db_err(
-            "migrate",
-            format!(
-                "database schema version {version} is newer than supported {SCHEMA_VERSION}; refusing to open"
-            ),
+        return Err(RuntimeError::with(
+            ErrorCode::DatabaseTooNew,
+            serde_json::json!({ "version": version, "supportedVersion": SCHEMA_VERSION }),
         ));
     }
 
@@ -187,6 +186,8 @@ CREATE TABLE IF NOT EXISTS outputs (
     tx_additional_pub_keys  BLOB,
     -- One-time output public key, for burning-bug checks (only one output per key is spendable)
     output_key          BLOB    CHECK (output_key IS NULL OR length(output_key) = 32),
+    -- 0 while a rescan or reorg re-verifies the row; it does not count until seen again
+    scan_valid          INTEGER NOT NULL DEFAULT 1 CHECK (scan_valid IN (0, 1)),
     UNIQUE (identity_id, txid, index_in_tx)
 );
 CREATE INDEX IF NOT EXISTS idx_outputs_unspent
@@ -216,6 +217,10 @@ CREATE TABLE IF NOT EXISTS transactions (
     -- Pending change, piconero decimal string. wallet2 counts it in the total
     -- (locked) balance; once scanned it becomes a normal output and is not counted here.
     change_atomic   TEXT,
+    -- Network fee, piconero, read from the scanned spending transaction.
+    fee_atomic      INTEGER,
+    -- 0 while a rescan or reorg re-verifies the row; shown without a height until seen again
+    scan_valid      INTEGER NOT NULL DEFAULT 1 CHECK (scan_valid IN (0, 1)),
     PRIMARY KEY (identity_id, txid)
 );
 CREATE INDEX IF NOT EXISTS idx_transactions_height ON transactions(identity_id, height);
@@ -237,6 +242,8 @@ CREATE TABLE IF NOT EXISTS possible_spends (
     spend_txid   BLOB    NOT NULL CHECK (length(spend_txid) = 32),
     height       INTEGER NOT NULL,
     timestamp    INTEGER,
+    -- The spending transaction's fee, moved to `transactions` once confirmed
+    fee_atomic   INTEGER,
     PRIMARY KEY (identity_id, out_txid, out_index, key_image)
 );
 CREATE INDEX IF NOT EXISTS idx_possible_spends_height ON possible_spends(identity_id, height);

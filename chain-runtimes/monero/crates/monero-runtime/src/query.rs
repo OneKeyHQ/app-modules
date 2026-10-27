@@ -72,7 +72,7 @@ pub fn balance(db: &Db, identity_id: i64, chain_tip: Option<u64>) -> Result<Bala
                             WHERE p.identity_id = o.identity_id
                               AND p.out_txid = o.txid AND p.out_index = o.index_in_tx) AS maybe_spent
              FROM outputs o
-             WHERE o.identity_id = ?1 AND o.spent_at_height IS NULL",
+             WHERE o.identity_id = ?1 AND o.scan_valid = 1 AND o.spent_at_height IS NULL",
         )
         .map_err(|e| db_err("balanceQuery", e))?;
 
@@ -242,6 +242,7 @@ pub fn spendable_rows(db: &Db, identity_id: i64, chain_tip: u64) -> Result<Vec<S
             "SELECT o.id, o.amount_atomic, o.global_index, o.height, o.additional_timelock
              FROM outputs o
              WHERE o.identity_id = ?1
+               AND o.scan_valid = 1
                AND o.spent_at_height IS NULL
                AND o.key_image IS NOT NULL
              ORDER BY o.amount_atomic DESC",
@@ -315,12 +316,13 @@ pub fn history(db: &Db, identity_id: i64, limit: u32, offset: u32) -> Result<Val
     let mut stmt = db
         .conn()
         .prepare(
-            "SELECT t.txid, t.height, t.direction,
+            "SELECT t.txid, CASE WHEN t.scan_valid = 1 THEN t.height END, t.direction,
                     COALESCE((SELECT sum(amount_atomic) FROM outputs
-                              WHERE identity_id = t.identity_id AND txid = t.txid), 0) AS received,
+                              WHERE identity_id = t.identity_id AND txid = t.txid AND scan_valid = 1), 0) AS received,
                     COALESCE((SELECT sum(amount_atomic) FROM outputs
                               WHERE identity_id = t.identity_id AND spent_in_txid = t.txid), 0) AS spent,
-                    COALESCE(t.timestamp, b.timestamp, t.sent_at), t.failed, t.outgoing_atomic
+                    COALESCE(t.timestamp, b.timestamp, t.sent_at), t.failed, t.outgoing_atomic,
+                    t.fee_atomic
              FROM transactions t
              LEFT JOIN blocks b ON b.identity_id = t.identity_id AND b.height = t.height
              WHERE t.identity_id = ?1
@@ -341,6 +343,7 @@ pub fn history(db: &Db, identity_id: i64, limit: u32, offset: u32) -> Result<Val
                 "timestamp": r.get::<_, Option<i64>>(5)?,
                 "failed": r.get::<_, i64>(6)? != 0,
                 "outgoingAtomic": r.get::<_, Option<String>>(7)?,
+                "feeAtomic": r.get::<_, Option<i64>>(8)?.map(|fee| fee.to_string()),
             }))
         })
         .map_err(|e| db_err("history", e))?;
@@ -379,7 +382,7 @@ pub fn transaction_details(db: &Db, identity_id: i64, txid_hex: &str) -> Result<
     let row = db
         .conn()
         .query_row(
-            "SELECT t.height, t.direction, COALESCE(t.timestamp, b.timestamp, t.sent_at)
+            "SELECT CASE WHEN t.scan_valid = 1 THEN t.height END, t.direction, COALESCE(t.timestamp, b.timestamp, t.sent_at)
              FROM transactions t LEFT JOIN blocks b ON b.identity_id = t.identity_id AND b.height = t.height
              WHERE t.identity_id = ?1 AND t.txid = ?2",
             params![identity_id, &txid],
@@ -402,7 +405,7 @@ pub fn transaction_details(db: &Db, identity_id: i64, txid_hex: &str) -> Result<
         .conn()
         .prepare(
             "SELECT amount_atomic, subaddress_major, subaddress_minor, index_in_tx
-             FROM outputs WHERE identity_id = ?1 AND txid = ?2 ORDER BY index_in_tx",
+             FROM outputs WHERE identity_id = ?1 AND txid = ?2 AND scan_valid = 1 ORDER BY index_in_tx",
         )
         .map_err(|e| db_err("transactionOutputs", e))?;
     let received = stmt

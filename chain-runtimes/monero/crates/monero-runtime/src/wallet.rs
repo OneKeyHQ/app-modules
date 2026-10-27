@@ -101,6 +101,17 @@ impl Db {
         view_private: &[u8],
         birthday_height: u64,
     ) -> Result<Identity> {
+        self.add_identity_with_rescan(uuid, spend_public, view_private, birthday_height, false)
+    }
+
+    pub fn add_identity_with_rescan(
+        &mut self,
+        uuid: &str,
+        spend_public: &[u8],
+        view_private: &[u8],
+        birthday_height: u64,
+        force_rescan: bool,
+    ) -> Result<Identity> {
         let pair = keys::view_pair_from_bytes(spend_public, view_private)?;
         let primary = keys::primary_address(&pair, self.network);
 
@@ -115,12 +126,15 @@ impl Db {
             .map_err(|e| db_err("findIdentity", e))?;
         if let Some((id, address)) = by_uuid {
             if address == primary {
+                if force_rescan || self.identity_by_id(id)?.birthday_height != birthday_height {
+                    crate::sync::reset_from_birthday(self, id, birthday_height)?;
+                }
                 return self.identity_by_id(id);
             }
-            // Same account id with new keys (a reset wallet reused the id): the
-            // old data belongs to a gone wallet and would be attributed to the
-            // new one, so delete it.
-            self.remove_identity(uuid)?;
+            return Err(RuntimeError::with(
+                ErrorCode::InvalidRequest,
+                json!({ "field": "uuid", "reason": "identityKeyMismatch" }),
+            ));
         }
 
         // Same keys under a new id (deleted and reimported): keep the scan data under the new id.
@@ -136,12 +150,21 @@ impl Db {
 
         let id = match by_address {
             Some(id) => {
-                self.conn
-                    .execute(
-                        "UPDATE identities SET uuid = ?1 WHERE id = ?2",
-                        params![uuid, id],
-                    )
-                    .map_err(|e| db_err("renameIdentity", e))?;
+                let rescan =
+                    force_rescan || self.identity_by_id(id)?.birthday_height != birthday_height;
+                let tx = self
+                    .conn
+                    .transaction()
+                    .map_err(|e| db_err("beginRenameIdentity", e))?;
+                tx.execute(
+                    "UPDATE identities SET uuid = ?1 WHERE id = ?2",
+                    params![uuid, id],
+                )
+                .map_err(|e| db_err("renameIdentity", e))?;
+                if rescan {
+                    crate::sync::reset_scan_in_transaction(&tx, id, birthday_height)?;
+                }
+                tx.commit().map_err(|e| db_err("commitRenameIdentity", e))?;
                 id
             }
             None => {
@@ -413,21 +436,26 @@ mod tests {
     }
 
     #[test]
-    fn the_same_account_id_with_other_keys_starts_clean() {
+    fn different_keys_require_explicit_identity_deletion() {
         let (mut db, old) = db_with_identity();
         insert_output_at_minor(&db, old, 1);
         let (spend, _) = key_bytes();
         let mut other_view = [0u8; 32];
         other_view[0] = 11;
 
-        let fresh = db.add_identity("acct-1", &spend, &other_view, 100).unwrap();
-
-        assert_ne!(fresh.id, old);
+        let error = db
+            .add_identity("acct-1", &spend, &other_view, 100)
+            .err()
+            .unwrap();
+        assert_eq!(error.params["reason"], "identityKeyMismatch");
         let outputs: i64 = db
             .conn()
             .query_row("SELECT count(*) FROM outputs", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(outputs, 0);
+        assert_eq!(outputs, 1);
+        db.remove_identity("acct-1").unwrap();
+        let fresh = db.add_identity("acct-1", &spend, &other_view, 100).unwrap();
+        assert_ne!(fresh.id, old);
     }
 
     /// Reimport after deletion (new id, same keys) reuses the scan data and must
@@ -448,13 +476,110 @@ mod tests {
         let mut db = db();
         let (spend, view) = key_bytes();
         let a = db.add_identity("acct-1", &spend, &view, 100).unwrap();
-        let b = db.add_identity("acct-1", &spend, &view, 999).unwrap();
+        let b = db.add_identity("acct-1", &spend, &view, 100).unwrap();
         assert_eq!(a.id, b.id, "same uuid must reuse the row");
         assert_eq!(
             b.birthday_height, 100,
             "re-registration must not overwrite the birthday"
         );
         assert_eq!(db.list_identities().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_later_birthday_drops_older_rows_but_keeps_pending_send_inputs() {
+        let (mut db, id) = db_with_identity();
+        let (spend, view) = key_bytes();
+        insert_output_at_minor(&db, id, 1);
+        insert_output_at_minor(&db, id, 2);
+        for (minor, image) in [(1, [7u8; 32]), (2, [8u8; 32])] {
+            db.conn().execute("UPDATE outputs SET key_image = ?2 WHERE identity_id = ?1 AND subaddress_minor = ?3", params![id, image.as_slice(), minor]).unwrap();
+        }
+        let sent = [9u8; 32];
+        db.conn().execute("INSERT INTO transactions (identity_id, txid, direction, sent_at, change_atomic) VALUES (?1, ?2, 'out', 1, '2')", params![id, sent.as_slice()]).unwrap();
+        db.conn().execute("UPDATE outputs SET spent_at_height = 200, spent_in_txid = ?2 WHERE identity_id = ?1 AND subaddress_minor = 1", params![id, sent.as_slice()]).unwrap();
+        crate::sync::update_chain_tip(&mut db, id, 1_000).unwrap();
+
+        let changed = db.add_identity("acct-1", &spend, &view, 900).unwrap();
+
+        assert_eq!(changed.id, id);
+        assert_eq!(changed.birthday_height, 900);
+        assert_eq!(
+            crate::sync::peek(&db, id).unwrap()["ranges"],
+            json!([{ "start": 900, "end": 1_001 }])
+        );
+        assert!(crate::query::spendable_rows(&db, id, 1_000)
+            .unwrap()
+            .is_empty());
+        let balance = crate::query::balance(&db, id, Some(1_000)).unwrap();
+        assert_eq!(
+            balance.total_atomic, 2,
+            "only the still-pending change is retained in balance"
+        );
+        let images: i64 = db
+            .conn()
+            .query_row(
+                "SELECT count(*) FROM outputs WHERE identity_id = ?1 AND key_image IS NOT NULL",
+                [id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(images, 1, "only the pending send's input is kept");
+        assert!(crate::spend::check_inputs_owned(db.conn(), id, &sent, &[[7u8; 32]]).is_ok());
+        let error =
+            crate::spend::check_inputs_owned(db.conn(), id, &[10u8; 32], &[[8u8; 32]]).unwrap_err();
+        assert_eq!(error.params["reason"], "inputNotOwnedByAccount");
+        assert_eq!(
+            db.add_identity("acct-1", &spend, &view, 100)
+                .unwrap()
+                .birthday_height,
+            100
+        );
+    }
+
+    #[test]
+    fn a_later_birthday_removes_older_confirmed_sends_from_history() {
+        let (mut db, id) = db_with_identity();
+        let (spend, view) = key_bytes();
+        for (txid, height) in [([3u8; 32], 150), ([4u8; 32], 950)] {
+            db.conn().execute("INSERT INTO transactions (identity_id, txid, height, direction, sent_at) VALUES (?1, ?2, ?3, 'out', 1)", params![id, txid.as_slice(), height]).unwrap();
+        }
+        crate::sync::update_chain_tip(&mut db, id, 1_000).unwrap();
+
+        db.add_identity("acct-1", &spend, &view, 900).unwrap();
+
+        let history = crate::query::history(&db, id, 10, 0).unwrap();
+        let txids: Vec<_> = history["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["txid"].as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(txids, vec![hex::encode([4u8; 32])]);
+    }
+
+    #[test]
+    fn a_failed_birthday_change_rolls_back_scan_invalidation() {
+        let (mut db, id) = db_with_identity();
+        insert_output_at_minor(&db, id, 1);
+        crate::sync::update_chain_tip(&mut db, id, 200).unwrap();
+        db.conn().execute_batch("CREATE TRIGGER fail_scan_reset BEFORE UPDATE OF birthday_height ON identities BEGIN SELECT RAISE(ABORT, 'synthetic storage failure'); END;").unwrap();
+        let (spend, view) = key_bytes();
+        assert!(db.add_identity("acct-1", &spend, &view, 150).is_err());
+        assert_eq!(db.identity_by_id(id).unwrap().birthday_height, 100);
+        assert_eq!(
+            crate::sync::peek(&db, id).unwrap()["ranges"],
+            json!([{ "start": 100, "end": 201 }])
+        );
+        assert_eq!(
+            db.conn()
+                .query_row(
+                    "SELECT scan_valid FROM outputs WHERE identity_id = ?1",
+                    [id],
+                    |r| r.get::<_, i64>(0)
+                )
+                .unwrap(),
+            1
+        );
     }
 
     /// Per-database network invariant: mixing networks silently breaks scanning.
