@@ -3,6 +3,7 @@
 //! Rust owns cryptography, protocol and storage; the host owns scan scheduling.
 
 pub mod blocks_bin;
+pub mod device_key_images;
 pub mod error;
 pub mod keys;
 pub mod network;

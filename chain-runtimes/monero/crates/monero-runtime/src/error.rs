@@ -23,6 +23,9 @@ pub enum ErrorCode {
     InvalidBlockRange,
     /// Malformed JSON from the host. Params: `{ field, reason }`
     InvalidRequest,
+    /// A device-supplied key image failed verification; nothing was imported.
+    /// Params: `{ outputId, reason }`
+    InvalidKeyImage,
 
     /// `openWallet` has not been called.
     WalletNotOpen,
@@ -82,6 +85,7 @@ impl ErrorCode {
             InvalidSubaddressIndex => "INVALID_SUBADDRESS_INDEX",
             InvalidBlockRange => "INVALID_BLOCK_RANGE",
             InvalidRequest => "INVALID_REQUEST",
+            InvalidKeyImage => "INVALID_KEY_IMAGE",
             WalletNotOpen => "WALLET_NOT_OPEN",
             WalletBusy => "WALLET_BUSY",
             NotInitialized => "NOT_INITIALIZED",
@@ -193,6 +197,7 @@ mod tests {
             InvalidSubaddressIndex,
             InvalidBlockRange,
             InvalidRequest,
+            InvalidKeyImage,
             WalletNotOpen,
             WalletBusy,
             NotInitialized,

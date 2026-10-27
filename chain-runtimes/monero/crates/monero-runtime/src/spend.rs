@@ -108,7 +108,7 @@ fn compute_key_images(
 }
 
 /// Stores computed key images and confirms earlier spends from possible spends.
-fn apply_key_images(
+pub(crate) fn apply_key_images(
     db: &mut Db,
     identity_id: i64,
     computed: &[(i64, [u8; 32], Vec<u8>, i64)],

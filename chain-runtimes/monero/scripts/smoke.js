@@ -68,6 +68,20 @@ for (const name of ['spendScalar', 'signTransaction', 'importKeyImages']) {
 const imported = JSON.parse(rt.importKeyImagesWithBip32Key(id, key));
 check('key-image import from the BIP-32 key on an empty wallet', imported.imported, 0);
 
+// Hardware accounts: nothing to sync yet, and an unverifiable device item is refused.
+const syncData = JSON.parse(rt.exportKeyImageSyncData(id));
+check('key-image sync export on an empty wallet', syncData.items.length, 0);
+try {
+  rt.importDeviceKeyImages(
+    id,
+    JSON.stringify([{ outputId: 1, keyImage: '00'.repeat(32), signature: '00'.repeat(64) }]),
+  );
+  check('device key-image import rejects an unknown output', 'succeeded', 'failed');
+} catch (e) {
+  const err = JSON.parse(e.message ?? e);
+  check('device key-image import rejects an unknown output', err.code, 'INVALID_KEY_IMAGE');
+}
+
 // Signing is pure computation. Bad input must be rejected, never passed on to broadcast.
 const review = JSON.stringify({
   network: 'mainnet',

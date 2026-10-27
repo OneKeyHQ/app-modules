@@ -46,6 +46,7 @@ validateAddress(network, address)
 addAccount(uuid, spendPub, viewPriv, birthday, forceRescan?) / listAccounts() / removeAccount(uuid)
 registerSubaddress(accountId, major, minor, label?)
 importKeyImagesWithBip32Key(accountId, bip32PrivateKeyHex)
+exportKeyImageSyncData(accountId) / importDeviceKeyImages(accountId, itemsJson)
 
 updateChainTip(accountId, tip) / syncStep(accountId, maxBlocks) / syncPeek(accountId)
 rewindTo(accountId, height, tip)

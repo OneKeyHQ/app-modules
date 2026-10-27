@@ -11,7 +11,7 @@ use wasm_bindgen::prelude::*;
 use crate::error::{ErrorCode, Result, RuntimeError};
 use zeroize::Zeroizing;
 
-use crate::{keys, query, runtime, spend, storage, sync, wallet};
+use crate::{device_key_images, keys, query, runtime, spend, storage, sync, wallet};
 
 fn json(value: serde_json::Value) -> std::result::Result<String, JsValue> {
     Ok(value.to_string())
@@ -235,6 +235,35 @@ pub fn import_key_images_with_bip32_key(
     let raw = decode_secret_hex(&bip32_private_key_hex, "bip32PrivateKeyHex")?;
     let result =
         runtime::with_db(|db| spend::import_key_images_with_bip32_key(db, account_id, &raw))?;
+    json(serde_json::json!({
+        "imported": result.imported,
+        "spendsFound": result.spends_found,
+    }))
+}
+
+/// Outputs whose key images a hardware wallet must compute, for view-only device accounts.
+///
+/// Returns `{ items: [{ outputId, outKey, txPubKey, additionalTxPubKey, internalOutputIndex,
+/// subAddrMajor, subAddrMinor }] }` (keys hex; `additionalTxPubKey` may be `null`) for the
+/// scan-valid outputs lacking a key image.
+#[wasm_bindgen(js_name = exportKeyImageSyncData)]
+pub fn export_key_image_sync_data(account_id: i64) -> std::result::Result<String, JsValue> {
+    let v = runtime::with_db_read(|db| device_key_images::export_sync_data(db, account_id))?;
+    json(v)
+}
+
+/// Import key images computed by a hardware wallet from `exportKeyImageSyncData`.
+///
+/// `itemsJson` is `[{ outputId, keyImage, signature }]`: hex key image and its one-member
+/// ring signature (`c || r`) by the output key. Every item is verified first; any failure
+/// (`INVALID_KEY_IMAGE`) imports nothing. Returns `{ imported, spendsFound }`.
+#[wasm_bindgen(js_name = importDeviceKeyImages)]
+pub fn import_device_key_images(
+    account_id: i64,
+    items_json: &str,
+) -> std::result::Result<String, JsValue> {
+    let result =
+        runtime::with_db(|db| device_key_images::import_verified(db, account_id, items_json))?;
     json(serde_json::json!({
         "imported": result.imported,
         "spendsFound": result.spends_found,
