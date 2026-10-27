@@ -237,6 +237,8 @@ pub(crate) fn restart_with_birthday(
             .id()
             .expose_uuid()
             .to_string();
+        // The old birthday's unscanned ranges would find what the new one excludes.
+        prune_scan_queue_below_wallet_birthday(wallet)?;
         crate::tx_state::prune_orphaned_rows(ext)?;
         Ok(uuid)
     })
@@ -467,28 +469,37 @@ pub fn remove_account(db: &mut Db, account_uuid: &str) -> Result<()> {
             )
             .detail(e)
         })?;
-        // delete_account leaves the scan queue alone, so ranges queued only for
-        // this account's earlier birthday would still be scanned for nobody.
-        let birthday = wallet.get_wallet_birthday().map_err(|e| {
-            RuntimeError::with(
-                ErrorCode::DatabaseError,
-                json!({ "operation": "getWalletBirthday" }),
-            )
-            .detail(e)
-        })?;
-        if let Some(birthday) = birthday {
-            wallet
-                .prune_scan_queue_below(birthday, Some(ScanPriority::OpenAdjacent))
-                .map_err(|e| {
-                    RuntimeError::with(
-                        ErrorCode::DatabaseError,
-                        json!({ "operation": "pruneScanQueue" }),
-                    )
-                    .detail(e)
-                })?;
-        }
+        prune_scan_queue_below_wallet_birthday(wallet)?;
         crate::tx_state::prune_orphaned_rows(ext)
     })
+}
+
+/// delete_account leaves the scan queue alone, so ranges queued only for a
+/// removed account's earlier birthday would still be scanned for nobody.
+fn prune_scan_queue_below_wallet_birthday<W>(wallet: &mut W) -> Result<()>
+where
+    W: WalletWrite,
+    <W as WalletRead>::Error: std::fmt::Display,
+{
+    let birthday = wallet.get_wallet_birthday().map_err(|e| {
+        RuntimeError::with(
+            ErrorCode::DatabaseError,
+            json!({ "operation": "getWalletBirthday" }),
+        )
+        .detail(e)
+    })?;
+    if let Some(birthday) = birthday {
+        wallet
+            .prune_scan_queue_below(birthday, Some(ScanPriority::OpenAdjacent))
+            .map_err(|e| {
+                RuntimeError::with(
+                    ErrorCode::DatabaseError,
+                    json!({ "operation": "pruneScanQueue" }),
+                )
+                .detail(e)
+            })?;
+    }
+    Ok(())
 }
 
 /// Finds the account with this UFVK, or returns `"null"`. The UFVK is the host's
@@ -505,8 +516,16 @@ pub fn account_by_ufvk(db: &Db, ufvk_str: &str) -> Result<String> {
 
 /// Finds the account the host named at import (its viewing key fingerprint), or
 /// returns `"null"`. Names survive a purge, and need no viewing key to match.
+/// The host deletes by this, so a name held twice is refused, never guessed.
 pub fn account_by_name(db: &Db, name: &str) -> Result<String> {
-    find_account(db, |acct| acct.name() == Some(name))
+    match matching_accounts(db, |acct| acct.name() == Some(name))?.as_slice() {
+        [] => Ok("null".to_string()),
+        [uuid] => Ok(json!({ "uuid": uuid }).to_string()),
+        _ => Err(RuntimeError::with(
+            ErrorCode::InvalidAccountId,
+            json!({ "reason": "duplicateName" }),
+        )),
+    }
 }
 
 /// `{ uuid }` of the first account `matches` accepts, or `"null"`.
@@ -514,6 +533,17 @@ fn find_account(
     db: &Db,
     matches: impl Fn(&<Db as WalletRead>::Account) -> bool,
 ) -> Result<String> {
+    Ok(matching_accounts(db, matches)?
+        .first()
+        .map_or_else(|| "null".to_string(), |uuid| json!({ "uuid": uuid }).to_string()))
+}
+
+/// UUIDs of every account `matches` accepts.
+fn matching_accounts(
+    db: &Db,
+    matches: impl Fn(&<Db as WalletRead>::Account) -> bool,
+) -> Result<Vec<String>> {
+    let mut found = Vec::new();
     for id in db.get_account_ids().map_err(|e| {
         RuntimeError::with(
             ErrorCode::DatabaseError,
@@ -532,10 +562,10 @@ fn find_account(
             continue;
         };
         if matches(&acct) {
-            return Ok(json!({ "uuid": acct.id().expose_uuid().to_string() }).to_string());
+            found.push(acct.id().expose_uuid().to_string());
         }
     }
-    Ok("null".to_string())
+    Ok(found)
 }
 
 pub fn list_accounts_json(db: &Db) -> Result<String> {
@@ -895,5 +925,34 @@ mod remove_account_tests {
             json!({ "uuid": uuid }).to_string()
         );
         assert_eq!(account_by_name(&db, "fp-missing").unwrap(), "null");
+    }
+
+    // Deleting goes by this name, so a name held twice must not pick one.
+    #[test]
+    fn refuses_a_name_two_accounts_share() {
+        let mut db = wallet();
+        import(&mut db, "fp-same", 0, 3_520_000);
+        import(&mut db, "fp-same", 1, 3_520_000);
+
+        let err = account_by_name(&db, "fp-same").unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidAccountId);
+        assert_eq!(err.params["reason"], "duplicateName");
+    }
+
+    #[test]
+    fn moving_the_birthday_later_stops_scanning_below_it() {
+        let mut db = wallet();
+        let uuid = import(&mut db, "fp-a", 0, 3_500_000);
+        db.update_chain_tip(BlockHeight::from_u32(TIP)).unwrap();
+        assert!(lowest_queued(&db) < 3_520_000);
+
+        let id = parse_account_id(&db, &uuid).unwrap();
+        let later = AccountBirthday::from_parts(
+            ChainState::empty(BlockHeight::from_u32(3_520_000), BlockHash([0; 32])),
+            None,
+        );
+        restart_with_birthday(&mut db, id, &later, None).unwrap();
+
+        assert!(lowest_queued(&db) >= 3_520_000);
     }
 }
