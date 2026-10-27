@@ -1159,7 +1159,6 @@ final class NativeListLifecycleTests: XCTestCase {
       "layout": ["kind": "linear", "contentPaddingHorizontal": 8], "rows": rows]
     view.applySnapshotJson(String(decoding: try JSONSerialization.data(withJSONObject: snapshot),
       as: UTF8.self))
-    let list = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
     list.contentInsetAdjustmentBehavior = .never
     func layout() {
       window.layoutIfNeeded()
