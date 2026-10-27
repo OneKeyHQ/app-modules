@@ -321,8 +321,9 @@ pub fn scan_blocks(
     let mut tx_pub_keys: HashMap<[u8; 32], TxKeys> = HashMap::new();
     let mut spends: Vec<(u64, [u8; 32], [u8; 32])> = Vec::new(); // (height, key_image, txid)
 
-    // Fees of transactions that spend ours: history needs them to tell the payment from the fee.
-    let mut spend_fees: HashMap<[u8; 32], u64> = HashMap::new();
+    // Fees of transactions that pay or spend ours: history shows them, and needs them to tell
+    // a payment from its fee.
+    let mut tx_fees: HashMap<[u8; 32], u64> = HashMap::new();
     let mut block_rows: Vec<(u64, [u8; 32], Option<u64>, u64)> = Vec::new(); // (height, hash, ringct_next, ts)
 
     // Block before the batch start, for continuity and RingCT cursor checks.
@@ -390,7 +391,7 @@ pub fn scan_blocks(
                 tx_pub_keys.insert(txid, (keys, additional));
             }
         }
-        let spends_before = spends.len() + possible_spends.len();
+        let ours_before = found.len() + spends.len() + possible_spends.len();
         // Match inputs before adding this block's outputs as candidates: new
         // outputs are locked for at least 10 blocks and cannot be spent in the same block.
         for reference in ring_references_in(block) {
@@ -426,8 +427,8 @@ pub fn scan_blocks(
                 spends.push((height, key_image, txid));
             }
         }
-        if spends.len() + possible_spends.len() > spends_before {
-            spend_fees.extend(tx_fees_in(block));
+        if found.len() + spends.len() + possible_spends.len() > ours_before {
+            tx_fees.extend(tx_fees_in(block));
         }
 
         // Cursor base: the previous block's cursor, else the node's claimed start. Never fall
@@ -462,7 +463,7 @@ pub fn scan_blocks(
         &known_key_images,
         &block_rows,
         &possible_spends,
-        &spend_fees,
+        &tx_fees,
     )?;
     outcome.outputs_without_key_image = count_outputs_without_key_image(db, identity_id)?;
     Ok(outcome)
@@ -544,7 +545,7 @@ fn persist(
     known_key_images: &HashMap<[u8; 32], i64>,
     block_rows: &[(u64, [u8; 32], Option<u64>, u64)],
     possible_spends: &[PossibleSpend],
-    spend_fees: &HashMap<[u8; 32], u64>,
+    tx_fees: &HashMap<[u8; 32], u64>,
 ) -> Result<()> {
     let tx = db
         .conn_mut()
@@ -606,16 +607,18 @@ fn persist(
 
         if seen_txids.insert(txid) {
             tx.execute(
-                "INSERT INTO transactions (identity_id, txid, height, timestamp, direction)
-                 VALUES (?1, ?2, ?3, ?4, 'in')
+                "INSERT INTO transactions (identity_id, txid, height, timestamp, direction, fee_atomic)
+                 VALUES (?1, ?2, ?3, ?4, 'in', ?5)
                  ON CONFLICT (identity_id, txid) DO UPDATE
                    SET height = excluded.height, failed = 0, scan_valid = 1,
-                       timestamp = COALESCE(excluded.timestamp, transactions.timestamp)",
+                       timestamp = COALESCE(excluded.timestamp, transactions.timestamp),
+                       fee_atomic = COALESCE(excluded.fee_atomic, transactions.fee_atomic)",
                 params![
                     identity_id,
                     txid.as_slice(),
                     *height as i64,
-                    block_time.get(height)
+                    block_time.get(height),
+                    tx_fees.get(&txid).map(|fee| *fee as i64)
                 ],
             )
             .map_err(|e| db_err("insertIncomingTransaction", e))?;
@@ -645,7 +648,7 @@ fn persist(
                 txid.as_slice(),
                 *height as i64,
                 block_time.get(height),
-                spend_fees.get(txid).map(|fee| *fee as i64)
+                tx_fees.get(txid).map(|fee| *fee as i64)
             ],
         )
         .map_err(|e| db_err("insertOutgoingTransaction", e))?;
@@ -665,7 +668,7 @@ fn persist(
                 ps.spend_txid.as_slice(),
                 ps.height as i64,
                 ps.timestamp as i64,
-                spend_fees.get(&ps.spend_txid).map(|fee| *fee as i64)
+                tx_fees.get(&ps.spend_txid).map(|fee| *fee as i64)
             ],
         )
         .map_err(|e| db_err("insertPossibleSpend", e))?;

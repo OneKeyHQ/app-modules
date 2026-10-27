@@ -35,6 +35,8 @@ pub struct Balance {
     pub pending_change_atomic: u128,
     /// Unspent outputs lacking a key image; selection only uses outputs with one.
     pub outputs_without_key_image: u64,
+    /// Blocks until every output still inside the 10-block lock is spendable.
+    pub confirming_blocks_left: Option<u64>,
 }
 
 impl Balance {
@@ -46,6 +48,7 @@ impl Balance {
             "unverifiableAtomic": self.unverifiable_atomic.to_string(),
             "pendingChangeAtomic": self.pending_change_atomic.to_string(),
             "outputsWithoutKeyImage": self.outputs_without_key_image,
+            "confirmingBlocksLeft": self.confirming_blocks_left,
         })
     }
 }
@@ -96,6 +99,12 @@ pub fn balance(db: &Db, identity_id: i64, chain_tip: Option<u64>) -> Result<Bala
         if let Some(tip) = chain_tip {
             if is_unlocked(height, timelock, tip, now, network) {
                 b.unlocked_atomic += amount;
+            } else {
+                // As is_unlocked: the chain length is tip + 1.
+                let left = (height + COINBASE_AND_STANDARD_LOCK).saturating_sub(tip + 1);
+                if left > 0 {
+                    b.confirming_blocks_left = b.confirming_blocks_left.max(Some(left));
+                }
             }
         }
     }
@@ -300,7 +309,10 @@ pub fn history(db: &Db, identity_id: i64, limit: u32, offset: u32) -> Result<Val
                     COALESCE((SELECT sum(amount_atomic) FROM outputs
                               WHERE identity_id = t.identity_id AND spent_in_txid = t.txid), 0) AS spent,
                     COALESCE(t.timestamp, b.timestamp, t.sent_at), t.failed, t.outgoing_atomic,
-                    t.fee_atomic
+                    t.fee_atomic,
+                    EXISTS (SELECT 1 FROM outputs
+                            WHERE identity_id = t.identity_id AND txid = t.txid AND scan_valid = 1
+                              AND subaddress_major IS NULL) AS received_on_primary
              FROM transactions t
              LEFT JOIN blocks b ON b.identity_id = t.identity_id AND b.height = t.height
              WHERE t.identity_id = ?1
@@ -322,6 +334,8 @@ pub fn history(db: &Db, identity_id: i64, limit: u32, offset: u32) -> Result<Val
                 "failed": r.get::<_, i64>(6)? != 0,
                 "outgoingAtomic": r.get::<_, Option<String>>(7)?,
                 "feeAtomic": r.get::<_, Option<i64>>(8)?.map(|fee| fee.to_string()),
+                // Paid to the account's primary address (subaddresses are not shown as ours).
+                "receivedOnPrimary": r.get::<_, bool>(9)?,
             }))
         })
         .map_err(|e| db_err("history", e))?;
@@ -606,6 +620,23 @@ mod tests {
     }
 
     #[test]
+    fn reports_how_many_blocks_the_youngest_output_still_waits() {
+        let (db, id) = db_with_identity();
+        add_output(&db, id, 100, 1_000, true);
+        add_output(&db, id, 200, 1_095, true);
+        add_output(&db, id, 300, 1_098, true);
+        // Chain length 1_101: the 1_095 output needs 4 more blocks, the 1_098 one 7.
+        let b = balance(&db, id, Some(1_100)).unwrap();
+        assert_eq!(b.unlocked_atomic, 100);
+        assert_eq!(b.confirming_blocks_left, Some(7));
+        assert_eq!(b.to_json()["confirmingBlocksLeft"], 7);
+
+        let settled = balance(&db, id, Some(1_200)).unwrap();
+        assert_eq!(settled.confirming_blocks_left, None);
+        assert!(settled.to_json()["confirmingBlocksLeft"].is_null());
+    }
+
+    #[test]
     fn timestamp_locked_outputs_unlock_in_balance_and_selection() {
         let (db, id) = db_with_identity();
         let o = add_output(&db, id, 800, 1_000, true);
@@ -688,6 +719,42 @@ mod tests {
         assert_eq!(item["timestamp"], 1_700_000_000);
         assert_eq!(item["failed"], true);
         assert_eq!(item["outgoingAtomic"], "1234");
+    }
+
+    #[test]
+    fn a_receive_reports_its_fee_and_whether_it_reached_the_primary_address() {
+        let (db, id) = db_with_identity();
+        for (txid, subaddress) in [([6u8; 32], None), ([7u8; 32], Some(1i64))] {
+            db.conn()
+                .execute(
+                    "INSERT INTO transactions (identity_id, txid, height, direction, fee_atomic)
+                     VALUES (?1, ?2, 100, 'in', 30000000)",
+                    params![id, txid.as_slice()],
+                )
+                .unwrap();
+            db.conn()
+                .execute(
+                    "INSERT INTO outputs (identity_id, blob, txid, global_index, index_in_tx,
+                                          amount_atomic, height, subaddress_major, subaddress_minor)
+                     VALUES (?1, x'00', ?2, ?3, 0, 700, 100, ?4, ?4)",
+                    params![id, txid.as_slice(), txid[0] as i64, subaddress],
+                )
+                .unwrap();
+        }
+        let items = &history(&db, id, 10, 0).unwrap()["items"];
+        let by_txid = |txid: [u8; 32]| {
+            items
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|item| item["txid"] == hex::encode(txid))
+                .unwrap()
+                .clone()
+        };
+        let primary = by_txid([6u8; 32]);
+        assert_eq!(primary["feeAtomic"], "30000000");
+        assert_eq!(primary["receivedOnPrimary"], true);
+        assert_eq!(by_txid([7u8; 32])["receivedOnPrimary"], false);
     }
 
     #[test]
