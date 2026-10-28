@@ -36,6 +36,7 @@ pub async fn chain_tip(daemon: &Daemon) -> Result<u64> {
 /// Tell an identity the chain tip and queue the range it still needs to scan.
 ///
 /// A new identity queues `[birthday, tip]`; one with progress queues `(scanned_to, tip]`.
+/// A lower tip (a node that is behind) drops queued heights above it.
 pub fn update_chain_tip(db: &mut Db, identity_id: i64, tip: u64) -> Result<()> {
     let identity = db.identity_by_id(identity_id)?;
     let scanned_to = scanned_to_height(db, identity_id)?;
@@ -43,18 +44,42 @@ pub fn update_chain_tip(db: &mut Db, identity_id: i64, tip: u64) -> Result<()> {
         .map(|h| h + 1)
         .unwrap_or(identity.birthday_height);
 
-    if start > tip {
-        return Ok(()); // Already at the tip; nothing to queue
-    }
-
-    db.conn()
-        .execute(
+    let tx = db
+        .conn_mut()
+        .transaction()
+        .map_err(|e| db_err("beginUpdateChainTip", e))?;
+    trim_ranges_above(&tx, identity_id, tip)?;
+    if start <= tip {
+        tx.execute(
             "INSERT INTO scan_ranges (identity_id, start_height, end_height)
              VALUES (?1, ?2, ?3)
              ON CONFLICT (identity_id, start_height) DO UPDATE SET end_height = max(end_height, ?3)",
-            params![identity_id, start as i64, (tip + 1) as i64],
+            params![identity_id, start as i64, end_after(tip)],
         )
         .map_err(|e| db_err("updateChainTip", e))?;
+    }
+    tx.commit().map_err(|e| db_err("commitUpdateChainTip", e))
+}
+
+/// Exclusive `end_height` of a range through `tip`.
+fn end_after(tip: u64) -> i64 {
+    i64::try_from(tip.saturating_add(1)).unwrap_or(i64::MAX)
+}
+
+/// Drop queued heights above `tip`; a node at that tip cannot serve them, and
+/// `update_chain_tip` queues them again once the tip passes them.
+fn trim_ranges_above(conn: &rusqlite::Connection, identity_id: i64, tip: u64) -> Result<()> {
+    let end = end_after(tip);
+    conn.execute(
+        "DELETE FROM scan_ranges WHERE identity_id = ?1 AND start_height >= ?2",
+        params![identity_id, end],
+    )
+    .map_err(|e| db_err("trimScanRanges", e))?;
+    conn.execute(
+        "UPDATE scan_ranges SET end_height = ?2 WHERE identity_id = ?1 AND end_height > ?2",
+        params![identity_id, end],
+    )
+    .map_err(|e| db_err("trimScanRanges", e))?;
     Ok(())
 }
 
@@ -492,13 +517,14 @@ pub fn rewind_and_requeue(db: &mut Db, identity_id: i64, height: u64, tip: u64) 
         params![identity_id, (height + 1) as i64],
     )
     .map_err(|e| db_err("rewindBirthday", e))?;
+    trim_ranges_above(&tx, identity_id, tip)?;
     // Requeue the rewound span here instead of relying on the host to call `update_chain_tip`.
     if tip > height {
         tx.execute(
                 "INSERT INTO scan_ranges (identity_id, start_height, end_height)
                  VALUES (?1, ?2, ?3)
                  ON CONFLICT (identity_id, start_height) DO UPDATE SET end_height = max(end_height, ?3)",
-                params![identity_id, (height + 1) as i64, (tip + 1) as i64],
+                params![identity_id, (height + 1) as i64, end_after(tip)],
             )
             .map_err(|e| db_err("requeueAfterRewind", e))?;
     }
@@ -659,6 +685,56 @@ mod tests {
         rewind_and_requeue(&mut db, id, 180, 200).unwrap();
         let (start, end) = next_range(&db, id).unwrap().expect("rewind should requeue");
         assert_eq!((start, end), (181, 201));
+    }
+
+    fn queued(db: &Db, id: i64) -> Vec<(i64, i64)> {
+        db.conn()
+            .prepare("SELECT start_height, end_height FROM scan_ranges WHERE identity_id = ?1 ORDER BY start_height")
+            .unwrap()
+            .query_map([id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+    }
+
+    /// A reorg can lower the tip: nothing above it stays queued, and scanning
+    /// resumes from the rewound height once the tip grows again.
+    #[test]
+    fn rewinding_to_a_lower_tip_drops_queued_heights_above_it() {
+        let (mut db, id) = db_with_identity(); // birthday 100
+        update_chain_tip(&mut db, id, 200).unwrap();
+        consume_range(&mut db, id, 100, 175).unwrap();
+        advance_scanned_to(&db, id, 175).unwrap();
+        assert_eq!(queued(&db, id), vec![(176, 201)]);
+
+        rewind_and_requeue(&mut db, id, 170, 180).unwrap();
+        assert_eq!(queued(&db, id), vec![(171, 181), (176, 181)]);
+
+        update_chain_tip(&mut db, id, 220).unwrap();
+        assert_eq!(queued(&db, id), vec![(171, 221), (176, 181)]);
+        consume_range(&mut db, id, 171, 220).unwrap();
+        advance_scanned_to(&db, id, 220).unwrap();
+        assert!(next_range(&db, id).unwrap().is_none());
+        assert_eq!(scanned_to_height(&db, id).unwrap(), Some(220));
+    }
+
+    /// A node that is behind cannot serve heights above its tip.
+    #[test]
+    fn a_node_that_is_behind_leaves_nothing_queued_above_its_tip() {
+        let (mut db, id) = db_with_identity(); // birthday 100
+        update_chain_tip(&mut db, id, 200).unwrap();
+        update_chain_tip(&mut db, id, 180).unwrap();
+        assert_eq!(queued(&db, id), vec![(100, 181)]);
+
+        update_chain_tip(&mut db, id, 200).unwrap();
+        consume_range(&mut db, id, 100, 190).unwrap();
+        advance_scanned_to(&db, id, 190).unwrap();
+        // Progress is already past the lower tip.
+        update_chain_tip(&mut db, id, 180).unwrap();
+        assert!(queued(&db, id).is_empty());
+
+        update_chain_tip(&mut db, id, 220).unwrap();
+        assert_eq!(queued(&db, id), vec![(191, 221)]);
     }
 
     #[test]
