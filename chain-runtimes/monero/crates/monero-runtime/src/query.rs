@@ -101,7 +101,8 @@ pub fn balance(db: &Db, identity_id: i64, chain_tip: Option<u64>) -> Result<Bala
                 b.unlocked_atomic += amount;
             } else {
                 // As is_unlocked: the chain length is tip + 1.
-                let left = (height + COINBASE_AND_STANDARD_LOCK).saturating_sub(tip + 1);
+                let left =
+                    (height + COINBASE_AND_STANDARD_LOCK).saturating_sub(tip.saturating_add(1));
                 if left > 0 {
                     b.confirming_blocks_left = b.confirming_blocks_left.max(Some(left));
                 }
@@ -665,6 +666,23 @@ mod tests {
             .unwrap();
         assert_eq!(balance(&db, id, Some(1_100)).unwrap().unlocked_atomic, 800);
         assert_eq!(spendable_rows(&db, id, 1_100).unwrap().len(), 1);
+    }
+
+    /// A still-locked output must not overflow the confirmation count at the largest tip.
+    #[test]
+    fn the_largest_chain_tip_does_not_overflow_the_confirmation_count() {
+        let (db, id) = db_with_identity();
+        add_output(&db, id, 100, 1_000, true);
+        let timestamp_locked = add_output(&db, id, 800, 1_001, true);
+        db.conn()
+            .execute(
+                "UPDATE outputs SET additional_timelock = ?1 WHERE id = ?2",
+                params![500_000_000i64, timestamp_locked],
+            )
+            .unwrap();
+        let b = balance(&db, id, Some(u64::MAX)).unwrap();
+        assert_eq!(b.unlocked_atomic, 100);
+        assert_eq!(b.confirming_blocks_left, None);
     }
 
     #[test]
