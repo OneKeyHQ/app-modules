@@ -420,6 +420,18 @@ mod tests {
         self_payment: bool,
         max_send: bool,
     ) -> (Vec<u8>, ReviewRequest, [u8; 32]) {
+        let recipient = (!self_payment).then_some(RECIPIENT);
+        fixture_paying(extra, change, input_count, recipient, max_send)
+    }
+
+    /// `recipient` `None` pays the sender's own primary address.
+    fn fixture_paying(
+        extra: Vec<Vec<u8>>,
+        change: impl FnOnce(ViewPair) -> Change,
+        input_count: u8,
+        recipient: Option<&str>,
+        max_send: bool,
+    ) -> (Vec<u8>, ReviewRequest, [u8; 32]) {
         let mut public_bytes = [0x66u8; 32];
         public_bytes[0] = 0x58;
         let public = CompressedPoint::from(public_bytes).decompress().unwrap();
@@ -455,7 +467,7 @@ mod tests {
         let spend_bytes = <[u8; 32]>::from(scalar(1));
         let pair = ViewPair::new(public, Zeroizing::new(Scalar::hash(spend_bytes))).unwrap();
         let sender = pair.legacy_address(Network::Mainnet).to_string();
-        let recipient = if self_payment { &sender } else { RECIPIENT };
+        let recipient = recipient.unwrap_or(&sender);
         let change = change(pair);
         let build = |payment_amount| {
             SignableTransaction::new(
@@ -673,5 +685,155 @@ mod tests {
             review.amount_atomic = bad.into();
             assert!(verify(&hex::encode(bytes), &review, Some(&spend)).is_err());
         }
+    }
+
+    /// monero `check_tx_key`: outputs whose key `Hs(8rA || o)G + B` pays `recipient`
+    /// (`A`, `B` its view and spend keys), derived from the tx key alone.
+    fn outputs_proven_by(
+        transaction: &Transaction,
+        tx_key: &str,
+        recipient: &MoneroAddress,
+    ) -> Vec<usize> {
+        let tx_key = Scalar::read(&mut hex::decode(tx_key).unwrap().as_slice()).unwrap();
+        let r: curve25519_dalek::Scalar = tx_key.into();
+        let view: curve25519_dalek::EdwardsPoint = recipient.view().into();
+        let spend: curve25519_dalek::EdwardsPoint = recipient.spend().into();
+        let derivation = (r * view).mul_by_cofactor().compress().to_bytes();
+        transaction
+            .prefix()
+            .outputs
+            .iter()
+            .enumerate()
+            .filter(|(index, output)| {
+                let index = u8::try_from(*index).unwrap();
+                assert!(index < 0x80, "one-byte varint");
+                let shared: curve25519_dalek::Scalar =
+                    Scalar::hash([derivation.as_slice(), &[index]].concat()).into();
+                let key = shared * curve25519_dalek::constants::ED25519_BASEPOINT_POINT + spend;
+                key.compress().to_bytes() == output.key.to_bytes()
+            })
+            .map(|(index, _)| index)
+            .collect()
+    }
+
+    fn transaction_public_key(transaction: &Transaction) -> curve25519_dalek::EdwardsPoint {
+        let extra =
+            monero_wallet::extra::Extra::read(&mut transaction.prefix().extra.as_slice()).unwrap();
+        let (keys, additional) = extra.keys().unwrap();
+        assert_eq!(keys.len(), 1);
+        assert!(
+            additional.is_none(),
+            "two outputs with a view-keyed change need none"
+        );
+        keys[0].into()
+    }
+
+    fn sign_fixture(
+        (bytes, review, spend): (Vec<u8>, ReviewRequest, [u8; 32]),
+    ) -> (serde_json::Value, Transaction) {
+        let signed =
+            crate::spend::sign_for_host(&hex::encode(bytes), &spend, &review_json(&review))
+                .unwrap();
+        let raw = hex::decode(signed["rawHex"].as_str().unwrap()).unwrap();
+        let transaction = Transaction::read(&mut raw.as_slice()).unwrap();
+        (signed, transaction)
+    }
+
+    /// The returned tx key is the one the transaction was built with: it is the discrete log
+    /// of R, and `check_tx_key` with it finds exactly the recipient's output.
+    #[test]
+    fn the_returned_tx_key_proves_the_payment_to_the_recipient() {
+        let (signed, transaction) = sign_fixture(fixture(vec![]));
+        // Pinned: monero-wallet derives it from the outgoing view key ([7; 32]) and the inputs.
+        assert_eq!(
+            signed["txKeyHex"],
+            "74b0219efe14a4ff500848b6fc703f55aaac172f114ab04da733dddf62719309"
+        );
+        assert_eq!(signed["additionalTxKeysHex"], serde_json::json!([]));
+
+        let tx_key = signed["txKeyHex"].as_str().unwrap();
+        let r: curve25519_dalek::Scalar =
+            Scalar::read(&mut hex::decode(tx_key).unwrap().as_slice())
+                .unwrap()
+                .into();
+        assert_eq!(
+            transaction_public_key(&transaction),
+            r * curve25519_dalek::constants::ED25519_BASEPOINT_POINT
+        );
+        let recipient = MoneroAddress::from_str(Network::Mainnet, RECIPIENT).unwrap();
+        assert_eq!(outputs_proven_by(&transaction, tx_key, &recipient).len(), 1);
+        let other = MoneroAddress::from_str(Network::Mainnet, OTHER).unwrap();
+        assert!(outputs_proven_by(&transaction, tx_key, &other).is_empty());
+    }
+
+    /// The sender's derivation `8rA` equals the receiver's `8aR`, so the proof agrees with
+    /// what the recipient's wallet scans (self-payment: the receiver's view key is known).
+    #[test]
+    fn the_tx_key_derivation_matches_the_receivers_view_key_derivation() {
+        let paid = fixture_with_options(vec![], |pair| Change::new(pair, None), 1, true, false);
+        let (to_address, spend) = (paid.1.to_address.clone(), paid.2);
+        let (signed, transaction) = sign_fixture(paid);
+        let r: curve25519_dalek::Scalar = Scalar::read(
+            &mut hex::decode(signed["txKeyHex"].as_str().unwrap())
+                .unwrap()
+                .as_slice(),
+        )
+        .unwrap()
+        .into();
+        let a: curve25519_dalek::Scalar = Scalar::hash(spend).into();
+        let recipient = MoneroAddress::from_str(Network::Mainnet, &to_address).unwrap();
+        let view: curve25519_dalek::EdwardsPoint = recipient.view().into();
+        assert_eq!(
+            (r * view).mul_by_cofactor(),
+            (a * transaction_public_key(&transaction)).mul_by_cofactor()
+        );
+        // A self-payment proves both outputs: the payment and the change.
+        assert_eq!(
+            outputs_proven_by(
+                &transaction,
+                signed["txKeyHex"].as_str().unwrap(),
+                &recipient
+            )
+            .len(),
+            2
+        );
+    }
+
+    /// A subaddress recipient: R is `rD` (D its spend key), and the receiver's `8aR` with the
+    /// account view key equals `8rC` (C its view key).
+    #[test]
+    fn a_subaddress_payment_keeps_a_tx_key_over_its_spend_key() {
+        let a: curve25519_dalek::Scalar = scalar(11).into();
+        let d: curve25519_dalek::Scalar = scalar(9).into();
+        let spend = Point::from(d * curve25519_dalek::constants::ED25519_BASEPOINT_POINT);
+        let view = Point::from(a * spend.into());
+        let subaddress = MoneroAddress::new(
+            Network::Mainnet,
+            monero_wallet::address::AddressType::Subaddress,
+            spend,
+            view,
+        );
+        let (signed, transaction) = sign_fixture(fixture_paying(
+            vec![],
+            |pair| Change::new(pair, None),
+            1,
+            Some(&subaddress.to_string()),
+            false,
+        ));
+        let tx_key = signed["txKeyHex"].as_str().unwrap();
+        let r: curve25519_dalek::Scalar =
+            Scalar::read(&mut hex::decode(tx_key).unwrap().as_slice())
+                .unwrap()
+                .into();
+        let public = transaction_public_key(&transaction);
+        assert_eq!(public, r * spend.into());
+        assert_eq!(
+            (a * public).mul_by_cofactor(),
+            (r * view.into()).mul_by_cofactor()
+        );
+        assert_eq!(
+            outputs_proven_by(&transaction, tx_key, &subaddress).len(),
+            1
+        );
     }
 }

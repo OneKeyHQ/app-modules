@@ -485,8 +485,10 @@ pub fn assemble_device_transaction(
 /// Sign a prepared transaction. No network, no DB, no broadcast.
 ///
 /// Takes the account's BIP-32 key (as `deriveAccount`); the spend key is reduced here and
-/// both are wiped after use. Returns `{ txid, rawHex, sizeBytes }`; the txid is fixed at
-/// signing so the host can record the pending transaction before broadcasting.
+/// both are wiped after use. Returns `{ txid, rawHex, sizeBytes, txKeyHex, additionalTxKeysHex }`;
+/// the txid is fixed at signing so the host can record the pending transaction before
+/// broadcasting. The tx private keys, checked against the transaction's public keys, are for
+/// payment proofs (wallet2 `get_tx_key`).
 #[wasm_bindgen(js_name = signTransactionWithBip32Key)]
 pub fn sign_transaction_with_bip32_key(
     signable_hex: &str,

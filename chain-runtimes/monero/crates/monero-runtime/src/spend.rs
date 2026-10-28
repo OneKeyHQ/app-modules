@@ -10,7 +10,10 @@ use std::collections::HashMap;
 use monero_wallet::{
     address::MoneroAddress,
     ed25519::{Point, Scalar},
-    send::{Change, SignableTransaction},
+    extra::Extra,
+    io::{read_byte, read_bytes, read_vec},
+    send::{Change, SignableTransaction, TransactionKeys},
+    transaction::Transaction,
     OutputWithDecoys, WalletOutput,
 };
 use rand_core::{CryptoRng, RngCore};
@@ -629,14 +632,88 @@ pub fn sign_prepared<R: RngCore + CryptoRng>(
     signable: SignableTransaction,
     rng: &mut R,
     spend_private: &[u8],
-) -> Result<(Vec<u8>, [u8; 32])> {
+) -> Result<Transaction> {
     let spend = parse_spend_key(spend_private)?;
-    let signed = signable.sign(rng, &spend).map_err(|e| {
+    signable.sign(rng, &spend).map_err(|e| {
         RuntimeError::with(ErrorCode::InvalidRequest, json!({ "field": "signature" }))
             .detail(format!("{e:?}"))
-    })?;
-    let txid = signed.hash();
-    Ok((signed.serialize(), txid))
+    })
+}
+
+/// A send's transaction private keys, kept for payment proofs as wallet2 keeps
+/// `m_tx_keys` and `m_additional_tx_keys`.
+struct TxKeys {
+    tx_key: Zeroizing<Scalar>,
+    /// One per output when the transaction carries additional public keys; usually none.
+    additional: Vec<Zeroizing<Scalar>>,
+}
+
+/// Re-derives the keys monero-wallet drew for `signable` (from its outgoing view key and
+/// inputs) and checks them against the public keys in the signed transaction's extra.
+fn transaction_keys(
+    signable: &[u8],
+    signed: &Transaction,
+    recipient: &MoneroAddress,
+) -> Result<TxKeys> {
+    use core::ops::Deref;
+
+    let mismatch = || {
+        RuntimeError::with(
+            ErrorCode::InvalidRequest,
+            json!({ "field": "transactionKey", "reason": "doesNotMatchTransaction" }),
+        )
+    };
+    let mut reader = signable;
+    let mut read_seed = || -> std::io::Result<_> {
+        read_byte(&mut reader)?;
+        let outgoing_view_key = Zeroizing::new(read_bytes::<_, 32>(&mut reader)?);
+        let inputs = read_vec(OutputWithDecoys::read, Some(1024), &mut reader)?;
+        Ok((outgoing_view_key, inputs))
+    };
+    let (outgoing_view_key, inputs) = read_seed().map_err(|_| mismatch())?;
+    let mut keys = TransactionKeys::new(
+        &outgoing_view_key,
+        inputs
+            .iter()
+            .map(|input| (input.key(), input.commitment().commit()))
+            .collect(),
+    );
+
+    let extra = Extra::read(&mut signed.prefix().extra.as_slice()).map_err(|_| mismatch())?;
+    let (public, additional_public) = extra.keys().ok_or_else(mismatch)?;
+    let [public] = public.as_slice() else {
+        return Err(mismatch());
+    };
+    let basepoint = curve25519_dalek::constants::ED25519_BASEPOINT_POINT;
+    let subaddress_spend: Option<curve25519_dalek::EdwardsPoint> =
+        recipient.is_subaddress().then(|| recipient.spend().into());
+    let commits_to =
+        |key: &Zeroizing<Scalar>, generator: curve25519_dalek::EdwardsPoint, public: &Point| {
+            let key: Zeroizing<curve25519_dalek::Scalar> = Zeroizing::new((**key).into());
+            Point::from(key.deref() * generator) == *public
+        };
+
+    let tx_key = keys.next().ok_or_else(mismatch)?;
+    // A lone subaddress payment uses R = rD (D its spend key) instead of rG; additional
+    // keys use rD per subaddress output, rG otherwise.
+    let generator = match (subaddress_spend, &additional_public) {
+        (Some(spend), None) => spend,
+        _ => basepoint,
+    };
+    if !commits_to(&tx_key, generator, public) {
+        return Err(mismatch());
+    }
+    let additional = additional_public
+        .unwrap_or_default()
+        .iter()
+        .map(|public| {
+            let key = keys.next().ok_or_else(mismatch)?;
+            let matches = commits_to(&key, basepoint, public)
+                || subaddress_spend.is_some_and(|spend| commits_to(&key, spend, public));
+            matches.then_some(key).ok_or_else(mismatch)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(TxKeys { tx_key, additional })
 }
 
 /// Broadcasts. Irreversible.
@@ -1557,11 +1634,19 @@ pub(crate) fn sign_for_host_with_rng<R: RngCore + CryptoRng>(
     let request = crate::review::parse_request(review_json)?;
     let signed = verify_and_sign(signable_hex, &request, spend_private, rng);
     keys::scrub_stack();
-    let (raw, txid) = signed?;
+    let (transaction, tx_keys) = signed?;
+    let raw = transaction.serialize();
     Ok(json!({
-        "txid": hex::encode(txid),
+        "txid": hex::encode(transaction.hash()),
         "rawHex": hex::encode(&raw),
         "sizeBytes": raw.len(),
+        // For payment proofs (wallet2 `get_tx_key`); the host keeps them with its sent record.
+        "txKeyHex": hex::encode(<[u8; 32]>::from(*tx_keys.tx_key)),
+        "additionalTxKeysHex": tx_keys
+            .additional
+            .iter()
+            .map(|key| hex::encode(<[u8; 32]>::from(**key)))
+            .collect::<Vec<_>>(),
     }))
 }
 
@@ -1572,9 +1657,17 @@ fn verify_and_sign<R: RngCore + CryptoRng>(
     request: &crate::review::ReviewRequest,
     spend_private: &[u8],
     rng: &mut R,
-) -> Result<(Vec<u8>, [u8; 32])> {
+) -> Result<(Transaction, TxKeys)> {
     let signable = crate::review::verify(signable_hex, request, Some(spend_private))?;
-    sign_prepared(signable, rng, spend_private)
+    let recipient = keys::parse_address(
+        keys::parse_network(&request.network)?,
+        &request.to_address,
+        "toAddress",
+    )?;
+    let serialized = Zeroizing::new(signable.serialize());
+    let signed = sign_prepared(signable, rng, spend_private)?;
+    let tx_keys = transaction_keys(&serialized, &signed, &recipient)?;
+    Ok((signed, tx_keys))
 }
 
 /// Amounts of our own send, known only at broadcast.
