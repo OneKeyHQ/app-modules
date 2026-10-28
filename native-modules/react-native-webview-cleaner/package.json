@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-webview-cleaner",
-  "version": "6.7.0-17",
+  "version": "6.7.0-19",
   "description": "webview cleaner",
   "main": "lib/commonjs/index",
   "module": "lib/module/index",

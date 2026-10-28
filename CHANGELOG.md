@@ -45,6 +45,11 @@ All notable changes to this project will be documented in this file.
 - Stop tracking `nitrogen/generated` for `react-native-image` and `react-native-native-list`. Every other Nitro package already ignores `nitrogen/` and regenerates it from the spec at release time; these two were missing a package `.gitignore`, so 117 generated files rode along in every diff that touched a prop. `react-native-native-list` now runs `yarn nitrogen` in its `release` script like the other view packages, and local builds need `yarn nitrogen` in the package before the first native build.
 - No version bump here; these changes ship with the next release. Note that 3.0.157 was published from this branch before the review fixes landed and should not be used.
 
+## [6.7.0-19] - 2026-10-28
+
+### Chores
+- Republish `main` as 6.7.0-19 so the `latest` dist-tag points at a build of `main` again. The source tree is the one 6.7.0-16 was published from (`0cff4933`); 6.7.0-17 and 6.7.0-18 were published from the native-list risk-actions branch before merge and carry no changelog section of their own.
+
 ## [6.7.0-16] - 2026-10-27
 
 ### Bug Fixes
