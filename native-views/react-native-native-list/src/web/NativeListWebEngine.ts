@@ -2611,7 +2611,7 @@ export class NativeListWebEngine {
     );
     this.observeSectionIndexTransforms();
     this.applyFontFamilies(fontFamiliesJson);
-    this.applySnapshot(this.snapshot);
+    this.applyValidatedSnapshot(this.snapshot);
   }
 
   private validateStickyInset(value = 0): number {
@@ -2703,6 +2703,10 @@ export class NativeListWebEngine {
       return next;
     });
     if (!validated) return;
+    this.applyValidatedSnapshot(validated);
+  }
+
+  private applyValidatedSnapshot(validated: NativeListSnapshot) {
     this.pressedHelpElement = undefined;
     this.invalidateActionAnchor('snapshot');
     const transition = validated.structuralTransition;

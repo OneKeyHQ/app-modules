@@ -1,4 +1,5 @@
 import type { NativeListSnapshot, RowModel } from '../models';
+import * as validation from '../validation';
 import { NativeListWebEngine } from '../web/NativeListWebEngine';
 
 jest.mock('../web/NativeListWebAvatarCache', () => ({
@@ -31,6 +32,61 @@ function snapshot(keys: readonly string[], id?: string): NativeListSnapshot {
 }
 
 describe('NativeList Web structural transition', () => {
+  it('validates the initial snapshot once and keeps its transition id consumed', () => {
+    const { window } = new JSDOM('<!doctype html><body></body>');
+    const frames = jest.fn(() => 1);
+    window.requestAnimationFrame = frames;
+    window.cancelAnimationFrame = jest.fn();
+    const host = window.document.createElement('div');
+    window.document.body.appendChild(host);
+    const validate = jest.spyOn(validation, 'validateSnapshot');
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot(['a', 'b'], 'initial'),
+      {},
+      false
+    );
+    try {
+      expect(validate).toHaveBeenCalledTimes(1);
+      frames.mockClear();
+      engine.applySnapshot(snapshot(['a', 'b', 'c'], 'initial'));
+      expect(frames).not.toHaveBeenCalled();
+      expect(engine.currentSnapshot().rows).toHaveLength(3);
+
+      engine.applySnapshot(snapshot(['a', 'b', 'c', 'd'], 'next'));
+      expect(frames).toHaveBeenCalled();
+      expect(engine.currentSnapshot().rows).toHaveLength(4);
+    } finally {
+      engine.destroy();
+      validate.mockRestore();
+    }
+  });
+
+  it('uses the empty fallback when its initial snapshot is invalid', () => {
+    const { window } = new JSDOM('<!doctype html><body></body>');
+    const host = window.document.createElement('div');
+    window.document.body.appendChild(host);
+    const validate = jest.spyOn(validation, 'validateSnapshot');
+    const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const invalid: NativeListSnapshot = {
+      ...snapshot(['a']),
+      rows: [{ ...snapshot(['a']).rows[0], height: -1 }],
+    };
+    try {
+      const engine = new NativeListWebEngine(host, invalid, {}, false);
+      try {
+        expect(validate).toHaveBeenCalledTimes(1);
+        expect(warning).toHaveBeenCalled();
+        expect(engine.currentSnapshot().rows).toHaveLength(0);
+      } finally {
+        engine.destroy();
+      }
+    } finally {
+      warning.mockRestore();
+      validate.mockRestore();
+    }
+  });
+
   it('commits grid and horizontal source layouts without a structural frame', () => {
     for (const [source, target] of [
       [{ kind: 'grid', gridColumns: 2 }, { kind: 'linear' }],
