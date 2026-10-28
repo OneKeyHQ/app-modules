@@ -74,12 +74,16 @@ pub fn dependency_versions() -> String {
 }
 
 /// Opens a page-backed database and applies the official SQLite migrations.
+///
+/// Also stores, as pending, any send whose submit stopped before its outcome was stored.
 #[wasm_bindgen(js_name = openWallet)]
 pub async fn open_wallet(network_name: String, db_name: String) -> Result<String, JsValue> {
     let (network_name, db_name) = (network_name.as_str(), db_name.as_str());
     let db = wallet::open_and_migrate(network_name, db_name)?;
     // WALLET_BUSY must propagate, or the caller assumes the database was swapped.
     runtime::set_db(db, db_name)?;
+    // Best effort: until stored, the send's inputs stay locked and the next submit retries.
+    let _ = runtime::with_db(send::settle_interrupted_submissions);
     Ok(serde_json::json!({ "dbName": db_name, "network": network_name }).to_string())
 }
 
@@ -485,13 +489,18 @@ async fn barrier_after_irreversible(params: serde_json::Value) -> Result<(), cra
     })
 }
 
-/// Submits a proven and signed PCZT: extracts the transaction, persists it, then broadcasts.
+/// Submits a proven and signed PCZT: locks its notes and records it, broadcasts it, then
+/// stores it unless the node definitively rejected it.
 ///
 /// Returns `{ txid, broadcast: "accepted" | "rejected" | "unknown", error? }`.
 /// - `rejected`: the node definitively judged it consensus-invalid or expired; it can never be
-///   mined. The transaction stays stored and its notes return only at expiry height.
-/// - `unknown`: delivery to the node is uncertain. The transaction stays pending until mined
-///   or expired; the host does not resubmit it and must not treat it as failed.
+///   mined. It is not stored and its notes are spendable again at once (if an earlier submit
+///   stored it, it is marked rejected and its notes return at its expiry height).
+/// - `unknown`: delivery to the node is uncertain. The transaction is stored and stays pending
+///   until mined or expired; the host does not resubmit it and must not treat it as failed.
+///
+/// Throws `FINALIZE_OUTCOME_UNKNOWN` when storing fails after the broadcast; `openWallet` or
+/// the next submit stores it as pending.
 #[wasm_bindgen(js_name = pcztSubmit)]
 pub async fn pczt_submit(account_uuid: String, pczt_bytes: Vec<u8>) -> Result<String, JsValue> {
     let outcome = runtime::with_db_and_client(move |mut db, mut client| async move {

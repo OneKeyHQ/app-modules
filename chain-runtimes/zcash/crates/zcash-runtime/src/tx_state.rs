@@ -1,9 +1,12 @@
-//! OneKey-owned record of node rejections.
+//! OneKey-owned send state: node rejections and submissions awaiting their outcome.
 //!
 //! The wallet schema cannot hold that the trusted node definitively rejected a
-//! send; that must stop any resend and show the send as failed. An unmined send
-//! that was not rejected stays pending until mined or expired; the host does not
-//! resubmit it.
+//! stored send; that must stop any resend and show the send as failed. An unmined
+//! send that was not rejected stays pending until mined or expired; the host does
+//! not resubmit it.
+//!
+//! A submission is recorded before its broadcast and removed once the outcome is
+//! stored, so a broadcast whose outcome was lost is still found and kept.
 
 use std::collections::HashSet;
 
@@ -21,10 +24,16 @@ use crate::wallet::Db;
 
 const LIFECYCLE_MIGRATION_ID: Uuid = Uuid::from_u128(0x5be0af90_63f4_43ea_ae65_8207c84e46dd);
 const REJECTIONS_MIGRATION_ID: Uuid = Uuid::from_u128(0x0d3b6f2e_9a41_4c8e_b7d5_3e1f6a2c9b70);
+const SUBMISSIONS_MIGRATION_ID: Uuid = Uuid::from_u128(0xe82d3b63_186f_4b69_b602_0a7e289c5914);
 pub(crate) const TABLE: &str = "ext_onekey_tx_state";
+const SUBMISSIONS: &str = "ext_onekey_submission";
 
 pub fn migrations() -> Vec<Box<dyn RusqliteMigration<Error = WalletMigrationError>>> {
-    vec![Box::new(LifecycleMigration), Box::new(RejectionsMigration)]
+    vec![
+        Box::new(LifecycleMigration),
+        Box::new(RejectionsMigration),
+        Box::new(SubmissionsMigration),
+    ]
 }
 
 /// The original lifecycle table, kept so databases that applied it keep a
@@ -119,6 +128,42 @@ impl RusqliteMigration for RejectionsMigration {
     }
 }
 
+/// Signed sends whose inputs are locked for a broadcast whose outcome is not stored yet.
+struct SubmissionsMigration;
+
+impl schemerz::Migration<Uuid> for SubmissionsMigration {
+    fn id(&self) -> Uuid {
+        SUBMISSIONS_MIGRATION_ID
+    }
+
+    fn dependencies(&self) -> HashSet<Uuid> {
+        HashSet::from([REJECTIONS_MIGRATION_ID])
+    }
+
+    fn description(&self) -> &'static str {
+        "Adds OneKey Zcash submissions awaiting their broadcast outcome."
+    }
+}
+
+impl RusqliteMigration for SubmissionsMigration {
+    type Error = WalletMigrationError;
+
+    fn up(&self, transaction: &rusqlite::Transaction) -> std::result::Result<(), Self::Error> {
+        transaction.execute_batch(
+            "CREATE TABLE ext_onekey_submission (
+               txid BLOB PRIMARY KEY NOT NULL,
+               account_uuid BLOB NOT NULL,
+               pczt BLOB NOT NULL
+             );",
+        )?;
+        Ok(())
+    }
+
+    fn down(&self, _transaction: &rusqlite::Transaction) -> std::result::Result<(), Self::Error> {
+        Err(WalletMigrationError::CannotRevert(SUBMISSIONS_MIGRATION_ID))
+    }
+}
+
 fn db_err(operation: &'static str, error: impl std::fmt::Display) -> RuntimeError {
     RuntimeError::with(
         ErrorCode::DatabaseError,
@@ -153,27 +198,91 @@ pub fn record_rejection(
     account_uuid: &str,
     error: &RuntimeError,
 ) -> Result<()> {
+    db.transactionally_with_extension(|_wallet, ext| {
+        insert_rejection(ext, txid, account_uuid, error)
+    })
+}
+
+pub(crate) fn insert_rejection(
+    ext: &ExtensionTransaction<'_>,
+    txid: &str,
+    account_uuid: &str,
+    error: &RuntimeError,
+) -> Result<()> {
     let txid = display_order_to_internal(txid)?;
     let account_uuid = uuid_blob(account_uuid)?;
     let rejection_code = error
         .params
         .get("errorCode")
         .and_then(serde_json::Value::as_i64);
-    db.transactionally_with_extension(|_wallet, ext| {
-        ext.execute(
-            &format!(
-                "INSERT INTO {TABLE} (txid, account_uuid, rejection_code, rejection_reason)
-                 VALUES (?1, ?2, ?3, ?4)
-                 ON CONFLICT(txid) DO UPDATE SET
-                   account_uuid = excluded.account_uuid,
-                   rejection_code = excluded.rejection_code,
-                   rejection_reason = excluded.rejection_reason"
-            ),
-            params![txid, account_uuid, rejection_code, error.detail.as_deref()],
-        )
-        .map_err(|error| db_err("recordRejection", error))?;
-        Ok(())
-    })
+    ext.execute(
+        &format!(
+            "INSERT INTO {TABLE} (txid, account_uuid, rejection_code, rejection_reason)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(txid) DO UPDATE SET
+               account_uuid = excluded.account_uuid,
+               rejection_code = excluded.rejection_code,
+               rejection_reason = excluded.rejection_reason"
+        ),
+        params![txid, account_uuid, rejection_code, error.detail.as_deref()],
+    )
+    .map_err(|error| db_err("recordRejection", error))?;
+    Ok(())
+}
+
+/// Whether the wallet already stores this transaction, e.g. from an earlier submit.
+pub(crate) fn is_stored(ext: &ExtensionTransaction<'_>, txid: &str) -> Result<bool> {
+    let txid = display_order_to_internal(txid)?;
+    ext.query_row(
+        "SELECT EXISTS(SELECT 1 FROM transactions WHERE txid = ?1)",
+        [txid],
+        |row| row.get(0),
+    )
+    .map_err(|error| db_err("readStoredTransaction", error))
+}
+
+pub(crate) fn put_submission(
+    ext: &ExtensionTransaction<'_>,
+    txid: &str,
+    account_uuid: &str,
+    pczt: &[u8],
+) -> Result<()> {
+    let txid = display_order_to_internal(txid)?;
+    let account_uuid = uuid_blob(account_uuid)?;
+    ext.execute(
+        &format!(
+            "INSERT INTO {SUBMISSIONS} (txid, account_uuid, pczt) VALUES (?1, ?2, ?3)
+             ON CONFLICT(txid) DO UPDATE SET
+               account_uuid = excluded.account_uuid,
+               pczt = excluded.pczt"
+        ),
+        params![txid, account_uuid, pczt],
+    )
+    .map_err(|error| db_err("recordSubmission", error))?;
+    Ok(())
+}
+
+pub(crate) fn delete_submission(ext: &ExtensionTransaction<'_>, txid: &str) -> Result<()> {
+    let txid = display_order_to_internal(txid)?;
+    ext.execute(
+        &format!("DELETE FROM {SUBMISSIONS} WHERE txid = ?1"),
+        [txid],
+    )
+    .map_err(|error| db_err("deleteSubmission", error))?;
+    Ok(())
+}
+
+/// A submission whose outcome was never stored, as `(txid, pczt)`.
+pub(crate) fn first_submission(
+    ext: &ExtensionTransaction<'_>,
+) -> Result<Option<(String, Vec<u8>)>> {
+    ext.query_row(
+        &format!("SELECT txid, pczt FROM {SUBMISSIONS} ORDER BY txid LIMIT 1"),
+        [],
+        |row| Ok((hex_display_order(&row.get::<_, Vec<u8>>(0)?), row.get(1)?)),
+    )
+    .optional()
+    .map_err(|error| db_err("readSubmission", error))
 }
 
 /// Fails with the recorded `BroadcastRejected` if the node already rejected this transaction.
@@ -233,13 +342,19 @@ pub fn pending_txids(conn: &rusqlite::Connection, account_uuid: &str) -> Result<
     .collect()
 }
 
-/// Drops rejections whose transaction left the wallet with a removed account.
+/// Drops rejections whose transaction left the wallet with a removed account, and
+/// that account's submissions (its notes and their locks went with it).
 pub fn prune_orphaned_rows(ext: &ExtensionTransaction<'_>) -> Result<()> {
     ext.execute(
         &format!("DELETE FROM {TABLE} WHERE txid NOT IN (SELECT txid FROM transactions)"),
         [],
     )
     .map_err(|error| db_err("pruneTransactionState", error))?;
+    ext.execute(
+        &format!("DELETE FROM {SUBMISSIONS} WHERE account_uuid NOT IN (SELECT uuid FROM accounts)"),
+        [],
+    )
+    .map_err(|error| db_err("pruneSubmissions", error))?;
     Ok(())
 }
 

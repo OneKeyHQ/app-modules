@@ -6,21 +6,25 @@
 //!   runtime.pcztCreate()          build (needs wallet state: note selection, witness, anchor)
 //!   runtime.pcztProve()           prove; pure computation, no private keys
 //!   keys.pcztSignWithAccountKeys() sign (needs the spending keys; in onekey-zcash-keys)
-//!   runtime.pcztSubmit()          extract, store, broadcast once (sync does not rebroadcast)
+//!   runtime.pcztSubmit()          hold inputs, broadcast once, store unless rejected (sync does not rebroadcast)
 //! ```
 //!
 //! Build and broadcast need the wallet database, signing needs the spending keys; they never share a crate.
 
+use rusqlite::OptionalExtension;
 use zcash_client_backend::data_api::wallet::{
     create_pczt_from_proposal, extract_and_store_transaction_from_pczt,
     input_selection::GreedyInputSelector, propose_transfer,
 };
-use zcash_client_backend::data_api::WalletRead;
+use zcash_client_backend::data_api::{locking::LockError, OutputLockStore, WalletRead};
 use zcash_client_backend::fees::{zip317::SingleOutputChangeStrategy, DustOutputPolicy};
-use zcash_client_backend::wallet::OvkPolicy;
+use zcash_client_backend::wallet::{LockOwner, OutputRef, OvkPolicy};
 use zcash_primitives::transaction::builder::BundlePadding;
 use zcash_primitives::transaction::fees::zip317::FeeRule as Zip317FeeRule;
-use zcash_protocol::{memo::MemoBytes, value::Zatoshis, ShieldedPool};
+use zcash_primitives::transaction::TxId;
+use zcash_protocol::{
+    consensus::BlockHeight, memo::MemoBytes, value::Zatoshis, PoolType, ShieldedPool,
+};
 
 use crate::account;
 use crate::error::{ErrorCode, Result, RuntimeError};
@@ -276,6 +280,14 @@ fn build_proposal(
         policy.untrusted,
         policy.allow_zero_conf_shielding,
     )?;
+    let (target, _) = db
+        .get_target_and_anchor_heights(confirmations.trusted())
+        .map_err(|error| build_err("targetHeight", error))?
+        .ok_or_else(|| RuntimeError::new(ErrorCode::NotSynced))?;
+    let target = BlockHeight::from(target);
+    if onekey_zcash_send_policy::expiry_height(&params, target).is_none() {
+        return Err(build_err("expiryHeight", "network upgrade is too close"));
+    }
 
     // Spend only the selected shielded pool, never transparent UTXOs.
     let spend_policy = {
@@ -292,7 +304,7 @@ fn build_proposal(
 
     let selector = GreedyInputSelector::<Db>::new();
     let change = SingleOutputChangeStrategy::<_, Db>::new(
-        Zip317FeeRule::standard(),
+        onekey_zcash_send_policy::fee_rule(&params, target),
         None,
         policy.change_pool(),
         DustOutputPolicy::default(),
@@ -342,8 +354,8 @@ pub fn quote(
 /// Builds an unsigned transfer PCZT for review. Returns `(pcztBytes, feeZat)`.
 ///
 /// Locks nothing, so an abandoned review leaves the notes spendable. Notes are
-/// held once `submit_signed_pczt` stores the signed transaction, until it is
-/// mined or expires.
+/// held from `submit_signed_pczt` until the transaction is mined or expires, or
+/// the node rejects it.
 pub fn create_pczt(
     db: &mut Db,
     account_uuid: &str,
@@ -360,6 +372,11 @@ pub fn create_pczt(
         .iter()
         .map(|step| u64::from(step.balance().fee_required()))
         .sum();
+    let expiry = onekey_zcash_send_policy::expiry_height(
+        &params,
+        BlockHeight::from(proposal.min_target_height()),
+    )
+    .ok_or_else(|| build_err("expiryHeight", "network upgrade is too close"))?;
 
     // InputsErrT / ChangeErrT appear only in the Err branch and cannot be inferred.
     let pczt = create_pczt_from_proposal::<
@@ -375,7 +392,7 @@ pub fn create_pczt(
         account_id,
         OvkPolicy::Sender,
         &proposal,
-        None,
+        Some(expiry),
         policy.padding(),
     )
     .map_err(|e| build_err("createPczt", format!("{e:?}")))?;
@@ -724,16 +741,45 @@ pub fn prove_pczt_at_height(
     })
 }
 
-/// Spend tables and their spent-output columns, one per pool.
-const SPEND_TABLES: [(&str, &str); 4] = [
-    ("sapling_received_note_spends", "sapling_received_note_id"),
-    ("orchard_received_note_spends", "orchard_received_note_id"),
-    ("ironwood_received_note_spends", "ironwood_received_note_id"),
+/// Spend tables with their spent-output columns, and the spent outputs' tables,
+/// index columns and pools.
+const SPEND_TABLES: [(&str, &str, &str, &str, PoolType); 4] = [
+    (
+        "sapling_received_note_spends",
+        "sapling_received_note_id",
+        "sapling_received_notes",
+        "output_index",
+        PoolType::SAPLING,
+    ),
+    (
+        "orchard_received_note_spends",
+        "orchard_received_note_id",
+        "orchard_received_notes",
+        "action_index",
+        PoolType::ORCHARD,
+    ),
+    (
+        "ironwood_received_note_spends",
+        "ironwood_received_note_id",
+        "ironwood_received_notes",
+        "action_index",
+        PoolType::IRONWOOD,
+    ),
     (
         "transparent_received_output_spends",
         "transparent_received_output_id",
+        "transparent_received_outputs",
+        "output_index",
+        PoolType::TRANSPARENT,
     ),
 ];
+
+fn refuse_store(reason: &str) -> RuntimeError {
+    RuntimeError::with(
+        ErrorCode::TransactionBuildError,
+        json!({ "stage": "storeSignedPczt", "reason": reason }),
+    )
+}
 
 /// Refuses a just-stored transaction that does not spend from `account_uuid`,
 /// or that spends an output another stored transaction still holds (mined, or
@@ -744,12 +790,6 @@ fn assert_sole_spend(
     account_uuid: &str,
 ) -> Result<()> {
     let internal = crate::history::display_order_to_internal(txid)?;
-    let refuse = |reason: &str| {
-        RuntimeError::with(
-            ErrorCode::TransactionBuildError,
-            json!({ "stage": "storeSignedPczt", "reason": reason }),
-        )
-    };
     let spends_from_account: bool = ext
         .query_row(
             "SELECT EXISTS(
@@ -761,9 +801,9 @@ fn assert_sole_spend(
         )
         .map_err(|e| build_err("readStoredSpend", e))?;
     if !spends_from_account {
-        return Err(refuse("accountMismatch"));
+        return Err(refuse_store("accountMismatch"));
     }
-    for (table, output) in SPEND_TABLES {
+    for (table, output, ..) in SPEND_TABLES {
         let conflict: bool = ext
             .query_row(
                 &format!(
@@ -787,33 +827,177 @@ fn assert_sole_spend(
             )
             .map_err(|e| build_err("readConflictingSpends", e))?;
         if conflict {
-            return Err(refuse("inputsAlreadySpent"));
+            return Err(refuse_store("inputsAlreadySpent"));
         }
     }
     Ok(())
 }
 
-/// Stores the signed PCZT in the wallet; from now on this transaction holds its
-/// spent notes until it is mined or expires. Stored atomically with its checks:
-/// a refusal leaves the wallet unchanged.
-fn store_signed_pczt(
+/// Extracts the signed PCZT and stores it in the wallet; from then on the
+/// transaction holds its spent notes until it is mined or expires.
+fn extract_and_store(
+    wallet: &mut zcash_client_sqlite::WalletDb<
+        zcash_client_sqlite::SqlTransaction<'_>,
+        &zcash_protocol::consensus::Network,
+        &crate::clock::HostClock,
+        &mut rand_chacha::ChaCha20Rng,
+    >,
+    pczt: pczt::Pczt,
+    orchard_vk: &orchard::circuit::VerifyingKey,
+) -> Result<TxId> {
+    extract_and_store_transaction_from_pczt::<_, zcash_client_sqlite::ReceivedNoteId>(
+        wallet,
+        pczt,
+        None,
+        Some(orchard_vk),
+    )
+    .map_err(|e| build_err("extractAndStore", format!("{e:?}")))
+}
+
+/// The wallet outputs a stored transaction spends.
+fn spent_outputs(
+    ext: &zcash_client_sqlite::ExtensionTransaction<'_>,
+    txid: &TxId,
+) -> Result<Vec<OutputRef>> {
+    let mut outputs = Vec::new();
+    for (spends, spent, table, index, pool) in SPEND_TABLES {
+        let mut after = -1_i64;
+        while let Some((id, source, output_index)) = ext
+            .query_row(
+                &format!(
+                    "SELECT output.id, source.txid, output.{index}
+                     FROM {spends} spend
+                     JOIN {table} output ON output.id = spend.{spent}
+                     JOIN transactions source ON source.id_tx = output.transaction_id
+                     JOIN transactions own ON own.id_tx = spend.transaction_id
+                     WHERE own.txid = ?1 AND output.id > ?2
+                     ORDER BY output.id LIMIT 1"
+                ),
+                rusqlite::params![txid.as_ref(), after],
+                |row| Ok((row.get(0)?, row.get::<_, [u8; 32]>(1)?, row.get(2)?)),
+            )
+            .optional()
+            .map_err(|e| build_err("readSpentOutputs", e))?
+        {
+            outputs.push(OutputRef::new(TxId::from_bytes(source), pool, output_index));
+            after = id;
+        }
+    }
+    Ok(outputs)
+}
+
+/// A signed transaction that passed the store checks but is not stored.
+struct Staged {
+    txid: TxId,
+    raw: Vec<u8>,
+    inputs: Vec<OutputRef>,
+    /// The transaction's expiry height, or the maximum if it never expires.
+    lock_expiry: BlockHeight,
+}
+
+/// Stores the signed PCZT with its checks in a transaction that is then rolled
+/// back, to learn what storing it would hold. Leaves the wallet unchanged.
+fn stage_signed_pczt(
     db: &mut Db,
     account_uuid: &str,
     pczt: pczt::Pczt,
     orchard_vk: &orchard::circuit::VerifyingKey,
-) -> Result<String> {
+) -> Result<Staged> {
+    // Only an error from the closure rolls the transaction back.
+    enum Rollback {
+        Staged(Staged),
+        Failed(RuntimeError),
+    }
+    impl From<rusqlite::Error> for Rollback {
+        fn from(error: rusqlite::Error) -> Self {
+            Rollback::Failed(error.into())
+        }
+    }
+    let rehearsal = db.transactionally_with_extension(
+        |wallet, ext| -> std::result::Result<std::convert::Infallible, Rollback> {
+            let staged = extract_and_store(wallet, pczt, orchard_vk).and_then(|txid| {
+                assert_sole_spend(ext, &txid.to_string(), account_uuid)?;
+                let (raw, expiry) = ext
+                    .query_row(
+                        "SELECT raw, expiry_height FROM transactions WHERE txid = ?1",
+                        [txid.as_ref()],
+                        |row| Ok((row.get(0)?, row.get::<_, Option<u32>>(1)?)),
+                    )
+                    .map_err(|e| build_err("readStaged", e))?;
+                Ok(Staged {
+                    txid,
+                    raw,
+                    inputs: spent_outputs(ext, &txid)?,
+                    lock_expiry: BlockHeight::from_u32(
+                        expiry.filter(|height| *height != 0).unwrap_or(u32::MAX),
+                    ),
+                })
+            });
+            Err(match staged {
+                Ok(staged) => Rollback::Staged(staged),
+                Err(error) => Rollback::Failed(error),
+            })
+        },
+    );
+    match rehearsal {
+        Ok(never) => match never {},
+        Err(Rollback::Staged(staged)) => Ok(staged),
+        Err(Rollback::Failed(error)) => Err(error),
+    }
+}
+
+/// Locks the inputs until the transaction's expiry height, as long as a stored
+/// spend would hold them, and records the submission, before any broadcast.
+fn hold_inputs(db: &mut Db, account_uuid: &str, staged: &Staged, pczt_bytes: &[u8]) -> Result<()> {
     db.transactionally_with_extension(|wallet, ext| {
-        let txid =
-            extract_and_store_transaction_from_pczt::<_, zcash_client_sqlite::ReceivedNoteId>(
-                wallet,
-                pczt,
-                None,
-                Some(orchard_vk),
+        wallet
+            .lock_outputs(
+                &staged.inputs,
+                LockOwner::new(*staged.txid.as_ref()),
+                staged.lock_expiry,
             )
-            .map_err(|e| build_err("extractAndStore", format!("{e:?}")))?
-            .to_string();
-        assert_sole_spend(ext, &txid, account_uuid)?;
-        Ok(txid)
+            .map_err(|error| match error {
+                LockError::LockFailure(_) => refuse_store("inputsAlreadySpent"),
+                error => build_err("lockInputs", error),
+            })?;
+        tx_state::put_submission(ext, &staged.txid.to_string(), account_uuid, pczt_bytes)
+    })
+}
+
+/// Stores a held submission; its spends take over from the input locks.
+fn store_submission(
+    db: &mut Db,
+    txid: &str,
+    pczt: pczt::Pczt,
+    orchard_vk: &orchard::circuit::VerifyingKey,
+) -> Result<()> {
+    db.transactionally_with_extension(|wallet, ext| {
+        extract_and_store(wallet, pczt, orchard_vk)?;
+        tx_state::delete_submission(ext, txid)
+    })
+}
+
+/// Releases a rejected submission's inputs. A copy an earlier submit stored still
+/// spends them until expiry, so its rejection is recorded instead.
+fn release_rejected(
+    db: &mut Db,
+    account_uuid: &str,
+    staged: &Staged,
+    error: &RuntimeError,
+) -> Result<()> {
+    let txid = staged.txid.to_string();
+    let owner = LockOwner::new(*staged.txid.as_ref());
+    db.transactionally_with_extension(|wallet, ext| {
+        for input in &staged.inputs {
+            wallet
+                .unlock_output(input, owner)
+                .map_err(|e| build_err("releaseInputs", e))?;
+        }
+        tx_state::delete_submission(ext, &txid)?;
+        if tx_state::is_stored(ext, &txid)? {
+            tx_state::insert_rejection(ext, &txid, account_uuid, error)?;
+        }
+        Ok(())
     })
 }
 
@@ -822,7 +1006,8 @@ pub enum SubmitOutcome {
     Accepted {
         txid: String,
     },
-    /// The trusted node rejected it; the stored transaction holds its notes until chain expiry.
+    /// The trusted node rejected it. It is not stored and its notes are spendable
+    /// again, unless an earlier submit stored it: then they return at its expiry.
     Rejected {
         txid: String,
         error: RuntimeError,
@@ -835,8 +1020,8 @@ pub enum SubmitOutcome {
     },
 }
 
-// Only a definitive rejection is recorded; a spent-input reply can refer to this
-// transaction itself.
+// Only a definitive rejection releases the notes; a spent-input reply can refer to
+// this transaction itself.
 fn first_submit_rejection(error: RuntimeError) -> std::result::Result<RuntimeError, RuntimeError> {
     if error.code == ErrorCode::BroadcastRejected {
         Ok(error)
@@ -845,65 +1030,130 @@ fn first_submit_rejection(error: RuntimeError) -> std::result::Result<RuntimeErr
     }
 }
 
-fn record_submit_outcome(
+/// Stores the broadcast transaction, or releases its inputs if the node
+/// definitively rejected it. Storing after a broadcast cannot fail as a plain error.
+fn finish_submission(
     db: &mut Db,
     account_uuid: &str,
-    txid: String,
+    staged: Staged,
+    pczt: pczt::Pczt,
+    orchard_vk: &orchard::circuit::VerifyingKey,
     result: Result<()>,
-) -> SubmitOutcome {
-    match result {
-        Ok(()) => SubmitOutcome::Accepted { txid },
-        Err(error) => match first_submit_rejection(error) {
-            Ok(error) => match tx_state::record_rejection(db, &txid, account_uuid, &error) {
+) -> Result<SubmitOutcome> {
+    let txid = staged.txid.to_string();
+    let result = match result.map_err(first_submit_rejection) {
+        Err(Ok(error)) => {
+            return Ok(match release_rejected(db, account_uuid, &staged, &error) {
                 Ok(()) => SubmitOutcome::Rejected { txid, error },
+                // Still recorded: it is kept as a pending send.
                 Err(error) => SubmitOutcome::Unknown { txid, error },
-            },
-            Err(error) => SubmitOutcome::Unknown { txid, error },
-        },
+            });
+        }
+        Err(Err(error)) => Err(error),
+        Ok(()) => Ok(()),
+    };
+    if let Err(error) = store_submission(db, &txid, pczt, orchard_vk) {
+        let broadcast = if result.is_ok() {
+            "accepted"
+        } else {
+            "unknown"
+        };
+        return Err(RuntimeError::with(
+            ErrorCode::FinalizeOutcomeUnknown,
+            json!({ "txid": txid, "broadcast": broadcast }),
+        )
+        .detail(error));
     }
+    Ok(match result {
+        Ok(()) => SubmitOutcome::Accepted { txid },
+        Err(error) => SubmitOutcome::Unknown { txid, error },
+    })
 }
 
-/// Persists the exact authorized transaction before broadcasting it.
+fn parse_pczt(bytes: &[u8]) -> Result<pczt::Pczt> {
+    pczt::Pczt::parse(bytes).map_err(|e| {
+        RuntimeError::with(ErrorCode::PcztError, json!({ "stage": "parse" }))
+            .detail(format!("{e:?}"))
+    })
+}
+
+/// The Orchard verifying key for the transaction's own branch.
+fn verifying_key_for(
+    db: &Db,
+    pczt: &pczt::Pczt,
+) -> Result<&'static orchard::circuit::VerifyingKey> {
+    let chain_tip = db
+        .chain_height()
+        .map_err(|error| build_err("chainHeight", error))?
+        .ok_or_else(|| RuntimeError::new(ErrorCode::NotSynced))?;
+    Ok(crate::circuit_keys::verifying_key(
+        circuit_version_for_branch(db.params(), *pczt.global().consensus_branch_id(), chain_tip),
+    ))
+}
+
+/// Stores submissions whose outcome was never stored: the process stopped after
+/// holding their inputs, or storing failed after the broadcast. The node may have
+/// them, so each is kept as a pending send, like an unknown outcome.
+pub fn settle_interrupted_submissions(db: &mut Db) -> Result<()> {
+    while let Some((txid, pczt_bytes)) =
+        db.transactionally_with_extension(|_wallet, ext| tx_state::first_submission(ext))?
+    {
+        let pczt = parse_pczt(&pczt_bytes)?;
+        let orchard_vk = verifying_key_for(db, &pczt)?;
+        store_submission(db, &txid, pczt, orchard_vk)?;
+    }
+    Ok(())
+}
+
+/// Holds the inputs and records the submission before broadcasting, then stores
+/// the transaction unless the node definitively rejected it.
 ///
-/// A transaction the node already rejected is not sent again.
+/// Storing is what makes the upstream wallet hold the notes until expiry, so a
+/// rejection must come first to release them at once. The record made before the
+/// broadcast keeps a lost outcome from looking like an unsent payment.
 pub async fn submit_signed_pczt(
     db: &mut Db,
     client: &mut crate::network::LightClient,
     account_uuid: &str,
     pczt_bytes: &[u8],
 ) -> Result<SubmitOutcome> {
-    let pczt = pczt::Pczt::parse(pczt_bytes).map_err(|e| {
-        RuntimeError::with(ErrorCode::PcztError, json!({ "stage": "parse" }))
-            .detail(format!("{e:?}"))
-    })?;
-    let params = *db.params();
-    let chain_tip = db
-        .chain_height()
-        .map_err(|error| build_err("chainHeight", error))?
-        .ok_or_else(|| RuntimeError::new(ErrorCode::NotSynced))?;
-    let version =
-        circuit_version_for_branch(&params, *pczt.global().consensus_branch_id(), chain_tip);
-    let orchard_vk = crate::circuit_keys::verifying_key(version);
+    submit_with(db, account_uuid, pczt_bytes, |raw| {
+        crate::network::broadcast(client, raw)
+    })
+    .await
+}
 
-    let txid = store_signed_pczt(db, account_uuid, pczt, orchard_vk)?;
-    if let Err(error) = tx_state::assert_not_rejected(db, &txid) {
-        return Ok(match error.code {
-            ErrorCode::BroadcastRejected => SubmitOutcome::Rejected { txid, error },
-            _ => SubmitOutcome::Unknown { txid, error },
-        });
+pub(crate) async fn submit_with<F, Fut>(
+    db: &mut Db,
+    account_uuid: &str,
+    pczt_bytes: &[u8],
+    broadcast: F,
+) -> Result<SubmitOutcome>
+where
+    F: FnOnce(Vec<u8>) -> Fut,
+    Fut: std::future::Future<Output = Result<()>>,
+{
+    let pczt = parse_pczt(pczt_bytes)?;
+    settle_interrupted_submissions(db)?;
+    let orchard_vk = verifying_key_for(db, &pczt)?;
+    let mut staged = stage_signed_pczt(db, account_uuid, pczt.clone(), orchard_vk)?;
+    // A stored copy the node already rejected is not sent again.
+    if let Err(error) = tx_state::assert_not_rejected(db, &staged.txid.to_string()) {
+        if error.code == ErrorCode::BroadcastRejected {
+            let txid = staged.txid.to_string();
+            return Ok(SubmitOutcome::Rejected { txid, error });
+        }
+        return Err(error);
     }
-    let raw = match raw_transaction(db, &txid) {
-        Ok(raw) => raw,
-        Err(error) => return Ok(SubmitOutcome::Unknown { txid, error }),
-    };
-    let result = crate::network::broadcast(client, raw).await;
-    Ok(record_submit_outcome(db, account_uuid, txid, result))
+    hold_inputs(db, account_uuid, &staged, pczt_bytes)?;
+    // Each extraction draws a new binding signature: the stored bytes can differ
+    // from the broadcast ones, never the txid.
+    let result = broadcast(std::mem::take(&mut staged.raw)).await;
+    finish_submission(db, account_uuid, staged, pczt, orchard_vk, result)
 }
 
 /// Reads a stored transaction's raw bytes from the wallet for broadcast.
 pub fn raw_transaction(db: &Db, txid: &str) -> Result<Vec<u8>> {
-    use zcash_primitives::transaction::TxId;
-
     let bytes = hex::decode(txid)
         .ok()
         .filter(|b| b.len() == 32)
@@ -955,82 +1205,6 @@ mod submit_state_tests {
         )
     }
 
-    fn outcome_wallet(fail_write: bool) -> (Db, String) {
-        let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch(
-            "CREATE TABLE ext_onekey_tx_state (
-               txid BLOB PRIMARY KEY NOT NULL,
-               account_uuid BLOB NOT NULL,
-               rejection_code INTEGER,
-               rejection_reason TEXT
-             );",
-        )
-        .unwrap();
-        if fail_write {
-            conn.execute_batch(
-                "CREATE TRIGGER fail_state BEFORE INSERT ON ext_onekey_tx_state
-                 BEGIN SELECT RAISE(ABORT, 'synthetic write failure'); END;",
-            )
-            .unwrap();
-        }
-        (wallet(conn), "01".repeat(32))
-    }
-
-    #[test]
-    fn only_a_node_rejection_is_recorded() {
-        let (mut db, txid) = outcome_wallet(false);
-        let account = uuid::Uuid::nil().to_string();
-        assert!(matches!(
-            record_submit_outcome(&mut db, &account, txid.clone(), Ok(())),
-            SubmitOutcome::Accepted { .. }
-        ));
-        tx_state::assert_not_rejected(&mut db, &txid).unwrap();
-
-        let rejected = RuntimeError::new(ErrorCode::BroadcastRejected).detail("bad-txns-expired");
-        assert!(matches!(
-            record_submit_outcome(&mut db, &account, txid.clone(), Err(rejected)),
-            SubmitOutcome::Rejected { .. }
-        ));
-        assert_eq!(
-            tx_state::assert_not_rejected(&mut db, &txid)
-                .unwrap_err()
-                .code,
-            ErrorCode::BroadcastRejected
-        );
-    }
-
-    #[test]
-    fn duplicate_spend_or_network_failure_keeps_the_stored_send_pending() {
-        for code in [ErrorCode::BroadcastOutcomeUnknown, ErrorCode::NetworkError] {
-            let (mut db, txid) = outcome_wallet(false);
-            assert!(matches!(
-                record_submit_outcome(
-                    &mut db,
-                    &uuid::Uuid::nil().to_string(),
-                    txid.clone(),
-                    Err(RuntimeError::new(code))
-                ),
-                SubmitOutcome::Unknown { .. }
-            ));
-            tx_state::assert_not_rejected(&mut db, &txid).unwrap();
-        }
-    }
-
-    #[test]
-    fn a_rejection_that_cannot_be_recorded_stays_unknown() {
-        let (mut db, txid) = outcome_wallet(true);
-        let rejected = RuntimeError::new(ErrorCode::BroadcastRejected);
-        match record_submit_outcome(
-            &mut db,
-            &uuid::Uuid::nil().to_string(),
-            txid.clone(),
-            Err(rejected),
-        ) {
-            SubmitOutcome::Unknown { txid: retained, .. } => assert_eq!(retained, txid),
-            _ => panic!("an unrecorded rejection must not drop the stored transaction"),
-        }
-    }
-
     /// Transaction 1 is the one just stored; it spends orchard note 7.
     fn spend_fixture(other: Option<(Option<u32>, Option<u32>)>) -> Db {
         let conn = Connection::open_in_memory().unwrap();
@@ -1043,7 +1217,7 @@ mod submit_state_tests {
              CREATE TABLE v_transactions (txid BLOB, account_uuid BLOB, total_spent INTEGER);",
         )
         .unwrap();
-        for (table, output) in SPEND_TABLES {
+        for (table, output, ..) in SPEND_TABLES {
             conn.execute_batch(&format!(
                 "CREATE TABLE {table} ({output} INTEGER, transaction_id INTEGER);"
             ))
@@ -1077,6 +1251,93 @@ mod submit_state_tests {
         let txid = crate::history::hex_display_order(&[1_u8; 32]);
         let account = uuid::Uuid::from_u128(account).to_string();
         db.transactionally_with_extension(|_, ext| assert_sole_spend(ext, &txid, &account))
+    }
+
+    fn lock_fixture(fail_delete: bool) -> (Db, Staged, String) {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE transactions (id_tx INTEGER PRIMARY KEY, txid BLOB);
+             CREATE TABLE scan_queue (block_range_end INTEGER);
+             INSERT INTO scan_queue VALUES (1001);
+             CREATE TABLE orchard_received_notes (
+               transaction_id INTEGER, action_index INTEGER,
+               lock_owner BLOB, lock_expiry_height INTEGER
+             );
+             INSERT INTO orchard_received_notes VALUES (1, 0, NULL, NULL);
+             CREATE TABLE ext_onekey_submission (
+               txid BLOB PRIMARY KEY, account_uuid BLOB, pczt BLOB
+             );",
+        )
+        .unwrap();
+        conn.execute("INSERT INTO transactions VALUES (1, ?1)", [[9_u8; 32]])
+            .unwrap();
+        if fail_delete {
+            conn.execute_batch(
+                "CREATE TRIGGER fail_release BEFORE DELETE ON ext_onekey_submission
+                 BEGIN SELECT RAISE(ABORT, 'simulated storage failure'); END;",
+            )
+            .unwrap();
+        }
+        let staged = Staged {
+            txid: TxId::from_bytes([1; 32]),
+            raw: vec![],
+            inputs: vec![OutputRef::new(
+                TxId::from_bytes([9; 32]),
+                PoolType::ORCHARD,
+                0,
+            )],
+            lock_expiry: BlockHeight::from_u32(1040),
+        };
+        (wallet(conn), staged, uuid::Uuid::from_u128(1).to_string())
+    }
+
+    fn held_state(db: &mut Db) -> (Option<Vec<u8>>, bool) {
+        db.transactionally_with_extension(|_, ext| {
+            let owner =
+                ext.query_row("SELECT lock_owner FROM orchard_received_notes", [], |row| {
+                    row.get(0)
+                })?;
+            Ok::<_, RuntimeError>((owner, tx_state::first_submission(ext)?.is_some()))
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn definite_rejection_releases_the_input_and_durable_submission_together() {
+        let (mut db, staged, account) = lock_fixture(false);
+        hold_inputs(&mut db, &account, &staged, &[4, 5]).unwrap();
+        assert_eq!(held_state(&mut db), (Some(vec![1; 32]), true));
+        release_rejected(
+            &mut db,
+            &account,
+            &staged,
+            &RuntimeError::new(ErrorCode::BroadcastRejected),
+        )
+        .unwrap();
+        assert_eq!(held_state(&mut db), (None, false));
+    }
+
+    #[test]
+    fn failed_release_rolls_back_the_unlock_and_keeps_recovery_state() {
+        let (mut db, staged, account) = lock_fixture(true);
+        hold_inputs(&mut db, &account, &staged, &[4, 5]).unwrap();
+        assert!(release_rejected(
+            &mut db,
+            &account,
+            &staged,
+            &RuntimeError::new(ErrorCode::BroadcastRejected)
+        )
+        .is_err());
+        assert_eq!(held_state(&mut db), (Some(vec![1; 32]), true));
+    }
+
+    #[test]
+    fn a_second_submission_cannot_take_the_first_submissions_inputs() {
+        let (mut db, mut staged, account) = lock_fixture(false);
+        hold_inputs(&mut db, &account, &staged, &[4, 5]).unwrap();
+        staged.txid = TxId::from_bytes([2; 32]);
+        assert!(hold_inputs(&mut db, &account, &staged, &[6, 7]).is_err());
+        assert_eq!(held_state(&mut db), (Some(vec![1; 32]), true));
     }
 
     #[test]
@@ -1603,7 +1864,8 @@ mod owned_output_tests {
             CREATE TABLE orchard_received_note_spends (orchard_received_note_id INTEGER, transaction_id INTEGER);
             CREATE TABLE ironwood_received_notes (id INTEGER, nf BLOB);
             CREATE TABLE ironwood_received_note_spends (ironwood_received_note_id INTEGER, transaction_id INTEGER);
-            CREATE TABLE ext_onekey_tx_state (txid BLOB, account_uuid BLOB, rejection_code INTEGER, rejection_reason TEXT);")
+            CREATE TABLE ext_onekey_tx_state (txid BLOB, account_uuid BLOB, rejection_code INTEGER, rejection_reason TEXT);
+            CREATE TABLE ext_onekey_submission (txid BLOB, account_uuid BLOB, pczt BLOB);")
             .unwrap();
         conn.execute(
             "INSERT INTO transactions VALUES (1, ?1, x'00', NULL, 3500040)",

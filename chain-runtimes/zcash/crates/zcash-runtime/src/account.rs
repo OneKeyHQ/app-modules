@@ -414,7 +414,7 @@ fn balance_value(
             "spendable": u64::from(b.spendable_value()),
             "pendingChange": u64::from(b.change_pending_confirmation()),
             "pendingSpendable": u64::from(b.value_pending_spendability()),
-            // Held by an unexpired upstream output lock; this runtime's sends take none.
+            // Held by an unexpired upstream output lock: a send not yet stored after its broadcast.
             "locked": u64::from(b.locked_value()),
             "total": u64::from(b.total()),
             // Unspent notes worth <= the marginal fee, confirmed or not. Upstream
@@ -529,13 +529,11 @@ pub fn account_by_name(db: &Db, name: &str) -> Result<String> {
 }
 
 /// `{ uuid }` of the first account `matches` accepts, or `"null"`.
-fn find_account(
-    db: &Db,
-    matches: impl Fn(&<Db as WalletRead>::Account) -> bool,
-) -> Result<String> {
-    Ok(matching_accounts(db, matches)?
-        .first()
-        .map_or_else(|| "null".to_string(), |uuid| json!({ "uuid": uuid }).to_string()))
+fn find_account(db: &Db, matches: impl Fn(&<Db as WalletRead>::Account) -> bool) -> Result<String> {
+    Ok(matching_accounts(db, matches)?.first().map_or_else(
+        || "null".to_string(),
+        |uuid| json!({ "uuid": uuid }).to_string(),
+    ))
 }
 
 /// UUIDs of every account `matches` accepts.
@@ -869,7 +867,8 @@ mod remove_account_tests {
     fn wallet() -> Db {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         rusqlite::vtab::array::load_module(&conn).unwrap();
-        let mut db = WalletDb::from_connection(conn, NET, HostClock, ChaCha20Rng::from_seed([7; 32]));
+        let mut db =
+            WalletDb::from_connection(conn, NET, HostClock, ChaCha20Rng::from_seed([7; 32]));
         WalletMigrator::new()
             .with_external_migrations(crate::tx_state::migrations())
             .init_or_migrate(&mut db)

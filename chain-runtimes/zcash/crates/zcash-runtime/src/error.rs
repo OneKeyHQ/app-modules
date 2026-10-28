@@ -99,7 +99,8 @@ pub enum ErrorCode {
     /// The node definitively judged the transaction consensus-invalid or expired; it
     /// can never be mined. Params: `{ errorCode }`; `detail` holds the node's message.
     ///
-    /// Unlike `NETWORK_ERROR`, do not retry as-is; the spent notes return only at the expiry height.
+    /// Unlike `NETWORK_ERROR`, do not retry as-is. A first submit's notes are spendable again;
+    /// a stored transaction's notes return only at its expiry height.
     BroadcastRejected,
     /// The node returned an error that does not prove the transaction can never be
     /// mined: it may already be mined or in the mempool (double spend, duplicate
@@ -108,8 +109,8 @@ pub enum ErrorCode {
     /// resubmit it; scanning resolves it as mined or expired. Hosts must not treat
     /// this as a failed send. Params: `{ errorCode }`; `detail` holds the node's message.
     BroadcastOutcomeUnknown,
-    /// The transaction may be in the in-memory wallet but persistence is unconfirmed.
-    /// Do not unlock or rebuild the transaction.
+    /// The transaction may have been broadcast but persisting the outcome is unconfirmed.
+    /// The send is kept, as pending once stored; do not rebuild it.
     FinalizeOutcomeUnknown,
 
     /// Capability not implemented. Params: `{ what }`

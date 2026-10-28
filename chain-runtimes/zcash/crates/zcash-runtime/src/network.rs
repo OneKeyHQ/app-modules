@@ -229,10 +229,25 @@ fn broadcast_definitely_invalid(message: &str) -> bool {
         return false;
     }
     let message = message.to_lowercase();
-    // zcashd consensus reject reasons; `tx-expiring-soon` is policy and excluded.
-    ["bad-txns-", "bad-tx-", "tx-overwinter-expired"]
-        .iter()
-        .any(|needle| message.contains(needle))
+    // These reasons reject immutable transaction contents. A broad `bad-txns-`
+    // prefix also includes chain-dependent anchors, nullifiers and relay policy.
+    const DEFINITIVE_REASONS: &[&str] = &[
+        "tx-overwinter-expired",
+        "bad-txns-vin-empty",
+        "bad-txns-vout-empty",
+        "bad-txns-oversize",
+        "bad-txns-vout-negative",
+        "bad-txns-vout-toolarge",
+        "bad-txns-txouttotal-toolarge",
+        "bad-txns-txintotal-toolarge",
+        "bad-txns-inputs-duplicate",
+        "bad-txns-in-belowout",
+        "bad-txns-fee-outofrange",
+        "bad-txns-orchard-verification-failed",
+    ];
+    message
+        .split(|character: char| !character.is_ascii_alphanumeric() && character != '-')
+        .any(|reason| DEFINITIVE_REASONS.contains(&reason))
 }
 
 fn broadcast_already_known(message: &str) -> bool {
@@ -308,7 +323,6 @@ mod tests {
     fn only_consensus_invalid_or_expired_replies_count_as_a_rejection() {
         for message in [
             "tx-overwinter-expired",
-            "bad-txns-fee-too-low",
             "bad-txns-orchard-verification-failed",
             "16: bad-txns-vout-negative",
         ] {
@@ -318,6 +332,13 @@ mod tests {
             "bad-txns-inputs-spent",
             "bad-txns-inputs-missingorspent",
             "bad-txns-shielded-requirements-not-met",
+            "bad-txns-orchard-unknown-anchor",
+            "bad-txns-orchard-duplicate-nullifier",
+            "bad-txns-ironwood-duplicate-nullifier",
+            "bad-txns-fee-too-low",
+            "bad-txns-nonfinal",
+            "bad-tx-overwinter-version-too-high",
+            "bad-txns-vout-negative-unrecognized-suffix",
             "tx-expiring-soon",
             "transaction is non-standard",
             "transaction dropped because the queue is full",
