@@ -64,16 +64,17 @@ pub async fn set_node_url(url: &str) -> std::result::Result<(), JsValue> {
 /// Fetch the chain tip. Does not require an open wallet DB (account creation needs the birthday first).
 ///
 /// Returns `{ height, network }`; the host must check `network` matches the wallet being created.
+/// `network` is that of the node that reported `height`.
 #[wasm_bindgen(js_name = chainTip)]
 pub async fn chain_tip() -> std::result::Result<String, JsValue> {
-    let tip: u64 = runtime::with_daemon(|daemon| async move {
-        let r = sync::chain_tip(&daemon).await;
+    let (tip, network) = runtime::with_daemon(|daemon, network| async move {
+        let r = sync::chain_tip(&daemon).await.map(|tip| (tip, network));
         (daemon, r)
     })
     .await?;
     json(serde_json::json!({
         "height": tip,
-        "network": runtime::daemon_network().map(crate::keys::network_name),
+        "network": network.map(crate::keys::network_name),
     }))
 }
 

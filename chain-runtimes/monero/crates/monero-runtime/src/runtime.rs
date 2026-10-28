@@ -223,19 +223,21 @@ where
     out
 }
 
-/// Borrows only the node client; **no wallet needs to be open**.
+/// Borrows only the node client, with its network; **no wallet needs to be open**.
 ///
 /// Account creation needs the chain tip for the birthday before the database exists.
+/// The network is read with the client, so a node switch during the call cannot pair
+/// one node's answer with another node's network.
 pub async fn with_daemon<T, F, Fut>(f: F) -> Result<T>
 where
-    F: FnOnce(Daemon) -> Fut,
+    F: FnOnce(Daemon, Option<Network>) -> Fut,
     Fut: std::future::Future<Output = (Daemon, Result<T>)>,
 {
     let daemon_gen = daemon_generation();
     let daemon = DAEMON
         .with(|c| c.borrow_mut().take())
         .ok_or_else(no_daemon)?;
-    let (daemon, result) = f(daemon).await;
+    let (daemon, result) = f(daemon, daemon_network()).await;
     put_daemon_back(daemon, daemon_gen);
     result
 }
@@ -332,8 +334,24 @@ mod tests {
             .block_on(f)
     }
 
+    const MAINNET_GENESIS: &str =
+        "418015bb9ae982a1975da7d79277c2705727a56894ba0fb246adaabb1f4632e3";
+    const TESTNET_GENESIS: &str =
+        "48ca7cd3c8de5b6a4d53d2861fbdaedca141553559f9be9520068053cda8430b";
+
     /// Minimal mainnet node: every JSON-RPC call gets the genesis hash, after `delay`.
     fn fake_node(delay: std::time::Duration) -> String {
+        fake_node_with(MAINNET_GENESIS, delay, 1, delay)
+    }
+
+    /// Minimal node: JSON-RPC calls get `genesis` after `delay`; `get_height`
+    /// reports `height` after `height_delay`.
+    fn fake_node_with(
+        genesis: &'static str,
+        delay: std::time::Duration,
+        height: u64,
+        height_delay: std::time::Duration,
+    ) -> String {
         use std::io::{Read, Write};
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
         let url = format!("http://{}", listener.local_addr().unwrap());
@@ -368,8 +386,13 @@ mod tests {
                         Ok(n) => request.extend_from_slice(&buf[..n]),
                     }
                 }
-                std::thread::sleep(delay);
-                let body = r#"{"jsonrpc":"2.0","id":0,"result":"418015bb9ae982a1975da7d79277c2705727a56894ba0fb246adaabb1f4632e3"}"#;
+                let body = if request.starts_with(b"POST /get_height") {
+                    std::thread::sleep(height_delay);
+                    format!(r#"{{"height":{height},"status":"OK"}}"#)
+                } else {
+                    std::thread::sleep(delay);
+                    format!(r#"{{"jsonrpc":"2.0","id":0,"result":"{genesis}"}}"#)
+                };
                 let _ = write!(
                     stream,
                     "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
@@ -398,6 +421,45 @@ mod tests {
         assert_eq!(crate::network::current_node_url(), Some(fast));
         assert_eq!(daemon_network(), Some(Network::Mainnet));
         assert!(DAEMON.with(|c| c.borrow().is_some()));
+    }
+
+    /// A tip keeps the network of the node that reported it, even when another node
+    /// is selected before it arrives.
+    #[test]
+    fn a_chain_tip_keeps_the_network_of_the_node_that_reported_it() {
+        let slow_mainnet = fake_node_with(
+            MAINNET_GENESIS,
+            std::time::Duration::ZERO,
+            3_000_001,
+            std::time::Duration::from_millis(400),
+        );
+        let testnet = fake_node_with(
+            TESTNET_GENESIS,
+            std::time::Duration::ZERO,
+            1_500_001,
+            std::time::Duration::ZERO,
+        );
+        block_on(async {
+            select_node(&slow_mainnet).await.expect("connect mainnet");
+            let tip = with_daemon(|daemon, network| async move {
+                let r = crate::sync::chain_tip(&daemon)
+                    .await
+                    .map(|tip| (tip, network));
+                (daemon, r)
+            });
+            let switch = async {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                select_node(&testnet).await
+            };
+            let (tip, switched) = tokio::join!(tip, switch);
+            switched.expect("connect testnet");
+            assert_eq!(
+                daemon_network(),
+                Some(Network::Testnet),
+                "switch finished first"
+            );
+            assert_eq!(tip.expect("tip"), (3_000_000, Some(Network::Mainnet)));
+        });
     }
 
     /// Disabling the node while a connect is pending keeps it disabled.
