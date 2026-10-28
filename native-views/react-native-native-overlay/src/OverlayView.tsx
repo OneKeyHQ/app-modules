@@ -5,6 +5,7 @@ import { StatusBar, StyleSheet, View, useWindowDimensions } from 'react-native';
 import NativeOverlay from './NativeOverlayNativeComponent';
 import { OverlayLevelProvider } from './OverlayLevelContext';
 import { isBlockingLevel } from './OverlayLevels';
+import { resolveSheetWidth } from './sheetWidth';
 import { useOverlayController } from './useOverlayController';
 
 import type {
@@ -66,6 +67,22 @@ export function OverlayView(props: IOverlayViewProps) {
   } = controller;
 
   const [measuredSheetHeight, setMeasuredSheetHeight] = useState(0);
+  // iOS sizes a sheet itself (narrower than the window on wide windows), so
+  // the content follows the width native reports; Android sheets span the
+  // window and never report.
+  const [reportedSheetWidth, setReportedSheetWidth] = useState<number>();
+  const { containerWidth: sheetContainerWidth, inset: sheetInset } =
+    resolveSheetWidth({
+      windowWidth: width,
+      reportedWidth: reportedSheetWidth,
+      maxWidth: sheet?.maxWidth,
+    });
+  const onSheetLayoutReport = useCallback(
+    (event: NativeSyntheticEvent<{ width: number }>) => {
+      setReportedSheetWidth(event.nativeEvent.width);
+    },
+    []
+  );
   const maxSheetHeight = sheet?.maxHeight ?? height * DEFAULT_SHEET_MAX_RATIO;
   const sheetHeight = Math.min(
     sheet?.height ?? measuredSheetHeight,
@@ -129,6 +146,7 @@ export function OverlayView(props: IOverlayViewProps) {
         onPresented={onHostPresented}
         onDismissed={onDismissed}
         onRequestDismiss={onRequestDismiss}
+        onSheetLayout={isSheet ? onSheetLayoutReport : undefined}
         testID={testID}
       >
         {isSheet ? (
@@ -136,7 +154,8 @@ export function OverlayView(props: IOverlayViewProps) {
             collapsable={false}
             onLayout={onSheetLayout}
             style={{
-              width,
+              width: sheetContainerWidth,
+              paddingHorizontal: sheetInset,
               height: sheet?.height,
               maxHeight: maxSheetHeight,
               // The host is 0x0; without this Yoga shrinks the content to 0 and

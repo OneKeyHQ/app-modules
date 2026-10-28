@@ -104,6 +104,13 @@ static NSString *RNCNativeOverlayPresentationString(RNCNativeOverlayPresentation
       NSString *reason = body[@"reason"] ?: @"system";
       emitter->onDismissed({.reason = std::string(reason.UTF8String)});
     };
+    _containerView.onSheetLayout = ^(CGFloat width) {
+      auto strongSelf = weakSelf;
+      if (!strongSelf) return;
+      auto emitter = std::static_pointer_cast<const RNCNativeOverlayEventEmitter>(strongSelf->_eventEmitter);
+      if (!emitter) return;
+      emitter->onSheetLayout({.width = width});
+    };
     _containerView.onRequestDismiss = ^(NSDictionary *body) {
       auto strongSelf = weakSelf;
       if (!strongSelf) return;

@@ -323,6 +323,30 @@ retain their configured surface color on Mac Catalyst and MUST NOT call
 which are unavailable there. iOS 26.1 and later retain their existing color
 effect. Presentation, sizing, motion, and lifecycle contracts are unchanged.
 
+### Sheet content width
+
+Implemented; unit-tested and iOS native build verified. The reported-width
+path is not yet runtime-verified on a wide window (the app's Dialog and
+ActionList no longer present sheets there). Android and Web unchanged.
+UIKit sizes a global sheet itself and
+gives it less than the window width on wide windows (centered, about 650 pt
+in iPhone compact-height landscape), and `preferredContentSize` with
+`widthFollowsPreferredContentSizeWhenEdgeAttached` was measured not to
+control that width or its position reliably. So the overlay never forces a
+sheet width; the content follows the sheet instead:
+
+- iOS emits `onSheetLayout { width }` whenever the sheet's width settles or
+  changes (presentation, rotation, window resize), for both UIKit global
+  sheets and page-scope sheets, including while the sheet is still entering.
+  It is deduplicated to changes of at least 0.5 pt.
+- JS lays the content out at `min(reported width ?? window width, window
+  width)`. Before the first report the content uses the window width, as
+  before; a narrower report re-lays it out and the fitted height follows.
+- `sheet.maxWidth` caps the content width; any remaining sheet width is split
+  evenly as horizontal inset, so the content is centered in a wider sheet.
+- Android never reports; its sheets stay full width and the content fills the
+  window width (or `maxWidth`, centered). Web is unchanged.
+
 ### Web keyboard focus containment
 
 The topmost active, unsuspended blocking Web entry MUST contain sequential
@@ -529,6 +553,9 @@ P2 sheet notes:
   the next dismissal follows the normal exit path and restores focus.
   Cancelling a tracked pointer resets its drag offset, transition and backdrop
   without dismissing the sheet or swallowing a later click.
+- Sheet content width follows the native `onSheetLayout` report and
+  `sheet.maxWidth` (see Sheet content width); `resolveSheetWidth` is unit
+  tested in `__tests__/sheetWidth.test.ts`.
 - A fitted sheet measures its content with `onLayout` before presenting.
   Hidden content stays mounted inside the zero-width host (clipped on iOS,
   INVISIBLE on Android), and the host height stays auto: a fixed 0 height

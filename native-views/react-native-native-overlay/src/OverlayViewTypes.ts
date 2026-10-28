@@ -26,6 +26,11 @@ export interface IOverlaySheetOptions {
   height?: number;
   /** Defaults to 92% of the window height. */
   maxHeight?: number;
+  /**
+   * Caps the content width; a sheet wider than this centers the content.
+   * The content otherwise fills the width the platform gave the sheet.
+   */
+  maxWidth?: number;
   cornerRadius?: number;
   showHandle?: boolean;
   backgroundColor?: ColorValue;
