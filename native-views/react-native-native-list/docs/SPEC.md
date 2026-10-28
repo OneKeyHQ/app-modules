@@ -1153,6 +1153,11 @@ replaces the previous command from current presentation geometry: the older
 id must not complete late or force its former target before the newer one.
 The caller guards the callback by its latest id and current list/account/network
 owner; a matching numeric id from a prior owner must not unmount current `C`.
+An accepted row patch while a direct disclosure commit is pending MUST preserve
+that command's settlement ownership. If the patch supersedes the pending list
+submission, its committed callback settles the current non-superseded id after
+layout and any pending collapsed-toggle positioning, exactly once. It MUST NOT
+leave callers waiting for a discarded list callback.
 An already settled id
 does not re-emit on a same-id patch. Disposal drops the callback with its
 owner. An unsupported or immediately settled new id must still acknowledge

@@ -2937,6 +2937,7 @@ class NativeListView(
     usesSelectorSourceScale = next.items.any { it.usesSelectorSourceScale }
     adapter.usesSelectorSourceScale = usesSelectorSourceScale
     adapter.selectedKeys = selected
+    val directDisclosureId = activeDisclosureTransitionId
     adapter.submitList(nextItems) {
       if (heldTailEpoch != null) {
         if (heldTailEpoch != structuralTransitionEpoch || disposed) return@submitList
@@ -2946,6 +2947,9 @@ class NativeListView(
         setStructuralSpacerHeight(0)
       }
       relayoutContents()
+      if (directDisclosureId != null) recyclerView.post {
+        settleCommittedDirectDisclosure(next, directDisclosureId, heldTailEpoch == null)
+      }
     }
     bindFooter(next)
   }
