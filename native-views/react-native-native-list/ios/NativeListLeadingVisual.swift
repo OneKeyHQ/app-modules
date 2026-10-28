@@ -21,6 +21,7 @@ final class NativeListLeadingVisual: UIView {
   private let cornerBackdrop = UIView()
   private var slots: [NativeListImageSlot] = []
   private var overlaySlots: [NativeListImageSlot] = []
+  private var overlayFallbackIcons: [UIImageView] = []
   private var overlays: [(UIView, [String: Any])] = []
   private let dashedBorder = CAShapeLayer()
   private var visual: [String: Any] = [:]
@@ -87,6 +88,7 @@ final class NativeListLeadingVisual: UIView {
     }
     let placeholder = theme?.string("strongBackground", default: "#0000000F") ?? "#0000000F"
     let fallbackIcon = visual.dictionary("fallbackIcon")
+    let fallbackBackground = fallbackIcon?.string("backgroundColor", default: placeholder) ?? placeholder
     let sourceFallback =
       kind != "icon" && !sources.isEmpty
       && sources[0].0.string("loadingStrategy", default: "none") != "none"
@@ -95,7 +97,8 @@ final class NativeListLeadingVisual: UIView {
     let restored = fallbackKey.map(NativeListSourceFallbackState.has) ?? false
     let fallbackData = kind == "icon" ? visual : fallbackIcon
     fallback.text = String(visual.string("fallbackText").prefix(2))
-    fallback.textColor = UIColor(nativeListHex: "#8D8D8D", fallback: .gray)
+    fallback.textColor = UIColor(
+      nativeListHex: visual.string("fallbackTextColor", default: "#8D8D8D"), fallback: .gray)
     icon.image = fallbackData.map { nativeListIcon(named: $0.string("name")) } ?? nil
     icon.tintColor = UIColor(
       nativeListHex: fallbackData?.string("tintColor", default: "#646464") ?? "#646464",
@@ -106,7 +109,9 @@ final class NativeListLeadingVisual: UIView {
       nativeListHex: visual.string(
         "backgroundColor", default: sources.isEmpty ? placeholder : "#00000000"), fallback: .clear)
     backgroundColor =
-      sourceFallback ? UIColor(nativeListHex: placeholder, fallback: .clear) : visualBackground
+      sources.isEmpty && fallbackIcon?["backgroundColor"] != nil || restored
+      ? UIColor(nativeListHex: fallbackBackground, fallback: .clear)
+      : sourceFallback ? UIColor(nativeListHex: placeholder, fallback: .clear) : visualBackground
     layer.borderWidth = kind == "icon" ? 1 / UIScreen.main.scale : 0
     layer.borderColor = UIColor(nativeListHex: "#0000001F", fallback: .clear).cgColor
     if bitmapBorderWidth > 0 {
@@ -121,7 +126,7 @@ final class NativeListLeadingVisual: UIView {
         continue
       }
       let source = sources[index]
-      slot.view.isHidden = index > 0 || sourceFallback
+      slot.view.isHidden = index > 0 || restored
       slot.bind(
         source.0, key: "\(key):leading:\(index)", variant: source.1,
         fit: index == 0 ? style["contentFit"] as? String : nil, placeholder: placeholder
@@ -136,7 +141,7 @@ final class NativeListLeadingVisual: UIView {
           }
         }
         self.backgroundColor =
-          loaded ? visualBackground : UIColor(nativeListHex: placeholder, fallback: .clear)
+          loaded ? visualBackground : UIColor(nativeListHex: fallbackBackground, fallback: .clear)
         self.fallback.isHidden = loaded || fallbackIcon != nil
         self.icon.isHidden = loaded || fallbackIcon == nil
       }
@@ -158,8 +163,17 @@ final class NativeListLeadingVisual: UIView {
     overlays.removeAll(keepingCapacity: true)
     let descriptors = Array(visual.dictionaries("overlays").prefix(2))
     while overlaySlots.count < descriptors.count { overlaySlots.append(NativeListImageSlot()) }
+    while overlayFallbackIcons.count < descriptors.count { overlayFallbackIcons.append(UIImageView()) }
     for (index, data) in descriptors.enumerated() {
       let frame = index < previousOverlays.count ? previousOverlays[index].0 : UIView()
+      let fallbackData = data.dictionary("fallbackIcon")
+      let fallbackGlyph = overlayFallbackIcons[index]
+      fallbackGlyph.image = fallbackData.flatMap { nativeListIcon(named: $0.string("name")) }
+      fallbackGlyph.tintColor = UIColor(
+        nativeListHex: fallbackData?.string("tintColor", default: "#646464") ?? "#646464",
+        fallback: .darkGray)
+      fallbackGlyph.contentMode = .scaleAspectFit
+      fallbackGlyph.isHidden = true
       frame.clipsToBounds = true
       frame.backgroundColor = UIColor(
         nativeListHex: data.string(
@@ -172,7 +186,9 @@ final class NativeListLeadingVisual: UIView {
         child = slot.view
         child.isHidden = true
         slot.bind(image, key: "\(key):overlay:\(index)", placeholder: placeholder) {
-          [weak child] loaded in child?.isHidden = !loaded
+          [weak child, weak fallbackGlyph] loaded in
+          child?.isHidden = !loaded
+          fallbackGlyph?.isHidden = loaded || fallbackData == nil
         }
       } else if !data.string("text").isEmpty {
         overlaySlots[index].recycle()
@@ -181,7 +197,10 @@ final class NativeListLeadingVisual: UIView {
         label.textAlignment = .center
         // A line-height box is the legacy wallet text badge: regular weight, centered metrics.
         label.font = nativeListFont(
-          ofSize: overlayTextFontSize, weight: overlayTextLineHeight == nil ? .medium : .regular,
+          ofSize: overlayTextFontSize,
+          weight: NativeListTextStyles.marketFontWeight(
+            data.string("fontWeight"),
+            fallback: overlayTextLineHeight == nil ? .medium : .regular),
           fonts: fonts)
         if let line = overlayTextLineHeight {
           let paragraph = NSMutableParagraphStyle()
@@ -207,10 +226,9 @@ final class NativeListLeadingVisual: UIView {
           nativeListHex: data.string("tintColor", default: "#646464"), fallback: .darkGray)
         child = glyph
       }
-      if child.superview !== frame {
-        frame.subviews.forEach { $0.removeFromSuperview() }
-        frame.addSubview(child)
-      }
+      frame.subviews.forEach { $0.removeFromSuperview() }
+      frame.addSubview(child)
+      if data.dictionary("image") != nil && fallbackData != nil { frame.addSubview(fallbackGlyph) }
       if frame.superview == nil { addSubview(frame) }
       overlays.append((frame, data))
     }
@@ -253,10 +271,16 @@ final class NativeListLeadingVisual: UIView {
     }
     fallback.frame = bounds
     let fallbackIcon = visual.dictionary("fallbackIcon")
+    let explicitFallbackSize: CGFloat? = fallbackIcon.flatMap { data in
+      guard data["size"] != nil else { return nil }
+      let size = data.double("size")
+      return size > 0 ? CGFloat(size) : nil
+    }
     let iconSize: CGFloat =
-      !sources.isEmpty && fallbackIcon != nil
+      explicitFallbackSize
+      ?? (!sources.isEmpty && fallbackIcon != nil
       ? min(bounds.width, bounds.height)
-        * (fallbackIcon?.string("name") == "GlobusOutline" ? 1.2 : 1) : glyphSize
+        * (fallbackIcon?.string("name") == "GlobusOutline" ? 1.2 : 1) : glyphSize)
     icon.frame = CGRect(
       x: (bounds.width - iconSize) / 2, y: (bounds.height - iconSize) / 2, width: iconSize,
       height: iconSize)
@@ -306,7 +330,8 @@ final class NativeListLeadingVisual: UIView {
     cornerBackdrop.frame = networkBackdrop.frame
     corner.frame = cornerBackdrop.frame.insetBy(dx: 1, dy: 1)
     unread.frame = logical(CGRect(x: bounds.width - 8, y: 0, width: 8, height: 8))
-    for (frame, data) in overlays {
+    for (index, overlay) in overlays.enumerated() {
+      let (frame, data) = overlay
       let size = CGFloat(data.double("size", default: 20))
       // Legacy wallet text badges size to their text (tabular 12pt + 4) at the line height.
       let textBadgeLine =
@@ -331,9 +356,19 @@ final class NativeListLeadingVisual: UIView {
           height: height))
       frame.layer.cornerRadius = min(width, height) / 2
       let inset = CGFloat(data.double("padding", default: 0))
-      frame.subviews.first?.frame = frame.bounds.insetBy(
+      let contentFrame = frame.bounds.insetBy(
         dx: data["text"] != nil ? overlayTextHorizontalInset ?? inset : inset,
         dy: data["text"] != nil && overlayTextHorizontalInset != nil ? 0 : inset)
+      frame.subviews.forEach { $0.frame = contentFrame }
+      let slot = overlaySlots[index].view
+      if data.dictionary("image") != nil {
+        let circularImage = inset > 0 && width == height
+        slot.layer.cornerRadius = circularImage ? min(contentFrame.width, contentFrame.height) / 2 : 0
+        slot.clipsToBounds = circularImage
+      } else {
+        slot.layer.cornerRadius = 0
+        slot.clipsToBounds = false
+      }
     }
     dashedBorder.isHidden = visual.string("borderStyle") != "dashed"
     dashedBorder.strokeColor =

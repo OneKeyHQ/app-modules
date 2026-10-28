@@ -580,6 +580,23 @@ export class CollapsiblePagerView extends React.PureComponent<
     this.scrollCurrentPageToTop(0, options?.animated ?? true);
   };
 
+  public scrollHeaderBy = (delta: number) => {
+    if (!Number.isFinite(delta)) return;
+    const offset = Math.min(
+      this.headerHeight,
+      Math.max(0, this.sharedHeaderOffset + delta)
+    );
+    this.scrollCurrentPageToTop(offset, false);
+  };
+
+  public scrollHeaderToOffset = (offset: number) => {
+    if (!Number.isFinite(offset)) return;
+    this.scrollCurrentPageToTop(
+      Math.min(this.headerHeight, Math.max(0, offset)),
+      false
+    );
+  };
+
   public scrollToStickyTop = (options?: Readonly<{ animated?: boolean }>) => {
     this.scrollCurrentPageToTop(
       this.headerHeight,
@@ -674,10 +691,10 @@ export class CollapsiblePagerView extends React.PureComponent<
       )
         return;
       this.pageOffsets.set(key, 0);
-      this.sharedHeaderOffset = offset;
+      this.sharedHeaderOffset = Math.min(this.headerHeight, Math.max(0, offset));
       this.bodyAlignment = { element, key };
       scrollElementTo(element, {
-        top: offset,
+        top: this.sharedHeaderOffset,
         behavior: animated ? "smooth" : "instant",
       });
       this.syncFallbackHeader();

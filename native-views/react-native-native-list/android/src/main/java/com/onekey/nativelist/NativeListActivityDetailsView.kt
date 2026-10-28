@@ -70,10 +70,13 @@ internal class NativeListActivityDetailsView(private val reactContext: ThemedRea
     val style = data.optJSONObject("style") ?: JSONObject()
     val image = style.optJSONObject("image") ?: JSONObject()
     val table = data.optString("presentation") == "table"
+    val hideLeading = data.optBoolean("hideLeading")
     val gap = if (style.has("leadingGap")) px(style.optDouble("leadingGap")) else dp(12)
     val iw = if (image.has("width")) px(image.optDouble("width")) else dp(40)
-    visual.layoutParams = LayoutParams(iw, if (image.has("height")) px(image.optDouble("height")) else dp(40)).apply { marginEnd = gap }
-    visual.bind(data.optJSONObject("leading") ?: JSONObject(), image, item.key, theme, false, sourceScale, data.optJSONObject("secondaryLeading"))
+    visual.layoutParams = LayoutParams(iw, if (image.has("height")) px(image.optDouble("height")) else dp(40)).apply { marginEnd = if (hideLeading) 0 else gap }
+    visual.visibility = if (hideLeading) GONE else VISIBLE
+    if (hideLeading) visual.recycle()
+    else visual.bind(data.optJSONObject("leading") ?: JSONObject(), image, item.key, theme, false, sourceScale, data.optJSONObject("secondaryLeading"))
     amounts.layoutParams = if (table) LayoutParams(0, -2, 1f).apply { marginStart = gap } else LayoutParams(-2, -2).apply { marginStart = gap }
     text(title, data.optString("title"), style.optJSONObject("title"), 16f, color("primary", theme), 24, "medium")
     text(description, data.optString("description"), style.optJSONObject("description"), 14f, color("secondary", theme), 20, lines = 2)
@@ -117,7 +120,7 @@ internal class NativeListActivityDetailsView(private val reactContext: ThemedRea
     actions.removeAllViews()
     val actionData = data.optJSONArray("footerActions")
     actions.visibility = if ((actionData?.length() ?: 0) == 0) GONE else VISIBLE
-    actions.layoutParams = LayoutParams(-1, -2).apply { marginStart = iw + gap; topMargin = dp(8) }
+    actions.layoutParams = LayoutParams(-1, -2).apply { marginStart = if (hideLeading) 0 else iw + gap; topMargin = dp(8) }
     for (index in 0 until (actionData?.length() ?: 0)) {
       val descriptor = actionData!!.getJSONObject(index)
       val button = NativeListTextView(context)
@@ -146,7 +149,7 @@ internal class NativeListActivityDetailsView(private val reactContext: ThemedRea
     }
     label.text = styled
   }
-  fun recycle() { visual.recycle(); amountViews.forEach { it.recycle() }; description.setOnClickListener(null); actions.removeAllViews() }
+  fun recycle() { visual.recycle(); visual.visibility = VISIBLE; amountViews.forEach { it.recycle() }; description.setOnClickListener(null); actions.removeAllViews() }
   fun dispose() { recycle(); visual.dispose(); amountViews.forEach { it.dispose() } }
 
   private inner class AmountView : LinearLayout(context) {

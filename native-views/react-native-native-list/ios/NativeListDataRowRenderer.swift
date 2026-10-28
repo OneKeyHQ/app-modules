@@ -6,7 +6,7 @@ final class NativeListDataRowCell: NativeListRendererCell {
     fonts: NativeListFontFamilies
   ) -> CGFloat? {
     let secondary = item.data.dictionaries("columns").contains {
-      !$0.string("secondaryText").isEmpty
+      !nativeListDataColumnText($0, "secondaryText").isEmpty
     }
     return secondary ? 60 : layout == "table" ? 48 : 56
   }
@@ -14,9 +14,13 @@ final class NativeListDataRowCell: NativeListRendererCell {
   private let visual = NativeListLeadingVisual()
   private let favorite = UIImageView()
   private let accessories = NativeListAccessoryStack()
+  private let trailingAccessories = NativeListAccessoryStack()
   private let columns = UIStackView()
   private let cells = (0..<4).map { _ in NativeListTableColumnView() }
   private var rowConstraints: [NSLayoutConstraint] = []
+  private var trailingWidthConstraint: NSLayoutConstraint?
+  private var columnWidthConstraints: [NSLayoutConstraint] = []
+  private var columnWeights: [Int]?
   override func unselectedBackground(
     _ item: NativeListItem, theme: [String: Any]?, layout: String, itemIndex: Int?
   ) -> UIColor {
@@ -34,8 +38,11 @@ final class NativeListDataRowCell: NativeListRendererCell {
     columns.alignment = .center
     columns.spacing = 8
     cells.forEach(columns.addArrangedSubview)
-    [favorite, visual, accessories, columns].forEach(root.addArrangedSubview)
+    [favorite, visual, accessories, columns, trailingAccessories].forEach(root.addArrangedSubview)
     accessories.onAction = { [weak self] key, view, slot, target in
+      self?.emitAction(key, from: view, source: "trailingAccessory", slot: slot, target: target)
+    }
+    trailingAccessories.onAction = { [weak self] key, view, slot, target in
       self?.emitAction(key, from: view, source: "trailingAccessory", slot: slot, target: target)
     }
   }
@@ -86,16 +93,55 @@ final class NativeListDataRowCell: NativeListRendererCell {
       item, descriptors: descriptors, theme: theme, style: accessoryStyle,
       checkboxState: checkboxState, fonts: fonts)
     accessories.isHidden = descriptors.isEmpty
-    NSLayoutConstraint.deactivate(rowConstraints)
-    rowConstraints = [
-      favorite.widthAnchor.constraint(equalToConstant: 20),
-      favorite.heightAnchor.constraint(equalToConstant: 20),
-      visual.widthAnchor.constraint(equalToConstant: CGFloat(image.double("width", default: 40))),
-      visual.heightAnchor.constraint(equalToConstant: CGFloat(image.double("height", default: 40))),
-    ]
+    let trailing = data.dictionaries("trailing")
+    trailingAccessories.bind(
+      item, descriptors: trailing, theme: theme, style: style,
+      checkboxState: checkboxState, fonts: fonts)
+    trailingAccessories.isHidden = trailing.isEmpty
+    if rowConstraints.isEmpty {
+      rowConstraints = [
+        favorite.widthAnchor.constraint(equalToConstant: 20),
+        favorite.heightAnchor.constraint(equalToConstant: 20),
+        visual.widthAnchor.constraint(equalToConstant: 40),
+        visual.heightAnchor.constraint(equalToConstant: 40),
+      ]
+      NSLayoutConstraint.activate(rowConstraints)
+    }
+    let visualWidth = CGFloat(image.double("width", default: 40))
+    let visualHeight = CGFloat(image.double("height", default: 40))
+    if rowConstraints[2].constant != visualWidth { rowConstraints[2].constant = visualWidth }
+    if rowConstraints[3].constant != visualHeight { rowConstraints[3].constant = visualHeight }
+    if !trailing.isEmpty {
+      // UIStackView has no intrinsic width of its own. Reserve the controls' fitted
+      // width so extra space goes to the weighted columns instead of this stack.
+      if trailingWidthConstraint == nil {
+        trailingWidthConstraint = trailingAccessories.widthAnchor.constraint(equalToConstant: 0)
+      }
+      if trailingWidthConstraint?.isActive == true { trailingWidthConstraint?.isActive = false }
+      let trailingWidth =
+        trailingAccessories.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize).width
+      if trailingWidthConstraint?.constant != trailingWidth {
+        trailingWidthConstraint?.constant = trailingWidth
+      }
+      trailingWidthConstraint?.isActive = true
+    } else {
+      if trailingWidthConstraint?.isActive == true { trailingWidthConstraint?.isActive = false }
+    }
     let values = Array(data.dictionaries("columns").prefix(4))
+    let weights = values.map { max(1, $0.int("weight", default: 1)) }
+    var divisor = weights.first ?? 1
+    for weight in weights.dropFirst() {
+      var a = divisor
+      var b = weight
+      while b != 0 { (a, b) = (b, a % b) }
+      divisor = a
+    }
+    let normalizedWeights = weights.map { $0 / divisor }
+    let columnsChanged = columnWeights != normalizedWeights
+    if columnsChanged { NSLayoutConstraint.deactivate(columnWidthConstraints) }
     for (index, cell) in cells.enumerated() {
-      cell.isHidden = index >= values.count
+      let hidden = index >= values.count
+      if cell.isHidden != hidden { cell.isHidden = hidden }
       guard index < values.count else {
         cell.reset()
         continue
@@ -109,23 +155,29 @@ final class NativeListDataRowCell: NativeListRendererCell {
       cell.applyStyle(style) { label, style in
         NativeListTextStyles.applyStyledText(label, style, fonts: fonts)
       }
-      if index > 0 {
-        rowConstraints.append(
-          cell.widthAnchor.constraint(
-            equalTo: cells[0].widthAnchor,
-            multiplier: CGFloat(max(1, values[index].int("weight", default: 1)))
-              / CGFloat(max(1, values[0].int("weight", default: 1)))))
-      }
+      cell.applySegments(values[index])
+      cell.bindTitleIcons(values[index], theme: theme)
     }
-    NSLayoutConstraint.activate(rowConstraints)
+    if columnsChanged {
+      columnWidthConstraints = values.count > 1 ? (1..<values.count).map { index in
+        cells[index].widthAnchor.constraint(equalTo: cells[0].widthAnchor,
+          multiplier: CGFloat(weights[index]) / CGFloat(weights[0]))
+      } : []
+      NSLayoutConstraint.activate(columnWidthConstraints)
+      columnWeights = normalizedWeights
+    }
   }
   override func bindSelectionContent(
     _ item: NativeListItem,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
-  ) { accessories.updateSelection(item, checkboxState: checkboxState) }
+  ) {
+    accessories.updateSelection(item, checkboxState: checkboxState)
+    trailingAccessories.updateSelection(item, checkboxState: checkboxState)
+  }
   override func recycleContent() {
     visual.recycle()
     accessories.reset()
+    trailingAccessories.reset()
     cells.forEach { $0.reset() }
   }
 }
@@ -133,6 +185,8 @@ final class NativeListDataRowCell: NativeListRendererCell {
 private final class NativeListTableColumnView: UIStackView {
   private let primaryLine = UIStackView()
   private let primaryLabel = NativeListTextLabel()
+  private let titleIconView = UIImageView()
+  private let secondaryTitleIconView = UIImageView()
   private let badgesStack = UIStackView()
   private let secondaryLine = UIStackView()
   private let secondaryLeadingLabel = NativeListTextLabel()
@@ -152,11 +206,21 @@ private final class NativeListTableColumnView: UIStackView {
     primaryLabel.numberOfLines = 1
     primaryLabel.lineBreakMode = .byTruncatingTail
     primaryLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    for icon in [titleIconView, secondaryTitleIconView] {
+      icon.contentMode = .scaleAspectFit
+      icon.translatesAutoresizingMaskIntoConstraints = false
+      icon.widthAnchor.constraint(equalToConstant: 20).isActive = true
+      icon.heightAnchor.constraint(equalToConstant: 20).isActive = true
+      icon.setContentHuggingPriority(.required, for: .horizontal)
+      icon.isHidden = true
+    }
     badgesStack.axis = .horizontal
     badgesStack.alignment = .center
     badgesStack.spacing = 4
     badgesStack.setContentCompressionResistancePriority(.required, for: .horizontal)
     primaryLine.addArrangedSubview(primaryLabel)
+    primaryLine.addArrangedSubview(titleIconView)
+    primaryLine.addArrangedSubview(secondaryTitleIconView)
     primaryLine.addArrangedSubview(badgesStack)
 
     secondaryLine.axis = .horizontal
@@ -178,8 +242,17 @@ private final class NativeListTableColumnView: UIStackView {
     fatalError("init(coder:) has not been implemented")
   }
 
-  func reset() {
+  func reset(clearPrimaryText: Bool = true) {
     linear = false
+    primaryLine.alignment = .center
+    for icon in [titleIconView, secondaryTitleIconView] {
+      icon.image = nil
+      icon.isHidden = true
+      icon.accessibilityLabel = nil
+      icon.isAccessibilityElement = false
+    }
+    primaryLine.setCustomSpacing(UIStackView.spacingUseDefault, after: primaryLabel)
+    primaryLine.setCustomSpacing(UIStackView.spacingUseDefault, after: titleIconView)
     for label in [primaryLabel, secondaryLeadingLabel, secondaryLabel] {
       label.rowVerticalAlignment = nil
       label.rowOffsetY = 0
@@ -190,7 +263,7 @@ private final class NativeListTableColumnView: UIStackView {
     primaryLabel.numberOfLines = 1
     secondaryLeadingLabel.numberOfLines = 1
     secondaryLabel.numberOfLines = 1
-    primaryLabel.attributedText = nil
+    if clearPrimaryText { primaryLabel.attributedText = nil }
     secondaryLeadingLabel.attributedText = nil
     secondaryLabel.attributedText = nil
     secondaryLeadingLabel.isHidden = true
@@ -199,6 +272,28 @@ private final class NativeListTableColumnView: UIStackView {
     badgesStack.arrangedSubviews.forEach {
       badgesStack.removeArrangedSubview($0)
       $0.removeFromSuperview()
+    }
+  }
+
+  func bindTitleIcons(_ column: [String: Any], theme: [String: Any]?) {
+    let descriptors = [column.dictionary("titleIcon"), column.dictionary("secondaryTitleIcon")]
+    for (index, descriptor) in descriptors.enumerated() {
+      guard let descriptor else { continue }
+      let icon = index == 0 ? titleIconView : secondaryTitleIconView
+      icon.image = nativeListIcon(named: descriptor.string("name"))
+      icon.tintColor = UIColor(
+        nativeListHex: descriptor.string("tintColor",
+          default: theme?["iconSubdued"] as? String ?? "#8D8D8D"),
+        fallback: .gray)
+      icon.isHidden = false
+      let label = descriptor.string("accessibilityLabel")
+      icon.accessibilityLabel = label.isEmpty ? nil : label
+      icon.isAccessibilityElement = !label.isEmpty
+    }
+    if descriptors.contains(where: { $0 != nil }) {
+      primaryLine.setCustomSpacing(4, after: primaryLabel)
+      primaryLine.setCustomSpacing(4, after: titleIconView)
+      if linear { primaryLine.alignment = .top }
     }
   }
 
@@ -228,7 +323,7 @@ private final class NativeListTableColumnView: UIStackView {
     secondaryLeadingLabel.font = nativeListFont(ofSize: 12, fonts: fonts)
     secondaryLabel.font = nativeListFont(ofSize: 12, fonts: fonts)
     primaryLabel.attributedText = line(
-      column.string("text"),
+      nativeListDataColumnText(column, "text"),
       font: nativeListFont(ofSize: 14, weight: .medium, fonts: fonts),
       color: textColor(column.string("tone"), theme: theme),
       height: 20
@@ -261,7 +356,7 @@ private final class NativeListTableColumnView: UIStackView {
       secondaryLeadingLabel.isHidden = false
       secondaryLine.isHidden = false
     }
-    let secondary = column.string("secondaryText")
+    let secondary = nativeListDataColumnText(column, "secondaryText")
     if !secondary.isEmpty {
       secondaryLabel.attributedText = line(
         secondary,
@@ -286,7 +381,7 @@ private final class NativeListTableColumnView: UIStackView {
     column: [String: Any], badges: [[String: Any]], theme: [String: Any]?,
     style: [String: Any] = [:], fonts: NativeListFontFamilies
   ) {
-    reset()
+    reset(clearPrimaryText: !linear)
     linear = true
     alignment = .fill
     badgesStack.isHidden = true
@@ -331,14 +426,15 @@ private final class NativeListTableColumnView: UIStackView {
     primaryLabel.textAlignment =
       column.string("alignment") == "end"
       ? .right : column.string("alignment") == "center" ? .center : .left
-    let secondary = column.string("secondaryText")
+    let secondary = nativeListDataColumnText(column, "secondaryText")
     let primaryFont = font(primaryStyle, size: 14, weight: .medium)
     let attributed = NSMutableAttributedString(
-      string: column.string("text"),
+      string: nativeListDataColumnText(column, "text"),
       attributes: [
         .font: primaryFont,
         .foregroundColor: color(primaryStyle, textColor(column.string("tone"), theme: theme)),
       ])
+    attributed.setAttributedString(nativeListDataSegments(attributed, column.dictionaries("textSegments")))
     let primaryLength = attributed.length
     // Every badge run is the legacy "  text " pill: both lead spaces sit inside the badge
     // background and are its left padding. `titleBadgeGap` adds an exact, unfilled gap between
@@ -378,7 +474,10 @@ private final class NativeListTableColumnView: UIStackView {
           textColor(column.string("secondaryTone", default: "secondary"), theme: theme)),
       ]
       attributes.merge(paragraph(secondaryStyle, font: secondaryFont, spacing: nil)) { $1 }
-      attributed.append(NSAttributedString(string: "\n\(secondary)", attributes: attributes))
+      attributed.append(NSAttributedString(string: "\n", attributes: attributes))
+      attributed.append(nativeListDataSegments(
+        NSAttributedString(string: secondary, attributes: attributes),
+        column.dictionaries("secondaryTextSegments")))
       lines = min(3, lines + max(1, secondaryStyle.int("lines", default: 1)))
     }
     primaryLabel.font = nativeListFont(ofSize: 12, fonts: fonts)
@@ -398,6 +497,16 @@ private final class NativeListTableColumnView: UIStackView {
     }
     primaryLabel.rowOffsetY = CGFloat(
       primaryStyle.double("offsetY", default: secondaryStyle.double("offsetY")))
+  }
+
+  func applySegments(_ column: [String: Any]) {
+    guard !linear else { return }
+    if let text = primaryLabel.attributedText {
+      primaryLabel.attributedText = nativeListDataSegments(text, column.dictionaries("textSegments"))
+    }
+    if let text = secondaryLabel.attributedText {
+      secondaryLabel.attributedText = nativeListDataSegments(text, column.dictionaries("secondaryTextSegments"))
+    }
   }
 
   func applyStyle(_ style: [String: Any], text: (UILabel, [String: Any]) -> Void) {
@@ -445,4 +554,23 @@ private final class NativeListTableColumnView: UIStackView {
     default: return nativeListColor(theme, "primaryText", "#202020")
     }
   }
+}
+
+private func nativeListDataColumnText(_ column: [String: Any], _ field: String) -> String {
+  let segments = column.dictionaries("\(field)Segments")
+  return segments.isEmpty ? column.string(field) : segments.map { $0.string("text") }.joined()
+}
+
+private func nativeListDataSegments(_ fallback: NSAttributedString, _ segments: [[String: Any]]) -> NSAttributedString {
+  guard !segments.isEmpty, fallback.length > 0 else { return fallback }
+  let attributes = fallback.attributes(at: 0, effectiveRange: nil)
+  let result = NSMutableAttributedString(string: "")
+  for segment in segments {
+    var runAttributes = attributes
+    if segment.string("style") == "subscript", let font = attributes[.font] as? UIFont {
+      runAttributes[.font] = font.withSize(ceil(font.pointSize * 0.6))
+    }
+    result.append(NSAttributedString(string: segment.string("text"), attributes: runAttributes))
+  }
+  return result
 }

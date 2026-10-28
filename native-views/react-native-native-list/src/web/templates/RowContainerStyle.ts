@@ -88,6 +88,8 @@ export function applyRowContainerStyle(body: HTMLElement, row: RowModel): void {
   }
   if (container.cornerRadius !== undefined)
     set(body, 'border-radius', `${container.cornerRadius}px`);
+  if (row.type === 'message' && row.presentation === 'inlineWarning')
+    set(body, 'border-radius', '0px');
   if (container.borderWidth !== undefined) {
     // Paint above member backgrounds without changing the content box or hit targets.
     body.setAttribute('data-nl-container-border', 'true');

@@ -226,6 +226,117 @@ function createIdentityRow(
       });
       column.insertBefore(segments, titleElement.nextSibling);
     }
+    if (row.titleIcon || row.secondaryTitleIcon) {
+      const badgeLine = titleElement.querySelector<HTMLElement>(
+        ':scope > .ok-native-list-badges'
+      );
+      const titleText = createElement(
+        document,
+        'span',
+        'ok-native-list-identity-title-text'
+      );
+      while (titleElement.firstChild && titleElement.firstChild !== badgeLine)
+        titleText.appendChild(titleElement.firstChild);
+      titleElement.prepend(titleText);
+      const icons = [row.titleIcon, row.secondaryTitleIcon]
+        .filter((icon): icon is NonNullable<typeof icon> => icon !== undefined)
+        .map((descriptor) => {
+          const icon = primitives.iconAction(
+            descriptor.name,
+            undefined,
+            undefined,
+            descriptor.tintColor
+          );
+          icon.className = 'ok-native-list-identity-title-icon';
+          if (descriptor.hoverActionKey) {
+            setData(icon, 'nativeListHoverAction', descriptor.hoverActionKey);
+            setData(icon, 'nativeListIconHelp', true);
+            markActionAnchorSource(icon, 'leadingAction');
+          }
+          if (descriptor.accessibilityLabel)
+            icon.setAttribute('aria-label', descriptor.accessibilityLabel);
+          else icon.setAttribute('aria-hidden', 'true');
+          return icon;
+        });
+      titleText.after(...icons);
+      titleElement.style.display = 'flex';
+      titleElement.style.alignItems = 'center';
+      titleElement.style.gap = '4px';
+    }
+    if (row.titleSuffixes?.length) {
+      const badges = titleElement.querySelector(
+        ':scope > .ok-native-list-badges'
+      );
+      let titleText = titleElement.querySelector<HTMLElement>(
+        ':scope > .ok-native-list-identity-title-text, :scope > [data-nl-slot="title"]'
+      );
+      if (!titleText) {
+        titleText = tagSlot(
+          createElement(document, 'span', 'ok-native-list-identity-title-text'),
+          'title'
+        );
+        while (titleElement.firstChild && titleElement.firstChild !== badges)
+          titleText.appendChild(titleElement.firstChild);
+        titleElement.prepend(titleText);
+        titleElement.removeAttribute('data-nl-slot');
+      } else if (titleElement.hasAttribute('data-nl-slot')) {
+        titleElement.removeAttribute('data-nl-slot');
+        tagSlot(titleText, 'title');
+      }
+      titleElement.style.display = 'flex';
+      titleElement.style.alignItems = 'center';
+      titleText.style.flex = '0 1 auto';
+      titleText.style.minWidth = 'min(80px, 100%)';
+      titleText.style.overflow = 'hidden';
+      titleText.style.textOverflow = 'ellipsis';
+      titleText.style.whiteSpace = 'nowrap';
+      row.titleSuffixes.forEach((suffix) => {
+        const label = createElement(
+          document,
+          'span',
+          'ok-native-list-identity-title-suffix',
+          suffix.text
+        );
+        label.style.flex = '0 1 auto';
+        label.style.minWidth = '0';
+        label.style.marginInlineStart =
+          row.titleIcon || row.secondaryTitleIcon ? '4px' : '8px';
+        label.style.maxWidth =
+          suffix.maxWidth === undefined ? '' : `${suffix.maxWidth}px`;
+        label.style.overflow = 'hidden';
+        label.style.textOverflow = 'ellipsis';
+        label.style.whiteSpace = 'nowrap';
+        label.style.fontSize = '12px';
+        label.style.lineHeight = '16px';
+        label.style.fontWeight = '400';
+        label.style.fontFamily = 'var(--nl-font-regular)';
+        label.style.color =
+          suffix.tone === 'disabled'
+            ? 'var(--nl-disabled)'
+            : 'var(--nl-secondary)';
+        titleElement.insertBefore(label, badges);
+      });
+    }
+    if (row.badges?.length && !row.titleIcon && !row.secondaryTitleIcon) {
+      const titleText = titleElement.querySelector<HTMLElement>(
+        ':scope > [data-nl-slot="title"]'
+      );
+      const badges = titleElement.querySelector<HTMLElement>(
+        ':scope > .ok-native-list-badges'
+      );
+      titleElement.style.display = 'flex';
+      titleElement.style.alignItems = 'center';
+      if (titleText) {
+        titleText.style.flex = '0 1 auto';
+        titleText.style.minWidth = row.titleSuffixes?.length
+          ? 'min(80px, 100%)'
+          : '0';
+      }
+      if (badges) {
+        badges.style.flex = '0 1 auto';
+        badges.style.minWidth = '0';
+      }
+    }
     if (presentation === 'walletSidebar' && row.badges?.length) {
       const badges = createElement(
         document,
@@ -242,7 +353,13 @@ function createIdentityRow(
       if (lines !== undefined)
         column
           .querySelectorAll<HTMLElement>(`[data-nl-slot="${key}"]`)
-          .forEach((text) => applyTextLayout(text, { lines }));
+          .forEach((text) =>
+            applyTextLayout(
+              text,
+              lines === 0 ? {} : { lines },
+              lines === 0 ? 0 : undefined
+            )
+          );
     }
   }
   body.appendChild(column);
@@ -272,6 +389,29 @@ function applyIdentityStyle(body: HTMLElement, row: IdentityRow) {
   const leading = body.querySelector<HTMLElement>(
     ':scope > .ok-native-list-visual, :scope > .ok-native-list-stacked'
   );
+  if (row.style?.leadingContentMaxWidthRatio !== undefined && !vertical) {
+    const column = body.querySelector<HTMLElement>(
+      ':scope > .ok-native-list-flex'
+    );
+    const trailing = body.querySelector<HTMLElement>(
+      ':scope > .ok-native-list-accessories'
+    );
+    const visualWidth = leading
+      ? row.style.image?.width ??
+        (row.presentation === 'accountSelector' ||
+        row.presentation === 'networkSelector'
+          ? 32
+          : 40)
+      : 0;
+    const gap = leading ? row.style.leadingGap ?? 12 : 0;
+    if (column) {
+      column.style.flex = '0 1 auto';
+      column.style.maxWidth = `calc(${
+        row.style.leadingContentMaxWidthRatio * 100
+      }% - ${visualWidth + gap}px)`;
+    }
+    if (trailing) trailing.style.marginInlineStart = 'auto';
+  }
   const defaultGap =
     body.style.gap ||
     (row.type === 'identity' && row.presentation === 'walletSidebar'
@@ -343,7 +483,7 @@ function applyIdentityStyle(body: HTMLElement, row: IdentityRow) {
     const images = leading.matches('img')
       ? [leading]
       : leading.querySelectorAll<HTMLElement>(
-          ':scope > img, :scope > .ok-native-list-visual-fallback'
+          ':scope > img:not(.ok-native-list-visual-corner), :scope > .ok-native-list-visual-fallback:not(.ok-native-list-visual-corner)'
         );
     images.forEach((bitmap) => {
       if (bitmap !== leading) {
@@ -522,7 +662,12 @@ export const identityRowRenderer = {
       ? 60
       : 56,
   measureRendered: (
-    _body: HTMLElement,
-    _row: IdentityRow
-  ): number | undefined => undefined,
+    body: HTMLElement,
+    row: IdentityRow
+  ): number | undefined => {
+    if (row.contentHeight !== 'auto' || hasExplicitRowHeight(row))
+      return undefined;
+    const height = body.getBoundingClientRect().height;
+    return height > 0 ? height : undefined;
+  },
 };

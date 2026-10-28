@@ -4,6 +4,62 @@ import XCTest
 
 @MainActor
 final class NativeListActivityPresentationTests: XCTestCase {
+  func testActivityLeadingVisibilityAndFooterAlignmentRestoreOnRebind() throws {
+    func item(rich: Bool, hidden: Bool) throws -> NativeListItem {
+      var data: [String: Any] = [
+        "type": "activity", "key": "tx", "title": "Send", "description": "To Alice",
+        "leading": ["kind": "icon", "name": "ArrowTopOutline"],
+        "hideLeading": hidden,
+        "footerActions": [["key": "speed-up", "label": "Speed up"]],
+      ]
+      if rich { data["amounts"] = [["key": "send", "text": "••••"]] }
+      else { data["primaryAmount"] = "••••" }
+      return try NativeListItem(data: data)
+    }
+    let details = NativeListActivityDetailsView()
+    let main = try XCTUnwrap(details.arrangedSubviews.first as? UIStackView)
+    let richVisual = try XCTUnwrap(main.arrangedSubviews.first)
+    let richActions = try XCTUnwrap(details.arrangedSubviews.last as? UIStackView)
+    let container = UIView(frame: CGRect(x: 0, y: 0, width: 366, height: 300))
+    details.translatesAutoresizingMaskIntoConstraints = false
+    container.addSubview(details)
+    NSLayoutConstraint.activate([
+      details.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+      details.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+      details.topAnchor.constraint(equalTo: container.topAnchor),
+    ])
+    for hidden in [false, true, false] {
+      let current = try item(rich: true, hidden: hidden)
+      details.bind(current, theme: nil, fonts: NativeListFontFamilies())
+      container.layoutIfNeeded()
+      XCTAssertEqual(richVisual.isHidden, hidden)
+      XCTAssertEqual(richActions.directionalLayoutMargins.leading, hidden ? 0 : 52)
+      XCTAssertEqual(
+        NativeListActivityDetailsView.measure(
+          current.data, width: 390,
+          fonts: NativeListFontFamilies()),
+        ceil(details.frame.height) + 16, accuracy: 1)
+      func hasAmount(_ view: UIView) -> Bool {
+        if (view as? UILabel)?.text == "••••" { return true }
+        return view.subviews.contains(where: hasAmount)
+      }
+      XCTAssertTrue(hasAmount(details))
+    }
+
+    let cell = NativeListActivityCell(frame: CGRect(x: 0, y: 0, width: 390, height: 100))
+    let legacyVisual = try XCTUnwrap(cell.root.arrangedSubviews.first)
+    let column = try XCTUnwrap(cell.root.arrangedSubviews[1] as? UIStackView)
+    let legacyActions = try XCTUnwrap(column.arrangedSubviews.last as? UIStackView)
+    for hidden in [false, true, false] {
+      cell.bind(item: try item(rich: false, hidden: hidden), theme: nil,
+        layout: "linear", selected: false, checkboxState: { _, _, fallback in fallback },
+        fonts: NativeListFontFamilies())
+      XCTAssertEqual(legacyVisual.isHidden, hidden)
+      XCTAssertFalse(legacyActions.isHidden)
+      XCTAssertEqual((legacyActions.arrangedSubviews.first as? UIButton)?.currentTitle, "Speed up")
+    }
+  }
+
   func testSmallNumberRunsPreserveBaselineAcrossAmountsFiatAndFee() throws {
     func segments(_ prefix: String, _ suffix: String) -> [[String: Any]] {
       [["text": prefix], ["text": "5", "style": "subscript"], ["text": suffix]]

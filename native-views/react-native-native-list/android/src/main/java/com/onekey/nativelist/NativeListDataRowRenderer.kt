@@ -22,6 +22,7 @@ internal class NativeListDataRowView(context: ThemedReactContext, fonts: NativeL
       gravity = Gravity.CENTER_VERTICAL
     }
   private val cells = List(4) { NativeListTableColumnView(context, fonts) }
+  private val trailingAccessories = NativeListAccessoryStack(context, fonts)
 
   override fun unselectedBackground(
     item: NativeListItem,
@@ -54,7 +55,11 @@ internal class NativeListDataRowView(context: ThemedReactContext, fonts: NativeL
     addView(visual)
     addView(accessories)
     addView(columns, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
+    addView(trailingAccessories)
     accessories.onAction = { key, view, slot, target ->
+      emitAction(key, view, "trailingAccessory", slot, target)
+    }
+    trailingAccessories.onAction = { key, view, slot, target ->
       emitAction(key, view, "trailingAccessory", slot, target)
     }
   }
@@ -63,7 +68,7 @@ internal class NativeListDataRowView(context: ThemedReactContext, fonts: NativeL
     val values = item.json.optJSONArray("columns") ?: JSONArray()
     val secondary =
       (0 until values.length()).any {
-        values.getJSONObject(it).optString("secondaryText").isNotEmpty()
+        nativeListDataColumnText(values.getJSONObject(it), "secondaryText").isNotEmpty()
       }
     return if (layout == "table") if (secondary) 60 else 52 else if (secondary) 64 else 56
   }
@@ -127,6 +132,9 @@ internal class NativeListDataRowView(context: ThemedReactContext, fonts: NativeL
     val accessoryStyle = JSONObject().put("value", style.optJSONObject("index"))
     accessories.bind(item, descriptors, theme, accessoryStyle, sourceScale, checkboxState)
     accessories.visibility = if (descriptors.length() == 0) GONE else VISIBLE
+    val trailing = data.optJSONArray("trailing") ?: JSONArray()
+    trailingAccessories.bind(item, trailing, theme, style, sourceScale, checkboxState)
+    trailingAccessories.visibility = if (trailing.length() == 0) GONE else VISIBLE
     accessories.layoutParams =
       LayoutParams(dp(32), LayoutParams.WRAP_CONTENT).apply { marginEnd = dp(10) }
     val values = data.getJSONArray("columns")
@@ -159,6 +167,7 @@ internal class NativeListDataRowView(context: ThemedReactContext, fonts: NativeL
             style,
             fixedTableGeometry = unstyled,
           )
+        cell.bindTitleIcons(value, theme, sourceScale)
         // Legacy table default: every column is a fixed 40dp, top-aligned block.
         cell.layoutParams =
           LayoutParams(
@@ -194,17 +203,20 @@ internal class NativeListDataRowView(context: ThemedReactContext, fonts: NativeL
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
   ) {
     accessories.updateSelection(item, checkboxState)
+    trailingAccessories.updateSelection(item, checkboxState)
   }
 
   override fun recycleContent() {
     visual.recycle()
     accessories.reset()
+    trailingAccessories.reset()
     cells.forEach { it.reset() }
   }
 
   override fun disposeContent() {
     visual.dispose()
     accessories.reset()
+    trailingAccessories.reset()
   }
 
   private companion object {
@@ -215,6 +227,8 @@ internal class NativeListDataRowView(context: ThemedReactContext, fonts: NativeL
 private class NativeListTableColumnView(context: android.content.Context, private val fonts: NativeListFonts) : LinearLayout(context) {
   private val primaryLine = LinearLayout(context)
   private val primary = NativeListTextView(context)
+  private val titleIcon = OneKeyIconView(context)
+  private val secondaryTitleIcon = OneKeyIconView(context)
   private val badges = LinearLayout(context)
   private val secondaryLine = LinearLayout(context)
   private val secondaryLeading = NativeListTextView(context)
@@ -256,6 +270,13 @@ private class NativeListTableColumnView(context: android.content.Context, privat
       },
     )
     primaryLine.addView(primary, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
+    for (icon in listOf(titleIcon, secondaryTitleIcon)) {
+      icon.visibility = GONE
+      primaryLine.addView(
+        icon,
+        LayoutParams(dp(20), dp(20)).apply { marginStart = dp(4) },
+      )
+    }
     primaryLine.addView(
       badges,
       LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
@@ -270,6 +291,13 @@ private class NativeListTableColumnView(context: android.content.Context, privat
   }
 
   fun reset() {
+    primaryLine.gravity = Gravity.CENTER_VERTICAL
+    for (icon in listOf(titleIcon, secondaryTitleIcon)) {
+      icon.visibility = GONE
+      icon.iconName = ""
+      icon.contentDescription = null
+      icon.setOnClickListener(null)
+    }
     primaryLine.layoutParams.width = LayoutParams.WRAP_CONTENT
     primaryLine.layoutParams.height = LayoutParams.WRAP_CONTENT
     secondaryLine.layoutParams.height = LayoutParams.WRAP_CONTENT
@@ -290,6 +318,26 @@ private class NativeListTableColumnView(context: android.content.Context, privat
     secondaryLine.visibility = GONE
     badges.removeAllViews()
     badges.visibility = GONE
+  }
+
+  fun bindTitleIcons(column: JSONObject, theme: JSONObject?, sourceScale: Boolean) {
+    for ((field, icon) in listOf(
+      "titleIcon" to titleIcon,
+      "secondaryTitleIcon" to secondaryTitleIcon,
+    )) {
+      val descriptor = column.optJSONObject(field) ?: continue
+      icon.iconName = descriptor.optString("name")
+      icon.glyphSizeDp = 20
+      icon.useSourceScale = sourceScale
+      icon.tintColor = parseNativeListColor(
+        descriptor.optString("tintColor").takeIf(String::isNotEmpty)
+          ?: theme?.optString("iconSubdued", "#00000072") ?: "#00000072"
+      )
+      icon.contentDescription = descriptor.optString("accessibilityLabel").takeIf(String::isNotEmpty)
+      icon.visibility = VISIBLE
+    }
+    if (primary.maxLines > 1 && (titleIcon.visibility == VISIBLE || secondaryTitleIcon.visibility == VISIBLE))
+      primaryLine.gravity = Gravity.TOP
   }
 
   fun bind(
@@ -326,7 +374,7 @@ private class NativeListTableColumnView(context: android.content.Context, privat
         .bind(view)
       if (resolved.optString("truncate") != "clip") view.ellipsize = TextUtils.TruncateAt.END
     }
-    bindText(primary, column.optString("text"), "columns", primarySize, "medium", primaryColor, 20)
+    bindText(primary, nativeListDataColumnText(column, "text"), "columns", primarySize, "medium", primaryColor, 20)
     bindText(
       secondaryLeading,
       column.optString("secondaryLeadingText"),
@@ -338,13 +386,15 @@ private class NativeListTableColumnView(context: android.content.Context, privat
     )
     bindText(
       secondary,
-      column.optString("secondaryText"),
+      nativeListDataColumnText(column, "secondaryText"),
       "columnSecondary",
       12f,
       "regular",
       secondaryColor,
       16,
     )
+    primary.text = dataSegments(primary.text, column.optJSONArray("textSegments"), primary.textSize)
+    secondary.text = dataSegments(secondary.text, column.optJSONArray("secondaryTextSegments"), secondary.textSize)
     if (rowBadges != null && rowBadges.length() > 0) {
       badges.visibility = VISIBLE
       for (index in 0 until minOf(2, rowBadges.length())) {
@@ -377,7 +427,7 @@ private class NativeListTableColumnView(context: android.content.Context, privat
       secondaryLeading.visibility = VISIBLE
       secondaryLine.visibility = VISIBLE
     }
-    val secondaryText = column.optString("secondaryText")
+    val secondaryText = nativeListDataColumnText(column, "secondaryText")
     if (secondaryText.isNotEmpty()) {
       secondary.visibility = VISIBLE
       secondaryLine.visibility = VISIBLE
@@ -404,7 +454,9 @@ private class NativeListTableColumnView(context: android.content.Context, privat
   ) {
     reset()
     gravity = Gravity.START
-    val value = android.text.SpannableStringBuilder(column.optString("text"))
+    val value = android.text.SpannableStringBuilder(dataSegments(
+      nativeListDataColumnText(column, "text"), column.optJSONArray("textSegments"),
+      sp(16f) * resources.displayMetrics.scaledDensity))
     value.setSpan(
       android.text.style.ForegroundColorSpan(primaryColor),
       0,
@@ -428,10 +480,12 @@ private class NativeListTableColumnView(context: android.content.Context, privat
           android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
         )
       }
-    val secondaryText = column.optString("secondaryText")
+    val secondaryText = nativeListDataColumnText(column, "secondaryText")
     if (secondaryText.isNotEmpty()) {
       val start = value.length
-      value.append("\n$secondaryText")
+      value.append("\n")
+      value.append(dataSegments(secondaryText, column.optJSONArray("secondaryTextSegments"),
+        sp(16f) * resources.displayMetrics.scaledDensity))
       value.setSpan(
         android.text.style.ForegroundColorSpan(secondaryColor),
         start,
@@ -461,6 +515,24 @@ private class NativeListTableColumnView(context: android.content.Context, privat
     primary.visibility = VISIBLE
   }
 
+  private fun dataSegments(fallback: CharSequence, segments: JSONArray?, fontSizePx: Float): CharSequence {
+    if (segments == null || segments.length() == 0) return fallback
+    val value = android.text.SpannableStringBuilder(fallback)
+    var offset = 0
+    for (index in 0 until segments.length()) {
+      val segment = segments.getJSONObject(index)
+      val end = offset + segment.optString("text").length
+      if (segment.optString("style") == "subscript" && end > offset) {
+        val density = resources.displayMetrics.density
+        val size = (kotlin.math.ceil(fontSizePx / density * 0.6f) * density).roundToInt()
+        value.setSpan(android.text.style.AbsoluteSizeSpan(size), offset, end,
+          android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+      }
+      offset = end
+    }
+    return value
+  }
+
   private fun applyStyle(style: JSONObject) {
     style.optJSONObject("columns")?.let {
       if (it.has("alignment")) {
@@ -484,4 +556,12 @@ private class NativeListTableColumnView(context: android.content.Context, privat
   private fun dp(value: Int): Int = NativeListScale.dp(resources, value)
 
   private fun sp(value: Float): Float = NativeListScale.font(resources, value)
+}
+
+private fun nativeListDataColumnText(column: JSONObject, field: String): String {
+  val segments = column.optJSONArray("${field}Segments")
+  if (segments == null || segments.length() == 0) return column.optString(field)
+  return buildString {
+    for (index in 0 until segments.length()) append(segments.getJSONObject(index).optString("text"))
+  }
 }

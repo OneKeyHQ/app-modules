@@ -42,6 +42,20 @@ class NativeListRowHost: UICollectionViewCell {
   var listStyle: [String: Any]?
   var onAction: ((NativeListItem, String, NativeSelectionTarget?, NativeListActionOrigin?) -> Void)?
   var onBindingInvalidated: ((NativeListRowHost, Int) -> Void)?
+  var structuralContentHeight: CGFloat?
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    // UIKit relays out cells again when the collection's offset changes.
+    if let structuralContentHeight {
+      contentView.frame = CGRect(x: 0, y: 0, width: bounds.width, height: structuralContentHeight)
+    }
+  }
+
+  override func prepareForReuse() {
+    super.prepareForReuse()
+    structuralContentHeight = nil
+  }
 
   func bind(
     item: NativeListItem, theme: [String: Any]?, layout: String, itemIndex: Int? = nil,

@@ -27,17 +27,22 @@ final class HybridNativeList: HybridNativeListSpec {
   }
 
   var containerSlotHeightsJson: String = "[]" {
+    didSet { if containerSlotHeightsJson != oldValue { slotHeightsChanged = true } }
+  }
+
+  var sidecarLayoutJson: String = "" {
     didSet {
-      guard containerSlotHeightsJson != oldValue else { return }
+      guard sidecarLayoutJson != oldValue else { return }
       runOnMain { [weak self] in
         guard let self else { return }
-        self.hostView?.setContainerSlotHeightsJson(self.containerSlotHeightsJson)
+        self.hostView?.setSidecarLayoutJson(self.sidecarLayoutJson)
       }
     }
   }
 
   private var fontsChanged = false
   private var snapshotChanged = false
+  private var slotHeightsChanged = false
 
   var fontFamiliesJson: String = "{}" {
     didSet { if fontFamiliesJson != oldValue { fontsChanged = true } }
@@ -75,11 +80,16 @@ final class HybridNativeList: HybridNativeListSpec {
 
   func afterUpdate() {
     let fonts = fontsChanged ? fontFamiliesJson : nil
+    let slotHeights = slotHeightsChanged ? containerSlotHeightsJson : nil
     let snapshot = snapshotChanged ? snapshotJson : nil
     fontsChanged = false
+    slotHeightsChanged = false
     snapshotChanged = false
     runOnMain { [weak self] in
       if let fonts { self?.hostView?.setFontFamiliesJson(fonts) }
+      if let slotHeights {
+        self?.hostView?.setContainerSlotHeightsJson(slotHeights, followedBySnapshot: snapshot != nil)
+      }
       if let snapshot { self?.hostView?.applySnapshotJson(snapshot) }
     }
   }
@@ -109,6 +119,14 @@ final class HybridNativeList: HybridNativeListSpec {
   var onSelectionDelta: ((_ payloadJson: String) -> Void)?
   var onReorder: ((_ payloadJson: String) -> Void)?
   var onEndReached: ((_ payloadJson: String) -> Void)?
+  var onStructuralTransitionSettled: ((_ payloadJson: String) -> Void)? {
+    didSet {
+      runOnMain { [weak self] in
+        guard let self else { return }
+        self.hostView?.onStructuralTransitionSettled = self.onStructuralTransitionSettled
+      }
+    }
+  }
   var onVisibleRangeChanged: ((_ payloadJson: String) -> Void)? {
     didSet {
       runOnMain { [weak self] in
@@ -222,6 +240,7 @@ final class HybridNativeList: HybridNativeListSpec {
     onSelectionDelta = nil
     onReorder = nil
     onEndReached = nil
+    onStructuralTransitionSettled = nil
     onVisibleRangeChanged = nil
     onScrollPositionThresholdChange = nil
     hostView.dispose()

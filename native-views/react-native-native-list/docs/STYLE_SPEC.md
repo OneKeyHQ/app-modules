@@ -153,6 +153,7 @@ resolved colors; `style.color` does not resolve application color-token names.
 | `bgApp` | `background` | List ground |
 | `bg` | `rowBackground` | Row ground |
 | `bgActive` | `rowSelectedBackground`, `rowPressedBackground` | Selected / pressed row |
+| `bgHover` | `rowHoverBackground` (optional Web) | Hovered row; omission uses pressed color |
 | `bgSubdued` | `subduedBackground` | Card and group ground |
 | `bgStrong` | `strongBackground` | Chip / badge ground |
 | `bgInverse` | `inverseBackground` | Inverted ground |
@@ -268,6 +269,11 @@ Each cell describes the same public contract on **Web + iOS + Android**.
 | `sectionHeader` | title, subtitle, value | padding, lineGap, trailingGap |
 | `action` | title, value | padding, leadingGap, trailingGap, image |
 | `system` | title, message, actionText | padding, lineGap |
+
+`identity.style.leadingContentMaxWidthRatio` optionally caps the leading
+visual, gap and title content to a finite fraction in `(0, 1]` of the row's
+inner width. Omission retains the existing width behavior. This lets a
+same-row trailing text button keep its own space while long titles truncate.
 
 Market additionally exposes `titleBadgeLayout: inline`, `contentTrailingGap`,
 `subtitleTrailingPadding`, `changeWidth`, `changeHeight`, `changeCornerRadius`, preserving

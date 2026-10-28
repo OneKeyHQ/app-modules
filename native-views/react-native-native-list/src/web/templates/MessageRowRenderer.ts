@@ -4,10 +4,8 @@ import type { MessageRow, NativeListTextStyle } from '../../models';
 
 type Text = Readonly<{
   value: string;
-  style: Required<
-    Pick<NativeListTextStyle, 'fontSize' | 'lineHeight' | 'lines'>
-  > &
-    NativeListTextStyle;
+  style: Required<Pick<NativeListTextStyle, 'fontSize' | 'lineHeight'>> &
+    Omit<NativeListTextStyle, 'lines'> & { lines: 0 | 1 | 2 | 3 };
 }>;
 export function resolveMessageRow(row: MessageRow) {
   const text = (
@@ -15,7 +13,7 @@ export function resolveMessageRow(row: MessageRow) {
     style: NativeListTextStyle | undefined,
     fontSize: number,
     lineHeight: number,
-    lines: 1 | 2 | 3,
+    lines: 0 | 1 | 2 | 3,
     color: string,
     fontWeight: NativeListTextStyle['fontWeight'] = 'regular'
   ): Text => ({
@@ -117,6 +115,9 @@ export function bindMessageRow(
   body.style.cssText = '';
   body.removeAttribute('data-nl-container-background');
   body.removeAttribute('data-nl-container-border');
+  if (row.presentation === 'inlineWarning')
+    body.setAttribute('data-nl-inline-warning', 'true');
+  else body.removeAttribute('data-nl-inline-warning');
   body.style.padding = `${resolved.verticalPadding}px ${resolved.horizontalPadding}px`;
   body.style.height = resolved.automaticHeight ? 'auto' : '100%';
   views.column.style.cssText = '';
@@ -128,7 +129,19 @@ export function bindMessageRow(
   ] as const) {
     view.style.cssText = '';
     view.textContent = text.value;
-    primitives.textStyle(view, text.style);
+    const { lines, ...textStyle } = text.style;
+    primitives.textStyle(
+      view,
+      lines === 0 ? textStyle : { ...textStyle, lines }
+    );
+    if (lines === 0) {
+      view.style.whiteSpace = 'pre-wrap';
+      view.style.overflow = 'visible';
+      view.style.textOverflow = 'clip';
+      view.style.maxHeight = 'none';
+      view.style.removeProperty('-webkit-line-clamp');
+      view.style.removeProperty('-webkit-box-orient');
+    }
   }
   views.unread.style.cssText = '';
   if (row.body) {
@@ -258,7 +271,10 @@ export function measureMessageRow(
           ),
         0
       );
-    return Math.min(text.style.lines, lines) * text.style.lineHeight;
+    return (
+      (text.style.lines === 0 ? lines : Math.min(text.style.lines, lines)) *
+      text.style.lineHeight
+    );
   };
   const timeWidth = Math.min(
     availableWidth / 3,

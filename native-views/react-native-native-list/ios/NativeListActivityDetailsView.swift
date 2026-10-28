@@ -70,8 +70,10 @@ final class NativeListActivityDetailsView: UIStackView {
     let verticalPadding = CGFloat(style.double("verticalPadding", default: 8))
     let lineGap = CGFloat(style.double("lineGap"))
     let gap = CGFloat(style.double("leadingGap", default: 12))
+    let hideLeading = data.bool("hideLeading")
     let imageWidth = CGFloat(image.double("width", default: 40))
     let imageHeight = CGFloat(image.double("height", default: 40))
+    let leadingWidth = hideLeading ? 0 : imageWidth + gap
     let mainWidth = max(0, width - horizontalPadding * 2)
 
     let amounts = data.dictionaries("amounts").map { amount -> (width: CGFloat, height: CGFloat) in
@@ -112,10 +114,10 @@ final class NativeListActivityDetailsView: UIStackView {
     let feeColumn = data.dictionary("fee") == nil ? 0 : gap + feeWidth
     let identityWidth: CGFloat
     if table {
-      let shared = (mainWidth - imageWidth - gap * 2 - feeColumn) / 2
+      let shared = (mainWidth - leadingWidth - gap - feeColumn) / 2
       identityWidth = min(mainWidth * 0.42, shared)
     } else {
-      identityWidth = mainWidth - imageWidth - gap * 2 - feeColumn - min(amountsWidth, mainWidth * 0.5)
+      identityWidth = mainWidth - leadingWidth - gap - feeColumn - min(amountsWidth, mainWidth * 0.5)
     }
 
     let title = NativeListResolvedText(data.string("title"), style: style.dictionary("title"), size: 16,
@@ -140,7 +142,7 @@ final class NativeListActivityDetailsView: UIStackView {
         return max(height, ceil(sizingButton.intrinsicContentSize.height))
       } + 8
     }
-    return max(imageHeight, identityHeight, amountsHeight, feeHeight) + actionsHeight + verticalPadding * 2
+    return max(hideLeading ? 0 : imageHeight, identityHeight, amountsHeight, feeHeight) + actionsHeight + verticalPadding * 2
   }
 
   func bind(_ item: NativeListItem, theme: [String: Any]?, fonts: NativeListFontFamilies) {
@@ -150,20 +152,28 @@ final class NativeListActivityDetailsView: UIStackView {
     let image = style.dictionary("image") ?? [:]
     let table = data.string("presentation") == "table"
     let gap = CGFloat(style.double("leadingGap", default: 12))
+    let hideLeading = data.bool("hideLeading")
     main.spacing = gap
     identity.spacing = CGFloat(style.double("lineGap"))
     amounts.spacing = CGFloat(style.double("trailingGap", default: 2))
     titleLine.spacing = CGFloat(style.double("titleBadgeGap", default: 4))
     NSLayoutConstraint.deactivate(dimensions)
+    let visualWidth = visual.widthAnchor.constraint(equalToConstant: CGFloat(image.double("width", default: 40)))
+    if hideLeading { visualWidth.priority = UILayoutPriority(999) }
     dimensions = [
-      visual.widthAnchor.constraint(equalToConstant: CGFloat(image.double("width", default: 40))),
+      visualWidth,
       visual.heightAnchor.constraint(equalToConstant: CGFloat(image.double("height", default: 40))),
       amounts.widthAnchor.constraint(lessThanOrEqualTo: main.widthAnchor, multiplier: table ? 0.42 : 0.5),
     ]
     if table { dimensions.append(amounts.widthAnchor.constraint(equalTo: identity.widthAnchor)) }
     NSLayoutConstraint.activate(dimensions)
-    visual.bind(data.dictionary("leading") ?? [:], style: image, key: item.key, theme: theme,
-      isUnread: false, secondaryVisual: data.dictionary("secondaryLeading"), fonts: fonts)
+    visual.isHidden = hideLeading
+    if hideLeading {
+      visual.recycle()
+    } else {
+      visual.bind(data.dictionary("leading") ?? [:], style: image, key: item.key, theme: theme,
+        isUnread: false, secondaryVisual: data.dictionary("secondaryLeading"), fonts: fonts)
+    }
     NativeListResolvedText(data.string("title"), style: style.dictionary("title"), size: 16,
       weight: .medium, color: nativeListColor(theme, "primaryText", "#202020"), lineHeight: 24,
       lines: 1, fonts: fonts
@@ -225,7 +235,7 @@ final class NativeListActivityDetailsView: UIStackView {
     let actionData = data.dictionaries("footerActions")
     actionKeys = actionData.map { $0.string("key") }
     actions.isHidden = actionData.isEmpty
-    actions.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 0, leading: CGFloat(image.double("width", default: 40)) + gap, bottom: 0, trailing: 0)
+    actions.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 0, leading: hideLeading ? 0 : CGFloat(image.double("width", default: 40)) + gap, bottom: 0, trailing: 0)
     for (index, descriptor) in actionData.enumerated() {
       let button = UIButton(type: .system); button.tag = index
       button.setTitle(descriptor.string("label"), for: .normal)
@@ -249,7 +259,7 @@ final class NativeListActivityDetailsView: UIStackView {
     onAction?(actionKeys[button.tag], button, "footerAction", button.tag)
   }
   func recycle() {
-    visual.recycle(); amountViews.forEach { $0.recycle() }; actionKeys = []; descriptionKey = ""
+    visual.recycle(); visual.isHidden = false; amountViews.forEach { $0.recycle() }; actionKeys = []; descriptionKey = ""
   }
 }
 

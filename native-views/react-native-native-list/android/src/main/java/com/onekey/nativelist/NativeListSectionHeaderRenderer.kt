@@ -26,6 +26,7 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext, fonts
   private val mainColumn = LinearLayout(context)
   private val titleLine = PackedTitleLineLayout(context)
   private val title = DottedUnderlineTextView(context)
+  private val leadingBadge = NativeListTextView(context)
   private val titleSpinner = ProgressBar(context, null, android.R.attr.progressBarStyleSmall).apply {
     isIndeterminate = true
     importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
@@ -165,6 +166,12 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext, fonts
     currentTheme = theme
     currentLayout = layout
     removeAllViews()
+    if (trailingViews[0].parent === titleLine) {
+      titleLine.removeView(trailingViews[0])
+      trailingColumn.addView(trailingViews[0], 0)
+    }
+    titleLine.removeView(leadingBadge)
+    leadingBadge.text = ""
     titleLine.removeView(headerTitleIcon)
     trailingColumn.removeView(headerValueIcon)
     paintDefaults.forEach { (view, flags) -> view.paintFlags = flags }
@@ -188,6 +195,10 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext, fonts
       view.ellipsize = null
       view.setHorizontallyScrolling(false)
       view.opticalOffsetY = 0f
+      view.helpBindingGeneration += 1
+      view.guardsHelpTouches = false
+      view.primaryHelpOnly = false
+      view.showsHelpUnderline = false
       view.gravity = Gravity.START
       view.letterSpacing = 0f
       view.fontFeatureSettings = "tnum"
@@ -291,6 +302,7 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext, fonts
       }
     }
     applyTextStyle(item)
+    bindPositionHeaderFields(item, theme)
     titleSpinner.indeterminateTintList = ColorStateList.valueOf(title.currentTextColor)
     style
       .optJSONObject("container")
@@ -305,6 +317,57 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext, fonts
           }
       }
     applySelectorTypography(item)
+  }
+
+  private fun bindPositionHeaderFields(item: NativeListItem, theme: JSONObject?) {
+    val style = item.json.optJSONObject("style") ?: JSONObject()
+    item.json.optJSONObject("leadingBadge")?.let { badge ->
+      leadingBadge.text = badge.optString("text")
+      leadingBadge.textSize = sp(12f)
+      leadingBadge.typeface = fonts.medium(context)
+      leadingBadge.includeFontPadding = false
+      val tones = mapOf("info" to ("info" to "#0F69F6"), "success" to ("positive" to "#008F5A"), "warning" to ("caution" to "#A35E00"), "danger" to ("negative" to "#CE2C31"))
+      val tone = tones[badge.optString("tone")]
+      if (tone != null) {
+        val tint = color(theme, tone.first, tone.second)
+        leadingBadge.setTextColor(tint)
+        val fallback = (tint and 0x00FFFFFF) or (31 shl 24)
+        val fill = if (badge.optString("tone") == "success" && theme?.has("successBackground") == true)
+          safeColor(theme.optString("successBackground"), fallback) else fallback
+        leadingBadge.background = roundedFill(fill, 4f)
+      } else {
+        leadingBadge.setTextColor(color(theme, "secondaryText", "#0000009B"))
+        leadingBadge.background = roundedFill(color(theme, "strongBackground", "#0000000F"), 4f)
+      }
+      leadingBadge.setPadding(dp(8), dp(2), dp(8), dp(2))
+      TextViewCompat.setLineHeight(leadingBadge, dp(16))
+      titleLine.addView(leadingBadge, 0, LayoutParams(LayoutParams.WRAP_CONTENT, dp(20)).apply { marginEnd = dp(8) })
+    }
+    if (style.has("titleDecoration")) {
+      title.showsDottedUnderline = false
+      title.showsHelpUnderline = style.optString("titleDecoration") == "dashed"
+      title.setPadding(0, 0, 0, if (title.showsHelpUnderline) dp(3) else 0)
+    }
+    val value = trailingViews[0]
+    if (style.optString("valuePlacement") == "afterTitle") {
+      trailingColumn.removeView(value)
+      title.layoutParams = wrap()
+      titleLine.packsChildrenAtStart = false
+      titleLine.addView(value, wrap().apply { marginStart = dp(8) })
+    }
+    item.json.optJSONObject("valueHelp")?.let { help ->
+      value.guardsHelpTouches = true
+      value.setOnClickListener(null)
+      value.isClickable = false
+      value.showsHelpUnderline = help.optString("underline") == "dashed"
+      if (help.optString("presentation") == "popover") {
+        value.setOnClickListener {
+          currentItem?.takeUnless { it.json.optBoolean("disabled") }?.let {
+            emitAction(it, help.optString("actionKey"), null, value, "trailingAccessory", 0)
+          }
+        }
+      }
+    }
   }
 
   private fun applyTextStyle(item: NativeListItem) {
@@ -411,6 +474,12 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext, fonts
   override fun recycleContent() {
     checkboxControl.reset()
     currentItem = null
+    title.setOnClickListener(null)
+    title.isClickable = false
+    trailingViews[0].helpBindingGeneration += 1
+    trailingViews[0].setOnClickListener(null)
+    trailingViews[0].isClickable = false
+    trailingViews[0].showsHelpUnderline = false
     titleSpinner.visibility = GONE
   }
 

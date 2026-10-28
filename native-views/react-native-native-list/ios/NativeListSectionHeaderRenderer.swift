@@ -1,6 +1,13 @@
 import UIKit
 
 final class NativeListDottedUnderlineLabel: NativeListTextLabel {
+  var usesDashedUnderline = false {
+    didSet {
+      dottedUnderlineLayer.lineDashPattern = usesDashedUnderline ? [3, 2] : [0, 4]
+      dottedUnderlineLayer.lineCap = usesDashedUnderline ? .butt : .round
+      setNeedsLayout()
+    }
+  }
   var showsDottedUnderline = false {
     didSet { setNeedsLayout() }
   }
@@ -111,6 +118,7 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
   private let mainStack = UIStackView()
   private let titleRowStack = UIStackView()
   private let titleLabel = NativeListDottedUnderlineLabel()
+  private let leadingBadge = NativeListInsetLabel()
   private let titleSpinner = UIActivityIndicatorView(style: .medium)
   private let subtitleLabel = NativeListTextLabel()
   private let trailingStack = UIStackView()
@@ -148,6 +156,7 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
     titleRowStack.axis = .horizontal
     titleRowStack.alignment = .center
     titleRowStack.spacing = 8
+    leadingBadge.heightAnchor.constraint(equalToConstant: 20).isActive = true
     titleRowStack.addArrangedSubview(titleLabel)
     mainStack.addArrangedSubview(titleRowStack)
     mainStack.addArrangedSubview(subtitleLabel)
@@ -182,6 +191,15 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
     selectorTypographyRestorers = []
     currentItem = item
     currentTheme = theme
+    if accessoryButtons[0].superview === titleRowStack {
+      titleRowStack.removeArrangedSubview(accessoryButtons[0])
+      accessoryButtons[0].removeFromSuperview()
+      trailingStack.insertArrangedSubview(accessoryButtons[0], at: 0)
+    }
+    titleRowStack.removeArrangedSubview(leadingBadge)
+    leadingBadge.removeFromSuperview()
+    leadingBadge.text = nil
+    leadingBadge.accessibilityLabel = nil
     titleSpinner.stopAnimating()
     NSLayoutConstraint.deactivate(selectorConstraints)
     selectorConstraints = []
@@ -198,6 +216,7 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
     titleLabel.removeGestureRecognizer(selectorTitleTap)
     titleLabel.isUserInteractionEnabled = false
     titleLabel.showsDottedUnderline = false
+    titleLabel.usesDashedUnderline = false
     titleLabel.reservesDottedUnderlineSpace = false
     titleLabel.dottedUnderlineVerticalOffset = 0
     for label in [titleLabel, subtitleLabel] {
@@ -211,6 +230,7 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
       label.rowVerticalAlignment = nil
     }
     titleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    titleLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
     subtitleLabel.font = nativeListFont(ofSize: 14, fonts: fonts)
     subtitleLabel.textColor = nativeListColor(theme, "secondaryText", "#646464")
     mainStack.alignment = .fill
@@ -228,6 +248,10 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
     value.contentHorizontalAlignment = .center
     value.contentVerticalAlignment = .center
     value.rowTextOffsetY = 0
+    value.helpBindingGeneration += 1
+    value.helpPrimaryLineOnly = false
+    value.showsHelpUnderline = false
+    value.isUserInteractionEnabled = true
     value.marketLineHeight = nil
     value.selectorSummaryLineHeight = nil
     value.isHidden = true
@@ -253,6 +277,7 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
     if style["lineGap"] != nil { mainStack.spacing = CGFloat(style.double("lineGap")) }
     if style["trailingGap"] != nil { trailingStack.spacing = CGFloat(style.double("trailingGap")) }
     applyTextStyle(item)
+    bindPositionHeaderFields(item, theme: theme)
     titleSpinner.color = titleLabel.textColor
     updateTitleSpinner()
     contentInsets = UIEdgeInsets(
@@ -271,6 +296,63 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
         equalToConstant: accessoryButtons[0].intrinsicContentSize.width + 12 + 20)
       width.isActive = true
       selectorConstraints.append(width)
+    }
+  }
+  private func bindPositionHeaderFields(_ item: NativeListItem, theme: [String: Any]?) {
+    let style = item.data.dictionary("style") ?? [:]
+    if let badge = item.data.dictionary("leadingBadge") {
+      leadingBadge.text = badge.string("text")
+      leadingBadge.font = nativeListFont(ofSize: 12, weight: .medium, fonts: fonts)
+      let tones = ["info": ("info", "#0F69F6"), "success": ("positive", "#008F5A"), "warning": ("caution", "#A35E00"), "danger": ("negative", "#CE2C31")]
+      if let tone = tones[badge.string("tone")] {
+        let color = nativeListColor(theme, tone.0, tone.1)
+        leadingBadge.textColor = color
+        leadingBadge.backgroundColor = color.withAlphaComponent(0.12)
+        if badge.string("tone") == "success", let background = theme?["successBackground"] as? String {
+          leadingBadge.backgroundColor = UIColor(nativeListHex: background, fallback: color.withAlphaComponent(0.12))
+        }
+      } else {
+        leadingBadge.textColor = nativeListColor(theme, "secondaryText", "#646464")
+        leadingBadge.backgroundColor = nativeListColor(theme, "strongBackground", "#F0F0F0")
+      }
+      let paragraph = NSMutableParagraphStyle()
+      paragraph.minimumLineHeight = 16
+      paragraph.maximumLineHeight = 16
+      leadingBadge.attributedText = NSAttributedString(
+        string: badge.string("text"), attributes: [
+          .font: leadingBadge.font as Any,
+          .foregroundColor: leadingBadge.textColor as Any,
+          .paragraphStyle: paragraph,
+        ])
+      leadingBadge.horizontalInset = 8
+      leadingBadge.topInset = 2
+      leadingBadge.bottomInset = 2
+      leadingBadge.layer.cornerRadius = 4
+      leadingBadge.clipsToBounds = true
+      leadingBadge.accessibilityLabel = badge["accessibilityLabel"] as? String
+      leadingBadge.setContentHuggingPriority(.required, for: .horizontal)
+      leadingBadge.setContentCompressionResistancePriority(.required, for: .horizontal)
+      titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+      titleRowStack.insertArrangedSubview(leadingBadge, at: 0)
+    }
+    if style["titleDecoration"] != nil {
+      titleLabel.showsDottedUnderline = style.string("titleDecoration") == "dashed"
+      titleLabel.usesDashedUnderline = true
+      titleLabel.dottedUnderlineColor = titleLabel.textColor
+    }
+    let value = accessoryButtons[0]
+    if style.string("valuePlacement") == "afterTitle" {
+      trailingStack.removeArrangedSubview(value)
+      value.removeFromSuperview()
+      titleLabel.setContentHuggingPriority(.required, for: .horizontal)
+      mainStack.alignment = .leading
+      titleRowStack.addArrangedSubview(value)
+    }
+    if let help = item.data.dictionary("valueHelp") {
+      value.showsHelpUnderline = help.string("underline") == "dashed"
+      value.isUserInteractionEnabled = help.string("presentation") == "popover"
+      accessoryActions = [(help.string("presentation") == "popover" ? help.string("actionKey") : "", nil)]
+      value.setNeedsLayout()
     }
   }
   private func applyTextStyle(_ item: NativeListItem) {
@@ -312,6 +394,12 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
   override func recycleContent() {
     checkboxControl.reset()
     currentItem = nil
+    accessoryActions = []
+    titleLabel.removeGestureRecognizer(selectorTitleTap)
+    titleLabel.isUserInteractionEnabled = false
+    accessoryButtons[0].helpBindingGeneration += 1
+    accessoryButtons[0].isUserInteractionEnabled = false
+    accessoryButtons[0].showsHelpUnderline = false
     titleSpinner.stopAnimating()
   }
   override func didMoveToWindow() {

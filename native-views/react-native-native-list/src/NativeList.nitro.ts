@@ -13,6 +13,7 @@ export interface NativeListNativeProps extends HybridViewProps {
   snapshotJson: string;
   fontFamiliesJson: string;
   containerSlotHeightsJson: string;
+  sidecarLayoutJson: string;
   topScrollEdgeEffect: NativeListScrollEdgeEffect;
   topOverlayHeight: number;
   scrollPositionThresholdsJson: string;
@@ -25,6 +26,7 @@ export interface NativeListNativeProps extends HybridViewProps {
   onReorder?: (payloadJson: string) => void;
   onEndReached?: (payloadJson: string) => void;
   onVisibleRangeChanged?: (payloadJson: string) => void;
+  onStructuralTransitionSettled?: (payloadJson: string) => void;
 }
 
 export type NativeListKeyboardDismissMode = 'none' | 'on-drag' | 'interactive';

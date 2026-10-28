@@ -17,6 +17,7 @@ internal object NativeListRendererRegistry {
       NativeListRendererKey.ACTIVITY to ::NativeListActivityRowView,
       NativeListRendererKey.SYSTEM to ::NativeListSystemRowView,
       NativeListRendererKey.ACTION to ::NativeListActionRowView,
+      NativeListRendererKey.BUTTON_GROUP to ::NativeListButtonGroupRowView,
     )
 
   private val keys =
@@ -33,6 +34,7 @@ internal object NativeListRendererRegistry {
       "activity" to NativeListRendererKey.ACTIVITY,
       "system" to NativeListRendererKey.SYSTEM,
       "action" to NativeListRendererKey.ACTION,
+      "buttonGroup" to NativeListRendererKey.BUTTON_GROUP,
     )
 
   fun key(type: String) = keys.getValue(type)

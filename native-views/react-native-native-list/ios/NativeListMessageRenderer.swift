@@ -29,7 +29,9 @@ enum NativeListMessageRenderer {
       body = NativeListResolvedText(
         item.data.string("body"), style: style.dictionary("body"), size: 14,
         color: nativeListColor(theme, "secondaryText", "#646464"), lineHeight: 20,
-        lines: item.data.int("bodyLines", default: 3), fonts: fonts)
+        lines: item.data.int("bodyLines", default: 3),
+        breakMode: item.data.int("bodyLines", default: 3) == 0 ? .byWordWrapping : .byTruncatingTail,
+        fonts: fonts)
       time = NativeListResolvedText(
         item.data.string("time"), style: style.dictionary("time"), size: 12,
         color: nativeListColor(theme, "disabledText", "#8D8D8D"), lineHeight: 16, lines: 1,
@@ -150,6 +152,11 @@ enum NativeListMessageRenderer {
 }
 
 final class NativeListMessageCell: NativeListRendererCell {
+  private let topWarningBorder = CALayer()
+  private let bottomWarningBorder = CALayer()
+  private var warningBorderWidth: CGFloat = 0
+  private var warningBorderColor = UIColor.clear
+  private var isInlineWarning = false
   override class func measure(
     _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String,
     fonts: NativeListFontFamilies
@@ -167,12 +174,38 @@ final class NativeListMessageCell: NativeListRendererCell {
     _ item: NativeListItem, theme: [String: Any]?, layout: String,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
   ) {
+    let container = item.data.dictionary("style")?.dictionary("container") ?? [:]
+    isInlineWarning = item.data.string("presentation") == "inlineWarning"
+    warningBorderWidth = isInlineWarning ? CGFloat(container.double("borderWidth")) : 0
+    warningBorderColor = UIColor(nativeListHex: container.string("borderColor"), fallback: .clear)
     let resolved = NativeListMessageRenderer.Resolved(
       item, theme: theme, layout: layout, fonts: fonts)
     views.bind(resolved, item: item, theme: theme, fonts: fonts)
     contentInsets = UIEdgeInsets(
       top: resolved.verticalPadding, left: resolved.horizontalPadding,
       bottom: resolved.verticalPadding, right: resolved.horizontalPadding)
+  }
+  override func applyAppearance() {
+    super.applyAppearance()
+    if isInlineWarning {
+      layer.cornerRadius = 0
+      contentView.layer.cornerRadius = 0
+      contentView.layer.borderWidth = 0
+      topWarningBorder.backgroundColor = warningBorderColor.cgColor
+      bottomWarningBorder.backgroundColor = warningBorderColor.cgColor
+      if topWarningBorder.superlayer == nil { contentView.layer.addSublayer(topWarningBorder) }
+      if bottomWarningBorder.superlayer == nil { contentView.layer.addSublayer(bottomWarningBorder) }
+    } else {
+      topWarningBorder.removeFromSuperlayer()
+      bottomWarningBorder.removeFromSuperlayer()
+    }
+  }
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    let height = max(0, warningBorderWidth)
+    topWarningBorder.frame = CGRect(x: 0, y: 0, width: contentView.bounds.width, height: height)
+    bottomWarningBorder.frame = CGRect(
+      x: 0, y: contentView.bounds.height - height, width: contentView.bounds.width, height: height)
   }
   override func recycleContent() { views.recycle() }
 }
