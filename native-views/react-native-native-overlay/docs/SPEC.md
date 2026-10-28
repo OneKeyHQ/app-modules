@@ -347,6 +347,62 @@ sheet width; the content follows the sheet instead:
 - Android never reports; its sheets stay full width and the content fills the
   window width (or `maxWidth`, centered). Web is unchanged.
 
+### Adaptive presentation by window width
+
+Implemented: `sheet.maxWidth` in this package and one width resolver in the
+App (`useOverlayWidthClass`). iOS runtime verification is in progress. The
+overlay is the single owner of the rule below;
+consumers (the App's Dialog, Popover, ActionList, Select and sheets) must
+resolve their presentation through it instead of platform checks
+(`isNativeIOSPad`, device type, Tamagui media clamped to the phone's short
+side). The rule depends only on the current window width W, in points on
+iOS, dp on Android and CSS px on Web, and is the same on every platform.
+
+Width classes reuse the App's existing breakpoints:
+
+| Class | Window width | Examples |
+|---|---|---|
+| compact | W < 640 | phones in portrait, iPhone Duo outer display in portrait (466), iPad Slide Over and narrow split windows, narrow browser windows |
+| medium | 640 <= W < 768 | iPhone Duo inner display in portrait (669), iPhone Duo outer display in landscape (678), unfolded Android foldables in portrait |
+| expanded | W >= 768 | iPhone Duo inner display in landscape (951), iPad full screen and large windows (834 and up), desktop, wide browser windows |
+
+Presentation per overlay kind:
+
+| Kind | compact | medium | expanded |
+|---|---|---|---|
+| Dialog (alerts, confirmations, short forms) | full-width sheet | max-width sheet | centered card, 400 wide, outline and no drop shadow |
+| Anchorable menu: Select, ActionList or Popover with a trigger, or with a window rect (`ActionList.show`) | full-width sheet | max-width sheet | anchored panel next to the trigger or rect |
+| Menu without an anchor (`ActionList.show` without a rect) | full-width sheet | max-width sheet | max-width sheet |
+| Other sheets (pickers, long content, forms) | full-width sheet | max-width sheet | max-width sheet |
+
+Max-width sheet (`sheet.maxWidth`, default 540):
+
+- The visible surface is `min(sheet width, maxWidth)` wide, horizontally
+  centered, bottom-attached, with top corners only. JS draws the surface; on
+  iOS the UIKit sheet itself keeps whatever width UIKit gives it but renders
+  transparent (no background color, background effect or shadow), so the
+  surface looks the same however wide UIKit makes the sheet.
+- The side margins behave as backdrop for taps: a tap there follows
+  `dismissOnBackdropPress`, and the margins are hidden from accessibility.
+  Known divergence: on iOS and Android the platform sheet owns the drag, so a
+  pan that starts on a margin still moves the sheet. On Web the margins are
+  the real backdrop.
+- Setting `maxWidth` always switches to the drawn surface, even while it
+  spans the whole sheet, so a width change never swaps which side paints the
+  background.
+- In compact windows the sheet is never wider than `maxWidth`, so the
+  max-width sheet and the full-width sheet are identical there.
+
+Width changes while open (rotation, folding, window resize):
+
+| Change | Anchored panel | Sheet | Centered card |
+|---|---|---|---|
+| Within one class | repositions to its anchor | surface width follows | stays centered |
+| Across classes | closes | surface width follows | switches presentation in place, keeping content and input |
+
+Open questions: whether the anchored panel should reopen as a sheet instead
+of closing when the class drops below expanded.
+
 ### Web keyboard focus containment
 
 The topmost active, unsuspended blocking Web entry MUST contain sequential

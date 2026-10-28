@@ -371,6 +371,11 @@ function WebOverlayEntry({
                     left: 0,
                     right: 0,
                     bottom: 0,
+                    // A max-width sheet is centered; the space beside it is
+                    // the backdrop.
+                    maxWidth: sheet.maxWidth,
+                    marginLeft: 'auto',
+                    marginRight: 'auto',
                     height: sheet.height,
                     maxHeight: sheet.maxHeight ?? DEFAULT_SHEET_MAX_HEIGHT,
                     display: 'flex',

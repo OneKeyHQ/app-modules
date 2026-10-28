@@ -1,6 +1,12 @@
 import { useCallback, useMemo, useState } from 'react';
 
-import { StatusBar, StyleSheet, View, useWindowDimensions } from 'react-native';
+import {
+  Pressable,
+  StatusBar,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 
 import NativeOverlay from './NativeOverlayNativeComponent';
 import { OverlayLevelProvider } from './OverlayLevelContext';
@@ -16,6 +22,9 @@ import type { LayoutChangeEvent, NativeSyntheticEvent } from 'react-native';
 
 const DEFAULT_BACKDROP_COLOR = 'rgba(0, 0, 0, 0.4)';
 const DEFAULT_SHEET_MAX_RATIO = 0.92;
+const DEFAULT_SHEET_CORNER_RADIUS = 24;
+// Taller than any bottom safe area; the sheet clips the rest.
+const SHEET_SURFACE_TAIL_HEIGHT = 120;
 
 const REQUEST_REASONS: Record<string, IOverlayRequestDismissReason> = {
   back: 'back',
@@ -33,6 +42,16 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     width: 0,
+  },
+  sheetMarginLeft: { position: 'absolute', top: 0, bottom: 0, left: 0 },
+  sheetMarginRight: { position: 'absolute', top: 0, bottom: 0, right: 0 },
+  sheetSurface: { borderCurve: 'continuous', overflow: 'hidden', flexGrow: 1 },
+  // The platform sheet extends below the content (home indicator area); the
+  // drawn surface continues into it so no backdrop shows under the content.
+  sheetSurfaceTail: {
+    position: 'absolute',
+    top: '100%',
+    height: SHEET_SURFACE_TAIL_HEIGHT,
   },
 });
 
@@ -77,6 +96,14 @@ export function OverlayView(props: IOverlayViewProps) {
       reportedWidth: reportedSheetWidth,
       maxWidth: sheet?.maxWidth,
     });
+  // `maxWidth` turns on the drawn surface even while it spans the whole sheet,
+  // so a width change never swaps who paints the background.
+  const hasSheetSurface = isSheet && sheet?.maxWidth !== undefined;
+  const dismissOnBackdropPress = backdrop ? !!backdrop.dismissOnPress : false;
+  const onSheetMarginPress = useCallback(() => {
+    // The margins beside a max-width surface stand in for the backdrop.
+    if (dismissOnBackdropPress) onHostRequestDismiss('backdrop');
+  }, [dismissOnBackdropPress, onHostRequestDismiss]);
   const onSheetLayoutReport = useCallback(
     (event: NativeSyntheticEvent<{ width: number }>) => {
       setReportedSheetWidth(event.nativeEvent.width);
@@ -140,7 +167,11 @@ export function OverlayView(props: IOverlayViewProps) {
         sheetHeight={isSheet ? sheetHeight : 0}
         sheetCornerRadius={sheet?.cornerRadius}
         showHandle={sheet?.showHandle}
-        sheetBackgroundColor={sheet?.backgroundColor}
+        // A max-width sheet draws its own surface, so the platform sheet
+        // stays transparent beside it.
+        sheetBackgroundColor={
+          hasSheetSurface ? 'transparent' : sheet?.backgroundColor
+        }
         dismissOnPanDown={sheet?.dismissOnPanDown ?? true}
         animationConfig={animationConfig}
         onPresented={onHostPresented}
@@ -163,9 +194,56 @@ export function OverlayView(props: IOverlayViewProps) {
               flexShrink: 0,
             }}
           >
-            <OverlayLevelProvider value={level}>
-              {children}
-            </OverlayLevelProvider>
+            {hasSheetSurface ? (
+              <>
+                {sheetInset > 0 ? (
+                  <>
+                    <Pressable
+                      accessible={false}
+                      importantForAccessibility="no-hide-descendants"
+                      onPress={onSheetMarginPress}
+                      style={[styles.sheetMarginLeft, { width: sheetInset }]}
+                    />
+                    <Pressable
+                      accessible={false}
+                      importantForAccessibility="no-hide-descendants"
+                      onPress={onSheetMarginPress}
+                      style={[styles.sheetMarginRight, { width: sheetInset }]}
+                    />
+                  </>
+                ) : null}
+                <View
+                  style={[
+                    styles.sheetSurfaceTail,
+                    {
+                      left: sheetInset,
+                      right: sheetInset,
+                      backgroundColor: sheet?.backgroundColor,
+                    },
+                  ]}
+                />
+                <View
+                  style={[
+                    styles.sheetSurface,
+                    {
+                      backgroundColor: sheet?.backgroundColor,
+                      borderTopLeftRadius:
+                        sheet?.cornerRadius ?? DEFAULT_SHEET_CORNER_RADIUS,
+                      borderTopRightRadius:
+                        sheet?.cornerRadius ?? DEFAULT_SHEET_CORNER_RADIUS,
+                    },
+                  ]}
+                >
+                  <OverlayLevelProvider value={level}>
+                    {children}
+                  </OverlayLevelProvider>
+                </View>
+              </>
+            ) : (
+              <OverlayLevelProvider value={level}>
+                {children}
+              </OverlayLevelProvider>
+            )}
           </View>
         ) : (
           <View
