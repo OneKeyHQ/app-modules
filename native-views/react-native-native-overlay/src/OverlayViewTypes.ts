@@ -79,6 +79,15 @@ export interface IOverlayViewProps {
    */
   onRequestDismiss?: (reason: IOverlayRequestDismissReason) => void;
   onPresented?: () => void;
+  /**
+   * Native only. Window coordinates measured in JS (`measureInWindow`) are
+   * relative to the enclosing native modal (react-native-screens), not the
+   * screen. Change `windowOffsetRequest` to receive the offset to add to such
+   * coordinates so they match where the overlay draws; it is `{0, 0}` outside
+   * modals and on Android.
+   */
+  windowOffsetRequest?: number;
+  onWindowOffset?: (offset: { x: number; y: number }) => void;
   /** The exit animation finished and the content unmounted. */
   onClose?: (reason: IOverlayDismissReason) => void;
   children?: ReactNode;

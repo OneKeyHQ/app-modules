@@ -403,6 +403,28 @@ Width changes while open (rotation, folding, window resize):
 Open questions: whether the anchored panel should reopen as a sheet instead
 of closing when the class drops below expanded.
 
+### Window offset for modal-relative anchors
+
+Implemented; iOS runtime-verified on an iPhone Duo inner display. Under
+Fabric, `measureInWindow` / `measure` inside a react-native-screens native
+modal return coordinates relative to that modal, not the screen (measured
+offset of 150, 8 pt for the account selector page sheet in landscape), and no
+JS API exposes the modal's position. Anchored overlays draw in screen
+coordinates, so callers that anchor to a JS-measured rect ask the overlay for
+the correction:
+
+- `windowOffsetRequest` (a counter) and `onWindowOffset({ x, y })`. Each new
+  non-zero value makes iOS report the host's on-screen origin once, after the
+  commit settles; JS measures a plain sibling probe at the same spot and
+  reports `native - measured`. It is `{0, 0}` outside modals.
+- The host's own shadow node reports the content origin, so the probe is a
+  separate view.
+- The overlay must be mounted to report, so callers keep it mounted
+  (hidden) while waiting. Android never reports; callers treat a missing
+  report as no offset only where the platform cannot report.
+- Rects already in screen space (for example from native lists) need no
+  correction.
+
 ### Web keyboard focus containment
 
 The topmost active, unsuspended blocking Web entry MUST contain sequential

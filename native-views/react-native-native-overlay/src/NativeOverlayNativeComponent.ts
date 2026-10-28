@@ -14,6 +14,11 @@ type INativeOverlayRequestDismissEvent = Readonly<{
   reason: string;
 }>;
 
+type INativeOverlayHostWindowOriginEvent = Readonly<{
+  x: CodegenTypes.Double;
+  y: CodegenTypes.Double;
+}>;
+
 type INativeOverlaySheetLayoutEvent = Readonly<{
   width: CodegenTypes.Double;
 }>;
@@ -57,6 +62,9 @@ export interface INativeOverlayNativeProps extends ViewProps {
   onRequestDismiss?: CodegenTypes.DirectEventHandler<INativeOverlayRequestDismissEvent>;
   /** `sheet` presentation: the width the platform gave the sheet. */
   onSheetLayout?: CodegenTypes.DirectEventHandler<INativeOverlaySheetLayoutEvent>;
+  /** Bump to have native report this host's on-screen origin once. */
+  hostOriginRequest?: CodegenTypes.WithDefault<CodegenTypes.Int32, 0>;
+  onHostWindowOrigin?: CodegenTypes.DirectEventHandler<INativeOverlayHostWindowOriginEvent>;
 }
 
 // The shadow node is hand-written (common/cpp): it carries the on-screen

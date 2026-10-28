@@ -63,6 +63,7 @@ static NSString *RNCNativeOverlayPresentationString(RNCNativeOverlayPresentation
   RCTSurfaceTouchHandler *_touchHandler;
   RNCNativeOverlayShadowNode::ConcreteState::Shared _state;
   CGPoint _contentOffset;
+  int32_t _hostOriginRequest;
 }
 
 + (ComponentDescriptorProvider)componentDescriptorProvider
@@ -163,6 +164,22 @@ static NSString *RNCNativeOverlayPresentationString(RNCNativeOverlayPresentation
   _containerView.animationConfig = [NSString stringWithUTF8String:newProps.animationConfig.c_str()];
   _containerView.visible = newProps.visible;
   [_containerView commitConfiguration];
+
+  if (newProps.hostOriginRequest != 0 && newProps.hostOriginRequest != _hostOriginRequest) {
+    _hostOriginRequest = newProps.hostOriginRequest;
+    // After the commit settles, report where this host really is on screen.
+    __weak auto weakSelf = self;
+    dispatch_async(dispatch_get_main_queue(), ^{
+      auto strongSelf = weakSelf;
+      if (!strongSelf || !strongSelf.window) return;
+      CGPoint origin = [strongSelf convertPoint:CGPointZero toView:nil];
+      origin.x += strongSelf.window.frame.origin.x;
+      origin.y += strongSelf.window.frame.origin.y;
+      auto emitter = std::static_pointer_cast<const RNCNativeOverlayEventEmitter>(strongSelf->_eventEmitter);
+      if (!emitter) return;
+      emitter->onHostWindowOrigin({.x = origin.x, .y = origin.y});
+    });
+  }
 
   [super updateProps:props oldProps:oldProps];
 }

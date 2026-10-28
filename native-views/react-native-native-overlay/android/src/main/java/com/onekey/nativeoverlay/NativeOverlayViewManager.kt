@@ -130,6 +130,9 @@ class NativeOverlayViewManager :
     view.sheetHeight = value
   }
 
+  // Android measures in screen space already; it never reports an offset.
+  override fun setHostOriginRequest(view: NativeOverlayView, value: Int) = Unit
+
   override fun setSheetCornerRadius(view: NativeOverlayView, value: Double) {
     view.sheetCornerRadius = value
   }

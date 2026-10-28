@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
 import {
   Pressable,
@@ -18,6 +18,7 @@ import type {
   IOverlayRequestDismissReason,
   IOverlayViewProps,
 } from './OverlayViewTypes';
+import type { ComponentRef } from 'react';
 import type { LayoutChangeEvent, NativeSyntheticEvent } from 'react-native';
 
 const DEFAULT_BACKDROP_COLOR = 'rgba(0, 0, 0, 0.4)';
@@ -67,7 +68,22 @@ export function OverlayView(props: IOverlayViewProps) {
     statusBarStyle,
     children,
     testID,
+    windowOffsetRequest,
+    onWindowOffset,
   } = props;
+  // A plain sibling at the host's spot: its JS-measured origin shares the
+  // modal-relative space of the caller's measurements, while native reports
+  // the true one (the host's own shadow node reports the content origin).
+  const offsetProbeRef = useRef<ComponentRef<typeof View>>(null);
+  const onHostWindowOrigin = useCallback(
+    (event: NativeSyntheticEvent<{ x: number; y: number }>) => {
+      const { x: nativeX, y: nativeY } = event.nativeEvent;
+      offsetProbeRef.current?.measureInWindow((x, y) => {
+        onWindowOffset?.({ x: nativeX - x, y: nativeY - y });
+      });
+    },
+    [onWindowOffset]
+  );
   const isSheet = presentation === 'sheet';
   const controller = useOverlayController(props);
   const { width, height } = useWindowDimensions();
@@ -148,6 +164,14 @@ export function OverlayView(props: IOverlayViewProps) {
   return (
     <>
       {statusBar}
+      {onWindowOffset ? (
+        <View
+          ref={offsetProbeRef}
+          collapsable={false}
+          pointerEvents="none"
+          style={styles.host}
+        />
+      ) : null}
       <NativeOverlay
         style={styles.host}
         // A fitted sheet presents once its content height is known.
@@ -178,6 +202,8 @@ export function OverlayView(props: IOverlayViewProps) {
         onDismissed={onDismissed}
         onRequestDismiss={onRequestDismiss}
         onSheetLayout={isSheet ? onSheetLayoutReport : undefined}
+        hostOriginRequest={onWindowOffset ? windowOffsetRequest ?? 0 : 0}
+        onHostWindowOrigin={onWindowOffset ? onHostWindowOrigin : undefined}
         testID={testID}
       >
         {isSheet ? (
