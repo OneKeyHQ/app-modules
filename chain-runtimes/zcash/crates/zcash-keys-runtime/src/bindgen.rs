@@ -5,6 +5,20 @@ use zeroize::Zeroizing;
 
 use crate::{account_keys, keys, review, sign, transparent_prevouts, transparent_send};
 
+#[wasm_bindgen(js_name = transactionPolicy)]
+pub fn transaction_policy(target_height: u32) -> Result<String, JsValue> {
+    serde_json::to_string(&onekey_zcash_send_policy::transaction_policy(
+        &zcash_protocol::consensus::MAIN_NETWORK,
+        zcash_protocol::consensus::BlockHeight::from_u32(target_height),
+    ))
+    .map_err(|error| JsValue::from_str(&error.to_string()))
+}
+
+#[wasm_bindgen(js_name = inspectTransaction)]
+pub fn inspect_transaction(request_json: &str) -> Result<String, JsValue> {
+    Ok(crate::transaction_history::inspect_json(request_json)?)
+}
+
 #[wasm_bindgen(js_name = validateAddress)]
 pub fn validate_address(network: &str, address: &str) -> Result<bool, JsValue> {
     Ok(keys::validate_address(network, address)?)
@@ -136,31 +150,38 @@ pub fn keys_capabilities() -> String {
     .to_string()
 }
 
+/// `ufvk` (this account's) seals Ironwood outputs to its Orchard external OVK so the sender can
+/// recover them; without it they are unrecoverable by the sender. The same key goes to the finalizing call.
 #[wasm_bindgen(js_name = transparentTxCreateWithAccountXpub)]
 pub fn transparent_tx_create_with_account_xpub(
     request_json: &str,
     account_xpub: &str,
     seed_fingerprint_hex: &str,
+    ufvk: Option<String>,
 ) -> Result<Vec<u8>, JsValue> {
     Ok(transparent_send::shielding::create_with_account_xpub(
         request_json,
         account_xpub,
         seed_fingerprint_hex,
+        ufvk.as_deref(),
     )?)
 }
 
+/// With `ufvk`, every Ironwood output must be recoverable with its OVK.
 #[wasm_bindgen(js_name = transparentTxCombineHardwareSigned)]
 pub fn transparent_tx_combine_hardware_signed(
     request_json: &str,
     account_xpub: &str,
     original: Vec<u8>,
     signed: Vec<u8>,
+    ufvk: Option<String>,
 ) -> Result<Vec<u8>, JsValue> {
     Ok(transparent_send::shielding::combine_hardware_signed(
         request_json,
         account_xpub,
         &original,
         &signed,
+        ufvk.as_deref(),
     )?)
 }
 
@@ -169,15 +190,18 @@ pub fn dependency_versions() -> String {
     crate::dependency_versions().to_string()
 }
 
+/// `ufvk` as in `transparentTxCreateWithAccountXpub`; pass the same key to the signing call.
 #[wasm_bindgen(js_name = transparentShieldCreateWithAccountXprv)]
 pub fn transparent_shield_create_with_account_xprv(
     request_json: &str,
     account_xprv: String,
+    ufvk: Option<String>,
 ) -> Result<Vec<u8>, JsValue> {
     let account_xprv = Zeroizing::new(account_xprv);
     Ok(transparent_send::shielding::create_with_account_xprv(
         request_json,
         &account_xprv,
+        ufvk.as_deref(),
     )?)
 }
 
@@ -187,6 +211,7 @@ pub fn transparent_shield_sign_with_account_xprv(
     account_xprv: String,
     original: Vec<u8>,
     pczt: Vec<u8>,
+    ufvk: Option<String>,
 ) -> Result<Vec<u8>, JsValue> {
     let account_xprv = Zeroizing::new(account_xprv);
     Ok(transparent_send::shielding::sign_with_account_xprv(
@@ -194,5 +219,6 @@ pub fn transparent_shield_sign_with_account_xprv(
         &account_xprv,
         &original,
         &pczt,
+        ufvk.as_deref(),
     )?)
 }

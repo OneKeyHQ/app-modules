@@ -19,7 +19,6 @@ use zcash_keys::address::Address;
 use zcash_primitives::transaction::{
     fees::{
         transparent::{InputSize, OutputView},
-        zip317::{FeeRule as Zip317FeeRule, MARGINAL_FEE},
         FeeRule as _,
     },
     sighash::{signature_hash, SignableInput},
@@ -39,7 +38,7 @@ use crate::{
     error::{ErrorCode, KeysError, Result},
 };
 
-const MAX_EXPIRY_DELTA: u32 = 100;
+const MAX_EXPIRY_DELTA: u32 = onekey_zcash_send_policy::EXPIRY_DELTA;
 const XPRV_VERSION: [u8; 4] = [0x04, 0x88, 0xad, 0xe4];
 const ACCOUNT_XPRV_DEPTH: u8 = 3;
 
@@ -265,7 +264,10 @@ fn plan_transaction(request: TransparentTxRequest) -> Result<TransactionPlan> {
                 }),
             )
         })?;
-    if expiry_delta == 0 || expiry_delta > MAX_EXPIRY_DELTA {
+    if expiry_delta < onekey_zcash_send_policy::MIN_VALID_BLOCKS
+        || onekey_zcash_send_policy::expiry_height(&MAIN_NETWORK, target_height)
+            .is_none_or(|maximum| request.expiry_height > u32::from(maximum))
+    {
         return Err(KeysError::with(
             ErrorCode::InvalidTargetHeight,
             serde_json::json!({
@@ -430,7 +432,13 @@ fn plan_transaction(request: TransparentTxRequest) -> Result<TransactionPlan> {
 
         // Dust change goes to the fee (like upstream `AddDustToFee`). The subtraction cannot underflow
         // because input_total > send_total + fee_without_change here.
-        if input_total_raw < needed_with_change || change_raw < MARGINAL_FEE.into_u64() {
+        if input_total_raw < needed_with_change
+            || change_raw
+                < u64::from(onekey_zcash_send_policy::marginal_fee(
+                    &MAIN_NETWORK,
+                    target_height,
+                ))
+        {
             let fee_raw = input_total_raw - send_total_raw;
             (parse_zatoshis_u64(fee_raw, "fee")?, None)
         } else {
@@ -685,7 +693,7 @@ fn calculate_fee(
     } else {
         ironwood_outputs.max(2)
     };
-    Zip317FeeRule::standard()
+    onekey_zcash_send_policy::fee_rule(&MAIN_NETWORK, target_height)
         .fee_required(
             &MAIN_NETWORK,
             target_height,
@@ -999,6 +1007,34 @@ mod tests {
     }
 
     #[test]
+    fn fee_quotes_follow_the_shared_height_policy() {
+        for (height, expected) in [
+            (3_589_999, "10000"),
+            (3_590_000, "10000"),
+            (3_590_099, "10000"),
+            (3_590_100, "2000"),
+        ] {
+            let mut request: serde_json::Value =
+                serde_json::from_str(&request_json(&[100_000], true)).unwrap();
+            request["targetHeight"] = height.into();
+            request["expiryHeight"] = (height + 40).into();
+            let quote: serde_json::Value =
+                serde_json::from_str(&quote_json(&request.to_string()).unwrap()).unwrap();
+            assert_eq!(quote["feeZat"], expected);
+        }
+    }
+
+    #[test]
+    fn a_transparent_quote_needs_eight_valid_blocks_and_at_most_forty() {
+        for delta in [0, 7, 41, 100] {
+            let mut request: serde_json::Value =
+                serde_json::from_str(&request_json(&[100_000], true)).unwrap();
+            request["expiryHeight"] = (3_500_000 + delta).into();
+            assert!(quote_json(&request.to_string()).is_err());
+        }
+    }
+
+    #[test]
     fn quotes_and_creates_shielding_without_a_wallet_or_scan() {
         for send_max in [false, true] {
             let request = shielding_request(send_max);
@@ -1009,7 +1045,7 @@ mod tests {
                 quote.send_amount_zat,
                 if send_max { "85000" } else { "50000" }
             );
-            let created = shielding::create_with_account_xprv(&request, &xprv()).unwrap();
+            let created = shielding::create_with_account_xprv(&request, &xprv(), None).unwrap();
             let pczt = pczt::Pczt::parse(&created).unwrap();
             assert_eq!(pczt.transparent().inputs().len(), 1);
             assert_eq!(pczt.transparent().outputs().len(), usize::from(!send_max));

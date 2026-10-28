@@ -87,6 +87,7 @@ pcztVerifyReview(pczt, reviewJson)
 pcztSignWithAccountKeys(network, orchardSk, accountXprv, accountIndex, pczt, reviewJson)
 pcztRedactForHardwareSigner(pczt)
 transparentTx* / transparentShield* / parseTransparentTransactions(requestJson)
+transactionPolicy(targetHeight) / inspectTransaction(requestJson)
 keysCapabilities() / keysDependencyVersions()
 ```
 
@@ -94,7 +95,12 @@ keysCapabilities() / keysDependencyVersions()
 
 ```
 crates/zcash-runtime/            wallet, scanning, PCZT build/prove/submit
+crates/zcash-send-policy/        height-gated ZIP 2009 fees and bounded expiry
 crates/zcash-keys-runtime/       derivation, review checks, signing, stateless transparent sends
 patches/                         pinned upstream checksums and patches
 scripts/                         vendor-deps.sh, build-wasm.sh, package-release.py
 ```
+
+The pinned SQLite patch also uses the shared height-dependent marginal fee for
+spendable-note selection and uneconomic balance classification. `vendor-deps.sh`
+verifies this patch against the recorded upstream archive before a build.

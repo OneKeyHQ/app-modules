@@ -8,6 +8,7 @@ pub mod error;
 pub mod keys;
 pub mod review;
 pub mod sign;
+pub mod transaction_history;
 pub mod transparent_prevouts;
 pub mod transparent_send;
 
