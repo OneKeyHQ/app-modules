@@ -252,8 +252,13 @@ fn ring_matches<'a>(
 /// host-computed `key_offset` (a malicious host could make it sign with any key), so R is
 /// kept; recovering it later needs a rescan or a txid query that leaks interest.
 fn tx_public_keys_in(block: &ScannableBlock) -> Vec<TxPublicKeys> {
-    // Length mismatches are reported by `key_images_in`; skip here.
     let mut out = Vec::new();
+    // The miner transaction pays coinbase outputs, which need their R as much as any other.
+    let miner = block.block.miner_transaction();
+    if let Some((keys, additional)) = tx_public_keys_from_extra(&miner.prefix().extra) {
+        out.push((miner.hash(), keys, additional));
+    }
+    // Length mismatches are reported by `key_images_in`; skip here.
     for (txid, tx) in block
         .block
         .transactions
@@ -330,6 +335,8 @@ pub fn scan_blocks(
     let mut found: Vec<(u64, WalletOutput)> = Vec::new();
     // txid -> (R, additional), only for transactions that paid us.
     let mut tx_pub_keys: HashMap<[u8; 32], TxKeys> = HashMap::new();
+    // Miner transactions of blocks that paid us.
+    let mut coinbase_txids: HashSet<[u8; 32]> = HashSet::new();
     let mut spends: Vec<(u64, [u8; 32], [u8; 32])> = Vec::new(); // (height, key_image, txid)
 
     // Fees of transactions that pay or spend ours: history shows them, and needs them to tell
@@ -401,6 +408,7 @@ pub fn scan_blocks(
             for (txid, keys, additional) in tx_public_keys_in(block) {
                 tx_pub_keys.insert(txid, (keys, additional));
             }
+            coinbase_txids.insert(block.block.miner_transaction().hash());
         }
         let ours_before = found.len() + spends.len() + possible_spends.len();
         // Match inputs before adding this block's outputs as candidates: new
@@ -475,6 +483,7 @@ pub fn scan_blocks(
         &block_rows,
         &possible_spends,
         &tx_fees,
+        &coinbase_txids,
     )?;
     outcome.outputs_without_key_image = count_outputs_without_key_image(db, identity_id)?;
     Ok(outcome)
@@ -557,6 +566,7 @@ fn persist(
     block_rows: &[(u64, [u8; 32], Option<u64>, u64)],
     possible_spends: &[PossibleSpend],
     tx_fees: &HashMap<[u8; 32], u64>,
+    coinbase_txids: &HashSet<[u8; 32]>,
 ) -> Result<()> {
     let tx = db
         .conn_mut()
@@ -625,20 +635,22 @@ fn persist(
 
         if seen_txids.insert(txid) {
             tx.execute(
-                "INSERT INTO transactions (identity_id, txid, height, timestamp, direction, fee_atomic, payment_id)
-                 VALUES (?1, ?2, ?3, ?4, 'in', ?5, ?6)
+                "INSERT INTO transactions (identity_id, txid, height, timestamp, direction, fee_atomic, payment_id, coinbase)
+                 VALUES (?1, ?2, ?3, ?4, 'in', ?5, ?6, ?7)
                  ON CONFLICT (identity_id, txid) DO UPDATE
                    SET height = excluded.height, failed = 0, scan_valid = 1,
                        timestamp = COALESCE(excluded.timestamp, transactions.timestamp),
                        fee_atomic = COALESCE(excluded.fee_atomic, transactions.fee_atomic),
-                       payment_id = COALESCE(excluded.payment_id, transactions.payment_id)",
+                       payment_id = COALESCE(excluded.payment_id, transactions.payment_id),
+                       coinbase = excluded.coinbase",
                 params![
                     identity_id,
                     txid.as_slice(),
                     *height as i64,
                     block_time.get(height),
                     tx_fees.get(&txid).map(|fee| *fee as i64),
-                    payment_ids.get(&txid)
+                    payment_ids.get(&txid),
+                    coinbase_txids.contains(&txid)
                 ],
             )
             .map_err(|e| db_err("insertIncomingTransaction", e))?;
@@ -848,6 +860,7 @@ mod tests {
             &[],
             &[],
             &HashMap::new(),
+            &HashSet::new(),
         )
         .unwrap();
         db.conn().execute("INSERT INTO transactions (identity_id, txid, height, direction, sent_at) VALUES (?1, ?2, 995, 'out', 1)", params![id, own_send.as_slice()]).unwrap();
@@ -891,6 +904,7 @@ mod tests {
             &[],
             &[],
             &HashMap::new(),
+            &HashSet::new(),
         )
         .unwrap();
         let (valid, index, height, stored_image, lock): (i64, i64, i64, Vec<u8>, Vec<u8>) = db
@@ -1113,6 +1127,7 @@ mod tests {
             ],
             &[],
             &HashMap::new(),
+            &HashSet::new(),
         )
         .unwrap();
 
@@ -1172,6 +1187,7 @@ mod tests {
             &[(mined_at, [7u8; 32], None, 1_700_000_000)],
             &[],
             &HashMap::new(),
+            &HashSet::new(),
         )
         .unwrap();
 
@@ -1235,6 +1251,7 @@ mod tests {
             &[(503, [7u8; 32], None, 1_700_000_000)],
             &[possible],
             &fees,
+            &HashSet::new(),
         )
         .unwrap();
 
@@ -1405,17 +1422,7 @@ mod tests {
     fn scan_vector_with(encrypted: [u8; 8]) -> (serde_json::Value, Option<Vec<u8>>) {
         use monero_wallet::{block::Block, transaction::Pruned};
 
-        let spend: [u8; 32] = hex::decode(VECTOR_SPEND_KEY).unwrap().try_into().unwrap();
-        let spend_public = (curve25519_dalek::constants::ED25519_BASEPOINT_POINT
-            * curve25519_dalek::Scalar::from_bytes_mod_order(spend))
-        .compress()
-        .to_bytes();
-        let view: [u8; 32] = hex::decode(VECTOR_VIEW_KEY).unwrap().try_into().unwrap();
-        let mut db = crate::wallet::testing::db();
-        let id = db
-            .add_identity("vector", &spend_public, &view, 0)
-            .unwrap()
-            .id;
+        let (mut db, id) = vector_wallet();
 
         let original = format!(
             "{VECTOR_NONCE_PREFIX}{}",
@@ -1442,6 +1449,149 @@ mod tests {
             .unwrap();
         let item = crate::query::history(&db, id, 10, 0).unwrap()["items"][0].clone();
         (item, stored)
+    }
+
+    /// A fresh wallet holding the vector keys.
+    fn vector_wallet() -> (Db, i64) {
+        let spend: [u8; 32] = hex::decode(VECTOR_SPEND_KEY).unwrap().try_into().unwrap();
+        let spend_public = (curve25519_dalek::constants::ED25519_BASEPOINT_POINT
+            * curve25519_dalek::Scalar::from_bytes_mod_order(spend))
+        .compress()
+        .to_bytes();
+        let view: [u8; 32] = hex::decode(VECTOR_VIEW_KEY).unwrap().try_into().unwrap();
+        let mut db = crate::wallet::testing::db();
+        let id = db
+            .add_identity("vector", &spend_public, &view, 0)
+            .unwrap()
+            .id;
+        (db, id)
+    }
+
+    /// The vector block with its miner transaction paying the vector keys (the outputs and
+    /// keys of `VECTOR_TX`), and that miner transaction's id.
+    fn vector_coinbase_block() -> (ScannableBlock, [u8; 32]) {
+        use monero_wallet::{
+            block::Block,
+            transaction::{Pruned, Timelock, TransactionPrefix},
+        };
+
+        let paying =
+            Transaction::<Pruned>::read(&mut hex::decode(VECTOR_TX).unwrap().as_slice()).unwrap();
+        let template = Block::read(&mut hex::decode(VECTOR_BLOCK).unwrap().as_slice()).unwrap();
+        let height = template.number();
+        let mut outputs = paying.prefix().outputs.clone();
+        for output in &mut outputs {
+            output.amount = Some(600_000_000_000);
+        }
+        let miner = Transaction::V2 {
+            prefix: TransactionPrefix {
+                additional_timelock: Timelock::Block(height + 60),
+                inputs: vec![Input::Gen(height)],
+                outputs,
+                extra: paying.prefix().extra.clone(),
+            },
+            proofs: None,
+        };
+        let miner_txid = miner.hash();
+        let block = ScannableBlock {
+            block: Block::new(template.header.clone(), miner, vec![]).unwrap(),
+            transactions: vec![],
+            output_index_for_first_ringct_output: Some(0),
+        };
+        (block, miner_txid)
+    }
+
+    /// A receive from the block's miner transaction is a coinbase; an ordinary one is not.
+    #[test]
+    fn a_receive_from_a_miner_transaction_is_flagged_as_coinbase() {
+        let (ordinary, _) = scan_vector_with(VECTOR_PAYMENT_ID_MASK);
+        assert_eq!(ordinary["isCoinbase"], false);
+
+        let (block, miner_txid) = vector_coinbase_block();
+        let (mut db, id) = vector_wallet();
+        assert_eq!(scan_blocks(&mut db, id, &[block]).unwrap().outputs_found, 2);
+        let item = crate::query::history(&db, id, 10, 0).unwrap()["items"][0].clone();
+        assert_eq!(item["txid"], hex::encode(miner_txid));
+        assert_eq!(item["direction"], "in");
+        assert_eq!(item["isCoinbase"], true);
+    }
+
+    /// A hardware account syncs coinbase outputs like any other: the export carries the miner
+    /// transaction's R, and the key image a device derives from it is the software one.
+    #[test]
+    fn a_coinbase_output_syncs_its_key_image_from_the_device() {
+        use curve25519_dalek::Scalar as Dalek;
+        use monero_wallet::{ed25519::Scalar, io::VarInt};
+
+        let (block, _) = vector_coinbase_block();
+        let (miner_r, _) =
+            tx_public_keys_from_extra(&block.block.miner_transaction().prefix().extra).unwrap();
+        let (mut device_db, device_id) = vector_wallet();
+        scan_blocks(&mut device_db, device_id, std::slice::from_ref(&block)).unwrap();
+        let (mut software_db, software_id) = vector_wallet();
+        scan_blocks(&mut software_db, software_id, &[block]).unwrap();
+
+        let exported = crate::device_key_images::export_sync_data(&device_db, device_id).unwrap();
+        let items = exported["items"].as_array().unwrap();
+        assert_eq!(items.len(), 2);
+
+        // Device side: x = Hs(8aR || i) + b from the exported R and index alone.
+        let view =
+            Dalek::from_bytes_mod_order(hex::decode(VECTOR_VIEW_KEY).unwrap().try_into().unwrap());
+        let spend: [u8; 32] = hex::decode(VECTOR_SPEND_KEY).unwrap().try_into().unwrap();
+        let mut signed = Vec::new();
+        for (n, item) in items.iter().enumerate() {
+            assert_eq!(item["txPubKey"], hex::encode(&miner_r));
+            assert!(item["additionalTxPubKey"].is_null());
+            let r: [u8; 32] = hex::decode(item["txPubKey"].as_str().unwrap())
+                .unwrap()
+                .try_into()
+                .unwrap();
+            let r = monero_wallet::ed25519::CompressedPoint::from(r)
+                .decompress()
+                .unwrap();
+            let mut derivation = (view * r.into())
+                .mul_by_cofactor()
+                .compress()
+                .to_bytes()
+                .to_vec();
+            VarInt::write(
+                &item["internalOutputIndex"].as_u64().unwrap(),
+                &mut derivation,
+            )
+            .unwrap();
+            let shared: Dalek = Scalar::hash(&derivation).into();
+            let x = shared + Dalek::from_bytes_mod_order(spend);
+            let (output_key, image, signature) =
+                crate::device_key_images::test_support::device_sign(x, Dalek::from(n as u64 + 7));
+            assert_eq!(hex::encode(output_key), item["outKey"]);
+            signed.push(json!({
+                "outputId": item["outputId"],
+                "keyImage": hex::encode(image),
+                "signature": hex::encode(signature),
+            }));
+        }
+        let imported = crate::device_key_images::import_verified(
+            &mut device_db,
+            device_id,
+            &serde_json::Value::Array(signed).to_string(),
+        )
+        .unwrap();
+        assert_eq!(imported.imported, 2);
+
+        crate::spend::import_key_images(&mut software_db, software_id, &spend).unwrap();
+        let key_images = |db: &Db| -> Vec<Option<Vec<u8>>> {
+            db.conn()
+                .prepare("SELECT key_image FROM outputs ORDER BY index_in_tx")
+                .unwrap()
+                .query_map([], |r| r.get(0))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap()
+        };
+        let from_device = key_images(&device_db);
+        assert!(from_device.iter().all(Option::is_some));
+        assert_eq!(from_device, key_images(&software_db));
     }
 
     #[test]

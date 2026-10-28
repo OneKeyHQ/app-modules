@@ -285,12 +285,38 @@ fn rejected(output_id: i64, reason: &str) -> RuntimeError {
     )
 }
 
+/// What a device returns for an output, for tests outside this module too.
+#[cfg(test)]
+pub(crate) mod test_support {
+    use curve25519_dalek::{
+        constants::ED25519_BASEPOINT_POINT as G, EdwardsPoint, Scalar as Dalek,
+    };
+    use monero_wallet::ed25519::{Point, Scalar};
+
+    /// `(output key, key image, c || r)`: a key image and its one-member ring signature
+    /// for the output with secret `x`, following Monero's `generate_ring_signature`.
+    pub fn device_sign(x: Dalek, nonce: Dalek) -> ([u8; 32], [u8; 32], [u8; 64]) {
+        let output_key = (x * G).compress().to_bytes();
+        let hp: EdwardsPoint = Point::biased_hash(output_key).into();
+        let image = (x * hp).compress().to_bytes();
+        let mut transcript = image.to_vec();
+        transcript.extend_from_slice((nonce * G).compress().as_bytes());
+        transcript.extend_from_slice((nonce * hp).compress().as_bytes());
+        let c: Dalek = Scalar::hash(&transcript).into();
+        let r = nonce - c * x;
+        let mut signature = [0u8; 64];
+        signature[..32].copy_from_slice(c.as_bytes());
+        signature[32..].copy_from_slice(r.as_bytes());
+        (output_key, image, signature)
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::test_support::device_sign;
     use super::*;
     use crate::wallet::testing::{db_with_identity, key_bytes};
     use curve25519_dalek::Scalar as Dalek;
-    use monero_wallet::ed25519::Point;
     use rusqlite::params;
 
     const G: EdwardsPoint = ED25519_BASEPOINT_POINT;
@@ -436,23 +462,6 @@ mod tests {
         assert_eq!(items[0]["txPubKey"], hex_of(tx_keys[0]));
         assert_eq!(items[0]["additionalTxPubKey"], hex_of(additional[2]));
         assert_eq!(items[0]["subAddrMinor"], 2);
-    }
-
-    /// `(output key, key image, c || r)`: a key image and its one-member ring signature
-    /// for the output with secret `x`, following Monero's `generate_ring_signature`.
-    fn device_sign(x: Dalek, nonce: Dalek) -> ([u8; 32], [u8; 32], [u8; 64]) {
-        let output_key = (x * G).compress().to_bytes();
-        let hp: EdwardsPoint = Point::biased_hash(output_key).into();
-        let image = (x * hp).compress().to_bytes();
-        let mut transcript = image.to_vec();
-        transcript.extend_from_slice((nonce * G).compress().as_bytes());
-        transcript.extend_from_slice((nonce * hp).compress().as_bytes());
-        let c: Dalek = Scalar::hash(&transcript).into();
-        let r = nonce - c * x;
-        let mut signature = [0u8; 64];
-        signature[..32].copy_from_slice(c.as_bytes());
-        signature[32..].copy_from_slice(r.as_bytes());
-        (output_key, image, signature)
     }
 
     fn item(id: i64, image: &[u8], signature: &[u8]) -> Value {

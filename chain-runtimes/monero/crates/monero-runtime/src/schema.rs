@@ -208,6 +208,8 @@ CREATE TABLE IF NOT EXISTS transactions (
     -- Payment ID decrypted with the view key when an output of the tx is scanned (8 bytes, or
     -- 32 for a pre-v12 unencrypted one). NULL when absent or all zeros (wallet2's dummy).
     payment_id      BLOB    CHECK (payment_id IS NULL OR length(payment_id) IN (8, 32)),
+    -- Received in a block's miner (coinbase) transaction, as wallet2 `m_coinbase`
+    coinbase        INTEGER NOT NULL DEFAULT 0 CHECK (coinbase IN (0, 1)),
     -- 0 while a rescan or reorg re-verifies the row; shown without a height until seen again
     scan_valid      INTEGER NOT NULL DEFAULT 1 CHECK (scan_valid IN (0, 1)),
     PRIMARY KEY (identity_id, txid)

@@ -314,7 +314,8 @@ pub fn history(db: &Db, identity_id: i64, limit: u32, offset: u32) -> Result<Val
                             WHERE identity_id = t.identity_id AND txid = t.txid AND scan_valid = 1
                               AND subaddress_major IS NULL) AS received_on_primary,
                     -- Change in our own send decrypts it with our key into noise; wallet2 skips it too.
-                    CASE WHEN t.direction = 'in' THEN t.payment_id END
+                    CASE WHEN t.direction = 'in' THEN t.payment_id END,
+                    t.coinbase
              FROM transactions t
              LEFT JOIN blocks b ON b.identity_id = t.identity_id AND b.height = t.height
              WHERE t.identity_id = ?1
@@ -339,6 +340,8 @@ pub fn history(db: &Db, identity_id: i64, limit: u32, offset: u32) -> Result<Val
                 // Paid to the account's primary address (subaddresses are not shown as ours).
                 "receivedOnPrimary": r.get::<_, bool>(9)?,
                 "paymentId": r.get::<_, Option<Vec<u8>>>(10)?.map(hex::encode),
+                // Paid by a block's miner transaction (wallet2 `m_coinbase`).
+                "isCoinbase": r.get::<_, bool>(11)?,
             }))
         })
         .map_err(|e| db_err("history", e))?;
