@@ -10,6 +10,7 @@ description = "OneKey Zcash Runtime: a thin wasm binding over librustzcash"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+onekey-zcash-send-policy.workspace = true
 incrementalmerkletree = "0.8.2"
 shardtree = "=0.7.1"
 blake2b_simd.workspace = true

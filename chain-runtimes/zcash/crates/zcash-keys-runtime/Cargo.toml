@@ -11,6 +11,7 @@ crate-type = ["cdylib", "rlib"]
 
 # Minimal deps for mobile bundles: no client_backend, sqlite, or tonic.
 [dependencies]
+onekey-zcash-send-policy.workspace = true
 zcash_keys.workspace = true
 zcash_protocol.workspace = true
 zcash_address.workspace = true

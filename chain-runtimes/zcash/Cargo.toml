@@ -1,13 +1,14 @@
 [workspace]
 resolver = "2"
 members = [
+  "crates/zcash-send-policy",
   "crates/zcash-runtime",
   "crates/zcash-keys-runtime",
 ]
 exclude = ["vendor/sqlite-wasm-vfs-0.2.0"]
 
 [workspace.package]
-version = "0.1.0-alpha.11"
+version = "0.1.0-alpha.12"
 edition = "2021"
 license = "Apache-2.0"
 rust-version = "1.85"
@@ -22,7 +23,8 @@ zcash_client_sqlite = { version = "0.22.0", default-features = false, features =
 zcash_keys = { version = "0.16.1", features = ["orchard", "sapling", "transparent-inputs"] }
 zcash_protocol = "0.10"
 # default-features = false: multicore makes halo2_proofs compile_error on wasm32 without atomics.
-zcash_primitives = { version = "0.30", default-features = false }
+zcash_primitives = { version = "0.30", default-features = false, features = ["non-standard-fees"] }
+onekey-zcash-send-policy = { path = "crates/zcash-send-policy" }
 transparent = { package = "zcash_transparent", version = "0.10" }
 zcash_address = "0.13"
 zip321 = "0.9.0"

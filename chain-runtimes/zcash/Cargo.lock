@@ -1655,7 +1655,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "onekey-zcash-keys"
-version = "0.1.0-alpha.11"
+version = "0.1.0-alpha.12"
 dependencies = [
  "bip0039",
  "bip32",
@@ -1665,6 +1665,7 @@ dependencies = [
  "getrandom 0.4.3",
  "hex",
  "js-sys",
+ "onekey-zcash-send-policy",
  "orchard",
  "pczt",
  "rand",
@@ -1687,7 +1688,7 @@ dependencies = [
 
 [[package]]
 name = "onekey-zcash-runtime"
-version = "0.1.0-alpha.11"
+version = "0.1.0-alpha.12"
 dependencies = [
  "blake2b_simd",
  "console_error_panic_hook",
@@ -1698,6 +1699,7 @@ dependencies = [
  "hex",
  "incrementalmerkletree",
  "js-sys",
+ "onekey-zcash-send-policy",
  "orchard",
  "pczt",
  "prost",
@@ -1732,6 +1734,15 @@ dependencies = [
  "zcash_transparent",
  "zip32",
  "zip321",
+]
+
+[[package]]
+name = "onekey-zcash-send-policy"
+version = "0.1.0-alpha.12"
+dependencies = [
+ "serde",
+ "zcash_primitives",
+ "zcash_protocol",
 ]
 
 [[package]]
@@ -3373,6 +3384,7 @@ dependencies = [
  "jubjub",
  "maybe-rayon",
  "nonempty",
+ "onekey-zcash-send-policy",
  "orchard",
  "pczt",
  "prost",
