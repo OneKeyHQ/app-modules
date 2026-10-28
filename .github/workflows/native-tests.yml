@@ -234,7 +234,7 @@ jobs:
           path: |
             ~/Library/Caches/CocoaPods/Pods
             ~/Library/Caches/ReactNative/*.tar.gz
-          key: ios-pods-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock', 'example/react-native/Gemfile.lock', 'example/react-native/ios/Podfile.lock') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: ios-pods-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock', 'example/react-native/Gemfile.lock', 'example/react-native/ios/Podfile.lock') }}
           restore-keys: |
             ios-pods-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock', 'example/react-native/Gemfile.lock', 'example/react-native/ios/Podfile.lock') }}-
       - name: Select and verify Xcode and simulator
@@ -321,7 +321,7 @@ jobs:
             done < <(find "$cache" -type f -name '*.tar.gz' -print0)
           fi
       - name: Save CocoaPods and React Native download caches
-        if: always() && steps.validate-rn-cache.outcome == 'success'
+        if: always() && steps.validate-rn-cache.outcome == 'success' && steps.pod-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: |

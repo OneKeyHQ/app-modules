@@ -2882,7 +2882,8 @@ final class NativeListLifecycleTests: XCTestCase {
       view.applySnapshotJson(try structuralRowsSnapshot(count: 25, generation: 2,
         transitionID: dispose ? "dispose-mid-transition" : "detach-mid-transition",
         durationMs: 400))
-      waitForStructuralFrames(0.08)
+      // Interrupt an active transition without racing a wall-clock delay on a busy runner.
+      XCTAssertNotNil(Mirror(reflecting: view).descendant("structuralDisplayLink") as? CADisplayLink)
       reference.view = view
       if dispose {
         view.dispose()

@@ -519,6 +519,94 @@ class NativeListReorderCancellationTest : InstrumentationTestCase() {
     }
   }
 
+  fun testDisclosureDirectCommitSupersededByPatchesSettlesOnce() {
+    val settlements = mutableListOf<JSONObject>()
+    onMain {
+      repeat(6) { index -> list.mountContainerSlot(View(activity), index) }
+      list.setContainerSlotHeightsJson("[0,0,56,0,100,48]")
+      list.onStructuralTransitionSettled = { settlements.add(JSONObject(it)) }
+    }
+    val cases = listOf(Triple(6, 50, true), Triple(50, 6, false),
+      Triple(6, 6, true), Triple(50, 50, false))
+    cases.forEachIndexed { index, (beforeCount, afterCount, expanded) ->
+      val id = "direct-patch-$index"
+      onMain { list.applySnapshot(disclosureSnapshot(beforeCount, !expanded)) }
+      awaitAdapterCount(beforeCount)
+      onMain {
+        list.applySnapshot(disclosureSnapshot(afterCount, expanded, id, 0))
+        // Keep the main thread occupied so neither diff nor posted settlement can finish.
+        repeat(2) { patchIndex ->
+          list.applyPatches(JSONArray().put(JSONObject().put("key", "row-2")
+            .put("type", "identity").put("changes", JSONObject()
+              .put("title", "patched-$patchIndex"))).toString())
+        }
+        assertEquals(id, field<String?>(list, "activeDisclosureTransitionId"))
+        assertEquals(index, settlements.size)
+      }
+      awaitDisclosureSettlement(settlements, id)
+      instrumentation.waitForIdleSync()
+      onMain {
+        assertEquals(index + 1, settlements.size)
+        assertEquals(id, settlements.last().getString("transitionId"))
+        assertEquals("completed", settlements.last().getString("status"))
+        assertEquals(expanded, settlements.last().getBoolean("settledExpanded"))
+        assertNull(field<String?>(list, "activeDisclosureTransitionId"))
+        assertFalse(field<Boolean>(list, "directDisclosureTogglePositionPending"))
+        val adapter = field<NativeListAdapter>(list, "adapter")
+        assertEquals(afterCount, adapter.itemCount)
+        assertEquals("patched-1", adapter.currentList[2].json.getString("title"))
+        if (!expanded) {
+          val togglePosition = field<NativeListContainerSlotAdapter>(list,
+            "headerSlotAdapter").itemCount + adapter.itemCount +
+            field<NativeListContainerSlotAdapter>(list, "emptySlotAdapter").itemCount +
+            field<NativeListContainerSlotAdapter>(list, "structuralSpacerAdapter").itemCount +
+            field<NativeListContainerSlotAdapter>(list, "expandedContentAdapter").itemCount
+          val toggle = recycler.layoutManager?.findViewByPosition(togglePosition)
+          assertNotNull("Patched collapse must position the settled toggle", toggle)
+          assertTrue(toggle!!.top >= recycler.paddingTop +
+            field<View>(list, "stickyHeaderHost").height)
+          assertTrue(toggle.bottom <= recycler.height - recycler.paddingBottom)
+        }
+        list.applyPatches(JSONArray().put(JSONObject().put("key", "row-2")
+          .put("type", "identity").put("changes", JSONObject()
+            .put("title", "after-settlement"))).toString())
+      }
+      instrumentation.waitForIdleSync()
+      onMain { assertEquals("A later patch must not replay settlement", index + 1, settlements.size) }
+    }
+  }
+
+  fun testDisclosurePatchedCommitCannotSettleSupersededCommand() {
+    val settlements = mutableListOf<JSONObject>()
+    onMain {
+      repeat(6) { index -> list.mountContainerSlot(View(activity), index) }
+      list.setContainerSlotHeightsJson("[0,0,56,0,100,48]")
+      list.onStructuralTransitionSettled = { settlements.add(JSONObject(it)) }
+      list.applySnapshot(disclosureSnapshot(6, false))
+    }
+    awaitAdapterCount(6)
+    onMain {
+      list.applySnapshot(disclosureSnapshot(50, true, "superseded-patch", 0))
+      list.applyPatches(JSONArray().put(JSONObject().put("key", "row-2")
+        .put("type", "identity").put("changes", JSONObject().put("title", "old"))).toString())
+      list.applySnapshot(disclosureSnapshot(6, false, "latest-patch", 0))
+      list.applyPatches(JSONArray().put(JSONObject().put("key", "row-2")
+        .put("type", "identity").put("changes", JSONObject().put("title", "latest"))).toString())
+    }
+    awaitDisclosureSettlement(settlements, "latest-patch")
+    instrumentation.waitForIdleSync()
+    onMain {
+      assertEquals(1, settlements.size)
+      assertEquals("latest-patch", settlements.single().getString("transitionId"))
+      assertEquals("completed", settlements.single().getString("status"))
+      assertFalse(settlements.single().getBoolean("settledExpanded"))
+      assertNull(field<String?>(list, "activeDisclosureTransitionId"))
+      assertFalse(field<Boolean>(list, "directDisclosureTogglePositionPending"))
+      assertEquals("latest", field<NativeListAdapter>(list, "adapter")
+        .currentList[2].json.getString("title"))
+    }
+  }
+
   fun testDisclosureKeepsMountedContentUntilLatestCollapseSettles() {
     val settlements = mutableListOf<JSONObject>()
     onMain {
