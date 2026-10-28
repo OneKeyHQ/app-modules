@@ -303,6 +303,7 @@ class NativeListView(
   private var activeDisclosureTransitionId: String? = null
   private var settledDisclosureTransitionId: String? = null
   private var directDisclosureStatus = "interrupted"
+  private var directDisclosureTogglePositionPending = false
   private var batchedDisclosureGeometryInvalid = false
   private var structuralTailCommandActive = false
   private var structuralTailFinalizing = false
@@ -785,14 +786,29 @@ class NativeListView(
   private fun settleDisclosureCommand(status: String) {
     val id = activeDisclosureTransitionId ?: return
     if (disposed || id == settledDisclosureTransitionId ||
-      config?.structuralTransition?.id != id || structuralTail != null) return
+      consumedStructuralTransitionId != id || structuralTail != null) return
     settledDisclosureTransitionId = id
     activeDisclosureTransitionId = null
+    directDisclosureTogglePositionPending = false
     onStructuralTransitionSettled?.invoke(JSONObject().apply {
       put("transitionId", id)
       put("status", status)
       put("settledExpanded", config?.disclosure?.expanded == true)
     }.toString())
+  }
+
+  private fun settleCommittedDirectDisclosure(
+    next: NativeListConfig,
+    id: String?,
+    positionToggle: Boolean,
+  ) {
+    if (id == null || disposed || config !== next ||
+      activeDisclosureTransitionId != id || consumedStructuralTransitionId != id ||
+      structuralTail != null || next.disclosure == null) return
+    relayoutRecyclerViewImmediately()
+    if (positionToggle && directDisclosureTogglePositionPending)
+      positionSettledDisclosureToggle()
+    settleDisclosureCommand(directDisclosureStatus)
   }
 
   private fun presentAcceptedDisclosureEndpoint(next: NativeListConfig) {
@@ -2399,6 +2415,7 @@ class NativeListView(
     if (!isNewTransition &&
       (next.disclosure == null || previous?.disclosure?.expanded != next.disclosure.expanded)) {
       activeDisclosureTransitionId = null
+      directDisclosureTogglePositionPending = false
     }
     val oldKeys = previous?.items?.map { it.key } ?: emptyList()
     val nextKeys = next.items.map { it.key }
@@ -2408,11 +2425,17 @@ class NativeListView(
         transition?.durationMs == 0L ||
         (Build.VERSION.SDK_INT >= 26 && !ValueAnimator.areAnimatorsEnabled()))
         "completed" else "interrupted"
+      directDisclosureTogglePositionPending = !next.disclosure.expanded &&
+        !disclosureGeometryInvalid && directDisclosureStatus == "completed"
     } else if (next.disclosure == null) {
       activeDisclosureTransitionId = null
+      directDisclosureTogglePositionPending = false
     }
-    val positionDirectCollapse = isNewTransition && !disclosureGeometryInvalid &&
-      next.disclosure?.expanded == false && directDisclosureStatus == "completed"
+    if (disclosureGeometryInvalid && activeDisclosureTransitionId != null) {
+      directDisclosureStatus = "interrupted"
+      directDisclosureTogglePositionPending = false
+    }
+    val positionDirectCollapse = directDisclosureTogglePositionPending
     var animateStructure = !disclosureGeometryInvalid && previous != null &&
       isNewTransition && oldKeys != nextKeys &&
       previous.orientation == "vertical" &&
@@ -2507,6 +2530,7 @@ class NativeListView(
       // Rows rebind through the adapter's listStyle invalidation; the fixed footer is bound
       // outside the adapter, so a listStyle-only snapshot must rebind it here.
       if (previous.listStyle?.toString() != next.listStyle?.toString()) bindFooter(next)
+      val directDisclosureId = activeDisclosureTransitionId
       adapter.submitList(next.items) {
         val committed: () -> Unit = {
           // OneKey patch: DiffUtil has dispatched its payloads; release the old serialized rows.
@@ -2517,14 +2541,7 @@ class NativeListView(
             bindVisibleSelection(changedSummaryKeys)
             bindFooterSelection()
             performPendingScrollIfNeeded()
-            if (next.disclosure != null && (isNewTransition || disclosureGeometryInvalid) &&
-              transition != null && activeDisclosureTransitionId == transition.id) {
-              relayoutRecyclerViewImmediately()
-              if (positionDirectCollapse && heldTailEpoch == null)
-                positionSettledDisclosureToggle()
-              settleDisclosureCommand(if (disclosureGeometryInvalid) "interrupted" else
-                directDisclosureStatus)
-            }
+            settleCommittedDirectDisclosure(next, directDisclosureId, heldTailEpoch == null)
           }
         }
         if (heldTailEpoch != null) completeHeldTailCommit(next, heldTailEpoch, committed,
@@ -2588,6 +2605,7 @@ class NativeListView(
         supportsChangeAnimations = false
       }
     }
+    val directDisclosureId = activeDisclosureTransitionId
     adapter.submitList(next.items) {
       val committed: () -> Unit = {
         pendingStructuralTransition?.takeIf { it.epoch == structuralTransitionEpoch }?.let {
@@ -2605,17 +2623,8 @@ class NativeListView(
         syncSectionIndexToVisibleRows()
         scheduleVisibleEvent()
         if (next.items.isNotEmpty()) checkEndReached()
-        if (next.disclosure != null && (isNewTransition || disclosureGeometryInvalid) &&
-          transition != null && activeDisclosureTransitionId == transition.id) {
-          recyclerView.post {
-            if (!disposed && activeDisclosureTransitionId == transition.id) {
-              relayoutRecyclerViewImmediately()
-              if (positionDirectCollapse && heldTailEpoch == null)
-                positionSettledDisclosureToggle()
-              settleDisclosureCommand(if (disclosureGeometryInvalid) "interrupted" else
-                directDisclosureStatus)
-            }
-          }
+        if (directDisclosureId != null) recyclerView.post {
+          settleCommittedDirectDisclosure(next, directDisclosureId, heldTailEpoch == null)
         }
       }
       if (heldTailEpoch != null) completeHeldTailCommit(next, heldTailEpoch, committed,

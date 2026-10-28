@@ -414,10 +414,16 @@ class NativeListReorderCancellationTest : InstrumentationTestCase() {
       list.applySnapshot(disclosureSnapshot(6, false))
     }
     awaitAdapterCount(6)
-    onMain { list.applySnapshot(disclosureSnapshot(6, true, "without-listener", 0)) }
+    onMain {
+      list.applySnapshot(disclosureSnapshot(6, true, "without-listener", 0))
+      val update = JSONObject(disclosureSnapshot(6, true))
+      update.getJSONArray("rows").getJSONObject(2).put("title", "updated")
+      list.applySnapshot(update.toString())
+    }
     awaitSettled("without-listener")
     onMain {
       assertNull(field<String?>(list, "activeDisclosureTransitionId"))
+      assertFalse(field<Boolean>(list, "directDisclosureTogglePositionPending"))
       list.onStructuralTransitionSettled = { first.add(JSONObject(it)) }
       list.applySnapshot(disclosureSnapshot(6, true, "without-listener", 0))
       assertTrue(first.isEmpty())
@@ -439,11 +445,78 @@ class NativeListReorderCancellationTest : InstrumentationTestCase() {
     awaitSettled("removed-listener")
     onMain {
       assertEquals(1, second.size)
+      assertFalse(field<Boolean>(list, "directDisclosureTogglePositionPending"))
       list.onStructuralTransitionSettled = { second.add(JSONObject(it)) }
       list.applySnapshot(disclosureSnapshot(6, false, "removed-listener", 0))
     }
     instrumentation.waitForIdleSync()
     onMain { assertEquals(1, second.size) }
+  }
+
+  fun testDisclosureTailValueUpdateWithoutCommandStillSettlesOnce() {
+    val settlements = mutableListOf<JSONObject>()
+    onMain {
+      repeat(6) { index -> list.mountContainerSlot(View(activity), index) }
+      list.setContainerSlotHeightsJson("[0,0,56,0,100,48]")
+      list.onStructuralTransitionSettled = { settlements.add(JSONObject(it)) }
+      list.applySnapshot(disclosureSnapshot(6, false))
+    }
+    awaitAdapterCount(6)
+    onMain { list.applySnapshot(disclosureSnapshot(50, true, "expand-value", 1200)) }
+    awaitTailMidframe(6)
+    onMain {
+      val update = JSONObject(disclosureSnapshot(50, true))
+      update.getJSONArray("rows").getJSONObject(20).put("title", "updated value")
+      list.applySnapshot(update.toString())
+      assertNull(field<NativeListConfig>(list, "config").structuralTransition)
+      assertEquals("expand-value", field<String?>(list, "activeDisclosureTransitionId"))
+    }
+    awaitTailFinished(50)
+    awaitDisclosureSettlement(settlements, "expand-value")
+    onMain {
+      assertEquals(1, settlements.size)
+      assertEquals("completed", settlements.single().getString("status"))
+      assertTrue(settlements.single().getBoolean("settledExpanded"))
+      assertNull(field<String?>(list, "activeDisclosureTransitionId"))
+    }
+  }
+
+  fun testDisclosureDirectCommitSupersededByValueUpdateStillPositionsToggle() {
+    val settlements = mutableListOf<JSONObject>()
+    onMain {
+      repeat(6) { index -> list.mountContainerSlot(View(activity), index) }
+      list.setContainerSlotHeightsJson("[0,0,56,0,100,48]")
+      list.onStructuralTransitionSettled = { settlements.add(JSONObject(it)) }
+      list.applySnapshot(disclosureSnapshot(50, true))
+    }
+    awaitAdapterCount(50)
+    onMain {
+      list.applySnapshot(disclosureSnapshot(50, false, "direct-value", 0))
+      val update = JSONObject(disclosureSnapshot(50, false))
+      update.getJSONArray("rows").getJSONObject(20).put("title", "updated value")
+      list.applySnapshot(update.toString())
+      assertNull(field<NativeListConfig>(list, "config").structuralTransition)
+    }
+    awaitDisclosureSettlement(settlements, "direct-value")
+    instrumentation.waitForIdleSync()
+    onMain {
+      assertEquals(1, settlements.size)
+      assertEquals("completed", settlements.single().getString("status"))
+      assertFalse(settlements.single().getBoolean("settledExpanded"))
+      assertNull(field<String?>(list, "activeDisclosureTransitionId"))
+      assertFalse(field<Boolean>(list, "directDisclosureTogglePositionPending"))
+      val togglePosition = field<NativeListContainerSlotAdapter>(list,
+        "headerSlotAdapter").itemCount + field<NativeListAdapter>(list, "adapter").itemCount +
+        field<NativeListContainerSlotAdapter>(list, "emptySlotAdapter").itemCount +
+        field<NativeListContainerSlotAdapter>(list, "structuralSpacerAdapter").itemCount +
+        field<NativeListContainerSlotAdapter>(list, "expandedContentAdapter").itemCount
+      val toggle = recycler.layoutManager?.findViewByPosition(togglePosition)
+      assertNotNull("Settled toggle must be attached", toggle)
+      assertTrue("Settled toggle must fit below the sticky header",
+        toggle!!.top >= recycler.paddingTop + field<View>(list, "stickyHeaderHost").height)
+      assertTrue("Settled toggle must fit above the viewport bottom",
+        toggle.bottom <= recycler.height - recycler.paddingBottom)
+    }
   }
 
   fun testDisclosureKeepsMountedContentUntilLatestCollapseSettles() {
@@ -484,6 +557,9 @@ class NativeListReorderCancellationTest : InstrumentationTestCase() {
         field<Boolean>(list, "structuralTailFinalizing"))
       assertNotNull(field<Any?>(list, "structuralAnimator"))
       assertEquals(listOf("same-rows"), settlements.map { it.getString("transitionId") })
+      val update = JSONObject(disclosureSnapshot(6, false))
+      update.getJSONArray("rows").getJSONObject(2).put("title", "reversed value")
+      list.applySnapshot(update.toString())
     }
     awaitTailFinished(6)
     awaitDisclosureSettlement(settlements, "collapse")
