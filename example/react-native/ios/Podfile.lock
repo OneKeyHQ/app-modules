@@ -2030,6 +2030,7 @@ PODS:
     - React-graphics
     - React-ImageManager
     - React-jsi
+    - react-native-native-list
     - React-NativeModulesApple
     - React-RCTFabric
     - React-renderercss
@@ -3664,7 +3665,7 @@ SPEC CHECKSUMS:
   React-mutationobservernativemodule: 58f6d2adf7d98e72b241608dfa2ddce414d2a4e7
   react-native-bottom-tabs: 2e6faee02eaa34069cbf8af929677c02039e9fb1
   react-native-native-list: 0e62529acfd170f04899dc3e07d573a5caf2417d
-  react-native-pager-view: 4b33c4021dfec9dcb5a55382e059c9a4abc025f4
+  react-native-pager-view: 6f88ca46674860f4b3e362959b3dc245bef13b55
   react-native-safe-area-context: 91a90d98c310adcc90a511e5aeb6046d7c19d885
   React-NativeModulesApple: 167e532fb9bae30f3c66636b8ee0092bab263667
   React-networking: 89f6b69755a3176f30e56ba1ba8e214b1518ecfb
