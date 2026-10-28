@@ -14,5 +14,5 @@ bash scripts/build-wasm.sh --offline
 python3 scripts/package-release.py pack --version "$VERSION" --tag "$TAG" --revision "$(git rev-parse HEAD)"
 
 # Fixed file names for the publish workflow.
-mv "dist/onekey-zcash-keys-$VERSION.tgz" dist/onekey-zcash-keys.tgz
-mv "dist/onekey-zcash-runtime-$VERSION.tgz" dist/onekey-zcash-runtime.tgz
+mv "dist/onekeyfe-zcash-keys-$VERSION.tgz" dist/zcash-keys.tgz
+mv "dist/onekeyfe-zcash-runtime-$VERSION.tgz" dist/zcash-runtime.tgz

@@ -13,7 +13,9 @@ import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-NAME = "onekey-monero-runtime"
+# wasm-bindgen module name, and the npm package name apps install.
+MODULE = "onekey_monero_runtime"
+NAME = "@onekeyfe/monero-runtime"
 
 
 def workspace_version(root=ROOT):
@@ -34,10 +36,12 @@ def prepare(root=ROOT):
     pkg = root / "pkg"
     path = pkg / "package.json"
     package = json.loads(path.read_text())
-    if package["name"] != NAME or package["version"] != workspace_version(root):
+    # wasm-pack names the package after the crate.
+    crate = MODULE.replace("_", "-")
+    if package["name"] != crate or package["version"] != workspace_version(root):
         raise ValueError("Rebuild the wasm package: pkg version mismatch")
-    module = NAME.replace("-", "_")
-    package["files"] = [f"{module}.js", f"{module}.d.ts", f"{module}_bg.wasm", "LICENSE"]
+    package["name"] = NAME
+    package["files"] = [f"{MODULE}.js", f"{MODULE}.d.ts", f"{MODULE}_bg.wasm", "LICENSE"]
     if (pkg / "snippets").exists():
         package["files"].append("snippets")
     package["repository"] = {
@@ -45,6 +49,8 @@ def prepare(root=ROOT):
         "url": "git+https://github.com/OneKeyHQ/app-modules.git",
         "directory": "chain-runtimes/monero/crates/monero-runtime",
     }
+    # A scoped package is private unless published public.
+    package["publishConfig"] = {"access": "public", "registry": "https://registry.npmjs.org/"}
     path.write_text(json.dumps(package, indent=2) + "\n")
     shutil.copyfile(root / "LICENSE", pkg / "LICENSE")
 
@@ -61,7 +67,8 @@ def main():
     subprocess.run(
         ["npm", "pack", "--pack-destination", str(dist)], cwd=ROOT / "pkg", check=True
     )
-    archive = dist / f"{NAME}-{args.version}.tgz"
+    # npm pack names @scope/pkg archives scope-pkg-<version>.tgz.
+    archive = dist / f"{NAME.removeprefix('@').replace('/', '-')}-{args.version}.tgz"
     if not archive.exists():
         raise SystemExit(f"missing {archive}")
     print(archive)

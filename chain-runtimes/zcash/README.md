@@ -3,9 +3,9 @@
 Thin wasm bindings over the official `librustzcash`, with `zcash_client_sqlite` as
 the wallet store. Two packages built from one source, used on every App platform:
 
-- `onekey-zcash-keys`: derivation, review checks and signing. No SQLite, network,
+- `@onekeyfe/zcash-keys`: derivation, review checks and signing. No SQLite, network,
   scanner or prover.
-- `onekey-zcash-runtime`: wallet, scanning, SQLite and PCZT proving.
+- `@onekeyfe/zcash-runtime`: wallet, scanning, SQLite and PCZT proving.
 
 Both run inside a DedicatedWorker. Native Rust builds are for tests and diagnostics
 only.
@@ -46,7 +46,7 @@ pins the exact version.
 Failures throw an `Error` with a stable `code`, structured `params`, and a log-only
 `detail`. `capabilities()` / `keysCapabilities()` report what the build supports.
 
-### `onekey-zcash-runtime`
+### `@onekeyfe/zcash-runtime`
 
 ```
 init() / storageRequiresWorkerRestart()
@@ -76,7 +76,7 @@ pcztExtractStateless(pczt)
 capabilities() / dependencyVersions()
 ```
 
-### `onekey-zcash-keys`
+### `@onekeyfe/zcash-keys`
 
 ```
 ufvkFromAccountKeys(network, orchardSk, accountXpub, accountIndex)

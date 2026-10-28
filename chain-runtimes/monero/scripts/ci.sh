@@ -13,4 +13,4 @@ bash scripts/build-wasm.sh release
 python3 scripts/package-release.py --version "$VERSION" --tag "$TAG"
 
 # Fixed file names for the publish workflow.
-mv "dist/onekey-monero-runtime-$VERSION.tgz" dist/onekey-monero-runtime.tgz
+mv "dist/onekeyfe-monero-runtime-$VERSION.tgz" dist/monero-runtime.tgz

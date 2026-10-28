@@ -67,8 +67,9 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          # The only packages this workflow publishes, as <runtime>/<package>.
-          packages='zcash/onekey-zcash-keys zcash/onekey-zcash-runtime monero/onekey-monero-runtime'
+          # The only packages this workflow publishes, as <runtime>/<package>;
+          # each is published as @onekeyfe/<package>.
+          packages='zcash/zcash-keys zcash/zcash-runtime monero/monero-runtime'
           # main publishes x.y.z or x.y.z-<pre>.n; other branches only x.y.z-alpha.n.
           versions='^[0-9]+\.[0-9]+\.[0-9]+(-[a-z]+\.[0-9]+)?$'
           if [ "$GITHUB_REF" != refs/heads/main ]; then
@@ -78,8 +79,8 @@ jobs:
 
           # Check every package before publishing any.
           for pkg in $packages; do
-            if [ "$(field "$pkg" name)" != "$(basename "$pkg")" ]; then
-              echo "::error::dist/$pkg.tgz is missing or is not $(basename "$pkg")"
+            if [ "$(field "$pkg" name)" != "@onekeyfe/$(basename "$pkg")" ]; then
+              echo "::error::dist/$pkg.tgz is missing or is not @onekeyfe/$(basename "$pkg")"
               exit 1
             fi
             if [[ ! "$(field "$pkg" version)" =~ $versions ]]; then
@@ -89,7 +90,7 @@ jobs:
           done
 
           for pkg in $packages; do
-            name=$(basename "$pkg")
+            name="@onekeyfe/$(basename "$pkg")"
             version=$(field "$pkg" version)
             if [ -n "$(npm view "$name@$version" version 2>/dev/null)" ]; then
               echo "$name@$version already published"

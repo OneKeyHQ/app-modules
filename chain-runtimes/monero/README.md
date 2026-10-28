@@ -1,6 +1,6 @@
 # OneKey Monero Runtime
 
-Wallet state layer over monero-oxide, published as `onekey-monero-runtime`.
+Wallet state layer over monero-oxide, published as `@onekeyfe/monero-runtime`.
 monero-oxide provides cryptography, scanning and transaction construction; this
 crate adds the storage it lacks: SQLite with incremental, transactional writes.
 

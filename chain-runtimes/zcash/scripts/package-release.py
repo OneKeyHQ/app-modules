@@ -13,7 +13,16 @@ import tomllib
 
 
 ROOT = Path(__file__).resolve().parent.parent
-PACKAGES = {"pkg": "onekey-zcash-runtime", "pkg-keys": "onekey-zcash-keys"}
+# Build directory -> (wasm-bindgen module name, npm package name).
+PACKAGES = {
+    "pkg": ("onekey_zcash_runtime", "@onekeyfe/zcash-runtime"),
+    "pkg-keys": ("onekey_zcash_keys", "@onekeyfe/zcash-keys"),
+}
+
+
+def archive_name(name, release_version):
+    # npm pack names @scope/pkg archives scope-pkg-<version>.tgz.
+    return f"{name.removeprefix('@').replace('/', '-')}-{release_version}.tgz"
 
 
 def version(root):
@@ -31,13 +40,14 @@ def check_version(value, expected, tag):
 
 def prepare(root):
     release_version = version(root)
-    for directory, name in PACKAGES.items():
+    for directory, (module, name) in PACKAGES.items():
         target = root / directory
         path = target / "package.json"
         package = json.loads(path.read_text())
-        if package["name"] != name or package["version"] != release_version:
+        # wasm-pack names the package after the crate.
+        if package["name"] != module.replace("_", "-") or package["version"] != release_version:
             raise ValueError(f"Rebuild both WASM packages: {directory} version mismatch")
-        module = name.replace("-", "_")
+        package["name"] = name
         package["files"] = [f"{module}.js", f"{module}.d.ts", f"{module}_bg.wasm", "LICENSE"]
         if (target / "snippets").exists():
             package["files"].append("snippets")
@@ -50,7 +60,7 @@ def prepare(root):
         path.write_text(json.dumps(package, indent=2) + "\n")
 
 
-def verify_tarball(archive, source, name, release_version):
+def verify_tarball(archive, source, module, name, release_version):
     with tarfile.open(archive, "r:gz") as tar:
         files = {}
         for member in tar.getmembers():
@@ -64,7 +74,6 @@ def verify_tarball(archive, source, name, release_version):
         if package["name"] != name or package["version"] != release_version:
             raise ValueError("Packed package identity mismatch")
         required = {"package.json", "LICENSE"}
-        module = name.replace("-", "_")
         required.update({f"{module}.js", f"{module}.d.ts", f"{module}_bg.wasm"})
         required.update(p.relative_to(source).as_posix() for p in (source / "snippets").rglob("*")
                         if p.is_file() and p.name != ".gitignore")
@@ -83,14 +92,14 @@ def pack(root, expected, tag, revision, allow_dirty=False):
     artifact.verify(root, revision, allow_dirty)
     output = root / "dist"
     output.mkdir(exist_ok=True)
-    for directory, name in PACKAGES.items():
+    for directory, (module, name) in PACKAGES.items():
         result = subprocess.check_output([
             "npm", "pack", "--ignore-scripts", "--json", "--pack-destination", str(output.resolve()),
         ], cwd=root / directory, text=True)
         filename = json.loads(result)[0]["filename"]
-        if filename != f"{name}-{expected}.tgz":
+        if filename != archive_name(name, expected):
             raise ValueError("Unexpected npm archive filename")
-        verify_tarball(output / filename, root / directory, name, expected)
+        verify_tarball(output / filename, root / directory, module, name, expected)
         print(f"Verified {filename}")
     shutil.copyfile(root / "zcash-wasm-manifest.json", output / "zcash-wasm-manifest.json")
 

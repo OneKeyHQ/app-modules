@@ -18,15 +18,19 @@ class PackageReleaseTests(unittest.TestCase):
             root = Path(directory)
             (root / "Cargo.toml").write_text('[workspace.package]\nversion = "0.1.0-rc.1"\n')
             (root / "LICENSE").write_text("license")
-            for package, name in release.PACKAGES.items():
+            for package, (module, _name) in release.PACKAGES.items():
                 target = root / package
                 target.mkdir()
-                (target / "package.json").write_text(json.dumps({"name": name, "version": "0.1.0-rc.1"}))
+                crate = module.replace("_", "-")
+                (target / "package.json").write_text(json.dumps({"name": crate, "version": "0.1.0-rc.1"}))
             release.prepare(root)
             package = json.loads((root / "pkg/package.json").read_text())
+            self.assertEqual(package["name"], "@onekeyfe/zcash-runtime")
             self.assertEqual(package["files"], [
                 "onekey_zcash_runtime.js", "onekey_zcash_runtime.d.ts", "onekey_zcash_runtime_bg.wasm", "LICENSE",
             ])
+            self.assertEqual(json.loads((root / "pkg-keys/package.json").read_text())["name"],
+                             "@onekeyfe/zcash-keys")
             self.assertEqual((root / "pkg-keys/LICENSE").read_text(), "license")
             (root / "pkg-keys/package.json").write_text(
                 json.dumps({"name": "onekey-zcash-keys", "version": "0.0.1"}))
@@ -46,8 +50,7 @@ class PackageReleaseTests(unittest.TestCase):
     def test_missing_snippets_and_changed_bytes_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            name = "onekey-zcash-runtime"
-            module = name.replace("-", "_")
+            module, name = release.PACKAGES["pkg"]
             files = {
                 "package.json": json.dumps({"name": name, "version": "0.1.0-rc.1"}).encode(),
                 "LICENSE": b"license",
@@ -70,13 +73,13 @@ class PackageReleaseTests(unittest.TestCase):
                         tar.addfile(member, io.BytesIO(data))
 
             pack(files)
-            release.verify_tarball(archive, root, name, "0.1.0-rc.1")
+            release.verify_tarball(archive, root, module, name, "0.1.0-rc.1")
             pack({k: v for k, v in files.items() if not k.startswith("snippets/")})
             with self.assertRaisesRegex(ValueError, "incomplete"):
-                release.verify_tarball(archive, root, name, "0.1.0-rc.1")
+                release.verify_tarball(archive, root, module, name, "0.1.0-rc.1")
             pack({**files, f"{module}.js": b"changed"})
             with self.assertRaisesRegex(ValueError, "differs"):
-                release.verify_tarball(archive, root, name, "0.1.0-rc.1")
+                release.verify_tarball(archive, root, module, name, "0.1.0-rc.1")
 
 
 if __name__ == "__main__":
