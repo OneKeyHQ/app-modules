@@ -68,6 +68,10 @@ pub enum ErrorCode {
 
     /// lightwalletd network error. Params: `{ operation }`
     NetworkError,
+    /// The lightwalletd endpoint serves another chain than the open wallet; the operation
+    /// did not run. Params: `{ nodeNetwork, walletNetwork }`; `nodeNetwork` is the
+    /// endpoint's raw `chainName`.
+    NodeNetworkMismatch,
     /// Wallet database error (including schema migration failure). Params: `{ operation }`
     DatabaseError,
     /// The database was migrated by a newer runtime; no migration was applied.
@@ -140,6 +144,7 @@ impl ErrorCode {
             NotSynced => "NOT_SYNCED",
             InsufficientFunds => "INSUFFICIENT_FUNDS",
             NetworkError => "NETWORK_ERROR",
+            NodeNetworkMismatch => "NODE_NETWORK_MISMATCH",
             DatabaseError => "DATABASE_ERROR",
             DatabaseTooNew => "DATABASE_TOO_NEW",
             ReorgDetected => "REORG_DETECTED",
@@ -288,6 +293,7 @@ mod tests {
             NotSynced,
             InsufficientFunds,
             NetworkError,
+            NodeNetworkMismatch,
             DatabaseError,
             DatabaseTooNew,
             InvalidTxid,

@@ -4,8 +4,9 @@
 //! end, so streaming calls like `get_block_range` never complete.
 
 use zcash_client_backend::proto::service::{
-    compact_tx_streamer_client::CompactTxStreamerClient, BlockId, ChainSpec, TreeState,
+    compact_tx_streamer_client::CompactTxStreamerClient, BlockId, ChainSpec, Empty, TreeState,
 };
+use zcash_protocol::consensus::Network;
 
 use crate::error::{ErrorCode, Result, RuntimeError};
 use serde_json::json;
@@ -146,6 +147,38 @@ pub async fn chain_tip(client: &mut LightClient) -> Result<u32> {
             json!({ "value": block.height }),
         )
     })
+}
+
+/// The chain an endpoint serves: `LightdInfo.chainName` ("main", "test" or "regtest").
+pub async fn chain_name(client: &mut LightClient) -> Result<String> {
+    let info = with_timeout(
+        async {
+            client
+                .get_lightd_info(Empty {})
+                .await
+                .map(|response| response.into_inner())
+                .map_err(|e| net_err("getLightdInfo", e))
+        },
+        DEFAULT_TIMEOUT_MS,
+        "getLightdInfo",
+    )
+    .await?;
+    Ok(info.chain_name)
+}
+
+/// Refuses an endpoint on another chain: its tree roots and tip would corrupt the wallet.
+pub fn check_chain_name(chain_name: &str, wallet: &Network) -> Result<()> {
+    let wallet_name = match wallet {
+        Network::MainNetwork => "main",
+        Network::TestNetwork => "test",
+    };
+    if chain_name == wallet_name {
+        return Ok(());
+    }
+    Err(RuntimeError::with(
+        ErrorCode::NodeNetworkMismatch,
+        json!({ "nodeNetwork": chain_name, "walletNetwork": wallet_name }),
+    ))
 }
 
 /// Submit a signed transaction to lightwalletd.
@@ -290,9 +323,29 @@ pub async fn tree_state(client: &mut LightClient, height: u32) -> Result<TreeSta
 mod tests {
     use super::{
         broadcast_already_known, broadcast_definitely_invalid, broadcast_outcome_ambiguous,
-        with_timeout,
+        check_chain_name, with_timeout, Network,
     };
     use crate::error::{ErrorCode, RuntimeError};
+
+    #[test]
+    fn an_endpoint_on_another_chain_is_refused() {
+        check_chain_name("main", &Network::MainNetwork).expect("same chain");
+        check_chain_name("test", &Network::TestNetwork).expect("same chain");
+        for (chain, wallet, wallet_name) in [
+            ("test", Network::MainNetwork, "main"),
+            ("main", Network::TestNetwork, "test"),
+            ("regtest", Network::MainNetwork, "main"),
+            ("regtest", Network::TestNetwork, "test"),
+            ("", Network::MainNetwork, "main"),
+            ("Main", Network::MainNetwork, "main"),
+        ] {
+            let error = check_chain_name(chain, &wallet).expect_err(chain);
+            assert_eq!(error.code, ErrorCode::NodeNetworkMismatch);
+            assert_eq!(error.code.as_str(), "NODE_NETWORK_MISMATCH");
+            assert_eq!(error.params["nodeNetwork"], chain);
+            assert_eq!(error.params["walletNetwork"], wallet_name);
+        }
+    }
 
     // A node also gives these for our own mined tx; they must stay unknown so scanning decides.
     #[test]

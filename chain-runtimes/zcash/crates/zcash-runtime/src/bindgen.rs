@@ -98,6 +98,8 @@ pub fn close_wallet() -> Result<(), JsValue> {
 /// Configures the lightwalletd endpoint, e.g. `https://host:port`.
 ///
 /// The endpoint must support gRPC-web. CORS is required only without a host transport.
+/// Its chain is checked against the open wallet before the first call that uses both;
+/// a mismatch throws `NODE_NETWORK_MISMATCH`.
 #[wasm_bindgen(js_name = setLightwalletdUrl)]
 pub fn set_lightwalletd_url(base_url: &str) -> Result<(), JsValue> {
     runtime::set_client(network::connect(base_url)?);
@@ -315,6 +317,8 @@ pub fn transaction_outputs(account_uuid: String, txid: String) -> Result<String,
 }
 
 /// Bounded scan step: at most `maxBatches` batches of `batchSize` blocks.
+///
+/// `batchSize × maxBatches` must be 1..=1000; otherwise throws `INVALID_BATCH_SIZE`.
 ///
 /// `priority` selects the lane: `"chainTip"` follows new blocks, `"historic"` backfills,
 /// absent or `"any"` follows upstream order. Candidate ranges come only from upstream

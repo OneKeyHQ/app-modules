@@ -1,7 +1,9 @@
-//! Cross-call runtime state: the database connection and lightwalletd client
-//! only (reopening per call would rerun migration checks).
+//! Cross-call runtime state: only the database connection, the lightwalletd client
+//! and the chain it serves (reopening per call would rerun migration checks).
 
 use std::cell::{Cell, RefCell};
+
+use zcash_protocol::consensus::Network;
 
 use crate::error::{ErrorCode, Result, RuntimeError};
 use crate::network::LightClient;
@@ -22,6 +24,10 @@ thread_local! {
     // The client has its own generation: `setLightwalletdUrl` does not touch DB,
     // so without it an in-flight `getChainTip` would restore the old endpoint.
     static CLIENT_GENERATION: Cell<u64> = const { Cell::new(0) };
+
+    // Chain name reported per client generation: one GetLightdInfo per endpoint,
+    // compared with whichever wallet is open.
+    static CLIENT_CHAIN: RefCell<Option<(u64, String)>> = const { RefCell::new(None) };
 }
 
 /// Compared against the value sampled before taking the client; a mismatch means
@@ -34,6 +40,27 @@ fn put_client_back(client: LightClient, sampled: u64) {
     if client_generation() == sampled {
         CLIENT.with(|c| *c.borrow_mut() = Some(client));
     }
+}
+
+/// Refuses an endpoint on another chain before an operation stores what it returns.
+async fn check_client_chain(
+    client: &mut LightClient,
+    sampled: u64,
+    wallet: &Network,
+) -> Result<()> {
+    let known = CLIENT_CHAIN.with(|c| match &*c.borrow() {
+        Some((generation, chain)) if *generation == sampled => Some(chain.clone()),
+        _ => None,
+    });
+    let chain = match known {
+        Some(chain) => chain,
+        None => {
+            let chain = crate::network::chain_name(client).await?;
+            CLIENT_CHAIN.with(|c| *c.borrow_mut() = Some((sampled, chain.clone())));
+            chain
+        }
+    };
+    crate::network::check_chain_name(&chain, wallet)
 }
 
 /// Refuses wallet-switching calls while an async operation is running.
@@ -147,7 +174,8 @@ pub fn with_db<T>(f: impl FnOnce(&mut Db) -> Result<T>) -> Result<T> {
     out
 }
 
-/// Lends the database and client for an async operation (sync, account import).
+/// Lends the database and client for an async operation (sync, account import), after
+/// checking that the endpoint serves the wallet's chain.
 pub async fn with_db_and_client<T, F, Fut>(f: F) -> Result<T>
 where
     F: FnOnce(Db, LightClient) -> Fut,
@@ -157,7 +185,7 @@ where
     let guard = BusyGuard::acquire("walletOperation")?;
     let client_gen = client_generation();
     let db = DB.with(|c| c.borrow_mut().take()).ok_or_else(not_open)?;
-    let client = match CLIENT.with(|c| c.borrow_mut().take()) {
+    let mut client = match CLIENT.with(|c| c.borrow_mut().take()) {
         Some(c) => c,
         None => {
             DB.with(|cell| *cell.borrow_mut() = Some(db));
@@ -165,7 +193,11 @@ where
         }
     };
 
-    let (db, client, out) = f(db, client).await;
+    let checked = check_client_chain(&mut client, client_gen, db.params()).await;
+    let (db, client, out) = match checked {
+        Ok(()) => f(db, client).await,
+        Err(e) => (db, client, Err(e)),
+    };
 
     // If the wallet was switched or closed meanwhile, drop this one rather than
     // overwrite the current wallet with a stale one.

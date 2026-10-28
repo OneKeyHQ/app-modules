@@ -352,6 +352,29 @@ pub async fn tip(db: &mut Db, client: &mut LightClient) -> Result<String> {
     Ok(json!({ "chainTip": tip }).to_string())
 }
 
+/// Per-call cap on `batch_size × max_batches`: a hang guard, as a call cannot be interrupted.
+pub const MAX_BLOCKS_PER_CALL: u64 = 1_000;
+
+fn check_step_size(batch_size: u32, max_batches: u32) -> Result<()> {
+    let blocks = u64::from(batch_size) * u64::from(max_batches);
+    if blocks == 0 || blocks > MAX_BLOCKS_PER_CALL {
+        return Err(RuntimeError::with(
+            ErrorCode::InvalidBatchSize,
+            json!({
+                "batchSize": batch_size,
+                "maxBatches": max_batches,
+                "maxBlocksPerCall": MAX_BLOCKS_PER_CALL,
+            }),
+        ));
+    }
+    Ok(())
+}
+
+/// Exclusive end of a batch of `len` blocks from `start`, within `range_end`.
+fn batch_end(start: BlockHeight, len: u32, range_end: BlockHeight) -> BlockHeight {
+    BlockHeight::from_u32(u32::from(start).saturating_add(len)).min(range_end)
+}
+
 /// Bounded progress: at most `max_batches` batches of `batch_size` blocks.
 ///
 /// Returns progress JSON; `done` means no ranges remain. Never loops to full sync;
@@ -364,12 +387,7 @@ pub async fn step(
     preferred: Option<ScanPriority>,
     active_ufvks: &[String],
 ) -> Result<String> {
-    if batch_size == 0 || max_batches == 0 {
-        return Err(RuntimeError::with(
-            ErrorCode::InvalidBatchSize,
-            json!({ "batchSize": batch_size, "maxBatches": max_batches }),
-        ));
-    }
+    check_step_size(batch_size, max_batches)?;
 
     let params = *db.params();
     let wallet_ufvks = db
@@ -444,7 +462,7 @@ pub async fn step(
         let mut attempt_len: u32 = initial_len;
         let mut same_size_retry = 1u32;
         let (batch, batch_len) = loop {
-            let attempt_end = std::cmp::min(start + attempt_len, range.block_range().end);
+            let attempt_end = batch_end(start, attempt_len, range.block_range().end);
             let candidate = ScanRange::from_parts(start..attempt_end, range.priority());
             // download_batch times out on stalls; only real failures reach here.
             match download_batch(client, &cache, &candidate).await {
@@ -1130,6 +1148,37 @@ mod tests {
         )
         .expect("test seed derives a USK")
         .to_unified_full_viewing_key()
+    }
+
+    #[test]
+    fn step_size_is_bounded_per_call() {
+        for (batch_size, max_batches) in [(50, 1), (500, 1), (1_000, 1), (1, 1_000), (500, 2)] {
+            check_step_size(batch_size, max_batches).expect("within the per-call cap");
+        }
+        for (batch_size, max_batches) in [
+            (0, 1),
+            (1, 0),
+            (1_001, 1),
+            (501, 2),
+            (u32::MAX, 1),
+            (1, u32::MAX),
+            (u32::MAX, u32::MAX),
+        ] {
+            let error = check_step_size(batch_size, max_batches).expect_err("rejected");
+            assert_eq!(error.code, ErrorCode::InvalidBatchSize);
+            assert_eq!(error.params["batchSize"], batch_size);
+            assert_eq!(error.params["maxBatches"], max_batches);
+            assert_eq!(error.params["maxBlocksPerCall"], MAX_BLOCKS_PER_CALL);
+        }
+    }
+
+    #[test]
+    fn batch_end_stays_within_the_range_near_the_height_limit() {
+        let h = BlockHeight::from_u32;
+        assert_eq!(batch_end(h(100), 50, h(1_000)), h(150));
+        assert_eq!(batch_end(h(100), 50, h(120)), h(120));
+        assert_eq!(batch_end(h(u32::MAX - 10), 1_000, h(u32::MAX)), h(u32::MAX));
+        assert_eq!(batch_end(h(u32::MAX), u32::MAX, h(u32::MAX)), h(u32::MAX));
     }
 
     #[test]
