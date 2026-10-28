@@ -329,7 +329,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       ? Math.min(viewportWidth, sidecarLayout.maxContentWidth)
       : 0;
     const slotInset = sidecarLayout
-      ? Math.max(0, (viewportWidth - bandWidth) / 2)
+      ? Math.max(0, (viewportWidth - bandWidth) / 2) + defaultSlotInset
       : defaultSlotInset;
     const sidecarSpace = sidecarLayout
       ? sidecarLayout.width + sidecarLayout.gap

@@ -255,6 +255,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
         0,
       disclosurePresent: validatedSnapshot.disclosure !== undefined,
       disclosureExpanded: validatedSnapshot.disclosure?.expanded === true,
+      hasExpandedContent: validatedSnapshot.disclosure?.expanded === true,
       expandedTrailingInset:
         validatedSnapshot.disclosure?.expandedTrailingInset ?? 0,
     }));
@@ -269,13 +270,16 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       const disclosurePresent = next.disclosure !== undefined;
       const disclosureExpanded = next.disclosure?.expanded === true;
       const expandedTrailingInset = next.disclosure?.expandedTrailingInset ?? 0;
-      setSlotState((previous) =>
-        previous.hasRows === hasRows &&
-        previous.padding === padding &&
-        previous.emptyBottomPadding === emptyBottomPadding &&
-        previous.disclosurePresent === disclosurePresent &&
-        previous.disclosureExpanded === disclosureExpanded &&
-        previous.expandedTrailingInset === expandedTrailingInset
+      setSlotState((previous) => {
+        const hasExpandedContent =
+          previous.hasExpandedContent || disclosureExpanded;
+        return previous.hasRows === hasRows &&
+          previous.padding === padding &&
+          previous.emptyBottomPadding === emptyBottomPadding &&
+          previous.disclosurePresent === disclosurePresent &&
+          previous.disclosureExpanded === disclosureExpanded &&
+          previous.hasExpandedContent === hasExpandedContent &&
+          previous.expandedTrailingInset === expandedTrailingInset
           ? previous
           : {
               hasRows,
@@ -283,9 +287,10 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
               emptyBottomPadding,
               disclosurePresent,
               disclosureExpanded,
+              hasExpandedContent,
               expandedTrailingInset,
-            }
-      );
+            };
+      });
     };
     const snapshotRef = useRef(validatedSnapshot);
     const snapshotPropRef = useRef(validatedSnapshot);
@@ -594,7 +599,8 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
         ) : null}
         {hasFooterBand ? (
           <View testID="native-list-footer-slot" style={footerBandStyle}>
-            {listExpandedContent !== undefined ? (
+            {listExpandedContent !== undefined &&
+            slotState.hasExpandedContent ? (
               <View
                 testID="native-list-expanded-content-slot"
                 aria-hidden={!slotState.disclosureExpanded}

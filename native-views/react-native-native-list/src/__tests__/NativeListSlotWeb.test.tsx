@@ -322,7 +322,7 @@ it('keeps disclosure content and toggle in one ordered Web footer band', () => {
     <NativeList
       snapshot={{
         ...snapshot,
-        disclosure: { expanded: false, expandedTrailingInset: 20 },
+        disclosure: { expanded: true, expandedTrailingInset: 20 },
       }}
       listFooter={<span>Web footer</span>}
       listExpandedContent={<button>Expanded content</button>}
@@ -343,8 +343,7 @@ it('keeps disclosure content and toggle in one ordered Web footer band', () => {
     markup.indexOf('Web footer')
   );
   expect(markup).toContain('data-testid="native-list-expanded-content-slot"');
-  expect(markup).toContain('aria-hidden="true"');
-  expect(markup).toContain('display:none');
+  expect(markup).not.toContain('aria-hidden="true"');
   expect(markup).toContain('Web footer');
   expect(markup).not.toContain('onStructuralTransitionSettled');
 });
@@ -439,9 +438,69 @@ it('hides supplied disclosure slots when the accepted snapshot has no disclosure
       listStructureToggle={<button>Toggle</button>}
     />
   );
-  expect(markup.match(/aria-hidden="true"/g)).toHaveLength(2);
-  expect(markup.match(/display:none/g)).toHaveLength(2);
+  expect(markup.match(/aria-hidden="true"/g)).toHaveLength(1);
+  expect(markup.match(/display:none/g)).toHaveLength(1);
+  expect(markup).not.toContain('native-list-expanded-content-slot');
   expect(markup).toContain('data-testid="native-list-footer-slot"');
+});
+
+it('mounts expanded content only after an accepted expansion and retains it later', async () => {
+  const ref = React.createRef<NativeListRef>();
+  const mount = jest.fn();
+  const unmount = jest.fn();
+  const Expanded = () => {
+    React.useEffect(() => {
+      mount();
+      return unmount;
+    }, []);
+    return <span>Expanded content</span>;
+  };
+  const collapsed: NativeListSnapshot = {
+    ...snapshot,
+    disclosure: { expanded: false },
+  };
+  const expanded: NativeListSnapshot = {
+    ...collapsed,
+    disclosure: { expanded: true },
+  };
+  const rejected: NativeListSnapshot = {
+    ...collapsed,
+    disclosure: { expanded: true, expandedTrailingInset: -1 },
+  };
+  const renderList = (next: NativeListSnapshot) => (
+    <NativeList
+      ref={ref}
+      snapshot={next}
+      listExpandedContent={<Expanded />}
+      listStructureToggle={<button>Toggle</button>}
+    />
+  );
+  const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  let renderer!: TestRenderer.ReactTestRenderer;
+  try {
+    await act(async () => {
+      renderer = TestRenderer.create(renderList(collapsed));
+    });
+    expect(mount).not.toHaveBeenCalled();
+    expect(
+      renderer.root.findAllByProps({
+        testID: 'native-list-expanded-content-slot',
+      })
+    ).toHaveLength(0);
+    await act(async () => renderer.update(renderList(rejected)));
+    expect(warning).toHaveBeenCalled();
+    expect(mount).not.toHaveBeenCalled();
+    await act(async () => ref.current?.applySnapshot(expanded));
+    expect(mount).toHaveBeenCalledTimes(1);
+    await act(async () => renderer.update(renderList(collapsed)));
+    expect(unmount).not.toHaveBeenCalled();
+    await act(async () => renderer.update(renderList(snapshot)));
+    expect(unmount).not.toHaveBeenCalled();
+  } finally {
+    if (renderer) await act(async () => renderer.unmount());
+    warning.mockRestore();
+  }
+  expect(unmount).toHaveBeenCalledTimes(1);
 });
 
 it('uses the sole footer band for a toggle without a caller footer', () => {

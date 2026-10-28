@@ -2049,44 +2049,112 @@ final class NativeListLifecycleTests: XCTestCase {
     view.setContainerSlotHeightsJson("[0,0,140,0,100,40]")
     let list = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
     list.contentInsetAdjustmentBehavior = .never
+    let contentHost = try XCTUnwrap(slots[4].superview)
     var settlements: [(String, String)] = []
+    let growSettled = expectation(description: "Disclosure growth settles")
     view.onStructuralTransitionSettled = { payload in
       guard let data = payload.data(using: .utf8),
             let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             let id = object["transitionId"] as? String,
             let status = object["status"] as? String else { return }
       settlements.append((id, status))
+      if id == "grow" && status == "completed" { growSettled.fulfill() }
     }
     view.applySnapshotJson(try structuralRowsSnapshot(count: 6, generation: 1,
       disclosureExpanded: false))
     view.layoutIfNeeded()
+    list.layoutIfNeeded()
+    drainMainQueue()
+    XCTAssertTrue(contentHost.isHidden, "Initial collapsed content must be hidden")
+    XCTAssertNil(Mirror(reflecting: view).descendant("structuralDisplayLink") as? CADisplayLink)
+
+    let growthPhase = expectation(description: "Disclosure growth presents a partial content mask")
+    var growthObserved = false
+    var growthLast = "no frame sampled"
+    let growthStartedAt = CACurrentMediaTime()
+    let growthProbe = Timer(timeInterval: 1.0 / 60, repeats: true) { _ in
+      let clock = Mirror(reflecting: view).descendant("structuralDisplayLink") as? CADisplayLink
+      let tail = Mirror(reflecting: view).descendant("structuralTail")
+      let tailActive = tail.map { !Mirror(reflecting: $0).children.isEmpty } ?? false
+      let maskHeight = contentHost.layer.mask?.frame.height
+      growthLast = "clock=\(clock != nil) tail=\(tailActive) "
+        + "mask=\(String(describing: maskHeight)) bounds=\(contentHost.bounds.height) "
+        + "elapsed=\(CACurrentMediaTime() - growthStartedAt) settlements=\(settlements)"
+      guard !growthObserved, let clock, tailActive, let maskHeight,
+            maskHeight > 0, maskHeight < 100 else { return }
+      growthObserved = true
+      let animationStart = Mirror(reflecting: view).descendant("structuralAnimationStart")
+        as? CFTimeInterval
+      let animationDuration = Mirror(reflecting: view).descendant("structuralAnimationDuration")
+        as? CFTimeInterval
+      XCTAssertNotNil(animationStart, "The active disclosure clock must have a start time")
+      XCTAssertNotNil(animationDuration, "The active disclosure clock must have a duration")
+      view.setContainerSlotHeightsJson("[0,0,140,0,140,40]")
+      XCTAssertTrue(Mirror(reflecting: view).descendant("structuralDisplayLink") as? CADisplayLink
+        === clock, "Content growth must retain the active display link")
+      XCTAssertEqual(Mirror(reflecting: view).descendant("structuralAnimationStart")
+        as? CFTimeInterval, animationStart, "Content growth must keep the original deadline")
+      XCTAssertEqual(Mirror(reflecting: view).descendant("structuralAnimationDuration")
+        as? CFTimeInterval, animationDuration, "Content growth must keep the original duration")
+      XCTAssertEqual(contentHost.layer.mask?.frame.height ?? -1, maskHeight, accuracy: 1,
+        "Content growth must not jump the visible mask")
+      growthPhase.fulfill()
+    }
+    RunLoop.main.add(growthProbe, forMode: .common)
+    defer { growthProbe.invalidate() }
     view.applySnapshotJson(try structuralRowsSnapshot(count: 50, generation: 2,
       transitionID: "grow", durationMs: 800, disclosureExpanded: true))
-    waitForStructuralFrames(0.12)
-    let contentHost = try XCTUnwrap(slots[4].superview)
-    let beforeHeight = try XCTUnwrap(contentHost.layer.mask).frame.height
-    let clock = try XCTUnwrap(Mirror(reflecting: view).descendant("structuralDisplayLink")
-      as? CADisplayLink)
-    view.setContainerSlotHeightsJson("[0,0,140,0,140,40]")
-    XCTAssertTrue(Mirror(reflecting: view).descendant("structuralDisplayLink") as? CADisplayLink
-      === clock)
-    XCTAssertEqual(try XCTUnwrap(contentHost.layer.mask).frame.height,
-      beforeHeight, accuracy: 1)
-    waitForStructuralFrames(0.75)
+    wait(for: [growthPhase], timeout: 1.5)
+    guard growthObserved else {
+      XCTFail("No partial disclosure growth frame observed: \(growthLast)")
+      return
+    }
+    growthProbe.invalidate()
+    wait(for: [growSettled], timeout: 1.5)
     XCTAssertEqual(contentHost.bounds.height, 140, accuracy: 1)
     XCTAssertNil(contentHost.layer.mask)
     XCTAssertTrue(contentHost.isUserInteractionEnabled)
-    XCTAssertEqual(settlements.map(\.0), ["grow"])
+    XCTAssertEqual(settlements.map(\.0), ["grow"], "Growth must settle exactly once")
     XCTAssertEqual(settlements.last?.1, "completed")
 
+    let collapsePhase = expectation(description: "Disclosure collapse presents a partial content mask")
+    var collapseObserved = false
+    var collapseLast = "no frame sampled"
+    let collapseStartedAt = CACurrentMediaTime()
+    let collapseProbe = Timer(timeInterval: 1.0 / 60, repeats: true) { _ in
+      let clock = Mirror(reflecting: view).descendant("structuralDisplayLink") as? CADisplayLink
+      let tail = Mirror(reflecting: view).descendant("structuralTail")
+      let tailActive = tail.map { !Mirror(reflecting: $0).children.isEmpty } ?? false
+      let maskHeight = contentHost.layer.mask?.frame.height
+      collapseLast = "clock=\(clock != nil) tail=\(tailActive) "
+        + "mask=\(String(describing: maskHeight)) bounds=\(contentHost.bounds.height) "
+        + "elapsed=\(CACurrentMediaTime() - collapseStartedAt) settlements=\(settlements)"
+      guard !collapseObserved, clock != nil, tailActive, let maskHeight,
+            maskHeight > 0, maskHeight < 140 else { return }
+      collapseObserved = true
+      view.scrollViewWillBeginDragging(list)
+      XCTAssertNil(Mirror(reflecting: view).descendant("structuralDisplayLink") as? CADisplayLink,
+        "Dragging must stop the active disclosure display link")
+      let remainingTail = Mirror(reflecting: view).descendant("structuralTail")
+      XCTAssertNotNil(remainingTail, "The structural tail field must remain observable")
+      XCTAssertFalse(remainingTail.map { !Mirror(reflecting: $0).children.isEmpty } ?? true,
+        "Dragging must clear the temporary structural tail")
+      XCTAssertTrue(contentHost.isHidden, "Dragging a collapse must hide content")
+      XCTAssertEqual(settlements.map(\.0), ["grow", "drag"],
+        "Dragging must settle the collapse exactly once")
+      XCTAssertEqual(settlements.last?.1, "interrupted")
+      collapsePhase.fulfill()
+    }
+    RunLoop.main.add(collapseProbe, forMode: .common)
+    defer { collapseProbe.invalidate() }
     view.applySnapshotJson(try structuralRowsSnapshot(count: 6, generation: 3,
       transitionID: "drag", durationMs: 800, disclosureExpanded: false))
-    waitForStructuralFrames(0.08)
-    view.scrollViewWillBeginDragging(list)
-    XCTAssertNil(Mirror(reflecting: view).descendant("structuralDisplayLink") as? CADisplayLink)
-    XCTAssertTrue(contentHost.isHidden)
-    XCTAssertEqual(settlements.map(\.0), ["grow", "drag"])
-    XCTAssertEqual(settlements.last?.1, "interrupted")
+    wait(for: [collapsePhase], timeout: 1.5)
+    guard collapseObserved else {
+      XCTFail("No partial disclosure collapse frame observed: \(collapseLast)")
+      return
+    }
+    collapseProbe.invalidate()
   }
 
   func testDisclosureDirectCollapseKeepsToggleVisible() throws {

@@ -658,6 +658,78 @@ describe('NativeList imperative ref', () => {
     await act(async () => renderer.unmount());
   });
 
+  it('keeps all start-column slot roots inside snapshot padding with a sidecar', async () => {
+    const { NativeList } = jest.requireActual(
+      '../NativeList'
+    ) as typeof import('../NativeList');
+    const padded: NativeListSnapshot = {
+      schemaVersion: 1,
+      generation: 1,
+      layout: {
+        kind: 'linear',
+        contentPadding: 9,
+        contentPaddingHorizontal: 12,
+      },
+      rows: [],
+      disclosure: { expanded: false },
+    };
+    const renderList = (next: NativeListSnapshot) => (
+      <NativeList
+        testID="padded-sidecar-slots"
+        snapshot={next}
+        listHeader={<React.Fragment />}
+        listEmpty={<React.Fragment />}
+        listFooter={<React.Fragment />}
+        listSidecar={<React.Fragment />}
+        listExpandedContent={<React.Fragment />}
+        listStructureToggle={<React.Fragment />}
+        sidecarLayout={{ width: 400, gap: 24, maxContentWidth: 1140 }}
+      />
+    );
+    const currentProps = () =>
+      mockFontRenders.mock.calls
+        .filter(([props]) => props.testID === 'padded-sidecar-slots')
+        .at(-1)?.[0];
+    const slots = () =>
+      React.Children.toArray(currentProps()?.children) as React.ReactElement<{
+        style: { start: number; end?: number; width?: number };
+      }>[];
+    let renderer!: TestRenderer.ReactTestRenderer;
+    try {
+      await act(async () => {
+        renderer = TestRenderer.create(renderList(padded));
+      });
+      const assertInsets = (base: number, padding: number) => {
+        for (const index of [0, 1, 2, 4, 5]) {
+          expect(slots()[index].props.style.start).toBe(base + padding);
+          expect(slots()[index].props.style.end).toBe(base + padding + 424);
+        }
+        expect(slots()[3].props.style).toEqual(
+          expect.objectContaining({ start: 0, end: undefined, width: 400 })
+        );
+      };
+      await act(async () =>
+        currentProps()?.onLayout({ nativeEvent: { layout: { width: 800 } } })
+      );
+      assertInsets(0, 12);
+      await act(async () =>
+        currentProps()?.onLayout({ nativeEvent: { layout: { width: 1400 } } })
+      );
+      assertInsets(130, 12);
+      await act(async () =>
+        renderer.update(
+          renderList({
+            ...padded,
+            layout: { kind: 'linear', contentPadding: 9 },
+          })
+        )
+      );
+      assertInsets(130, 9);
+    } finally {
+      await act(async () => renderer?.unmount());
+    }
+  });
+
   it('waits for newly mounted disclosure slots before sending only the latest structural command', async () => {
     const { NativeList } = jest.requireActual(
       '../NativeList'
