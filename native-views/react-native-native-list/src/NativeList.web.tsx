@@ -169,11 +169,15 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
           'Web parent scrolling and container slots support vertical lists only'
         );
       const emptySlot = hasReactEmpty && next.rows.length === 0;
-      const normalized = emptySlot ? { ...next, emptyState: undefined } : next;
+      const normalized =
+        emptySlot && next.emptyState !== undefined
+          ? { ...next, emptyState: undefined }
+          : next;
       const validated = validatedInThisRender
         ? normalized
         : validateSnapshot(normalized);
-      return emptySlot
+      // Preserve an already normalized fallback's identity across rerenders.
+      return emptySlot && validated.layout.contentPaddingBottom !== 0
         ? {
             ...validated,
             layout: { ...validated.layout, contentPaddingBottom: 0 },

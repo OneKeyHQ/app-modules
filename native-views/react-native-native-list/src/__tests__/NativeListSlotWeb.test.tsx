@@ -119,6 +119,89 @@ it('keeps the accepted rows when a new invalid input adds an empty slot', async 
   }
 });
 
+it.each([true, false])(
+  'keeps the accepted empty snapshot when invalid input adds an empty slot (development=%s)',
+  async (development) => {
+    const ref = React.createRef<NativeListRef>();
+    const emptySlot = <span>Empty</span>;
+    const environment = globalThis as typeof globalThis & { __DEV__: boolean };
+    const previous = environment.__DEV__;
+    environment.__DEV__ = development;
+    const accepted: NativeListSnapshot = {
+      ...snapshot,
+      layout: { kind: 'linear', contentPaddingBottom: 24 },
+      emptyState: {
+        type: 'system',
+        key: 'space',
+        variant: 'spacer',
+        height: 24,
+      },
+    };
+    const rejected: NativeListSnapshot = {
+      ...accepted,
+      generation: 2,
+      emptyState: {
+        type: 'system',
+        key: 'space',
+        variant: 'spacer',
+        height: -1,
+      },
+    };
+    const imperative: NativeListSnapshot = {
+      ...snapshot,
+      generation: 3,
+      rows: [
+        {
+          type: 'identity',
+          key: 'wallet',
+          title: 'Imperative',
+          leading: { kind: 'icon', name: 'wallet' },
+        },
+      ],
+    };
+    const recovered: NativeListSnapshot = { ...accepted, generation: 4 };
+    const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    let renderer!: TestRenderer.ReactTestRenderer;
+    try {
+      await act(async () => {
+        renderer = TestRenderer.create(
+          <NativeList ref={ref} snapshot={accepted} />
+        );
+      });
+      await act(async () =>
+        renderer.update(
+          <NativeList ref={ref} snapshot={rejected} listEmpty={emptySlot} />
+        )
+      );
+      expect(warning).toHaveBeenCalledWith(
+        expect.stringContaining('emptyState.height')
+      );
+      expect(renderer.root.findAllByType('span')).toHaveLength(1);
+      expect(
+        renderer.root.findAll((node) => node.props.style?.paddingBottom === 0)
+      ).not.toHaveLength(0);
+      await act(async () =>
+        renderer.update(
+          <NativeList ref={ref} snapshot={rejected} listEmpty={emptySlot} />
+        )
+      );
+      expect(renderer.root.findAllByType('span')).toHaveLength(1);
+      act(() => ref.current?.applySnapshot(imperative));
+      expect(renderer.root.findAllByType('span')).toHaveLength(0);
+      await act(async () =>
+        renderer.update(
+          <NativeList ref={ref} snapshot={recovered} listEmpty={emptySlot} />
+        )
+      );
+      expect(renderer.root.findAllByType('span')).toHaveLength(1);
+    } finally {
+      if (renderer) await act(async () => renderer.unmount());
+      warning.mockRestore();
+      environment.__DEV__ = previous;
+    }
+  }
+);
+
 it('keeps an imperative patch when only the sidecar layout object changes', async () => {
   const ref = React.createRef<NativeListRef>();
   const input: NativeListSnapshot = {
