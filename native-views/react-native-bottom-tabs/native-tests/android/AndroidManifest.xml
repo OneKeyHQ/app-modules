@@ -3,5 +3,6 @@
     <uses-library android:name="android.test.runner" android:required="false" />
     <uses-library android:name="android.test.base" android:required="false" />
     <activity android:name="com.onekey.bottomtabs.BottomBlurTestActivity" android:exported="false" />
+    <activity android:name="com.onekey.bottomtabs.BottomTabsDrawerTestActivity" android:exported="false" />
   </application>
 </manifest>

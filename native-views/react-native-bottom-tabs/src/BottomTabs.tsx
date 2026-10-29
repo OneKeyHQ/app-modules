@@ -21,6 +21,7 @@ import NativeBottomTabs, {
 import useLatestCallback from 'use-latest-callback';
 import type { AppleIcon, BaseRoute, NavigationState, TabRole } from './types';
 import DelayedFreeze from './DelayedFreeze';
+import NativeBottomTabsDrawer from './BottomTabsDrawerNativeComponent';
 import {
   BottomAccessoryView,
   type RNBottomTabsAccessoryViewProps,
@@ -34,6 +35,14 @@ interface Props<Route extends BaseRoute> {
    * Whether to show labels in tabs. When false, only icons will be displayed.
    */
   labeled?: boolean;
+  /** Optional physical-left menu; all motion and input are owned by native. */
+  renderDrawerContent?: () => React.ReactNode;
+  /** External drawer target. Mirror onDrawerOpenChange for user transitions. */
+  drawerOpen?: boolean;
+  /** Enables root-screen content swipes after inner horizontal views reach their boundary. */
+  drawerSwipeEnabled?: boolean;
+  /** Reports a completed user target so the external open state can follow it. */
+  onDrawerOpenChange?: (open: boolean) => void;
   /**
    * A tab bar style that adapts to each platform.
    *
@@ -225,6 +234,10 @@ const BottomTabs = <Route extends BaseRoute>({
   renderLazyPlaceholder,
   onIndexChange,
   onTabDoublePress,
+  renderDrawerContent,
+  drawerOpen = false,
+  drawerSwipeEnabled = false,
+  onDrawerOpenChange,
   rippleColor,
   tabBarActiveTintColor: activeTintColor,
   tabBarInactiveTintColor: inactiveTintColor,
@@ -458,89 +471,106 @@ const BottomTabs = <Route extends BaseRoute>({
 
   return (
     <BottomTabBarHeightContext.Provider value={tabBarHeight}>
-      <NativeBottomTabs
-        ref={nativeBottomTabsRef}
-        {...props}
-        {...tabLabelStyle}
+      <NativeBottomTabsDrawer
         style={styles.fullWidth}
-        items={items}
-        icons={renderCustomTabBar ? undefined : resolvedIconAssets}
-        selectedIcons={
-          isIOS && !renderCustomTabBar ? resolvedSelectedIconAssets : undefined
-        }
-        selectedPage={focusedKey}
-        tabBarHidden={props.tabBarHidden ?? !!renderCustomTabBar}
-        onTabDoublePress={handleTabDoublePress}
-        onPageSelected={handlePageSelected}
-        onTabBarMeasured={handleTabBarMeasured}
-        onNativeLayout={handleNativeLayout}
+        enabled={!!renderDrawerContent}
+        open={drawerOpen}
+        swipeEnabled={drawerSwipeEnabled}
         hapticFeedbackEnabled={hapticFeedbackEnabled}
-        activeTintColor={activeTintColor}
-        inactiveTintColor={inactiveTintColor}
-        barTintColor={tabBarStyle?.backgroundColor}
-        rippleColor={rippleColor}
-        activeIndicatorColor={activeIndicatorColor}
-        androidBottomBlurEnabled={
-          Platform.OS === 'android' &&
-          !renderCustomTabBar &&
-          androidBottomBlurEnabled
+        bottomBarHeight={tabBarHeight ?? 0}
+        onDrawerOpenChange={(event) =>
+          onDrawerOpenChange?.(event.nativeEvent.open)
         }
-        labeled={labeled}
       >
-        {trimmedRoutes.map((route) => {
-          if (getLazy({ route }) !== false && !loaded.includes(route.key)) {
-            return (
-              <View
-                key={route.key}
-                collapsable={false}
-                style={styles.fullWidth}
-              >
-                {renderLazyPlaceholder?.({ route })}
-              </View>
-            );
-          }
-
-          const focused = route.key === focusedKey;
-          const freeze = !focused ? getFreezeOnBlur({ route }) : false;
-
-          const customStyle = getSceneStyle({ route });
-
-          return (
-            <View
-              key={route.key}
-              style={[
-                styles.screen,
-                renderCustomTabBar ? styles.fullWidth : measuredDimensions,
-                customStyle,
-              ]}
-              collapsable={false}
-              pointerEvents={focused ? 'auto' : 'none'}
-              accessibilityElementsHidden={!focused}
-              importantForAccessibility={
-                focused ? 'auto' : 'no-hide-descendants'
+        <View collapsable={false} style={styles.drawerMenu}>
+          {Platform.OS !== 'web' ? renderDrawerContent?.() : null}
+        </View>
+        <View collapsable={false} style={styles.fullWidth}>
+          <NativeBottomTabs
+            ref={nativeBottomTabsRef}
+            {...props}
+            {...tabLabelStyle}
+            style={styles.fullWidth}
+            items={items}
+            icons={renderCustomTabBar ? undefined : resolvedIconAssets}
+            selectedIcons={
+              isIOS && !renderCustomTabBar ? resolvedSelectedIconAssets : undefined
+            }
+            selectedPage={focusedKey}
+            tabBarHidden={props.tabBarHidden ?? !!renderCustomTabBar}
+            onTabDoublePress={handleTabDoublePress}
+            onPageSelected={handlePageSelected}
+            onTabBarMeasured={handleTabBarMeasured}
+            onNativeLayout={handleNativeLayout}
+            hapticFeedbackEnabled={hapticFeedbackEnabled}
+            activeTintColor={activeTintColor}
+            inactiveTintColor={inactiveTintColor}
+            barTintColor={tabBarStyle?.backgroundColor}
+            rippleColor={rippleColor}
+            activeIndicatorColor={activeIndicatorColor}
+            androidBottomBlurEnabled={
+              Platform.OS === 'android' &&
+              !renderCustomTabBar &&
+              androidBottomBlurEnabled
+            }
+            labeled={labeled}
+          >
+            {trimmedRoutes.map((route) => {
+              if (getLazy({ route }) !== false && !loaded.includes(route.key)) {
+                return (
+                  <View
+                    key={route.key}
+                    collapsable={false}
+                    style={styles.fullWidth}
+                  >
+                    {renderLazyPlaceholder?.({ route })}
+                  </View>
+                );
               }
-            >
-              <DelayedFreeze freeze={!!freeze} delayedFreeze={delayedFreeze}>
-                {renderScene({
-                  route,
-                  jumpTo,
-                })}
-              </DelayedFreeze>
-            </View>
-          );
-        })}
-        {Platform.OS === 'ios' &&
-        parseFloat(Platform.Version) >= 26 &&
-        renderBottomAccessoryView &&
-        !renderCustomTabBar ? (
-          <BottomAccessoryView
-            renderBottomAccessoryView={renderBottomAccessoryView}
-          />
-        ) : null}
-      </NativeBottomTabs>
-      {renderCustomTabBar ? (
-        <View ref={customTabBarWrapperRef}>{renderCustomTabBar()}</View>
-      ) : null}
+
+              const focused = route.key === focusedKey;
+              const freeze = !focused ? getFreezeOnBlur({ route }) : false;
+
+              const customStyle = getSceneStyle({ route });
+
+              return (
+                <View
+                  key={route.key}
+                  style={[
+                    styles.screen,
+                    renderCustomTabBar ? styles.fullWidth : measuredDimensions,
+                    customStyle,
+                  ]}
+                  collapsable={false}
+                  pointerEvents={focused ? 'auto' : 'none'}
+                  accessibilityElementsHidden={!focused}
+                  importantForAccessibility={
+                    focused ? 'auto' : 'no-hide-descendants'
+                  }
+                >
+                  <DelayedFreeze freeze={!!freeze} delayedFreeze={delayedFreeze}>
+                    {renderScene({
+                      route,
+                      jumpTo,
+                    })}
+                  </DelayedFreeze>
+                </View>
+              );
+            })}
+            {Platform.OS === 'ios' &&
+            parseFloat(Platform.Version) >= 26 &&
+            renderBottomAccessoryView &&
+            !renderCustomTabBar ? (
+              <BottomAccessoryView
+                renderBottomAccessoryView={renderBottomAccessoryView}
+              />
+            ) : null}
+          </NativeBottomTabs>
+          {renderCustomTabBar ? (
+            <View ref={customTabBarWrapperRef}>{renderCustomTabBar()}</View>
+          ) : null}
+        </View>
+      </NativeBottomTabsDrawer>
     </BottomTabBarHeightContext.Provider>
   );
 };
@@ -550,6 +580,11 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     flex: 1,
+  },
+  drawerMenu: {
+    position: 'absolute',
+    width: '78%',
+    height: '100%',
   },
   screen: {
     position: 'absolute',

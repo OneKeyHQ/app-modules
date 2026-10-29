@@ -7,7 +7,7 @@ import com.facebook.react.uimanager.ViewManager
 
 class BottomTabsPackage : ReactPackage {
   override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> {
-    return listOf(BottomTabsViewManager(reactContext))
+    return listOf(BottomTabsViewManager(reactContext), BottomTabsDrawerManager())
   }
 
   override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> {

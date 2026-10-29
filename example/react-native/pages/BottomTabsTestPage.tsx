@@ -6,6 +6,8 @@ import type { BaseRoute, NavigationState } from '@onekeyfe/react-native-bottom-t
 import type { RootStackNavigationProp } from '../route';
 import { getBottomTabsSettings, setBottomTabsSettings, subscribeBottomTabsSettings } from './bottomTabsSettingsStore';
 
+const DrawerOpenContext = React.createContext(() => {});
+
 // --- Tab content scenes ---
 
 const COLOR_STRIPS = [
@@ -16,6 +18,7 @@ const COLOR_STRIPS = [
 ];
 
 function ColorfulScene({ title, colorIndex }: { title: string; colorIndex: number }) {
+  const openDrawer = React.useContext(DrawerOpenContext);
   const colors = COLOR_STRIPS[colorIndex % COLOR_STRIPS.length]!;
   const height = useBottomTabBarHeight();
   const { androidBottomBlurEnabled } = useSyncExternalStore(subscribeBottomTabsSettings, getBottomTabsSettings);
@@ -24,6 +27,9 @@ function ColorfulScene({ title, colorIndex }: { title: string; colorIndex: numbe
   return (
     <ScrollView style={sceneStyles.scrollContainer} contentContainerStyle={[sceneStyles.scrollContent, { paddingBottom: bottomPadding }]}>
       <View style={sceneStyles.topSection}>
+        <TouchableOpacity testID="open-native-drawer" onPress={openDrawer} style={{ padding: 12 }}>
+          <Text style={{ color: '#007AFF', fontSize: 17 }}>☰ Open menu</Text>
+        </TouchableOpacity>
         <Text style={sceneStyles.title}>{title}</Text>
         <Text style={sceneStyles.body}>Scroll down to see colors behind the tab bar</Text>
         <TabBarHeightDisplay />
@@ -121,6 +127,7 @@ export function BottomTabsTestPage() {
   const settings = useSyncExternalStore(subscribeBottomTabsSettings, getBottomTabsSettings);
   const { showBadge, labeled, translucent, tabBarHidden, sidebarAdaptable, hapticFeedback, androidFloating } = settings;
   const [index, setIndex] = useState(0);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [routes] = useState<Route[]>([
     {
       key: 'home',
@@ -193,7 +200,26 @@ export function BottomTabsTestPage() {
 
   return (
     <View style={styles.container}>
+      <DrawerOpenContext.Provider value={() => setDrawerOpen(true)}>
       <BottomTabs
+        drawerOpen={drawerOpen}
+        onDrawerOpenChange={setDrawerOpen}
+        drawerSwipeEnabled
+        renderDrawerContent={() => (
+          <ScrollView style={{ flex: 1, backgroundColor: '#101114' }} contentContainerStyle={{ padding: 24, paddingTop: 48 }}>
+            <Text style={{ color: 'white', fontSize: 36 }}>◉</Text>
+            <Text style={{ color: 'white', fontSize: 22, fontWeight: '600', marginTop: 16 }}>Native menu</Text>
+            <Text style={{ color: '#999', marginVertical: 16 }}>Swipe right on the content to open when inner horizontal views reach their boundary. Tap or drag the dimmed page to close.</Text>
+            {['Profile', 'Bookmarks', 'Lists', 'Settings'].map((title) => (
+              <TouchableOpacity key={title} onPress={() => setDrawerOpen(false)} style={{ paddingVertical: 18 }}>
+                <Text style={{ color: 'white', fontSize: 20 }}>{title}</Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity testID="close-native-drawer" onPress={() => setDrawerOpen(false)} style={{ paddingVertical: 24 }}>
+              <Text style={{ color: '#4DA3FF', fontSize: 17 }}>Close menu</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        )}
         navigationState={navigationState}
         renderScene={renderScene}
         onIndexChange={(nextIndex) => {
@@ -231,6 +257,7 @@ export function BottomTabsTestPage() {
           return undefined;
         }}
       />
+      </DrawerOpenContext.Provider>
     </View>
   );
 }
