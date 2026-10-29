@@ -20,6 +20,7 @@ import com.facebook.react.uimanager.PointerEvents
 import com.facebook.react.uimanager.ReactPointerEventsView
 import com.facebook.react.uimanager.TouchTargetHelper
 import com.facebook.react.views.view.ReactViewGroup
+import com.facebook.react.viewmanagers.RNBottomTabsDrawerManagerDelegate
 import com.facebook.react.internal.ChoreographerProvider
 import com.facebook.react.modules.core.ReactChoreographer
 import com.facebook.react.soloader.OpenSourceMergedSoMapping
@@ -126,6 +127,28 @@ class BottomTabsDrawerTest : InstrumentationTestCase() {
     }
     settle()
     onMain { assertTrue(events.isEmpty()); assertEquals(0f, drawer.getChildAt(1).translationX) }
+  }
+
+  fun testGeneratedPropsKeepDrawerOnPhysicalLeftInRTLAndAllowClosingWithSwipesDisabled() {
+    val delegate = RNBottomTabsDrawerManagerDelegate(BottomTabsDrawerManager())
+    onMain {
+      drawer.layoutDirection = View.LAYOUT_DIRECTION_RTL
+      delegate.setProperty(drawer, "swipeEnabled", false)
+      delegate.setProperty(drawer, "open", true)
+    }
+    settle()
+    onMain {
+      assertTrue(events.isEmpty())
+      assertEquals(drawer.width * .78f, drawer.getChildAt(1).translationX, 1f)
+      assertSame(main, drawer.getReactChild(1))
+      drag(drawer.width * .95f, 150f, drawer.width * .25f, 150f)
+    }
+    settle()
+    onMain {
+      assertEquals(listOf(false), events)
+      assertEquals(0f, drawer.getChildAt(1).translationX)
+      assertEquals(0, clicks)
+    }
   }
 
   fun testCancellationAndNewPropCancelStaleUserCompletion() {
