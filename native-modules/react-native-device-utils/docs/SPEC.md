@@ -219,10 +219,13 @@ DeviceUtils HybridObjects; listener IDs are unique per process.
    key window exists yet, it waits for `UIWindow.didBecomeKeyNotification`. A
    non-nil hinge marks the device as dual-screen; a nil hinge keeps the last
    known state.
-3. A positive result is written to `UserDefaults` key
-   `1k_is_dual_screen_device` and read synchronously on later launches. It is
-   never written as `false` and has no invalidation; reinstalling the app clears
-   it.
+3. A positive result stores the current model identifier as a string in
+   `UserDefaults` key `1k_is_dual_screen_device`. Later launches accept the
+   cached positive only when that identifier equals the current device model.
+   A legacy Boolean or a different model identifier is ignored, so restoring
+   preferences onto a regular iPhone cannot carry over foldable detection.
+   Known foldable models rewrite legacy/mismatched entries immediately; an
+   unlisted model must be confirmed by its hinge before writing a new entry.
 
 Builds without the iOS 27.1 SDK compile only steps 1 and 3. An iOS 27.0 SDK
 toolchain that also reports Swift 6.4 is not supported by this guard.

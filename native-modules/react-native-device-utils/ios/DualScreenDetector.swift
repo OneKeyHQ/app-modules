@@ -28,10 +28,10 @@ final class DualScreenDetector {
     private init() {
         let modelIdentifier = DualScreenDetector.modelIdentifier()
         let isKnownModel = DualScreenDetector.foldableModelIdentifiers.contains(modelIdentifier)
-        let isCached = UserDefaults.standard.bool(forKey: DualScreenDetector.cacheKey)
+        let isCached = UserDefaults.standard.string(forKey: DualScreenDetector.cacheKey) == modelIdentifier
         isDualScreen = isKnownModel || isCached
         if isKnownModel && !isCached {
-            UserDefaults.standard.set(true, forKey: DualScreenDetector.cacheKey)
+            UserDefaults.standard.set(modelIdentifier, forKey: DualScreenDetector.cacheKey)
         }
         OneKeyLog.info(
             "DeviceUtils",
@@ -135,7 +135,7 @@ final class DualScreenDetector {
         lock.unlock()
 
         if isNewlyDetected {
-            UserDefaults.standard.set(true, forKey: DualScreenDetector.cacheKey)
+            UserDefaults.standard.set(DualScreenDetector.modelIdentifier(), forKey: DualScreenDetector.cacheKey)
             OneKeyLog.info(
                 "DeviceUtils",
                 "Dual screen detected by hinge: model=\(DualScreenDetector.modelIdentifier())"
