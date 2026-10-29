@@ -309,12 +309,15 @@ removeWindowControlsInsetsChangedListener(id: number): void;
 ## Lifecycle and callbacks
 
 1. The first call to any of the three methods creates the observer. It installs
-   on the main thread; if no key window exists yet it waits for
-   `UIWindow.didBecomeKeyNotification`.
+   on the main thread and observes `UIWindow.didBecomeKeyNotification` for
+   the process lifetime, including when no key window exists yet.
 2. It inserts an invisible, non-interactive view spanning the key window,
    behind the root view controller's view. That view recomputes the insets on
    every `layoutSubviews` and `safeAreaInsetsDidChange`, which covers window
-   resizes and entering or leaving full screen.
+   resizes and entering or leaving full screen. When another window becomes
+   key, the previous tracking view is removed and tracking attaches to that
+   window before recomputing the insets. Callbacks from a detached tracking
+   view are ignored.
 3. Listeners fire on the main thread, once per changed value, after the stored
    value is updated. Equal values do not notify.
 

@@ -47,25 +47,24 @@ final class WindowControlsInsetsObserver {
         listeners.removeValue(forKey: id)
     }
 
-    private func install() {
+    private func install(in keyWindow: UIWindow? = nil) {
         // UIView.LayoutRegion ships in the iOS 26 SDK (Swift 6.2). Older
         // toolchains and systems keep the all-zero value.
         #if compiler(>=6.2)
         guard #available(iOS 26.0, *) else { return }
-        guard trackingView == nil else { return }
-        guard let window = WindowControlsInsetsObserver.keyWindow() else {
-            // Native modules can initialize before the first window exists.
-            guard keyWindowObserver == nil else { return }
+        if keyWindowObserver == nil {
             keyWindowObserver = NotificationCenter.default.addObserver(
                 forName: UIWindow.didBecomeKeyNotification,
                 object: nil,
                 queue: .main
-            ) { [weak self] _ in
-                guard let self, let observer = self.keyWindowObserver else { return }
-                NotificationCenter.default.removeObserver(observer)
-                self.keyWindowObserver = nil
-                self.install()
+            ) { [weak self] notification in
+                guard let window = notification.object as? UIWindow else { return }
+                self?.install(in: window)
             }
+        }
+        guard let window = keyWindow ?? WindowControlsInsetsObserver.keyWindow() else { return }
+        if let view = trackingView, view.window === window {
+            update(from: view)
             return
         }
         let view = WindowControlsTrackingView(frame: window.bounds) { [weak self] view in
@@ -76,8 +75,10 @@ final class WindowControlsInsetsObserver {
         view.isAccessibilityElement = false
         // Behind the root view controller's view, so it never draws or
         // receives touches above app content.
-        window.insertSubview(view, at: 0)
+        let previousView = trackingView
         trackingView = view
+        previousView?.removeFromSuperview()
+        window.insertSubview(view, at: 0)
         update(from: view)
         #endif
     }
@@ -85,6 +86,7 @@ final class WindowControlsInsetsObserver {
     #if compiler(>=6.2)
     @available(iOS 26.0, *)
     private func update(from view: UIView) {
+        guard view === trackingView else { return }
         let safeArea = view.safeAreaInsets
         let adapted = view.edgeInsets(for: .safeArea(cornerAdaptation: .horizontal))
         let next = WindowControlsInsets(

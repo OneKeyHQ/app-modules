@@ -1,6 +1,8 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 
 import {
+  Platform,
+  PlatformColor,
   Pressable,
   StatusBar,
   StyleSheet,
@@ -115,6 +117,13 @@ export function OverlayView(props: IOverlayViewProps) {
   // `maxWidth` turns on the drawn surface even while it spans the whole sheet,
   // so a width change never swaps who paints the background.
   const hasSheetSurface = isSheet && sheet?.maxWidth !== undefined;
+  const sheetSurfaceBackgroundColor =
+    sheet?.backgroundColor ??
+    PlatformColor(
+      Platform.OS === 'ios'
+        ? 'systemBackground'
+        : '?android:attr/colorBackground'
+    );
   const dismissOnBackdropPress = backdrop ? !!backdrop.dismissOnPress : false;
   const onSheetMarginPress = useCallback(() => {
     // The margins beside a max-width surface stand in for the backdrop.
@@ -244,7 +253,7 @@ export function OverlayView(props: IOverlayViewProps) {
                     {
                       left: sheetInset,
                       right: sheetInset,
-                      backgroundColor: sheet?.backgroundColor,
+                      backgroundColor: sheetSurfaceBackgroundColor,
                     },
                   ]}
                 />
@@ -252,7 +261,7 @@ export function OverlayView(props: IOverlayViewProps) {
                   style={[
                     styles.sheetSurface,
                     {
-                      backgroundColor: sheet?.backgroundColor,
+                      backgroundColor: sheetSurfaceBackgroundColor,
                       borderTopLeftRadius:
                         sheet?.cornerRadius ?? DEFAULT_SHEET_CORNER_RADIUS,
                       borderTopRightRadius:

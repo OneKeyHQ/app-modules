@@ -382,6 +382,10 @@ Max-width sheet (`sheet.maxWidth`, default 540):
   iOS the UIKit sheet itself keeps whatever width UIKit gives it but renders
   transparent (no background color, background effect or shadow), so the
   surface looks the same however wide UIKit makes the sheet.
+- Without `sheet.backgroundColor`, both the drawn content surface and its
+  bottom safe-area tail keep the native default: iOS `systemBackground` or
+  Android's theme `colorBackground`. Explicit colors, including transparent,
+  take precedence. The platform sheet remains transparent beside the surface.
 - The side margins behave as backdrop for taps: a tap there follows
   `dismissOnBackdropPress`, and the margins are hidden from accessibility.
   Known divergence: on iOS and Android the platform sheet owns the drag, so a
