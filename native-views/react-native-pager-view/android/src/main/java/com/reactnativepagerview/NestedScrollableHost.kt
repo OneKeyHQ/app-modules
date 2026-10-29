@@ -112,6 +112,10 @@ open class NestedScrollableHost : FrameLayout {
         else -> 0
       }
       if (smoothTouchAxis != 0) {
+        if (!nestedNativeGestureStarted) {
+          NativeGestureUtil.notifyNativeGestureStarted(this, e)
+          nestedNativeGestureStarted = true
+        }
         OneKeyLog.debug("CollapsiblePager", "content-direction owner=${if (smoothTouchAxis == 1) "list" else "horizontal"} dx=$dx dy=$dy nested=${nestedHorizontalOwner != null}")
       }
     }

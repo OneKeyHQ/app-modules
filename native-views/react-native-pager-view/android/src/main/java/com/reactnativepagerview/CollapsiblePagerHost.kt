@@ -591,9 +591,29 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     cancelPagerTop()
     if (adapter.itemCount == 0 || !nativeSmoothHeaderScrollEnabled || headerHeightPx <= 0) return
     if (transitionHeaderOffsets == null) {
-      transitionSourceDisplayBody = primaryScrollableForPage(selectedPage)?.let(::verticalScrollOffset) ?: 0
-      transitionSourceRecyclerAnchor = (primaryScrollableForPage(selectedPage) as? RecyclerView)?.let(::captureRecyclerAnchor)
-      pageHeaderOffsets[currentPageKey()] = headerOffsetPx
+      val sourceKey = currentPageKey()
+      val sourceView = primaryScrollableForPage(selectedPage)
+      val topInset = headerHeightPx + stickyHeaderHeightPx
+      val sourceRestored = sourceKey !in pendingPageRestores && when (sourceView) {
+        is RecyclerView -> restoredRecyclerKeys[sourceView] == sourceKey &&
+          originalRecyclerPadding[sourceView]?.appliedTopInset == topInset
+        is ScrollView -> restoredScrollerKeys[sourceView] == sourceKey &&
+          originalScrollerPadding[sourceView]?.appliedTopInset == topInset
+        is NativeScrollerViewport -> ownedScrollerKeys[sourceView] == sourceKey
+        else -> false
+      }
+      transitionSourceDisplayBody = if (sourceRestored && sourceView != null) {
+        verticalScrollOffset(sourceView)
+      } else {
+        displayBodyOverrides[sourceKey] ?: pageOffsets[sourceKey] ?: 0
+      }
+      transitionSourceRecyclerAnchor = if (sourceRestored && sourceView is RecyclerView) {
+        captureRecyclerAnchor(sourceView)
+      } else {
+        (displayRecyclerAnchors[sourceKey] ?: recyclerReadingAnchors[sourceKey])
+          ?.takeIf { sourceView !is RecyclerView || (it.view.get() === sourceView && it.adapter === sourceView.adapter) }
+      }
+      pageHeaderOffsets[sourceKey] = headerOffsetPx
       detachPrimaryScrollObserver()
       transitionSourcePage = selectedPage
       transitionHeaderOffsets = pageHeaderOffsets.toMap()
@@ -1684,6 +1704,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
       )
     }
     updateRecyclerPaddingOwnership(recycler, original)
+    val key = pageKey(pageIndex)
     val topInset = headerHeightPx + stickyHeaderHeightPx
     recycler.clipToPadding = false
     val top = original.top + topInset
@@ -1695,12 +1716,23 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
       // OneKey patch: LinearLayoutManager otherwise anchors children at their old
       // screen coordinates when a page changes the sticky header height.
       val manager = recycler.layoutManager as? LinearLayoutManager
-      val first = manager?.takeIf { it.orientation == RecyclerView.VERTICAL }
-        ?.findFirstVisibleItemPosition() ?: RecyclerView.NO_POSITION
-      val anchorOffset = if (first != RecyclerView.NO_POSITION) {
+      val savedAnchor = if (nativeSmoothHeaderScrollEnabled && original.appliedTopInset == 0) {
+        if (headerOffsetPx < headerHeightPx) {
+          recycler.adapter?.let { RecyclerReadingAnchor(recycler, it, 0, 0) }
+        } else {
+          (if (transitionPageOffsets != null && pageIndex == transitionSourcePage) transitionSourceRecyclerAnchor
+            else displayRecyclerAnchors[key] ?: recyclerReadingAnchors[key])
+            ?.takeIf { it.view.get() === recycler && it.adapter === recycler.adapter }
+        }
+      } else null
+      val first = savedAnchor?.position
+        ?: manager?.takeIf { it.orientation == RecyclerView.VERTICAL }
+          ?.findFirstVisibleItemPosition()
+        ?: RecyclerView.NO_POSITION
+      val anchorOffset = savedAnchor?.top ?: if (first != RecyclerView.NO_POSITION) {
         manager?.findViewByPosition(first)?.let { manager.getDecoratedTop(it) - recycler.paddingTop }
       } else null
-      offsetDiag("recycler-inset-before-nextTop=$top-anchorPosition=$first-anchorOffset=$anchorOffset", recycler, pageKey(pageIndex), pageIndex)
+      offsetDiag("recycler-inset-before-nextTop=$top-anchorPosition=$first-anchorOffset=$anchorOffset", recycler, key, pageIndex)
       recycler.setPadding(original.left, top, original.right, bottom)
       if (anchorOffset != null) manager?.scrollToPositionWithOffset(first, anchorOffset)
       // React Native can stop this nested requestLayout at its React-owned parent.
@@ -1714,9 +1746,8 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
         recycler.layout(recycler.left, recycler.top, recycler.right, recycler.bottom)
       }
     }
-    if (original.appliedTopInset != topInset) offsetDiag("recycler-inset-after-old=${original.appliedTopInset}-new=$topInset", recycler, pageKey(pageIndex), pageIndex)
+    if (original.appliedTopInset != topInset) offsetDiag("recycler-inset-after-old=${original.appliedTopInset}-new=$topInset", recycler, key, pageIndex)
     original.appliedTopInset = topInset
-    val key = pageKey(pageIndex)
     val geometry = Triple(recycler.computeVerticalScrollRange(), recycler.computeVerticalScrollExtent(), recycler.childCount)
     deferredRecyclerGeometry[recycler]?.let { deferred ->
       if (geometry != deferred) {
