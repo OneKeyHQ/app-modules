@@ -1,0 +1,5 @@
+# Pinned for reproducible wasm, same as the Zcash runtime; not the MSRV.
+[toolchain]
+channel = "1.93.0"
+profile = "minimal"
+targets = ["wasm32-unknown-unknown"]

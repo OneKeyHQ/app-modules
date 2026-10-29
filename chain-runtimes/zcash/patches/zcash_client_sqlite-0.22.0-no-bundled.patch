@@ -1,0 +1,123 @@
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -229,7 +229,6 @@
+ [dependencies.rusqlite]
+ version = "0.37"
+ features = [
+-    "bundled",
+     "time",
+     "array",
+     "uuid",
+@@ -454,3 +453,6 @@
+     'cfg(zcash_unstable, values("nu7"))',
+     "cfg(live_network_tests)",
+ ]
++
++[dependencies.onekey-zcash-send-policy]
++path = "../../crates/zcash-send-policy"
+--- a/src/wallet/common.rs
++++ b/src/wallet/common.rs
+@@ -12,7 +12,7 @@
+     },
+     wallet::ReceivedNote,
+ };
+-use zcash_primitives::transaction::{TxId, builder::DEFAULT_TX_EXPIRY_DELTA, fees::zip317};
++use zcash_primitives::transaction::{TxId, builder::DEFAULT_TX_EXPIRY_DELTA};
+ use zcash_protocol::{
+     PoolType, ShieldedPool,
+     consensus::{self, BlockHeight},
+@@ -436,13 +436,13 @@
+     .next())
+ }
+ 
+-/// Selects all the unspent notes with value greater than [`zip317::MARGINAL_FEE`] and for the
++/// Selects all the unspent notes with value greater than the height-dependent marginal fee and for the
+ /// specified shielded protocols from a given account, excepting any explicitly excluded note
+ /// identifiers.
+ ///
+ /// Implementation details:
+ ///
+-/// - Notes with individual value *below* the ``MARGINAL_FEE`` will be ignored
++/// - Notes with individual value *below* the marginal fee will be ignored
+ /// - Note spendability is determined using the `target_height`. If the note is mined at a height
+ ///   greater than or equal to the target height, it will still be returned by this query.
+ /// - The `to_received_note` function is expected to return `Ok(None)` in the case that spending
+@@ -528,7 +528,7 @@
+ 
+     let account_uuid = account.0;
+     let target_height_arg = u32::from(target_height);
+-    let min_value = u64::from(zip317::MARGINAL_FEE);
++    let min_value = u64::from(onekey_zcash_send_policy::marginal_fee(params, target_height.into()));
+     let overridable_owners = overridable_owners_rarray(lock_filter);
+     let mut sql_params: Vec<(&str, &dyn ToSql)> = vec![
+         (":account_uuid", &account_uuid),
+@@ -630,7 +630,7 @@
+ /// covers ``target_value`` alone, oldest first; callers take the head.
+ ///
+ /// - Implementation details
+-///   - Notes with individual value *below* the ``MARGINAL_FEE`` will be ignored
++///   - Notes with individual value *below* the marginal fee will be ignored
+ ///   - Note spendability is determined using the `anchor_height`
+ #[allow(clippy::too_many_arguments)]
+ fn select_spendable_notes_matching_value<P: consensus::Parameters, F, Note>(
+@@ -810,7 +810,7 @@
+     let target_value_arg = u64::from(target_value);
+     let scanned_priority = priority_code(&ScanPriority::Scanned);
+     let tip_unscanned_arg = i64::from(tip_unscanned);
+-    let min_value = u64::from(zip317::MARGINAL_FEE);
++    let min_value = u64::from(onekey_zcash_send_policy::marginal_fee(params, target_height.into()));
+     let overridable_owners = overridable_owners_rarray(lock_filter);
+     let mut sql_params: Vec<(&str, &dyn ToSql)> = vec![
+         (":account_uuid", &account_uuid),
+--- a/src/wallet.rs
++++ b/src/wallet.rs
+@@ -127,7 +127,7 @@
+ use zcash_primitives::{
+     block::BlockHash,
+     merkle_tree::{HashSer, read_commitment_tree},
+-    transaction::{Transaction, TransactionData, builder::DEFAULT_TX_EXPIRY_DELTA, fees::zip317},
++    transaction::{Transaction, TransactionData, builder::DEFAULT_TX_EXPIRY_DELTA},
+ };
+ use zcash_protocol::{
+     PoolType, ShieldedPool, TxId,
+@@ -2749,6 +2749,7 @@
+     fn with_pool_balances<F>(
+         tx: &rusqlite::Transaction,
+         target_height: TargetHeight,
++        marginal_fee: Zatoshis,
+         anchor_height: Option<BlockHeight>,
+         confirmations_policy: ConfirmationsPolicy,
+         account_balances: &mut HashMap<AccountUuid, AccountBalance>,
+@@ -2912,7 +2913,7 @@
+                 uneconomic_value,
+             ) = {
+                 let zero = Zatoshis::ZERO;
+-                if value <= zip317::MARGINAL_FEE {
++                if value <= marginal_fee {
+                     (zero, zero, zero, zero, value)
+                 } else if is_spendable && is_locked {
+                     // Only notes that would otherwise be spendable are counted as locked; a
+@@ -2949,6 +2950,7 @@
+         with_pool_balances(
+             tx,
+             target_height,
++            onekey_zcash_send_policy::marginal_fee(params, target_height.into()),
+             anchor_height,
+             confirmations_policy,
+             &mut account_balances,
+@@ -2978,6 +2980,7 @@
+         with_pool_balances(
+             tx,
+             target_height,
++            onekey_zcash_send_policy::marginal_fee(params, target_height.into()),
+             anchor_height,
+             confirmations_policy,
+             &mut account_balances,
+@@ -3005,6 +3008,7 @@
+     with_pool_balances(
+         tx,
+         target_height,
++        onekey_zcash_send_policy::marginal_fee(params, target_height.into()),
+         anchor_height,
+         confirmations_policy,
+         &mut account_balances,

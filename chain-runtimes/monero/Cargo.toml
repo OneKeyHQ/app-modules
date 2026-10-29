@@ -1,0 +1,48 @@
+[workspace]
+resolver = "2"
+members = ["crates/monero-runtime"]
+exclude = ["vendor/sqlite-wasm-vfs-0.2.0"]
+
+[workspace.package]
+version = "0.1.0-alpha.12"
+edition = "2021"
+license = "Apache-2.0"
+rust-version = "1.85"
+
+# monero-oxide has no storage layer; this workspace persists wallet state to SQLite.
+[workspace.dependencies]
+monero-wallet = { version = "0.2", default-features = false, features = ["std"] }
+monero-address = { version = "0.1", default-features = false, features = ["std"] }
+monero-daemon-rpc = { version = "0.2", default-features = false, features = ["std"] }
+monero-interface = { version = "0.2", default-features = false, features = ["std"] }
+# get_blocks.bin request and parsing (blocks_bin.rs); same version as monero-daemon-rpc uses.
+monero-epee = { version = "0.2", default-features = false }
+
+# rusqlite without "bundled" (no libc sysroot on wasm32); sqlite-wasm-rs provides the symbols.
+rusqlite = { version = "0.37", default-features = false }
+sqlite-wasm-rs = "0.5"
+# OPFS sync-access VFS, patched with the Zcash runtime's patch (see
+# scripts/vendor-deps.sh): metadata I/O failures surface instead of passing.
+sqlite-wasm-vfs = { version = "0.2", path = "vendor/sqlite-wasm-vfs-0.2.0" }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+hex = "0.4"
+rand_core = { version = "0.6", features = ["getrandom"] }
+# Must match monero-oxide's major version so Scalar/Point types line up.
+curve25519-dalek = { version = "4", default-features = false }
+zeroize = { version = "1", features = ["zeroize_derive"] }
+
+wasm-bindgen = "0.2"
+gloo-timers = { version = "0.3", features = ["futures"] }
+js-sys = "0.3"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = ["Request", "RequestInit", "Response", "Headers"] }
+# Native-only (diagnostics and integration tests), not shipped. Keep default
+# features: without them connections fail at the transport layer.
+reqwest = "0.12"
+futures-lite = "2"
+futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
+# reqwest needs a Tokio reactor, so native integration tests need a runtime.
+tokio = { version = "1", features = ["rt", "macros", "time"] }
