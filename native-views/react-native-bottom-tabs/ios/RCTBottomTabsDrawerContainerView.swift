@@ -196,6 +196,15 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
     var view = touchTarget
     while let current = view, current !== self {
       if let scroll = current as? UIScrollView, scroll.isScrollEnabled {
+        // The native smooth pager exposes this existing header exclusion. Read
+        // its getter instead of invoking UIKit's recognition lifecycle hook.
+        let selector = NSSelectorFromString("excludedHeaderView")
+        if scroll.responds(to: selector),
+           let header = scroll.perform(selector)?.takeUnretainedValue() as? UIView,
+           let target = touchTarget, target.isDescendant(of: header) {
+          view = current.superview
+          continue
+        }
         if let page = pageController(for: scroll) {
           // UIPageViewController keeps its private scroll view centered even at
           // the first page. Its public before query describes physical right.

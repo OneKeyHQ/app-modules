@@ -4,8 +4,8 @@
 
 Status: implemented in module source. Package TypeScript, iOS/Android Fabric
 code generation, iOS Objective-C++ Fabric bridge compilation against RN 0.86.2,
-11 React wrapper checks, nine Android API 36 native tests and four real-Fabric
-iOS gesture cases passed (Home scrolling/boundary ownership and ordinary Pager).
+13 React wrapper checks, ten Android API 36 native tests and four real-Fabric
+iOS review cases passed (shared-header/body arbitration and bar-height switches).
 The static Home example also passed a focused TypeScript check.
 Detailed iOS runtime evidence is recorded separately; physical-device and exact
 reference-video acceptance remain pending.
@@ -41,6 +41,17 @@ of pixel-perfect parity. Closed menus are hidden from touch/accessibility;
 while visible, the foreground is blocked by a native dim surface. Tapping that
 surface closes the drawer. iOS accessibility escape and Android Back close an
 open drawer; the dim surface exposes an accessible close action.
+On Android the dim surface MUST retain full foreground bounds even while hidden
+and after React/Fabric ancestors suppress `requestLayout`. Internal containers
+and both slots MUST be measured and laid out on host layout and slot changes,
+without relying on a later ancestor layout pass. Visible dim input MUST prevent
+native foreground controls from receiving the same touch.
+
+The reported native tab-bar height MUST become zero when hidden and restore the
+current height when shown. The context and drawer exclusion use one effective
+height: a rendered custom bar's own measured height takes precedence; otherwise
+`tabBarHidden` forces zero. Native hide measurements MUST NOT overwrite a custom
+bar's height, including across native/custom presentation switches.
 
 With opening swipes enabled, a one-finger rightward gesture may start anywhere
 in the foreground content. At the first confirmed direction, the actual native
@@ -51,6 +62,13 @@ scroll views do not block horizontal drawer intent. Once selected, the owner is
 locked until up/cancel: reaching a boundary mid-gesture does not hand off.
 Disabled pager input does not claim a gesture based on its retained scroll
 range; an independently enabled horizontal child inside that page still can.
+An ancestor pager which explicitly excludes the touched shared header MUST NOT
+claim that header gesture solely because its horizontal offset is nonzero.
+The header's own nested horizontal content retains its normal boundary priority.
+On iOS this uses the repository's existing `excludedHeaderView` Objective-C
+getter on the native smooth pager and the real touch target's ancestry. It does
+not invoke another scroll view's UIKit recognition lifecycle hook, add a Pager
+API, or infer a header exclusion from a pager's selected page.
 The iOS UIPageViewController boundary uses its public data-source query once per
 decision, skipping its internally centered scroll offset. Android observes
 pending direction even when a nested pager initially disallows interception,

@@ -1,5 +1,5 @@
 import React from 'react';
-import { View } from 'react-native';
+import { Text, View } from 'react-native';
 import ReactTestRenderer, { act } from 'react-test-renderer';
 
 jest.mock(
@@ -25,6 +25,11 @@ jest.mock(
 
 import BottomTabs from '../../../native-views/react-native-bottom-tabs/src/BottomTabs';
 import DrawerWeb from '../../../native-views/react-native-bottom-tabs/src/BottomTabsDrawerNativeComponent.web';
+import { useBottomTabBarHeight } from '../../../native-views/react-native-bottom-tabs/src/utils/useBottomTabBarHeight';
+
+function HeightProbe() {
+  return <Text testID="tab-height-probe">{useBottomTabBarHeight()}</Text>;
+}
 
 describe('native drawer slots', () => {
   let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
@@ -102,5 +107,47 @@ describe('native drawer slots', () => {
     expect(renderer!.root.findAllByProps({ testID: 'menu' })).toHaveLength(0);
     expect(renderer!.root.findAllByType(View)).toHaveLength(1);
     expect(renderer!.root.findByType(View).props.testID).toBe('main');
+  });
+
+  it('uses zero for both context and drawer immediately when the native bar is hidden', async () => {
+    const tabs = (hidden: boolean) => (
+      <BottomTabs navigationState={{ index: 0, routes: [{ key: 'home' }] }}
+        renderScene={() => <HeightProbe />} onIndexChange={() => {}} tabBarHidden={hidden} />
+    );
+    await act(() => { renderer = ReactTestRenderer.create(tabs(false)); });
+    const native = renderer!.root.findByType('NativeBottomTabs' as any);
+    const height = () => renderer!.root.findByType(Text).props.children;
+    act(() => native.props.onTabBarMeasured({ nativeEvent: { height: 83 } }));
+    expect(height()).toBe(83);
+    await act(() => { renderer!.update(tabs(true)); });
+    expect(height()).toBe(0);
+    expect(renderer!.root.findByType('NativeDrawer' as any).props.bottomBarHeight).toBe(0);
+    act(() => native.props.onTabBarMeasured({ nativeEvent: { height: 0 } }));
+    await act(() => { renderer!.update(tabs(false)); });
+    act(() => native.props.onTabBarMeasured({ nativeEvent: { height: 83 } }));
+    expect(height()).toBe(83);
+    expect(renderer!.root.findByType('NativeDrawer' as any).props.bottomBarHeight).toBe(83);
+  });
+
+  it('keeps custom height separate from native hide events and presentation switches', async () => {
+    const custom = () => <View testID="custom-bar" />;
+    const tabs = (useCustom: boolean) => (
+      <BottomTabs navigationState={{ index: 0, routes: [{ key: 'home' }] }}
+        renderScene={() => <HeightProbe />} onIndexChange={() => {}}
+        tabBar={useCustom ? custom : undefined} tabBarHidden={useCustom} />
+    );
+    await act(() => { renderer = ReactTestRenderer.create(tabs(false)); });
+    const native = renderer!.root.findByType('NativeBottomTabs' as any);
+    act(() => native.props.onTabBarMeasured({ nativeEvent: { height: 83 } }));
+    await act(() => { renderer!.update(tabs(true)); });
+    const wrapper = renderer!.root.findAllByType(View).find(node => typeof node.props.onLayout === 'function')!;
+    act(() => wrapper.props.onLayout({ nativeEvent: { layout: { height: 52 } } }));
+    act(() => native.props.onTabBarMeasured({ nativeEvent: { height: 0 } }));
+    expect(renderer!.root.findByType(Text).props.children).toBe(52);
+    expect(renderer!.root.findByType('NativeDrawer' as any).props.bottomBarHeight).toBe(52);
+    await act(() => { renderer!.update(tabs(false)); });
+    expect(renderer!.root.findByType(Text).props.children).toBe(0);
+    act(() => native.props.onTabBarMeasured({ nativeEvent: { height: 83 } }));
+    expect(renderer!.root.findByType(Text).props.children).toBe(83);
   });
 });

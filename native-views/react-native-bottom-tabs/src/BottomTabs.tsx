@@ -276,7 +276,11 @@ const BottomTabs = <Route extends BaseRoute>({
   const focusedKey = navigationState.routes[navigationState.index].key;
   const customTabBarWrapperRef = useRef<View>(null) as React.RefObject<any>;
   const nativeBottomTabsRef = useRef<React.ElementRef<typeof NativeBottomTabs>>(null);
-  const [tabBarHeight, setTabBarHeight] = React.useState<number | undefined>(0);
+  const [nativeTabBarHeight, setNativeTabBarHeight] = React.useState(0);
+  const [customTabBarHeight, setCustomTabBarHeight] = React.useState(0);
+  const tabBarHeight = renderCustomTabBar
+    ? customTabBarHeight
+    : props.tabBarHidden ? 0 : nativeTabBarHeight;
   const [measuredDimensions, setMeasuredDimensions] = React.useState<
     { width: DimensionValue; height: DimensionValue } | undefined
   >({ width: '100%', height: '100%' });
@@ -448,9 +452,9 @@ const BottomTabs = <Route extends BaseRoute>({
 
   const handleTabBarMeasured = React.useCallback(
     (event: NativeSyntheticEvent<{ height: number }>) => {
-      setTabBarHeight(event.nativeEvent.height);
+      setNativeTabBarHeight(event.nativeEvent.height);
     },
-    [setTabBarHeight]
+    [setNativeTabBarHeight]
   );
 
   const handleNativeLayout = React.useCallback(
@@ -464,7 +468,7 @@ const BottomTabs = <Route extends BaseRoute>({
   useLayoutEffect(() => {
     if (renderCustomTabBar && customTabBarWrapperRef.current) {
       customTabBarWrapperRef.current.measure((_x: number, _y: number, _width: number, height: number) => {
-        setTabBarHeight(height);
+        setCustomTabBarHeight(height);
       });
     }
   }, [renderCustomTabBar]);
@@ -567,7 +571,12 @@ const BottomTabs = <Route extends BaseRoute>({
             ) : null}
           </NativeBottomTabs>
           {renderCustomTabBar ? (
-            <View ref={customTabBarWrapperRef}>{renderCustomTabBar()}</View>
+            <View
+              ref={customTabBarWrapperRef}
+              onLayout={(event) => setCustomTabBarHeight(event.nativeEvent.layout.height)}
+            >
+              {renderCustomTabBar()}
+            </View>
           ) : null}
         </View>
       </NativeBottomTabsDrawer>

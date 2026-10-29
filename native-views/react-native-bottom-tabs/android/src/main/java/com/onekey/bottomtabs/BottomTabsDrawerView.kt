@@ -155,6 +155,7 @@ class BottomTabsDrawerView(context: Context) : FrameLayout(context) {
       )
     }
     requestLayout()
+    if (width > 0 && height > 0) layoutSlots()
   }
 
   override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -164,9 +165,24 @@ class BottomTabsDrawerView(context: Context) : FrameLayout(context) {
   }
 
   override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
-    menu.layout(0, 0, (width * .78f).roundToInt(), height)
-    foreground.layout(0, 0, width, height)
+    layoutSlots()
     setProgress(progress)
+  }
+
+  private fun layoutSlots() {
+    val exactHeight = MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
+    val menuWidth = (width * .78f).roundToInt()
+    menu.measure(MeasureSpec.makeMeasureSpec(menuWidth, MeasureSpec.EXACTLY), exactHeight)
+    foreground.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), exactHeight)
+    menu.layout(0, 0, menuWidth, height)
+    foreground.layout(0, 0, width, height)
+    // ReactViewGroup can absorb descendant requestLayout calls. A newly mounted
+    // slot must receive native bounds during this mounting transaction itself.
+    slots.forEachIndexed { index, child ->
+      val childWidth = if (index == 0) menuWidth else width
+      child.measure(MeasureSpec.makeMeasureSpec(childWidth, MeasureSpec.EXACTLY), exactHeight)
+      child.layout(0, 0, childWidth, height)
+    }
   }
 
   override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -359,7 +375,7 @@ class BottomTabsDrawerView(context: Context) : FrameLayout(context) {
     foreground.cornerRadius = 64f * density * progress
     foreground.invalidate()
     dim.alpha = .7f * progress
-    dim.visibility = if (progress > 0f) VISIBLE else GONE
+    dim.visibility = if (progress > 0f) VISIBLE else INVISIBLE
     content.pointerEvents = if (progress > 0f) PointerEvents.NONE else PointerEvents.AUTO
     content.importantForAccessibility = if (progress > 0f) IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
       else IMPORTANT_FOR_ACCESSIBILITY_AUTO

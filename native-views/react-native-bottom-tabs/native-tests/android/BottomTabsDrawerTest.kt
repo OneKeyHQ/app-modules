@@ -18,6 +18,7 @@ import androidx.activity.ComponentActivity
 import com.facebook.react.uimanager.RootView
 import com.facebook.react.uimanager.PointerEvents
 import com.facebook.react.uimanager.ReactPointerEventsView
+import com.facebook.react.views.view.ReactViewGroup
 import com.facebook.react.internal.ChoreographerProvider
 import com.facebook.react.modules.core.ReactChoreographer
 import com.facebook.react.soloader.OpenSourceMergedSoMapping
@@ -25,9 +26,21 @@ import com.facebook.soloader.SoLoader
 
 class BottomTabsDrawerTestActivity : ComponentActivity()
 
-private class DrawerTestRoot(context: Context) : FrameLayout(context), RootView {
+private class DrawerTestRoot(context: Context) : ReactViewGroup(context), RootView {
   var started = 0
   var ended = 0
+  var layouts = 0
+  override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+    // Fabric owns direct-child bounds. Perform its initial/resize layout only;
+    // retain ReactViewGroup's real no-op requestLayout for descendant updates.
+    layouts++
+    for (index in 0 until childCount) {
+      val child = getChildAt(index)
+      child.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+        View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY))
+      child.layout(0, 0, width, height)
+    }
+  }
   override fun onChildStartedNativeGesture(childView: View?, ev: MotionEvent) { started++ }
   override fun onChildEndedNativeGesture(childView: View, ev: MotionEvent) { ended++ }
   override fun handleException(t: Throwable) { throw t }
@@ -51,6 +64,7 @@ class BottomTabsDrawerTest : InstrumentationTestCase() {
     activity = instrumentation.startActivitySync(Intent(instrumentation.context, BottomTabsDrawerTestActivity::class.java)
       .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as BottomTabsDrawerTestActivity
     onMain {
+      SoLoader.init(activity, OpenSourceMergedSoMapping)
       drawer = BottomTabsDrawerView(activity)
       drawer.setDrawerEnabled(true)
       drawer.swipeEnabled = true
@@ -83,15 +97,21 @@ class BottomTabsDrawerTest : InstrumentationTestCase() {
       assertEquals(drawer.height, main.height)
       assertEquals(drawer.width * .78f, drawer.getChildAt(1).translationX, 1f)
       assertEquals(drawer.width * .78f, drawer.getReactChild(0).width.toFloat(), 1f)
+      val dim = (drawer.getChildAt(1) as FrameLayout).getChildAt(1)
+      assertEquals(drawer.width, dim.width)
+      assertEquals(drawer.height, dim.height)
+      assertEquals(View.VISIBLE, dim.visibility)
+      assertEquals(.7f, dim.alpha)
       // A prop echo has no second event or animation.
       drawer.setDrawerOpen(true)
       assertEquals(listOf(true), events)
-      (drawer.getChildAt(1) as FrameLayout).getChildAt(1).performClick()
+      tap(drawer.width * .9f, 150f)
     }
     settle()
     onMain {
       assertEquals(listOf(true, false), events)
       assertEquals(0f, drawer.getChildAt(1).translationX)
+      assertEquals(0, clicks)
     }
   }
 
@@ -123,7 +143,7 @@ class BottomTabsDrawerTest : InstrumentationTestCase() {
   fun testUserCanOverrideAnUnfinishedExternalTarget() {
     onMain { drawer.setDrawerOpen(true) }
     SystemClock.sleep(100)
-    onMain { (drawer.getChildAt(1) as FrameLayout).getChildAt(1).performClick() }
+    onMain { tap(drawer.width * .9f, 150f) }
     settle()
     onMain { assertEquals(listOf(false), events); assertEquals(0f, drawer.getChildAt(1).translationX) }
     onMain { drawer.setDrawerOpen(true) }
@@ -190,6 +210,7 @@ class BottomTabsDrawerTest : InstrumentationTestCase() {
       tabs.setSelectedItem("home")
       main.removeAllViews()
       main.addView(tabs, FrameLayout.LayoutParams(-1, -1))
+      layoutFixtureContent()
     }
     for (style in listOf("default", "floating")) {
       onMain { tabs.setAndroidTabBarStyle(style); drawer.setDrawerOpen(false) }
@@ -220,6 +241,7 @@ class BottomTabsDrawerTest : InstrumentationTestCase() {
       val overlay = DrawerPointerOverlay(activity, PointerEvents.BOX_NONE).apply { z = 20f }
       overlay.addView(DrawerPointerOverlay(activity, PointerEvents.NONE), FrameLayout.LayoutParams(-1, -1))
       main.addView(overlay, FrameLayout.LayoutParams(-1, -1))
+      layoutFixtureContent()
     }
     settle()
     onMain {
@@ -253,6 +275,7 @@ class BottomTabsDrawerTest : InstrumentationTestCase() {
       }
       main.addView(pager, FrameLayout.LayoutParams(-1, -1))
       pager.setCurrentItem(1, false)
+      layoutFixtureContent()
     }
     settle()
     onMain { drag(drawer.width * .3f, 150f, drawer.width * .95f, 150f) }
@@ -268,6 +291,7 @@ class BottomTabsDrawerTest : InstrumentationTestCase() {
       drawer.setDrawerOpen(false)
       pager.setCurrentItem(1, false)
       pager.isUserInputEnabled = false
+      layoutFixtureContent()
     }
     settle()
     onMain {
@@ -276,6 +300,47 @@ class BottomTabsDrawerTest : InstrumentationTestCase() {
     }
     settle()
     onMain { assertEquals(listOf(true, true), events) }
+  }
+
+  fun testMountedSlotGetsBoundsWithoutAnotherReactAncestorLayout() {
+    onMain {
+      val previousRootLayouts = root.layouts
+      val replacement = ReactViewGroup(activity)
+      drawer.removeReactChild(1)
+      drawer.addReactChild(replacement, 1)
+      assertEquals(drawer.width, replacement.measuredWidth)
+      assertEquals(drawer.width, replacement.width)
+      assertEquals(drawer.height, replacement.height)
+      assertEquals(previousRootLayouts, root.layouts)
+      drawer.setDrawerOpen(true)
+    }
+    settle()
+    onMain {
+      val dim = (drawer.getChildAt(1) as FrameLayout).getChildAt(1)
+      assertEquals(drawer.width, dim.width)
+      assertEquals(drawer.height, dim.height)
+      tap(drawer.width * .9f, 150f)
+    }
+    settle()
+    onMain { assertEquals(listOf(false), events) }
+  }
+
+  private fun tap(x: Float, y: Float) {
+    val start = SystemClock.uptimeMillis()
+    for ((action, offset) in listOf(MotionEvent.ACTION_DOWN to 0L, MotionEvent.ACTION_UP to 32L)) {
+      val event = MotionEvent.obtain(start, start + offset, action, x, y, 0)
+      root.dispatchTouchEvent(event)
+      event.recycle()
+    }
+  }
+
+  private fun layoutFixtureContent() {
+    // Raw native test fixtures have no Fabric mount transaction to provide
+    // their initial bounds after addView. Simulate that transaction locally;
+    // do not re-layout the React ancestor or mask later descendant requests.
+    main.measure(View.MeasureSpec.makeMeasureSpec(drawer.width, View.MeasureSpec.EXACTLY),
+      View.MeasureSpec.makeMeasureSpec(drawer.height, View.MeasureSpec.EXACTLY))
+    main.layout(0, 0, drawer.width, drawer.height)
   }
 
   private fun drag(x0: Float, y0: Float, x1: Float, y1: Float, cancel: Boolean = false) {
