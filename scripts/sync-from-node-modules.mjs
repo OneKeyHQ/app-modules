@@ -9,8 +9,9 @@
 // A file counts as edited only when it differs from the installed version's
 // pristine tarball (the consumer's .yarn/cache zip), so an older install never
 // rolls this repository back. Only published source entries (`files` in the
-// package's package.json) are considered; build output (`lib`), docs and
-// native build folders are skipped. Nothing is deleted.
+// package's package.json, minus its `!` exclusions) are considered; build
+// output (`lib`), docs and native build folders are skipped. Nothing is
+// deleted.
 //
 // Per edited file:
 //   - repository already has the same content: skipped
@@ -55,6 +56,30 @@ export function findPackageDirs(repoRoot = REPO_ROOT) {
   return dirs;
 }
 
+// Converts a `files` glob to a RegExp over "/"-separated relative paths:
+// `**` spans directories, `*` and `?` stay within one segment, and a pattern
+// without a "/" matches at any depth (npm `files` semantics).
+export function globToRegExp(glob) {
+  const pattern = glob.replace(/^\.?\//, "").replace(/\/$/, "");
+  let source = "";
+  for (let index = 0; index < pattern.length; index += 1) {
+    const char = pattern[index];
+    if (char === "*" && pattern[index + 1] === "*") {
+      const slash = pattern[index + 2] === "/";
+      source += slash ? "(?:.*/)?" : ".*";
+      index += slash ? 2 : 1;
+    } else if (char === "*") {
+      source += "[^/]*";
+    } else if (char === "?") {
+      source += "[^/]";
+    } else {
+      source += char.replace(/[\\^$.|+()[\]{}]/g, "\\$&");
+    }
+  }
+  const anyDepth = pattern.includes("/") ? "" : "(?:.*/)?";
+  return new RegExp(`^${anyDepth}${source}$`);
+}
+
 // Source entries to consider: the positive `files` entries minus build
 // output and docs. Glob entries (`*.podspec`) resolve against `dir`.
 export function selectSyncEntries(files, dir) {
@@ -62,12 +87,7 @@ export function selectSyncEntries(files, dir) {
   for (const file of files ?? []) {
     if (file.startsWith("!") || SKIPPED_ENTRIES.has(file)) continue;
     if (file.includes("*")) {
-      const pattern = new RegExp(
-        `^${file
-          .split("*")
-          .map((part) => part.replace(/[\\^$.|?+()[\]{}]/g, "\\$&"))
-          .join(".*")}$`,
-      );
+      const pattern = globToRegExp(file);
       for (const name of fs.readdirSync(dir)) {
         if (pattern.test(name)) entries.push(name);
       }
@@ -76,6 +96,22 @@ export function selectSyncEntries(files, dir) {
     entries.push(file);
   }
   return entries;
+}
+
+// The negative `files` entries (`!**/__tests__`): a path is excluded when the
+// pattern matches it or one of its parent directories.
+export function createExcludeMatcher(files) {
+  const patterns = (files ?? [])
+    .filter((file) => file.startsWith("!"))
+    .map((file) => globToRegExp(file.slice(1)));
+  return (relativePath) => {
+    const segments = relativePath.split(/[\\/]/);
+    for (let length = 1; length <= segments.length; length += 1) {
+      const candidate = segments.slice(0, length).join("/");
+      if (patterns.some((pattern) => pattern.test(candidate))) return true;
+    }
+    return false;
+  };
 }
 
 function listFiles(root, entry) {
@@ -142,9 +178,11 @@ function syncPackage(name, consumerRoot, packageDir, { dryRun, force }) {
   const { files } = JSON.parse(
     fs.readFileSync(path.join(packageDir, "package.json"), "utf8"),
   );
+  const isExcluded = createExcludeMatcher(files);
   let conflicts = 0;
   for (const entry of selectSyncEntries(files, edited)) {
     for (const file of listFiles(edited, entry)) {
+      if (isExcluded(file)) continue;
       const editedContent = fs.readFileSync(path.join(edited, file));
       const target = path.join(packageDir, file);
       const action = classifyFile({

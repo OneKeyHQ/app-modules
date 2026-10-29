@@ -6,7 +6,9 @@ import test from "node:test";
 
 import {
   classifyFile,
+  createExcludeMatcher,
   findPackageDirs,
+  globToRegExp,
   selectSyncEntries,
 } from "./sync-from-node-modules.mjs";
 
@@ -62,4 +64,29 @@ test("resolves package directories by package name", () => {
     dirs.get("@onekeyfe/react-native-native-overlay") ?? "",
     /native-views[/\\]react-native-native-overlay$/,
   );
+});
+
+test("skips paths excluded by negative files entries", () => {
+  const isExcluded = createExcludeMatcher([
+    "src",
+    "ios",
+    "!**/__tests__",
+    "!**/__fixtures__",
+    "!ios/build",
+    "!**/*.test.ts",
+  ]);
+  assert.equal(isExcluded("src/__tests__/sheetWidth.test.ts"), true);
+  assert.equal(isExcluded("src/a/__fixtures__/data.json"), true);
+  assert.equal(isExcluded("ios/build/Foo.o"), true);
+  assert.equal(isExcluded("src/util.test.ts"), true);
+  assert.equal(isExcluded("src/OverlayView.tsx"), false);
+  assert.equal(isExcluded("ios/NativeOverlayContainerView.swift"), false);
+  assert.equal(isExcluded("ios/builder.swift"), false);
+});
+
+test("converts files globs segment by segment", () => {
+  assert.equal(globToRegExp("*.podspec").test("Foo.podspec"), true);
+  assert.equal(globToRegExp("ios/*.h").test("ios/a/b.h"), false);
+  assert.equal(globToRegExp("ios/**/*.h").test("ios/a/b.h"), true);
+  assert.equal(globToRegExp("ios/**/*.h").test("ios/b.h"), true);
 });
