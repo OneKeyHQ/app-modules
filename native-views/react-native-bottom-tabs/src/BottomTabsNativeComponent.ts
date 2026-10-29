@@ -22,6 +22,14 @@ export type OnNativeLayout = Readonly<{
   height: Double;
 }>;
 
+// Where the system draws the tab bar: 'bottom', or 'leading' / 'trailing' for
+// a vertical bar (the iPhone Duo side strip, iOS 27.1+).
+export type OnTabBarPlacementChange = Readonly<{
+  placement: string;
+}>;
+
+export type OnSideAccessoryPress = Readonly<{}>;
+
 export type BottomTabsItems = ReadonlyArray<{
   key: string;
   title: string;
@@ -65,6 +73,11 @@ export interface BottomTabsNativeProps extends ViewProps {
   ignoreBottomInsets?: boolean;
   androidTabBarStyle?: WithDefault<'default' | 'floating', 'default'>;
   ignoreKeyboardInsets?: WithDefault<boolean, true>;
+  onTabBarPlacementChange?: DirectEventHandler<OnTabBarPlacementChange>;
+  // A round button drawn above a vertical tab bar; iOS only.
+  sideAccessoryIcon?: ImageSource;
+  sideAccessoryLabel?: string;
+  onSideAccessoryPress?: DirectEventHandler<OnSideAccessoryPress>;
 }
 
 export default codegenNativeComponent<BottomTabsNativeProps>('RNBottomTabsView');

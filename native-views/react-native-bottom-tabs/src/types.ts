@@ -7,6 +7,9 @@ export type AppleIcon = { sfSymbol: SFSymbol };
 
 export type TabRole = 'search';
 
+// 'leading' and 'trailing' mean a vertical tab bar on that edge.
+export type TabBarPlacement = 'bottom' | 'leading' | 'trailing';
+
 export type BaseRoute = {
   key: string;
   title?: string;

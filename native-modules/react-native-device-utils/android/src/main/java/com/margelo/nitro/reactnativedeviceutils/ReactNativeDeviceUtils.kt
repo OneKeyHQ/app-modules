@@ -765,6 +765,35 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
         spanningChangedListeners.removeIf { it.id == id }
     }
 
+  // Android has no window controls inside the app window: the value is always
+  // zero and never changes, so listeners are accepted but never called.
+  override fun getWindowControlsInsets(): WindowControlsInsets =
+    WindowControlsInsets(0.0, 0.0, 0.0, 0.0)
+
+  override fun addWindowControlsInsetsChangedListener(
+    callback: (insets: WindowControlsInsets) -> Unit
+  ): Double = synchronized(this) {
+    val id = nextListenerId
+    nextListenerId++
+    return@synchronized id
+  }
+
+  override fun removeWindowControlsInsetsChangedListener(id: Double) {}
+
+  // Android has no app-owned main menu bar: the config is ignored, and
+  // listeners are accepted but never called.
+  override fun setMainMenuConfig(config: MainMenuConfig) {}
+
+  override fun addMainMenuCommandListener(
+    callback: (command: MainMenuCommand) -> Unit
+  ): Double = synchronized(this) {
+    val id = nextListenerId
+    nextListenerId++
+    return@synchronized id
+  }
+
+  override fun removeMainMenuCommandListener(id: Double) {}
+
   private fun startObservingLayoutChanges() {
     if (isObservingLayoutChanges) {
       return

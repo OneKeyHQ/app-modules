@@ -171,6 +171,28 @@ static NSArray<NSDictionary *>* convertItemsToArray(const std::vector<RNBottomTa
       }
     };
     [_containerView setValue:onNativeLayout forKey:@"onNativeLayout"];
+
+    EventBlock onTabBarPlacementChange = ^(NSDictionary *body) {
+      auto strongSelf = weakSelf;
+      if (!strongSelf) return;
+      auto emitter = std::static_pointer_cast<const RNBottomTabsViewEventEmitter>(strongSelf->_eventEmitter);
+      if (emitter) {
+        emitter->onTabBarPlacementChange({
+          .placement = std::string([[body objectForKey:@"placement"] UTF8String] ?: "bottom")
+        });
+      }
+    };
+    [_containerView setValue:onTabBarPlacementChange forKey:@"onTabBarPlacementChange"];
+
+    EventBlock onSideAccessoryPress = ^(NSDictionary *body) {
+      auto strongSelf = weakSelf;
+      if (!strongSelf) return;
+      auto emitter = std::static_pointer_cast<const RNBottomTabsViewEventEmitter>(strongSelf->_eventEmitter);
+      if (emitter) {
+        emitter->onSideAccessoryPress({});
+      }
+    };
+    [_containerView setValue:onSideAccessoryPress forKey:@"onSideAccessoryPress"];
   }
 
   return self;
@@ -306,6 +328,21 @@ static NSArray<NSDictionary *>* convertItemsToArray(const std::vector<RNBottomTa
 
   if (oldViewProps.tabBarHidden != newViewProps.tabBarHidden) {
     [_containerView setValue:@(newViewProps.tabBarHidden) forKey:@"tabBarHidden"];
+  }
+
+  if (oldViewProps.sideAccessoryIcon != newViewProps.sideAccessoryIcon) {
+    const auto &source = newViewProps.sideAccessoryIcon;
+    NSDictionary *iconDict = source.uri.empty() ? nil : @{
+      @"uri": [NSString stringWithUTF8String:source.uri.c_str()],
+      @"width": @(source.size.width),
+      @"height": @(source.size.height),
+      @"scale": @(source.scale),
+    };
+    [_containerView setValue:iconDict forKey:@"sideAccessoryIcon"];
+  }
+
+  if (oldViewProps.sideAccessoryLabel != newViewProps.sideAccessoryLabel) {
+    [_containerView setValue:NSStringFromStdStringNilIfEmpty(newViewProps.sideAccessoryLabel) forKey:@"sideAccessoryLabel"];
   }
 
 #undef SET_PROP

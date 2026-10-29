@@ -26,6 +26,39 @@ export interface DualScreenInfoRect {
   height: number;
 }
 
+/**
+ * Extra room, in points beyond the safe area, that content near the window
+ * corners must leave for system window controls (the iPadOS window controls in
+ * the top-leading corner, for example). All zero when no controls are shown.
+ */
+export interface WindowControlsInsets {
+  top: number;
+  left: number;
+  bottom: number;
+  right: number;
+}
+
+/** App commands in the iPadOS menu bar that JS performs. */
+export type MainMenuCommand = 'about' | 'preferences' | 'lockNow';
+
+export interface MainMenuLink {
+  title: string;
+  url: string;
+}
+
+/**
+ * Localized content of the custom main menu (the iPadOS menu bar). Help links
+ * open in the system browser natively; the other items notify JS. An empty
+ * `aboutTitle` removes the About item and empty `helpLinks` remove the Help
+ * menu.
+ */
+export interface MainMenuConfig {
+  aboutTitle: string;
+  preferencesTitle: string;
+  lockNowTitle: string;
+  helpLinks: MainMenuLink[];
+}
+
 export interface LaunchOptions {
   launchType: string;
   deepLink?: string;
@@ -67,6 +100,27 @@ export interface ReactNativeDeviceUtils
   addSpanningChangedListener(callback: (isSpanning: boolean) => void): number;
   removeSpanningChangedListener(id: number): void;
   setUserInterfaceStyle(style: UserInterfaceStyle): void;
+  /**
+   * Window-controls insets of the app's main window, for content that adapts
+   * horizontally (a header row beside the controls). iOS 26+ reads UIKit's
+   * safe area with horizontal corner adaptation; Android and older iOS return
+   * all zeros. Listeners fire on the main thread when the value changes.
+   */
+  getWindowControlsInsets(): WindowControlsInsets;
+  addWindowControlsInsetsChangedListener(
+    callback: (insets: WindowControlsInsets) => void
+  ): number;
+  removeWindowControlsInsetsChangedListener(id: number): void;
+  /**
+   * Replaces the custom main menu content and rebuilds the menu bar. The menu
+   * only shows on iPadOS (and in windows with a menu bar); Android ignores it.
+   */
+  setMainMenuConfig(config: MainMenuConfig): void;
+  /** Listeners fire on the main thread when the user picks an app command. */
+  addMainMenuCommandListener(
+    callback: (command: MainMenuCommand) => void
+  ): number;
+  removeMainMenuCommandListener(id: number): void;
 
   // LaunchOptionsManager
   getLaunchOptions(): Promise<LaunchOptions>;

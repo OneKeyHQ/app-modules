@@ -323,6 +323,115 @@ retain their configured surface color on Mac Catalyst and MUST NOT call
 which are unavailable there. iOS 26.1 and later retain their existing color
 effect. Presentation, sizing, motion, and lifecycle contracts are unchanged.
 
+### Sheet content width
+
+Implemented; unit-tested and iOS native build verified. The reported-width
+path is not yet runtime-verified on a wide window (the app's Dialog and
+ActionList no longer present sheets there). Android and Web unchanged.
+UIKit sizes a global sheet itself and
+gives it less than the window width on wide windows (centered, about 650 pt
+in iPhone compact-height landscape), and `preferredContentSize` with
+`widthFollowsPreferredContentSizeWhenEdgeAttached` was measured not to
+control that width or its position reliably. So the overlay never forces a
+sheet width; the content follows the sheet instead:
+
+- iOS emits `onSheetLayout { width }` whenever the sheet's width settles or
+  changes (presentation, rotation, window resize), for both UIKit global
+  sheets and page-scope sheets, including while the sheet is still entering.
+  It is deduplicated to changes of at least 0.5 pt.
+- JS lays the content out at `min(reported width ?? window width, window
+  width)`. Before the first report the content uses the window width, as
+  before; a narrower report re-lays it out and the fitted height follows.
+- `sheet.maxWidth` caps the content width; any remaining sheet width is split
+  evenly as horizontal inset, so the content is centered in a wider sheet.
+- Android never reports; its sheets stay full width and the content fills the
+  window width (or `maxWidth`, centered). Web is unchanged.
+
+### Adaptive presentation by window width
+
+Implemented: `sheet.maxWidth` in this package and one width resolver in the
+App (`useOverlayWidthClass`). iOS runtime verification is in progress. The
+overlay is the single owner of the rule below;
+consumers (the App's Dialog, Popover, ActionList, Select and sheets) must
+resolve their presentation through it instead of platform checks
+(`isNativeIOSPad`, device type, Tamagui media clamped to the phone's short
+side). The rule depends only on the current window width W, in points on
+iOS, dp on Android and CSS px on Web, and is the same on every platform.
+
+Width classes reuse the App's existing breakpoints:
+
+| Class | Window width | Examples |
+|---|---|---|
+| compact | W < 640 | phones in portrait, iPhone Duo outer display in portrait (466), iPad Slide Over and narrow split windows, narrow browser windows |
+| medium | 640 <= W < 768 | iPhone Duo inner display in portrait (669), iPhone Duo outer display in landscape (678), unfolded Android foldables in portrait |
+| expanded | W >= 768 | iPhone Duo inner display in landscape (951), iPad full screen and large windows (834 and up), desktop, wide browser windows |
+
+Presentation per overlay kind:
+
+| Kind | compact | medium | expanded |
+|---|---|---|---|
+| Dialog (alerts, confirmations, short forms) | full-width sheet | max-width sheet | centered card, 400 wide, outline and no drop shadow |
+| Anchorable menu: Select, ActionList or Popover with a trigger, or with a window rect (`ActionList.show`) | full-width sheet | max-width sheet | anchored panel next to the trigger or rect |
+| Menu without an anchor (`ActionList.show` without a rect) | full-width sheet | max-width sheet | max-width sheet |
+| Other sheets (pickers, long content, forms) | full-width sheet | max-width sheet | max-width sheet |
+
+Max-width sheet (`sheet.maxWidth`, default 540):
+
+- The visible surface is `min(sheet width, maxWidth)` wide, horizontally
+  centered, bottom-attached, with top corners only. JS draws the surface; on
+  iOS the UIKit sheet itself keeps whatever width UIKit gives it but renders
+  transparent (no background color, background effect or shadow), so the
+  surface looks the same however wide UIKit makes the sheet.
+- Without `sheet.backgroundColor`, both the drawn content surface and its
+  bottom safe-area tail keep the native default: iOS `systemBackground` or
+  Android's theme `colorBackground`. Explicit colors, including transparent,
+  take precedence. The platform sheet remains transparent beside the surface.
+- The side margins behave as backdrop for taps: a tap there follows
+  `dismissOnBackdropPress`, and the margins are hidden from accessibility.
+  Known divergence: on iOS and Android the platform sheet owns the drag, so a
+  pan that starts on a margin still moves the sheet. On Web the margins are
+  the real backdrop.
+- Setting `maxWidth` always switches to the drawn surface, even while it
+  spans the whole sheet, so a width change never swaps which side paints the
+  background.
+- In compact windows the sheet is never wider than `maxWidth`, so the
+  max-width sheet and the full-width sheet are identical there.
+
+Width changes while open (rotation, folding, window resize):
+
+| Change | Anchored panel | Sheet | Centered card |
+|---|---|---|---|
+| Within one class | repositions to its anchor | surface width follows | stays centered |
+| Across classes | closes | surface width follows | switches presentation in place, keeping content and input |
+
+Open questions: whether the anchored panel should reopen as a sheet instead
+of closing when the class drops below expanded.
+
+### Window offset for modal-relative anchors
+
+Implemented; iOS runtime-verified on an iPhone Duo inner display. Under
+Fabric, `measureInWindow` / `measure` inside a react-native-screens native
+modal return coordinates relative to that modal, not the screen (measured
+offset of 150, 8 pt for the account selector page sheet in landscape), and no
+JS API exposes the modal's position. Anchored overlays draw in screen
+coordinates, so callers that anchor to a JS-measured rect ask the overlay for
+the correction:
+
+- `windowOffsetRequest` (a counter) and `onWindowOffset({ x, y })`. Each new
+  non-zero value makes iOS report the host's on-screen origin once, after the
+  commit settles; JS measures a plain sibling probe at the same spot and
+  reports `native - measured`. It is `{0, 0}` outside modals. A request that
+  arrives before window attachment or event-emitter setup stays pending and
+  retries after those dependencies attach. It is consumed only after emitting;
+  zero cancels a pending request, and a newer value supersedes it.
+- The host's own shadow node reports the content origin, so the probe is a
+  separate view.
+- The overlay must be mounted to report, so callers keep it mounted
+  (hidden) while waiting. Android never reports; callers treat a missing
+  report as no offset only where the platform cannot report.
+- Rects already in screen space (for example from native lists) need no
+  correction.
+
 ### Web keyboard focus containment
 
 The topmost active, unsuspended blocking Web entry MUST contain sequential
@@ -529,6 +638,9 @@ P2 sheet notes:
   the next dismissal follows the normal exit path and restores focus.
   Cancelling a tracked pointer resets its drag offset, transition and backdrop
   without dismissing the sheet or swallowing a later click.
+- Sheet content width follows the native `onSheetLayout` report and
+  `sheet.maxWidth` (see Sheet content width); `resolveSheetWidth` is unit
+  tested in `__tests__/sheetWidth.test.ts`.
 - A fitted sheet measures its content with `onLayout` before presenting.
   Hidden content stays mounted inside the zero-width host (clipped on iOS,
   INVISIBLE on Android), and the host height stays auto: a fixed 0 height

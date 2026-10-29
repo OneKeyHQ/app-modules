@@ -232,6 +232,10 @@ final class NativeOverlayEntryView: UIView {
   /// Window origin (points) of the view the content lives in; the shadow
   /// node offsets `measure` / `measureInWindow` by it.
   @objc public var onContentOffsetChanged: ((CGPoint) -> Void)?
+  /// Sheet presentation: the width UIKit (or the page host) gave the sheet,
+  /// so JS lays the content out at it instead of the window width.
+  @objc public var onSheetLayout: ((CGFloat) -> Void)?
+  private var reportedSheetWidth: CGFloat?
   private var reportedContentOffset: CGPoint?
 
   private enum Phase {
@@ -500,7 +504,18 @@ final class NativeOverlayEntryView: UIView {
   /// level window, sheet, page host, or this host while staged). Only at
   /// rest: the enter / exit transforms would skew it, while UIKit's own
   /// sheet container transform must be included.
+  private func reportSheetWidth() {
+    guard isSheet, let container = contentChild?.superview else { return }
+    let width = container.bounds.width
+    guard width > 0 else { return }
+    if let reported = reportedSheetWidth, abs(reported - width) < 0.5 { return }
+    reportedSheetWidth = width
+    onSheetLayout?(width)
+  }
+
   func reportContentOffset() {
+    // The sheet's width settles while it is still entering.
+    reportSheetWidth()
     guard phase == .shown || phase == .hidden,
           let container = contentChild?.superview,
           let containerWindow = container.window

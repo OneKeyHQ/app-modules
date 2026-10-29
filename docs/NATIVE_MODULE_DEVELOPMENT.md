@@ -145,6 +145,32 @@ a reason; it MUST NOT be silently omitted when the concern exists.
 - Generated files MUST follow the repository's tracked/generated-file policy;
   do not hand-edit generated bindings.
 
+## 6.1 Debugging inside a consumer's node_modules
+
+Editing `node_modules/@onekeyfe/<package>` in a consumer app (OneKey
+app-monorepo) is allowed for debugging, but this repository stays the source
+of truth. After every such edit:
+
+1. Sync it into an app-modules worktree for the change (one branch per
+   change; never edit `main`):
+
+   ```bash
+   node scripts/sync-from-node-modules.mjs --from <consumer-root> <package-name> --dry-run
+   node scripts/sync-from-node-modules.mjs --from <consumer-root> <package-name>
+   ```
+
+   The script compares each published source file with the installed
+   version's pristine tarball in `<consumer-root>/.yarn/cache`, so only files
+   actually edited in `node_modules` are copied and an older install never
+   rolls this repository back. `lib` (build output), `docs` and native build
+   folders are skipped and nothing is deleted. A file changed in both places
+   is reported as a conflict (exit code 2) and left alone unless `--force`.
+2. Update the package's `docs/SPEC.md` in the same worktree, as section 4
+   requires; specs are written here, never in `node_modules`.
+3. When the change is built here first instead, copy the build into the
+   consumer's `node_modules` after `bob build`; the sync above then reports
+   nothing to copy.
+
 ## 7. Required post-change audit
 
 After any native package change, the author or agent MUST perform this audit:

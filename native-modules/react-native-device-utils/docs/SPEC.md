@@ -178,3 +178,266 @@ size.
 - Acceptance is rendered-pixel inspection in the OneKey app with
   `edgeToEdgeEnabled`; see Status for the covered cases. Android 15+ without a
   navigation bar could not be produced on stock emulators.
+
+# DeviceUtils: iOS dual-screen detection
+
+## Status and scope
+
+This section covers the iOS implementation of the existing dual-screen API:
+`isDualScreenDevice()`, `isSpanning()`, `addSpanningChangedListener()`, and
+`removeSpanningChangedListener()`. It targets foldable iPhones (iPhone Duo).
+The TypeScript contract is unchanged; before this change iOS returned `false`
+and `0` and ignored listeners. The behavior below is Implemented.
+
+Runtime verified on the iPhone Duo simulator (iOS 27.1, app built with
+Xcode 27.1): `isDualScreenDevice()` returns `true` synchronously at launch via
+the model identifier, on both the outer and the inner display. Unverified: the
+hinge path (status values, spanning callbacks, detection of an unlisted model),
+behavior on hardware, and builds with an iOS 27.0 SDK.
+
+`getWindowRects()` and `getHingeBounds()` keep their existing iOS results (an
+empty array and a zero rect). Detecting the fold region is a non-goal here.
+
+## Definitions and ownership
+
+- **Dual-screen device:** hardware with a hinge between displays.
+- **Spanning (iOS):** the hinge is partially or fully open, so the app runs on
+  the inner display. This differs from Android, where spanning means a window
+  across both screens of a dual-screen device.
+
+One process-wide native detector owns the result, the hinge observer, and the
+listener table. The main and background JS runtimes share it through their
+DeviceUtils HybridObjects; listener IDs are unique per process.
+
+## Detection and persistence
+
+1. At first use, the model identifier is matched against known foldable
+   iPhones (`iPhone19,4`). The simulator reads `SIMULATOR_MODEL_IDENTIFIER`;
+   devices read `utsname.machine`.
+2. On iOS 27.1+ in builds with the iOS 27.1 SDK (Swift 6.4), a
+   `UIHingeInteraction` is attached to the key window on the main thread. If no
+   key window exists yet, it waits for `UIWindow.didBecomeKeyNotification`. A
+   non-nil hinge marks the device as dual-screen. A nil hinge clears spanning
+   without clearing the detected device identity.
+3. A positive result stores the current model identifier as a string in
+   `UserDefaults` key `1k_is_dual_screen_device`. Later launches accept the
+   cached positive only when that identifier equals the current device model.
+   A legacy Boolean or a different model identifier is ignored, so restoring
+   preferences onto a regular iPhone cannot carry over foldable detection.
+   Known foldable models rewrite legacy/mismatched entries immediately; an
+   unlisted model must be confirmed by its hinge before writing a new entry.
+
+Builds without the iOS 27.1 SDK compile only steps 1 and 3. An iOS 27.0 SDK
+toolchain that also reports Swift 6.4 is not supported by this guard.
+
+## Lifecycle and callbacks
+
+`isDualScreenDevice()` and `isSpanning()` are synchronous and lock-protected.
+`isSpanning()` is `false` until the first hinge update. Listeners fire on the
+main thread when spanning changes, and once with the current spanning value
+when the hinge first confirms a device that steps 1 and 3 did not. Callers
+must re-read `isDualScreenDevice()` in the callback instead of assuming
+spanning implies detection. Removing an unknown ID is a no-op. Key-window
+notifications are observed for the process lifetime. The hinge interaction
+moves to each new key window and detaches when its window resigns key status.
+Losing observation or switching windows resets spanning to `false` until the
+new window supplies a hinge update; listeners notify only if that changes the
+stored value. Callbacks from a previous interaction are ignored.
+
+## Platform contract
+
+| Concern | iOS | Android |
+| --- | --- | --- |
+| Device detection | Model identifier, then `UIHingeInteraction` | `ReactNativeDeviceUtils.kt` (existing) |
+| Spanning meaning | Hinge partially or fully open | Window spans both screens |
+| Persistence | `UserDefaults`, positive results only | None |
+| Window rects / hinge bounds | Empty / zero (unchanged) | Implemented (existing) |
+
+## Conformance and acceptance
+
+- iOS: `ios/DualScreenDetector.swift`, forwarded by
+  `ios/ReactNativeDeviceUtils.swift`.
+- No automated native test covers this API; the standalone Swift runner cannot
+  link UIKit. Remaining acceptance: a hinge-only detection with the model list
+  emptied, spanning callbacks on fold and unfold, the cached result on the next
+  launch, and a regular iPhone returning `false`.
+
+# DeviceUtils: window controls insets
+
+## Status and scope
+
+This section covers `getWindowControlsInsets()`,
+`addWindowControlsInsetsChangedListener()`, and
+`removeWindowControlsInsetsChangedListener()`. They tell JS how much room the
+system window controls take in the app's main window, so a custom header row
+can keep its content beside them. The behavior below is Implemented.
+
+Runtime verified on an iPad Pro 11-inch (M5) simulator (iOS 27.0, app built
+with Xcode 27.1) in a resizable window at 375 x 486 pt and 743 x 1146 pt: the
+tracking view is installed, and the consumer header clears the window controls
+after resizes. Unverified: listener timing during rapid resizes, iOS 26,
+Stage Manager on external displays, multiple windows of one app, iPhone (zero
+expected), and builds with an iOS 18 SDK.
+
+Non-goals: positioning content for the controls (consumers own layout), the
+vertical corner adaptation, and Android desktop windowing.
+
+## Definitions and ownership
+
+- **Window controls:** system controls drawn inside the app window, such as
+  the iPadOS close, minimize, and tile buttons in the top-leading corner of a
+  resizable window.
+- **Window controls insets:** per edge, UIKit's safe area with horizontal
+  corner adaptation minus the plain safe area, clamped at zero. The value is
+  in points and excludes the plain safe area, which callers already apply.
+
+One process-wide native observer owns the value, the tracking view, and the
+listener table. The main and background JS runtimes share it through their
+DeviceUtils HybridObjects; listener IDs are unique per process.
+
+## Public API and defaults
+
+```ts
+interface WindowControlsInsets { top: number; left: number; bottom: number; right: number }
+
+getWindowControlsInsets(): WindowControlsInsets;
+addWindowControlsInsetsChangedListener(callback: (insets: WindowControlsInsets) => void): number;
+removeWindowControlsInsetsChangedListener(id: number): void;
+```
+
+- All edges are zero until the observer measures the window, when no controls
+  are shown, on iOS before 26, and on Android.
+- The getter is synchronous and returns the last measured value.
+- Removing an unknown ID is a no-op.
+
+## Lifecycle and callbacks
+
+1. The first call to any of the three methods creates the observer. It installs
+   on the main thread and observes `UIWindow.didBecomeKeyNotification` for
+   the process lifetime, including when no key window exists yet.
+2. It inserts an invisible, non-interactive view spanning the key window,
+   behind the root view controller's view. That view recomputes the insets on
+   every `layoutSubviews` and `safeAreaInsetsDidChange`, which covers window
+   resizes and entering or leaving full screen. When another window becomes
+   key, the previous tracking view is removed and tracking attaches to that
+   window before recomputing the insets. Callbacks from a detached tracking
+   view are ignored.
+3. Listeners fire on the main thread, once per changed value, after the stored
+   value is updated. Equal values do not notify.
+
+The observer, the tracking view, and the listeners live for the process.
+Callers must read the getter after subscribing, because the first measurement
+can land before a listener is added.
+
+## Platform contract
+
+| Concern | iOS 26+ | iOS < 26 | Android |
+| --- | --- | --- | --- |
+| Source | `UIView.edgeInsets(for: .safeArea(cornerAdaptation: .horizontal))` minus `safeAreaInsets` | None | None |
+| Value | Measured | All zero | All zero |
+| Listeners | Fire on change | Never fire | Accepted, never fire |
+
+The UIKit API requires the iOS 26 SDK (Swift 6.2); older toolchains compile the
+all-zero path.
+
+## Performance and resource budget
+
+The work per layout pass is two inset reads and a comparison on the main
+thread. Retained state is one view, one value, and the listener table.
+
+## Conformance and acceptance
+
+- iOS: `ios/WindowControlsInsetsObserver.swift`, forwarded by
+  `ios/ReactNativeDeviceUtils.swift`.
+- Android: `ReactNativeDeviceUtils.kt` (`getWindowControlsInsets`).
+- Measured in the simulator: a 375 x 486 pt window has safe area
+  `{10, 0, 10, 0}` and horizontally adapted `{10, 66, 10, 9.5}`; a 743 x 1146 pt
+  window has `{32, 0, 10, 0}` and `{32, 66, 10, 9.5}`. Both give insets of
+  `{0, 66, 0, 9.5}`.
+- No automated native test covers this API; the standalone Swift runner cannot
+  host a UIKit window. Remaining acceptance: values after rapid window resizes,
+  iOS 26, and an iPhone returning zero.
+
+# DeviceUtils: main menu
+
+## Status and scope
+
+This section covers `setMainMenuConfig()`, `addMainMenuCommandListener()`, and
+`removeMainMenuCommandListener()`, which let JS give the iPadOS menu bar
+localized app commands and Help links. The behavior below is Implemented;
+runtime status is in Conformance.
+
+Non-goals: Edit, View, and Window commands (the system owns them), menus of
+secondary windows, and context menus.
+
+## Definitions and ownership
+
+- **Main menu:** the `UIMenuSystem.main` menu, shown as the iPadOS menu bar
+  when the app runs in a window with one.
+- **App command:** an item JS performs: `about`, `preferences`, or `lockNow`.
+
+One process-wide controller owns the last config and the listener table. The
+host app's delegate MUST forward `buildMenu(with:)` to
+`MainMenuController.buildMenu(withBuilder:)` (Objective-C selector
+`buildMenuWithBuilder:`); app targets that cannot import Nitro modules reach
+it through `NSClassFromString("ReactNativeDeviceUtils.MainMenuController")`.
+
+## Public API and defaults
+
+```ts
+type MainMenuCommand = 'about' | 'preferences' | 'lockNow';
+interface MainMenuLink { title: string; url: string }
+interface MainMenuConfig {
+  aboutTitle: string; preferencesTitle: string; lockNowTitle: string;
+  helpLinks: MainMenuLink[];
+}
+
+setMainMenuConfig(config: MainMenuConfig): void;
+addMainMenuCommandListener(callback: (command: MainMenuCommand) => void): number;
+removeMainMenuCommandListener(id: number): void;
+```
+
+The built main menu:
+
+| Menu | Content |
+| --- | --- |
+| App | About (`aboutTitle`; removed when empty), then Preferences (`preferencesTitle`, Command-Comma) and Lock Now (`lockNowTitle`, Command-Shift-L). Preferences replaces the system item that opens the app's page in the Settings app. System Hide items stay. |
+| File, Format | Removed. |
+| Edit, View, Window | System content, unchanged. |
+| Help | One item per help link, in order; each opens its URL with `UIApplication.open`. Removed when `helpLinks` is empty. |
+
+- Before the first config, File and Format are removed and the app and Help
+  menus keep their system content.
+- A later config replaces the previous one and rebuilds the menu.
+- A help link whose URL does not parse is dropped and logged; an empty link
+  list keeps the system Help menu.
+- Removing an unknown listener ID is a no-op.
+
+## Lifecycle and callbacks
+
+`setMainMenuConfig` stores the config under a lock and asks
+`UIMenuSystem.main` to rebuild on the main thread. App commands are
+`UICommand`/`UIKeyCommand`s whose action, `onekeyPerformMainMenuCommand:`, is
+added to `UIApplication` (always in the responder chain); it notifies every
+listener on the main thread with the command. Commands picked while no
+listener is registered are dropped.
+
+## Platform contract
+
+| Concern | iOS | Android |
+| --- | --- | --- |
+| Menu | `UIMenuBuilder` in `buildMenu(with:)` | None |
+| `setMainMenuConfig` | Stores and rebuilds | Ignored |
+| Listeners | Fire on app commands | Accepted, never fire |
+
+The menu bar is visible only where iPadOS shows one (resizable windows); the
+config is harmless elsewhere.
+
+## Conformance and acceptance
+
+- iOS: `ios/MainMenuController.swift`, forwarded by
+  `ios/ReactNativeDeviceUtils.swift`; the host app forwards `buildMenu(with:)`.
+- Android: `ReactNativeDeviceUtils.kt` (`setMainMenuConfig`).
+- No automated native test covers this API. Runtime acceptance: see the
+  consumer verification; remaining: localization switches at runtime,
+  keyboard shortcuts with a hardware keyboard, and iOS 26.
