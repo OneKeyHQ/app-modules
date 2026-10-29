@@ -917,6 +917,19 @@ fallback debounce, including replacement-state restoration. Other collection
 fallbacks keep that safety delay. Caller insets and retained logical offsets
 remain governed by the existing restoration policy.
 
+A verified, mounted NativeList with usable vertical bounds is a scroll-owner
+boundary. Its React container slots may contain independent Fabric scroll views,
+NativeScroller views or nested pagers; those descendants MUST NOT replace that
+NativeList as the enclosing page's owner or receive its shared header. Candidate
+priority between sibling page owners remains unchanged, including an explicit
+NativeScroller sibling. Pages without an enclosing NativeList retain nested-pager
+active-owner delegation. This boundary does not change scroll offsets, insets,
+shared-header collapse or per-page body memory.
+
+Status: implemented and verified by production-native UIKit regressions on
+iOS 27.1 for footer insertion, explicit-sibling priority and nested-pager
+delegation. Full App and physical-device visual acceptance are reported separately.
+
 When the active scroll owner is removed before its replacement becomes usable,
 the pager MUST retain bounded recovery (at most 12 retries per recovery round,
 spaced 100 ms apart). Clearing the completed mount's reattachment flag MUST NOT

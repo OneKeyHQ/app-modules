@@ -19,6 +19,7 @@ Pod::Spec.new do |s|
 
   s.test_spec "Tests" do |test_spec|
     test_spec.source_files = "ios/tests/**/*.{m,mm}"
+    test_spec.dependency "react-native-native-list"
   end
 
   install_modules_dependencies(s)

@@ -3691,6 +3691,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
           resolution.tier = isMountedNativeList
             ? RNCScrollCandidateTierVerifiedNativeList
             : RNCScrollCandidateTierGenericFallback;
+          // React slots inside a verified list may own independent scroll views.
+          if (isMountedNativeList) return resolution;
         }
       }
     }

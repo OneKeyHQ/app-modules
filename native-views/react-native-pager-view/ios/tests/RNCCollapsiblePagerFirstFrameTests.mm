@@ -1,6 +1,7 @@
 #import <XCTest/XCTest.h>
 #import "RNCCollapsiblePagerViewComponentView.h"
 #import "RNCNativeScrollerComponentView.h"
+#import <React/RCTScrollViewComponentView.h>
 #import <react/renderer/components/pagerview/Props.h>
 #import <react/renderer/mounting/MountingTransaction.h>
 
@@ -13,6 +14,7 @@ using namespace facebook::react;
                withSurfaceTelemetry:(const SurfaceTelemetry &)telemetry;
 - (UIScrollView *)findExplicitNativeScrollerInView:(UIView *)view;
 - (UIScrollView *)findVerticalScrollViewInView:(UIView *)view;
+- (UIScrollView *)verticalScrollViewForPageAtIndex:(NSInteger)pageIndex;
 - (void)attachScrollObserverForCurrentPage;
 - (void)attachScrollObserverForCurrentPageAfterTransition:(BOOL)selectionSettled;
 - (void)detachScrollObserver;
@@ -787,6 +789,87 @@ using namespace facebook::react;
   XCTAssertEqual(sharedHeader.superview, lateScroller.scrollView);
   XCTAssertEqualWithAccuracy(lateScroller.scrollView.contentInset.top, 164, 0.01);
   XCTAssertNil([pager valueForKey:@"releasedPageScrollStates"][@"page-0"]);
+}
+
+- (RCTViewComponentView *)addNativeListToPager:(RNCCollapsiblePagerViewComponentView *)pager
+{
+  Class nativeListClass = NSClassFromString(@"HybridNativeListComponent");
+  XCTAssertNotNil(nativeListClass, @"The real NativeList test dependency must be linked");
+  RCTViewComponentView *component = [[nativeListClass alloc] init];
+  component.tag = 92001;
+  component.frame = CGRectMake(0, 0, 320, 600);
+  component.contentView.frame = component.bounds;
+  UIViewController *page = [pager valueForKey:@"pageControllers"][0];
+  [page.view addSubview:component];
+  [component.contentView layoutIfNeeded];
+  return component;
+}
+
+- (void)testNativeListFooterScrollViewCannotReplacePageOwner
+{
+  RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:1];
+  RCTViewComponentView *component = [self addNativeListToPager:pager];
+  UICollectionView *list = nil;
+  for (UIView *child in component.contentView.subviews) {
+    if ([child isKindOfClass:UICollectionView.class]) {
+      list = (UICollectionView *)child;
+      break;
+    }
+  }
+  XCTAssertTrue([list isKindOfClass:UICollectionView.class]);
+  XCTAssertGreaterThan(CGRectGetWidth(list.bounds), 0);
+  XCTAssertGreaterThan(CGRectGetHeight(list.bounds), 0);
+  XCTAssertEqual(list.delegate, (id)component.contentView);
+  XCTAssertTrue([list isDescendantOfView:component.contentView]);
+  [pager attachScrollObserverForCurrentPage];
+  UIView *header = [pager valueForKey:@"sharedHeaderHostView"];
+  XCTAssertNotNil(header);
+  XCTAssertEqual([pager valueForKey:@"observedScrollView"], list);
+  XCTAssertEqual(header.superview, list);
+  CGFloat inset = list.contentInset.top;
+  CGFloat offset = list.contentOffset.y;
+
+  RCTScrollViewComponentView *footerList = [RCTScrollViewComponentView new];
+  footerList.tag = 92002;
+  footerList.frame = CGRectMake(0, 0, 320, 400);
+  footerList.scrollView.frame = footerList.bounds;
+  footerList.scrollView.contentSize = CGSizeMake(320, 1000);
+  footerList.scrollView.alwaysBounceHorizontal = NO;
+  for (NSInteger index = 0; index < 6; index++) {
+    UIView *slot = index == 2 ? footerList : [UIView new];
+    [component mountChildComponentView:(id)slot index:index];
+  }
+  XCTAssertTrue([footerList isDescendantOfView:list]);
+  XCTAssertEqual([pager verticalScrollViewForPageAtIndex:0], list);
+  ShadowView inserted;
+  inserted.tag = (Tag)footerList.tag;
+  MountingTransaction transaction(1, 2,
+    {ShadowViewMutation::InsertMutation((Tag)component.tag, inserted, 2)}, {});
+  SurfaceTelemetry telemetry;
+  [pager mountingTransactionDidMount:transaction withSurfaceTelemetry:telemetry];
+  XCTAssertEqual([pager valueForKey:@"observedScrollView"], list);
+  XCTAssertEqual(header.superview, list);
+  XCTAssertEqualWithAccuracy(list.contentInset.top, inset, 0.01);
+  XCTAssertEqualWithAccuracy(list.contentOffset.y, offset, 0.01);
+  XCTAssertEqualWithAccuracy(footerList.scrollView.contentInset.top, 0, 0.01);
+}
+
+- (void)testExplicitScrollerSiblingStillPrecedesNativeList
+{
+  RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:1];
+  [self addNativeListToPager:pager];
+  RNCNativeScrollerComponentView *scroller = [self addScrollerToPager:pager atIndex:0];
+  XCTAssertEqual([pager verticalScrollViewForPageAtIndex:0], scroller.scrollView);
+}
+
+- (void)testPageWithoutNativeListStillDelegatesToNestedPager
+{
+  RNCCollapsiblePagerViewComponentView *outer = [self pagerWithPageCount:1];
+  RNCCollapsiblePagerViewComponentView *inner = [self pagerWithPageCount:1];
+  RNCNativeScrollerComponentView *scroller = [self addScrollerToPager:inner atIndex:0];
+  UIViewController *page = [outer valueForKey:@"pageControllers"][0];
+  [page.view addSubview:inner];
+  XCTAssertEqual([outer verticalScrollViewForPageAtIndex:0], scroller.scrollView);
 }
 
 @end
