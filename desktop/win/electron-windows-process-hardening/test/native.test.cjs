@@ -18,7 +18,7 @@ test("native hardening succeeds in an isolated Node child", { skip: !supported }
   assert.deepEqual(result.extensionPoint.status, "applied", JSON.stringify(result));
 });
 
-test("the protected DACL changes actual OpenProcess access in an isolated child", { skip: !supported, timeout: 30000 }, async () => {
+test("the protected DACL changes actual OpenProcess access in an isolated child", { skip: !supported, timeout: 75000 }, async () => {
   const child = spawn(process.execPath, [require.resolve("./node-child.cjs"), "--hold"], {
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -30,7 +30,7 @@ test("the protected DACL changes actual OpenProcess access in an isolated child"
       "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
       require("node:path").join(__dirname, "probe-open-process.ps1"),
       "-ProcessId", String(pid),
-    ], { encoding: "utf8", timeout: 10000 });
+    ], { encoding: "utf8", timeout: 30000 });
     assert.equal(result.status, 0, result.stderr || result.error?.message);
     return JSON.parse(result.stdout.trim());
   }

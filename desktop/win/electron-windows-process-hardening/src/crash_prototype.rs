@@ -11,7 +11,10 @@ use std::{
     },
     path::{Path, PathBuf},
     ptr,
-    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
+    sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Arc,
+    },
     time::Instant,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -27,10 +30,10 @@ use windows::{
                 ConvertStringSecurityDescriptorToSecurityDescriptorW, GetSecurityInfo,
                 SetSecurityInfo, SDDL_REVISION_1, SE_KERNEL_OBJECT,
             },
-            GetSecurityDescriptorControl, GetSecurityDescriptorDacl, GetTokenInformation,
-            SetTokenInformation, TokenDefaultDacl, TokenStatistics, ACL, DACL_SECURITY_INFORMATION,
-            PROTECTED_DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, SE_DACL_PROTECTED,
-            TOKEN_ACCESS_MASK, TOKEN_DEFAULT_DACL, TOKEN_STATISTICS,
+            GetSecurityDescriptorControl, GetSecurityDescriptorDacl, GetSecurityDescriptorLength,
+            GetTokenInformation, SetTokenInformation, TokenDefaultDacl, TokenStatistics, ACL,
+            DACL_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR,
+            SE_DACL_PROTECTED, TOKEN_ACCESS_MASK, TOKEN_DEFAULT_DACL, TOKEN_STATISTICS,
         },
         System::{
             Diagnostics::Debug::{SetUnhandledExceptionFilter, EXCEPTION_POINTERS},
@@ -314,7 +317,12 @@ unsafe fn terminate_crashed_process(code: u32) -> ! {
 
 // This is an actual unhandled-exception filter. It does not observe FailFast or hangs.
 unsafe extern "system" fn unhandled_exception(info: *const EXCEPTION_POINTERS) -> i32 {
-    if info.is_null() || CRASH_SENT.swap(true, Ordering::AcqRel) {
+    if info.is_null() {
+        terminate_crashed_process(1);
+    }
+    if CRASH_SENT.swap(true, Ordering::AcqRel) {
+        // Let the first fault finish capture/ACK within its existing budget.
+        Sleep(30_000);
         terminate_crashed_process(1);
     }
     let write = CLIENT_WRITE.load(Ordering::Acquire);
@@ -531,7 +539,7 @@ fn transfer_startup(
     file: &File,
     bytes: Box<[u8]>,
     write: bool,
-    event: *mut c_void,
+    event: &Arc<File>,
     deadline: u64,
 ) -> Result<Box<[u8]>, &'static str> {
     let mut bytes = bytes;
@@ -540,13 +548,13 @@ fn transfer_startup(
         internal_high: 0,
         offset: 0,
         offset_high: 0,
-        event,
+        event: raw(event),
     });
     unsafe {
         if windows::Win32::System::SystemInformation::GetTickCount64() >= deadline {
             return Err("handler_io_timeout");
         }
-        if ResetEvent(event) == 0 {
+        if ResetEvent(raw(event)) == 0 {
             return Err("handler_io_event");
         }
         let started = if write {
@@ -572,12 +580,14 @@ fn transfer_startup(
         if started == 0 {
             let now = windows::Win32::System::SystemInformation::GetTickCount64();
             let remaining = deadline.saturating_sub(now).min(u32::MAX as u64) as u32;
-            if remaining == 0 || WaitForSingleObject(handle(event as usize), remaining).0 != 0 {
+            if remaining == 0 || WaitForSingleObject(handle(raw(event) as usize), remaining).0 != 0
+            {
                 CancelIoEx(raw(file), &mut *op);
                 // Cancellation is asynchronous. Keep the OVERLAPPED and buffer
                 // alive instead of waiting without a deadline on app startup.
                 std::mem::forget(op);
                 std::mem::forget(bytes);
+                std::mem::forget(Arc::clone(event));
                 return Err("handler_io_timeout");
             }
         }
@@ -586,6 +596,7 @@ fn transfer_startup(
             CancelIoEx(raw(file), &mut *op);
             std::mem::forget(op);
             std::mem::forget(bytes);
+            std::mem::forget(Arc::clone(event));
             return Err("handler_io_result");
         }
         if transferred != bytes.len() as u32 {
@@ -729,6 +740,7 @@ pub fn start(
     // remains the profile's ordinary ACL even if helper token defaults change.
     let output = profile.join("local-crash-prototype");
     fs::create_dir(&output).map_err(|_| "output_directory_not_new")?;
+    let output_cleanup = NewOutputDirectory(&output);
 
     // Creation-time process DACL has no QUERY_LIMITED_INFORMATION, so a
     // same-user observer cannot open the new process token during setup.
@@ -750,6 +762,7 @@ pub fn start(
     if io_event_raw.is_null() {
         return Err("handler_io_event_create");
     }
+    let io_event = Arc::new(unsafe { File::from_raw_handle(io_event_raw) });
     // Retained for the callback; on startup cancellation it must also remain
     // alive because the kernel may still signal a pending OVERLAPPED request.
     let stderr = OpenOptions::new()
@@ -927,10 +940,10 @@ pub fn start(
         &parent_stdin,
         init.into_boxed_slice(),
         true,
-        io_event_raw,
+        &io_event,
         init_deadline,
     )?;
-    wait_ack(&parent_stdout, b'H', io_event_raw, init_deadline)?;
+    wait_ack(&parent_stdout, b'H', &io_event, init_deadline)?;
     if unsafe { GetProcessId(handle(raw(&child_process) as usize)) } != information.pid {
         return Err("handler_identity");
     }
@@ -951,10 +964,10 @@ pub fn start(
         &parent_stdin,
         Box::new((duplicate.0 as usize as u64).to_le_bytes()),
         true,
-        io_event_raw,
+        &io_event,
         init_deadline,
     )?;
-    wait_ack(&parent_stdout, b'R', io_event_raw, init_deadline)?;
+    wait_ack(&parent_stdout, b'R', &io_event, init_deadline)?;
     // Make the crash IPC valid before installing either callback. A crash
     // between the two registrations still has a runnable, bounded path.
     CLIENT_WRITE.store(raw(&parent_stdin) as usize, Ordering::Release);
@@ -976,13 +989,15 @@ pub fn start(
     std::mem::forget(parent_stdout);
     std::mem::forget(child_process);
     std::mem::forget(job);
+    std::mem::forget(io_event);
+    std::mem::forget(output_cleanup);
     Ok(information.pid)
 }
 
 fn wait_ack(
     stdout: &File,
     expected: u8,
-    event: *mut c_void,
+    event: &Arc<File>,
     deadline: u64,
 ) -> Result<(), &'static str> {
     let ack = transfer_startup(stdout, Box::new([0u8; 1]), false, event, deadline)?;
@@ -1001,6 +1016,15 @@ impl Drop for LocalSd {
     }
 }
 
+struct NewOutputDirectory<'a>(&'a Path);
+impl Drop for NewOutputDirectory<'_> {
+    fn drop(&mut self) {
+        // Only remove the empty directory created by this startup attempt.
+        // Preserve any diagnostics the helper managed to write before failure.
+        let _ = fs::remove_dir(self.0);
+    }
+}
+
 fn descriptor_acl(sd: &LocalSd) -> Result<(*mut ACL, Vec<u8>), &'static str> {
     let mut present = BOOL(0);
     let mut defaulted = BOOL(0);
@@ -1010,11 +1034,25 @@ fn descriptor_acl(sd: &LocalSd) -> Result<(*mut ACL, Vec<u8>), &'static str> {
     if !present.as_bool() || acl.is_null() {
         return Err("helper_sd_acl_missing");
     }
-    let size = unsafe { (*acl).AclSize as usize };
+    // creation_sd returns an owned self-relative descriptor. Bound the ACL to
+    // that live allocation and read its header through a checked byte slice.
+    let length = unsafe { GetSecurityDescriptorLength(sd.0) } as usize;
+    let offset = (acl as usize)
+        .checked_sub(sd.0 .0 as usize)
+        .ok_or("helper_sd_acl_range")?;
+    let descriptor = unsafe { std::slice::from_raw_parts(sd.0 .0.cast::<u8>(), length) };
+    let header = descriptor
+        .get(offset..)
+        .and_then(|bytes| bytes.get(..std::mem::size_of::<ACL>()))
+        .ok_or("helper_sd_acl_range")?;
+    let size = u16::from_le_bytes([header[2], header[3]]) as usize;
     if !(8..=65535).contains(&size) {
         return Err("helper_sd_acl_size");
     }
-    let bytes = unsafe { std::slice::from_raw_parts(acl.cast::<u8>(), size) }.to_vec();
+    let bytes = descriptor
+        .get(offset..offset + size)
+        .ok_or("helper_sd_acl_range")?
+        .to_vec();
     Ok((acl, bytes))
 }
 
@@ -1979,6 +2017,102 @@ pub fn run_handler() -> Result<(), &'static str> {
 #[cfg(test)]
 mod tests {
     use super::sanitize_dump;
+
+    #[test]
+    fn descriptor_acl_copies_the_owned_acl() {
+        let sd = super::creation_sd("S-1-5-18", 0x0010_0800).unwrap();
+        let (acl, bytes) = super::descriptor_acl(&sd).unwrap();
+        assert!(!acl.is_null());
+        assert_eq!(bytes[0], 2); // ACL_REVISION
+        assert_eq!(
+            bytes.len(),
+            u16::from_le_bytes([bytes[2], bytes[3]]) as usize
+        );
+        assert_eq!(u16::from_le_bytes([bytes[4], bytes[5]]), 3); // deny + two allow ACEs
+        let (_, again) = super::descriptor_acl(&sd).unwrap();
+        assert_eq!(bytes, again);
+    }
+
+    #[test]
+    fn startup_error_releases_the_io_event() {
+        let event_raw = unsafe { super::CreateEventW(std::ptr::null(), 1, 0, std::ptr::null()) };
+        assert!(!event_raw.is_null());
+        let event = super::Arc::new(unsafe {
+            <std::fs::File as std::os::windows::io::FromRawHandle>::from_raw_handle(event_raw)
+        });
+        let retained = event.try_clone().unwrap();
+        let file = std::fs::File::open("NUL").unwrap();
+        assert_eq!(
+            super::transfer_startup(&file, Box::new([0u8]), false, &event, 0),
+            Err("handler_io_timeout")
+        );
+        drop(event);
+        // Other tests can reuse the closed handle value; compare identity with
+        // a retained duplicate rather than assuming that value stays invalid.
+        assert!(unsafe {
+            !super::CompareObjectHandles(
+                super::handle(event_raw as usize),
+                super::handle(super::raw(&retained) as usize),
+            )
+            .as_bool()
+        });
+    }
+
+    #[test]
+    fn secondary_fault_waits_for_active_capture() {
+        use std::io::{BufRead, Write};
+        const CHILD: &str = "ONEKEY_SECONDARY_FAULT_TEST_CHILD";
+        if std::env::var_os(CHILD).is_some() {
+            super::CRASH_SENT.store(true, super::Ordering::Release);
+            println!("secondary-fault-ready");
+            std::io::stdout().flush().unwrap();
+            let info = super::EXCEPTION_POINTERS::default();
+            unsafe { super::unhandled_exception(&info) };
+            unreachable!();
+        }
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "crash_prototype::tests::secondary_fault_waits_for_active_capture",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let ready = std::io::BufReader::new(child.stdout.take().unwrap())
+            .lines()
+            .any(|line| line.unwrap().contains("secondary-fault-ready"));
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        let status = child.try_wait().unwrap();
+        let _ = child.kill();
+        child.wait().unwrap();
+        assert!(ready, "secondary fault child did not reach the callback");
+        assert!(
+            status.is_none(),
+            "secondary fault terminated active capture"
+        );
+    }
+
+    #[test]
+    fn failed_startup_removes_only_its_empty_output_directory() {
+        let root = std::env::temp_dir().join(format!(
+            "onekey-startup-cleanup-{}-{}",
+            std::process::id(),
+            super::PIPE_SEQUENCE.fetch_add(1, super::Ordering::Relaxed)
+        ));
+        std::fs::create_dir(&root).unwrap();
+        drop(super::NewOutputDirectory(&root));
+        assert!(!root.exists());
+        // A retry can recreate the directory; diagnostics prevent its removal.
+        std::fs::create_dir(&root).unwrap();
+        let status = root.join("status.json");
+        std::fs::write(&status, b"diagnostic").unwrap();
+        drop(super::NewOutputDirectory(&root));
+        assert_eq!(std::fs::read(&status).unwrap(), b"diagnostic");
+        std::fs::remove_file(status).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
 
     fn put32(bytes: &mut [u8], offset: usize, value: u32) {
         bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());

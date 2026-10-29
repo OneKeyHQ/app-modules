@@ -8,13 +8,47 @@ Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 public static class ProcessAccessProbe {
+    [StructLayout(LayoutKind.Sequential)]
+    struct Luid { public uint LowPart; public int HighPart; }
+    [StructLayout(LayoutKind.Sequential)]
+    struct TokenPrivileges { public uint Count; public Luid Luid; public uint Attributes; }
+    [DllImport("kernel32.dll")]
+    static extern IntPtr GetCurrentProcess();
+    [DllImport("advapi32.dll", SetLastError = true)]
+    static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    static extern bool LookupPrivilegeValue(string system, string name, out Luid luid);
+    [DllImport("advapi32.dll", SetLastError = true)]
+    static extern bool AdjustTokenPrivileges(IntPtr token, bool disableAll, ref TokenPrivileges state,
+        uint length, IntPtr previous, IntPtr returned);
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern IntPtr OpenProcess(uint access, bool inheritHandle, uint processId);
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool CloseHandle(IntPtr handle);
+    public static void DisableDebugPrivilege() {
+        IntPtr token;
+        if (!OpenProcessToken(GetCurrentProcess(), 0x20, out token))
+            throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        try {
+            Luid luid;
+            if (!LookupPrivilegeValue(null, "SeDebugPrivilege", out luid))
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+            var state = new TokenPrivileges { Count = 1, Luid = luid, Attributes = 0 };
+            if (!AdjustTokenPrivileges(token, false, ref state, 0, IntPtr.Zero, IntPtr.Zero))
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+            int error = Marshal.GetLastWin32Error();
+            // ERROR_NOT_ALL_ASSIGNED means this token never had SeDebugPrivilege.
+            if (error != 0 && error != 1300)
+                throw new System.ComponentModel.Win32Exception(error);
+        } finally { CloseHandle(token); }
+    }
 }
 '@
+
+# The probe is a fresh PowerShell process with no impersonation token. Elevated
+# CI runners must not bypass the target DACL through SeDebugPrivilege.
+[ProcessAccessProbe]::DisableDebugPrivilege()
 
 $masks = [ordered]@{
   QUERY_LIMITED_INFORMATION = 0x00001000
