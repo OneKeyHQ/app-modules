@@ -497,8 +497,8 @@ async fn barrier_after_irreversible(params: serde_json::Value) -> Result<(), cra
 /// stores it unless the node definitively rejected it.
 ///
 /// Returns `{ txid, broadcast: "accepted" | "rejected" | "unknown", error? }`.
-/// - `rejected`: the node definitively judged it consensus-invalid or expired; it can never be
-///   mined. It is not stored and its notes are spendable again at once (if an earlier submit
+/// - `rejected`: the node reported it expired and the local chain has passed its expiry; it can
+///   never be mined. It is not stored and its notes are spendable again at once (if an earlier submit
 ///   stored it, it is marked rejected and its notes return at its expiry height).
 /// - `unknown`: delivery to the node is uncertain. The transaction is stored and stays pending
 ///   until mined or expired; the host does not resubmit it and must not treat it as failed.
@@ -549,7 +549,7 @@ pub fn pending_broadcast_txids(account_uuid: String) -> Result<String, JsValue> 
 /// Resends a stored pending transaction. Irreversible. For an explicit user request only:
 /// sync does not call it, and an unmined send otherwise stays pending until mined or expired.
 ///
-/// Throws `BROADCAST_REJECTED` when the node definitively rejects it (do not retry);
+/// Throws `BROADCAST_REJECTED` when the node reports it expired and the local chain agrees (do not retry);
 /// `BROADCAST_OUTCOME_UNKNOWN` when the node errored without proving it can never be mined;
 /// `NETWORK_ERROR` on transport failure. In the latter two cases the transaction stays pending
 /// until mined or expired.
@@ -559,7 +559,9 @@ pub async fn broadcast_transaction(txid: String) -> Result<(), JsValue> {
         let r = match tx_state::assert_not_rejected(&mut db, &txid)
             .and_then(|_| send::raw_transaction(&db, &txid))
         {
-            Ok(raw) => network::broadcast(&mut client, raw).await,
+            Ok(raw) => network::broadcast(&mut client, raw)
+                .await
+                .map_err(|e| send::confirm_stored_rejection(&db, &txid, e)),
             Err(e) => Err(e),
         };
         let r = match r {
