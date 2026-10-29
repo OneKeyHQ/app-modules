@@ -75,6 +75,8 @@ class RCTBottomTabsContainerView: UIView {
   private var reportedTabBarPlacement: String?
   private var sideAccessoryButton: UIButton?
   private var loadedSideAccessoryIcon: UIImage?
+  // Increments per icon load; a completion applies only to the latest one.
+  private var sideAccessoryIconRequest = 0
   private var isSideAccessoryLayoutScheduled = false
   private static let sideAccessorySize: CGFloat = 48
   private static let sideAccessorySpacing: CGFloat = 12
@@ -336,12 +338,16 @@ class RCTBottomTabsContainerView: UIView {
   }
 
   private func loadSideAccessoryIcon() {
-    let source = sideAccessoryIcon.map { IconSource(dict: $0) }
-    guard let source, let url = URL(string: source.uri) else {
+    sideAccessoryIconRequest += 1
+    let request = sideAccessoryIconRequest
+    // Drop the previous icon so a slower or failed load never leaves it shown
+    // for the new source.
+    if loadedSideAccessoryIcon != nil {
       loadedSideAccessoryIcon = nil
       scheduleSideAccessoryLayout()
-      return
     }
+    let source = sideAccessoryIcon.map { IconSource(dict: $0) }
+    guard let source, let url = URL(string: source.uri) else { return }
     // The image loader arrives with the first state update; setImageLoader
     // calls this again.
     guard let imageLoader else { return }
@@ -356,7 +362,7 @@ class RCTBottomTabsContainerView: UIView {
       completionBlock: { [weak self] error, image in
         guard error == nil, let image else { return }
         DispatchQueue.main.async {
-          guard let self else { return }
+          guard let self, request == self.sideAccessoryIconRequest else { return }
           self.loadedSideAccessoryIcon = image
             .resizeImageTo(size: self.iconSize)?
             .withRenderingMode(.alwaysTemplate)
