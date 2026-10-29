@@ -4,7 +4,7 @@
 
 Status: implemented in module source. Package TypeScript, iOS/Android Fabric
 code generation, iOS Objective-C++ Fabric bridge compilation against RN 0.86.2,
-13 React wrapper checks, ten Android API 36 native tests and four real-Fabric
+13 React wrapper checks, eleven Android API 36 native tests and four real-Fabric
 iOS review cases passed (shared-header/body arbitration and bar-height switches).
 The static Home example also passed a focused TypeScript check.
 Detailed iOS runtime evidence is recorded separately; physical-device and exact
@@ -46,6 +46,9 @@ and after React/Fabric ancestors suppress `requestLayout`. Internal containers
 and both slots MUST be measured and laid out on host layout and slot changes,
 without relying on a later ancestor layout pass. Visible dim input MUST prevent
 native foreground controls from receiving the same touch.
+While closed, that retained dim surface MUST also be excluded from React Native
+touch-target lookup, so JS Pressable taps reach the foreground. Visibility alone
+is insufficient for React Native's native target traversal.
 
 The reported native tab-bar height MUST become zero when hidden and restore the
 current height when shown. The context and drawer exclusion use one effective

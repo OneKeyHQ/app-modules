@@ -39,7 +39,7 @@ test toggles native configuration but does not establish dark-mode visual
 acceptance. API <31 intentionally skips GPU-only cases.
 
 The same opt-in build also includes `com.onekey.bottomtabs.BottomTabsDrawerTest`.
-Run that class with the same instrumentation command for ten focused native
+Run that class with the same instrumentation command for eleven focused native
 drawer tests. They exercise full-size foreground translation, stable child slots,
 one settled event and prop echoes, native gesture start/end cancellation, vertical
 and bottom-bar exclusions, disabled opening swipes, cancelled/newer targets,
@@ -52,6 +52,8 @@ The test RootView is a real ReactViewGroup with its no-op requestLayout and
 records React's native gesture cancellation notifications. Initial native fixture
 bounds simulate Fabric mount transactions; opening does not trigger an ancestor
 layout. Coordinate MotionEvent taps verify dim coverage/close and prevent native
-foreground clicks, and late slot mounts assert immediate native bounds;
+foreground clicks, and late slot mounts assert immediate native bounds. A real
+TouchTargetHelper regression checks closed/open/closed React target tags so the
+retained invisible dim cannot block JS Pressable input;
 consumer-app React Pressable/scroll interaction and physical haptics still need
 device acceptance.

@@ -18,6 +18,7 @@ import androidx.activity.ComponentActivity
 import com.facebook.react.uimanager.RootView
 import com.facebook.react.uimanager.PointerEvents
 import com.facebook.react.uimanager.ReactPointerEventsView
+import com.facebook.react.uimanager.TouchTargetHelper
 import com.facebook.react.views.view.ReactViewGroup
 import com.facebook.react.internal.ChoreographerProvider
 import com.facebook.react.modules.core.ReactChoreographer
@@ -323,6 +324,38 @@ class BottomTabsDrawerTest : InstrumentationTestCase() {
     }
     settle()
     onMain { assertEquals(listOf(false), events) }
+  }
+
+  fun testReactTouchTargetPassesClosedDimAndBlocksTheOpenForeground() {
+    val targetTag = 903
+    val drawerTag = 902
+    onMain {
+      root.id = 901
+      drawer.id = drawerTag
+      main.removeAllViews()
+      main.addView(ReactViewGroup(activity).apply { id = targetTag }, FrameLayout.LayoutParams(-1, -1))
+      layoutFixtureContent()
+      val dim = (drawer.getChildAt(1) as FrameLayout).getChildAt(1)
+      assertEquals(drawer.width, dim.width)
+      assertEquals(View.INVISIBLE, dim.visibility)
+      assertFalse(dim.isEnabled)
+      // RN target lookup intentionally ignores Android visibility. Use its real
+      // traversal with React-tagged views, rather than native performClick.
+      assertEquals(targetTag, TouchTargetHelper.findTargetTagForTouch(drawer.width * .4f, 150f, root))
+      drawer.setDrawerOpen(true)
+    }
+    settle()
+    onMain {
+      val dim = (drawer.getChildAt(1) as FrameLayout).getChildAt(1)
+      assertTrue(dim.isEnabled)
+      assertEquals(drawerTag, TouchTargetHelper.findTargetTagForTouch(drawer.width * .9f, 150f, root))
+      tap(drawer.width * .9f, 150f)
+    }
+    settle()
+    onMain {
+      assertEquals(listOf(false), events)
+      assertEquals(targetTag, TouchTargetHelper.findTargetTagForTouch(drawer.width * .4f, 150f, root))
+    }
   }
 
   private fun tap(x: Float, y: Float) {

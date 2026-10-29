@@ -376,6 +376,7 @@ class BottomTabsDrawerView(context: Context) : FrameLayout(context) {
     foreground.invalidate()
     dim.alpha = .7f * progress
     dim.visibility = if (progress > 0f) VISIBLE else INVISIBLE
+    dim.isEnabled = progress > 0f
     content.pointerEvents = if (progress > 0f) PointerEvents.NONE else PointerEvents.AUTO
     content.importantForAccessibility = if (progress > 0f) IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
       else IMPORTANT_FOR_ACCESSIBILITY_AUTO
