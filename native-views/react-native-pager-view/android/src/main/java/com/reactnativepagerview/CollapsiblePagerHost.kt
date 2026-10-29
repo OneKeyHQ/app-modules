@@ -327,6 +327,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     pager.id = View.generateViewId()
     pager.adapter = adapter
     pager.isSaveEnabled = false
+    (pager.getChildAt(0) as? RecyclerView)?.itemAnimator = null
     super.addView(
       pager,
       LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
@@ -708,7 +709,16 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
 
   private fun layoutPagerIfRequested() {
     val recycler = pager.getChildAt(0) as? RecyclerView ?: return
-    if (!recycler.isLayoutRequested || recycler.isLayoutSuppressed || recycler.isComputingLayout || recycler.width <= 0 || recycler.height <= 0) return
+    if (
+      !shouldDrainCollapsiblePagerLayout(
+        recycler.isLayoutRequested,
+        recycler.isLayoutSuppressed,
+        recycler.isComputingLayout,
+        recycler.width,
+        recycler.height,
+        adapter.itemCount,
+      )
+    ) return
     // OneKey patch: a non-animated page command queues RecyclerView layout, but RN
     // can stop that request after navigation. Drain it before showing the page.
     recycler.measure(
@@ -732,7 +742,11 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   }
 
   private fun isPagerRecyclerLayoutSuppressed(): Boolean =
-    (pager.getChildAt(0) as? RecyclerView)?.isLayoutSuppressed == true
+    shouldSuppressCollapsiblePagerRecyclerLayout(
+      (pager.getChildAt(0) as? RecyclerView)?.isLayoutSuppressed == true,
+      adapter.itemCount,
+      attachedPageCount(),
+    )
 
   override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
     val width = MeasureSpec.getSize(widthMeasureSpec)

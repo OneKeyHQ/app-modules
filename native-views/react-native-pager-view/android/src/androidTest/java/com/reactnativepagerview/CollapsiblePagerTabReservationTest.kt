@@ -12,6 +12,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.HorizontalScrollView
 import android.widget.TextView
+import androidx.recyclerview.widget.RecyclerView
+import androidx.viewpager2.widget.ViewPager2
 import com.facebook.react.uimanager.PointerEvents
 import com.facebook.react.views.view.ReactViewGroup
 import java.util.concurrent.atomic.AtomicInteger
@@ -239,6 +241,63 @@ class CollapsiblePagerTabReservationTest : InstrumentationTestCase() {
       instrumentation.waitForIdleSync()
       assertEquals(2, toolbarPresses.get())
       assertEquals(1, tabPresses.get())
+    } finally {
+      instrumentation.runOnMainSync { activity.finish() }
+      instrumentation.waitForIdleSync()
+    }
+  }
+
+  fun testUnmountWithTransitioningPageHoldersSkipsEmptyRecyclerLayout() {
+    val context = instrumentation.targetContext
+    val activity = instrumentation.startActivitySync(
+      Intent(context, CollapsiblePagerHitTestActivity::class.java)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+    ) as CollapsiblePagerHitTestActivity
+    try {
+      instrumentation.runOnMainSync {
+        val density = context.resources.displayMetrics.density
+        fun dp(value: Int) = (value * density).roundToInt()
+        val width = dp(320)
+        val height = dp(500)
+        val host = CollapsiblePagerHost(context)
+        activity.setContentView(host)
+        val header = View(context)
+        val sticky = View(context)
+        val page0 = View(context)
+        val page1 = View(context)
+        host.addReactChild(header, 0)
+        host.addReactChild(sticky, 1)
+        host.addReactChild(page0, 2)
+        host.addReactChild(page1, 3)
+        host.measure(
+          View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+          View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY),
+        )
+        host.layout(0, 0, width, height)
+        val pager = (0 until host.childCount).map(host::getChildAt).filterIsInstance<ViewPager2>().first()
+        val recycler = pager.getChildAt(0) as RecyclerView
+        assertNull(recycler.itemAnimator)
+        assertTrue(host.attachedPageCount() > 0)
+
+        val transitioningHolders = (0 until recycler.childCount).map(recycler::getChildAt)
+        transitioningHolders.forEach { recycler.startViewTransition(it) }
+
+        host.removeReactChild(page1)
+        host.removeReactChild(page0)
+        host.removeReactChild(sticky)
+        host.removeReactChild(header)
+
+        host.viewTreeObserver.dispatchOnPreDraw()
+        host.measure(
+          View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+          View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY),
+        )
+        host.layout(0, 0, width, height)
+        assertTrue(host.attachedPageCount() > 0)
+
+        transitioningHolders.forEach { recycler.endViewTransition(it) }
+      }
+      instrumentation.waitForIdleSync()
     } finally {
       instrumentation.runOnMainSync { activity.finish() }
       instrumentation.waitForIdleSync()

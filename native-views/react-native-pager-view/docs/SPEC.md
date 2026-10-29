@@ -357,8 +357,19 @@ Status: implemented locally; unreleased. On the Android UI thread, during a
 screen removal transition,
 NativeList and CollapsiblePager layout entry points respect the RecyclerView
 suppression state established by the screen-transition owner. The owner restores
-the original state when its last transition ownership ends. This adds no public
-API and does not change Web or iOS behavior.
+the original state when its last transition ownership ends. In addition,
+`CollapsiblePagerHost` disables `DefaultItemAnimator` on its internal
+`ViewPager2` `RecyclerView` (`itemAnimator = null`) and skips pre-draw
+(`layoutPagerIfRequested`) and host-driven `ViewPager2` layout passes when all
+React page children have been removed from the adapter (`adapter.itemCount == 0`)
+while previously rendered page `ViewHolder` views remain attached
+(`attachedPageCount() > 0`), matching `PagerViewViewManagerImpl`'s unmount
+guard. Initial empty measurement before any page is attached
+(`attachedPageCount() == 0`) and subsequent page insertions (`adapter.itemCount > 0`)
+still measure and lay out normally. This prevents unmount-time empty-adapter
+layout passes from clearing visible exit frames or recycling attached
+`ViewHolder` views held in `mDisappearingChildren` by `ViewGroup.startViewTransition`.
+This adds no public API and does not change Web or iOS behavior.
 
 If Fabric removes the current NativeScroller React child while its origin-frame
 transition remains active, Android retains the already displayed native extent
