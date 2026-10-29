@@ -20,6 +20,16 @@ pub fn set_request_handler(handler: Option<js_sys::Function>) {
     network::set_request_handler(handler);
 }
 
+/// Sets when mainnet fees drop to the ZIP 2009 rate, for every later quote, build and
+/// balance: `"null"` disables the switch and a height delays it; absent or malformed
+/// keeps the default. It never advances the switch.
+#[wasm_bindgen(js_name = setZip2009MainnetHeight)]
+pub fn set_zip2009_mainnet_height(json: Option<String>) {
+    onekey_zcash_send_policy::set_zip2009_switch(
+        onekey_zcash_send_policy::Zip2009Switch::from_host_json(json.as_deref()),
+    );
+}
+
 /// Installs the storage layer. Must be awaited once before any other call. Idempotent.
 #[wasm_bindgen(js_name = init)]
 pub async fn init() -> Result<(), JsValue> {

@@ -1025,6 +1025,25 @@ mod tests {
     }
 
     #[test]
+    fn fee_quotes_follow_a_delayed_or_disabled_switch() {
+        use onekey_zcash_send_policy::{set_zip2009_switch, Zip2009Switch};
+        let quote_at = |height: u32| {
+            let mut request: serde_json::Value =
+                serde_json::from_str(&request_json(&[100_000], true)).unwrap();
+            request["targetHeight"] = height.into();
+            request["expiryHeight"] = (height + 40).into();
+            let quote: serde_json::Value =
+                serde_json::from_str(&quote_json(&request.to_string()).unwrap()).unwrap();
+            quote["feeZat"].clone()
+        };
+        set_zip2009_switch(Zip2009Switch::Disabled);
+        assert_eq!(quote_at(3_590_100), "10000");
+        set_zip2009_switch(Zip2009Switch::from_host_json(Some("3600000")));
+        assert_eq!(quote_at(3_600_099), "10000");
+        assert_eq!(quote_at(3_600_100), "2000");
+    }
+
+    #[test]
     fn a_transparent_quote_needs_eight_valid_blocks_and_at_most_forty() {
         for delta in [0, 7, 41, 100] {
             let mut request: serde_json::Value =

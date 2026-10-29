@@ -1741,6 +1741,7 @@ name = "onekey-zcash-send-policy"
 version = "0.1.0-alpha.12"
 dependencies = [
  "serde",
+ "serde_json",
  "zcash_primitives",
  "zcash_protocol",
 ]
