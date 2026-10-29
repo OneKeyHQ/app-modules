@@ -86,6 +86,7 @@ export function selectSyncEntries(files, dir) {
   const entries = [];
   for (const file of files ?? []) {
     if (file.startsWith("!") || SKIPPED_ENTRIES.has(file)) continue;
+    if (file.startsWith("docs/")) continue;
     if (file.includes("*")) {
       const pattern = globToRegExp(file);
       for (const name of fs.readdirSync(dir)) {

@@ -20,7 +20,17 @@ test("considers published source entries but never build output or docs", () => 
   fs.writeFileSync(path.join(dir, "Other.txt"), "");
   assert.deepEqual(
     selectSyncEntries(
-      ["src", "lib", "docs", "ios", "*.podspec", "!ios/build", "README.md"],
+      [
+        "src",
+        "lib",
+        "docs",
+        "docs/SPEC.md",
+        "docs/guides",
+        "ios",
+        "*.podspec",
+        "!ios/build",
+        "README.md",
+      ],
       dir,
     ),
     ["src", "ios", "NativeOverlay.podspec"],
