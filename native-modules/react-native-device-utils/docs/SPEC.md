@@ -217,8 +217,8 @@ DeviceUtils HybridObjects; listener IDs are unique per process.
 2. On iOS 27.1+ in builds with the iOS 27.1 SDK (Swift 6.4), a
    `UIHingeInteraction` is attached to the key window on the main thread. If no
    key window exists yet, it waits for `UIWindow.didBecomeKeyNotification`. A
-   non-nil hinge marks the device as dual-screen; a nil hinge keeps the last
-   known state.
+   non-nil hinge marks the device as dual-screen. A nil hinge clears spanning
+   without clearing the detected device identity.
 3. A positive result stores the current model identifier as a string in
    `UserDefaults` key `1k_is_dual_screen_device`. Later launches accept the
    cached positive only when that identifier equals the current device model.
@@ -237,8 +237,12 @@ toolchain that also reports Swift 6.4 is not supported by this guard.
 main thread when spanning changes, and once with the current spanning value
 when the hinge first confirms a device that steps 1 and 3 did not. Callers
 must re-read `isDualScreenDevice()` in the callback instead of assuming
-spanning implies detection. Removing an unknown ID is a no-op. The hinge
-observer lives for the process.
+spanning implies detection. Removing an unknown ID is a no-op. Key-window
+notifications are observed for the process lifetime. The hinge interaction
+moves to each new key window and detaches when its window resigns key status.
+Losing observation or switching windows resets spanning to `false` until the
+new window supplies a hinge update; listeners notify only if that changes the
+stored value. Callbacks from a previous interaction are ignored.
 
 ## Platform contract
 

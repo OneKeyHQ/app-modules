@@ -23,7 +23,9 @@ final class DualScreenDetector {
     private var spanning = false
     private var listeners: [Double: (Bool) -> Void] = [:]
     private var nextListenerId: Double = 1
-    private var hingeObserver: AnyObject?
+    private var hingeInteraction: UIInteraction?
+    private var keyWindowObserver: NSObjectProtocol?
+    private var resignKeyWindowObserver: NSObjectProtocol?
 
     private init() {
         let modelIdentifier = DualScreenDetector.modelIdentifier()
@@ -89,46 +91,56 @@ final class DualScreenDetector {
         #if compiler(>=6.4)
         guard #available(iOS 27.1, *) else { return }
         DispatchQueue.main.async { [weak self] in
-            self?.attachHingeInteraction()
+            guard let self else { return }
+            self.keyWindowObserver = NotificationCenter.default.addObserver(
+                forName: UIWindow.didBecomeKeyNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] notification in
+                guard let window = notification.object as? UIWindow else { return }
+                self?.attachHingeInteraction(in: window)
+            }
+            self.resignKeyWindowObserver = NotificationCenter.default.addObserver(
+                forName: UIWindow.didResignKeyNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] notification in
+                guard let self, let window = notification.object as? UIWindow,
+                      self.hingeInteraction?.view === window else { return }
+                self.attachHingeInteraction(in: nil)
+            }
+            self.attachHingeInteraction(in: DualScreenDetector.keyWindow())
         }
         #endif
     }
 
     #if compiler(>=6.4)
     @available(iOS 27.1, *)
-    private func attachHingeInteraction() {
-        guard hingeObserver == nil else { return }
-        guard let window = DualScreenDetector.keyWindow() else {
-            // Native modules can initialize before the first window exists.
-            hingeObserver = NotificationCenter.default.addObserver(
-                forName: UIWindow.didBecomeKeyNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                guard let self, let observer = self.hingeObserver else { return }
-                NotificationCenter.default.removeObserver(observer)
-                self.hingeObserver = nil
-                self.attachHingeInteraction()
-            }
-            return
+    private func attachHingeInteraction(in window: UIWindow?) {
+        if let interaction = hingeInteraction, interaction.view === window { return }
+        let previousInteraction = hingeInteraction
+        hingeInteraction = nil
+        if let interaction = previousInteraction {
+            interaction.view?.removeInteraction(interaction)
         }
-        let interaction = UIHingeInteraction { [weak self] _, update in
-            self?.handleHingeUpdate(update.hinge)
+        handleHingeUpdate(nil)
+        // A listener can change the key window while spanning is reset.
+        guard let window, window.isKeyWindow, hingeInteraction == nil else { return }
+        let interaction = UIHingeInteraction { [weak self] interaction, update in
+            guard let self, self.hingeInteraction === interaction else { return }
+            self.handleHingeUpdate(update.hinge)
         }
+        hingeInteraction = interaction
         window.addInteraction(interaction)
-        hingeObserver = interaction
     }
 
     @available(iOS 27.1, *)
     private func handleHingeUpdate(_ hinge: UIHinge?) {
-        // A nil hinge means the hierarchy no longer provides hinge updates;
-        // keep the last known state.
-        guard let hinge else { return }
-        let nextSpanning = hinge.status == .fullyOpen || hinge.status == .partiallyOpen
+        let nextSpanning = hinge?.status == .fullyOpen || hinge?.status == .partiallyOpen
 
         lock.lock()
-        let isNewlyDetected = !isDualScreen
-        isDualScreen = true
+        let isNewlyDetected = hinge != nil && !isDualScreen
+        if hinge != nil { isDualScreen = true }
         let didChangeSpanning = spanning != nextSpanning
         spanning = nextSpanning
         let callbacks = Array(listeners.values)
