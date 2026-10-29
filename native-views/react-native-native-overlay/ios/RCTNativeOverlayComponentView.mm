@@ -64,6 +64,8 @@ static NSString *RNCNativeOverlayPresentationString(RNCNativeOverlayPresentation
   RNCNativeOverlayShadowNode::ConcreteState::Shared _state;
   CGPoint _contentOffset;
   int32_t _hostOriginRequest;
+  int32_t _reportedHostOriginRequest;
+  BOOL _hostOriginReportScheduled;
 }
 
 + (ComponentDescriptorProvider)componentDescriptorProvider
@@ -165,23 +167,46 @@ static NSString *RNCNativeOverlayPresentationString(RNCNativeOverlayPresentation
   _containerView.visible = newProps.visible;
   [_containerView commitConfiguration];
 
-  if (newProps.hostOriginRequest != 0 && newProps.hostOriginRequest != _hostOriginRequest) {
-    _hostOriginRequest = newProps.hostOriginRequest;
-    // After the commit settles, report where this host really is on screen.
-    __weak auto weakSelf = self;
-    dispatch_async(dispatch_get_main_queue(), ^{
-      auto strongSelf = weakSelf;
-      if (!strongSelf || !strongSelf.window) return;
-      CGPoint origin = [strongSelf convertPoint:CGPointZero toView:nil];
-      origin.x += strongSelf.window.frame.origin.x;
-      origin.y += strongSelf.window.frame.origin.y;
-      auto emitter = std::static_pointer_cast<const RNCNativeOverlayEventEmitter>(strongSelf->_eventEmitter);
-      if (!emitter) return;
-      emitter->onHostWindowOrigin({.x = origin.x, .y = origin.y});
-    });
-  }
+  _hostOriginRequest = newProps.hostOriginRequest;
+  if (_hostOriginRequest == 0) _reportedHostOriginRequest = 0;
+  [self scheduleHostWindowOrigin];
 
   [super updateProps:props oldProps:oldProps];
+}
+
+- (void)didMoveToWindow
+{
+  [super didMoveToWindow];
+  [self scheduleHostWindowOrigin];
+}
+
+- (void)updateEventEmitter:(EventEmitter::Shared const &)eventEmitter
+{
+  [super updateEventEmitter:eventEmitter];
+  [self scheduleHostWindowOrigin];
+}
+
+- (void)scheduleHostWindowOrigin
+{
+  if (_hostOriginRequest == 0 || _hostOriginRequest == _reportedHostOriginRequest || _hostOriginReportScheduled) return;
+  _hostOriginReportScheduled = YES;
+  __weak auto weakSelf = self;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    auto strongSelf = weakSelf;
+    if (!strongSelf) return;
+    strongSelf->_hostOriginReportScheduled = NO;
+    const auto request = strongSelf->_hostOriginRequest;
+    // Mounting can deliver props before the window or event emitter. Keep
+    // the request pending until both are ready; attachment retries it.
+    if (request == 0 || request == strongSelf->_reportedHostOriginRequest || !strongSelf.window) return;
+    auto emitter = std::static_pointer_cast<const RNCNativeOverlayEventEmitter>(strongSelf->_eventEmitter);
+    if (!emitter) return;
+    CGPoint origin = [strongSelf convertPoint:CGPointZero toView:nil];
+    origin.x += strongSelf.window.frame.origin.x;
+    origin.y += strongSelf.window.frame.origin.y;
+    strongSelf->_reportedHostOriginRequest = request;
+    emitter->onHostWindowOrigin({.x = origin.x, .y = origin.y});
+  });
 }
 
 - (void)updateState:(State::Shared const &)state oldState:(State::Shared const &)oldState
@@ -205,6 +230,8 @@ static NSString *RNCNativeOverlayPresentationString(RNCNativeOverlayPresentation
 
 - (void)invalidate
 {
+  _hostOriginRequest = 0;
+  _reportedHostOriginRequest = 0;
   [_containerView invalidate];
   [super invalidate];
 }

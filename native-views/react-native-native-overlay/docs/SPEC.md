@@ -420,7 +420,10 @@ the correction:
 - `windowOffsetRequest` (a counter) and `onWindowOffset({ x, y })`. Each new
   non-zero value makes iOS report the host's on-screen origin once, after the
   commit settles; JS measures a plain sibling probe at the same spot and
-  reports `native - measured`. It is `{0, 0}` outside modals.
+  reports `native - measured`. It is `{0, 0}` outside modals. A request that
+  arrives before window attachment or event-emitter setup stays pending and
+  retries after those dependencies attach. It is consumed only after emitting;
+  zero cancels a pending request, and a newer value supersedes it.
 - The host's own shadow node reports the content origin, so the probe is a
   separate view.
 - The overlay must be mounted to report, so callers keep it mounted
