@@ -48,7 +48,9 @@ export interface MainMenuLink {
 
 /**
  * Localized content of the custom main menu (the iPadOS menu bar). Help links
- * open in the system browser natively; the other items notify JS.
+ * open in the system browser natively; the other items notify JS. An empty
+ * `aboutTitle` removes the About item and empty `helpLinks` remove the Help
+ * menu.
  */
 export interface MainMenuConfig {
   aboutTitle: string;

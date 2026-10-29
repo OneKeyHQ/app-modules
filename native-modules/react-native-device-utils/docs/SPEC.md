@@ -391,10 +391,10 @@ The built main menu:
 
 | Menu | Content |
 | --- | --- |
-| App | About (`aboutTitle`), then Preferences (`preferencesTitle`, Command-Comma) and Lock Now (`lockNowTitle`, Command-Shift-L). Preferences replaces the system item that opens the app's page in the Settings app. System Hide items stay. |
+| App | About (`aboutTitle`; removed when empty), then Preferences (`preferencesTitle`, Command-Comma) and Lock Now (`lockNowTitle`, Command-Shift-L). Preferences replaces the system item that opens the app's page in the Settings app. System Hide items stay. |
 | File, Format | Removed. |
 | Edit, View, Window | System content, unchanged. |
-| Help | One item per help link, in order; each opens its URL with `UIApplication.open`. |
+| Help | One item per help link, in order; each opens its URL with `UIApplication.open`. Removed when `helpLinks` is empty. |
 
 - Before the first config, File and Format are removed and the app and Help
   menus keep their system content.

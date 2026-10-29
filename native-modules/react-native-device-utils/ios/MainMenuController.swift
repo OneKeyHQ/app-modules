@@ -138,13 +138,18 @@ public final class MainMenuController: NSObject {
         } else {
             builder.insertChild(settingsMenu, atStartOfMenu: .application)
         }
-        if builder.menu(for: .about) != nil {
+        // An empty About title removes the item (Travel Mode hides About).
+        if config.aboutTitle.isEmpty {
+            builder.remove(menu: .about)
+        } else if builder.menu(for: .about) != nil {
             builder.replace(menu: .about, with: aboutMenu)
         } else {
             builder.insertSibling(aboutMenu, beforeMenu: MainMenuController.settingsMenuIdentifier)
         }
 
-        if !config.helpLinks.isEmpty, builder.menu(for: .help) != nil {
+        if config.helpLinks.isEmpty {
+            builder.remove(menu: .help)
+        } else if builder.menu(for: .help) != nil {
             let links = config.helpLinks.map { link in
                 UIAction(title: link.title) { _ in
                     UIApplication.shared.open(link.url)
