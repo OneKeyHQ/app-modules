@@ -404,9 +404,7 @@ class RCTBottomTabsContainerView: UIView {
 
     DispatchQueue.main.async { [weak self] in
       guard let self, let tbc = self.tabBarController else { return }
-      if !tbc.tabBar.isHidden {
-        self.onTabBarMeasured?(["height": Double(tbc.tabBar.frame.size.height)])
-      }
+      self.onTabBarMeasured?(["height": self.tabBarHidden ? 0 : Double(tbc.tabBar.frame.size.height)])
     }
   }
 
@@ -680,9 +678,7 @@ class RCTBottomTabsContainerView: UIView {
     #endif
     tbc.tabBar.isUserInteractionEnabled = !tabBarHidden
 
-    if !tabBarHidden {
-      onTabBarMeasured?(["height": Double(tbc.tabBar.frame.size.height)])
-    }
+    onTabBarMeasured?(["height": tabBarHidden ? 0 : Double(tbc.tabBar.frame.size.height)])
     scheduleSideAccessoryLayout()
   }
 

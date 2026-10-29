@@ -66,6 +66,11 @@ replacing its delegate. Android coordinates nested scroll with the active
 Web scroll child can opt in by exposing a DOM element with
 `data-collapsible-pager-scroll`. CSS scroll timelines drive header/sticky
 movement, so React is not updated on each vertical scroll frame.
+`pagerRef.current?.scrollHeaderBy(delta)` immediately moves the active page's
+collapsible header by a finite logical distance, clamped to its measured range.
+`scrollHeaderToOffset(offset)` targets an absolute collapse position, so a
+keyboard's own scroll adjustment cannot add a second relative movement.
+It is useful for revealing a focused field above a keyboard.
 
 On Web, `WebCollapsiblePagerView` is an explicit root export of the existing Web
 pager. It measures Header and sticky content when their heights are omitted.

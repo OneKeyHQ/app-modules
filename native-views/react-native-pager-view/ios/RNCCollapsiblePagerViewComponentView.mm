@@ -18,6 +18,7 @@
 
 // OneKey patch: deduplicate structural mutation parents before scanning the page.
 #include <unordered_set>
+#include <cmath>
 
 using namespace facebook::react;
 
@@ -382,7 +383,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 @property (nonatomic, copy) RNCCollapsiblePagerNativeTabPressHandler onTabPress;
 - (void)updateItemsJSON:(NSString *)itemsJSON;
 - (void)updateStyleWithHeight:(CGFloat)height
+                      variant:(NSString *)variant
      contentPaddingHorizontal:(CGFloat)contentPaddingHorizontal
+       contentPaddingVertical:(CGFloat)contentPaddingVertical
                   itemSpacing:(CGFloat)itemSpacing
                      fontSize:(CGFloat)fontSize
                    fontFamily:(NSString *)fontFamily
@@ -399,12 +402,15 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 @implementation RNCCollapsiblePagerNativeTabBarView {
   RNCCollapsiblePagerHorizontalScrollView *_scrollView;
+  UIView *_trackView;
   UIView *_indicatorView;
   NSArray<NSDictionary *> *_items;
   NSMutableArray<UIButton *> *_buttons;
   NSMutableArray<NSValue *> *_indicatorFrames;
   CGFloat _barHeight;
   CGFloat _contentPaddingHorizontal;
+  CGFloat _contentPaddingVertical;
+  BOOL _segmented;
   CGFloat _itemSpacing;
   CGFloat _fontSize;
   NSString *_fontFamily;
@@ -427,6 +433,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     _indicatorFrames = [NSMutableArray new];
     _barHeight = 44;
     _contentPaddingHorizontal = 20;
+    _contentPaddingVertical = 0;
+    _segmented = NO;
     _itemSpacing = 8;
     _fontSize = 16;
     _activeTextColor = UIColor.labelColor;
@@ -447,6 +455,10 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     _scrollView.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
     _scrollView.delegate = self;
     [self addSubview:_scrollView];
+
+    _trackView = [UIView new];
+    _trackView.userInteractionEnabled = NO;
+    [_scrollView addSubview:_trackView];
 
     _indicatorView = [UIView new];
     _indicatorView.userInteractionEnabled = NO;
@@ -502,7 +514,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 }
 
 - (void)updateStyleWithHeight:(CGFloat)height
+                      variant:(NSString *)variant
      contentPaddingHorizontal:(CGFloat)contentPaddingHorizontal
+       contentPaddingVertical:(CGFloat)contentPaddingVertical
                   itemSpacing:(CGFloat)itemSpacing
                      fontSize:(CGFloat)fontSize
                    fontFamily:(NSString *)fontFamily
@@ -514,19 +528,26 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
               indicatorBottom:(CGFloat)indicatorBottom
 {
   _barHeight = MAX(1, height);
+  BOOL wasSegmented = _segmented;
+  _segmented = [variant isEqualToString:@"segmented"];
   _contentPaddingHorizontal = MAX(0, contentPaddingHorizontal);
+  _contentPaddingVertical = MAX(0, contentPaddingVertical);
   _itemSpacing = MAX(0, itemSpacing);
   _fontSize = MAX(1, fontSize);
   _fontFamily = [fontFamily copy];
-  self.backgroundColor = backgroundColor ?: UIColor.clearColor;
+  self.backgroundColor = _segmented ? UIColor.clearColor : (backgroundColor ?: UIColor.clearColor);
   _scrollView.backgroundColor = self.backgroundColor;
+  _scrollView.scrollEnabled = !_segmented;
+  if (_segmented && !wasSegmented) [_scrollView setContentOffset:CGPointZero animated:NO];
+  _trackView.hidden = !_segmented;
+  _trackView.backgroundColor = backgroundColor ?: UIColor.clearColor;
   _activeTextColor = activeTextColor ?: UIColor.labelColor;
   _inactiveTextColor = inactiveTextColor ?: UIColor.secondaryLabelColor;
   _indicatorColor = indicatorColor ?: _activeTextColor;
   _indicatorHeight = MAX(0, indicatorHeight);
   _indicatorBottom = MAX(0, indicatorBottom);
   _indicatorView.backgroundColor = _indicatorColor;
-  _indicatorView.layer.cornerRadius = _indicatorHeight / 2;
+  _indicatorView.layer.cornerRadius = _segmented ? 0 : _indicatorHeight / 2;
   for (UIButton *button in _buttons) button.titleLabel.font = self.tabFont;
   [self setNeedsLayout];
 }
@@ -585,6 +606,33 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 {
   [super layoutSubviews];
   _scrollView.frame = self.bounds;
+  if (_segmented) {
+    CGFloat width = CGRectGetWidth(self.bounds);
+    CGFloat height = CGRectGetHeight(self.bounds);
+    CGFloat insetX = MIN(_contentPaddingHorizontal, width / 2);
+    CGFloat insetY = MIN(_contentPaddingVertical, height / 2);
+    CGRect trackFrame = CGRectMake(insetX, insetY,
+      MAX(0, width - 2 * insetX), MAX(0, height - 2 * insetY));
+    _trackView.frame = trackFrame;
+    _trackView.layer.cornerRadius = CGRectGetHeight(trackFrame) / 2;
+    _scrollView.contentSize = self.bounds.size;
+    [_indicatorFrames removeAllObjects];
+    NSUInteger count = _buttons.count;
+    [_buttons enumerateObjectsUsingBlock:^(UIButton *button, NSUInteger index, BOOL *stop) {
+      CGFloat first = CGRectGetMinX(trackFrame) + CGRectGetWidth(trackFrame) * index / count;
+      CGFloat last = CGRectGetMinX(trackFrame) + CGRectGetWidth(trackFrame) * (index + 1) / count;
+      CGFloat x = self->_leftToRight ? first : CGRectGetMaxX(trackFrame) - (last - CGRectGetMinX(trackFrame));
+      CGFloat end = self->_leftToRight ? last : CGRectGetMaxX(trackFrame) - (first - CGRectGetMinX(trackFrame));
+      button.frame = CGRectMake(x, CGRectGetMinY(trackFrame), MAX(0, end - x), CGRectGetHeight(trackFrame));
+      CGRect thumbFrame = CGRectMake(x + 2, CGRectGetMinY(trackFrame) + 2,
+        MAX(0, CGRectGetWidth(button.frame) - 4), MAX(0, CGRectGetHeight(trackFrame) - 4));
+      [self->_indicatorFrames addObject:[NSValue valueWithCGRect:thumbFrame]];
+    }];
+    _indicatorView.layer.cornerRadius = MAX(0, CGRectGetHeight(trackFrame) - 4) / 2;
+    [self updatePresentation];
+    return;
+  }
+  _trackView.frame = CGRectZero;
   UIFont *font = self.tabFont;
   NSMutableArray<NSNumber *> *widths = [NSMutableArray arrayWithCapacity:_buttons.count];
   CGFloat itemsWidth = 0;
@@ -648,10 +696,10 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     CGRectGetMinX(fromFrame) + (CGRectGetMinX(toFrame) - CGRectGetMinX(fromFrame)) * fraction,
     CGRectGetMinY(fromFrame),
     CGRectGetWidth(fromFrame) + (CGRectGetWidth(toFrame) - CGRectGetWidth(fromFrame)) * fraction,
-    _indicatorHeight
+    _segmented ? CGRectGetHeight(fromFrame) : _indicatorHeight
   );
   _indicatorView.frame = indicatorFrame;
-  _indicatorView.hidden = _indicatorHeight <= 0;
+  _indicatorView.hidden = CGRectGetHeight(indicatorFrame) <= 0;
 
   NSInteger selectedIndex = (NSInteger)round(progress);
   [_buttons enumerateObjectsUsingBlock:^(UIButton *button, NSUInteger index, BOOL *stop) {
@@ -668,7 +716,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
       : UIAccessibilityTraitButton;
   }];
 
-  if (_shouldCenterSelectedItem && !_scrollView.tracking && !_scrollView.dragging &&
+  if (_shouldCenterSelectedItem && !_segmented && !_scrollView.tracking && !_scrollView.dragging &&
       !_scrollView.decelerating && CGRectGetWidth(_scrollView.bounds) > 0) {
     CGFloat maximumOffset = MAX(0, _scrollView.contentSize.width - CGRectGetWidth(_scrollView.bounds));
     CGFloat desiredOffset = RNCClamp(
@@ -1485,6 +1533,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 - (void)liftSharedHeadersForPagerTransition:(NSString *)reason;
 - (void)restoreSharedHeadersToContainer;
 - (void)layoutSharedHeaders;
+- (void)bringReservedStickyControlToFront;
 - (void)restorePinnedStickyHeader;
 - (void)updatePinnedStickyHeader;
 - (UIScrollView *)currentVerticalScrollViewForParentPager;
@@ -1575,6 +1624,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   NSUInteger _pendingTopInsetReboundGeneration;
   NSTimer *_topInsetReboundTimer;
   CGFloat _nativeTabBarHeight;
+  CGFloat _nativeTabBarTrailingReservedWidth;
   CGFloat _nativeSubHeaderHeight;
   CGFloat _headerOffset;
   BOOL _scrollEnabled;
@@ -2501,6 +2551,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   }
   [_nativeTabBarView updateAncestorGesturePrecedence];
   [_nativeSubHeaderView updateAncestorGesturePrecedence];
+  [self bringReservedStickyControlToFront];
 }
 
 - (void)restoreSharedHeadersToContainer
@@ -2606,10 +2657,11 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   CGFloat nativeTabBarVisibleHeight = _nativeTabBarView.hidden
     ? 0
     : MIN(_stickyHeaderHeight, _nativeTabBarHeight);
+  CGFloat tabReservedWidth = MIN(width, MAX(0, _nativeTabBarTrailingReservedWidth));
   _nativeTabBarView.frame = CGRectMake(
-    0,
+    self.isLtrLayout ? 0 : tabReservedWidth,
     stickyChildY,
-    width,
+    width - tabReservedWidth,
     nativeTabBarVisibleHeight
   );
   _nativeSubHeaderView.frame = CGRectMake(
@@ -2623,7 +2675,24 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   );
   _topOverlayHostView.frame = CGRectMake(0, 0, width, self.effectiveTopOverlayHeight);
   _topOverlayView.frame = _topOverlayHostView.bounds;
+  [self bringReservedStickyControlToFront];
   [self applyHeaderOffset];
+}
+
+- (void)bringReservedStickyControlToFront
+{
+  if (_stickyHeaderView != nil &&
+      _stickyHeaderView.superview == _nativeTabBarView.superview) {
+    if (_nativeTabBarTrailingReservedWidth > 0) {
+      [_stickyHeaderView.superview bringSubviewToFront:_stickyHeaderView];
+    } else {
+      [_nativeTabBarView.superview bringSubviewToFront:_nativeTabBarView];
+      if (!_nativeSubHeaderView.hidden &&
+          _nativeSubHeaderView.superview == _nativeTabBarView.superview) {
+        [_nativeSubHeaderView.superview bringSubviewToFront:_nativeSubHeaderView];
+      }
+    }
+  }
 }
 
 - (void)updatePinnedStickyHeader
@@ -2672,8 +2741,10 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   CGFloat childY = shouldPin ? 0 : _headerHeight;
   CGFloat width = CGRectGetWidth(self.bounds);
   CGFloat tabHeight = _nativeTabBarView.hidden ? 0 : MIN(_stickyHeaderHeight, _nativeTabBarHeight);
+  CGFloat tabReservedWidth = MIN(width, MAX(0, _nativeTabBarTrailingReservedWidth));
   _stickyHeaderView.frame = CGRectMake(0, childY, width, _stickyHeaderHeight);
-  _nativeTabBarView.frame = CGRectMake(0, childY, width, tabHeight);
+  _nativeTabBarView.frame = CGRectMake(self.isLtrLayout ? 0 : tabReservedWidth,
+    childY, width - tabReservedWidth, tabHeight);
   _nativeSubHeaderView.frame = CGRectMake(0, childY + tabHeight, width,
     MIN(MAX(0, _stickyHeaderHeight - tabHeight), _nativeSubHeaderHeight));
   _pinnedStickyHostView.hidden = !shouldPin;
@@ -2693,6 +2764,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   }
   [_nativeTabBarView updateAncestorGesturePrecedence];
   [_nativeSubHeaderView updateAncestorGesturePrecedence];
+  [self bringReservedStickyControlToFront];
   [self updateTopScrollEdgeForScrollView:_observedScrollView];
   [self logHomeVisualGeometry:shouldPin ? @"pin" : @"unpin"
                     scrollView:_observedScrollView];
@@ -3088,6 +3160,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   if (_stickyHeaderView != nil) [_sharedHeaderHostView bringSubviewToFront:_stickyHeaderView];
   if (!_nativeTabBarView.hidden) [_sharedHeaderHostView bringSubviewToFront:_nativeTabBarView];
   if (!_nativeSubHeaderView.hidden) [_sharedHeaderHostView bringSubviewToFront:_nativeSubHeaderView];
+  [self bringReservedStickyControlToFront];
   [_containerView bringSubviewToFront:_sharedHeaderHostView];
   if (_stickyHeaderIsPinned) {
     [_pinnedStickyHostView.superview bringSubviewToFront:_pinnedStickyHostView];
@@ -3292,6 +3365,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   _homeVisualLastLayoutLog = 0;
   _homeVisualLastGeometrySignature = nil;
   _nativeTabBarHeight = 44;
+  _nativeTabBarTrailingReservedWidth = 0;
   _nativeSubHeaderHeight = 74;
   _headerOffset = 0;
   _currentLogicalOffset = 0;
@@ -3373,6 +3447,13 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     _layoutDirection = RCTNSStringFromString(toString(newViewProps.layoutDirection));
     [_nativeTabBarView setLeftToRight:self.isLtrLayout];
     [_nativeSubHeaderView setLeftToRight:self.isLtrLayout];
+    [self setNeedsLayout];
+  }
+  if (_needsPropsReapply ||
+      oldViewProps.nativeTabBarTrailingReservedWidth != newViewProps.nativeTabBarTrailingReservedWidth) {
+    double reserved = newViewProps.nativeTabBarTrailingReservedWidth;
+    _nativeTabBarTrailingReservedWidth = std::isfinite(reserved) && reserved >= 0 ? reserved : 0;
+    [self setNeedsLayout];
   }
   BOOL insetsChanged = NO;
   if (_needsPropsReapply || oldViewProps.headerHeight != newViewProps.headerHeight) {
@@ -3453,7 +3534,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   }
   if (_needsPropsReapply ||
       oldViewProps.nativeTabBarHeight != newViewProps.nativeTabBarHeight ||
+      oldViewProps.nativeTabBarVariant != newViewProps.nativeTabBarVariant ||
       oldViewProps.nativeTabBarContentPaddingHorizontal != newViewProps.nativeTabBarContentPaddingHorizontal ||
+      oldViewProps.nativeTabBarContentPaddingVertical != newViewProps.nativeTabBarContentPaddingVertical ||
       oldViewProps.nativeTabBarItemSpacing != newViewProps.nativeTabBarItemSpacing ||
       oldViewProps.nativeTabBarFontSize != newViewProps.nativeTabBarFontSize ||
       oldViewProps.nativeTabBarFontFamily != newViewProps.nativeTabBarFontFamily ||
@@ -3470,7 +3553,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     NSString *fontFamily = RCTNSStringFromString(newViewProps.nativeTabBarFontFamily);
     [_nativeTabBarView
       updateStyleWithHeight:_nativeTabBarHeight
+      variant:RCTNSStringFromString(newViewProps.nativeTabBarVariant)
       contentPaddingHorizontal:MAX(0, newViewProps.nativeTabBarContentPaddingHorizontal)
+      contentPaddingVertical:MAX(0, newViewProps.nativeTabBarContentPaddingVertical)
       itemSpacing:MAX(0, newViewProps.nativeTabBarItemSpacing)
       fontSize:newViewProps.nativeTabBarFontSize > 0 ? newViewProps.nativeTabBarFontSize : 16
       fontFamily:fontFamily
@@ -3504,6 +3589,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   if (!_nativeSubHeaderView.hidden) {
     [_nativeSubHeaderView.superview bringSubviewToFront:_nativeSubHeaderView];
   }
+  [self bringReservedStickyControlToFront];
   [_sharedHeaderHostView.superview bringSubviewToFront:_sharedHeaderHostView];
   if (_stickyHeaderIsPinned) {
     [_pinnedStickyHostView.superview bringSubviewToFront:_pinnedStickyHostView];
@@ -3605,6 +3691,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
           resolution.tier = isMountedNativeList
             ? RNCScrollCandidateTierVerifiedNativeList
             : RNCScrollCandidateTierGenericFallback;
+          // React slots inside a verified list may own independent scroll views.
+          if (isMountedNativeList) return resolution;
         }
       }
     }
@@ -4581,8 +4669,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 - (void)updateNativeScrollerViewport:(UIScrollView *)scrollView stickyHeight:(CGFloat)height
 {
-  if ([scrollView.superview isKindOfClass:RNCNativeScrollerComponentView.class]) {
-    [(RNCNativeScrollerComponentView *)scrollView.superview setPagerStickyHeight:height forOwner:self];
+  id host = scrollView.superview;
+  if ([host respondsToSelector:@selector(setPagerStickyHeight:forOwner:)]) {
+    [host setPagerStickyHeight:height forOwner:self];
   }
 }
 
@@ -5436,6 +5525,13 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 {
   UIScrollView *scrollView = _pagerTopScrollView;
   if (_dispatchingPagerTop || ![self matchesPagerTop:scrollView]) return;
+  CGFloat clampedTarget = MIN(MAX(_pagerTopLogicalTarget, 0), _headerHeight);
+  if (clampedTarget != _pagerTopLogicalTarget) {
+    _pagerTopLogicalTarget = clampedTarget;
+    CGFloat physicalTarget = RNCLimitRestoredScrollOffset(clampedTarget - scrollView.contentInset.top,
+      scrollView.contentSize.height, scrollView.bounds.size.height, scrollView.contentInset.top, scrollView.contentInset.bottom);
+    [scrollView setContentOffset:CGPointMake(scrollView.contentOffset.x, physicalTarget) animated:NO];
+  }
   CGFloat logical = scrollView.contentOffset.y + scrollView.contentInset.top;
   if (fabs(logical - _pagerTopLogicalTarget) > 0.5) return;
   _pageOffsets[_pagerTopPageKey] = @(_nativeSmoothHeaderScrollEnabled ? 0 : _pagerTopLogicalTarget);
@@ -5448,10 +5544,28 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 - (void)scrollToTop:(NSInteger)target animated:(BOOL)animated
 {
+  if (target != 0 && target != 1) return;
+  [self scrollHeaderToOffset:(target == 1 ? _headerHeight : 0) animated:animated];
+}
+
+- (void)scrollHeaderBy:(double)delta
+{
+  if (!std::isfinite(delta)) return;
+  [self scrollHeaderToOffset:MIN(MAX(_headerOffset + delta, 0), _headerHeight) animated:NO];
+}
+
+- (void)scrollHeaderToOffset:(double)offset
+{
+  if (!std::isfinite(offset)) return;
+  [self scrollHeaderToOffset:MIN(MAX(offset, 0), _headerHeight) animated:NO];
+}
+
+- (void)scrollHeaderToOffset:(CGFloat)logicalTarget animated:(BOOL)animated
+{
   [self cancelTopInsetReboundCheck];
   UIScrollView *scrollView = _observedScrollView;
   NSString *key = _observedPageKey;
-  if ((target != 0 && target != 1) || _isBeingRecycled || _transitioning || _isPagerDragging ||
+  if (_isBeingRecycled || _transitioning || _isPagerDragging ||
       _transitionPageOffsets != nil || _syntheticPageRestore || scrollView == nil || scrollView.window == nil ||
       key == nil || ![key isEqualToString:self.currentPageKey] || _observedPageIndex != _currentIndex ||
       _observedPageGeneration != _generation || self.window == nil) return;
@@ -5467,7 +5581,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   [_alignedBodyKeys removeObject:key];
   [_suspendedBodyKeys removeObject:key];
   [_displayBodyOverrides removeObjectForKey:key];
-  CGFloat logicalTarget = target == 1 ? _headerHeight : 0;
+  logicalTarget = MIN(MAX(logicalTarget, 0), _headerHeight);
   _pageOffsets[key] = @(_nativeSmoothHeaderScrollEnabled ? 0 : logicalTarget);
   _pagerTopScrollView = scrollView;
   _pagerTopPageKey = [key copy];

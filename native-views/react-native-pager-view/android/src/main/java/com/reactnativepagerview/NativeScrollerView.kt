@@ -37,26 +37,50 @@ class NativeScrollerView(context: Context) : FrameLayout(context) {
       setMeasuredDimension(MeasureSpec.getSize(widthSpec), MeasureSpec.getSize(heightSpec))
     }
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) = Unit
+
+    override fun startViewTransition(view: View) {
+      super.startViewTransition(view)
+      if (view === reactChild) transitioningReactChild = view
+    }
+
+    override fun endViewTransition(view: View) {
+      super.endViewTransition(view)
+      if (transitioningReactChild === view) transitioningReactChild = null
+      if (retainedReactChild === view) {
+        clearRetainedGeometry()
+        if (isAttachedToWindow) scheduleLayout()
+      }
+    }
   }
   private val contentFrame = object : FrameLayout(context) {
     override fun onMeasure(widthSpec: Int, heightSpec: Int) {
       setMeasuredDimension(
-        max(MeasureSpec.getSize(widthSpec), contentWidthPx + insetLeft + insetRight),
-        contentHeightPx + contentTop + insetBottom,
+        max(MeasureSpec.getSize(widthSpec), effectiveContentWidthPx + insetLeft + insetRight),
+        effectiveContentHeightPx + contentTop + insetBottom,
       )
     }
 
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
       // Only the native origin layer moves. Fabric owns its React child's layout/transform.
+      val contentWidth = effectiveContentWidthPx
+      val contentHeight = effectiveContentHeightPx
       contentOriginFrame.measure(
-        MeasureSpec.makeMeasureSpec(contentWidthPx, MeasureSpec.EXACTLY),
-        MeasureSpec.makeMeasureSpec(contentHeightPx, MeasureSpec.EXACTLY),
+        MeasureSpec.makeMeasureSpec(contentWidth, MeasureSpec.EXACTLY),
+        MeasureSpec.makeMeasureSpec(contentHeight, MeasureSpec.EXACTLY),
       )
-      contentOriginFrame.layout(insetLeft, contentTop, insetLeft + contentWidthPx, contentTop + contentHeightPx)
+      contentOriginFrame.layout(insetLeft, contentTop, insetLeft + contentWidth, contentTop + contentHeight)
     }
   }
   private val pagerInsets = WeakHashMap<View, Int>()
   private var reactChild: View? = null
+  private var transitioningReactChild: View? = null
+  private var retainedReactChild: View? = null
+  private var retainedContentWidthPx = 0
+  private var retainedContentHeightPx = 0
+  private val effectiveContentWidthPx: Int
+    get() = if (reactChild == null && retainedReactChild != null) retainedContentWidthPx else contentWidthPx
+  private val effectiveContentHeightPx: Int
+    get() = if (reactChild == null && retainedReactChild != null) retainedContentHeightPx else contentHeightPx
   private var fabricState: StateWrapper? = null
   private var lastOriginX: Int? = null
   private var lastOriginY: Int? = null
@@ -172,6 +196,8 @@ class NativeScrollerView(context: Context) : FrameLayout(context) {
   internal fun addReactChild(child: View, index: Int) {
     require(index == 0 && reactChild == null) { "NativeScroller requires one React content view" }
     viewport.stopMotion()
+    clearRetainedGeometry()
+    transitioningReactChild = null
     reactChild = child
     contentOriginFrame.addView(child)
     scheduleLayout()
@@ -180,11 +206,27 @@ class NativeScrollerView(context: Context) : FrameLayout(context) {
   internal fun removeReactChild() {
     viewport.stopMotion()
     pendingRestore.cancel()
-    reactChild?.let(contentOriginFrame::removeView)
+    reactChild?.let { child ->
+      clearRetainedGeometry()
+      // Fabric removes the child before its disappearing view finishes drawing.
+      if (transitioningReactChild === child &&
+        contentOriginFrame.width > 0 && contentOriginFrame.height > 0) {
+        retainedReactChild = child
+        retainedContentWidthPx = contentOriginFrame.width
+        retainedContentHeightPx = contentOriginFrame.height
+      }
+      contentOriginFrame.removeView(child)
+    }
     reactChild = null
     contentWidthPx = 0
     contentHeightPx = 0
     scheduleLayout()
+  }
+
+  private fun clearRetainedGeometry() {
+    retainedReactChild = null
+    retainedContentWidthPx = 0
+    retainedContentHeightPx = 0
   }
 
   internal fun reactChildCount() = if (reactChild == null) 0 else 1
@@ -381,6 +423,8 @@ class NativeScrollerView(context: Context) : FrameLayout(context) {
     lastContentViewportHeight = null
     viewport.stopMotion()
     viewport.setTag(R.id.onekey_native_scroll_coordinator_offset_listener, null)
+    transitioningReactChild = null
+    clearRetainedGeometry()
     super.onDetachedFromWindow()
   }
 

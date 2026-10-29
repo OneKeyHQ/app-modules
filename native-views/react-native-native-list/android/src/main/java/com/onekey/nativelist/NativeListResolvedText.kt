@@ -52,7 +52,7 @@ internal data class NativeListResolvedText(
     view.letterSpacing = 0f
     view.gravity = gravity
     view.opticalOffsetY = offset
-    view.maxLines = lines
+    view.maxLines = if (lines == 0) Int.MAX_VALUE else lines
     view.setHorizontallyScrolling(lines == 1 && explicitTruncation)
     view.ellipsize = if (explicitTruncation && !clip) TextUtils.TruncateAt.END else null
     view.setLineSpacing(0f, 1f)
@@ -87,7 +87,8 @@ internal data class NativeListResolvedText(
       sourceScale: Boolean,
     ): NativeListResolvedText {
       val density = context.resources.displayMetrics.density
-      val maxLines = (style?.optInt("lines", lines) ?: lines).coerceIn(1, 3)
+      val requestedLines = style?.optInt("lines", lines) ?: lines
+      val maxLines = if (requestedLines == 0) 0 else requestedLines.coerceIn(1, 3)
       val truncation = style?.let { it.has("lines") || it.has("truncate") } == true
       val fontSize =
         if (style?.has("fontSize") == true) (style.optDouble("fontSize") * density).toFloat()

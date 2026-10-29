@@ -1,5 +1,6 @@
 package com.margelo.nitro.nativelist
 
+import android.graphics.PointF
 import android.graphics.drawable.GradientDrawable
 import android.text.Spannable
 import android.text.SpannableStringBuilder
@@ -8,6 +9,7 @@ import android.text.style.AbsoluteSizeSpan
 import android.text.style.ForegroundColorSpan
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
@@ -28,16 +30,40 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
   private val mainColumn = LinearLayout(context)
   private val titleLine = PackedTitleLineLayout(context)
   private val title = NativeListTextView(context)
+  private val titleIcon = OneKeyIconView(context)
   private val subtitle = NativeListTextView(context)
   private val tertiary = NativeListTextView(context)
   private val badgeLine = NativeListTextView(context)
+  private val titleSuffixLabels = mutableListOf<NativeListTextView>()
+  private val titleSuffixMaxWidths = mutableListOf<Int>()
   private val trailingColumn = NativeListAccessoryStack(context, fonts)
   private val semanticBadgeLabels = mutableListOf<TextView>()
   private val semanticSubtitleLabels = mutableListOf<TextView>()
   private var walletBadgeLine: View? = null
   private var currentItem: NativeListItem? = null
   private var currentTheme: JSONObject? = null
+  private var longPressPoint: PointF? = null
+  private var longPressPointEpoch = -1L
   private val paintDefaults = mutableMapOf<TextView, Int>()
+
+  override fun onRowTouch(event: MotionEvent) {
+    when (event.actionMasked) {
+      MotionEvent.ACTION_DOWN -> {
+        longPressPoint = if (currentItem?.isRowPressEnabled == true) PointF(event.x, event.y) else null
+        longPressPointEpoch = bindingEpoch
+      }
+      MotionEvent.ACTION_MOVE -> {
+        if (longPressPointEpoch == bindingEpoch && longPressPoint != null &&
+          event.x >= 0 && event.y >= 0 && event.x < width && event.y < height
+        ) longPressPoint?.set(event.x, event.y)
+        else longPressPoint = null
+      }
+      MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+        longPressPoint = null
+        longPressPointEpoch = -1L
+      }
+    }
+  }
 
   override fun backgroundGroupPosition(
     item: NativeListItem,
@@ -83,6 +109,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
     titleLine.orientation = HORIZONTAL
     titleLine.gravity = Gravity.CENTER_VERTICAL
     titleLine.addView(title, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
+    titleLine.addView(titleIcon, LayoutParams(dp(20), dp(20)).apply { marginStart = dp(4) })
     titleLine.addView(badgeLine)
     trailingColumn.onAction = { key, view, slot, target ->
       emitAction(key, view, "trailingAccessory", slot, target, trailingColumn.anchorInset(view))
@@ -111,7 +138,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
 
   private fun showText(view: TextView, text: String, lines: Int) {
     view.text = text
-    view.maxLines = lines
+    view.maxLines = if (lines == 0) Int.MAX_VALUE else lines
     view.visibility = if (text.isEmpty()) GONE else VISIBLE
   }
 
@@ -135,10 +162,42 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
     layout: String,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
   ) {
+    cancelLongPress()
+    longPressPoint = null
+    longPressPointEpoch = -1L
     currentItem = item
+    val longPressActionKey = item.json.optString("longPressActionKey")
+    val boundEpoch = bindingEpoch
+    setOnLongClickListener(
+      if (longPressActionKey.isNotEmpty())
+        OnLongClickListener {
+          val point = longPressPoint
+          if (!isEnabled || !item.isRowPressEnabled || currentItem?.key != item.key ||
+            bindingEpoch != boundEpoch ||
+            (longPressPointEpoch == boundEpoch && point == null)) false
+          else {
+            val windowPoint = point?.takeIf { longPressPointEpoch == boundEpoch }?.let {
+              val location = IntArray(2)
+              getLocationInWindow(location)
+              PointF(location[0] + it.x, location[1] + it.y)
+            }
+            onAction?.invoke(item, longPressActionKey, null,
+              NativeListActionOrigin(this, this, bindingEpoch, "row",
+                windowPointPixels = windowPoint))
+            longPressPoint = null
+            longPressPointEpoch = -1L
+            true
+          }
+        }
+      else null
+    )
+    isLongClickable = longPressActionKey.isNotEmpty()
     currentTheme = theme
     removeAllViews()
     mainColumn.removeAllViews()
+    titleSuffixLabels.forEach(titleLine::removeView)
+    titleSuffixLabels.clear()
+    titleSuffixMaxWidths.clear()
     semanticBadgeLabels.clear()
     semanticSubtitleLabels.clear()
     walletBadgeLine = null
@@ -157,8 +216,12 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
     mainColumn.gravity = Gravity.CENTER_VERTICAL
     titleLine.gravity = Gravity.CENTER_VERTICAL
     titleLine.packsChildrenAtStart = false
+    titleLine.leadingTextMaxWidth = Int.MAX_VALUE
     titleLine.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
     title.layoutParams = LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)
+    titleIcon.visibility = GONE
+    titleIcon.contentDescription = null
+    titleIcon.setOnClickListener(null)
     for (view in listOf(title, subtitle, tertiary, badgeLine)) {
       view.text = ""
       view.visibility = GONE
@@ -294,6 +357,19 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
   private fun addLeading(visual: JSONObject?, sizeDp: Int, spacingDp: Int = 12) {
     // Legacy: a missing visual still reserves an empty, transparent leading slot.
     val descriptor = visual ?: JSONObject().put("backgroundColor", "#00000000")
+    val overlays = descriptor.optJSONArray("overlays")
+    if (overlays != null && (0 until minOf(2, overlays.length())).any { index ->
+        val overlay = overlays.optJSONObject(index) ?: return@any false
+        overlay.optInt("offsetX", overlay.optInt("offset", 2)) > 0 ||
+          overlay.optInt("offsetY", overlay.optInt("offset", 2)) > 0
+      }) {
+      // The badge extends beyond the avatar and the row's padded content box.
+      clipChildren = false
+      clipToPadding = false
+    }
+    leadingFrame.bitmapBorderWidth =
+      if (descriptor.optString("borderColor").isNotEmpty() &&
+        descriptor.optString("borderStyle") != "dashed") dp(1) else 0
     if (visual == null) leadingFrame.recycle()
     val item = currentItem!!
     val style = item.json.optJSONObject("style")?.optJSONObject("image") ?: JSONObject()
@@ -310,6 +386,16 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
       if (item.json.optString("presentation") == "accountSelector" && item.hasExplicitHeight) 8
       else 10
     leadingFrame.bind(descriptor, style, item.key, currentTheme, false, sourceScale)
+    // The leading badges (overlay, cornerIcon, token network image) hang past the
+    // leading frame, and Android clips a child to its own bounds while its parent
+    // clips children: with the row's default clipping the account selector's
+    // bottom-right network badge was cut flat on Android only (OK-65694); iOS and
+    // Web let it overflow. Stop clipping the row, as the Market and Message
+    // renderers do for their network badges.
+    if (leadingFrame.requestsUnclippedHost) {
+      clipChildren = false
+      clipToPadding = false
+    }
     leadingFallback.typeface = fonts.bold(context)
     leadingFallback.textSize = sp(13f)
     leadingFallback.setLineSpacing(0f, 1f)
@@ -356,7 +442,58 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
   }
 
   override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+    val ratio = currentItem?.json?.optJSONObject("style")
+      ?.optDouble("leadingContentMaxWidthRatio", Double.NaN) ?: Double.NaN
+    titleLine.leadingTextMaxWidth =
+      if (ratio.isFinite() && ratio > 0.0 && ratio <= 1.0 && leadingFrame.parent === this) {
+        val inner = (MeasureSpec.getSize(widthMeasureSpec) - paddingLeft - paddingRight)
+          .coerceAtLeast(0)
+        val leading = leadingFrame.layoutParams as LayoutParams
+        val icon = if (titleIcon.visibility == VISIBLE) dp(24) else 0
+        (inner * ratio).roundToInt()
+          .minus(leading.width + leading.marginEnd + icon)
+          .coerceAtLeast(0)
+      } else Int.MAX_VALUE
+    titleSuffixLabels.forEachIndexed { index, label ->
+      label.maxWidth = titleSuffixMaxWidths[index]
+    }
     super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+    if (titleSuffixLabels.isNotEmpty()) {
+      val fixedWidth =
+        (1 until titleLine.childCount).sumOf { index ->
+          val view = titleLine.getChildAt(index)
+          if (view.visibility == GONE || titleSuffixLabels.any { it === view }) 0
+          else {
+            val margins = view.layoutParams as MarginLayoutParams
+            view.measuredWidth + margins.leftMargin + margins.rightMargin
+          }
+        }
+      val suffixMargins = titleSuffixLabels.sumOf {
+        val margins = it.layoutParams as MarginLayoutParams
+        margins.leftMargin + margins.rightMargin
+      }
+      val available =
+        (titleLine.measuredWidth - fixedWidth - suffixMargins - dp(80)).coerceAtLeast(0)
+      val desired = titleSuffixLabels.mapIndexed { index, label ->
+        label.paint.measureText(label.text.toString()).roundToInt()
+          .coerceAtMost(titleSuffixMaxWidths[index])
+      }
+      val total = desired.sum()
+      var remaining = available
+      var changed = false
+      titleSuffixLabels.forEachIndexed { index, label ->
+        val share =
+          if (total <= available) desired[index]
+          else if (index == titleSuffixLabels.lastIndex) remaining
+          else (desired[index].toLong() * available / total).toInt()
+        remaining -= share
+        if (label.maxWidth != share) {
+          label.maxWidth = share
+          changed = true
+        }
+      }
+      if (changed) super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+    }
     val item = currentItem ?: return
     if (
       item.hasExplicitHeight &&
@@ -414,6 +551,9 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
   }
 
   override fun recycleContent() {
+    cancelLongPress()
+    longPressPoint = null
+    longPressPointEpoch = -1L
     leadingFrame.recycle()
     trailingColumn.reset()
     currentItem = null
@@ -582,6 +722,48 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
     titleLine.packsChildrenAtStart = true
     title.ellipsize = TextUtils.TruncateAt.END
     showText(title, item.json.optString("title"), item.json.optInt("titleLines", 1))
+    item.json.optJSONArray("titleSuffixes")?.let { suffixes ->
+      for (index in 0 until suffixes.length()) {
+        val suffix = suffixes.optJSONObject(index) ?: continue
+        val label = NativeListTextView(context).apply {
+          text = suffix.optString("text")
+          typeface = fonts.regular(context)
+          textSize = sp(12f)
+          includeFontPadding = false
+          maxLines = 1
+          ellipsize = TextUtils.TruncateAt.END
+          setTextColor(
+            color(
+              theme,
+              if (suffix.optString("tone") == "disabled") "disabledText" else "secondaryText",
+              "#0000009B",
+            )
+          )
+        }
+        TextViewCompat.setLineHeight(label, dp(16))
+        val maxWidth =
+          if (suffix.has("maxWidth")) stylePx(suffix.optDouble("maxWidth")) else Int.MAX_VALUE
+        label.maxWidth = maxWidth
+        titleSuffixMaxWidths.add(maxWidth)
+        titleSuffixLabels.add(label)
+        titleLine.addView(
+          label,
+          titleLine.childCount - 1,
+          LayoutParams(LayoutParams.WRAP_CONTENT, dp(16)).apply { marginStart = dp(8) },
+        )
+      }
+    }
+    item.json.optJSONObject("titleIcon")?.let { icon ->
+      titleIcon.iconName = icon.optString("name")
+      titleIcon.glyphSizeDp = 20
+      titleIcon.useSourceScale = sourceScale
+      titleIcon.tintColor = safeColor(
+        icon.optString("tintColor").takeIf(String::isNotEmpty),
+        color(theme, "iconSubdued", "#00000072"),
+      )
+      titleIcon.contentDescription = icon.optString("accessibilityLabel").takeIf(String::isNotEmpty)
+      titleIcon.visibility = VISIBLE
+    }
     if (item.json.optString("presentation") == "accountSelector") {
       title.typeface = fonts.regular(context)
     }
@@ -701,6 +883,10 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
           .let { kinds ->
             kinds.containsAll(listOf("value", "checkbox")) ||
               kinds == listOf("valuePair", "menu") ||
+              kinds == listOf("valuePair", "chevron") ||
+              (kinds == listOf("icon", "chevron") &&
+                accessories.getJSONObject(0).optString("name") == "RefreshCcwOutline" &&
+                accessories.getJSONObject(0).optString("actionKey").isEmpty()) ||
               (kinds == listOf("icon", "icon") &&
                 accessories.getJSONObject(0).optString("name") == "PencilOutline" &&
                 accessories.getJSONObject(1).optString("name") == "DragOutline")

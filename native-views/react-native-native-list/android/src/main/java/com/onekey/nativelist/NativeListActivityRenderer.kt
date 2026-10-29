@@ -81,6 +81,7 @@ internal class NativeListActivityRowView(context: ThemedReactContext, fonts: Nat
     details.recycle()
     val style = data.optJSONObject("style") ?: JSONObject()
     val image = style.optJSONObject("image") ?: JSONObject()
+    val hideLeading = data.optBoolean("hideLeading")
     fun color(name: String, fallback: String) =
       parseNativeListColor(theme?.optString(name, fallback) ?: fallback)
     fun fill(value: Int, radius: Int) =
@@ -143,8 +144,10 @@ internal class NativeListActivityRowView(context: ThemedReactContext, fonts: Nat
     val iw = if (image.has("width")) stylePx(image.optDouble("width")) else dp(40)
     val ih = if (image.has("height")) stylePx(image.optDouble("height")) else dp(40)
     val gap = if (style.has("leadingGap")) stylePx(style.optDouble("leadingGap")) else dp(12)
-    visual.layoutParams = LayoutParams(iw, ih).apply { marginEnd = gap }
-    visual.bind(
+    visual.layoutParams = LayoutParams(iw, ih).apply { marginEnd = if (hideLeading) 0 else gap }
+    visual.visibility = if (hideLeading) GONE else VISIBLE
+    if (hideLeading) visual.recycle()
+    else visual.bind(
       // Legacy: a missing visual still reserves an empty, transparent slot.
       data.optJSONObject("leading") ?: JSONObject().put("backgroundColor", "#00000000"),
       image,
@@ -212,7 +215,7 @@ internal class NativeListActivityRowView(context: ThemedReactContext, fonts: Nat
     actions.visibility = if (count == 0) GONE else VISIBLE
     actions.layoutParams =
       LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
-        marginStart = if (style.has("leadingGap") || image.has("width")) iw + gap else dp(52)
+        marginStart = if (hideLeading) 0 else if (style.has("leadingGap") || image.has("width")) iw + gap else dp(52)
         topMargin = if (style.has("lineGap")) stylePx(style.optDouble("lineGap")) else dp(8)
         bottomMargin = dp(4)
       }

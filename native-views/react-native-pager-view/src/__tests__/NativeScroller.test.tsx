@@ -9,7 +9,9 @@ import {
 } from "react-native";
 import { NativeScroller, type NativeScrollerRef } from "../NativeScroller";
 import { CollapsiblePagerView } from "../CollapsiblePagerView";
-import CollapsiblePagerViewHost from "../CollapsiblePagerViewNativeComponent";
+import CollapsiblePagerViewHost, {
+  Commands as CollapsibleCommands,
+} from "../CollapsiblePagerViewNativeComponent";
 import NativeScrollerHost, { Commands } from "../NativeScrollerNativeComponent";
 import { ScrollEdgeEffect } from "../ScrollEdgeEffect";
 
@@ -68,8 +70,210 @@ jest.mock("../CollapsiblePagerViewNativeComponent", () => {
     default: ReactMock.forwardRef((props: object, ref) =>
       ReactMock.createElement("CollapsibleNativeHost", { ...props, ref })
     ),
-    Commands: {},
+    Commands: {
+      scrollHeaderToOffset: jest.fn(),
+      scrollHeaderBy: jest.fn(),
+      setPage: jest.fn(),
+      setPageWithoutAnimation: jest.fn(),
+    },
   };
+});
+
+describe("CollapsiblePagerView native tab reservation and press", () => {
+  let renderer: ReactTestRenderer;
+  const items = [
+    { key: "overview", title: "Overview" },
+    { key: "ethereum", title: "Ethereum" },
+  ];
+  const host = () =>
+    renderer.root
+      .findAllByProps({ testID: "reservation-host" })
+      .find((node) => "nativeTabBarTrailingReservedWidth" in node.props)!.props;
+  const renderPager = (
+    trailingReservedWidth?: number,
+    enabled = true,
+    onNativeTabPress = jest.fn(),
+    tabItems = items
+  ) => (
+    <CollapsiblePagerView
+      header={<View />}
+      testID="reservation-host"
+      stickyHeader={<View />}
+      headerHeight={100}
+      stickyHeaderHeight={44}
+      pageRetentionDistance={0}
+      nativeTabBar={
+        enabled
+          ? { items: tabItems, style: { trailingReservedWidth } }
+          : undefined
+      }
+      onNativeTabPress={onNativeTabPress}
+    >
+      <View key="overview" />
+      <View key="ethereum" />
+    </CollapsiblePagerView>
+  );
+
+  afterEach(() => {
+    if (renderer) act(() => renderer.unmount());
+  });
+
+  it("normalizes reservation when the tab descriptor changes or is disabled", () => {
+    act(() => {
+      renderer = create(renderPager(64));
+    });
+    expect(host().nativeTabBarTrailingReservedWidth).toBe(64);
+    act(() => renderer.update(renderPager(Number.NaN)));
+    expect(host().nativeTabBarTrailingReservedWidth).toBe(0);
+    act(() => renderer.update(renderPager(-2)));
+    expect(host().nativeTabBarTrailingReservedWidth).toBe(0);
+    act(() => renderer.update(renderPager()));
+    expect(host().nativeTabBarTrailingReservedWidth).toBe(0);
+    act(() => renderer.update(renderPager(64, false)));
+    expect(host().nativeTabBarTrailingReservedWidth).toBe(0);
+  });
+
+  it("forwards the opt-in segmented variant and resets to underline", () => {
+    const configured = (variant?: "underline" | "segmented", padding?: number) => (
+      <CollapsiblePagerView
+        header={<View />}
+        stickyHeader={<View />}
+        headerHeight={0}
+        stickyHeaderHeight={56}
+        testID="reservation-host"
+        nativeTabBar={{ items, style: { variant, contentPaddingVertical: padding } }}
+      >
+        <View key="overview" />
+        <View key="ethereum" />
+      </CollapsiblePagerView>
+    );
+    act(() => { renderer = create(configured("segmented", 12)); });
+    expect(host().nativeTabBarVariant).toBe("segmented");
+    expect(host().nativeTabBarContentPaddingVertical).toBe(12);
+    act(() => renderer.update(configured(undefined, Number.NaN)));
+    expect(host().nativeTabBarVariant).toBe("underline");
+    expect(host().nativeTabBarContentPaddingVertical).toBe(0);
+    act(() => renderer.update(configured(undefined, -1)));
+    expect(host().nativeTabBarContentPaddingVertical).toBe(0);
+  });
+
+  it("forwards finite partial-header deltas only while mounted", () => {
+    jest.mocked(CollapsibleCommands.scrollHeaderBy).mockClear();
+    jest.mocked(CollapsibleCommands.scrollHeaderToOffset).mockClear();
+    act(() => {
+      renderer = create(renderPager(), {
+        createNodeMock: () => nativeHandle,
+      });
+    });
+    const pager = renderer.root.findByType(CollapsiblePagerView)
+      .instance as CollapsiblePagerView;
+    act(() => {
+      pager.scrollHeaderBy(42);
+      pager.scrollHeaderBy(Number.NaN);
+      pager.scrollHeaderBy(Number.POSITIVE_INFINITY);
+      pager.scrollHeaderToOffset(64);
+      pager.scrollHeaderToOffset(Number.NEGATIVE_INFINITY);
+    });
+    expect(CollapsibleCommands.scrollHeaderBy).toHaveBeenCalledTimes(1);
+    expect(CollapsibleCommands.scrollHeaderBy).toHaveBeenCalledWith(
+      nativeHandle,
+      42
+    );
+    expect(CollapsibleCommands.scrollHeaderToOffset).toHaveBeenCalledTimes(1);
+    expect(CollapsibleCommands.scrollHeaderToOffset).toHaveBeenCalledWith(
+      nativeHandle,
+      64
+    );
+    act(() => renderer.unmount());
+    pager.scrollHeaderBy(10);
+    pager.scrollHeaderToOffset(10);
+    expect(CollapsibleCommands.scrollHeaderBy).toHaveBeenCalledTimes(1);
+    expect(CollapsibleCommands.scrollHeaderToOffset).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a stale native tab key before page commands and callbacks", () => {
+    const onNativeTabPress = jest.fn();
+    const animationFrame = globalThis.requestAnimationFrame;
+    globalThis.requestAnimationFrame = (callback) => {
+      callback(0);
+      return 1;
+    };
+    jest.mocked(CollapsibleCommands.setPage).mockClear();
+    jest.mocked(CollapsibleCommands.setPageWithoutAnimation).mockClear();
+    try {
+      act(() => {
+        renderer = create(renderPager(64, true, onNativeTabPress), {
+          createNodeMock: () => nativeHandle,
+        });
+      });
+      act(() =>
+        host().onNativeTabPress({
+          nativeEvent: { position: 1, key: "old-ethereum" },
+        })
+      );
+      expect(onNativeTabPress).not.toHaveBeenCalled();
+      expect(host().retainedPages).not.toContain("1");
+      expect(CollapsibleCommands.setPage).not.toHaveBeenCalled();
+      expect(CollapsibleCommands.setPageWithoutAnimation).not.toHaveBeenCalled();
+      act(() =>
+        renderer.update(
+          renderPager(64, true, onNativeTabPress, [...items].reverse())
+        )
+      );
+      act(() =>
+        host().onNativeTabPress({
+          nativeEvent: { position: 1, key: "ethereum" },
+        })
+      );
+      expect(onNativeTabPress).not.toHaveBeenCalled();
+      expect(CollapsibleCommands.setPage).not.toHaveBeenCalled();
+      act(() => renderer.update(renderPager(64, true, onNativeTabPress)));
+      act(() =>
+        host().onNativeTabPress({
+          nativeEvent: { position: 1, key: "ethereum" },
+        })
+      );
+      expect(onNativeTabPress).toHaveBeenCalledTimes(1);
+      expect(host().retainedPages).toContain("1");
+      expect(CollapsibleCommands.setPage).toHaveBeenCalledTimes(1);
+      act(() => renderer.update(renderPager(64, false, onNativeTabPress)));
+      expect(host().onNativeTabPress).toBeUndefined();
+    } finally {
+      globalThis.requestAnimationFrame = animationFrame;
+    }
+  });
+
+  it("drops a queued native tab command when its key moves before the frame", () => {
+    const animationFrame = globalThis.requestAnimationFrame;
+    const frames: FrameRequestCallback[] = [];
+    globalThis.requestAnimationFrame = (callback) => {
+      frames.push(callback);
+      return frames.length;
+    };
+    jest.mocked(CollapsibleCommands.setPage).mockClear();
+    jest.mocked(CollapsibleCommands.setPageWithoutAnimation).mockClear();
+    try {
+      act(() => {
+        renderer = create(renderPager(64), {
+          createNodeMock: () => nativeHandle,
+        });
+      });
+      act(() =>
+        host().onNativeTabPress({
+          nativeEvent: { position: 1, key: "ethereum" },
+        })
+      );
+      expect(frames).toHaveLength(1);
+      act(() =>
+        renderer.update(renderPager(64, true, jest.fn(), [...items].reverse()))
+      );
+      act(() => frames[0](0));
+      expect(CollapsibleCommands.setPage).not.toHaveBeenCalled();
+      expect(CollapsibleCommands.setPageWithoutAnimation).not.toHaveBeenCalled();
+    } finally {
+      globalThis.requestAnimationFrame = animationFrame;
+    }
+  });
 });
 
 const nativeHandle = {

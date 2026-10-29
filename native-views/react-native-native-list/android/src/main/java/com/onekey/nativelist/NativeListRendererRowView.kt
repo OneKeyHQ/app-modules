@@ -106,6 +106,8 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
   protected open val pressedColorName = "rowPressedBackground"
   protected open val pressedColorFallback = "#00000017"
   private var current: NativeListItem? = null
+  protected val boundItem: NativeListItem?
+    get() = current
   private var theme: JSONObject? = null
   private var listLayout = "linear"
   private var itemIndex: Int? = null

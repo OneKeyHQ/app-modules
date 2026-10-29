@@ -54,6 +54,7 @@ import { ChartWebViewTestPage } from './pages/ChartWebViewTestPage';
 import { ChartSingletonTestPage } from './pages/ChartSingletonTestPage';
 import { SplashScreenTestPage } from './pages/SplashScreenTestPage';
 import { BottomTabsTestPage } from './pages/BottomTabsTestPage';
+import { BottomTabsHomeDrawerExample } from './pages/BottomTabsHomeDrawerExample';
 import { BottomTabsSettingsPage } from './pages/BottomTabsSettingsPage';
 import { TextInputTestPage } from './pages/TextInputTestPage';
 import { TextTestPage } from './pages/TextTestPage';
@@ -112,6 +113,7 @@ export type RootStackParamList = {
   Skeleton: undefined;
   SplashScreen: undefined;
   BottomTabs: undefined;
+  BottomTabsHomeDrawer: undefined;
   BottomTabsSettings: undefined;
   TextInput: undefined;
   Text: undefined;
@@ -369,6 +371,12 @@ const modules: {
     description:
       'Native tab bar with UIKit (iOS) / Material (Android), badges, icons, liquid glass',
     icon: '📑',
+  },
+  {
+    screen: 'BottomTabsHomeDrawer',
+    name: 'Wallet Home Drawer',
+    description: 'Native drawer with the wallet shared header, five pages, and nested scrolling',
+    icon: '👛',
   },
   {
     screen: 'Text',
@@ -773,6 +781,11 @@ export function AppNavigator() {
         name="BottomTabsSettings"
         component={BottomTabsSettingsPage}
         options={{ title: 'Bottom Tabs Settings' }}
+      />
+      <Stack.Screen
+        name="BottomTabsHomeDrawer"
+        component={BottomTabsHomeDrawerExample}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="Text"

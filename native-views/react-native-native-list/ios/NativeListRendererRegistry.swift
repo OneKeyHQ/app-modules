@@ -18,6 +18,7 @@ enum NativeListRendererRegistry {
       .activity: (NativeListActivityCell.self, { NativeListActivityCell(frame: .zero) }),
       .system: (NativeListSystemCell.self, { NativeListSystemCell(frame: .zero) }),
       .action: (NativeListActionCell.self, { NativeListActionCell(frame: .zero) }),
+      .buttonGroup: (NativeListButtonGroupCell.self, { NativeListButtonGroupCell(frame: .zero) }),
       .unsupported: (
         NativeListUnsupportedCell.self, { NativeListUnsupportedCell(frame: .zero) }
       ),

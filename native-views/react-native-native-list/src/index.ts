@@ -14,10 +14,12 @@ export type {
   ScrollToKeyParams,
   ScrollToLocationParams,
   ScrollToOffsetParams,
+  StructuralTransitionSettledEvent,
 } from './NativeList';
 export type * from './models';
 export {
   applyRowPatches,
+  planNativeListPatches,
   serializePatches,
   serializeSnapshot,
   validatePatches,

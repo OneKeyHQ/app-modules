@@ -1,10 +1,17 @@
 import type { DataRow, TextTone } from '../../models';
-import { createElement, tagSlot } from './RowElements';
+import {
+  createElement,
+  markActionAnchorSource,
+  setData,
+  tagSlot,
+} from './RowElements';
+import { applyValueSegments, fontWeight } from './RowText';
 import { RowVisualStyle, type RowPrimitives } from './RowVisual';
 type ColumnViews = {
   body: HTMLElement;
   primaryLine: HTMLElement;
   primary: HTMLElement;
+  titleIcons: HTMLElement;
   badges: HTMLElement;
   secondaryLine: HTMLElement;
   secondary: HTMLElement[];
@@ -13,6 +20,7 @@ type Views = {
   favorite: HTMLElement;
   index: HTMLElement;
   controls: HTMLElement;
+  trailing: HTMLElement;
   columns: ColumnViews[];
   visual?: HTMLElement;
   visualStyle?: RowVisualStyle;
@@ -43,6 +51,11 @@ function bind(body: HTMLElement, row: DataRow, primitives: RowPrimitives) {
   if (row.checkbox)
     v.controls.appendChild(primitives.accessory(row.key, row.checkbox, 0));
   v.controls.style.display = 'contents';
+  v.trailing.replaceChildren();
+  row.trailing?.forEach((accessory, index) =>
+    v.trailing.appendChild(primitives.accessory(row.key, accessory, index))
+  );
+  v.trailing.hidden = !row.trailing?.length;
   v.index.style.cssText = '';
   v.index.hidden = row.index === undefined;
   v.index.textContent = String(row.index ?? '');
@@ -88,7 +101,41 @@ function bind(body: HTMLElement, row: DataRow, primitives: RowPrimitives) {
       cell.primaryLine.style.gap = `${style.titleBadgeGap}px`;
     cell.primary.style.cssText = '';
     cell.primary.textContent = column.text;
+    applyValueSegments(
+      cell.primary,
+      column.textSegments,
+      style?.columns?.fontSize ?? 14,
+      style?.columns?.lineHeight ?? 20,
+      fontWeight(style?.columns?.fontWeight, 500)
+    );
     if (style?.columns) primitives.textStyle(cell.primary, style.columns);
+    cell.titleIcons.replaceChildren();
+    if (column.titleIcon || column.secondaryTitleIcon) {
+      cell.primary.style.minWidth = '0';
+      cell.primary.style.overflow = 'hidden';
+      cell.primary.style.textOverflow = 'ellipsis';
+      cell.primary.style.whiteSpace = 'nowrap';
+      [column.titleIcon, column.secondaryTitleIcon]
+        .filter((icon): icon is NonNullable<typeof icon> => icon !== undefined)
+        .forEach((descriptor) => {
+          const icon = primitives.iconAction(
+            descriptor.name,
+            undefined,
+            undefined,
+            descriptor.tintColor
+          );
+          icon.className = 'ok-native-list-identity-title-icon';
+          if (descriptor.hoverActionKey) {
+            setData(icon, 'nativeListHoverAction', descriptor.hoverActionKey);
+            setData(icon, 'nativeListIconHelp', true);
+            markActionAnchorSource(icon, 'leadingAction');
+          }
+          if (descriptor.accessibilityLabel)
+            icon.setAttribute('aria-label', descriptor.accessibilityLabel);
+          else icon.setAttribute('aria-hidden', 'true');
+          cell.titleIcons.appendChild(icon);
+        });
+    }
     cell.badges.replaceChildren();
     cell.badges.style.display = 'contents';
     if (column.key === 'asset')
@@ -107,25 +154,34 @@ function bind(body: HTMLElement, row: DataRow, primitives: RowPrimitives) {
       });
     // Legacy Web layout: secondary leading text sits inline before the primary
     // text; secondary text is a direct line below it, toned by secondaryTone.
-    cell.secondaryLine.style.display = column.secondaryText
-      ? 'contents'
-      : 'none';
-    [column.secondaryLeadingText, column.secondaryText].forEach(
-      (text, slot) => {
-        const label = cell.secondary[slot]!;
-        label.hidden = !text;
-        if (!text) label.remove();
-        else if (slot === 0) cell.primaryLine.insertBefore(label, cell.primary);
-        else cell.secondaryLine.appendChild(label);
-        label.style.cssText = '';
-        label.textContent = text ?? '';
-        if (slot === 1)
-          label.style.color = tone(column.secondaryTone, 'secondary');
-        if (style?.columnSecondary)
-          primitives.textStyle(label, style.columnSecondary);
+    const secondaryText = column.secondaryTextSegments?.length
+      ? column.secondaryTextSegments.map((segment) => segment.text).join('')
+      : column.secondaryText;
+    cell.secondaryLine.style.display = secondaryText ? 'contents' : 'none';
+    [column.secondaryLeadingText, secondaryText].forEach((text, slot) => {
+      const label = cell.secondary[slot]!;
+      label.hidden = !text;
+      if (!text) label.remove();
+      else if (slot === 0) cell.primaryLine.insertBefore(label, cell.primary);
+      else cell.secondaryLine.appendChild(label);
+      label.style.cssText = '';
+      label.textContent = text ?? '';
+      if (slot === 1) {
+        applyValueSegments(
+          label,
+          column.secondaryTextSegments,
+          style?.columnSecondary?.fontSize ?? 12,
+          style?.columnSecondary?.lineHeight ?? 16,
+          fontWeight(style?.columnSecondary?.fontWeight, 400)
+        );
       }
-    );
+      if (slot === 1)
+        label.style.color = tone(column.secondaryTone, 'secondary');
+      if (style?.columnSecondary)
+        primitives.textStyle(label, style.columnSecondary);
+    });
   });
+  body.appendChild(v.trailing);
 }
 function create(document: Document, row: DataRow, primitives: RowPrimitives) {
   const body = createElement(
@@ -140,6 +196,11 @@ function create(document: Document, row: DataRow, primitives: RowPrimitives) {
   );
   const favorite = createElement(document, 'span', 'ok-native-list-favorite');
   const controls = createElement(document, 'span');
+  const trailing = createElement(
+    document,
+    'span',
+    'ok-native-list-accessories'
+  );
   body.append(controls, index, favorite);
   const columns = Array.from({ length: 4 }, () => {
     const cell = createElement(document, 'span', 'ok-native-list-data-cell');
@@ -149,8 +210,10 @@ function create(document: Document, row: DataRow, primitives: RowPrimitives) {
       'ok-native-list-data-primary'
     );
     const primary = tagSlot(createElement(document, 'span'), 'columns');
+    const titleIcons = createElement(document, 'span');
+    titleIcons.style.display = 'contents';
     const badges = createElement(document, 'span');
-    primaryLine.append(primary, badges);
+    primaryLine.append(primary, titleIcons, badges);
     const secondaryLine = createElement(
       document,
       'span',
@@ -169,15 +232,18 @@ function create(document: Document, row: DataRow, primitives: RowPrimitives) {
       body: cell,
       primaryLine,
       primary,
+      titleIcons,
       badges,
       secondaryLine,
       secondary,
     };
   });
+  body.appendChild(trailing);
   views.set(body, {
     favorite,
     index,
     controls,
+    trailing,
     columns,
     visualKey: '',
     primitives,
@@ -196,6 +262,7 @@ function recycle(body: HTMLElement) {
   v.visualStyle = undefined;
   v.visualKey = '';
   v.controls.replaceChildren();
+  v.trailing.replaceChildren();
 }
 export const dataRowRenderer = {
   key: 'dataRow' as const,
@@ -204,7 +271,13 @@ export const dataRowRenderer = {
   recycle,
   // Legacy presets: table rows without secondary text are 8 units shorter.
   measure: (row: DataRow, _width: number, layout?: string) => {
-    const secondary = row.columns.some((column) => column.secondaryText);
+    const secondary = row.columns.some((column) =>
+      column.secondaryTextSegments?.length
+        ? column.secondaryTextSegments.some(
+            (segment) => segment.text.length > 0
+          )
+        : !!column.secondaryText
+    );
     return (secondary ? 60 : 56) + (layout === 'table' && !secondary ? -8 : 0);
   },
   measureRendered: (_body: HTMLElement, _row: DataRow): number | undefined =>

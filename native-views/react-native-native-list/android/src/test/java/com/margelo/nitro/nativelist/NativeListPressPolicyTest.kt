@@ -26,6 +26,7 @@ class NativeListPressPolicyTest {
       Case(type = "system", variant = "end", expected = false),
       Case(type = "system", variant = "spacer", expected = false),
       Case(type = "walletGroup", expected = false),
+      Case(type = "buttonGroup", expected = false),
     )
 
     assertEquals(

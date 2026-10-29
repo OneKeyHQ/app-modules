@@ -26,7 +26,8 @@ struct NativeListResolvedText {
     let style = style ?? [:]
     self.tabular = tabular
     self.preservesBreakMode = preservesBreakMode
-    self.lines = min(3, max(1, style.int("lines", default: lines)))
+    let requestedLines = style.int("lines", default: lines)
+    self.lines = requestedLines == 0 ? 0 : min(3, max(1, requestedLines))
     explicitTruncation = style["lines"] != nil || style["truncate"] != nil
     text =
       self.lines == 1 && explicitTruncation

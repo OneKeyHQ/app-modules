@@ -16,8 +16,15 @@ import type { SystemRow } from '../../models';
 import { systemRowRenderer } from './SystemRowRenderer';
 import type { ActionRow } from '../../models';
 import { actionRowRenderer } from './ActionRowRenderer';
+import { buttonGroupRowRenderer } from './ButtonGroupRowRenderer';
 import { mediaTileRowRenderer } from './MediaTileRowRenderer';
-import type { MessageRow, RailRow, MediaTileRow, RowModel } from '../../models';
+import type {
+  ButtonGroupRow,
+  MessageRow,
+  RailRow,
+  MediaTileRow,
+  RowModel,
+} from '../../models';
 import { messageRowRenderer } from './MessageRowRenderer';
 import type { RowPrimitives } from './RowVisual';
 import { railRowRenderer } from './RailRowRenderer';
@@ -71,6 +78,8 @@ const factories = {
     registration(activityRowRenderer, row as ActivityRow),
   system: (row: RowModel) => registration(systemRowRenderer, row as SystemRow),
   action: (row: RowModel) => registration(actionRowRenderer, row as ActionRow),
+  buttonGroup: (row: RowModel) =>
+    registration(buttonGroupRowRenderer, row as ButtonGroupRow),
   message: (row: RowModel) =>
     registration(messageRowRenderer, row as MessageRow),
   rail: (row: RowModel) => registration(railRowRenderer, row as RailRow),
@@ -91,6 +100,7 @@ const renderers = {
   activity: activityRowRenderer,
   system: systemRowRenderer,
   action: actionRowRenderer,
+  buttonGroup: buttonGroupRowRenderer,
   message: messageRowRenderer,
   rail: railRowRenderer,
   mediaTile: mediaTileRowRenderer,

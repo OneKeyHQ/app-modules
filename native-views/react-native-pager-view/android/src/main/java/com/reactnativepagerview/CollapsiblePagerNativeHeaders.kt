@@ -65,7 +65,11 @@ private class CollapsiblePagerHorizontalItemsView(
 ) : HorizontalScrollView(context) {
   private val density = resources.displayMetrics.density
   private val content = FrameLayout(context)
+  private val track = View(context)
   private val indicator = View(context)
+  private val trackBackground = GradientDrawable().apply {
+    shape = GradientDrawable.RECTANGLE
+  }
   private val indicatorBackground = GradientDrawable().apply {
     shape = GradientDrawable.RECTANGLE
   }
@@ -75,6 +79,8 @@ private class CollapsiblePagerHorizontalItemsView(
   private var selectedKey = ""
   private var rowHeightPx = dp(if (showsProgressIndicator) 44.0 else 42.0)
   private var contentPaddingPx = dp(20.0)
+  private var contentPaddingVerticalPx = 0
+  private var segmented = false
   private var itemSpacingPx = dp(8.0)
   private var fontSize = if (showsProgressIndicator) 16.0 else 14.0
   private var fontFamily: String? = null
@@ -96,7 +102,9 @@ private class CollapsiblePagerHorizontalItemsView(
     isFillViewport = true
     overScrollMode = OVER_SCROLL_NEVER
     clipToPadding = false
+    track.background = trackBackground
     indicator.background = indicatorBackground
+    content.addView(track, FrameLayout.LayoutParams(0, 0))
     content.addView(indicator, FrameLayout.LayoutParams(0, 0))
     addView(
       content,
@@ -149,17 +157,24 @@ private class CollapsiblePagerHorizontalItemsView(
     fontFamily: String?,
     indicatorHeight: Double = 0.0,
     indicatorBottom: Double = 0.0,
+    variant: String = "underline",
+    contentPaddingVertical: Double = 0.0,
   ) {
     rowHeightPx = max(1, dp(rowHeight))
     contentPaddingPx = max(0, dp(contentPadding))
+    contentPaddingVerticalPx = max(0, dp(contentPaddingVertical))
+    val wasSegmented = segmented
+    segmented = showsProgressIndicator && variant == "segmented"
     itemSpacingPx = max(0, dp(itemSpacing))
     this.fontSize = max(1.0, fontSize)
     this.fontFamily = fontFamily
     if (showsProgressIndicator) {
       indicatorHeightPx = max(0, dp(indicatorHeight))
       indicatorBottomPx = max(0, dp(indicatorBottom))
-      indicatorBackground.cornerRadius = indicatorHeightPx / 2f
+      indicatorBackground.cornerRadius = if (segmented) dp(14.0).toFloat() else indicatorHeightPx / 2f
     }
+    track.visibility = if (segmented) VISIBLE else GONE
+    if (segmented && !wasSegmented) scrollTo(0, 0)
     applyTypeface()
     requestLayout()
   }
@@ -171,8 +186,9 @@ private class CollapsiblePagerHorizontalItemsView(
     selectedBackgroundColor: Int,
     indicatorColor: Int,
   ) {
-    setBackgroundColor(backgroundColor)
-    content.setBackgroundColor(backgroundColor)
+    setBackgroundColor(if (segmented) Color.TRANSPARENT else backgroundColor)
+    content.setBackgroundColor(if (segmented) Color.TRANSPARENT else backgroundColor)
+    trackBackground.setColor(backgroundColor)
     this.activeTextColor = activeTextColor
     this.inactiveTextColor = inactiveTextColor
     this.selectedBackgroundColor = selectedBackgroundColor
@@ -213,6 +229,46 @@ private class CollapsiblePagerHorizontalItemsView(
     }
     applyTypeface()
     itemFrames.clear()
+    if (segmented) {
+      val actualPaddingHorizontal = min(contentPaddingPx, width / 2)
+      val actualPaddingVertical = min(contentPaddingVerticalPx, height / 2)
+      val trackLeft = actualPaddingHorizontal
+      val trackRight = max(trackLeft, width - contentPaddingPx)
+      val trackTop = actualPaddingVertical
+      val trackBottom = max(trackTop, height - contentPaddingVerticalPx)
+      val trackWidth = trackRight - trackLeft
+      val trackHeight = trackBottom - trackTop
+      trackBackground.cornerRadius = trackHeight / 2f
+      indicatorBackground.cornerRadius = max(0, trackHeight - dp(4.0)) / 2f
+      track.layoutParams = FrameLayout.LayoutParams(trackWidth, trackHeight).apply {
+        gravity = Gravity.TOP or Gravity.LEFT
+        leftMargin = trackLeft
+        topMargin = trackTop
+      }
+      buttons.forEachIndexed { index, button ->
+        val count = buttons.size
+        val first = trackLeft + trackWidth * index / count
+        val last = trackLeft + trackWidth * (index + 1) / count
+        val start = if (layoutDirection == View.LAYOUT_DIRECTION_RTL) trackRight - (last - trackLeft) else first
+        val end = if (layoutDirection == View.LAYOUT_DIRECTION_RTL) trackRight - (first - trackLeft) else last
+        val buttonWidth = max(0, end - start)
+        val thumbInset = dp(2.0)
+        itemFrames.add(intArrayOf(start, buttonWidth, start + thumbInset, max(0, buttonWidth - 2 * thumbInset)))
+        button.layoutParams = FrameLayout.LayoutParams(buttonWidth, trackHeight).apply {
+          gravity = Gravity.TOP or Gravity.LEFT
+          leftMargin = start
+          topMargin = trackTop
+        }
+      }
+      content.layoutParams = LayoutParams(width, height)
+      content.measure(
+        MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+        MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY),
+      )
+      setMeasuredDimension(width, height)
+      return
+    }
+    track.layoutParams = FrameLayout.LayoutParams(0, 0)
     var x = contentPaddingPx
     buttons.forEachIndexed { index, button ->
       val textWidth = ceil(button.paint.measureText(button.text.toString()).toDouble()).toInt()
@@ -260,6 +316,9 @@ private class CollapsiblePagerHorizontalItemsView(
     return super.onTouchEvent(event)
   }
 
+  override fun onInterceptTouchEvent(event: MotionEvent): Boolean =
+    if (segmented) false else super.onInterceptTouchEvent(event)
+
   private fun updatePresentation() {
     if (buttons.isEmpty() || itemFrames.size != buttons.size) return
     val selectedIndex: Int
@@ -275,14 +334,16 @@ private class CollapsiblePagerHorizontalItemsView(
       val interpolatedIndicatorWidth = from[3] + (to[3] - from[3]) * fraction
       val indicatorX = interpolatedIndicatorX.roundToInt()
       val indicatorWidth = interpolatedIndicatorWidth.roundToInt()
-      val indicatorTop = max(0, measuredHeight - indicatorBottomPx - indicatorHeightPx)
+      val actualPaddingVertical = min(contentPaddingVerticalPx, measuredHeight / 2)
+      val indicatorHeight = if (segmented) max(0, measuredHeight - 2 * actualPaddingVertical - dp(4.0)) else indicatorHeightPx
+      val indicatorTop = if (segmented) actualPaddingVertical + dp(2.0) else max(0, measuredHeight - indicatorBottomPx - indicatorHeightPx)
       indicator.layout(
         indicatorX,
         indicatorTop,
         indicatorX + indicatorWidth,
-        indicatorTop + indicatorHeightPx,
+        indicatorTop + indicatorHeight,
       )
-      indicator.visibility = if (indicatorHeightPx > 0) VISIBLE else GONE
+      indicator.visibility = if (indicatorHeight > 0) VISIBLE else GONE
       scrollTargetCenterX = interpolatedIndicatorX + interpolatedIndicatorWidth / 2f
       selectedIndex = clamped.roundToInt()
       buttons.forEachIndexed { index, button ->
@@ -304,7 +365,7 @@ private class CollapsiblePagerHorizontalItemsView(
       }
     }
 
-    if (centerSelectionWhenIdle && !isTouchDragging && width > 0 && selectedIndex in itemFrames.indices) {
+    if (centerSelectionWhenIdle && !segmented && !isTouchDragging && width > 0 && selectedIndex in itemFrames.indices) {
       val desired = (scrollTargetCenterX - width / 2f).roundToInt()
         .coerceIn(0, max(0, content.measuredWidth - width))
       scrollTo(desired, 0)
@@ -335,7 +396,9 @@ internal class CollapsiblePagerNativeTabBarView(context: Context) : FrameLayout(
 
   fun updateStyle(
     height: Double,
+    variant: String,
     contentPadding: Double,
+    contentPaddingVertical: Double,
     itemSpacing: Double,
     fontSize: Double,
     fontFamily: String?,
@@ -351,6 +414,8 @@ internal class CollapsiblePagerNativeTabBarView(context: Context) : FrameLayout(
       fontFamily,
       indicatorHeight,
       indicatorBottom,
+      variant,
+      contentPaddingVertical,
     )
     requestLayout()
   }

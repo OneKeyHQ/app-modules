@@ -11,6 +11,15 @@ internal class NativeListContainerSlotAdapter : RecyclerView.Adapter<NativeListC
   private var content: View? = null
   private var height = 0
   private var enabled = true
+  private var boundHolder: Holder? = null
+  private var visualTranslationY = 0f
+
+  fun contentView(): View? = content
+
+  fun setVisualTranslationY(value: Float) {
+    visualTranslationY = value
+    boundHolder?.container?.translationY = value
+  }
 
   fun update(view: View?, heightPx: Int, visible: Boolean) {
     val previousCount = itemCount
@@ -39,6 +48,8 @@ internal class NativeListContainerSlotAdapter : RecyclerView.Adapter<NativeListC
   }
 
   override fun onBindViewHolder(holder: Holder, position: Int) {
+    boundHolder = holder
+    holder.container.translationY = visualTranslationY
     holder.container.layoutParams = RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, height)
     holder.container.removeAllViews()
     content?.let { view ->
@@ -48,6 +59,7 @@ internal class NativeListContainerSlotAdapter : RecyclerView.Adapter<NativeListC
   }
 
   override fun onViewRecycled(holder: Holder) {
+    if (boundHolder === holder) boundHolder = null
     holder.container.removeAllViews()
   }
 }

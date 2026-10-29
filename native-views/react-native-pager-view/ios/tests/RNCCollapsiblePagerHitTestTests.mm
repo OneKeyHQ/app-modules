@@ -2,13 +2,35 @@
 
 #import "RNCCollapsiblePagerViewComponentView.h"
 #import "RNCPagerViewComponentView.h"
+#import <React/RCTViewComponentView.h>
 #import <react/renderer/components/pagerview/Props.h>
+#import <react/renderer/components/view/ViewProps.h>
 
 using namespace facebook::react;
 
 @interface RNCCollapsiblePagerViewComponentView (ScrollEdgeTesting)
 - (void)updateTopScrollEdgeForScrollView:(UIScrollView *)scrollView;
 - (void)updateScrollEdgeContentMasks;
+- (void)layoutSharedHeaders;
+@end
+
+@interface UIView (NativeTabReservationTesting)
+- (void)updateItemsJSON:(NSString *)itemsJSON;
+- (void)updateStyleWithHeight:(CGFloat)height
+                      variant:(NSString *)variant
+     contentPaddingHorizontal:(CGFloat)contentPaddingHorizontal
+       contentPaddingVertical:(CGFloat)contentPaddingVertical
+                  itemSpacing:(CGFloat)itemSpacing
+                     fontSize:(CGFloat)fontSize
+                   fontFamily:(NSString *)fontFamily
+              backgroundColor:(UIColor *)backgroundColor
+              activeTextColor:(UIColor *)activeTextColor
+            inactiveTextColor:(UIColor *)inactiveTextColor
+               indicatorColor:(UIColor *)indicatorColor
+              indicatorHeight:(CGFloat)indicatorHeight
+              indicatorBottom:(CGFloat)indicatorBottom;
+- (void)setProgress:(CGFloat)progress;
+- (void)setLeftToRight:(BOOL)leftToRight;
 @end
 
 @interface RNCCollapsiblePagerHitTestTests : XCTestCase
@@ -54,6 +76,162 @@ using namespace facebook::react;
 - (void)testCollapsedHeaderDoesNotInterceptSiblingToolbar
 {
   XCTAssertEqual([self.root hitTest:CGPointMake(20, 80) withEvent:nil], self.toolbar);
+}
+
+- (void)testNativeTabReservationKeepsReactToolbarAboveTabsAndResetsInRTL
+{
+  UIView *sharedHost = [self.pager valueForKey:@"sharedHeaderHostView"];
+  UIView *tabBar = [self.pager valueForKey:@"nativeTabBarView"];
+  [tabBar updateItemsJSON:@"[{\"key\":\"a\",\"title\":\"Overview\"},"
+    @"{\"key\":\"b\",\"title\":\"Ethereum\"},"
+    @"{\"key\":\"c\",\"title\":\"BNB Chain\"},"
+    @"{\"key\":\"d\",\"title\":\"Polygon\"}]"];
+  RCTViewComponentView *sticky = [RCTViewComponentView new];
+  auto stickyProps = std::make_shared<ViewProps>();
+  stickyProps->pointerEvents = PointerEventsMode::BoxNone;
+  [sticky updateProps:stickyProps oldProps:nullptr];
+  UIButton *trailingControl = [[UIButton alloc] initWithFrame:CGRectMake(250, 0, 70, 44)];
+  [sticky addSubview:trailingControl];
+  [sharedHost addSubview:sticky];
+  [sharedHost addSubview:tabBar];
+  [self.pager setValue:sticky forKey:@"stickyHeaderView"];
+  [self.pager setValue:@0 forKey:@"headerHeight"];
+  [self.pager setValue:@44 forKey:@"stickyHeaderHeight"];
+  tabBar.hidden = NO;
+
+  [self.pager setValue:@64 forKey:@"nativeTabBarTrailingReservedWidth"];
+  [self.pager layoutSharedHeaders];
+  XCTAssertEqualWithAccuracy(CGRectGetWidth(sticky.frame), 320, 0.001);
+  XCTAssertEqualWithAccuracy(CGRectGetWidth(tabBar.frame), 256, 0.001);
+  XCTAssertEqualWithAccuracy(CGRectGetMinX(tabBar.frame), 0, 0.001);
+  XCTAssertEqual(sharedHost.subviews.lastObject, sticky);
+  XCTAssertEqual([sharedHost hitTest:CGPointMake(300, 22) withEvent:nil], trailingControl);
+  XCTAssertTrue([tabBar pointInside:CGPointMake(250, 22) withEvent:nil]);
+  [tabBar layoutIfNeeded];
+  [tabBar setProgress:3];
+  UIScrollView *tabScroll = (UIScrollView *)tabBar.subviews.firstObject;
+  NSArray<UIButton *> *buttons = [tabScroll.subviews filteredArrayUsingPredicate:
+    [NSPredicate predicateWithBlock:^BOOL(UIView *view, NSDictionary *bindings) {
+      return [view isKindOfClass:UIButton.class];
+    }]];
+  UIButton *lastTab = buttons.lastObject;
+  XCTAssertNotNil(lastTab);
+  XCTAssertGreaterThanOrEqual(CGRectGetMinX(lastTab.frame), tabScroll.contentOffset.x - 1);
+  XCTAssertLessThanOrEqual(CGRectGetMaxX(lastTab.frame),
+    tabScroll.contentOffset.x + CGRectGetWidth(tabScroll.bounds) + 1);
+
+  [self.pager setValue:@"rtl" forKey:@"layoutDirection"];
+  [tabBar setLeftToRight:NO];
+  trailingControl.frame = CGRectMake(0, 0, 70, 44);
+  [self.pager layoutSharedHeaders];
+  XCTAssertEqualWithAccuracy(CGRectGetMinX(tabBar.frame), 64, 0.001);
+  XCTAssertEqualWithAccuracy(CGRectGetMaxX(tabBar.frame), 320, 0.001);
+  XCTAssertEqual([sharedHost hitTest:CGPointMake(20, 22) withEvent:nil], trailingControl);
+
+  [self.pager setValue:@500 forKey:@"nativeTabBarTrailingReservedWidth"];
+  [self.pager layoutSharedHeaders];
+  XCTAssertEqualWithAccuracy(CGRectGetMinX(tabBar.frame), 320, 0.001);
+  XCTAssertEqualWithAccuracy(CGRectGetWidth(tabBar.frame), 0, 0.001);
+
+  [self.pager setValue:@0 forKey:@"nativeTabBarTrailingReservedWidth"];
+  [self.pager layoutSharedHeaders];
+  XCTAssertEqualWithAccuracy(CGRectGetMinX(tabBar.frame), 0, 0.001);
+  XCTAssertEqualWithAccuracy(CGRectGetWidth(tabBar.frame), 320, 0.001);
+  XCTAssertEqual(sharedHost.subviews.lastObject, tabBar);
+}
+
+- (void)testNativeTabReservationPropsRestoreDefaultOnRemoval
+{
+  auto reservedProps = std::make_shared<RNCCollapsiblePagerViewProps>();
+  reservedProps->nativeSmoothHeaderScrollEnabled = true;
+  reservedProps->nativeTabBarTrailingReservedWidth = 64;
+  [self.pager updateProps:reservedProps oldProps:nullptr];
+  XCTAssertEqualWithAccuracy(
+    [[self.pager valueForKey:@"nativeTabBarTrailingReservedWidth"] doubleValue], 64, 0.001);
+
+  auto defaultProps = std::make_shared<RNCCollapsiblePagerViewProps>();
+  defaultProps->nativeSmoothHeaderScrollEnabled = true;
+  [self.pager updateProps:defaultProps oldProps:reservedProps];
+  XCTAssertEqualWithAccuracy(
+    [[self.pager valueForKey:@"nativeTabBarTrailingReservedWidth"] doubleValue], 0, 0.001);
+}
+
+- (void)testSegmentedNativeTabsFollowFractionalProgressAndResetToUnderline
+{
+  UIView *tabBar = [self.pager valueForKey:@"nativeTabBarView"];
+  [tabBar updateItemsJSON:@"[{\"key\":\"recent\",\"title\":\"Recents\"},"
+    @"{\"key\":\"account\",\"title\":\"Accounts\"},"
+    @"{\"key\":\"book\",\"title\":\"Address Book\"}]"];
+  [tabBar updateStyleWithHeight:56 variant:@"segmented"
+    contentPaddingHorizontal:20 contentPaddingVertical:12 itemSpacing:0
+    fontSize:14 fontFamily:nil backgroundColor:UIColor.lightGrayColor
+    activeTextColor:UIColor.blackColor inactiveTextColor:UIColor.grayColor
+    indicatorColor:UIColor.whiteColor indicatorHeight:2 indicatorBottom:0];
+  tabBar.frame = CGRectMake(0, 0, 320, 56);
+  [tabBar layoutIfNeeded];
+  UIScrollView *scroll = (UIScrollView *)tabBar.subviews.firstObject;
+  UIView *track = scroll.subviews.firstObject;
+  UIView *thumb = [tabBar valueForKey:@"indicatorView"];
+  NSArray<UIButton *> *buttons = [scroll.subviews filteredArrayUsingPredicate:
+    [NSPredicate predicateWithBlock:^BOOL(UIView *view, NSDictionary *bindings) {
+      return [view isKindOfClass:UIButton.class];
+    }]];
+  XCTAssertEqual(buttons.count, 3);
+  XCTAssertFalse(scroll.scrollEnabled);
+  XCTAssertEqualWithAccuracy(CGRectGetMinX(track.frame), 20, 0.01);
+  XCTAssertEqualWithAccuracy(CGRectGetHeight(track.frame), 32, 0.01);
+  XCTAssertEqualWithAccuracy(CGRectGetWidth(buttons[0].frame),
+    CGRectGetWidth(buttons[1].frame), 0.01);
+  [tabBar setProgress:0];
+  CGFloat firstX = CGRectGetMinX(thumb.frame);
+  [tabBar setProgress:1];
+  CGFloat secondX = CGRectGetMinX(thumb.frame);
+  [tabBar setProgress:0.25];
+  XCTAssertEqualWithAccuracy(CGRectGetMinX(thumb.frame), firstX + (secondX - firstX) * 0.25, 0.01);
+  [tabBar setProgress:0.5];
+  XCTAssertEqualWithAccuracy(CGRectGetMinX(thumb.frame), (firstX + secondX) / 2, 0.01);
+  [tabBar setProgress:0];
+  XCTAssertEqualWithAccuracy(CGRectGetMinX(thumb.frame), firstX, 0.01);
+
+  [tabBar setLeftToRight:NO];
+  [tabBar layoutIfNeeded];
+  XCTAssertGreaterThan(CGRectGetMinX(buttons[0].frame), CGRectGetMinX(buttons[1].frame));
+  [tabBar updateItemsJSON:@"[{\"key\":\"recent\",\"title\":\"Recents (8)\"},"
+    @"{\"key\":\"account\",\"title\":\"Accounts\"}]"];
+  [tabBar layoutIfNeeded];
+  NSArray<UIButton *> *twoButtons = [scroll.subviews filteredArrayUsingPredicate:
+    [NSPredicate predicateWithBlock:^BOOL(UIView *view, NSDictionary *bindings) {
+      return [view isKindOfClass:UIButton.class];
+    }]];
+  XCTAssertEqual(twoButtons.count, 2);
+  XCTAssertEqualWithAccuracy(CGRectGetWidth(twoButtons[0].frame),
+    CGRectGetWidth(track.frame) / 2, 0.01);
+  [tabBar updateStyleWithHeight:56 variant:@"segmented"
+    contentPaddingHorizontal:20 contentPaddingVertical:40 itemSpacing:0
+    fontSize:14 fontFamily:nil backgroundColor:UIColor.lightGrayColor
+    activeTextColor:UIColor.blackColor inactiveTextColor:UIColor.grayColor
+    indicatorColor:UIColor.whiteColor indicatorHeight:2 indicatorBottom:0];
+  tabBar.frame = CGRectMake(0, 0, 30, 56);
+  [tabBar layoutIfNeeded];
+  XCTAssertEqualWithAccuracy(CGRectGetMinX(track.frame), 15, 0.01);
+  XCTAssertEqualWithAccuracy(CGRectGetWidth(track.frame), 0, 0.01);
+  XCTAssertEqualWithAccuracy(CGRectGetMinY(track.frame), 28, 0.01);
+  XCTAssertEqualWithAccuracy(CGRectGetHeight(track.frame), 0, 0.01);
+  XCTAssertTrue(thumb.hidden);
+  [tabBar updateItemsJSON:@"[]"];
+  XCTAssertTrue(tabBar.hidden);
+
+  [tabBar updateItemsJSON:@"[{\"key\":\"recent\",\"title\":\"Recents\"}]"];
+  [tabBar updateStyleWithHeight:44 variant:@"underline"
+    contentPaddingHorizontal:20 contentPaddingVertical:0 itemSpacing:8
+    fontSize:16 fontFamily:nil backgroundColor:UIColor.clearColor
+    activeTextColor:UIColor.blackColor inactiveTextColor:UIColor.grayColor
+    indicatorColor:UIColor.blackColor indicatorHeight:2 indicatorBottom:0];
+  tabBar.frame = CGRectMake(0, 0, 320, 44);
+  [tabBar layoutIfNeeded];
+  XCTAssertTrue(scroll.scrollEnabled);
+  XCTAssertTrue(track.hidden);
+  XCTAssertEqualWithAccuracy(CGRectGetHeight(thumb.frame), 2, 0.01);
 }
 
 - (void)testPinnedChildOutsideHeaderHostStillReceivesViewportTouches

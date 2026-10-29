@@ -1,5 +1,5 @@
-import React, { useLayoutEffect, useRef } from 'react';
-import type { NativeSyntheticEvent } from 'react-native';
+import React, { useLayoutEffect, useRef } from "react";
+import type { NativeSyntheticEvent } from "react-native";
 import {
   type ColorValue,
   type DimensionValue,
@@ -11,27 +11,28 @@ import {
   View,
   type ViewStyle,
   processColor,
-} from 'react-native';
-import { BottomTabBarHeightContext } from './utils/BottomTabBarHeightContext';
+} from "react-native";
+import { BottomTabBarHeightContext } from "./utils/BottomTabBarHeightContext";
 
 // eslint-disable-next-line @react-native/no-deep-imports
-import type { ImageSource } from 'react-native/Libraries/Image/ImageSource';
+import type { ImageSource } from "react-native/Libraries/Image/ImageSource";
 import NativeBottomTabs, {
   type BottomTabsItems,
-} from './BottomTabsNativeComponent';
-import useLatestCallback from 'use-latest-callback';
+} from "./BottomTabsNativeComponent";
+import useLatestCallback from "use-latest-callback";
 import type {
   AppleIcon,
   BaseRoute,
   NavigationState,
   TabBarPlacement,
   TabRole,
-} from './types';
-import DelayedFreeze from './DelayedFreeze';
+} from "./types";
+import DelayedFreeze from "./DelayedFreeze";
+import NativeBottomTabsDrawer from "./BottomTabsDrawerNativeComponent";
 import {
   BottomAccessoryView,
   type RNBottomTabsAccessoryViewProps,
-} from './BottomAccessoryView';
+} from "./BottomAccessoryView";
 
 const isAppleSymbol = (icon: any): icon is { sfSymbol: string } =>
   icon?.sfSymbol;
@@ -41,6 +42,14 @@ interface Props<Route extends BaseRoute> {
    * Whether to show labels in tabs. When false, only icons will be displayed.
    */
   labeled?: boolean;
+  /** Optional physical-left menu; all motion and input are owned by native. */
+  renderDrawerContent?: () => React.ReactNode;
+  /** External drawer target. Mirror onDrawerOpenChange for user transitions. */
+  drawerOpen?: boolean;
+  /** Enables root-screen content swipes after inner horizontal views reach their boundary. */
+  drawerSwipeEnabled?: boolean;
+  /** Reports a completed user target so the external open state can follow it. */
+  onDrawerOpenChange?: (open: boolean) => void;
   /**
    * A tab bar style that adapts to each platform.
    *
@@ -63,12 +72,12 @@ interface Props<Route extends BaseRoute> {
   /**
    * Describes the appearance attributes for the tabBar to use when an observable scroll view is scrolled to the bottom. (iOS only)
    */
-  scrollEdgeAppearance?: 'default' | 'opaque' | 'transparent';
+  scrollEdgeAppearance?: "default" | "opaque" | "transparent";
 
   /**
    * Behavior for minimizing the tab bar. (iOS 26+)
    */
-  minimizeBehavior?: 'automatic' | 'onScrollDown' | 'onScrollUp' | 'never';
+  minimizeBehavior?: "automatic" | "onScrollDown" | "onScrollUp" | "never";
   /**
    * Active tab color.
    */
@@ -197,7 +206,7 @@ interface Props<Route extends BaseRoute> {
    * A function that returns a React element to display as bottom accessory view.
    * iOS 26+ only.
    */
-  renderBottomAccessoryView?: RNBottomTabsAccessoryViewProps['renderBottomAccessoryView'];
+  renderBottomAccessoryView?: RNBottomTabsAccessoryViewProps["renderBottomAccessoryView"];
   /**
    * Whether the tab bar is hidden.
    */
@@ -209,7 +218,7 @@ interface Props<Route extends BaseRoute> {
   /**
    * Visual style of the Android tab bar. Android only.
    */
-  androidTabBarStyle?: 'default' | 'floating';
+  androidTabBarStyle?: "default" | "floating";
   /**
    * Whether the tab bar ignores the soft keyboard. Defaults to true, so the
    * keyboard covers the tab bar as on iOS. Set to false to pad the tab bar by
@@ -250,6 +259,10 @@ const BottomTabs = <Route extends BaseRoute>({
   renderLazyPlaceholder,
   onIndexChange,
   onTabDoublePress,
+  renderDrawerContent,
+  drawerOpen = false,
+  drawerSwipeEnabled = false,
+  onDrawerOpenChange,
   rippleColor,
   tabBarActiveTintColor: activeTintColor,
   tabBarInactiveTintColor: inactiveTintColor,
@@ -272,14 +285,14 @@ const BottomTabs = <Route extends BaseRoute>({
   getSceneStyle = ({ route }: { route: Route }) => route.style,
   getPreventsDefault = ({ route }: { route: Route }) => route.preventsDefault,
   hapticFeedbackEnabled = false,
-  labeled = Platform.OS !== 'android' ? true : undefined,
+  labeled = Platform.OS !== "android" ? true : undefined,
   getFreezeOnBlur = ({ route }: { route: Route }) => route.freezeOnBlur,
   tabBar: renderCustomTabBar,
   tabBarStyle,
   tabLabelStyle,
   renderBottomAccessoryView,
   activeIndicatorColor,
-  androidBottomBlurEnabled = Platform.OS === 'android' &&
+  androidBottomBlurEnabled = Platform.OS === "android" &&
     Number(Platform.Version) >= 36,
   delayedFreeze = false,
   onTabBarPlacementChange,
@@ -291,15 +304,22 @@ const BottomTabs = <Route extends BaseRoute>({
   // @ts-ignore
   const focusedKey = navigationState.routes[navigationState.index].key;
   const customTabBarWrapperRef = useRef<View>(null) as React.RefObject<any>;
-  const nativeBottomTabsRef = useRef<React.ElementRef<typeof NativeBottomTabs>>(null);
-  const [tabBarHeight, setTabBarHeight] = React.useState<number | undefined>(0);
+  const nativeBottomTabsRef =
+    useRef<React.ElementRef<typeof NativeBottomTabs>>(null);
+  const [nativeTabBarHeight, setNativeTabBarHeight] = React.useState(0);
+  const [customTabBarHeight, setCustomTabBarHeight] = React.useState(0);
+  const tabBarHeight = renderCustomTabBar
+    ? customTabBarHeight
+    : props.tabBarHidden
+    ? 0
+    : nativeTabBarHeight;
   const [measuredDimensions, setMeasuredDimensions] = React.useState<
     { width: DimensionValue; height: DimensionValue } | undefined
-  >({ width: '100%', height: '100%' });
+  >({ width: "100%", height: "100%" });
 
   const trimmedRoutes = React.useMemo(() => {
     if (
-      Platform.OS === 'android' &&
+      Platform.OS === "android" &&
       navigationState.routes.length > ANDROID_MAX_TABS
     ) {
       console.warn(
@@ -316,7 +336,7 @@ const BottomTabs = <Route extends BaseRoute>({
     setLoaded((loaded) => [...loaded, focusedKey]);
   }
 
-  const isIOS = Platform.OS === 'ios';
+  const isIOS = Platform.OS === "ios";
 
   // Unfocused (outline) icons — independent of focusedKey so the array stays
   // stable across tab switches and the native side never reloads on switch.
@@ -353,9 +373,9 @@ const BottomTabs = <Route extends BaseRoute>({
         const icon = icons[index];
         const isSfSymbol = isAppleSymbol(icon);
 
-        if (Platform.OS === 'android' && isSfSymbol) {
+        if (Platform.OS === "android" && isSfSymbol) {
           console.warn(
-            'SF Symbols are not supported on Android. Use require() or pass uri to load an image instead.'
+            "SF Symbols are not supported on Android. Use require() or pass uri to load an image instead."
           );
         }
 
@@ -369,10 +389,10 @@ const BottomTabs = <Route extends BaseRoute>({
           sfSymbol: isSfSymbol ? icon.sfSymbol : undefined,
           badge: getBadge?.({ route }),
           badgeBackgroundColor:
-            typeof badgeBgColor === 'number' ? badgeBgColor : undefined,
+            typeof badgeBgColor === "number" ? badgeBgColor : undefined,
           badgeTextColor:
-            typeof badgeTxtColor === 'number' ? badgeTxtColor : undefined,
-          activeTintColor: typeof color === 'number' ? color : undefined,
+            typeof badgeTxtColor === "number" ? badgeTxtColor : undefined,
+          activeTintColor: typeof color === "number" ? color : undefined,
           hidden: getHidden?.({ route }),
           testID: getTestID?.({ route }),
           role: getRole?.({ route }),
@@ -401,13 +421,13 @@ const BottomTabs = <Route extends BaseRoute>({
           // @ts-ignore - resolveAssetSource accepts ImageSourcePropType
           const resolved = Image.resolveAssetSource(icon);
           return {
-            uri: resolved?.uri ?? '',
+            uri: resolved?.uri ?? "",
             width: resolved?.width ?? 0,
             height: resolved?.height ?? 0,
             scale: resolved?.scale ?? 1,
           };
         }
-        return { uri: '', width: 0, height: 0, scale: 1 };
+        return { uri: "", width: 0, height: 0, scale: 1 };
       }),
     [icons]
   );
@@ -421,13 +441,13 @@ const BottomTabs = <Route extends BaseRoute>({
           // @ts-ignore - resolveAssetSource accepts ImageSourcePropType
           const resolved = Image.resolveAssetSource(icon);
           return {
-            uri: resolved?.uri ?? '',
+            uri: resolved?.uri ?? "",
             width: resolved?.width ?? 0,
             height: resolved?.height ?? 0,
             scale: resolved?.scale ?? 1,
           };
         }
-        return { uri: '', width: 0, height: 0, scale: 1 };
+        return { uri: "", width: 0, height: 0, scale: 1 };
       }),
     [focusedIcons]
   );
@@ -456,17 +476,19 @@ const BottomTabs = <Route extends BaseRoute>({
       const { key } = event.nativeEvent;
       const accepted = jumpTo(key);
       if (accepted === false) {
-        nativeBottomTabsRef.current?.setNativeProps({ selectedPage: focusedKey });
+        nativeBottomTabsRef.current?.setNativeProps({
+          selectedPage: focusedKey,
+        });
       }
     },
-    [focusedKey, jumpTo],
+    [focusedKey, jumpTo]
   );
 
   const handleTabBarMeasured = React.useCallback(
     (event: NativeSyntheticEvent<{ height: number }>) => {
-      setTabBarHeight(event.nativeEvent.height);
+      setNativeTabBarHeight(event.nativeEvent.height);
     },
-    [setTabBarHeight]
+    [setNativeTabBarHeight]
   );
 
   const handleNativeLayout = React.useCallback(
@@ -506,113 +528,151 @@ const BottomTabs = <Route extends BaseRoute>({
 
   useLayoutEffect(() => {
     if (renderCustomTabBar && customTabBarWrapperRef.current) {
-      customTabBarWrapperRef.current.measure((_x: number, _y: number, _width: number, height: number) => {
-        setTabBarHeight(height);
-      });
+      customTabBarWrapperRef.current.measure(
+        (_x: number, _y: number, _width: number, height: number) => {
+          setCustomTabBarHeight(height);
+        }
+      );
     }
   }, [renderCustomTabBar]);
 
   return (
     <BottomTabBarHeightContext.Provider value={tabBarHeight}>
-      <NativeBottomTabs
-        ref={nativeBottomTabsRef}
-        {...props}
-        {...tabLabelStyle}
+      <NativeBottomTabsDrawer
         style={styles.fullWidth}
-        items={items}
-        icons={renderCustomTabBar ? undefined : resolvedIconAssets}
-        selectedIcons={
-          isIOS && !renderCustomTabBar ? resolvedSelectedIconAssets : undefined
-        }
-        selectedPage={focusedKey}
-        tabBarHidden={props.tabBarHidden ?? !!renderCustomTabBar}
-        onTabDoublePress={handleTabDoublePress}
-        onPageSelected={handlePageSelected}
-        onTabBarMeasured={handleTabBarMeasured}
-        onNativeLayout={handleNativeLayout}
-        onTabBarPlacementChange={handleTabBarPlacementChange}
-        sideAccessoryIcon={renderCustomTabBar ? undefined : resolvedSideAccessoryIcon}
-        sideAccessoryLabel={sideAccessoryLabel}
-        onSideAccessoryPress={handleSideAccessoryPress}
+        enabled={!!renderDrawerContent}
+        open={drawerOpen}
+        swipeEnabled={drawerSwipeEnabled}
         hapticFeedbackEnabled={hapticFeedbackEnabled}
-        activeTintColor={activeTintColor}
-        inactiveTintColor={inactiveTintColor}
-        barTintColor={tabBarStyle?.backgroundColor}
-        rippleColor={rippleColor}
-        activeIndicatorColor={activeIndicatorColor}
-        androidBottomBlurEnabled={
-          Platform.OS === 'android' &&
-          !renderCustomTabBar &&
-          androidBottomBlurEnabled
+        bottomBarHeight={tabBarHeight ?? 0}
+        onDrawerOpenChange={(event) =>
+          onDrawerOpenChange?.(event.nativeEvent.open)
         }
-        labeled={labeled}
       >
-        {trimmedRoutes.map((route) => {
-          if (getLazy({ route }) !== false && !loaded.includes(route.key)) {
-            return (
-              <View
-                key={route.key}
-                collapsable={false}
-                style={styles.fullWidth}
-              >
-                {renderLazyPlaceholder?.({ route })}
-              </View>
-            );
-          }
+        <View collapsable={false} style={styles.drawerMenu}>
+          {Platform.OS !== "web" ? renderDrawerContent?.() : null}
+        </View>
+        <View collapsable={false} style={styles.fullWidth}>
+          <NativeBottomTabs
+            ref={nativeBottomTabsRef}
+            {...props}
+            {...tabLabelStyle}
+            style={styles.fullWidth}
+            items={items}
+            icons={renderCustomTabBar ? undefined : resolvedIconAssets}
+            selectedIcons={
+              isIOS && !renderCustomTabBar
+                ? resolvedSelectedIconAssets
+                : undefined
+            }
+            selectedPage={focusedKey}
+            tabBarHidden={props.tabBarHidden ?? !!renderCustomTabBar}
+            onTabDoublePress={handleTabDoublePress}
+            onPageSelected={handlePageSelected}
+            onTabBarMeasured={handleTabBarMeasured}
+            onNativeLayout={handleNativeLayout}
+            onTabBarPlacementChange={handleTabBarPlacementChange}
+            sideAccessoryIcon={
+              renderCustomTabBar ? undefined : resolvedSideAccessoryIcon
+            }
+            sideAccessoryLabel={sideAccessoryLabel}
+            onSideAccessoryPress={handleSideAccessoryPress}
+            hapticFeedbackEnabled={hapticFeedbackEnabled}
+            activeTintColor={activeTintColor}
+            inactiveTintColor={inactiveTintColor}
+            barTintColor={tabBarStyle?.backgroundColor}
+            rippleColor={rippleColor}
+            activeIndicatorColor={activeIndicatorColor}
+            androidBottomBlurEnabled={
+              Platform.OS === "android" &&
+              !renderCustomTabBar &&
+              androidBottomBlurEnabled
+            }
+            labeled={labeled}
+          >
+            {trimmedRoutes.map((route) => {
+              if (getLazy({ route }) !== false && !loaded.includes(route.key)) {
+                return (
+                  <View
+                    key={route.key}
+                    collapsable={false}
+                    style={styles.fullWidth}
+                  >
+                    {renderLazyPlaceholder?.({ route })}
+                  </View>
+                );
+              }
 
-          const focused = route.key === focusedKey;
-          const freeze = !focused ? getFreezeOnBlur({ route }) : false;
+              const focused = route.key === focusedKey;
+              const freeze = !focused ? getFreezeOnBlur({ route }) : false;
 
-          const customStyle = getSceneStyle({ route });
+              const customStyle = getSceneStyle({ route });
 
-          return (
+              return (
+                <View
+                  key={route.key}
+                  style={[
+                    styles.screen,
+                    renderCustomTabBar ? styles.fullWidth : measuredDimensions,
+                    customStyle,
+                  ]}
+                  collapsable={false}
+                  pointerEvents={focused ? "auto" : "none"}
+                  accessibilityElementsHidden={!focused}
+                  importantForAccessibility={
+                    focused ? "auto" : "no-hide-descendants"
+                  }
+                >
+                  <DelayedFreeze
+                    freeze={!!freeze}
+                    delayedFreeze={delayedFreeze}
+                  >
+                    {renderScene({
+                      route,
+                      jumpTo,
+                    })}
+                  </DelayedFreeze>
+                </View>
+              );
+            })}
+            {Platform.OS === "ios" &&
+            parseFloat(Platform.Version) >= 26 &&
+            renderBottomAccessoryView &&
+            !renderCustomTabBar ? (
+              <BottomAccessoryView
+                renderBottomAccessoryView={renderBottomAccessoryView}
+              />
+            ) : null}
+          </NativeBottomTabs>
+          {renderCustomTabBar ? (
             <View
-              key={route.key}
-              style={[
-                styles.screen,
-                renderCustomTabBar ? styles.fullWidth : measuredDimensions,
-                customStyle,
-              ]}
-              collapsable={false}
-              pointerEvents={focused ? 'auto' : 'none'}
-              accessibilityElementsHidden={!focused}
-              importantForAccessibility={
-                focused ? 'auto' : 'no-hide-descendants'
+              ref={customTabBarWrapperRef}
+              onLayout={(event) =>
+                setCustomTabBarHeight(event.nativeEvent.layout.height)
               }
             >
-              <DelayedFreeze freeze={!!freeze} delayedFreeze={delayedFreeze}>
-                {renderScene({
-                  route,
-                  jumpTo,
-                })}
-              </DelayedFreeze>
+              {renderCustomTabBar()}
             </View>
-          );
-        })}
-        {Platform.OS === 'ios' &&
-        parseFloat(Platform.Version) >= 26 &&
-        renderBottomAccessoryView &&
-        !renderCustomTabBar ? (
-          <BottomAccessoryView
-            renderBottomAccessoryView={renderBottomAccessoryView}
-          />
-        ) : null}
-      </NativeBottomTabs>
-      {renderCustomTabBar ? (
-        <View ref={customTabBarWrapperRef}>{renderCustomTabBar()}</View>
-      ) : null}
+          ) : null}
+        </View>
+      </NativeBottomTabsDrawer>
     </BottomTabBarHeightContext.Provider>
   );
 };
 
 const styles = StyleSheet.create({
   fullWidth: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
     flex: 1,
   },
+  drawerMenu: {
+    position: "absolute",
+    width: "78%",
+    height: "100%",
+  },
   screen: {
-    position: 'absolute',
+    position: "absolute",
   },
 });
 

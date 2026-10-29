@@ -210,7 +210,7 @@ jobs:
 
   ios-xctest:
     runs-on: macos-26
-    timeout-minutes: 90
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -221,6 +221,22 @@ jobs:
           working-directory: example/react-native
           ruby-version: '3.4.4'
           bundler-cache: true
+      - name: Restore Yarn download cache
+        id: yarn-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .yarn/cache
+          key: ios-yarn-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock', '.yarnrc.yml') }}
+      - name: Restore CocoaPods and React Native download caches
+        id: pod-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/Library/Caches/CocoaPods/Pods
+            ~/Library/Caches/ReactNative/*.tar.gz
+          key: ios-pods-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock', 'example/react-native/Gemfile.lock', 'example/react-native/ios/Podfile.lock') }}
+          restore-keys: |
+            ios-pods-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock', 'example/react-native/Gemfile.lock', 'example/react-native/ios/Podfile.lock') }}-
       - name: Select and verify Xcode and simulator
         run: |
           sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
@@ -233,15 +249,36 @@ jobs:
           echo "SIMULATOR_UDID=$sim_udid" >> "$GITHUB_ENV"
           df -h .
       - name: Install and generate native bindings
+        id: install-bindings
+        timeout-minutes: 8
         run: |
           corepack enable
           yarn install --immutable
           # shellcheck disable=SC2016
           find native-modules native-views -mindepth 2 -maxdepth 2 -name nitro.json -print0 |
             xargs -0 -n1 -P4 bash -c 'yarn --cwd "$(dirname "$0")" nitrogen > /dev/null'
+      - name: Save Yarn download cache
+        if: steps.yarn-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .yarn/cache
+          key: ios-yarn-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock', '.yarnrc.yml') }}
       - name: Install CocoaPods test specs and verify lockfile
+        timeout-minutes: 10
         working-directory: example/react-native/ios
+        env:
+          CURL_HOME: ${{ runner.temp }}/ios-pod-curl
         run: |
+          mkdir -p "$CURL_HOME"
+          cat > "$CURL_HOME/.curlrc" <<'CURLRC'
+          connect-timeout = 30
+          speed-limit = 16384
+          speed-time = 60
+          max-time = 240
+          retry = 2
+          retry-max-time = 300
+          retry-delay = 2
+          CURLRC
           bundle exec pod install
           ruby - <<'RUBY'
           require 'yaml'
@@ -272,8 +309,28 @@ jobs:
           end
           puts 'Podfile.lock matches: only the Hermes checksum and Specs CDN URL may differ'
           RUBY
+      - name: Keep only complete React Native downloads
+        id: validate-rn-cache
+        if: always() && steps.install-bindings.outcome == 'success'
+        shell: bash
+        run: |
+          cache="$HOME/Library/Caches/ReactNative"
+          if [[ -d "$cache" ]]; then
+            while IFS= read -r -d '' file; do
+              tar -tzf "$file" > /dev/null || rm -f "$file"
+            done < <(find "$cache" -type f -name '*.tar.gz' -print0)
+          fi
+      - name: Save CocoaPods and React Native download caches
+        if: always() && steps.validate-rn-cache.outcome == 'success' && steps.pod-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/Library/Caches/CocoaPods/Pods
+            ~/Library/Caches/ReactNative/*.tar.gz
+          key: ${{ steps.pod-cache.outputs.cache-primary-key }}
       - name: Compile native overlay pod and run nine pod XCTest suites on iOS Simulator
         shell: bash
+        timeout-minutes: 20
         run: |
           set -euo pipefail
           mkdir -p artifacts/ios

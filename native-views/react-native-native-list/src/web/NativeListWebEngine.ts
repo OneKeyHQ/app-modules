@@ -801,7 +801,7 @@ export const WEB_LIST_CSS = `
 .ok-native-list-table-secondary{display:block;min-width:0;overflow:clip}.ok-native-list-table-secondary-track{display:flex;flex-direction:column;transition:transform 100ms ease}.ok-native-list-market-table:focus-within .ok-native-list-table-secondary[data-has-hover="true"]>.ok-native-list-table-secondary-track{transform:translateY(calc(-1 * var(--nl-table-secondary-height)))}@media(hover:hover){.ok-native-list-market-table:hover .ok-native-list-table-secondary[data-has-hover="true"]>.ok-native-list-table-secondary-track{transform:translateY(calc(-1 * var(--nl-table-secondary-height)))}}.ok-native-list-market-table button:focus-visible{outline:2px solid var(--nl-accent);outline-offset:1px}.ok-native-list-market-table button:hover{opacity:.75}.ok-native-list-market-table button:active{opacity:.5}
 
 [data-native-list-selector="walletSidebar"] .ok-native-list-title{max-width:100%;min-width:0}
-.ok-native-list-root{--nl-bg:#f7f7f7;--nl-row:#fff;--nl-selected:#eaf2ff;--nl-pressed:#e8e8e8;--nl-subdued:#f9f9f9;--nl-strong:#0000000f;--nl-primary:#111;--nl-secondary:#6b7280;--nl-disabled:#8d8d8d;--nl-icon:#111;--nl-icon-subdued:#8d8d8d;--nl-separator:#e5e7eb;--nl-accent:#2f6bff;--nl-positive:#15803d;--nl-negative:#dc2626;--nl-critical:#feecec;--nl-inverse:#202020;--nl-inverse-text:#fcfcfc;--nl-info:#0d74ce;position:absolute;inset:0;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;background:var(--nl-bg);color:var(--nl-primary);font-synthesis:none;font-family:var(--nl-font-regular)}
+.ok-native-list-root{--nl-bg:#f7f7f7;--nl-row:#fff;--nl-selected:#eaf2ff;--nl-pressed:#e8e8e8;--nl-hover:#e8e8e8;--nl-subdued:#f9f9f9;--nl-strong:#0000000f;--nl-primary:#111;--nl-secondary:#6b7280;--nl-disabled:#8d8d8d;--nl-icon:#111;--nl-icon-subdued:#8d8d8d;--nl-separator:#e5e7eb;--nl-accent:#2f6bff;--nl-positive:#15803d;--nl-negative:#dc2626;--nl-critical:#feecec;--nl-inverse:#202020;--nl-inverse-text:#fcfcfc;--nl-info:#0d74ce;position:absolute;inset:0;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;background:var(--nl-bg);color:var(--nl-primary);font-synthesis:none;font-family:var(--nl-font-regular)}
 .ok-native-list-viewport-frame{position:relative;flex:1;min-width:0;min-height:0;overflow:hidden}
 .ok-native-list-viewport{position:absolute;inset:0;overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scrollbar-gutter:stable}
 .ok-native-list-content{position:relative;min-width:100%;min-height:100%}
@@ -812,7 +812,7 @@ export const WEB_LIST_CSS = `
 .ok-native-list-item[data-native-list-selected="true"]>.ok-native-list-row{background:var(--nl-selected)}
 .ok-native-list-item[data-native-list-disabled="true"]>.ok-native-list-row{cursor:default}
 .ok-native-list-item[data-native-list-row-press-enabled="true"]>.ok-native-list-row{cursor:pointer}
-.ok-native-list-item[data-native-list-row-press-enabled="true"]:hover>.ok-native-list-row{background:var(--nl-pressed)}
+.ok-native-list-item[data-native-list-row-press-enabled="true"]:hover>.ok-native-list-row{background:var(--nl-hover)}
 .ok-native-list-item[data-native-list-row-press-enabled="true"]:active>.ok-native-list-row{background:var(--nl-pressed)}
 .ok-native-list-item[data-native-list-row-press-enabled="true"]:not([data-native-list-selected="true"]):hover>.ok-native-list-wallet-row{background:var(--nl-strong)}
 .ok-native-list-item[data-native-list-row-press-enabled="true"]:not([data-native-list-selected="true"]):active>.ok-native-list-wallet-row{background:var(--nl-pressed)}
@@ -843,16 +843,23 @@ export const WEB_LIST_CSS = `
 .ok-native-list-item[data-group-position="last"]>.ok-native-list-row{border-radius:0 0 var(--nl-group-radius,12px) var(--nl-group-radius,12px)}
 .ok-native-list-item[data-group-position="single"]>.ok-native-list-row{border-radius:var(--nl-group-radius,12px)}
 .ok-native-list-standard{padding:8px 12px}.ok-native-list-network-row{padding:0 12px}.ok-native-list-wallet-row{padding:4px 8px;flex-direction:column;justify-content:center;gap:4px}.ok-native-list-account-row{padding:4px 12px;gap:8px}
+.ok-native-list-trailing-button{appearance:none;box-sizing:border-box;flex:0 0 auto;padding:4px 10px;border:1px solid transparent;border-radius:9999px;background:var(--nl-button-bg,var(--nl-strong));color:var(--nl-button-text,var(--nl-primary));font:500 14px/20px var(--nl-font-medium);white-space:nowrap;cursor:pointer}.ok-native-list-trailing-button:hover:not(:disabled){background:var(--nl-button-hover,var(--nl-strong))}.ok-native-list-trailing-button:active:not(:disabled){background:var(--nl-button-pressed,var(--nl-pressed))}.ok-native-list-trailing-button:focus-visible{outline:2px solid var(--nl-button-focus,var(--nl-accent))}.ok-native-list-trailing-button:disabled{opacity:.4;cursor:default}
+.ok-native-list-icon-button.ok-native-list-tertiary-icon{box-sizing:border-box;flex:0 0 38px;width:38px;height:38px;margin:-7px;padding:6px;border:1px solid transparent;border-radius:9999px;color:var(--nl-icon-subdued);background:transparent}.ok-native-list-icon-button.ok-native-list-tertiary-icon:hover:not(:disabled){background:var(--nl-hover)}.ok-native-list-icon-button.ok-native-list-tertiary-icon:active:not(:disabled){background:var(--nl-pressed)}.ok-native-list-icon-button.ok-native-list-tertiary-icon:disabled{opacity:.4;cursor:default}
+.ok-native-list-icon-button.ok-native-list-tertiary-icon:focus-visible:not(:disabled){outline:2px solid var(--nl-accent)}
+.ok-native-list-identity-title-icon{flex:0 0 20px;width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;color:var(--nl-icon);font-size:20px}.ok-native-list-identity-title-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ok-native-list-account-row .ok-native-list-visual,.ok-native-list-account-action-row .ok-native-list-visual{width:32px;height:32px;flex-basis:32px}.ok-native-list-account-row .ok-native-list-visual>img,.ok-native-list-account-row .ok-native-list-visual-main,.ok-native-list-account-action-row .ok-native-list-visual>img,.ok-native-list-account-action-row .ok-native-list-visual-main{width:32px;height:32px}.ok-native-list-account-row .ok-native-list-visual>.ok-native-list-visual-corner{width:20px;height:20px;padding:2px}.ok-native-list-account-action-row .ok-native-list-visual{border-radius:8px!important}.ok-native-list-wallet-row .ok-native-list-title{color:var(--nl-secondary);font-size:12px;line-height:16px;font-weight:400;font-family:var(--nl-font-regular)}.ok-native-list-item[data-native-list-selected="true"]>.ok-native-list-wallet-row .ok-native-list-title{color:var(--nl-primary)}.ok-native-list-account-row .ok-native-list-title{font-size:16px;line-height:20px;font-weight:400;font-family:var(--nl-font-regular)}.ok-native-list-account-row .ok-native-list-secondary{font-size:14px;line-height:20px;font-weight:400;font-family:var(--nl-font-regular)}
 .ok-native-list-flex{display:flex;flex:1;min-width:0;flex-direction:column;justify-content:center}.ok-native-list-title{font-size:15px;line-height:20px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--nl-font-semibold)}.ok-native-list-secondary{font-size:13px;line-height:18px;color:var(--nl-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-tertiary{color:var(--nl-secondary)}.ok-native-list-info{color:var(--nl-info)}
 .ok-native-list-identity-row .ok-native-list-title,.ok-native-list-identity-row .ok-native-list-amounts>span:first-child{font-size:16px;line-height:20px}.ok-native-list-identity-row .ok-native-list-secondary{font-size:14px;line-height:20px}
 .ok-native-list-value{font-size:14px;line-height:20px;font-weight:500;white-space:nowrap;font-family:var(--nl-font-medium)}.ok-native-list-time{font-size:11px;line-height:16px;color:var(--nl-secondary);align-self:flex-start}.ok-native-list-amounts{display:flex;flex-direction:column;align-items:flex-end;min-width:0}.ok-native-list-actions{display:flex;gap:16px;margin-top:6px}
 .ok-native-list-action-button{appearance:none;border:0;background:transparent;padding:2px;color:var(--nl-accent);cursor:pointer;font:600 12px/16px var(--nl-font-semibold)}.ok-native-list-action-button[data-tone="danger"]{color:var(--nl-negative)}.ok-native-list-action-button:disabled{opacity:.5;cursor:default}
-.ok-native-list-visual{position:relative;flex:0 0 40px;width:40px;height:40px;border-radius:20px;overflow:visible;background:var(--nl-strong)}.ok-native-list-visual>img,.ok-native-list-visual-main{display:block;width:40px;height:40px;border-radius:inherit;object-fit:cover}.ok-native-list-visual-fallback{display:flex;width:100%;height:100%;align-items:center;justify-content:center;border-radius:inherit;color:var(--nl-primary);font-size:15px;font-weight:600;overflow:hidden;font-family:var(--nl-font-semibold)}.ok-native-list-visual>.ok-native-list-visual-corner{position:absolute;right:-4px;bottom:-4px;width:18px;height:18px;padding:2px;border-radius:50%;background:var(--nl-row);object-fit:cover}.ok-native-list-stacked{display:flex;align-items:center;width:48px;flex-basis:48px}.ok-native-list-stacked img{width:28px;height:28px;border:2px solid var(--nl-row);border-radius:50%;object-fit:cover;margin-left:-10px}.ok-native-list-stacked img:first-child{margin-left:0}
+.ok-native-list-visual{position:relative;flex:0 0 40px;width:40px;height:40px;border-radius:20px;overflow:visible;background:var(--nl-strong)}.ok-native-list-visual>img,.ok-native-list-visual-main{display:block;width:40px;height:40px;border-radius:inherit;object-fit:cover}.ok-native-list-visual-fallback{display:flex;width:100%;height:100%;align-items:center;justify-content:center;border-radius:inherit;color:var(--nl-primary);font-size:15px;font-weight:600;overflow:hidden;font-family:var(--nl-font-semibold)}.ok-native-list-image-skeleton{position:absolute;inset:0;border-radius:inherit;pointer-events:none;animation:ok-native-list-skeleton-light 1.5s linear infinite alternate}.ok-native-list-image-skeleton[data-dark="true"]{animation-name:ok-native-list-skeleton-dark}@keyframes ok-native-list-skeleton-light{0%{background-color:#fafafa}100%{background-color:#cdcdcd}}@keyframes ok-native-list-skeleton-dark{0%{background-color:#111111}100%{background-color:#333333}}@media(prefers-reduced-motion:reduce){.ok-native-list-image-skeleton{animation:none;background-color:var(--nl-strong)}}.ok-native-list-visual>.ok-native-list-visual-corner{position:absolute;right:-4px;bottom:-4px;width:18px;height:18px;padding:2px;border-radius:50%;background:var(--nl-row);object-fit:cover}.ok-native-list-stacked{display:flex;align-items:center;width:48px;flex-basis:48px}.ok-native-list-stacked img{width:28px;height:28px;border:2px solid var(--nl-row);border-radius:50%;object-fit:cover;margin-left:-10px}.ok-native-list-stacked img:first-child{margin-left:0}
 .ok-native-list-accessories{display:flex;align-items:center;gap:10px;min-width:0}.ok-native-list-accessory{font-size:14px;color:var(--nl-primary);white-space:nowrap}.ok-native-list-accessory-secondary{color:var(--nl-secondary)}.ok-native-list-icon-button{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:24px;border:0;background:transparent;color:var(--nl-icon);font-size:20px;line-height:1;font-weight:500;cursor:pointer;font-family:var(--nl-font-medium)}.ok-native-list-checkbox{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:20px;height:20px;border:2px solid color-mix(in srgb,var(--nl-primary) 19%,transparent);border-radius:5px;background:var(--nl-row);cursor:pointer}.ok-native-list-checkbox[data-state="checked"],.ok-native-list-checkbox[data-state="indeterminate"]{border-color:transparent;background:var(--nl-primary)}.ok-native-list-checkbox[data-state="checked"]::after{content:"";width:6px;height:10px;margin-top:-2px;border-right:2px solid var(--nl-row);border-bottom:2px solid var(--nl-row);transform:rotate(45deg)}.ok-native-list-checkbox[data-state="indeterminate"]::after{content:"";width:8px;height:2px;border-radius:1px;background:var(--nl-row)}.ok-native-list-spinner{width:16px;height:16px;border:2px solid var(--nl-separator);border-top-color:var(--nl-primary);border-radius:50%;animation:ok-native-list-spin .8s linear infinite}@keyframes ok-native-list-spin{to{transform:rotate(360deg)}}
-.ok-native-list-badge{display:inline-flex;align-items:center;max-width:100%;height:18px;padding:0 5px;border-radius:5px;background:color-mix(in srgb,var(--nl-accent) 12%,transparent);color:var(--nl-accent);font-size:11px;line-height:18px;white-space:nowrap}.ok-native-list-badge[data-tone="danger"]{background:var(--nl-critical);color:var(--nl-negative)}.ok-native-list-badges{display:inline-flex;gap:4px;margin-left:6px;vertical-align:middle}
+.ok-native-list-icon-button.ok-native-list-decorative-refresh{min-width:16px;width:16px;height:16px}
+.ok-native-list-badge{display:inline-flex;align-items:center;max-width:100%;height:18px;padding:0 5px;border-radius:5px;background:color-mix(in srgb,var(--nl-accent) 12%,transparent);color:var(--nl-accent);font-size:11px;line-height:18px;white-space:nowrap}.ok-native-list-badge[data-tone="danger"]{background:var(--nl-critical);color:var(--nl-negative)}.ok-native-list-badge[data-tone="success"]{background:var(--nl-success-background,color-mix(in srgb,var(--nl-positive) 12%,transparent));color:var(--nl-positive)}.ok-native-list-section>.ok-native-list-badge[data-tone="success"]{box-sizing:border-box;height:20px;padding:2px 8px;border-radius:4px;font:500 12px/16px var(--nl-font-medium)}.ok-native-list-badges{display:inline-flex;gap:4px;margin-left:6px;vertical-align:middle}
+.ok-native-list-identity-row .ok-native-list-badge[data-tone="neutral"]{height:20px;box-sizing:border-box;padding:2px 8px;border-radius:4px;background:var(--nl-strong);color:var(--nl-secondary);font-size:12px;line-height:16px;font-weight:500;font-family:var(--nl-font-medium)}
 .ok-native-list-section{padding:0 8px;background:var(--nl-bg);gap:8px}.ok-native-list-section[data-variant="summary"]{padding:0 20px}.ok-native-list-section[data-variant="gallery"]{padding:0 12px}.ok-native-list-section[data-variant="history"]{padding:0 8px}.ok-native-list-section-title{font-size:13px;line-height:18px;font-weight:700;color:var(--nl-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--nl-font-bold)}.ok-native-list-section[data-variant="summary"] .ok-native-list-section-title{font-size:16px;font-weight:500;color:var(--nl-primary);font-family:var(--nl-font-medium)}.ok-native-list-section[data-variant="gallery"] .ok-native-list-section-title{font-size:16px;color:var(--nl-primary)}.ok-native-list-section[data-variant="history"] .ok-native-list-section-title{font-size:12px;line-height:16px;letter-spacing:0.8px}.ok-native-list-section-value{margin-left:auto}
 .ok-native-list-action-row{justify-content:space-between;padding:0 16px}.ok-native-list-action-title{font-size:15px;font-weight:600;color:var(--nl-accent);font-family:var(--nl-font-semibold)}.ok-native-list-action-title[data-tone="danger"]{color:var(--nl-negative)}
+.ok-native-list-button-group{padding:0;gap:10px;overflow:visible}.ok-native-list-block-button{position:relative;display:flex;flex:1 1 0;min-width:0;min-height:48px;align-items:center;justify-content:center;gap:8px;padding:12px 8px;border:1px solid color-mix(in srgb,var(--nl-info) 35%,transparent);border-radius:12px;background:transparent;color:var(--nl-info);font:500 14px/20px var(--nl-font-medium);cursor:pointer}.ok-native-list-block-button>span:not(.ok-native-list-spinner){min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ok-native-list-block-button>.ok-native-list-spinner{position:static;flex:0 0 20px;width:20px;height:20px;border-top-color:var(--nl-info)}.ok-native-list-block-button:hover:not(:disabled){background:color-mix(in srgb,var(--nl-info) 10%,transparent);border-color:var(--nl-info)}.ok-native-list-block-button:active:not(:disabled){background:color-mix(in srgb,var(--nl-info) 17%,transparent)}.ok-native-list-block-button:focus-visible{outline:2px solid var(--nl-info);outline-offset:1px}.ok-native-list-block-button:disabled{opacity:.4;cursor:default}
 .ok-native-list-account-action-row{justify-content:flex-start;gap:12px;padding:0 12px}.ok-native-list-account-action-row .ok-native-list-action-title{color:var(--nl-secondary);font-size:16px;line-height:24px;font-weight:400;font-family:var(--nl-font-regular)}
 .ok-native-list-system{justify-content:center;padding:8px 12px;background:var(--nl-bg);color:var(--nl-secondary);cursor:default}.ok-native-list-system[data-variant="retry"],.ok-native-list-system[data-variant="noMatch"],.ok-native-list-system[data-variant="end"]{justify-content:flex-start}.ok-native-list-system[data-variant="retry"]{cursor:pointer}
 .ok-native-list-rail{padding:4px;gap:6px;border-radius:8px}.ok-native-list-rail .ok-native-list-visual{width:20px;height:20px;flex-basis:20px}.ok-native-list-rail .ok-native-list-visual>img,.ok-native-list-rail .ok-native-list-visual-main{width:20px;height:20px}.ok-native-list-rail-title{font-size:12px;font-weight:500;white-space:nowrap;font-family:var(--nl-font-medium)}
@@ -901,6 +908,7 @@ export const WEB_LIST_CSS = `
 .ok-native-list-root .ok-native-list-item>[data-nl-container-background="true"],.ok-native-list-root .ok-native-list-wallet-member>[data-nl-container-background="true"]{background:var(--nl-container-background)}
 .ok-native-list-root [data-nl-container-border="true"]{position:relative}
 .ok-native-list-root [data-nl-container-border="true"]::before{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 var(--nl-container-border-width) var(--nl-container-border-color);z-index:2;pointer-events:none}
+.ok-native-list-root [data-nl-inline-warning="true"][data-nl-container-border="true"]::before{box-shadow:none;border-block:var(--nl-container-border-width) solid var(--nl-container-border-color);border-inline:0;border-radius:0}
 .ok-native-list-root .ok-native-list-item[data-native-list-row-press-enabled="true"]:hover>[data-nl-container-background="true"],.ok-native-list-root .ok-native-list-item[data-native-list-row-press-enabled="true"]:active>[data-nl-container-background="true"],.ok-native-list-root .ok-native-list-wallet-member:hover>[data-nl-container-background="true"],.ok-native-list-root .ok-native-list-wallet-member:active>[data-nl-container-background="true"]{background:var(--nl-pressed)}
 `;
 
@@ -1187,6 +1195,45 @@ const selectorIcons: Readonly<
     }>
   >
 > = {
+  RefreshCcwOutline: {
+    viewBox: '0 0 24 24',
+    paths: [
+      {
+        d: 'M5 12a7 7 0 0 0 7 7 7.15 7.15 0 0 0 4.955-2h-2.943v-2h6v6h-2v-2.257A9.148 9.148 0 0 1 12 21a9 9 0 0 1-9-9v-1h2v1Zm1-6.754A9.148 9.148 0 0 1 12 3a9 9 0 0 1 9 9v1h-2v-1a7 7 0 0 0-7-7 7.15 7.15 0 0 0-4.955 2H10v2H4V3h2v2.246Z',
+        fill: 'currentColor',
+        fillRule: 'nonzero',
+        opacity: 1,
+      },
+    ],
+  },
+  TicketOutline: {
+    viewBox: '0 0 24 24',
+    paths: [
+      {
+        d: 'M16 17.01h-2V15h2v2.01Zm0-4h-2V11h2v2.01Zm0-4h-2V7h2v2.01Z',
+        fill: 'currentColor',
+        fillRule: 'nonzero',
+        opacity: 1,
+      },
+      {
+        d: 'm22 9.927-.629.252c-1.661.665-1.661 2.977 0 3.642l.629.252V20H2v-5.927l.629-.252c1.661-.665 1.661-2.977 0-3.642L2 9.927V4h20v5.927ZM4 8.636c2.5 1.52 2.499 5.207 0 6.727V18h16v-2.637c-2.499-1.52-2.5-5.208 0-6.727V6H4v2.636Z',
+        fill: 'currentColor',
+        fillRule: 'evenodd',
+        opacity: 1,
+      },
+    ],
+  },
+  GasSolid: {
+    viewBox: '0 0 24 24',
+    paths: [
+      {
+        d: 'M15 9h4v7h1V8.414L17.586 6 19 4.586l3 3V18h-5v-7h-2v8h1v2H2v-2h1V3h12zM6 9v2h6V9z',
+        fill: 'currentColor',
+        fillRule: 'evenodd',
+        opacity: 1,
+      },
+    ],
+  },
   CryptoCoinOutline: {
     viewBox: '0 0 24 24',
     paths: [
@@ -1486,6 +1533,7 @@ function applySelectorIcon(element: HTMLElement, name: string) {
 
 function iconGlyph(name: string): string {
   const normalized = name.toLocaleLowerCase();
+  if (normalized === 'dotversolid') return '⋮';
   if (normalized.includes('chevron')) {
     if (normalized.includes('top')) return '⌃';
     if (normalized.includes('bottom')) return '⌄';
@@ -1563,6 +1611,10 @@ function createVisual(
     : visualBackground;
   const fallbackIcon =
     'fallbackIcon' in visual ? visual.fallbackIcon : undefined;
+  const fallbackBackground =
+    fallbackIcon?.backgroundColor ?? 'var(--nl-strong)';
+  if (!source && fallbackIcon?.backgroundColor)
+    frame.style.background = fallbackBackground;
   const handlesSourceFallback =
     showsSourcePlaceholder &&
     (fallbackIcon !== undefined || 'fallbackText' in visual);
@@ -1578,6 +1630,28 @@ function createVisual(
       if (image.complete && image.naturalWidth > 0) restoreBackground();
     }
     if (selectorPresentation) paintSelectorImageBackground(image, frame);
+    if (
+      source?.loadingStrategy === 'skeleton' &&
+      !(image.complete && image.naturalWidth > 0)
+    ) {
+      const skeleton = createElement(
+        context.document,
+        'span',
+        'ok-native-list-image-skeleton'
+      );
+      const background = resolvedTheme(context.snapshot).background;
+      const rgb = /^#([0-9a-f]{6})/i.exec(background)?.[1];
+      if (rgb) {
+        const red = Number.parseInt(rgb.slice(0, 2), 16);
+        const green = Number.parseInt(rgb.slice(2, 4), 16);
+        const blue = Number.parseInt(rgb.slice(4, 6), 16);
+        if (red * 299 + green * 587 + blue * 114 < 128_000)
+          skeleton.dataset.dark = 'true';
+      }
+      frame.appendChild(skeleton);
+      image.addEventListener('load', () => skeleton.remove(), { once: true });
+      image.addEventListener('error', () => skeleton.remove(), { once: true });
+    }
   } else if (!source || showsSourcePlaceholder) {
     frame.appendChild(
       createElement(
@@ -1632,13 +1706,29 @@ function createVisual(
           ? visual.fallbackText ?? ''
           : ''
       );
+      if (
+        'fallbackTextColor' in visual &&
+        visual.fallbackTextColor &&
+        !fallbackIcon
+      )
+        fallback.style.color = visual.fallbackTextColor;
       if (fallbackIcon) {
         applySelectorIcon(fallback, fallbackIcon.name);
         if (fallbackIcon.tintColor)
           fallback.style.color = fallbackIcon.tintColor;
+        if (fallbackIcon.size) {
+          const svg = fallback.querySelector<SVGElement>('svg');
+          if (svg) {
+            svg.style.width = `${fallbackIcon.size}px`;
+            svg.style.height = `${fallbackIcon.size}px`;
+          }
+        }
       }
-      fallback.style.backgroundColor =
-        'var(--nl-image-fallback-background, transparent)';
+      if (fallbackIcon?.backgroundColor)
+        frame.style.background = fallbackBackground;
+      else
+        fallback.style.backgroundColor =
+          'var(--nl-image-fallback-background, transparent)';
       frame.prepend(fallback);
     };
     if (image) image.addEventListener('error', showFallback, { once: true });
@@ -1647,6 +1737,9 @@ function createVisual(
   if ('borderStyle' in visual && visual.borderStyle === 'dashed') {
     frame.style.border =
       '2px dashed ' + (visual.borderColor ?? 'var(--nl-disabled)');
+    frame.style.boxSizing = 'border-box';
+  } else if ('borderColor' in visual && visual.borderColor) {
+    frame.style.border = '1px solid ' + visual.borderColor;
     frame.style.boxSizing = 'border-box';
   }
   if ('overlays' in visual)
@@ -1677,6 +1770,16 @@ function createVisual(
         corner.style.lineHeight = '16px';
         applyTextWeight(corner, '400');
       }
+      if (overlay.fontWeight)
+        applyTextWeight(
+          corner,
+          {
+            regular: 400,
+            medium: 500,
+            semibold: 600,
+            bold: 700,
+          }[overlay.fontWeight]
+        );
       if (
         isWalletText ||
         overlay.width !== undefined ||
@@ -1697,7 +1800,31 @@ function createVisual(
       if (overlay.image) {
         const overlayImage = createImage(context, overlay.image);
         if (overlayImage) {
+          if (
+            (overlay.padding ?? 0) > 0 &&
+            (overlay.width ?? size) === (overlay.height ?? size)
+          )
+            overlayImage.style.borderRadius = '50%';
           corner.appendChild(overlayImage);
+          if (overlay.fallbackIcon) {
+            overlayImage.addEventListener(
+              'error',
+              () => {
+                disposeWebImageRetries(overlayImage);
+                overlayImage.remove();
+                const glyph = createElement(
+                  context.document,
+                  'span',
+                  'ok-native-list-overlay-fallback'
+                );
+                applySelectorIcon(glyph, overlay.fallbackIcon!.name);
+                if (overlay.fallbackIcon?.tintColor)
+                  glyph.style.color = overlay.fallbackIcon.tintColor;
+                corner.appendChild(glyph);
+              },
+              { once: true }
+            );
+          }
           if (selectorPresentation)
             paintSelectorImageBackground(
               overlayImage,
@@ -1862,8 +1989,44 @@ function createAccessory(
   context: RenderContext,
   rowKey: string,
   accessory: TrailingAccessory,
-  slot: number
+  slot: number,
+  rowDisabled: boolean
 ): HTMLElement {
+  if (accessory.kind === 'button') {
+    const element = createElement(
+      context.document,
+      'button',
+      'ok-native-list-trailing-button',
+      accessory.label
+    ) as HTMLButtonElement;
+    element.type = 'button';
+    element.disabled = Boolean(rowDisabled || accessory.disabled);
+    element.setAttribute('aria-disabled', String(element.disabled));
+    element.setAttribute(
+      'aria-label',
+      accessory.accessibilityLabel ?? accessory.label
+    );
+    setData(element, 'testid', accessory.testID);
+    setData(element, 'nativeListAction', accessory.actionKey);
+    markActionAnchorSource(element, 'trailingAccessory', slot);
+    if (accessory.textColor)
+      element.style.setProperty('--nl-button-text', accessory.textColor);
+    if (accessory.backgroundColor)
+      element.style.setProperty('--nl-button-bg', accessory.backgroundColor);
+    if (accessory.pressedBackgroundColor)
+      element.style.setProperty(
+        '--nl-button-pressed',
+        accessory.pressedBackgroundColor
+      );
+    if (accessory.hoverBackgroundColor)
+      element.style.setProperty(
+        '--nl-button-hover',
+        accessory.hoverBackgroundColor
+      );
+    if (accessory.focusRingColor)
+      element.style.setProperty('--nl-button-focus', accessory.focusRingColor);
+    return element;
+  }
   if (accessory.kind === 'checkbox') {
     const element = createCheckbox(context, rowKey, accessory);
     markActionAnchorSource(element, 'trailingAccessory', slot);
@@ -1878,9 +2041,21 @@ function createAccessory(
       accessory.tintColor
     );
     markActionAnchorSource(element, 'trailingAccessory', slot);
+    if (accessory.name === 'RefreshCcwOutline' && !accessory.actionKey) {
+      element.classList.add('ok-native-list-decorative-refresh');
+      const glyph = element.querySelector('svg');
+      glyph?.setAttribute('width', '16');
+      glyph?.setAttribute('height', '16');
+    }
+    if (accessory.buttonStyle === 'tertiary') {
+      element.classList.add('ok-native-list-tertiary-icon');
+      setData(element, 'nativeListAnchorInset', 7);
+    }
     setData(element, 'testid', accessory.testID);
     if (accessory.hoverActionKey)
       setData(element, 'nativeListHoverAction', accessory.hoverActionKey);
+    if (accessory.hoverActionKey && accessory.buttonStyle === 'tertiary')
+      setData(element, 'nativeListIconHelp', true);
     if (accessory.accessibilityLabel)
       element.setAttribute('aria-label', accessory.accessibilityLabel);
     const row = context.snapshot.rows[context.itemIndex];
@@ -1928,6 +2103,25 @@ function createAccessory(
         accessory.primary
       );
       primary.style.color = toneColor(accessory.primaryTone, 'primary');
+      applyValueSegments(primary, accessory.primaryTextSegments, 16, 20, 500);
+      if (accessory.primaryFontWeight === 'medium')
+        applyTextWeight(primary, 500);
+      if (accessory.primaryHelp) {
+        const help = accessory.primaryHelp;
+        primary.tabIndex = 0;
+        primary.setAttribute('role', 'button');
+        if (help.presentation === 'tooltip') {
+          setData(primary, 'nativeListHoverAction', help.actionKey);
+          setData(primary, 'nativeListIconHelp', true);
+        } else {
+          setData(primary, 'nativeListAction', help.actionKey);
+        }
+        if (help.underline === 'dashed') {
+          primary.style.textDecoration = 'underline dashed';
+          primary.style.textUnderlineOffset = '4px';
+        }
+        markActionAnchorSource(primary, 'trailingAccessory', slot);
+      }
       const secondary = createElement(
         context.document,
         'span',
@@ -1935,6 +2129,13 @@ function createAccessory(
         accessory.secondary
       );
       secondary.style.color = toneColor(accessory.secondaryTone, 'secondary');
+      applyValueSegments(
+        secondary,
+        accessory.secondaryTextSegments,
+        14,
+        20,
+        400
+      );
       element.replaceChildren(primary, '\n', secondary);
       element.classList.add('ok-native-list-amounts');
       break;
@@ -1963,11 +2164,11 @@ function createAccessory(
   return element;
 }
 
-function rendererPrimitives(context: RenderContext) {
+function rendererPrimitives(context: RenderContext, rowDisabled: boolean) {
   return {
     background: resolvedTheme(context.snapshot).background,
     accessory: (key: string, descriptor: TrailingAccessory, slot: number) =>
-      createAccessory(context, key, descriptor, slot),
+      createAccessory(context, key, descriptor, slot, rowDisabled),
     visual: (source: LeadingVisual | undefined, presentation?: string) =>
       createVisual(context, source, presentation),
     thumbnail: (source: ImageSource) =>
@@ -1988,7 +2189,10 @@ export function createRowBody(
   context: RenderContext,
   row: RowModel
 ): HTMLElement {
-  return rowRenderer(row).create(context.document, rendererPrimitives(context));
+  return rowRenderer(row).create(
+    context.document,
+    rendererPrimitives(context, Boolean(row.disabled))
+  );
 }
 
 export type NativeListWebScrollOptions = Readonly<{
@@ -2037,6 +2241,7 @@ export class NativeListWebEngine {
     rail: [],
     mediaTile: [],
     action: [],
+    buttonGroup: [],
     system: [],
     activity: [],
     dataRow: [],
@@ -2080,6 +2285,7 @@ export class NativeListWebEngine {
   private pullDistance = 0;
   private virtualizationEnabled: boolean;
   private actionAnchor: WebActionAnchorRecord | undefined;
+  private pressedHelpElement: HTMLElement | undefined;
   private readonly actionAnchorInstanceId = String(
     ++webNativeListInstanceCounter
   );
@@ -2100,6 +2306,39 @@ export class NativeListWebEngine {
   private lastViewportWidth = -1;
   private lastViewportHeight = -1;
   private destroyed = false;
+  private hasAppliedSnapshot = false;
+  private lastStructuralTransitionId: string | undefined;
+  private structuralFrame: number | undefined;
+  private structuralFinish: number | undefined;
+  private structuralRevision = 0;
+  private structuralAnimations: Animation[] = [];
+  private structuralScrollInterrupted = false;
+  private structuralRenderedHeight: number | undefined;
+  private structuralTargetHeight: number | undefined;
+  private reactFooterHeight = 0;
+  private structuralFooterCompensation = 0;
+  private structuralFooterExpansion = 0;
+  private structuralFooterFromHeight = 0;
+  private structuralFooterElement: HTMLElement | undefined;
+  private structuralFooterStyles:
+    | { marginBottom: string; transform: string; clipPath: string }
+    | undefined;
+  private structuralProgress = 0;
+  private structuralAnchorStyles:
+    | { owner: string; content: string }
+    | undefined;
+  private structuralContentOverflow: string | undefined;
+  private structuralPrefixTransition = false;
+  private structuralTail:
+    | {
+        snapshot: NativeListSnapshot;
+        rows: readonly RowModel[];
+        layout: WebListLayout;
+        firstIndex: number;
+        layer: HTMLElement;
+        mounted: Map<number, HTMLElement>;
+      }
+    | undefined;
   private sectionIndexAlignStart = false;
   // Renderers report intrinsic height after browser text wrapping.
   private measuredRendererHeights = new Map<
@@ -2271,6 +2510,12 @@ export class NativeListWebEngine {
       'ok-collapsible-pager-cancel-scroll-command',
       this.handlePagerScrollCommandCancel
     );
+    for (const event of ['wheel', 'pointerdown', 'touchstart'])
+      (this.externalScrollHost ?? this.viewport).addEventListener(
+        event,
+        this.handleStructuralUserScroll,
+        { passive: true }
+      );
     this.viewport.addEventListener('scroll', this.handleScroll, {
       passive: true,
     });
@@ -2289,6 +2534,7 @@ export class NativeListWebEngine {
     this.root.addEventListener('pointercancel', this.handleMarketPointerEnd);
     // OneKey patch: preserve web tooltip hover for section titles.
     this.root.addEventListener('pointerover', this.handleTitlePointerOver);
+    this.root.addEventListener('pointerdown', this.handleIconHelpPointerDown);
     this.root.addEventListener('focusin', this.handleTitlePointerOver);
     this.root.addEventListener('focusout', this.handleTitlePointerOut);
     this.root.addEventListener('pointerout', this.handleTitlePointerOut);
@@ -2365,7 +2611,7 @@ export class NativeListWebEngine {
     );
     this.observeSectionIndexTransforms();
     this.applyFontFamilies(fontFamiliesJson);
-    this.applySnapshot(this.snapshot);
+    this.applyValidatedSnapshot(this.snapshot);
   }
 
   private validateStickyInset(value = 0): number {
@@ -2457,8 +2703,435 @@ export class NativeListWebEngine {
       return next;
     });
     if (!validated) return;
+    this.applyValidatedSnapshot(validated);
+  }
+
+  private applyValidatedSnapshot(validated: NativeListSnapshot) {
+    this.pressedHelpElement = undefined;
     this.invalidateActionAnchor('snapshot');
-    this.setSnapshot(validated);
+    const transition = validated.structuralTransition;
+    const isNewTransition =
+      transition !== undefined &&
+      transition.id !== this.lastStructuralTransitionId;
+    if (transition) this.lastStructuralTransitionId = transition.id;
+    const nextRows = effectiveRows(validated);
+    const changedKeys =
+      this.rows.length !== nextRows.length ||
+      this.rows.some((row, index) => row.key !== nextRows[index]?.key);
+    const incompatibleActivePrefix =
+      this.structuralPrefixTransition &&
+      (validated.layout.kind !== this.snapshot.layout.kind ||
+        validated.layout.orientation !== this.snapshot.layout.orientation ||
+        nextRows.some(
+          (row, index) =>
+            row.height !== this.rows[index]?.height ||
+            row.style?.container?.height !==
+              this.rows[index]?.style?.container?.height
+        ));
+    const shouldAnimate =
+      this.hasAppliedSnapshot &&
+      isNewTransition &&
+      changedKeys &&
+      (this.snapshot.layout.kind === 'linear' ||
+        this.snapshot.layout.kind === 'table') &&
+      this.snapshot.layout.orientation !== 'horizontal' &&
+      (validated.layout.kind === 'linear' ||
+        validated.layout.kind === 'table') &&
+      validated.layout.orientation !== 'horizontal' &&
+      (transition?.durationMs ?? 220) > 0 &&
+      !this.document.defaultView?.matchMedia?.(
+        '(prefers-reduced-motion: reduce)'
+      ).matches;
+    if (shouldAnimate && transition)
+      this.applyStructuralSnapshot(validated, transition);
+    else {
+      if (isNewTransition || changedKeys || incompatibleActivePrefix)
+        this.cancelStructuralAnimation();
+      this.setSnapshot(validated);
+    }
+    this.hasAppliedSnapshot = true;
+  }
+
+  private cancelStructuralAnimation() {
+    this.structuralRevision += 1;
+    if (this.structuralFrame !== undefined)
+      this.document.defaultView?.cancelAnimationFrame(this.structuralFrame);
+    if (this.structuralFinish !== undefined)
+      this.document.defaultView?.clearTimeout(this.structuralFinish);
+    this.structuralFrame = undefined;
+    this.structuralFinish = undefined;
+    this.structuralAnimations.forEach((animation) => animation.cancel());
+    this.structuralAnimations = [];
+    if (this.structuralTail) {
+      disposeWebImageRetries(this.structuralTail.layer);
+      this.structuralTail.layer.remove();
+      this.structuralTail = undefined;
+    }
+    if (this.structuralContentOverflow !== undefined) {
+      this.content.style.overflow = this.structuralContentOverflow;
+      this.structuralContentOverflow = undefined;
+    }
+    this.structuralPrefixTransition = false;
+    if (this.structuralFooterElement && this.structuralFooterStyles) {
+      this.structuralFooterElement.style.marginBottom =
+        this.structuralFooterStyles.marginBottom;
+      this.structuralFooterElement.style.transform =
+        this.structuralFooterStyles.transform;
+      this.structuralFooterElement.style.clipPath =
+        this.structuralFooterStyles.clipPath;
+    }
+    this.structuralFooterElement = undefined;
+    this.structuralFooterStyles = undefined;
+    this.structuralScrollInterrupted = false;
+    this.structuralRenderedHeight = undefined;
+    this.structuralTargetHeight = undefined;
+    this.structuralFooterCompensation = 0;
+    this.structuralFooterExpansion = 0;
+    this.structuralProgress = 0;
+    const owner = this.externalScrollHost ?? this.viewport;
+    if (this.structuralAnchorStyles) {
+      owner.style.overflowAnchor = this.structuralAnchorStyles.owner;
+      this.content.style.overflowAnchor = this.structuralAnchorStyles.content;
+      this.structuralAnchorStyles = undefined;
+    }
+  }
+
+  private handleStructuralUserScroll = (event: Event) => {
+    if (
+      event.type === 'pointerdown' &&
+      event.target !== (this.externalScrollHost ?? this.viewport) &&
+      (event as PointerEvent).pointerType !== 'touch'
+    )
+      return;
+    this.structuralScrollInterrupted = true;
+    if (this.structuralPrefixTransition) {
+      this.cancelStructuralAnimation();
+      this.recomputeLayout();
+    }
+  };
+
+  private updateStructuralTailWindow() {
+    const tail = this.structuralTail;
+    if (!tail) return;
+    const visible = visibleWebLayoutItems(
+      tail.layout,
+      this.currentOffset(),
+      this.viewportLength(),
+      this.viewportLength() * OVERSCAN_VIEWPORTS
+    ).filter((item) => item.index >= tail.firstIndex);
+    const desired = new Set(visible.map((item) => item.index));
+    tail.mounted.forEach((element, index) => {
+      if (desired.has(index)) return;
+      disposeWebImageRetries(element);
+      element.remove();
+      tail.mounted.delete(index);
+    });
+    visible.forEach((item) => {
+      if (tail.mounted.has(item.index)) return;
+      const row = tail.rows[item.index];
+      if (!row) return;
+      const element = createElement(
+        this.document,
+        'div',
+        'ok-native-list-item'
+      );
+      element.setAttribute('aria-hidden', 'true');
+      element.style.pointerEvents = 'none';
+      element.style.opacity = String(
+        (row.style?.container?.opacity ?? row.opacity ?? 1) *
+          (row.disabled ? 0.5 : 1)
+      );
+      const body = createRowBody(
+        {
+          document: this.document,
+          snapshot: tail.snapshot,
+          selectedKeys: selectionStateFromSnapshot(tail.snapshot).selectedKeys,
+          itemIndex: item.index,
+        },
+        row
+      );
+      applyRowStyle(body, row);
+      element.append(body);
+      this.positionElement(element, item);
+      tail.layer.append(element);
+      tail.mounted.set(item.index, element);
+    });
+  }
+
+  private writeStructuralHeight(height: number) {
+    if (this.externalScrollHost) this.writeExternalHeight(height);
+    else this.content.style.height = `${height}px`;
+  }
+
+  private reactFooterElement() {
+    return this.contentBounds?.querySelector<HTMLElement>(
+      '[data-testid="native-list-footer-slot"]'
+    );
+  }
+
+  private readReactFooterHeight() {
+    return this.reactFooterElement()?.getBoundingClientRect().height ?? 0;
+  }
+
+  private applyStructuralFooterVisual(progress: number) {
+    const footer = this.structuralFooterElement;
+    if (!footer || this.structuralFooterExpansion <= 0) return;
+    const hidden = this.structuralFooterExpansion * (1 - progress);
+    footer.style.marginBottom = `${-hidden}px`;
+    footer.style.transform = `translateY(${-hidden}px)`;
+    footer.style.clipPath = `inset(${hidden}px 0 0 0)`;
+  }
+
+  private applyStructuralSnapshot(
+    next: NativeListSnapshot,
+    transition: NonNullable<NativeListSnapshot['structuralTransition']>
+  ) {
+    const owner = this.externalScrollHost ?? this.viewport;
+    const oldOffset = owner.scrollTop;
+    const oldScrollHeight = owner.scrollHeight;
+    const oldHeight =
+      this.structuralRenderedHeight ??
+      (this.content.getBoundingClientRect().height ||
+        this.layout.contentHeight);
+    const nextFooterHeight = this.readReactFooterHeight();
+    const oldFooterHeight =
+      this.structuralRenderedHeight === undefined
+        ? this.reactFooterHeight
+        : this.structuralFooterFromHeight +
+          (this.reactFooterHeight - this.structuralFooterFromHeight) *
+            this.structuralProgress;
+    const footerDifference = oldFooterHeight - nextFooterHeight;
+    const startHeight = oldHeight + Math.max(0, footerDifference);
+    const oldSnapshot = this.snapshot;
+    const oldRows = this.rows;
+    const oldLayout = this.layout;
+    const oldItems = oldLayout.items;
+    const nextRows = effectiveRows(next);
+    const prefixCount = Math.min(oldRows.length, nextRows.length);
+    const prefixTailChange =
+      oldSnapshot.layout.kind === next.layout.kind &&
+      oldSnapshot.layout.orientation === next.layout.orientation &&
+      oldRows.length !== nextRows.length &&
+      oldRows
+        .slice(0, prefixCount)
+        .every((row, index) => row.key === nextRows[index]?.key);
+    const oldPositions = new Map<string, number>();
+    this.mounted.forEach((element, index) => {
+      const row = this.rows[index];
+      if (row) oldPositions.set(row.key, element.getBoundingClientRect().top);
+    });
+    const nextKeys = new Set(effectiveRows(next).map((row) => row.key));
+    const visibleOffset = this.currentOffset();
+    const visibleSurvivor = oldItems.find(
+      (item) => item.y + item.height > visibleOffset && nextKeys.has(item.key)
+    );
+    const anchor = visibleSurvivor;
+    this.cancelStructuralAnimation();
+    this.structuralScrollInterrupted = false;
+    this.structuralAnchorStyles = {
+      owner: owner.style.overflowAnchor,
+      content: this.content.style.overflowAnchor,
+    };
+    owner.style.overflowAnchor = 'none';
+    this.content.style.overflowAnchor = 'none';
+    this.structuralContentOverflow = this.content.style.overflow;
+    if (prefixTailChange) this.content.style.overflow = 'clip';
+    this.structuralRenderedHeight = startHeight;
+    this.structuralFooterFromHeight = oldFooterHeight;
+    this.structuralFooterCompensation = Math.max(0, footerDifference);
+    this.structuralFooterExpansion = Math.max(0, -footerDifference);
+    this.structuralProgress = 0;
+    this.reactFooterHeight = nextFooterHeight;
+    this.structuralFooterElement = this.reactFooterElement() ?? undefined;
+    if (this.structuralFooterElement) {
+      const style = this.structuralFooterElement.style;
+      this.structuralFooterStyles = {
+        marginBottom: style.marginBottom,
+        transform: style.transform,
+        clipPath: style.clipPath,
+      };
+      this.applyStructuralFooterVisual(0);
+    }
+    this.setSnapshot(next);
+    const newHeight = this.layout.contentHeight;
+    this.structuralTargetHeight = newHeight;
+    const stablePrefixGeometry =
+      prefixTailChange &&
+      oldItems.length === oldRows.length &&
+      this.layout.items.length === nextRows.length &&
+      oldItems.slice(0, prefixCount).every((item, index) => {
+        const nextItem = this.layout.items[index];
+        return (
+          nextItem?.y === item.y &&
+          nextItem?.height === item.height &&
+          nextItem?.width === item.width
+        );
+      });
+    if (!stablePrefixGeometry) {
+      this.content.style.overflow = this.structuralContentOverflow;
+      this.structuralContentOverflow = undefined;
+    } else {
+      this.structuralPrefixTransition = true;
+    }
+    if (stablePrefixGeometry && nextRows.length < oldRows.length) {
+      const layer = createElement(
+        this.document,
+        'div',
+        'ok-native-list-structural-tail'
+      );
+      layer.setAttribute('aria-hidden', 'true');
+      layer.setAttribute('inert', '');
+      Object.assign(layer.style, {
+        position: 'absolute',
+        inset: '0',
+        pointerEvents: 'none',
+      });
+      this.content.append(layer);
+      this.structuralTail = {
+        snapshot: oldSnapshot,
+        rows: oldRows,
+        layout: oldLayout,
+        firstIndex: prefixCount,
+        layer,
+        mounted: new Map(),
+      };
+      this.updateStructuralTailWindow();
+    }
+    const nextAnchor =
+      anchor && this.layout.items.find((item) => item.key === anchor.key);
+    const delta = nextAnchor && anchor ? nextAnchor.y - anchor.y : 0;
+    let finalScrollHeight = oldScrollHeight + newHeight - oldHeight;
+    if (stablePrefixGeometry && this.externalScrollHost) {
+      const beforeMeasure = owner.scrollTop;
+      const tailLayer = this.structuralTail?.layer;
+      if (tailLayer) tailLayer.style.display = 'none';
+      this.writeStructuralHeight(newHeight);
+      this.applyStructuralFooterVisual(1);
+      finalScrollHeight = owner.scrollHeight;
+      this.writeStructuralHeight(startHeight);
+      this.applyStructuralFooterVisual(0);
+      if (tailLayer) tailLayer.style.display = '';
+      owner.scrollTop = beforeMeasure;
+    }
+    const finalMaxOffset = Math.max(0, finalScrollHeight - owner.clientHeight);
+    let targetOffset = Math.max(0, Math.min(oldOffset + delta, finalMaxOffset));
+    if (
+      !visibleSurvivor &&
+      transition.anchorKey &&
+      !(stablePrefixGeometry && nextRows.length > oldRows.length)
+    ) {
+      const fallback = this.layout.items.find(
+        (item) => item.key === transition.anchorKey
+      );
+      if (fallback) {
+        const pagerStickyInset = Number.parseFloat(
+          this.externalScrollHost?.style.getPropertyValue(
+            '--ok-collapsible-pager-sticky-inset'
+          ) ?? ''
+        );
+        const effectiveStickyInset = Math.max(
+          this.externalStickyInset,
+          Number.isFinite(pagerStickyInset) ? pagerStickyInset : 0
+        );
+        const fallbackTop = this.externalScrollHost
+          ? this.externalGeometry().origin + fallback.y - effectiveStickyInset
+          : resolveWebCollapsiblePagerRawOffset(
+              Math.max(0, fallback.y - this.collapsiblePagerInsets().sticky),
+              this.collapsiblePagerInsets().header
+            );
+        if (
+          stablePrefixGeometry &&
+          this.externalScrollHost &&
+          this.reactFooterHeight > 0
+        ) {
+          const footerTop = this.externalGeometry().origin + newHeight;
+          const footerStart = Math.max(
+            0,
+            footerTop + this.reactFooterHeight - owner.clientHeight
+          );
+          const footerEnd = Math.max(0, footerTop - effectiveStickyInset);
+          const nearestVisibleOffset =
+            footerStart <= footerEnd
+              ? Math.max(footerStart, Math.min(oldOffset, footerEnd))
+              : footerEnd;
+          targetOffset = Math.max(
+            0,
+            Math.min(nearestVisibleOffset, finalMaxOffset)
+          );
+        } else {
+          targetOffset = Math.min(targetOffset, Math.max(0, fallbackTop));
+        }
+      }
+    }
+    const duration = transition.durationMs ?? 220;
+    const easing = 'cubic-bezier(0.42, 0, 0.58, 1)';
+    this.mounted.forEach((element, index) => {
+      const row = this.rows[index];
+      const previousTop = row && oldPositions.get(row.key);
+      if (previousTop === undefined || typeof element.animate !== 'function')
+        return;
+      const offset = previousTop - element.getBoundingClientRect().top;
+      if (Math.abs(offset) < 0.5) return;
+      this.structuralAnimations.push(
+        element.animate(
+          [
+            { transform: `translateY(${offset}px)` },
+            { transform: 'translateY(0)' },
+          ],
+          { duration, easing }
+        )
+      );
+    });
+    const startedAt =
+      this.document.defaultView?.performance.now() ?? Date.now();
+    const revision = this.structuralRevision;
+    const finish = () => {
+      if (this.destroyed || revision !== this.structuralRevision) return;
+      const ownsScroll = !this.structuralScrollInterrupted;
+      this.cancelStructuralAnimation();
+      this.recomputeLayout();
+      if (stablePrefixGeometry && ownsScroll) {
+        owner.scrollTop = Math.max(
+          0,
+          Math.min(targetOffset, owner.scrollHeight - owner.clientHeight)
+        );
+      }
+    };
+    const step = (time: number) => {
+      if (this.destroyed || revision !== this.structuralRevision) return;
+      if (
+        this.structuralPrefixTransition &&
+        this.document.defaultView?.matchMedia?.(
+          '(prefers-reduced-motion: reduce)'
+        ).matches
+      ) {
+        finish();
+        return;
+      }
+      const progress = Math.min(1, (time - startedAt) / duration);
+      const eased = progress * progress * (3 - 2 * progress);
+      this.structuralProgress = eased;
+      const renderedHeight =
+        oldHeight +
+        ((this.structuralTargetHeight ?? newHeight) - oldHeight) * eased +
+        this.structuralFooterCompensation * (1 - eased);
+      this.structuralRenderedHeight = renderedHeight;
+      this.writeStructuralHeight(renderedHeight);
+      this.applyStructuralFooterVisual(eased);
+      if (!this.structuralScrollInterrupted)
+        owner.scrollTop = oldOffset + (targetOffset - oldOffset) * eased;
+      this.externalGeometryCache = undefined;
+      this.updateStructuralTailWindow();
+      if (progress < 1)
+        this.structuralFrame =
+          this.document.defaultView?.requestAnimationFrame(step);
+    };
+    this.structuralFrame =
+      this.document.defaultView?.requestAnimationFrame(step);
+    this.structuralFinish = this.document.defaultView?.setTimeout(
+      finish,
+      duration + 40
+    );
   }
 
   currentContentHeight(): number {
@@ -2663,6 +3336,8 @@ export class NativeListWebEngine {
 
   destroy() {
     if (this.destroyed) return;
+    this.cancelStructuralAnimation();
+    this.pressedHelpElement = undefined;
     this.invalidateActionAnchor('destroy');
     this.destroyed = true;
     if (this.frameHandle !== undefined) this.cancelFrame(this.frameHandle);
@@ -2690,6 +3365,11 @@ export class NativeListWebEngine {
       'ok-collapsible-pager-cancel-scroll-command',
       this.handlePagerScrollCommandCancel
     );
+    for (const event of ['wheel', 'pointerdown', 'touchstart'])
+      (this.externalScrollHost ?? this.viewport).removeEventListener(
+        event,
+        this.handleStructuralUserScroll
+      );
     this.viewport.removeEventListener('scroll', this.handleScroll);
     (this.externalScrollHost ?? this.viewport).removeEventListener(
       'ok-collapsible-pager-insets-changed',
@@ -2704,6 +3384,10 @@ export class NativeListWebEngine {
     this.root.removeEventListener('pointerup', this.handleMarketPointerEnd);
     this.root.removeEventListener('pointercancel', this.handleMarketPointerEnd);
     this.root.removeEventListener('pointerover', this.handleTitlePointerOver);
+    this.root.removeEventListener(
+      'pointerdown',
+      this.handleIconHelpPointerDown
+    );
     this.root.removeEventListener('focusin', this.handleTitlePointerOver);
     this.root.removeEventListener('focusout', this.handleTitlePointerOut);
     this.root.removeEventListener('pointerout', this.handleTitlePointerOut);
@@ -2766,6 +3450,7 @@ export class NativeListWebEngine {
     selectedKeys?: ReadonlySet<string>
   ) {
     this.cancelMarketPointer();
+    this.pressedHelpElement = undefined;
     this.measuredRendererHeights.clear();
     this.snapshot = snapshot;
     this.rows = effectiveRows(snapshot);
@@ -2786,6 +3471,7 @@ export class NativeListWebEngine {
       '--nl-row': theme.rowBackground,
       '--nl-selected': theme.rowSelectedBackground,
       '--nl-pressed': theme.rowPressedBackground,
+      '--nl-hover': theme.rowHoverBackground ?? theme.rowPressedBackground,
       '--nl-subdued': theme.subduedBackground,
       '--nl-strong': theme.strongBackground,
       '--nl-image-fallback-background':
@@ -2803,6 +3489,7 @@ export class NativeListWebEngine {
       '--nl-separator': theme.separator,
       '--nl-accent': theme.accent,
       '--nl-positive': theme.positive,
+      '--nl-success-background': theme.successBackground,
       '--nl-negative': theme.negative,
       '--nl-critical': theme.criticalBackground,
       '--nl-inverse': theme.inverseBackground,
@@ -2890,13 +3577,37 @@ export class NativeListWebEngine {
 
   private recomputeLayout = () => {
     if (this.destroyed) return;
+    if (
+      this.structuralPrefixTransition &&
+      this.lastViewportWidth > 0 &&
+      this.viewport.clientWidth > 0 &&
+      this.viewport.clientWidth !== this.lastViewportWidth
+    )
+      this.cancelStructuralAnimation();
+    if (this.structuralRenderedHeight === undefined)
+      this.reactFooterHeight = this.readReactFooterHeight();
+    else {
+      const nextFooterHeight = this.readReactFooterHeight();
+      const footerDelta = this.reactFooterHeight - nextFooterHeight;
+      if (footerDelta !== 0) {
+        this.reactFooterHeight = nextFooterHeight;
+        const priorCompensation = this.structuralFooterCompensation;
+        const difference = this.structuralFooterFromHeight - nextFooterHeight;
+        this.structuralFooterCompensation = Math.max(0, difference);
+        this.structuralFooterExpansion = Math.max(0, -difference);
+        this.structuralRenderedHeight +=
+          (this.structuralFooterCompensation - priorCompensation) *
+          (1 - this.structuralProgress);
+        this.applyStructuralFooterVisual(this.structuralProgress);
+      }
+    }
     const cachedWidth = this.lastViewportWidth;
     const cachedHeight = this.lastViewportHeight;
     const precomputedLayout =
       this.externalScrollHost && cachedWidth > 0 && cachedHeight > 0
         ? this.computeLayout(cachedWidth, cachedHeight)
         : undefined;
-    if (precomputedLayout) {
+    if (precomputedLayout && this.structuralRenderedHeight === undefined) {
       // Commit appended row extent before measuring React-owned slot changes.
       this.writeExternalHeight(
         Math.max(this.layout.contentHeight, precomputedLayout.contentHeight)
@@ -2949,11 +3660,15 @@ export class NativeListWebEngine {
         ? precomputedLayout
         : this.computeLayout(viewportWidth, viewportHeight);
     this.content.style.width = String(this.layout.contentWidth) + 'px';
-    this.content.style.height = String(this.layout.contentHeight) + 'px';
+    const renderedHeight =
+      this.structuralRenderedHeight ?? this.layout.contentHeight;
+    this.content.style.height = String(renderedHeight) + 'px';
     if (this.externalScrollHost) {
-      this.writeExternalHeight(this.layout.contentHeight);
+      this.writeExternalHeight(renderedHeight);
       this.externalGeometryCache = undefined;
     }
+    if (this.structuralRenderedHeight !== undefined)
+      this.structuralTargetHeight = this.layout.contentHeight;
     this.renderSectionIndex(
       this.viewport.clientHeight <= 0
         ? DEFAULT_VIEWPORT_HEIGHT
@@ -3114,6 +3829,7 @@ export class NativeListWebEngine {
     }
     this.updateVisibleSelection();
     this.updateVisibleState();
+    this.updateStructuralTailWindow();
   }
 
   private positionElement(element: HTMLElement, item: WebLayoutItem) {
@@ -3192,7 +3908,7 @@ export class NativeListWebEngine {
     const body = reusableBody ?? createRowBody(context, row);
     if (reusableBody) {
       resetRowContainerStyle(body);
-      registered.bind(body, rendererPrimitives(context));
+      registered.bind(body, rendererPrimitives(context, Boolean(row.disabled)));
     }
     // OneKey patch: explicit selector fields preserve original page geometry.
     element.style.contain = row.backgroundFullWidth ? 'layout style' : '';
@@ -3984,6 +4700,8 @@ export class NativeListWebEngine {
   }
 
   private invalidateActionAnchorForElement(element: HTMLElement) {
+    if (this.pressedHelpElement && element.contains(this.pressedHelpElement))
+      this.pressedHelpElement = undefined;
     const anchor = this.actionAnchor;
     if (
       anchor &&
@@ -4096,9 +4814,13 @@ export class NativeListWebEngine {
       '[data-native-list-row-key]'
     );
     const row = this.rowAtElement(rowElement);
-    if (row?.type !== 'market' || !isRowPressEnabled(row)) return;
+    if (
+      (row?.type !== 'market' && row?.type !== 'identity') ||
+      !isRowPressEnabled(row)
+    )
+      return;
     this.cancelMarketPointer();
-    if (row.pressInActionKey)
+    if (row.type === 'market' && row.pressInActionKey)
       this.emitRowAction(
         row,
         row.pressInActionKey,
@@ -4117,7 +4839,7 @@ export class NativeListWebEngine {
         !rowElement.isConnected ||
         rowElement.dataset.nativeListBindingEpoch !== bindingEpoch ||
         currentRow?.key !== row.key ||
-        currentRow.type !== 'market' ||
+        (currentRow.type !== 'market' && currentRow.type !== 'identity') ||
         !isRowPressEnabled(currentRow) ||
         !currentRow.longPressActionKey
       )
@@ -4135,7 +4857,7 @@ export class NativeListWebEngine {
     this.marketPointer = {
       pointerId: event.pointerId,
       pointerType: event.pointerType,
-      compact: !row.webTable,
+      compact: row.type === 'identity' || !row.webTable,
       rowKey: row.key,
       startX: event.clientX,
       startY: event.clientY,
@@ -4203,11 +4925,23 @@ export class NativeListWebEngine {
         action.contains(event.relatedTarget))
     )
       return;
+    if (action.dataset.nativeListIconHelp === 'true') {
+      if (
+        event.type === 'pointerover' &&
+        (event as PointerEvent).pointerType === 'touch'
+      )
+        return;
+      if (this.pressedHelpElement === action) return;
+    }
     if (
       action.classList.contains('ok-native-list-market-subtitle-prefix') &&
       action.scrollWidth <= action.clientWidth + 1
     )
       return;
+    this.emitHoverAction(action);
+  };
+
+  private emitHoverAction(action: HTMLElement) {
     const rowElement = action.closest<HTMLElement>(
       '[data-native-list-row-key]'
     );
@@ -4229,6 +4963,24 @@ export class NativeListWebEngine {
     // WalletGroup), not the enclosing row's `disabled`.
     if (sourceRow && !sourceRow.disabled && actionKey)
       this.emitRowAction(sourceRow, actionKey, action, rowElement ?? undefined);
+  }
+
+  private handleIconHelpPointerDown = (event: PointerEvent) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const action = target.closest<HTMLElement>(
+      '[data-native-list-icon-help="true"]'
+    );
+    if (!action) return;
+    if (event.pointerType === 'touch') {
+      if (this.actionAnchor?.actionElement === action && this.actionAnchor.open)
+        this.invalidateActionAnchor('pointerLeave');
+      else this.emitHoverAction(action);
+    } else {
+      this.pressedHelpElement = action;
+      if (this.actionAnchor?.actionElement === action)
+        this.invalidateActionAnchor('pointerLeave');
+    }
   };
 
   private handleTitlePointerOut = (event: PointerEvent | FocusEvent) => {
@@ -4243,6 +4995,14 @@ export class NativeListWebEngine {
         action.contains(event.relatedTarget))
     )
       return;
+    if (
+      action.dataset.nativeListIconHelp === 'true' &&
+      event.type === 'pointerout' &&
+      (event as PointerEvent).pointerType === 'touch'
+    )
+      return;
+    if (event.type === 'pointerout' && this.pressedHelpElement === action)
+      this.pressedHelpElement = undefined;
     if (this.actionAnchor?.actionElement === action)
       this.invalidateActionAnchor('pointerLeave');
   };
@@ -4256,6 +5016,11 @@ export class NativeListWebEngine {
     }
     const target = event.target;
     if (!(target instanceof Element)) return;
+    if (target.closest('[data-native-list-icon-help="true"]')) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     const rowElement = target.closest<HTMLElement>(
       '[data-native-list-row-key]'
     );
@@ -4276,6 +5041,10 @@ export class NativeListWebEngine {
     // member press is blocked by `isRowPressEnabled` in `handleRowPress`.
     const action = target.closest<HTMLElement>('[data-native-list-action]');
     if (action) {
+      if (action.tagName === 'BUTTON' && action.hasAttribute('disabled'))
+        return;
+      if (action.classList.contains('ok-native-list-trailing-button'))
+        event.stopPropagation();
       const scope = action.dataset.selectionScope;
       if (scope === 'row') this.activateSelection({ scope: 'row' }, row);
       else if (scope === 'section' && action.dataset.selectionKey)
@@ -4301,6 +5070,19 @@ export class NativeListWebEngine {
   };
 
   private handleKeyDown = (event: KeyboardEvent) => {
+    if (
+      (event.key === 'Enter' || event.key === ' ') &&
+      event.target instanceof HTMLElement &&
+      event.target.matches('[role="button"][data-native-list-hover-action]')
+    ) {
+      event.preventDefault();
+      if (
+        this.actionAnchor?.actionElement !== event.target ||
+        !this.actionAnchor.open
+      )
+        this.emitHoverAction(event.target);
+      return;
+    }
     // OneKey patch: non-button title help supports keyboard activation.
     if (
       (event.key === 'Enter' || event.key === ' ') &&
@@ -4438,6 +5220,7 @@ export class NativeListWebEngine {
 
   private handleScroll = () => {
     this.externalGeometryCache = undefined;
+    this.pressedHelpElement = undefined;
     this.cancelMarketPointer();
     this.invalidateActionAnchor('scroll');
     this.scheduleFrame();

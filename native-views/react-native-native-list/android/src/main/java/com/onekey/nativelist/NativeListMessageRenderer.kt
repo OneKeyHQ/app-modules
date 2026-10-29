@@ -1,7 +1,9 @@
 package com.margelo.nitro.nativelist
 
 import android.graphics.Color
+import android.graphics.Canvas
 import android.graphics.Outline
+import android.graphics.Paint
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.View
@@ -211,6 +213,7 @@ internal class NativeListMessageRowView(context: ThemedReactContext, fonts: Nati
   NativeListRendererRowView(context, fonts) {
   override val assetFields = listOf("leading", "thumbnail")
   private val views = NativeListMessageRenderer.Views(context, fonts)
+  private val warningBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
   override fun bindContent(
     item: NativeListItem,
@@ -228,6 +231,28 @@ internal class NativeListMessageRowView(context: ThemedReactContext, fonts: Nati
   }
 
   override fun recycleContent() = views.recycle()
+
+  override fun appearance() {
+    super.appearance()
+    if (boundItem?.json?.optString("presentation") == "inlineWarning") {
+      foreground = null
+      clipToOutline = false
+      (background as? GradientDrawable)?.cornerRadius = 0f
+    }
+  }
+
+  override fun dispatchDraw(canvas: Canvas) {
+    super.dispatchDraw(canvas)
+    val item = boundItem ?: return
+    if (item.json.optString("presentation") != "inlineWarning") return
+    val container = item.json.optJSONObject("style")?.optJSONObject("container") ?: return
+    val borderWidth = container.optDouble("borderWidth", 0.0).toFloat()
+    if (borderWidth <= 0) return
+    val pixels = (borderWidth * resources.displayMetrics.density).coerceAtLeast(1f)
+    warningBorderPaint.color = parseNativeListColor(container.optString("borderColor", "#00000000"))
+    canvas.drawRect(0f, 0f, width.toFloat(), pixels, warningBorderPaint)
+    canvas.drawRect(0f, height - pixels, width.toFloat(), height.toFloat(), warningBorderPaint)
+  }
 
   override fun disposeContent() = views.dispose()
 }

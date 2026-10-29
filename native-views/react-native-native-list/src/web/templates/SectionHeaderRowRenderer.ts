@@ -1,6 +1,6 @@
 import { applyTextWeight } from './RowText';
 import { applyTabularNumbers, hasExplicitRowHeight } from './RowElements';
-import type { SectionHeaderRow } from '../../models';
+import type { RowTextHelp, SectionHeaderRow } from '../../models';
 import {
   createElement,
   setData,
@@ -10,6 +10,21 @@ import {
 } from './RowElements';
 import { applyValueSegments } from './RowText';
 import type { RowPrimitives } from './RowVisual';
+
+function bindHelp(target: HTMLElement, help: RowTextHelp) {
+  markActionAnchorSource(target, 'trailingAccessory', 0);
+  if (help.presentation === 'tooltip') {
+    setData(target, 'nativeListHoverAction', help.actionKey);
+    setData(target, 'nativeListIconHelp', true);
+  } else {
+    setData(target, 'nativeListAction', help.actionKey);
+    target.setAttribute('role', 'button');
+  }
+  if (help.underline === 'dashed') {
+    target.style.textDecoration = 'underline dashed';
+    target.style.textUnderlineOffset = '4px';
+  }
+}
 function createSectionHeader(
   document: Document,
   primitives: RowPrimitives,
@@ -36,6 +51,16 @@ function createSectionHeader(
   const column = createTextColumn(document, row.title, row.subtitle);
   const title = column.firstElementChild as HTMLElement;
   title.classList.add('ok-native-list-section-title');
+  if (row.leadingBadge) {
+    const badge = createElement(
+      document,
+      'span',
+      'ok-native-list-badge',
+      row.leadingBadge.text
+    );
+    if (row.leadingBadge.tone) setData(badge, 'tone', row.leadingBadge.tone);
+    body.appendChild(badge);
+  }
   if (row.titleActionKey) {
     setData(title, 'nativeListAction', row.titleActionKey);
     markActionAnchorSource(title, 'leadingAction');
@@ -49,6 +74,12 @@ function createSectionHeader(
       title.style.textUnderlineOffset = '6px';
     }
     if (row.titleActionOnHover) setData(title, 'nativeListHoverAction', true);
+  }
+  if (row.style?.titleDecoration === 'none')
+    title.style.textDecoration = 'none';
+  if (row.style?.titleDecoration === 'dashed') {
+    title.style.textDecoration = 'underline dashed';
+    title.style.textUnderlineOffset = '4px';
   }
   if (row.presentation === 'networkSelector' && hasExplicitRowHeight(row)) {
     body.style.padding =
@@ -160,8 +191,10 @@ function createSectionHeader(
     const value = tagSlot(
       createElement(
         document,
-        row.valueActionKey ? 'button' : 'span',
-        row.valueActionKey
+        row.valueActionKey || row.valueHelp?.presentation === 'popover'
+          ? 'button'
+          : 'span',
+        row.valueActionKey || row.valueHelp?.presentation === 'popover'
           ? 'ok-native-list-action-button ok-native-list-section-value'
           : 'ok-native-list-value ok-native-list-section-value',
         row.value
@@ -186,7 +219,17 @@ function createSectionHeader(
       setData(value, 'nativeListAction', row.valueActionKey);
       markActionAnchorSource(value, 'trailingAccessory', 0);
     }
-    body.appendChild(value);
+    if (row.valueHelp) bindHelp(value, row.valueHelp);
+    if (row.style?.valuePlacement === 'afterTitle') {
+      value.style.marginLeft = '0';
+      value.style.flexShrink = '0';
+      value.style.alignSelf = 'center';
+      title.insertAdjacentElement('afterend', value);
+      column.style.flexDirection = 'row';
+      column.style.alignItems = 'center';
+      column.style.justifyContent = 'flex-start';
+      column.style.gap = '8px';
+    } else body.appendChild(value);
   }
   if (row.valueIcon) {
     const valueIcon = primitives.iconAction(

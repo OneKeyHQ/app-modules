@@ -74,7 +74,7 @@ the shared host before their old scroll-edge interaction is released.
 The measured overlay height is excluded from the collapsible header distance:
 `header` remains collapsible and `stickyHeader` pins immediately below the
 overlay. Selection, cancellation, reuse and disposal rebind or release the
-interaction and restore any prior scroll-edge style. Native scroll/refresh
+interaction and restore any prior scroll-edge style. The existing owner-scoped native sticky-height callback also reaches NativeList hosts, so their React container slots clip below the same fixed viewport region and release it when the owner detaches. Native scroll/refresh
 coordination continues on the main thread without per-frame JavaScript work.
 Refresh retains the pager-owned `overlay + header + sticky` top inset but offsets
 the indicator by `header + sticky`, so its spinner begins below the fixed overlay.
@@ -170,6 +170,24 @@ new target is established. Same-target commands also take over old reading
 intent. Real vertical consumption, a newer valid command, or owner detachment
 releases the target. Existing NativeList and NativeScroller public coordinates
 are unchanged. The same page-top/sticky-top destinations are available without smooth-header mode.
+
+## Current-page partial header command
+
+`scrollHeaderBy(delta: number)` moves the current page's shared collapsible
+header from its displayed offset C to `clamp(C + delta, 0, D)`.
+`scrollHeaderToOffset(offset: number)` moves it to `clamp(offset, 0, D)`
+regardless of intervening native keyboard or user scrolling. D is the latest
+measured collapsible height. Inputs use logical points on iOS and Android and
+CSS pixels on Web. Non-finite values are ignored. The header and current body move immediately
+so a focused input becomes visible before the next keyboard frame. A valid command
+clears only the current page's body reading position B; it never changes
+another page's memory or adds permanent content/insets. It requires the same
+stable attached current owner as the page-top commands and is a safe no-op
+during horizontal transitions, before mount, or after disposal. A newer
+command or real user vertical consumption takes ownership from an older one.
+Dynamic header measurements clamp any in-flight target to the latest D.
+This command allows a focused input inside the shared header to move above a
+keyboard without replacing the pager's sole vertical scroll owner.
 
 ## Independent NativeScroller migration
 
@@ -333,6 +351,32 @@ warnings were observed. Keyboard, multi-touch, physical-device performance and
 the full lifecycle/interaction matrix remain unverified. These are local source
 builds; the currently installed npm version does not yet contain this migration.
 
+## Android removal-transition geometry retention
+
+Status: implemented locally; unreleased. On the Android UI thread, during a
+screen removal transition,
+NativeList and CollapsiblePager layout entry points respect the RecyclerView
+suppression state established by the screen-transition owner. The owner restores
+the original state when its last transition ownership ends. This adds no public
+API and does not change Web or iOS behavior.
+
+If Fabric removes the current NativeScroller React child while its origin-frame
+transition remains active, Android retains the already displayed native extent
+for drawing. The current child and raw content dimensions still clear normally;
+only native content measurement and layout use the retained effective extent.
+The matching transition end or detach clears the private child and extent state
+idempotently. Adding a new child cancels prior retention, and a late end for the
+old child cannot alter the new content. Ordinary removal, size events and scroll
+commands keep their existing semantics.
+
+Local arm64 DevShell acceptance covered Base, CXO and Overview exit content,
+normal scrolling, RecyclerView ownership and suppression cleanup for the
+observed CXO exit, and NativeScroller raw-zero content dimensions with a
+nonzero displayed origin followed by detach cleanup. Nested-owner and cancel
+paths, Overview rebound/cancel, natural resize and new-child runtime cases,
+and the full performance matrix remain unverified. SDK publication and
+consumer version alignment are separate steps.
+
 ## iOS vertical-scroll press cancellation
 
 Status: implemented in source. A source-identical `node_modules` build was
@@ -452,6 +496,40 @@ The attached UIKit regression intentionally constrains the real pager pan to two
 required touches to prove the no-pan path; it is distinct from natural Home OS
 input, coalesced-event delivery, and physical-device acceptance.
 
+## Native segmented tab bar
+
+Status: implemented locally. Focused production-class iOS XCTest and Android
+instrumentation checks pass; consuming App interaction acceptance is separate.
+`nativeTabBar.style.variant` accepts `"underline"` (the default) or
+`"segmented"` on iOS and Android. The optional
+`nativeTabBar.style.contentPaddingVertical` is a nonnegative logical inset,
+defaulting to zero. Omitting both fields preserves the existing content-width,
+horizontally scrollable underline bar. Web ignores `nativeTabBar` and retains
+its caller-rendered sticky header.
+
+In segmented mode, the existing `height` is the entire tab slot. The track
+fills the space inside `contentPaddingHorizontal` and
+`contentPaddingVertical`, uses `backgroundColor`, and has a fully rounded
+outline. Its visible items divide the track into equal-width segments in their
+current order, including after item insertion, removal, relabeling, or resize.
+The thumb uses `indicatorColor`, is inset two logical points from its segment,
+and is fully rounded. Segment titles use the existing font and active/inactive
+text colors, remain single-line with truncation, and retain their existing
+accessibility labels, test IDs, and native press event keys. The segmented bar
+does not scroll horizontally; `itemSpacing`, `indicatorHeight`, and
+`indicatorBottom` apply only to underline mode. The pager's native fractional
+page progress moves the thumb continuously between equal-width segments and
+interpolates text emphasis without per-frame JavaScript updates. It settles at
+the actual selected page after a completed or cancelled gesture. RTL reverses
+physical segment order without changing logical page keys or indices.
+
+Switching variants or removing the native tab bar clears the previous visual
+state. The existing native press command, page callbacks, retention, vertical
+header geometry, and Web behavior remain unchanged. Acceptance requires
+focused native geometry/progress/press checks on iOS and Android, including
+two or three segments, dynamic labels/items, RTL, narrow widths, and variant
+switching. Type forwarding alone does not prove rendered behavior.
+
 ## Native tab-press animation default
 
 Behavior change: previously an omitted `nativeTabPressAnimationEnabled` animated
@@ -471,6 +549,28 @@ Callers rendering their own JS tab bar choose the matching imperative command.
 Status: implemented; focused native-wrapper tests cover both directions,
 explicit overrides and in-flight/superseded command targets. Home applies this policy to its JS tab bar, with iOS and
 Android simulator recordings verifying distant jumps and adjacent transitions.
+
+## Native tab trailing control reservation
+
+Status: implemented locally, unreleased. The focused Android host test passed
+(1/1); iOS hit tests had 8 passes and 1 existing skip. iOS companion-app UI
+acceptance remains unverified.
+`nativeTabBar.style.trailingReservedWidth` is an optional logical trailing
+reservation for a sibling React control in the full-width sticky header. It
+defaults to zero. JavaScript normalizes non-finite or negative input to zero;
+native also clamps the reservation to the actual tab viewport width. On Android
+and iOS, only the native tab viewport shrinks from `W` to `W - R`: its frame
+begins at zero in LTR and at `R` in RTL. The sticky React header, its height,
+and page content keep their original full-width geometry. Touches in the
+reserved region reach the sibling control, while native tab hit testing and
+last-tab visibility use the reduced viewport. Changing the reservation updates
+that viewport; removing it or recycling the pager restores the default zero.
+Web does not render the native tab and ignores this style field. For a positive
+reservation, the box-none sticky React control draws above the native tab so
+its inward fade and toolbar hit area remain visible; zero preserves the old
+native-tab foreground order. Acceptance requires focused native layout and hit
+testing for zero, nonzero, reset, and RTL reservations; type forwarding alone
+is insufficient.
 
 ## Android refresh foreground coordination
 
@@ -816,6 +916,19 @@ Verified NativeList collections bypass the existing 0.5-second generic collectio
 fallback debounce, including replacement-state restoration. Other collection
 fallbacks keep that safety delay. Caller insets and retained logical offsets
 remain governed by the existing restoration policy.
+
+A verified, mounted NativeList with usable vertical bounds is a scroll-owner
+boundary. Its React container slots may contain independent Fabric scroll views,
+NativeScroller views or nested pagers; those descendants MUST NOT replace that
+NativeList as the enclosing page's owner or receive its shared header. Candidate
+priority between sibling page owners remains unchanged, including an explicit
+NativeScroller sibling. Pages without an enclosing NativeList retain nested-pager
+active-owner delegation. This boundary does not change scroll offsets, insets,
+shared-header collapse or per-page body memory.
+
+Status: implemented and verified by production-native UIKit regressions on
+iOS 27.1 for footer insertion, explicit-sibling priority and nested-pager
+delegation. Full App and physical-device visual acceptance are reported separately.
 
 When the active scroll owner is removed before its replacement becomes usable,
 the pager MUST retain bounded recovery (at most 12 retries per recovery round,

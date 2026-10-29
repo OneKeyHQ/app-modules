@@ -764,6 +764,26 @@ typedef struct __IOHIDEvent *RNCTestHIDEventRef;
   XCTAssertTrue([pager isKindOfClass:NSClassFromString(@"RNCCollapsiblePagerDirectScrollView")]);
 }
 
+- (void)configureSegmentedTabsForTwoPages
+{
+  auto baseline = std::make_shared<RNCCollapsiblePagerViewProps>();
+  baseline->nativeSmoothHeaderScrollEnabled = true;
+  baseline->headerHeight = 120;
+  baseline->stickyHeaderHeight = 44;
+  auto segmented = std::make_shared<RNCCollapsiblePagerViewProps>();
+  segmented->nativeSmoothHeaderScrollEnabled = true;
+  segmented->headerHeight = 120;
+  segmented->stickyHeaderHeight = 56;
+  segmented->nativeTabBarItems =
+    R"([{"key":"recent","title":"Recents"},{"key":"account","title":"Accounts"}])";
+  segmented->nativeTabBarVariant = "segmented";
+  segmented->nativeTabBarHeight = 56;
+  segmented->nativeTabBarContentPaddingHorizontal = 20;
+  segmented->nativeTabBarContentPaddingVertical = 12;
+  [self.pager updateProps:segmented oldProps:baseline];
+  [self.window layoutIfNeeded];
+}
+
 - (void)recordPagerPan:(UIPanGestureRecognizer *)pan
 {
   if (pan.state == UIGestureRecognizerStateBegan) self.pagerPanBegins += 1;
@@ -903,6 +923,51 @@ typedef struct __IOHIDEvent *RNCTestHIDEventRef;
   // UIKit must not deliver the lift to the prevented handler as a press end.
   XCTAssertFalse([self.handler.events containsObject:@"ended"], @"events %@", self.handler.events);
   XCTAssertEqual(self.handler.events.count, eventsBeforeLift);
+}
+
+- (void)testSegmentedThumbTracksDeliveredPagerDragAndReverseBeforeLift
+{
+  [self assertFixtureIsReadyForDelivery];
+  [self assertDirectPagerForRegression];
+  [self configureSegmentedTabsForTwoPages];
+
+  UIScrollView *pagerScrollView = [self.pager valueForKey:@"pagerScrollView"];
+  UIView *tabBar = [self.pager valueForKey:@"nativeTabBarView"];
+  UIView *thumb = [tabBar valueForKey:@"indicatorView"];
+  NSArray<UIButton *> *buttons = [tabBar valueForKey:@"buttons"];
+  XCTAssertEqual(buttons.count, 2);
+  XCTAssertFalse(tabBar.hidden);
+  XCTAssertEqualWithAccuracy(CGRectGetHeight(tabBar.bounds), 56, 0.01);
+  CGFloat firstThumbX = CGRectGetMinX(buttons[0].frame) + 2;
+  CGFloat secondThumbX = CGRectGetMinX(buttons[1].frame) + 2;
+  XCTAssertEqualWithAccuracy(CGRectGetMinX(thumb.frame), firstThumbX, 1);
+
+  CGPoint point = CGPointMake(350, 600);
+  UITouch *touch = [self.driver beginAt:point];
+  CGFloat largestOffset = 0;
+  NSUInteger intermediateFrames = 0;
+  for (NSInteger step = 1; step <= 18; ++step) {
+    [self.driver move:touch to:CGPointMake(point.x - 14 * step, point.y)];
+    CGFloat offset = pagerScrollView.contentOffset.x;
+    largestOffset = MAX(largestOffset, offset);
+    if (offset > 1 && offset < CGRectGetWidth(pagerScrollView.bounds) - 1) {
+      CGFloat progress = offset / CGRectGetWidth(pagerScrollView.bounds);
+      XCTAssertEqualWithAccuracy(CGRectGetMinX(thumb.frame),
+        firstThumbX + (secondThumbX - firstThumbX) * progress, 1);
+      intermediateFrames += 1;
+    }
+  }
+  XCTAssertTrue(pagerScrollView.isDragging);
+  XCTAssertGreaterThan(largestOffset, 80);
+  XCTAssertGreaterThan(intermediateFrames, 2);
+
+  for (NSInteger step = 17; step >= 0; --step) {
+    [self.driver move:touch to:CGPointMake(point.x - 14 * step, point.y)];
+  }
+  // UIKit can briefly bounce past the leading edge before the finger lifts.
+  XCTAssertLessThan(fabs(pagerScrollView.contentOffset.x), 10);
+  XCTAssertEqualWithAccuracy(CGRectGetMinX(thumb.frame), firstThumbX, 1);
+  [self.driver end:touch];
 }
 
 - (void)testStationaryTapKeepsReactPress

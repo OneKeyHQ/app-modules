@@ -27,6 +27,7 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
   private val cornerBackdrop = View(context)
   private val slots = mutableListOf<NativeListImageSlot>()
   private val overlaySlots = mutableListOf<NativeListImageSlot>()
+  private val overlayFallbackIcons = mutableListOf<OneKeyIconView>()
   private val overlays = mutableListOf<Pair<FrameLayout, JSONObject>>()
   private var visual = JSONObject()
   private var style = JSONObject()
@@ -41,6 +42,15 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
    * tall pills with 12sp text on a 16dp line box, and a dashed frame border is 1dp.
    */
   var walletTextOverlays = false
+
+  /**
+   * True once the bound visual lays a badge past this frame (see
+   * [nativeListLeadingVisualOverhangsFrame]). This view never clips its children,
+   * but a host that clips children clips this view to its own bounds, so such a
+   * host must stop clipping or the badge is cut flat (OK-65694).
+   */
+  var requestsUnclippedHost = false
+    private set
 
   private fun isWalletText(data: JSONObject) =
     walletTextOverlays &&
@@ -150,6 +160,8 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
     }
     val placeholder = theme?.optString("strongBackground", "#0000000F") ?: "#0000000F"
     val fallbackIcon = visual.optJSONObject("fallbackIcon")
+    val fallbackBackground = fallbackIcon?.optString("backgroundColor")
+      ?.takeIf(String::isNotEmpty) ?: placeholder
     val sourceFallback =
       sources.firstOrNull()?.first?.optString("loadingStrategy", "none")?.let { it != "none" } ==
         true && (visual.has("fallbackText") || fallbackIcon != null)
@@ -170,7 +182,7 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
     val restored = fallbackKey?.let(NativeListSourceFallbackState::has) == true
     fallback.textSize = if (sourceScale) 13f else NativeListScale.font(resources, 13f)
     fallback.text = visual.optString("fallbackText").take(2)
-    fallback.setTextColor(color("#00000072"))
+    fallback.setTextColor(color(visual.optString("fallbackTextColor", "#00000072")))
     fallback.visibility =
       if (kind != "icon" && fallbackIcon == null && (sources.isEmpty() || restored)) VISIBLE
       else GONE
@@ -184,7 +196,9 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
       color(
         visual.optString("backgroundColor", if (sources.isEmpty()) placeholder else "#00000000")
       )
-    val backgroundColor = if (sourceFallback) color(placeholder) else visualBackground
+    val backgroundColor =
+      if (sources.isEmpty() && fallbackIcon?.has("backgroundColor") == true || restored) color(fallbackBackground)
+      else if (sourceFallback) color(placeholder) else visualBackground
     background =
       fill(backgroundColor, 0f).apply {
         if (kind == "icon" && iconBorder) setStroke(1, color("#0000001F"))
@@ -201,7 +215,7 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
         slot.recycle()
         slot.view.visibility = GONE
       } else {
-        slot.view.visibility = if (index > 0 || sourceFallback) INVISIBLE else VISIBLE
+        slot.view.visibility = if (index > 0 || restored) INVISIBLE else VISIBLE
         slot.bind(
           sources[index].first,
           "$key:leading:$index",
@@ -220,7 +234,7 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
               else NativeListSourceFallbackState.remember(it)
             }
             (background as? GradientDrawable)?.setColor(
-              if (loaded) visualBackground else color(placeholder)
+              if (loaded) visualBackground else color(fallbackBackground)
             )
             fallback.visibility = if (!loaded && fallbackIcon == null) VISIBLE else GONE
             icon.visibility = if (!loaded && fallbackIcon != null) VISIBLE else GONE
@@ -255,9 +269,26 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
         .optJSONArray("overlays")
         ?.let { values -> (0 until minOf(2, values.length())).map { values.getJSONObject(it) } }
         .orEmpty()
+    requestsUnclippedHost =
+      nativeListLeadingVisualOverhangsFrame(
+        kind = kind,
+        sourceCount = sources.size,
+        hasCornerIcon = badge != null,
+        overlayCount = descriptors.size,
+      )
     while (overlaySlots.size < descriptors.size) overlaySlots.add(NativeListImageSlot(reactContext))
+    while (overlayFallbackIcons.size < descriptors.size)
+      overlayFallbackIcons.add(OneKeyIconView(context))
     descriptors.forEachIndexed { index, data ->
       val frame = previousOverlays.getOrNull(index)?.first ?: FrameLayout(context)
+      val image = data.optJSONObject("image")
+      val fallbackData = data.optJSONObject("fallbackIcon")
+      val fallbackGlyph = overlayFallbackIcons[index].apply {
+        visibility = GONE
+        iconName = fallbackData?.optString("name") ?: ""
+        tintColor = color(fallbackData?.optString("tintColor", "#0000009B") ?: "#0000009B")
+        useSourceScale = sourceScale
+      }
       frame.background =
         fill(
           color(data.optString("backgroundColor", "#00000000")),
@@ -269,11 +300,15 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
       frame.outlineProvider = ViewOutlineProvider.BACKGROUND
       frame.clipToOutline = true
       val child: View =
-        data.optJSONObject("image")?.let { image ->
+        image?.let { source ->
           val slot = overlaySlots[index]
           slot.view.visibility = INVISIBLE
-          slot.bind(image, "$key:overlay:$index", placeholder = placeholder) {
+          val circularImage = data.optInt("padding", 0) > 0 &&
+            data.optInt("width", data.optInt("size", 20)) == overlayHeight(data)
+          slot.bind(source, "$key:overlay:$index", placeholder = placeholder,
+            round = circularImage) {
             slot.view.visibility = if (it) VISIBLE else INVISIBLE
+            fallbackGlyph.visibility = if (!it && fallbackData != null) VISIBLE else GONE
           }
           slot.view
         }
@@ -290,8 +325,13 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
               if (walletText) androidx.core.widget.TextViewCompat.setLineHeight(this, dp(16))
               else setLineSpacing(0f, 1f)
               typeface =
-                if (isWalletText(data)) fonts.regular(context)
-                else fonts.medium(context)
+                when (data.optString("fontWeight")) {
+                  "regular" -> fonts.regular(context)
+                  "medium" -> fonts.medium(context)
+                  "semibold" -> fonts.semibold(context)
+                  "bold" -> fonts.bold(context)
+                  else -> if (isWalletText(data)) fonts.regular(context) else fonts.medium(context)
+                }
               setTextColor(color(data.optString("tintColor", "#0000009B")))
             }
           } else {
@@ -305,11 +345,13 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
       val inset = data.optInt("padding", 0)
       if (isWalletText(data)) frame.setPadding(dp(2), 0, dp(2), 0)
       else frame.setPadding(dp(inset), dp(inset), dp(inset), dp(inset))
-      if (child.parent !== frame) {
-        frame.removeAllViews()
-        // A reused slot view may still belong to a frame dropped by an earlier bind.
-        (child.parent as? android.view.ViewGroup)?.removeView(child)
-        frame.addView(child, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+      frame.removeAllViews()
+      // A reused slot view may still belong to a frame dropped by an earlier bind.
+      (child.parent as? android.view.ViewGroup)?.removeView(child)
+      frame.addView(child, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+      if (image != null && fallbackData != null) {
+        (fallbackGlyph.parent as? android.view.ViewGroup)?.removeView(fallbackGlyph)
+        frame.addView(fallbackGlyph, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
       }
       if (frame.parent == null) addView(frame)
       overlays.add(frame to data)
@@ -367,8 +409,11 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
       )
     }
     place(fallback, 0, 0, w, h)
+    val explicitFallbackSize = visual.optJSONObject("fallbackIcon")
+      ?.optDouble("size", Double.NaN)?.takeIf { it.isFinite() && it > 0.0 }
     val iconSize =
-      if (sources.isNotEmpty() && visual.optJSONObject("fallbackIcon") != null)
+      if (explicitFallbackSize != null) dp(explicitFallbackSize.roundToInt())
+      else if (sources.isNotEmpty() && visual.optJSONObject("fallbackIcon") != null)
         (minOf(w, h) *
             if (visual.optJSONObject("fallbackIcon")?.optString("name") == "GlobusOutline") 1.2f
             else 1f)
