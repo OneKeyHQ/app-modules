@@ -1,5 +1,123 @@
 # Native Tab View behavioral contract
 
+## Native left drawer
+
+Status: implemented in module source. Package TypeScript, iOS/Android Fabric
+code generation, iOS Objective-C++ Fabric bridge compilation against RN 0.86.2,
+13 React wrapper checks, eleven Android API 36 native tests and four real-Fabric
+iOS review cases passed (shared-header/body arbitration and bar-height switches).
+The static Home example also passed a focused TypeScript check.
+Detailed iOS runtime evidence is recorded separately; physical-device and exact
+reference-video acceptance remain pending.
+
+`renderDrawerContent?: () => React.ReactNode` supplies an optional menu slot.
+`drawerOpen?: boolean` defaults to false and requests its stable open state.
+`onDrawerOpenChange?: (open: boolean) => void` reports a completed user transition;
+controlled consumers MUST mirror it into `drawerOpen`. Prop-driven transitions,
+initial layout and cancellation emit no event. A user transition returning to
+the previous stable state emits only when it overrides an in-flight external
+target, so the consumer can reconcile that target. `drawerSwipeEnabled?: boolean`
+defaults to false; callers MUST enable it only where drawer navigation is appropriate (normally a root
+screen). Existing `hapticFeedbackEnabled` enables one light native haptic after
+a completed user transition changes the stable state. Programmatic updates and
+cancelled gestures do not vibrate.
+
+The drawer is physically left on both iOS and Android, including RTL. Its width
+is 78 percent of the host. The foreground is the full tab container, including
+the native tab bar and an optional custom JS bar. It keeps its full width and
+height while moving right, without scaling, scene reparenting or remounting.
+The native host and two slots remain mounted when the drawer is disabled or its
+content changes. Missing content disables the drawer, resets it closed without
+an event, and passes foreground input through. Web omits the drawer host/menu
+and passes the existing tab content through; it implements no drawer gestures.
+The existing tab view's other Web support is unchanged.
+
+For normalized progress `p` in [0, 1], foreground translation is `.78 * width * p`,
+its left circular corner radius is `64 * p` points/dp and its neutral gray
+dim surface (RGB 28/28/28) has opacity `.7 * p`.
+The menu translates from `-.12 * drawerWidth` to zero; a black menu shade fades
+from .12 to zero. These are initial reference-video tuning values, not a claim
+of pixel-perfect parity. Closed menus are hidden from touch/accessibility;
+while visible, the foreground is blocked by a native dim surface. Tapping that
+surface closes the drawer. iOS accessibility escape and Android Back close an
+open drawer; the dim surface exposes an accessible close action.
+On Android the dim surface MUST retain full foreground bounds even while hidden
+and after React/Fabric ancestors suppress `requestLayout`. Internal containers
+and both slots MUST be measured and laid out on host layout and slot changes,
+without relying on a later ancestor layout pass. Visible dim input MUST prevent
+native foreground controls from receiving the same touch.
+While closed, that retained dim surface MUST also be excluded from React Native
+touch-target lookup, so JS Pressable taps reach the foreground. Visibility alone
+is insufficient for React Native's native target traversal.
+
+The reported native tab-bar height MUST become zero when hidden and restore the
+current height when shown. The context and drawer exclusion use one effective
+height: a rendered custom bar's own measured height takes precedence; otherwise
+`tabBarHidden` forces zero. Native hide measurements MUST NOT overwrite a custom
+bar's height, including across native/custom presentation switches.
+
+With opening swipes enabled, a one-finger rightward gesture may start anywhere
+in the foreground content. At the first confirmed direction, the actual native
+touch target and its ancestor chain determine ownership. A horizontal scroll
+view, list or pager which can consume that physical direction takes priority;
+only when every such ancestor is at its boundary may the drawer open. Vertical
+scroll views do not block horizontal drawer intent. Once selected, the owner is
+locked until up/cancel: reaching a boundary mid-gesture does not hand off.
+Disabled pager input does not claim a gesture based on its retained scroll
+range; an independently enabled horizontal child inside that page still can.
+An ancestor pager which explicitly excludes the touched shared header MUST NOT
+claim that header gesture solely because its horizontal offset is nonzero.
+The header's own nested horizontal content retains its normal boundary priority.
+On iOS this uses the repository's existing `excludedHeaderView` Objective-C
+getter on the native smooth pager and the real touch target's ancestry. It does
+not invoke another scroll view's UIKit recognition lifecycle hook, add a Pager
+API, or infer a header exclusion from a pager's selected page.
+The iOS UIPageViewController boundary uses its public data-source query once per
+decision, skipping its internally centered scroll offset. Android observes
+pending direction even when a nested pager initially disallows interception,
+but stops overriding that request after the child wins. Sliders and editing controls,
+web/graphics surfaces, system back gestures and starts in the bottom tab-bar
+footprint take priority. When open, closing gestures
+remain enabled even if opening swipes are disabled. Only the exposed
+foreground accepts a closing pan; menu scrolling remains the consumer's own.
+Vertical gestures fail before taking ownership. Active touches interrupted by
+a second finger, system cancellation, disabling, detach or a newer prop update
+cannot later emit an event. Cancellation returns to the previous stable state,
+or resumes an external target whose programmatic animation the gesture interrupted.
+No gesture progress crosses the JS bridge.
+
+Both platforms settle on their UI thread with the same critically damped curve:
+`p(t) = target + (a + b*t) * exp(-22*t)`, where `a = p0-target`,
+`b = v0 + 22*a`, and normalized velocity `v0` is clamped to [-8, 8] per second.
+Presentation is clamped to [0, 1], and the transition ends at or before 500 ms.
+Release targets open when `p + v0*.12 >= .5`. A newer animation or touch starts
+from the current displayed progress and cancels the previous completion.
+Resize snaps a pending settlement to its target, emitting its user event once
+if appropriate; an active drag follows the same cancellation rule. Detach cancels
+animations and callbacks; reattachment reapplies the latest external target.
+The host retains at most one display-link/animator, one touch
+sequence, two React child slots, and native dim surfaces. It owns no snapshots,
+workers, persistence, JS animation objects, RNGH or Reanimated dependency.
+
+Implementation boundaries: `src/BottomTabs.tsx` owns slots and settled callbacks;
+`src/BottomTabsDrawerNativeComponent.ts` defines the Fabric boundary;
+`ios/RCTBottomTabsDrawerContainerView.swift` and
+`android/src/main/java/com/onekey/bottomtabs/BottomTabsDrawerView.kt` own native
+input, layout, animation and cleanup. The iOS Fabric component and Android manager only forward children,
+props and the settled event. Required acceptance includes both bar styles,
+custom bars, content/vertical gestures, dim close, rapid reversal, cancellation,
+disable/remove-content, resize, detach, accessibility, RTL and bottom-bar
+gesture ownership, including a real pager, nested horizontal list and vertical
+scrolling in the complete Fabric example. Source checks and emulator checks do not establish physical
+device smoothness or exact reference-video fidelity.
+
+The standalone `example/react-native/pages/BottomTabsHomeDrawerExample.tsx`
+reproduces Home’s wallet toolbar, balance/actions/banner shared header and
+Spot/Perps/Earn/NFT/History hierarchy using static data, native CollapsiblePager
+and standard React Native scroll views. It is an equivalent interaction fixture;
+the application’s existing JS collapsible-header implementation and business
+NativeList pages are not migrated or exercised by this fixture.
+
 ## Tab presses and double press
 
 Status: implemented in module source. Runtime verification status is recorded
@@ -146,8 +264,9 @@ page exposes the switch and its scrolling scene reserves the reported bar height
 
 All gesture handling, animations, and timers run on the platform UI thread in
 the main-runtime native view. The view owns no background-runtime or shared JS
-objects. Retained state is bounded to the current touch sequence, the last
-pressed tab and timestamp, and at most two running animators.
+objects. The tab bar retains the current touch sequence, the last pressed tab
+and timestamp, and at most two running animators. The optional drawer's additional
+single animation and touch ownership are bounded in the Native left drawer section.
 
 ## Conformance and acceptance
 

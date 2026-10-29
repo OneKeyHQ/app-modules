@@ -107,7 +107,8 @@
     "ios": {
       "componentProvider": {
         "RNBottomTabsView": "RCTBottomTabsComponentView",
-        "RNBottomTabsAccessoryView": "RCTBottomAccessoryComponentView"
+        "RNBottomTabsAccessoryView": "RCTBottomAccessoryComponentView",
+        "RNBottomTabsDrawer": "RCTBottomTabsDrawerComponentView"
       },
       "modulesConformingToProtocol": {
         "RCTImageDataDecoder": [

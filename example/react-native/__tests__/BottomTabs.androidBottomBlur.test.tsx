@@ -82,7 +82,7 @@ describe('Android bottom blur public option', () => {
     await act(() => {
       renderer = ReactTestRenderer.create(renderTabs());
     });
-    const scene = renderer!.root.findByType(View);
+    const scene = renderer!.root.findByType('NativeBottomTabs' as any).findByType(View);
     await act(() => {
       renderer!.update(renderTabs(false));
     });
@@ -90,7 +90,7 @@ describe('Android bottom blur public option', () => {
       renderer!.root.findByType('NativeBottomTabs' as any).props
         .androidBottomBlurEnabled,
     ).toBe(false);
-    expect(renderer!.root.findByType(View)).toBe(scene);
+    expect(renderer!.root.findByType('NativeBottomTabs' as any).findByType(View)).toBe(scene);
     await act(() => {
       renderer!.update(renderTabs(true, true));
     });
