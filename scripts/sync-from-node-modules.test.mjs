@@ -25,6 +25,13 @@ test("considers published source entries but never build output or docs", () => 
   );
 });
 
+test("treats glob entries literally apart from the wildcard", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sync-glob-"));
+  fs.writeFileSync(path.join(dir, "a+b.podspec"), "");
+  fs.writeFileSync(path.join(dir, "aab.podspec"), "");
+  assert.deepEqual(selectSyncEntries(["a+b*"], dir), ["a+b.podspec"]);
+});
+
 test("copies only files edited in node_modules", () => {
   assert.equal(
     classifyFile({ edited: buf("a"), pristine: buf("a"), repo: buf("newer") }),

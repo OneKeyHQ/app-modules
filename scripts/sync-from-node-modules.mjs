@@ -63,7 +63,10 @@ export function selectSyncEntries(files, dir) {
     if (file.startsWith("!") || SKIPPED_ENTRIES.has(file)) continue;
     if (file.includes("*")) {
       const pattern = new RegExp(
-        `^${file.replace(/\./g, "\\.").replace(/\*/g, ".*")}$`,
+        `^${file
+          .split("*")
+          .map((part) => part.replace(/[\\^$.|?+()[\]{}]/g, "\\$&"))
+          .join(".*")}$`,
       );
       for (const name of fs.readdirSync(dir)) {
         if (pattern.test(name)) entries.push(name);
