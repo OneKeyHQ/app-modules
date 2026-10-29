@@ -72,4 +72,44 @@ fun main() {
   check(nativeRefreshForegroundTop(37 + 230 + 64, 294f) == 37f)
   check(nativeRefreshForegroundTop(-40 + 294, 294f) == -40f)
   println("Refresh foreground policy: repeat, owner transfer/release, external alpha, transparent baseline, caller offset, and combined nested inset passed")
+
+  // Initial mount before any page ViewHolder is attached still measures ViewPager2.
+  check(!shouldSuppressCollapsiblePagerRecyclerLayout(isLayoutSuppressed = false, adapterItemCount = 0, attachedPageCount = 0))
+  // Unmount removes all adapter pages while rendered ViewHolder views remain attached.
+  check(shouldSuppressCollapsiblePagerRecyclerLayout(isLayoutSuppressed = false, adapterItemCount = 0, attachedPageCount = 1))
+  check(shouldSuppressCollapsiblePagerRecyclerLayout(isLayoutSuppressed = true, adapterItemCount = 2, attachedPageCount = 1))
+  // Re-adding pages resumes ViewPager2 layout.
+  check(!shouldSuppressCollapsiblePagerRecyclerLayout(isLayoutSuppressed = false, adapterItemCount = 1, attachedPageCount = 1))
+
+  check(
+    !shouldDrainCollapsiblePagerLayout(
+      isLayoutRequested = true,
+      isLayoutSuppressed = false,
+      isComputingLayout = false,
+      width = 1080,
+      height = 2400,
+      adapterItemCount = 0,
+    ),
+  )
+  check(
+    shouldDrainCollapsiblePagerLayout(
+      isLayoutRequested = true,
+      isLayoutSuppressed = false,
+      isComputingLayout = false,
+      width = 1080,
+      height = 2400,
+      adapterItemCount = 2,
+    ),
+  )
+  check(
+    !shouldDrainCollapsiblePagerLayout(
+      isLayoutRequested = true,
+      isLayoutSuppressed = true,
+      isComputingLayout = false,
+      width = 1080,
+      height = 2400,
+      adapterItemCount = 2,
+    ),
+  )
+  println("CollapsiblePager unmount layout guard: initial mount, unmount retention, suppression, and re-add passed")
 }

@@ -39,3 +39,22 @@ internal class NativeRefreshForegroundAlpha(initialAlpha: Float) {
     return lastApplied
   }
 }
+
+// Skip ViewPager2 RecyclerView layout when explicitly suppressed or when all React page
+// children have been removed on unmount while rendered ViewHolder views remain attached.
+internal fun shouldSuppressCollapsiblePagerRecyclerLayout(
+  isLayoutSuppressed: Boolean,
+  adapterItemCount: Int,
+  attachedPageCount: Int,
+): Boolean = isLayoutSuppressed || (adapterItemCount <= 0 && attachedPageCount > 0)
+
+internal fun shouldDrainCollapsiblePagerLayout(
+  isLayoutRequested: Boolean,
+  isLayoutSuppressed: Boolean,
+  isComputingLayout: Boolean,
+  width: Int,
+  height: Int,
+  adapterItemCount: Int,
+): Boolean = adapterItemCount > 0 && isLayoutRequested && !isLayoutSuppressed &&
+  !isComputingLayout && width > 0 && height > 0
+
