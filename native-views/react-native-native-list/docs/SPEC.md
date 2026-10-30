@@ -158,6 +158,50 @@ after semantic text styling. Both lines retain their default size, tone, line
 height, right alignment and accessibility text. These fields add no action or
 hit target and travel in existing snapshot JSON without a Nitro ABI change.
 
+### Identity title image
+
+Status: implemented in local source, unreleased. Type checks, JS/Web tests,
+Web runtime checks, package build, iOS XCTest-target compilation, Android
+production/instrumentation-test compilation and JVM tests pass. Native
+instrumentation/device execution and complete App acceptance remain pending;
+the local CoreSimulator service could not create the isolated test device.
+An `identity` row may supply `titleImage: { image, accessibilityLabel?,
+hoverActionKey? }`. `image` uses the existing `ImageSource` contract and must
+declare equal finite width and height within 1...40 logical units. The image
+is circular, follows the title and any title icons with a 4-point gap, and
+precedes title suffixes and inline badges. It reserves its declared square
+while loading or after failure, so neither state moves the text. Existing
+rows without this field keep their current layout. The image does not change
+row identity or infer a stock, issuer, or other product meaning.
+
+iOS and Android use the existing OneKeyImage-backed slot, request options and
+retry limits. Slots belong to the mounted row renderer; OneKeyImage owns image
+caches. Text-only rebinds retain an unchanged row/source request. Source or row
+changes, removal, recycling and disposal cancel prior work and prevent stale
+completion from painting the next binding. Failure leaves the reserved square
+empty; the SDK adds no title-image fallback request or separate cache.
+
+On Web, optional `hoverActionKey` uses the title icon's existing help semantics
+and `leadingAction` anchor source: mouse/pen entry opens an anchored help event,
+departure invalidates it, mouse/pen press closes it until departure, and touch
+press toggles it. Pressing this help target does not activate the row. Without
+help, the image participates in the ordinary row press. It adds no tab stop.
+Native renderers ignore this Web-only help field and preserve ordinary row
+presses. The consumer owns the tooltip text and presentation. Omitted
+`accessibilityLabel` makes the image decorative; a supplied label describes it.
+
+Full snapshots without `titleImage` remove the image and old help anchor.
+Explicit patch replacement updates the descriptor; an omitted patch field
+leaves it unchanged. Removal requires a full snapshot. Snapshot/patch guards
+reject null, malformed descriptors, empty URIs, invalid geometry and empty help
+keys. The field travels in existing JSON and does not change the Nitro ABI;
+consumers must use a native SDK that implements the field before enabling it.
+
+Acceptance covers protocol validation, image/source replacement and removal,
+text-only request retention, Web help-action isolation and anchor cleanup,
+native bind/recycle geometry, and native compilation. Device and complete App
+acceptance must be reported separately from source and DOM tests.
+
 ### Identity row risk-management controls
 
 Status: implemented in source for local consumers, unreleased. Focused validation,

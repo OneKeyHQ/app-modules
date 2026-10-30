@@ -3166,6 +3166,111 @@ describe('complex renderer lifecycle', () => {
       engine.destroy();
     }
   });
+  it('retains title image requests, isolates help and clears removed images and anchors', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const titleImage = {
+      image: { uri: 'https://example.com/issuer.png', width: 14, height: 14 },
+      accessibilityLabel: 'Issuer',
+      hoverActionKey: 'issuer-info',
+    };
+    const row: IdentityRow = {
+      type: 'identity',
+      key: 'stock',
+      title: 'STOCK',
+      leading: { kind: 'token', image },
+      titleImage,
+    };
+    const onRowAction = jest.fn();
+    const onActionAnchorInvalidated = jest.fn();
+    const engine = new NativeListWebEngine(
+      host,
+      snap(row),
+      { onRowAction, onActionAnchorInvalidated },
+      false
+    );
+    const previousElement = global.Element;
+    const previousNode = global.Node;
+    global.Element = document.defaultView!.Element;
+    global.Node = document.defaultView!.Node;
+    const holder = () =>
+      host.querySelector<HTMLElement>('.ok-native-list-identity-title-image')!;
+    const pointer = (type: string, pointerType: string) =>
+      holder().dispatchEvent(
+        Object.assign(
+          new document.defaultView!.Event(type, { bubbles: true }),
+          { pointerType }
+        )
+      );
+    try {
+      const bitmap = holder().querySelector('img')!;
+      expect(holder().style.width).toBe('14px');
+      expect(holder().style.height).toBe('14px');
+      expect(holder().style.borderRadius).toBe('50%');
+      expect(holder().getAttribute('aria-label')).toBe('Issuer');
+      expect(holder().tabIndex).toBe(-1);
+      engine.applySnapshot(snap({ ...row, title: 'Changed title' }));
+      expect(holder().querySelector('img')).toBe(bitmap);
+      pointer('pointerover', 'mouse');
+      const event = onRowAction.mock.calls[0]![0];
+      expect(event).toMatchObject({
+        rowKey: 'stock',
+        actionKey: 'issuer-info',
+        anchor: { source: 'leadingAction' },
+      });
+      engine.setActionAnchorState({ token: event.anchor.token, open: true });
+      bitmap.click();
+      expect(onRowAction).toHaveBeenCalledTimes(1);
+      engine.applyPatches([
+        {
+          type: 'identity',
+          key: 'stock',
+          changes: {
+            titleImage: {
+              image: {
+                ...titleImage.image,
+                uri: 'https://example.com/new.png',
+              },
+            },
+          },
+        },
+      ]);
+      expect(onActionAnchorInvalidated).toHaveBeenCalledTimes(1);
+      const replacement = holder().querySelector('img')!;
+      expect(replacement).not.toBe(bitmap);
+      expect(holder().dataset.nativeListHoverAction).toBeUndefined();
+      expect(holder().getAttribute('aria-hidden')).toBe('true');
+      replacement.dispatchEvent(new document.defaultView!.Event('error'));
+      expect(holder().style.width).toBe('14px');
+      replacement.click();
+      expect(onRowAction.mock.calls[1]![0].actionKey).toBe('press');
+      engine.applySnapshot(snap(row));
+      pointer('pointerdown', 'touch');
+      expect(onRowAction.mock.calls[2]![0].actionKey).toBe('issuer-info');
+      pointer('pointerup', 'touch');
+      holder().querySelector<HTMLElement>('img')!.click();
+      expect(onRowAction).toHaveBeenCalledTimes(3);
+      engine.setActionAnchorState({
+        token: onRowAction.mock.calls[2]![0].anchor.token,
+        open: true,
+      });
+      engine.applySnapshot(snap({ ...row, titleImage: undefined }));
+      expect(
+        host.querySelector('.ok-native-list-identity-title-image')
+      ).toBeNull();
+      expect(onActionAnchorInvalidated).toHaveBeenCalledTimes(2);
+      bitmap.dispatchEvent(new document.defaultView!.Event('load'));
+      expect(
+        host.querySelector('.ok-native-list-identity-title-image')
+      ).toBeNull();
+    } finally {
+      engine.destroy();
+      global.Element = previousElement;
+      global.Node = previousNode;
+    }
+  });
+
   it('opens icon-only help and clears it on press, rebind and touch toggle', () => {
     const { document } = new JSDOM('<!doctype html><body></body>').window;
     const host = document.createElement('div');

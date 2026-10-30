@@ -544,6 +544,13 @@ export type IdentityRow = RowBase &
     }>;
     /** Web-only additional help icon after titleIcon. */
     secondaryTitleIcon?: IdentityRow['titleIcon'];
+    /** Circular image after title icons; image dimensions must be square, 1...40. */
+    titleImage?: Readonly<{
+      image: ImageSource;
+      accessibilityLabel?: string;
+      /** Web-only help anchor; the consumer owns tooltip content. */
+      hoverActionKey?: string;
+    }>;
     subtitle?: string;
     tertiary?: string;
     tertiaryTone?: 'secondary' | 'info';
@@ -1068,6 +1075,7 @@ export type RowPatch =
           | 'titleSuffixes'
           | 'titleIcon'
           | 'secondaryTitleIcon'
+          | 'titleImage'
           | 'subtitle'
           | 'subtitleLines'
           | 'contentHeight'

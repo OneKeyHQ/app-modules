@@ -1248,7 +1248,7 @@ function assertButtonGroup(
 function assertIdentityExtras(
   row: Pick<
     IdentityRow,
-    'titleIcon' | 'secondaryTitleIcon' | 'trailing' | 'style'
+    'titleIcon' | 'secondaryTitleIcon' | 'titleImage' | 'trailing' | 'style'
   >,
   path: string
 ): void {
@@ -1278,6 +1278,30 @@ function assertIdentityExtras(
       fail(`${iconPath}.accessibilityLabel`, 'must be a string');
     if (titleIcon.hoverActionKey !== undefined)
       assertKey(titleIcon.hoverActionKey, `${iconPath}.hoverActionKey`);
+  }
+  if (row.titleImage !== undefined) {
+    const imagePath = `${path}.titleImage`;
+    const descriptor = protocolObject(row.titleImage, imagePath);
+    assertUnknownKeys(
+      descriptor,
+      ['image', 'accessibilityLabel', 'hoverActionKey'],
+      imagePath,
+      'title image key'
+    );
+    protocolObject(row.titleImage.image, `${imagePath}.image`);
+    if (typeof row.titleImage.image.uri !== 'string')
+      fail(`${imagePath}.image.uri`, 'must be a string');
+    assertImage(row.titleImage.image, `${imagePath}.image`);
+    const { width, height } = row.titleImage.image;
+    if (width !== height || width < 1 || width > 40)
+      fail(`${imagePath}.image`, 'must be square within 1...40');
+    if (
+      row.titleImage.accessibilityLabel !== undefined &&
+      typeof row.titleImage.accessibilityLabel !== 'string'
+    )
+      fail(`${imagePath}.accessibilityLabel`, 'must be a string');
+    if (row.titleImage.hoverActionKey !== undefined)
+      assertKey(row.titleImage.hoverActionKey, `${imagePath}.hoverActionKey`);
   }
   const ratio = row.style?.leadingContentMaxWidthRatio;
   if (

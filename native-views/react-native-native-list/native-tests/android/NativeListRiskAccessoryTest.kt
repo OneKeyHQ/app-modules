@@ -66,6 +66,50 @@ class NativeListRiskAccessoryTest : InstrumentationTestCase() {
     super.tearDown()
   }
 
+  fun testTitleImageRetainsRequestAndClearsOnProductionRowReuse() {
+    onMain {
+      val context = ThemedReactContext(BridgeReactContext(activity), activity, "TitleImageTest", 1)
+      val identity = NativeListIdentityRowView(context, NativeListFonts())
+      activity.setContentView(identity)
+      fun bind(descriptor: JSONObject?, title: String = "STOCK") {
+        val json = JSONObject().put("key", "stock").put("type", "identity").put("title", title)
+          .put("height", 60).put("leading", JSONObject().put("kind", "token"))
+        if (descriptor != null) json.put("titleImage", descriptor)
+        identity.bind(NativeListItem("stock", "identity", null, 0, json), null, "linear", "vertical",
+          null, false, { _, _, fallback -> fallback }, true)
+        identity.measure(View.MeasureSpec.makeMeasureSpec(640, View.MeasureSpec.EXACTLY),
+          View.MeasureSpec.makeMeasureSpec(120, View.MeasureSpec.EXACTLY))
+        identity.layout(0, 0, identity.measuredWidth, identity.measuredHeight)
+      }
+      val descriptor = JSONObject().put("image", JSONObject().put("uri", "data:image/png;base64,AA==")
+        .put("width", 14).put("height", 14)).put("accessibilityLabel", "Issuer")
+        .put("hoverActionKey", "issuer-info")
+      bind(descriptor)
+      val slot = field<NativeListImageSlot>(identity, "titleImage")
+      val density = activity.resources.displayMetrics.density
+      assertEquals(View.VISIBLE, slot.view.visibility)
+      assertEquals(14f * density, slot.view.width.toFloat(), 1f)
+      assertEquals(14f * density, slot.view.height.toFloat(), 1f)
+      assertEquals("Issuer", slot.view.contentDescription)
+      val requestIdentity = field<String>(slot, "identity")
+      bind(descriptor, "Changed title")
+      assertEquals(requestIdentity, field<String>(slot, "identity"))
+      bind(JSONObject().put("image", JSONObject().put("uri", "data:image/png;base64,AQ==")
+        .put("width", 20).put("height", 20)))
+      assertFalse(requestIdentity == field<String>(slot, "identity"))
+      assertEquals(20f * density, slot.view.width.toFloat(), 1f)
+      assertNull(slot.view.contentDescription)
+      bind(null)
+      assertEquals(View.GONE, slot.view.visibility)
+      assertNull(field<String?>(slot, "identity"))
+      bind(descriptor)
+      identity.recycle()
+      assertEquals(View.GONE, slot.view.visibility)
+      assertNull(slot.view.contentDescription)
+      identity.dispose()
+    }
+  }
+
   fun testValuePairSegmentsRebindAndSemanticStyleOnProductionStack() {
     onMain {
       val context = ThemedReactContext(BridgeReactContext(activity), activity, "PairTest", 1)

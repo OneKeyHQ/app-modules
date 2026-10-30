@@ -99,6 +99,92 @@ const snapshot = (
   selection: { mode: 'multiple', selectedKeys: [], rowPressToggles: true },
 });
 
+describe.each([true, false])(
+  'identity title image protocol in development=%s',
+  (development) => {
+    const environment = globalThis as typeof globalThis & { __DEV__: boolean };
+    const titleImage: NonNullable<IdentityRow['titleImage']> = {
+      image: { uri: 'https://example.com/issuer.png', width: 14, height: 14 },
+      accessibilityLabel: 'Issuer',
+      hoverActionKey: 'issuer-info',
+    };
+    it('serializes and replaces title images without losing omitted patch data', () => {
+      const original = environment.__DEV__;
+      environment.__DEV__ = development;
+      try {
+        const initial = snapshot([{ ...row('stock'), titleImage }]);
+        expect(
+          JSON.parse(serializeSnapshot(initial)).rows[0].titleImage
+        ).toEqual(titleImage);
+        const unchanged = applyRowPatches(initial, [
+          { type: 'identity', key: 'stock', changes: { title: 'New title' } },
+        ]);
+        expect(unchanged.rows[0]).toMatchObject({ titleImage });
+        const replacement = {
+          image: { ...titleImage.image, uri: 'https://example.com/next.png' },
+        };
+        const patched = applyRowPatches(initial, [
+          {
+            type: 'identity',
+            key: 'stock',
+            changes: { titleImage: replacement },
+          },
+        ]);
+        expect(patched.rows[0]).toMatchObject({ titleImage: replacement });
+        expect(
+          (patched.rows[0] as IdentityRow).titleImage?.hoverActionKey
+        ).toBeUndefined();
+        expect(
+          planNativeListPatches(initial, snapshot([row('stock')]))
+        ).toBeUndefined();
+      } finally {
+        environment.__DEV__ = original;
+      }
+    });
+    it('rejects malformed image descriptors in snapshots and patches', () => {
+      const original = environment.__DEV__;
+      environment.__DEV__ = development;
+      try {
+        const invalid = [
+          null,
+          {},
+          { image: null },
+          { ...titleImage, image: { ...titleImage.image, uri: '' } },
+          { ...titleImage, image: { ...titleImage.image, width: 0 } },
+          {
+            ...titleImage,
+            image: { ...titleImage.image, width: 0.5, height: 0.5 },
+          },
+          {
+            ...titleImage,
+            image: { ...titleImage.image, width: 41, height: 41 },
+          },
+          { ...titleImage, image: { ...titleImage.image, height: 15 } },
+          { ...titleImage, hoverActionKey: '' },
+          { ...titleImage, accessibilityLabel: 3 },
+        ];
+        for (const descriptor of invalid) {
+          const value = descriptor as unknown as IdentityRow['titleImage'];
+          expect(() =>
+            validateSnapshot(snapshot([{ ...row('stock'), titleImage: value }]))
+          ).toThrow();
+          expect(() =>
+            validatePatches([
+              {
+                type: 'identity',
+                key: 'stock',
+                changes: { titleImage: value },
+              },
+            ])
+          ).toThrow();
+        }
+      } finally {
+        environment.__DEV__ = original;
+      }
+    });
+  }
+);
+
 describe('public NativeList patch planner', () => {
   it('shares an empty batch for equal JSON values regardless of property order or omitted undefined', () => {
     const oldRow = row('btc');
