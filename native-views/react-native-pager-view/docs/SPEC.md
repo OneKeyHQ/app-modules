@@ -435,6 +435,10 @@ controls belongs to the consuming responder implementation; the Pager package
 does not contain or publish Tamagui helpers. The native application tab bar has
 a separate contract in react-native-bottom-tabs/docs/SPEC.md.
 
+On Android, smooth-touch coordination and nested interception share the same
+native-gesture state. Once either path starts the gesture, later MOVE events
+MUST NOT start it again before its end or cancellation clears that state.
+
 The current native implementation confirms horizontal intent after at least
 32 points on iOS or 32 dp on Android, with horizontal displacement exceeding
 vertical displacement. Vertical intent uses the native vertical scroll threshold

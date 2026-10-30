@@ -1881,6 +1881,7 @@ final class NativeListLifecycleTests: XCTestCase {
     for (index, slot) in slots.enumerated() { view.mountContainerSlot(slot, atIndex: index) }
     view.setContainerSlotHeightsJson("[0,0,140,0,100,40]")
     var settlements: [(String, String, Bool)] = []
+    let latestSettled = expectation(description: "Latest disclosure transition settled")
     view.onStructuralTransitionSettled = { payload in
       guard let data = payload.data(using: .utf8),
             let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -1888,6 +1889,7 @@ final class NativeListLifecycleTests: XCTestCase {
             let status = object["status"] as? String,
             let expanded = object["settledExpanded"] as? Bool else { return }
       settlements.append((id, status, expanded))
+      if id == "collapse-latest" { latestSettled.fulfill() }
     }
     view.applySnapshotJson(try structuralRowsSnapshot(count: 6, generation: 1,
       disclosureExpanded: false))
@@ -1908,11 +1910,15 @@ final class NativeListLifecycleTests: XCTestCase {
     view.applySnapshotJson(try structuralRowsSnapshot(count: 50, generation: 4,
       transitionID: "expand-superseded", durationMs: 400,
       disclosureExpanded: true))
-    waitForStructuralFrames(0.08)
+    // Supersede on the same main-thread turn: a timed wait can outlast the
+    // expansion on a busy simulator and legitimately deliver its settlement.
+    XCTAssertNotNil(Mirror(reflecting: view).descendant("structuralDisplayLink")
+      as? CADisplayLink)
+    XCTAssertEqual(settlements.map(\.0), ["same-rows"])
     view.applySnapshotJson(try structuralRowsSnapshot(count: 6, generation: 5,
       transitionID: "collapse-latest", durationMs: 400,
       disclosureExpanded: false))
-    waitForStructuralFrames(0.5)
+    wait(for: [latestSettled], timeout: 2)
     XCTAssertEqual(settlements.map(\.0), ["same-rows", "collapse-latest"])
     XCTAssertEqual(settlements.last?.1, "completed")
     XCTAssertEqual(settlements.last?.2, false)

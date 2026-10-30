@@ -188,8 +188,10 @@ open class NestedScrollableHost : FrameLayout {
       val scaledDy = dy.absoluteValue * if (isVpHorizontal) 1f else .5f
 
       if (scaledDx > touchSlop || scaledDy > touchSlop) {
-        NativeGestureUtil.notifyNativeGestureStarted(this, e)
-        nestedNativeGestureStarted = true
+        if (!nestedNativeGestureStarted) {
+          NativeGestureUtil.notifyNativeGestureStarted(this, e)
+          nestedNativeGestureStarted = true
+        }
 
         if (orientation == null) return
         if (isVpHorizontal == (scaledDy > scaledDx)) {
