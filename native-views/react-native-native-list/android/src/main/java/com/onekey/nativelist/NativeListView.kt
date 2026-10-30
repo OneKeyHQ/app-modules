@@ -46,6 +46,7 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.facebook.react.uimanager.ThemedReactContext
 import com.facebook.react.uimanager.PointerEvents
 import com.facebook.react.uimanager.ReactPointerEventsView
+import com.facebook.react.uimanager.events.NativeGestureUtil
 import com.margelo.nitro.nativelogger.OneKeyLog
 import org.json.JSONArray
 import org.json.JSONObject
@@ -220,6 +221,14 @@ class NativeListView(
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
       if (isLayoutSuppressed) return
       super.onLayout(changed, left, top, right, bottom)
+    }
+
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+      val handled = super.dispatchTouchEvent(event)
+      if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
+        finishPagerNativeGesture(event)
+      }
+      return handled
     }
   }
   private var configuredTopPaddingPx = 0
@@ -1843,6 +1852,7 @@ class NativeListView(
   // OneKey patch: vertical lists retain vertical drags and leave horizontal drags to a parent pager.
   private val pagerGestureTouchSlop = ViewConfiguration.get(context).scaledTouchSlop
   private var pagerGestureIsVertical = false
+  private var pagerNativeGestureStarted = false
   private val pagerGestureTouchListener = object : RecyclerView.SimpleOnItemTouchListener() {
     private var downX = 0f
     private var downY = 0f
@@ -1856,29 +1866,42 @@ class NativeListView(
           downY = event.y
           directionResolved = false
           pagerGestureIsVertical = false
+          pagerNativeGestureStarted = false
         }
-        MotionEvent.ACTION_MOVE -> if (!directionResolved) {
+        MotionEvent.ACTION_MOVE -> {
           val deltaX = abs(event.x - downX)
           val deltaY = abs(event.y - downY)
-          if (max(deltaX, deltaY) > pagerGestureTouchSlop) {
+          if (!directionResolved && max(deltaX, deltaY) > pagerGestureTouchSlop) {
             directionResolved = true
             pagerGestureIsVertical = deltaY >= deltaX
             recyclerView.parent?.requestDisallowInterceptTouchEvent(pagerGestureIsVertical)
-            if (
-              pagerGestureIsVertical &&
-              keyboardDismissMode == NativeListKeyboardDismissMode.ON_DRAG
-            ) {
+          } else if (!pagerGestureIsVertical && deltaY > pagerGestureTouchSlop && deltaY >= deltaX) {
+            pagerGestureIsVertical = true
+            recyclerView.parent?.requestDisallowInterceptTouchEvent(true)
+          }
+          if (pagerGestureIsVertical && !pagerNativeGestureStarted) {
+            NativeGestureUtil.notifyNativeGestureStarted(this@NativeListView, event)
+            pagerNativeGestureStarted = true
+            if (keyboardDismissMode == NativeListKeyboardDismissMode.ON_DRAG) {
               dismissKeyboard()
             }
           }
         }
         MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-          recyclerView.parent?.requestDisallowInterceptTouchEvent(false)
-          pagerGestureIsVertical = false
+          finishPagerNativeGesture(event)
         }
       }
       return false
     }
+  }
+
+  private fun finishPagerNativeGesture(event: MotionEvent) {
+    if (pagerNativeGestureStarted) {
+      NativeGestureUtil.notifyNativeGestureEnded(this, event)
+      pagerNativeGestureStarted = false
+    }
+    recyclerView.parent?.requestDisallowInterceptTouchEvent(false)
+    pagerGestureIsVertical = false
   }
   // Intercept only a completed tap so RecyclerView keeps drag and reorder ownership.
   private val keyboardTapTouchListener = object : RecyclerView.SimpleOnItemTouchListener() {

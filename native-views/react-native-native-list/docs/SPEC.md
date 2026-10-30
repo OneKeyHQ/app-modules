@@ -384,6 +384,46 @@ image that already loaded. Common container styling clears what it wrote on the
 next bind, including properties it set on template children. UI mutation remains on the platform
 UI thread; [DESIGN.md](DESIGN.md) describes update and event ownership.
 
+### Android vertical-drag React touch cancellation
+
+Status: implemented; four real Android MotionEvent/JSTouchDispatcher regressions
+passed on a dedicated API 34 emulator on 2026-10-30. The focused regression is
+in `native-tests/android/NativeListTouchDeliveryTest.kt`; build and run
+instructions are in that directory's README. Physical-device press/scroll
+acceptance remains separate.
+
+This behavior applies to every vertical NativeList, including standalone lists
+outside a CollapsiblePager and touches beginning on React container slots.
+On the UI thread, movement exceeding Android touch slop with vertical
+displacement at least equal to horizontal displacement confirms a vertical
+drag. An initially horizontal movement may become vertical while the list still
+receives the stream; once vertical, ownership stays vertical until release or
+cancellation. Horizontal lists retain their existing touch behavior.
+
+The list notifies its React root of native gesture ownership once per confirmed
+drag, cancelling the active React touch before finger-up. Later MOVE events MUST
+NOT repeat that notification. The listener does not consume the stream: native
+RecyclerView scrolling continues. A stationary tap or movement below touch slop
+MUST retain ordinary React touch-end delivery without native-gesture start/end
+notifications. The existing `keyboardDismissMode: 'on-drag'` behavior shares the
+confirmed-drag boundary.
+
+ACTION_UP and ACTION_CANCEL finish a started native gesture exactly once and
+release the parent's interception restriction, even after RecyclerView has
+intercepted its child and stops invoking the item-touch interception listener.
+They clear vertical ownership; the next ACTION_DOWN resets direction and
+gesture tracking. Android's touch-target removal cancellation must finish the
+old stream before a retained list is reattached or its slots are reused, so the
+next tap is not suppressed by the previous drag. Disposal releases the listener
+through the existing detached-resource cleanup. This change adds no prop or
+callback and changes neither iOS nor Web touch handling.
+
+Conformance uses real MotionEvent dispatch through NativeListView/RecyclerView
+and React Native's JSTouchDispatcher: vertical drag produces one touch-cancel
+and one native end, a tap produces touch-end, and cancellation/removal followed
+by reuse leaves the next tap functional. This proves native touch delivery, not
+execution of a JavaScript press handler or physical-device gesture feel.
+
 ### Android reorder cancellation
 
 Status: implemented; three real Android View/callback regressions verified on

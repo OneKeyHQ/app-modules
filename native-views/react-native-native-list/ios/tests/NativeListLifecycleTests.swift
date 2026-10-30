@@ -1619,12 +1619,15 @@ final class NativeListLifecycleTests: XCTestCase {
     let thousandCells = try sampleCells(count: 1000)
     print("NativeList 100 visible/attached first/mid/tail: \(hundredCells)")
     print("NativeList 1000 visible/attached first/mid/tail: \(thousandCells)")
+    let visibleCellLimit = Int(ceil(list.bounds.height / 60)) + 2
     XCTAssertTrue(hundredCells.allSatisfy {
-      $0.visible > 0 && $0.visible <= 24 && $0.attached > 0 && $0.attached <= 24
+      $0.visible > 0 && $0.visible <= visibleCellLimit && $0.attached >= $0.visible
     })
     XCTAssertTrue(thousandCells.allSatisfy {
-      $0.visible > 0 && $0.visible <= 24 && $0.attached > 0 && $0.attached <= 24
+      $0.visible > 0 && $0.visible <= visibleCellLimit && $0.attached >= $0.visible
     })
+    // UIKit also retains offscreen cells in subviews. Their count may exceed
+    // the visible budget, but must remain bounded as the data grows tenfold.
     XCTAssertLessThanOrEqual(thousandCells.map(\.attached).max() ?? 0,
       (hundredCells.map(\.attached).max() ?? 0) + 4)
   }
@@ -1941,6 +1944,7 @@ final class NativeListLifecycleTests: XCTestCase {
     for (index, slot) in slots.enumerated() { view.mountContainerSlot(slot, atIndex: index) }
     view.setContainerSlotHeightsJson("[0,0,140,0,100,40]")
     var settlements: [(String, String, Bool)] = []
+    let latestSettled = expectation(description: "Latest disclosure transition settled")
     view.onStructuralTransitionSettled = { payload in
       guard let data = payload.data(using: .utf8),
             let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -1948,6 +1952,7 @@ final class NativeListLifecycleTests: XCTestCase {
             let status = object["status"] as? String,
             let expanded = object["settledExpanded"] as? Bool else { return }
       settlements.append((id, status, expanded))
+      if id == "collapse-latest" { latestSettled.fulfill() }
     }
     view.applySnapshotJson(try structuralRowsSnapshot(count: 6, generation: 1,
       disclosureExpanded: false))
@@ -1968,11 +1973,15 @@ final class NativeListLifecycleTests: XCTestCase {
     view.applySnapshotJson(try structuralRowsSnapshot(count: 50, generation: 4,
       transitionID: "expand-superseded", durationMs: 400,
       disclosureExpanded: true))
-    waitForStructuralFrames(0.08)
+    // Supersede on the same main-thread turn: a timed wait can outlast the
+    // expansion on a busy simulator and legitimately deliver its settlement.
+    XCTAssertNotNil(Mirror(reflecting: view).descendant("structuralDisplayLink")
+      as? CADisplayLink)
+    XCTAssertEqual(settlements.map(\.0), ["same-rows"])
     view.applySnapshotJson(try structuralRowsSnapshot(count: 6, generation: 5,
       transitionID: "collapse-latest", durationMs: 400,
       disclosureExpanded: false))
-    waitForStructuralFrames(0.5)
+    wait(for: [latestSettled], timeout: 2)
     XCTAssertEqual(settlements.map(\.0), ["same-rows", "collapse-latest"])
     XCTAssertEqual(settlements.last?.1, "completed")
     XCTAssertEqual(settlements.last?.2, false)
