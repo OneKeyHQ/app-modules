@@ -1530,7 +1530,10 @@ final class NativeListView: UIView {
       let previous = current.items[index]
       var merged = current.items[index].data
       changes.forEach { key, value in
-        if key != "key" && key != "type" { merged[key] = value }
+        if key != "key" && key != "type" {
+          if value is NSNull { merged.removeValue(forKey: key) }
+          else { merged[key] = value }
+        }
       }
       guard let item = try? NativeListItem(data: merged) else { return }
       if rowHeight(previous, usingCompactReorderHeight: false) != rowHeight(item, usingCompactReorderHeight: false) ||
@@ -1554,6 +1557,8 @@ final class NativeListView: UIView {
       }
       if let selected = changes["selected"] as? Bool {
         if selected { current.selectedKeys.insert(item.key) } else { current.selectedKeys.remove(item.key) }
+      } else if changes["selected"] is NSNull {
+        current.selectedKeys.remove(item.key)
       }
     }
     if !changedKeys.isEmpty { invalidateActionAnchor(reason: "snapshot") }

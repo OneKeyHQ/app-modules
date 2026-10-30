@@ -688,7 +688,7 @@ describe('web row style', () => {
   );
 
   test.each([undefined, Array(257).fill(1)])(
-    'contains unsafe production sparkline samples before changing the rendered snapshot (%j)',
+    'sanitizes unsafe production sparkline samples without rejecting the row (%j)',
     (points) => {
       const environment = globalThis as typeof globalThis & {
         __DEV__: boolean;
@@ -710,9 +710,13 @@ describe('web row style', () => {
         change: { text: '0%', tone: 'neutral' },
         leading: { kind: 'token', fallbackText: 'C' },
         webTable: {
-          columns: [{ key: 'chart', width: 100 }],
+          columns: [
+            { key: 'chart', width: 100 },
+            { key: 'label', width: 100 },
+          ],
           cells: [
             { key: 'chart', kind: 'sparkline', points, width: 100, height: 40 },
+            { key: 'label', kind: 'text', primary: [{ text: 'Chart' }] },
           ],
         },
       } as unknown as RowModel;
@@ -720,8 +724,22 @@ describe('web row style', () => {
         expect(() =>
           engine.applySnapshot(snapshot({ kind: 'linear' }, [malformed]))
         ).not.toThrow();
-        expect(engine.currentSnapshot()).toBe(valid);
-        expect(host.textContent).toContain('Identity');
+        expect(engine.currentSnapshot().rows[0]).toMatchObject({
+          key: 'chart',
+          title: 'Chart',
+          price: '$1',
+        });
+        const accepted = engine.currentSnapshot().rows[0];
+        if (accepted.type === 'market') {
+          const cell = accepted.webTable?.cells[0];
+          if (points)
+            expect(cell).toMatchObject({
+              kind: 'sparkline',
+              points: Array(256).fill(1),
+            });
+          else expect(cell).toMatchObject({ kind: 'text', primary: [] });
+        }
+        expect(host.textContent).toContain('Chart');
       } finally {
         engine.destroy();
         environment.__DEV__ = previous;
@@ -3166,6 +3184,184 @@ describe('complex renderer lifecycle', () => {
       engine.destroy();
     }
   });
+  it('clears stale production image help when a replacement descriptor is malformed', () => {
+    const environment = globalThis as typeof globalThis & { __DEV__: boolean };
+    const original = environment.__DEV__;
+    environment.__DEV__ = false;
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const onRowAction = jest.fn();
+    const onActionAnchorInvalidated = jest.fn();
+    const engine = new NativeListWebEngine(
+      host,
+      snap({
+        type: 'identity',
+        key: 'stock',
+        title: 'STOCK',
+        leading: { kind: 'token', image },
+        titleImage: {
+          image: { ...image, width: 14, height: 14 },
+          hoverActionKey: 'old-help',
+        },
+      }),
+      { onRowAction, onActionAnchorInvalidated },
+      false
+    );
+    const previousElement = global.Element;
+    const previousNode = global.Node;
+    global.Element = document.defaultView!.Element;
+    global.Node = document.defaultView!.Node;
+    try {
+      const holder = host.querySelector<HTMLElement>(
+        '.ok-native-list-identity-title-image'
+      )!;
+      holder.dispatchEvent(
+        Object.assign(
+          new document.defaultView!.Event('pointerover', { bubbles: true }),
+          { pointerType: 'mouse' }
+        )
+      );
+      expect(onRowAction).toHaveBeenCalledTimes(1);
+      engine.setActionAnchorState({
+        token: onRowAction.mock.calls[0]![0].anchor.token,
+        open: true,
+      });
+      engine.applyPatches([
+        {
+          type: 'identity',
+          key: 'stock',
+          changes: {
+            titleImage: {
+              image: { uri: 'ftp://invalid', width: 14, height: 14 },
+            },
+          },
+        },
+      ]);
+      expect(
+        host.querySelector('.ok-native-list-identity-title-image')
+      ).toBeNull();
+      expect(engine.currentSnapshot().rows[0]).not.toHaveProperty('titleImage');
+      expect(onActionAnchorInvalidated).toHaveBeenCalledTimes(1);
+      holder.dispatchEvent(
+        Object.assign(
+          new document.defaultView!.Event('pointerover', { bubbles: true }),
+          { pointerType: 'mouse' }
+        )
+      );
+      expect(onRowAction).toHaveBeenCalledTimes(1);
+    } finally {
+      engine.destroy();
+      global.Element = previousElement;
+      global.Node = previousNode;
+      environment.__DEV__ = original;
+    }
+  });
+  it('retains title image requests, isolates help and clears removed images and anchors', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const titleImage = {
+      image: { uri: 'https://example.com/issuer.png', width: 14, height: 14 },
+      accessibilityLabel: 'Issuer',
+      hoverActionKey: 'issuer-info',
+    };
+    const row: IdentityRow = {
+      type: 'identity',
+      key: 'stock',
+      title: 'STOCK',
+      leading: { kind: 'token', image },
+      titleImage,
+    };
+    const onRowAction = jest.fn();
+    const onActionAnchorInvalidated = jest.fn();
+    const engine = new NativeListWebEngine(
+      host,
+      snap(row),
+      { onRowAction, onActionAnchorInvalidated },
+      false
+    );
+    const previousElement = global.Element;
+    const previousNode = global.Node;
+    global.Element = document.defaultView!.Element;
+    global.Node = document.defaultView!.Node;
+    const holder = () =>
+      host.querySelector<HTMLElement>('.ok-native-list-identity-title-image')!;
+    const pointer = (type: string, pointerType: string) =>
+      holder().dispatchEvent(
+        Object.assign(
+          new document.defaultView!.Event(type, { bubbles: true }),
+          { pointerType }
+        )
+      );
+    try {
+      const bitmap = holder().querySelector('img')!;
+      expect(holder().style.width).toBe('14px');
+      expect(holder().style.height).toBe('14px');
+      expect(holder().style.borderRadius).toBe('50%');
+      expect(holder().getAttribute('aria-label')).toBe('Issuer');
+      expect(holder().tabIndex).toBe(-1);
+      engine.applySnapshot(snap({ ...row, title: 'Changed title' }));
+      expect(holder().querySelector('img')).toBe(bitmap);
+      pointer('pointerover', 'mouse');
+      const event = onRowAction.mock.calls[0]![0];
+      expect(event).toMatchObject({
+        rowKey: 'stock',
+        actionKey: 'issuer-info',
+        anchor: { source: 'leadingAction' },
+      });
+      engine.setActionAnchorState({ token: event.anchor.token, open: true });
+      bitmap.click();
+      expect(onRowAction).toHaveBeenCalledTimes(1);
+      engine.applyPatches([
+        {
+          type: 'identity',
+          key: 'stock',
+          changes: {
+            titleImage: {
+              image: {
+                ...titleImage.image,
+                uri: 'https://example.com/new.png',
+              },
+            },
+          },
+        },
+      ]);
+      expect(onActionAnchorInvalidated).toHaveBeenCalledTimes(1);
+      const replacement = holder().querySelector('img')!;
+      expect(replacement).not.toBe(bitmap);
+      expect(holder().dataset.nativeListHoverAction).toBeUndefined();
+      expect(holder().getAttribute('aria-hidden')).toBe('true');
+      replacement.dispatchEvent(new document.defaultView!.Event('error'));
+      expect(holder().style.width).toBe('14px');
+      replacement.click();
+      expect(onRowAction.mock.calls[1]![0].actionKey).toBe('press');
+      engine.applySnapshot(snap(row));
+      pointer('pointerdown', 'touch');
+      expect(onRowAction.mock.calls[2]![0].actionKey).toBe('issuer-info');
+      pointer('pointerup', 'touch');
+      holder().querySelector<HTMLElement>('img')!.click();
+      expect(onRowAction).toHaveBeenCalledTimes(3);
+      engine.setActionAnchorState({
+        token: onRowAction.mock.calls[2]![0].anchor.token,
+        open: true,
+      });
+      engine.applySnapshot(snap({ ...row, titleImage: undefined }));
+      expect(
+        host.querySelector('.ok-native-list-identity-title-image')
+      ).toBeNull();
+      expect(onActionAnchorInvalidated).toHaveBeenCalledTimes(2);
+      bitmap.dispatchEvent(new document.defaultView!.Event('load'));
+      expect(
+        host.querySelector('.ok-native-list-identity-title-image')
+      ).toBeNull();
+    } finally {
+      engine.destroy();
+      global.Element = previousElement;
+      global.Node = previousNode;
+    }
+  });
+
   it('opens icon-only help and clears it on press, rebind and touch toggle', () => {
     const { document } = new JSDOM('<!doctype html><body></body>').window;
     const host = document.createElement('div');
@@ -6561,4 +6757,62 @@ describe('DeFi position Web controls', () => {
       global.HTMLElement = previousHTMLElement;
     }
   });
+});
+
+test('commits valid production rows and renders null-cleared overlays in one patch transaction', () => {
+  const { JSDOM } = require('jsdom') as {
+    JSDOM: new (html: string) => { window: { document: Document } };
+  };
+  const environment = globalThis as typeof globalThis & { __DEV__: boolean };
+  const previous = environment.__DEV__;
+  environment.__DEV__ = false;
+  const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  const { document } = new JSDOM('<!doctype html><body></body>').window;
+  const host = document.createElement('div');
+  document.body.appendChild(host);
+  const identity = rows[2] as IdentityRow;
+  const initial = snapshot({ kind: 'linear' }, [
+    {
+      ...identity,
+      key: 'good',
+      subtitle: 'Before',
+      subtitleSegments: [{ text: 'Old overlay' }],
+    },
+    { ...identity, key: 'bad', title: 'Retained' },
+  ]);
+  const engine = new NativeListWebEngine(host, initial, {}, false);
+  try {
+    engine.applyPatches([
+      {
+        type: 'identity',
+        key: 'good',
+        changes: { title: 'Updated', subtitle: 'Fresh' },
+      },
+      {
+        type: 'identity',
+        key: 'bad',
+        changes: {
+          trailing: [{ kind: 'button', label: 'Send', actionKey: '' }],
+        },
+      },
+    ]);
+    expect(host.textContent).toContain('Updated');
+    expect(host.textContent).toContain('Fresh');
+    expect(host.textContent).not.toContain('Old overlay');
+    expect(host.textContent).toContain('Retained');
+    expect(host.textContent).not.toContain('Send');
+    expect(engine.currentSnapshot().rows[0]).not.toHaveProperty(
+      'subtitleSegments'
+    );
+    expect(engine.currentSnapshot().rows[1]).toBe(initial.rows[1]);
+    engine.applyPatches([
+      { type: 'identity', key: 'good', changes: { subtitle: null } },
+    ]);
+    expect(host.textContent).not.toContain('Fresh');
+    expect(engine.currentSnapshot().rows[0]).not.toHaveProperty('subtitle');
+  } finally {
+    engine.destroy();
+    environment.__DEV__ = previous;
+    warning.mockRestore();
+  }
 });

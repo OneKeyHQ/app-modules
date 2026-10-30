@@ -226,7 +226,7 @@ function createIdentityRow(
       });
       column.insertBefore(segments, titleElement.nextSibling);
     }
-    if (row.titleIcon || row.secondaryTitleIcon) {
+    if (row.titleIcon || row.secondaryTitleIcon || row.titleImage) {
       const badgeLine = titleElement.querySelector<HTMLElement>(
         ':scope > .ok-native-list-badges'
       );
@@ -258,6 +258,45 @@ function createIdentityRow(
           else icon.setAttribute('aria-hidden', 'true');
           return icon;
         });
+      if (row.titleImage) {
+        const descriptor = row.titleImage;
+        const holder = createElement(
+          document,
+          'span',
+          'ok-native-list-identity-title-image'
+        );
+        Object.assign(holder.style, {
+          flex: `0 0 ${descriptor.image.width}px`,
+          width: `${descriptor.image.width}px`,
+          height: `${descriptor.image.height}px`,
+          borderRadius: '50%',
+          overflow: 'hidden',
+        });
+        const image = primitives.thumbnail(descriptor.image);
+        if (image) {
+          Object.assign(image.style, {
+            width: '100%',
+            height: '100%',
+            borderRadius: 'inherit',
+            objectFit:
+              descriptor.image.contentFit === 'center'
+                ? 'none'
+                : descriptor.image.contentFit ?? 'cover',
+          });
+          image.setAttribute('alt', '');
+          holder.appendChild(image);
+        }
+        if (descriptor.hoverActionKey) {
+          setData(holder, 'nativeListHoverAction', descriptor.hoverActionKey);
+          setData(holder, 'nativeListIconHelp', true);
+          markActionAnchorSource(holder, 'leadingAction');
+        }
+        if (descriptor.accessibilityLabel) {
+          holder.setAttribute('role', 'img');
+          holder.setAttribute('aria-label', descriptor.accessibilityLabel);
+        } else holder.setAttribute('aria-hidden', 'true');
+        icons.push(holder);
+      }
       titleText.after(...icons);
       titleElement.style.display = 'flex';
       titleElement.style.alignItems = 'center';
@@ -300,7 +339,9 @@ function createIdentityRow(
         label.style.flex = '0 1 auto';
         label.style.minWidth = '0';
         label.style.marginInlineStart =
-          row.titleIcon || row.secondaryTitleIcon ? '4px' : '8px';
+          row.titleIcon || row.secondaryTitleIcon || row.titleImage
+            ? '4px'
+            : '8px';
         label.style.maxWidth =
           suffix.maxWidth === undefined ? '' : `${suffix.maxWidth}px`;
         label.style.overflow = 'hidden';
@@ -317,7 +358,12 @@ function createIdentityRow(
         titleElement.insertBefore(label, badges);
       });
     }
-    if (row.badges?.length && !row.titleIcon && !row.secondaryTitleIcon) {
+    if (
+      row.badges?.length &&
+      !row.titleIcon &&
+      !row.secondaryTitleIcon &&
+      !row.titleImage
+    ) {
       const titleText = titleElement.querySelector<HTMLElement>(
         ':scope > [data-nl-slot="title"]'
       );
@@ -513,6 +559,7 @@ type Views = {
     node: HTMLElement;
     defaults: RowVisualStyle;
   };
+  titleImage?: { key: string; node: HTMLElement };
   primitives: RowPrimitives;
 };
 const views = new WeakMap<HTMLElement, Views>();
@@ -520,10 +567,21 @@ function bind(body: HTMLElement, row: IdentityRow, primitives: RowPrimitives) {
   const v = views.get(body)!;
   v.primitives = primitives;
   let used = false;
+  let usedTitleImage = false;
   const next = createIdentityRow(
     body.ownerDocument,
     {
       ...primitives,
+      thumbnail: (source) => {
+        usedTitleImage = true;
+        const key = JSON.stringify([row.key, source]);
+        if (v.titleImage?.key !== key) {
+          if (v.titleImage) primitives.dispose(v.titleImage.node);
+          const node = primitives.thumbnail(source);
+          v.titleImage = node ? { key, node } : undefined;
+        }
+        return v.titleImage?.node;
+      },
       visual: (source, presentation) => {
         used = true;
         const key = JSON.stringify([row.key, source, presentation]);
@@ -549,6 +607,10 @@ function bind(body: HTMLElement, row: IdentityRow, primitives: RowPrimitives) {
   if (!used && v.visual) {
     primitives.dispose(v.visual.node);
     v.visual = undefined;
+  }
+  if (!usedTitleImage && v.titleImage) {
+    primitives.dispose(v.titleImage.node);
+    v.titleImage = undefined;
   }
   body.replaceChildren(...Array.from(next.childNodes));
   body.className = next.className;
@@ -640,7 +702,11 @@ function create(
 function recycle(body: HTMLElement) {
   const v = views.get(body);
   if (v?.visual) v.primitives.dispose(v.visual.node);
-  if (v) v.visual = undefined;
+  if (v?.titleImage) v.primitives.dispose(v.titleImage.node);
+  if (v) {
+    v.visual = undefined;
+    v.titleImage = undefined;
+  }
   body.replaceChildren();
 }
 export const identityRowRenderer = {

@@ -31,6 +31,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
   private val titleLine = PackedTitleLineLayout(context)
   private val title = NativeListTextView(context)
   private val titleIcon = OneKeyIconView(context)
+  private var titleImage: NativeListImageSlot? = null
   private val subtitle = NativeListTextView(context)
   private val tertiary = NativeListTextView(context)
   private val badgeLine = NativeListTextView(context)
@@ -79,7 +80,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
       "single"
     else item.json.optString("groupPosition")
 
-  override val assetFields = listOf("leading")
+  override val assetFields = listOf("leading", "titleImage")
 
   override fun usesSourceScale(item: NativeListItem, provided: Boolean) =
     item.usesSelectorSourceScale || provided
@@ -262,6 +263,29 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
     leadingActionIcon.useSourceScale = sourceScale
     leadingActionIcon.setOnClickListener(null)
     bindIdentity(item, theme, item.json.optBoolean("selected"), checkboxState)
+    val titleImageDescriptor = item.json.optJSONObject("titleImage")
+    val titleImageSource = titleImageDescriptor?.optJSONObject("image")
+    if (titleImageSource != null && titleImageSource.optString("uri").isNotEmpty()) {
+      if (item.json.optString("presentation") == "walletSidebar") {
+        titleLine.packsChildrenAtStart = true
+        title.layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
+      }
+      val slot = titleImage ?: NativeListImageSlot(reactContext).also { titleImage = it }
+      // Reinsert after icons so newly added suffixes cannot precede the image.
+      titleLine.removeView(slot.view)
+      titleLine.addView(slot.view, titleLine.indexOfChild(titleIcon) + 1)
+      val size = stylePx(titleImageSource.optDouble("width"))
+      slot.view.layoutParams = LayoutParams(size, size).apply { marginStart = dp(4) }
+      slot.view.visibility = VISIBLE
+      slot.view.contentDescription = titleImageDescriptor.optString("accessibilityLabel").takeIf(String::isNotEmpty)
+      slot.view.importantForAccessibility = if (slot.view.contentDescription == null)
+        View.IMPORTANT_FOR_ACCESSIBILITY_NO else View.IMPORTANT_FOR_ACCESSIBILITY_YES
+      slot.bind(titleImageSource, "${item.key}:titleImage", placeholder = "#00000000", round = true)
+    } else {
+      titleImage?.recycle()
+      titleImage?.view?.visibility = GONE
+      titleImage?.view?.contentDescription = null
+    }
     TextViewCompat.setLineHeight(
       title,
       dp(if (item.json.optString("presentation") == "walletSidebar") 16 else 24),
@@ -449,7 +473,10 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
         val inner = (MeasureSpec.getSize(widthMeasureSpec) - paddingLeft - paddingRight)
           .coerceAtLeast(0)
         val leading = leadingFrame.layoutParams as LayoutParams
-        val icon = if (titleIcon.visibility == VISIBLE) dp(24) else 0
+        val imageWidth = titleImage?.view?.takeIf { it.visibility == VISIBLE }?.let {
+          it.layoutParams.width + dp(4)
+        } ?: 0
+        val icon = (if (titleIcon.visibility == VISIBLE) dp(24) else 0) + imageWidth
         (inner * ratio).roundToInt()
           .minus(leading.width + leading.marginEnd + icon)
           .coerceAtLeast(0)
@@ -555,6 +582,9 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
     longPressPoint = null
     longPressPointEpoch = -1L
     leadingFrame.recycle()
+    titleImage?.recycle()
+    titleImage?.view?.visibility = GONE
+    titleImage?.view?.contentDescription = null
     trailingColumn.reset()
     currentItem = null
   }
@@ -562,6 +592,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
   override fun disposeContent() {
     recycleContent()
     leadingFrame.dispose()
+    titleImage?.dispose()
   }
 
   private fun bindIdentity(

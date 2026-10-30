@@ -66,6 +66,105 @@ class NativeListRiskAccessoryTest : InstrumentationTestCase() {
     super.tearDown()
   }
 
+  fun testCanonicalNullPatchRemovesStoredOptionalFields() {
+    val original = JSONObject().put("key", "token").put("type", "identity")
+      .put("title", "Token").put("subtitle", "Old")
+      .put("titleImage", JSONObject().put("image", JSONObject().put("uri", "data:image/png;base64,AA==")
+        .put("width", 14).put("height", 14)))
+    val changes = JSONObject().put("title", "New").put("subtitle", JSONObject.NULL)
+      .put("titleImage", JSONObject.NULL)
+    val accepted = mergeRow(original, changes)
+    assertEquals("New", accepted.getString("title"))
+    assertEquals("token", accepted.getString("key"))
+    assertFalse(accepted.has("subtitle"))
+    assertFalse(accepted.has("titleImage"))
+    assertTrue(original.has("titleImage"))
+  }
+
+  fun testWalletSidebarTitleReservesImageWidthAndRestoresFullWidthAfterRemoval() {
+    onMain {
+      val context = ThemedReactContext(BridgeReactContext(activity), activity, "WalletTitleImageTest", 1)
+      val identity = NativeListIdentityRowView(context, NativeListFonts())
+      activity.setContentView(identity)
+      val density = activity.resources.displayMetrics.density
+      val width = (140f * density).toInt()
+      val height = (100f * density).toInt()
+      fun bind(name: String, withImage: Boolean) {
+        val json = JSONObject().put("key", "wallet").put("type", "identity")
+          .put("presentation", "walletSidebar").put("title", name)
+          .put("height", 100).put("leading", JSONObject().put("kind", "token"))
+        if (withImage) json.put("titleImage", JSONObject().put("image", JSONObject()
+          .put("uri", "data:image/png;base64,AA==").put("width", 14).put("height", 14)))
+        identity.bind(NativeListItem("wallet", "identity", null, 0, json), null, "linear", "vertical",
+          null, false, { _, _, fallback -> fallback }, true)
+        identity.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+          View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY))
+        identity.layout(0, 0, width, height)
+      }
+      for (name in listOf("Wallet", "Very long wallet name ".repeat(8))) {
+        bind(name, true)
+        val title = field<TextView>(identity, "title")
+        val line = field<LinearLayout>(identity, "titleLine")
+        val slot = field<NativeListImageSlot>(identity, "titleImage")
+        assertEquals(View.VISIBLE, slot.view.visibility)
+        assertEquals(14f * density, slot.view.width.toFloat(), 1f)
+        assertTrue(title.width > 0)
+        assertTrue(title.right <= slot.view.left)
+        assertTrue(slot.view.right <= line.width)
+        assertTrue(slot.view.left >= 0)
+        if (name.length > 20) assertTrue(title.layout.getEllipsisCount(0) > 0)
+      }
+      bind("Wallet", false)
+      assertEquals(View.GONE, field<NativeListImageSlot>(identity, "titleImage").view.visibility)
+      assertEquals(field<LinearLayout>(identity, "titleLine").width, field<TextView>(identity, "title").width)
+      identity.dispose()
+    }
+  }
+
+  fun testTitleImageRetainsRequestAndClearsOnProductionRowReuse() {
+    onMain {
+      val context = ThemedReactContext(BridgeReactContext(activity), activity, "TitleImageTest", 1)
+      val identity = NativeListIdentityRowView(context, NativeListFonts())
+      activity.setContentView(identity)
+      fun bind(descriptor: JSONObject?, title: String = "STOCK") {
+        val json = JSONObject().put("key", "stock").put("type", "identity").put("title", title)
+          .put("height", 60).put("leading", JSONObject().put("kind", "token"))
+        if (descriptor != null) json.put("titleImage", descriptor)
+        identity.bind(NativeListItem("stock", "identity", null, 0, json), null, "linear", "vertical",
+          null, false, { _, _, fallback -> fallback }, true)
+        identity.measure(View.MeasureSpec.makeMeasureSpec(640, View.MeasureSpec.EXACTLY),
+          View.MeasureSpec.makeMeasureSpec(120, View.MeasureSpec.EXACTLY))
+        identity.layout(0, 0, identity.measuredWidth, identity.measuredHeight)
+      }
+      val descriptor = JSONObject().put("image", JSONObject().put("uri", "data:image/png;base64,AA==")
+        .put("width", 14).put("height", 14)).put("accessibilityLabel", "Issuer")
+        .put("hoverActionKey", "issuer-info")
+      bind(descriptor)
+      val slot = field<NativeListImageSlot>(identity, "titleImage")
+      val density = activity.resources.displayMetrics.density
+      assertEquals(View.VISIBLE, slot.view.visibility)
+      assertEquals(14f * density, slot.view.width.toFloat(), 1f)
+      assertEquals(14f * density, slot.view.height.toFloat(), 1f)
+      assertEquals("Issuer", slot.view.contentDescription)
+      val requestIdentity = field<String>(slot, "identity")
+      bind(descriptor, "Changed title")
+      assertEquals(requestIdentity, field<String>(slot, "identity"))
+      bind(JSONObject().put("image", JSONObject().put("uri", "data:image/png;base64,AQ==")
+        .put("width", 20).put("height", 20)))
+      assertFalse(requestIdentity == field<String>(slot, "identity"))
+      assertEquals(20f * density, slot.view.width.toFloat(), 1f)
+      assertNull(slot.view.contentDescription)
+      bind(null)
+      assertEquals(View.GONE, slot.view.visibility)
+      assertNull(field<String?>(slot, "identity"))
+      bind(descriptor)
+      identity.recycle()
+      assertEquals(View.GONE, slot.view.visibility)
+      assertNull(slot.view.contentDescription)
+      identity.dispose()
+    }
+  }
+
   fun testValuePairSegmentsRebindAndSemanticStyleOnProductionStack() {
     onMain {
       val context = ThemedReactContext(BridgeReactContext(activity), activity, "PairTest", 1)

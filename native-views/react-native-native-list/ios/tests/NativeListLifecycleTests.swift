@@ -4,6 +4,25 @@ import XCTest
 
 @MainActor
 final class NativeListLifecycleTests: XCTestCase {
+  func testCanonicalNullPatchRemovesStoredOptionalFields() throws {
+    let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+    let row: [String: Any] = ["key": "token", "type": "identity", "title": "Token",
+      "leading": ["kind": "token"], "subtitle": "Old",
+      "titleImage": ["image": ["uri": "data:image/png;base64,AA==", "width": 14, "height": 14]]]
+    let snapshot: [String: Any] = ["schemaVersion": 1, "generation": 1,
+      "layout": ["kind": "linear"], "rows": [row]]
+    view.applySnapshotJson(String(decoding: try JSONSerialization.data(withJSONObject: snapshot), as: UTF8.self))
+    let patches: [[String: Any]] = [["key": "token", "type": "identity",
+      "changes": ["title": "New", "subtitle": NSNull(), "titleImage": NSNull()]]]
+    view.applyPatchesJson(String(decoding: try JSONSerialization.data(withJSONObject: patches), as: UTF8.self))
+    let items = try XCTUnwrap(Mirror(reflecting: view).descendant("itemsByKey") as? [String: NativeListItem])
+    let accepted = try XCTUnwrap(items["token"])
+    XCTAssertEqual(accepted.data.string("title"), "New")
+    XCTAssertNil(accepted.data["subtitle"])
+    XCTAssertNil(accepted.data["titleImage"])
+    XCTAssertEqual(accepted.key, "token")
+  }
+
   func testAcceptedRowIndexReusesStableShapeAndRejectsLateInvalidPatch() throws {
     let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
     func snapshot(_ keys: [String], generation: Int, title: String = "Old") throws -> String {
@@ -227,6 +246,47 @@ final class NativeListLifecycleTests: XCTestCase {
     cell.prepareForReuse()
     XCTAssertEqual(invalidatedEpochs, [originalEpoch, changedEpoch])
     XCTAssertNotEqual(cell.bindingEpoch, changedEpoch)
+  }
+
+  func testIdentityTitleImageRetainsRequestAndClearsOnProductionCellReuse() throws {
+    let cell = NativeListIdentityCell(frame: CGRect(x: 0, y: 0, width: 320, height: 60))
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 200))
+    window.addSubview(cell)
+    func bind(_ descriptor: [String: Any]?, title: String = "STOCK") throws {
+      var data: [String: Any] = ["key": "stock", "type": "identity", "title": title,
+        "height": 60, "leading": ["kind": "token", "fallbackIcon": ["name": "CryptoCoinOutline"]]]
+      if let descriptor { data["titleImage"] = descriptor }
+      cell.bind(item: try NativeListItem(data: data), theme: nil, layout: "linear", selected: false,
+        checkboxState: { _, _, fallback in fallback }, fonts: NativeListFontFamilies())
+      cell.layoutIfNeeded()
+    }
+    let descriptor: [String: Any] = ["image": ["uri": "data:image/png;base64,AA==", "width": 14, "height": 14],
+      "accessibilityLabel": "Issuer", "hoverActionKey": "issuer-info"]
+    try bind(descriptor)
+    let slot = try XCTUnwrap(Mirror(reflecting: cell).children.first {
+      $0.label == "titleImageSlot"
+    }?.value as? NativeListImageSlot)
+    XCTAssertFalse(slot.view.isHidden)
+    XCTAssertEqual(slot.view.bounds.width, 14, accuracy: 0.5)
+    XCTAssertEqual(slot.view.bounds.height, 14, accuracy: 0.5)
+    XCTAssertEqual(slot.view.layer.cornerRadius, 7, accuracy: 0.1)
+    XCTAssertEqual(slot.view.accessibilityLabel, "Issuer")
+    let identity = Mirror(reflecting: slot).children.first { $0.label == "identity" }?.value as? String
+    XCTAssertNotNil(identity)
+    try bind(descriptor, title: "Changed title")
+    XCTAssertEqual(Mirror(reflecting: slot).children.first { $0.label == "identity" }?.value as? String, identity)
+    try bind(["image": ["uri": "data:image/png;base64,AQ==", "width": 20, "height": 20]])
+    XCTAssertEqual(slot.view.bounds.width, 20, accuracy: 0.5)
+    XCTAssertEqual(slot.view.layer.cornerRadius, 10, accuracy: 0.1)
+    XCTAssertNil(slot.view.accessibilityLabel)
+    XCTAssertNotEqual(Mirror(reflecting: slot).children.first { $0.label == "identity" }?.value as? String, identity)
+    try bind(nil)
+    XCTAssertTrue(slot.view.isHidden)
+    XCTAssertNil(Mirror(reflecting: slot).children.first { $0.label == "identity" }?.value as? String)
+    try bind(descriptor)
+    cell.prepareForReuse()
+    XCTAssertTrue(slot.view.isHidden)
+    XCTAssertNil(slot.view.accessibilityLabel)
   }
 
   func testRiskIdentityTitleIconAndButtonResetOnProductionCellBind() throws {

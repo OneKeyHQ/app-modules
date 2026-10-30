@@ -61,10 +61,9 @@ import {
   type NormalizedPositionScroll,
 } from '../scrolling';
 import {
-  applyRowPatches,
+  applyValidatedRowPatches,
   containNativeListInput,
   emptyNativeListSnapshot,
-  validatePatches,
   validateSnapshot,
 } from '../validation';
 import { avatarPrefetchWindow } from '../avatarPrefetch';
@@ -3199,13 +3198,9 @@ export class NativeListWebEngine {
   }
 
   applyPatches(patches: readonly RowPatch[]) {
-    const accepted = containNativeListInput(() => {
-      const normalized = validatePatches(patches);
-      return {
-        patches: normalized,
-        snapshot: applyRowPatches(this.snapshot, normalized),
-      };
-    });
+    const accepted = containNativeListInput(() =>
+      applyValidatedRowPatches(this.snapshot, patches)
+    );
     if (!accepted || accepted.patches.length === 0) return;
     patches = accepted.patches;
     const next = accepted.snapshot;
@@ -3214,7 +3209,8 @@ export class NativeListWebEngine {
       const selected =
         'selected' in patch.changes ? patch.changes.selected : undefined;
       if (selected === true) selection.add(patch.key);
-      else if (selected === false) selection.delete(patch.key);
+      else if (selected === false || selected === null)
+        selection.delete(patch.key);
     });
     const tableValuesOnly = patches.every((patch) => {
       const index = this.rows.findIndex((row) => row.key === patch.key);
