@@ -144,6 +144,7 @@ final class NativeListLeadingVisual: UIView {
         fit: index == 0 ? style["contentFit"] as? String : nil, placeholder: placeholder
       ) { [weak self, weak slot] loaded in
         slot?.view.isHidden = !loaded && (index > 0 || sourceFallback)
+        if let self, index == self.pairIndex { self.syncPairBackdrop() }
         guard let self, index == 0, sourceFallback else { return }
         if let fallbackKey {
           if loaded {
@@ -160,8 +161,8 @@ final class NativeListLeadingVisual: UIView {
     }
     networkBackdrop.isHidden = networkIndex == nil
     networkBackdrop.backgroundColor = nativeListColor(theme, "rowBackground", "#FFFFFF")
-    pairBackdrop.isHidden = pairIndex == nil
     pairBackdrop.backgroundColor = nativeListColor(theme, "rowBackground", "#FFFFFF")
+    syncPairBackdrop()
     // Stacking order by role: primary, pair ring, secondary token, badge
     // backdrop, badge, corner icon. Slots are reused across binds with
     // different roles, so the order is restored on every bind.
@@ -426,9 +427,22 @@ final class NativeListLeadingVisual: UIView {
       UIBezierPath(ovalIn: bounds.insetBy(dx: dashedBorderWidth / 2, dy: dashedBorderWidth / 2))
       .cgPath
   }
+  /// The pair ring sits above the primary token, so it is shown only while the
+  /// secondary token image is actually displayed: hidden while that image loads,
+  /// after a failed load and once the slot is recycled, or it would cover the
+  /// primary's lower-right corner with a blank row-background disc.
+  private func syncPairBackdrop() {
+    guard let pairIndex, slots.indices.contains(pairIndex) else {
+      pairBackdrop.isHidden = true
+      return
+    }
+    pairBackdrop.isHidden = slots[pairIndex].view.isHidden
+  }
+
   func recycle() {
     slots.forEach { $0.recycle() }
     overlaySlots.forEach { $0.recycle() }
+    pairBackdrop.isHidden = true
   }
   /// Empty slot (legacy leading container without a visual): no image, fallback, fill,
   /// border or overlays from a previous binding.

@@ -634,7 +634,9 @@ image (the app's swap and multi-asset history rows) draws them as a pair inside
 the 40-unit visual box, as the legacy avatar and the Web renderer do: the
 primary token at the top-left at 0.6 of the box (24 units), the secondary at the
 same size at the bottom-right inside a 2-unit ring in the row background, above
-the primary. The token `networkImage` badge, when present, keeps its single-token
+the primary. The ring is shown only while the secondary image is displayed:
+while that image loads, after a failed load and after recycling it stays hidden,
+so it never covers the primary's corner with a blank disc. The token `networkImage` badge, when present, keeps its single-token
 geometry at the box's bottom-right corner above the secondary; a pair shows one
 badge, never one per member. A secondary token without an image leaves the
 primary alone at full size, and a primary without an image lets the secondary

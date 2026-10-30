@@ -245,6 +245,7 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
         ) { loaded ->
           slot.view.visibility =
             if (!loaded && (index > 0 || sourceFallback)) INVISIBLE else VISIBLE
+          if (index == pairIndex) syncPairBackdrop()
           if (index == 0 && sourceFallback) {
             fallbackKey?.let {
               if (loaded) NativeListSourceFallbackState.forget(it)
@@ -262,9 +263,9 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
     networkBackdrop.visibility = if (networkIndex != null) VISIBLE else GONE
     networkBackdrop.background =
       fill(color(theme?.optString("rowBackground", "#FFFFFF") ?: "#FFFFFF"), dp(10).toFloat())
-    pairBackdrop.visibility = if (pairIndex != null) VISIBLE else GONE
     pairBackdrop.background =
       fill(color(theme?.optString("rowBackground", "#FFFFFF") ?: "#FFFFFF"), 0f)
+    syncPairBackdrop()
     // Stacking order by role: primary, pair ring, secondary token, badge
     // backdrop, badge, corner icon. Slots are reused across binds with
     // different roles, so the order is restored on every bind.
@@ -542,9 +543,22 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
     }
   }
 
+  /**
+   * The pair ring sits above the primary token, so it is shown only while the
+   * secondary token image is actually displayed: hidden while that image loads,
+   * after a failed load and once the slot is recycled, or it would cover the
+   * primary's lower-right corner with a blank row-background disc.
+   */
+  private fun syncPairBackdrop() {
+    val secondary = pairIndex?.let { slots.getOrNull(it) }
+    pairBackdrop.visibility =
+      if (secondary != null && secondary.view.visibility == VISIBLE) VISIBLE else GONE
+  }
+
   fun recycle() {
     slots.forEach { it.recycle() }
     overlaySlots.forEach { it.recycle() }
+    pairBackdrop.visibility = GONE
   }
 
   fun dispose() {
