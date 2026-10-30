@@ -3184,6 +3184,79 @@ describe('complex renderer lifecycle', () => {
       engine.destroy();
     }
   });
+  it('clears stale production image help when a replacement descriptor is malformed', () => {
+    const environment = globalThis as typeof globalThis & { __DEV__: boolean };
+    const original = environment.__DEV__;
+    environment.__DEV__ = false;
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const onRowAction = jest.fn();
+    const onActionAnchorInvalidated = jest.fn();
+    const engine = new NativeListWebEngine(
+      host,
+      snap({
+        type: 'identity',
+        key: 'stock',
+        title: 'STOCK',
+        leading: { kind: 'token', image },
+        titleImage: {
+          image: { ...image, width: 14, height: 14 },
+          hoverActionKey: 'old-help',
+        },
+      }),
+      { onRowAction, onActionAnchorInvalidated },
+      false
+    );
+    const previousElement = global.Element;
+    const previousNode = global.Node;
+    global.Element = document.defaultView!.Element;
+    global.Node = document.defaultView!.Node;
+    try {
+      const holder = host.querySelector<HTMLElement>(
+        '.ok-native-list-identity-title-image'
+      )!;
+      holder.dispatchEvent(
+        Object.assign(
+          new document.defaultView!.Event('pointerover', { bubbles: true }),
+          { pointerType: 'mouse' }
+        )
+      );
+      expect(onRowAction).toHaveBeenCalledTimes(1);
+      engine.setActionAnchorState({
+        token: onRowAction.mock.calls[0]![0].anchor.token,
+        open: true,
+      });
+      engine.applyPatches([
+        {
+          type: 'identity',
+          key: 'stock',
+          changes: {
+            titleImage: {
+              image: { uri: 'ftp://invalid', width: 14, height: 14 },
+            },
+          },
+        },
+      ]);
+      expect(
+        host.querySelector('.ok-native-list-identity-title-image')
+      ).toBeNull();
+      expect(engine.currentSnapshot().rows[0]).not.toHaveProperty('titleImage');
+      expect(onActionAnchorInvalidated).toHaveBeenCalledTimes(1);
+      holder.dispatchEvent(
+        Object.assign(
+          new document.defaultView!.Event('pointerover', { bubbles: true }),
+          { pointerType: 'mouse' }
+        )
+      );
+      expect(onRowAction).toHaveBeenCalledTimes(1);
+    } finally {
+      engine.destroy();
+      global.Element = previousElement;
+      global.Node = previousNode;
+      environment.__DEV__ = original;
+    }
+  });
   it('retains title image requests, isolates help and clears removed images and anchors', () => {
     const { document } = new JSDOM('<!doctype html><body></body>').window;
     const host = document.createElement('div');

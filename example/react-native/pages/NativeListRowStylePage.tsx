@@ -98,6 +98,86 @@ function buildRows(styled: boolean): RowModel[] {
       horizontalPadding: 12,
     },
   });
+  // Swap token selector rendering check, styled in both modes: a `valuePair`
+  // balance column followed by the row's DotVerSolid menu icon inside a fixed
+  // 60dp row. The pair must lay out side by side (as iOS does); Android used
+  // to stack it, pushing the balance above the menu and clipping both.
+  rows.push({
+    ...identity,
+    key: 'identity-valuepair-menu',
+    title: 'KITE',
+    subtitle: 'Kite',
+    badges: [{ key: 'fee', text: '0 Fee', tone: 'success' }],
+    height: 60,
+    trailing: [
+      {
+        kind: 'valuePair',
+        primary: '27,497,421.1856',
+        secondary: '$3,139,518.06',
+      },
+      {
+        kind: 'icon',
+        name: 'DotVerSolid',
+        buttonStyle: 'tertiary',
+        actionKey: 'menu',
+      },
+    ],
+    style: {
+      horizontalPadding: 20,
+      leadingGap: 12,
+      trailingGap: 8,
+      image: { width: 40, height: 40, shape: 'circle' },
+      title: { fontSize: 16, lineHeight: 24, fontWeight: 'medium' },
+      subtitle: { fontSize: 14, lineHeight: 20 },
+    },
+  });
+  // Icon-set check, styled in both modes: the asset-list icons the app passes
+  // by name. Every slot must show a glyph; an unmapped name draws nothing.
+  rows.push({
+    ...identity,
+    key: 'identity-asset-icons',
+    title: 'Contract Interaction',
+    subtitle: 'Document2 · Ticket · Wallet · PlusLarge',
+    badges: [],
+    height: 60,
+    leading: { kind: 'icon', name: 'Document2Outline' },
+    titleIcon: { name: 'TicketOutline' },
+    trailing: [
+      { kind: 'icon', name: 'WalletOutline', buttonStyle: 'tertiary' },
+      { kind: 'icon', name: 'PlusLargeOutline' },
+    ],
+    style: {
+      horizontalPadding: 12,
+      title: { fontSize: 16, lineHeight: 24, fontWeight: 'medium' },
+      subtitle: { fontSize: 14, lineHeight: 20 },
+    },
+  });
+  // OK-66041 rendering check, styled in both modes: the Home native-token row
+  // carries a GasSolid titleIcon that must sit right after the title text on
+  // every platform. iOS stretched the title label across the row and pushed
+  // the icon to the value column.
+  rows.push({
+    ...identity,
+    key: 'identity-title-icon-gas',
+    title: 'ETH',
+    subtitle: '',
+    badges: [],
+    height: 60,
+    titleIcon: { name: 'GasSolid' },
+    subtitleSegments: [
+      { text: '$2,330.23', tone: 'secondary' },
+      { text: '+0.23%', tone: 'positive', separatorBefore: true },
+    ],
+    trailing: [
+      { kind: 'valuePair', primary: '0.00001417', secondary: '$0.03' },
+    ],
+    style: {
+      horizontalPadding: 20,
+      leadingGap: 12,
+      image: { width: 40, height: 40, shape: 'circle' },
+      title: { fontSize: 16, lineHeight: 24, fontWeight: 'medium' },
+    },
+  });
   rows.push({
     ...identity,
     key: 'identity-styled',
@@ -223,6 +303,69 @@ function buildRows(styled: boolean): RowModel[] {
     ...(styled
       ? { style: { title: { token: '$bodyMd' as const, color: '#0D74CE' } } }
       : {}),
+  });
+
+  // OK-66071 rendering check, styled in both modes: the Home history rows'
+  // leading visuals. The network badge hangs past the 40dp avatar and must
+  // render whole (Android used to clip it at the row content box), and a
+  // `secondaryLeading` token must form a top-left / bottom-right pair with the
+  // single badge above it (Android drew the second token over the whole box).
+  rows.push(header('activity-badges', 'activity', 'network badge / token pair'));
+  const usdc = {
+    uri: 'https://uni.onekey-asset.com/server-service-indexer/evm--1/tokens/address-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.png',
+    width: 40,
+    height: 40,
+  };
+  const eth = {
+    uri: 'https://cdn.jsdelivr.net/gh/atomiclabs/cryptocurrency-icons@1a63530be6e374711a8554f31b17e4cb92c25fa5/128/color/eth.png',
+    width: 40,
+    height: 40,
+  };
+  const arbitrumBadge = {
+    uri: 'https://uni.onekey-asset.com/static/chain/arbitrum.png',
+    width: 16,
+    height: 16,
+  };
+  rows.push({
+    type: 'activity',
+    key: 'activity-network-badge',
+    sectionKey: 'activity-badges',
+    leading: {
+      kind: 'token',
+      image: usdc,
+      shape: 'circle',
+      fallbackIcon: { name: 'CryptoCoinOutline' },
+      networkImage: arbitrumBadge,
+    },
+    title: 'Send',
+    description: 'Hidden #1 / Account #1',
+    primaryAmount: '-0.001 USDC',
+    secondaryAmount: '< $0.01',
+    height: 60,
+  });
+  rows.push({
+    type: 'activity',
+    key: 'activity-token-pair',
+    sectionKey: 'activity-badges',
+    leading: {
+      kind: 'token',
+      image: eth,
+      shape: 'circle',
+      fallbackIcon: { name: 'CryptoCoinOutline' },
+      networkImage: arbitrumBadge,
+    },
+    secondaryLeading: {
+      kind: 'token',
+      image: usdc,
+      shape: 'circle',
+      fallbackIcon: { name: 'CryptoCoinOutline' },
+      networkImage: arbitrumBadge,
+    },
+    title: 'Swap',
+    description: 'OKX DEX',
+    primaryAmount: '+0.2292 USDC',
+    secondaryAmount: '-0.0000966 ETH',
+    height: 60,
   });
 
   // Cover remaining templates with local text/image/gap overrides. Outer row

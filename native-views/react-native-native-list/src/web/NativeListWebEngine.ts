@@ -1205,6 +1205,62 @@ const selectorIcons: Readonly<
       },
     ],
   },
+  DotVerSolid: {
+    viewBox: '0 0 24 24',
+    paths: [
+      {
+        d: 'M14 18v4h-4v-4zm0-4h-4v-4h4zm0-8h-4V2h4z',
+        fill: 'currentColor',
+        fillRule: 'nonzero',
+        opacity: 1,
+      },
+    ],
+  },
+  Document2Outline: {
+    viewBox: '0 0 24 24',
+    paths: [
+      {
+        d: 'M12 16H8v-2h4zm4-4H8v-2h8zm0-4H8V6h8z',
+        fill: 'currentColor',
+        fillRule: 'nonzero',
+        opacity: 1,
+      },
+      {
+        d: 'M20 22H4V2h16zM6 20h12V4H6z',
+        fill: 'currentColor',
+        fillRule: 'evenodd',
+        opacity: 1,
+      },
+    ],
+  },
+  WalletOutline: {
+    viewBox: '0 0 24 24',
+    paths: [
+      {
+        d: 'M15.5 13.25a1.25 1.25 0 1 1 0 2.5 1.25 1.25 0 0 1 0-2.5',
+        fill: 'currentColor',
+        fillRule: 'nonzero',
+        opacity: 1,
+      },
+      {
+        d: 'M17 8h4v13H7a4 4 0 0 1-4-4V6.5A3.5 3.5 0 0 1 6.5 3H17zM5 17a2 2 0 0 0 2 2h12v-9H6.5c-.537 0-1.045-.12-1.5-.337zM6.5 5a1.5 1.5 0 1 0 0 3H15V5z',
+        fill: 'currentColor',
+        fillRule: 'evenodd',
+        opacity: 1,
+      },
+    ],
+  },
+  PlusLargeOutline: {
+    viewBox: '0 0 24 24',
+    paths: [
+      {
+        d: 'M13 11h8v2h-8v8h-2v-8H3v-2h8V3h2z',
+        fill: 'currentColor',
+        fillRule: 'nonzero',
+        opacity: 1,
+      },
+    ],
+  },
   TicketOutline: {
     viewBox: '0 0 24 24',
     paths: [

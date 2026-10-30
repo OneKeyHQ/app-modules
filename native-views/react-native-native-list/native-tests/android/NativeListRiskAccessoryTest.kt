@@ -81,6 +81,46 @@ class NativeListRiskAccessoryTest : InstrumentationTestCase() {
     assertTrue(original.has("titleImage"))
   }
 
+  fun testWalletSidebarTitleReservesImageWidthAndRestoresFullWidthAfterRemoval() {
+    onMain {
+      val context = ThemedReactContext(BridgeReactContext(activity), activity, "WalletTitleImageTest", 1)
+      val identity = NativeListIdentityRowView(context, NativeListFonts())
+      activity.setContentView(identity)
+      val density = activity.resources.displayMetrics.density
+      val width = (140f * density).toInt()
+      val height = (100f * density).toInt()
+      fun bind(name: String, withImage: Boolean) {
+        val json = JSONObject().put("key", "wallet").put("type", "identity")
+          .put("presentation", "walletSidebar").put("title", name)
+          .put("height", 100).put("leading", JSONObject().put("kind", "token"))
+        if (withImage) json.put("titleImage", JSONObject().put("image", JSONObject()
+          .put("uri", "data:image/png;base64,AA==").put("width", 14).put("height", 14)))
+        identity.bind(NativeListItem("wallet", "identity", null, 0, json), null, "linear", "vertical",
+          null, false, { _, _, fallback -> fallback }, true)
+        identity.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+          View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY))
+        identity.layout(0, 0, width, height)
+      }
+      for (name in listOf("Wallet", "Very long wallet name ".repeat(8))) {
+        bind(name, true)
+        val title = field<TextView>(identity, "title")
+        val line = field<LinearLayout>(identity, "titleLine")
+        val slot = field<NativeListImageSlot>(identity, "titleImage")
+        assertEquals(View.VISIBLE, slot.view.visibility)
+        assertEquals(14f * density, slot.view.width.toFloat(), 1f)
+        assertTrue(title.width > 0)
+        assertTrue(title.right <= slot.view.left)
+        assertTrue(slot.view.right <= line.width)
+        assertTrue(slot.view.left >= 0)
+        if (name.length > 20) assertTrue(title.layout.getEllipsisCount(0) > 0)
+      }
+      bind("Wallet", false)
+      assertEquals(View.GONE, field<NativeListImageSlot>(identity, "titleImage").view.visibility)
+      assertEquals(field<LinearLayout>(identity, "titleLine").width, field<TextView>(identity, "title").width)
+      identity.dispose()
+    }
+  }
+
   fun testTitleImageRetainsRequestAndClearsOnProductionRowReuse() {
     onMain {
       val context = ThemedReactContext(BridgeReactContext(activity), activity, "TitleImageTest", 1)

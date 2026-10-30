@@ -3,15 +3,17 @@ import UIKit
 
 /// Native segmented slider. Renders the track, fill bar, segment marks, thumb
 /// and value bubble as CALayers and handles the drag gesture itself, so a drag
-/// never crosses the JS bridge per frame. Mirrors the web variant
-/// (`composite/SegmentSlider/index.tsx`) pixel-for-pixel.
+/// never crosses the JS bridge per frame. Follows the web variant's semantics,
+/// with extra endpoint space for the enlarged iOS drag thumb.
 final class HybridSegmentSlider: HybridSegmentSliderSpec {
 
-  // MARK: - Geometry (points), identical to the web constants
+  // MARK: - Geometry (points)
   private let thumbSize: CGFloat = 16
+  private let activeThumbScale: CGFloat = 1.15
   private let markSize: CGFloat = 10
   private let haloRing: CGFloat = 4 // translucent halo width beyond each mark
-  private var inset: CGFloat { thumbSize / 2 }
+  // Include the enlarged thumb radius and room for its shadow at either end.
+  private var inset: CGFloat { ceil(thumbSize * activeThumbScale / 2) + 2 }
 
   // MARK: - HybridView
   var view: UIView = SegmentSliderUIView()
@@ -173,7 +175,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   }
 
   // MARK: - Geometry helpers
-  private var trackWidth: CGFloat { Swift.max(view.bounds.width - thumbSize, 0) }
+  private var trackWidth: CGFloat { Swift.max(view.bounds.width - inset * 2, 0) }
   private var trackLeft: CGFloat { inset }
   private var range: Double { let r = max - min; return r == 0 ? 1 : r }
   private var markCount: Int { segments >= 1 ? Int(segments) + 1 : 0 }
@@ -317,7 +319,9 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
       let bw = ceil(textW) + padH * 2
       let bh: CGFloat = 20
       let by = trackTop - 8 - bh
-      bubbleLayer.frame = CGRect(x: thumbX - bw / 2, y: by, width: bw, height: bh)
+      // Keep endpoint bubbles inside horizontally clipping ancestors.
+      let bx = Swift.max(bounds.minX, Swift.min(thumbX - bw / 2, bounds.maxX - bw))
+      bubbleLayer.frame = CGRect(x: bx, y: by, width: bw, height: bh)
       bubbleTextLayer.frame = CGRect(x: 0, y: 2, width: bw, height: 16)
     }
 
@@ -385,7 +389,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     touchStartTime = CACurrentMediaTime()
     haptic.prepare()
     onSlideStart?()
-    animateThumbScale(1.15)
+    animateThumbScale(activeThumbScale)
     setBubbleVisible(true)
     // Tap-snap mode: defer any value change until we know this is a tap or a
     // drag, so a tap never jumps to the raw touch point first.

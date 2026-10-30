@@ -3605,3 +3605,46 @@ it('sanitizes optional production styles and images without changing valid style
     environment.__DEV__ = original;
   }
 });
+
+it('clears an existing production title image when its replacement cannot be sanitized', () => {
+  const environment = globalThis as typeof globalThis & { __DEV__: boolean };
+  const original = environment.__DEV__;
+  environment.__DEV__ = false;
+  try {
+    const titleImage = {
+      image: { uri: 'https://example.com/old.png', width: 14, height: 14 },
+      hoverActionKey: 'old-help',
+    };
+    const initial = ownValidatedNativeSnapshot(
+      validateSnapshot(
+        snapshot([{ ...row('stock'), titleImage }, row('untouched')])
+      )
+    );
+    for (const replacement of [
+      { image: { uri: 'ftp://invalid', width: 14, height: 14 } },
+      {},
+      { image: null },
+      { image: { uri: 'https://example.com/new.png', width: 0, height: 14 } },
+    ]) {
+      const patches = [
+        {
+          type: 'identity',
+          key: 'stock',
+          changes: { titleImage: replacement },
+        },
+      ] as unknown as readonly RowPatch[];
+      expect(validatePatches(patches)).toEqual([
+        { type: 'identity', key: 'stock', changes: { titleImage: null } },
+      ]);
+      const accepted = applyOwnedNativePatches(initial, patches);
+      expect(accepted.snapshot.rows[0]).not.toHaveProperty('titleImage');
+      expect(JSON.parse(accepted.json)).toEqual([
+        { type: 'identity', key: 'stock', changes: { titleImage: null } },
+      ]);
+      expect(accepted.snapshot.rows[1]).toBe(initial.rows[1]);
+      expect(initial.rows[0]).toMatchObject({ titleImage });
+    }
+  } finally {
+    environment.__DEV__ = original;
+  }
+});

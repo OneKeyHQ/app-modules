@@ -287,6 +287,12 @@ internal class OneKeyIconView(context: android.content.Context) : View(context) 
     // use EVEN_ODD. Other existing icons retain their prior rendering behavior.
     private val actionIconFillTypes =
       mapOf(
+        // Asset-list icons the app passes by name (OK-66072 audit): absent entries drew nothing.
+        "DotVerSolid" to listOf(Path.FillType.WINDING),
+        "Document2Outline" to listOf(Path.FillType.WINDING, Path.FillType.EVEN_ODD),
+        "WalletOutline" to listOf(Path.FillType.WINDING, Path.FillType.EVEN_ODD),
+        "PlusLargeOutline" to listOf(Path.FillType.WINDING),
+        "TicketOutline" to listOf(Path.FillType.WINDING, Path.FillType.EVEN_ODD),
         "GlobusOutline" to listOf(Path.FillType.EVEN_ODD),
         "GasSolid" to listOf(Path.FillType.EVEN_ODD),
         "RefreshCcwOutline" to listOf(Path.FillType.WINDING),
@@ -333,6 +339,29 @@ internal class OneKeyIconView(context: android.content.Context) : View(context) 
     // Exact 24x24 paths from app-monorepo packages/components Icon sources.
     private val iconPaths =
       mapOf(
+        "DotVerSolid" to
+          listOf(
+            "M14 18v4h-4v-4zm0-4h-4v-4h4zm0-8h-4V2h4z"
+          ),
+        "Document2Outline" to
+          listOf(
+            "M12 16H8v-2h4zm4-4H8v-2h8zm0-4H8V6h8z",
+            "M20 22H4V2h16zM6 20h12V4H6z"
+          ),
+        "WalletOutline" to
+          listOf(
+            "M15.5 13.25a1.25 1.25 0 1 1 0 2.5 1.25 1.25 0 0 1 0-2.5",
+            "M17 8h4v13H7a4 4 0 0 1-4-4V6.5A3.5 3.5 0 0 1 6.5 3H17zM5 17a2 2 0 0 0 2 2h12v-9H6.5c-.537 0-1.045-.12-1.5-.337zM6.5 5a1.5 1.5 0 1 0 0 3H15V5z"
+          ),
+        "PlusLargeOutline" to
+          listOf(
+            "M13 11h8v2h-8v8h-2v-8H3v-2h8V3h2z"
+          ),
+        "TicketOutline" to
+          listOf(
+            "M16 17.01h-2V15h2zm0-4h-2V11h2zm0-4h-2V7h2z",
+            "m22 9.927-.629.252c-1.661.665-1.661 2.977 0 3.642l.629.252V20H2v-5.927l.629-.252c1.661-.665 1.661-2.977 0-3.642L2 9.927V4h20zM4 8.636c2.5 1.52 2.499 5.207 0 6.727V18h16v-2.637c-2.499-1.52-2.5-5.208 0-6.727V6H4z"
+          ),
         "RefreshCcwOutline" to
           listOf(
             "M5 12a7 7 0 0 0 7 7 7.15 7.15 0 0 0 4.955-2h-2.943v-2h6v6h-2v-2.257A9.148 9.148 0 0 1 12 21a9 9 0 0 1-9-9v-1h2v1Zm1-6.754A9.148 9.148 0 0 1 12 3a9 9 0 0 1 9 9v1h-2v-1a7 7 0 0 0-7-7 7.15 7.15 0 0 0-4.955 2H10v2H4V3h2v2.246Z"

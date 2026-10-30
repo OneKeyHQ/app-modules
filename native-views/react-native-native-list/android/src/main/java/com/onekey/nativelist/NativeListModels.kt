@@ -4,6 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.nio.ByteBuffer
 import java.security.MessageDigest
+import kotlin.math.roundToInt
 import java.util.Locale
 
 internal data class NativeSelectionTarget(val scope: String, val key: String?)
@@ -47,6 +48,96 @@ internal fun nativeListLeadingVisualOverhangsFrame(
   hasCornerIcon: Boolean,
   overlayCount: Int,
 ): Boolean = kind == "token" && sourceCount > 1 || hasCornerIcon || overlayCount > 0
+
+/**
+ * Whether an Activity row host clips its children and padding for this bind.
+ * One row view serves both the legacy row and the rich (`amounts`) row and is
+ * reused across binds, so clipping is derived from the bound item alone and
+ * applied on every bind: only a legacy row whose leading visual lays a badge
+ * past its frame ([nativeListLeadingVisualOverhangsFrame], OK-66071) opts out;
+ * a rich row keeps Android's default clipping even when the view it reuses
+ * last showed such a badge.
+ */
+internal fun nativeListActivityHostClips(rich: Boolean, leadingOverhangs: Boolean): Boolean =
+  rich || !leadingOverhangs
+
+internal data class NativeListSlotFrame(val x: Int, val y: Int, val width: Int, val height: Int)
+
+/** Side of one member of an Activity token pair inside a [frame]-unit box (24 in 40). */
+internal fun nativeListLeadingPairMemberSize(frame: Int): Int = (frame * 0.6f).roundToInt()
+
+/**
+ * Frame of image source [index] of a leading visual inside its [width]×[height]
+ * box (SPEC "Activity leading pair", OK-66071). [networkIndex] is the token
+ * `networkImage` badge and [pairIndex] the Activity `secondaryLeading` token;
+ * either is null when absent. A pair draws the primary at the top-left and the
+ * secondary at the bottom-right, both [nativeListLeadingPairMemberSize] wide and
+ * the secondary inset by its [pairRing]; the badge keeps its corner geometry
+ * above them. A lone token, or a token with only a badge, fills the box. Any
+ * other multi-source visual (stackedImages) steps 0.72-sized images diagonally.
+ */
+internal fun nativeListLeadingSlotFrame(
+  index: Int,
+  sourceCount: Int,
+  networkIndex: Int?,
+  pairIndex: Int?,
+  width: Int,
+  height: Int,
+  badgeSize: Int,
+  badgeOverhang: Int,
+  pairRing: Int,
+): NativeListSlotFrame {
+  if (index == networkIndex)
+    return NativeListSlotFrame(
+      width - badgeSize + badgeOverhang,
+      height - badgeSize + badgeOverhang,
+      badgeSize,
+      badgeSize,
+    )
+  if (pairIndex != null) {
+    val member = nativeListLeadingPairMemberSize(height)
+    return if (index == pairIndex)
+      NativeListSlotFrame(width - member - pairRing, height - member - pairRing, member, member)
+    else NativeListSlotFrame(0, 0, member, member)
+  }
+  if (sourceCount == 1 || networkIndex != null) return NativeListSlotFrame(0, 0, width, height)
+  val side = (height * 0.72f).roundToInt()
+  val x = (index * (width - side).toFloat() / maxOf(1, sourceCount - 1)).roundToInt()
+  return NativeListSlotFrame(x, (height - side) / 2, side, side)
+}
+
+internal data class NativeListTrailingDescriptor(
+  val kind: String,
+  val name: String = "",
+  val actionKey: String = "",
+)
+
+/**
+ * Identity trailing accessories stack vertically unless they form one of the
+ * pairs every platform lays out side by side. The `valuePair` + `DotVerSolid`
+ * menu icon pair (the Swap token selector's balance and row menu) matches
+ * iOS `configureTrailingStack`; stacking it put the menu under the balance and
+ * clipped both inside the fixed row height on Android only.
+ */
+internal fun nativeListIdentityTrailingIsHorizontal(
+  accessories: List<NativeListTrailingDescriptor>,
+): Boolean {
+  val kinds = accessories.map { it.kind }
+  if (kinds.containsAll(listOf("value", "checkbox"))) return true
+  if (accessories.size != 2) return false
+  val (first, second) = accessories
+  return kinds == listOf("valuePair", "menu") ||
+    kinds == listOf("valuePair", "chevron") ||
+    (kinds == listOf("valuePair", "icon") &&
+      second.name == "DotVerSolid" &&
+      second.actionKey == "menu") ||
+    (kinds == listOf("icon", "chevron") &&
+      first.name == "RefreshCcwOutline" &&
+      first.actionKey.isEmpty()) ||
+    (kinds == listOf("icon", "icon") &&
+      first.name == "PencilOutline" &&
+      second.name == "DragOutline")
+}
 
 internal fun resolveNativeListSelectorBackgroundColor(
   rowType: String,

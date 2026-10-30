@@ -4450,6 +4450,7 @@ function normalizePatch(patch: RowPatch, index: number): RowPatch | undefined {
       ? normalized
       : sanitizeDecoration(normalized, field);
     if (canonical !== undefined) changes[field] = canonical;
+    else if (field === 'titleImage') changes[field] = null;
   }
   if (
     patch.type === 'market' &&
