@@ -2,6 +2,8 @@
 
 SegmentSlider view for React Native
 
+See [the behavioral contract](docs/SPEC.md) for platform behavior and acceptance.
+
 ## Installation
 
 ```sh
