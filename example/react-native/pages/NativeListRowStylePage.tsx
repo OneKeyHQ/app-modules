@@ -152,6 +152,32 @@ function buildRows(styled: boolean): RowModel[] {
       subtitle: { fontSize: 14, lineHeight: 20 },
     },
   });
+  // OK-66041 rendering check, styled in both modes: the Home native-token row
+  // carries a GasSolid titleIcon that must sit right after the title text on
+  // every platform. iOS stretched the title label across the row and pushed
+  // the icon to the value column.
+  rows.push({
+    ...identity,
+    key: 'identity-title-icon-gas',
+    title: 'ETH',
+    subtitle: '',
+    badges: [],
+    height: 60,
+    titleIcon: { name: 'GasSolid' },
+    subtitleSegments: [
+      { text: '$2,330.23', tone: 'secondary' },
+      { text: '+0.23%', tone: 'positive', separatorBefore: true },
+    ],
+    trailing: [
+      { kind: 'valuePair', primary: '0.00001417', secondary: '$0.03' },
+    ],
+    style: {
+      horizontalPadding: 20,
+      leadingGap: 12,
+      image: { width: 40, height: 40, shape: 'circle' },
+      title: { fontSize: 16, lineHeight: 24, fontWeight: 'medium' },
+    },
+  });
   rows.push({
     ...identity,
     key: 'identity-styled',

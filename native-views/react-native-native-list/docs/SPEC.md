@@ -182,7 +182,11 @@ Status: implemented in source for local consumers, unreleased. Focused validatio
 Web DOM tests, native builds and device acceptance are tracked separately below.
 The optional `identity.titleIcon` is a static, non-actionable icon after the
 title: a 20-point glyph with a 4-point gap, optional tint and accessibility
-label. Its optional Web-only `hoverActionKey` emits an anchored help action
+label. "After the title" means directly after the title text: the title row
+packs at its start on every platform (Android `PackedTitleLineLayout`, Web flex
+`0 1 auto`, iOS a slack-absorbing filler at the end of the title row), so the
+glyph and any badge follow the text and never drift toward the trailing column
+(OK-66041). Its optional Web-only `hoverActionKey` emits an anchored help action
 from the icon alone on mouse/pen hover or touch press; the consumer owns the
 tooltip. Mouse/pen press closes the anchor until pointer leave. Touch press
 toggles the icon anchor. The icon adds no tab stop or separate click action;
