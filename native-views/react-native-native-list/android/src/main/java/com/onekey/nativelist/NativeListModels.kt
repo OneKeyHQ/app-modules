@@ -49,6 +49,18 @@ internal fun nativeListLeadingVisualOverhangsFrame(
   overlayCount: Int,
 ): Boolean = kind == "token" && sourceCount > 1 || hasCornerIcon || overlayCount > 0
 
+/**
+ * Whether an Activity row host clips its children and padding for this bind.
+ * One row view serves both the legacy row and the rich (`amounts`) row and is
+ * reused across binds, so clipping is derived from the bound item alone and
+ * applied on every bind: only a legacy row whose leading visual lays a badge
+ * past its frame ([nativeListLeadingVisualOverhangsFrame], OK-66071) opts out;
+ * a rich row keeps Android's default clipping even when the view it reuses
+ * last showed such a badge.
+ */
+internal fun nativeListActivityHostClips(rich: Boolean, leadingOverhangs: Boolean): Boolean =
+  rich || !leadingOverhangs
+
 internal data class NativeListSlotFrame(val x: Int, val y: Int, val width: Int, val height: Int)
 
 /** Side of one member of an Activity token pair inside a [frame]-unit box (24 in 40). */

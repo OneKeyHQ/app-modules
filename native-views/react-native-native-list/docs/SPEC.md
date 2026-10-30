@@ -593,7 +593,8 @@ an action-less accessory as a `span`, so its click reaches the row.
 ### Leading badge overhang (OK-65694)
 
 Status: implemented on Android, the only platform that clipped. Android JVM
-policy test (`NativeListLeadingVisualClipPolicyTest`); Android emulator
+policy tests (`NativeListLeadingVisualClipPolicyTest`,
+`NativeListActivityHostClipPolicyTest`); Android emulator
 acceptance on the example account selector (API 36, 2026-10-27) is recorded in
 the changelog entry. iOS and Web are unchanged.
 
@@ -611,6 +612,12 @@ overhanging badge (`requestsUnclippedHost`, decided by
 `nativeListLeadingVisualOverhangsFrame`), as the Market and Message renderers
 already do for their network badges; a visual without such a badge keeps the
 row's default clipping.
+
+Host clipping is per-bind state. A row view that serves several row shapes
+(the Android Activity view serves the legacy row and the rich `amounts` row) is
+reused across binds, so each bind MUST derive clipping from the item it binds
+(`nativeListActivityHostClips`): a view that last showed an overhanging badge
+clips again when it is rebound to a row without one.
 
 The row's own shape still clips on every platform: iOS masks the cell to its
 corner radius (`masksToBounds`), Web keeps the row `overflow: hidden`, and
