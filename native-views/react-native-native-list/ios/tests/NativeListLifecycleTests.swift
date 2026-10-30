@@ -1559,12 +1559,15 @@ final class NativeListLifecycleTests: XCTestCase {
     let thousandCells = try sampleCells(count: 1000)
     print("NativeList 100 visible/attached first/mid/tail: \(hundredCells)")
     print("NativeList 1000 visible/attached first/mid/tail: \(thousandCells)")
+    let visibleCellLimit = Int(ceil(list.bounds.height / 60)) + 2
     XCTAssertTrue(hundredCells.allSatisfy {
-      $0.visible > 0 && $0.visible <= 24 && $0.attached > 0 && $0.attached <= 24
+      $0.visible > 0 && $0.visible <= visibleCellLimit && $0.attached >= $0.visible
     })
     XCTAssertTrue(thousandCells.allSatisfy {
-      $0.visible > 0 && $0.visible <= 24 && $0.attached > 0 && $0.attached <= 24
+      $0.visible > 0 && $0.visible <= visibleCellLimit && $0.attached >= $0.visible
     })
+    // UIKit also retains offscreen cells in subviews. Their count may exceed
+    // the visible budget, but must remain bounded as the data grows tenfold.
     XCTAssertLessThanOrEqual(thousandCells.map(\.attached).max() ?? 0,
       (hundredCells.map(\.attached).max() ?? 0) + 4)
   }
