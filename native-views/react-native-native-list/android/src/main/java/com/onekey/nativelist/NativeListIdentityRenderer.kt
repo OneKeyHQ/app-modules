@@ -878,19 +878,16 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
       sourceScale,
       checkboxState,
       horizontal =
-        (0 until accessories.length())
-          .map { accessories.getJSONObject(it).optString("kind") }
-          .let { kinds ->
-            kinds.containsAll(listOf("value", "checkbox")) ||
-              kinds == listOf("valuePair", "menu") ||
-              kinds == listOf("valuePair", "chevron") ||
-              (kinds == listOf("icon", "chevron") &&
-                accessories.getJSONObject(0).optString("name") == "RefreshCcwOutline" &&
-                accessories.getJSONObject(0).optString("actionKey").isEmpty()) ||
-              (kinds == listOf("icon", "icon") &&
-                accessories.getJSONObject(0).optString("name") == "PencilOutline" &&
-                accessories.getJSONObject(1).optString("name") == "DragOutline")
-          },
+        nativeListIdentityTrailingIsHorizontal(
+          (0 until accessories.length()).map { index ->
+            val accessory = accessories.getJSONObject(index)
+            NativeListTrailingDescriptor(
+              kind = accessory.optString("kind"),
+              name = accessory.optString("name"),
+              actionKey = accessory.optString("actionKey"),
+            )
+          }
+        ),
     )
     trailingColumn.endInset?.let { setPadding(paddingLeft, paddingTop, it, paddingBottom) }
   }

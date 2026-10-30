@@ -51,6 +51,24 @@ ordinary press for that gesture. Motion cancellation, row rebind/recycle,
 disabled state and disposal cancel pending recognition. Trailing accessory
 actions remain independent. Omission preserves existing tap behavior.
 
+Identity trailing accessories stack vertically, except for the pairs every
+platform lays out side by side: `value` + `checkbox`, `valuePair` + `menu`,
+`valuePair` + an `icon` named `DotVerSolid` whose `actionKey` is `menu`,
+`valuePair` + `chevron`, a `RefreshCcwOutline` icon without an action key +
+`chevron`, and `PencilOutline` + `DragOutline` icons. iOS decides this in
+`configureTrailingStack`; Android in `nativeListIdentityTrailingIsHorizontal`
+(JVM test `NativeListIdentityTrailingAxisTest`). The `valuePair` + menu-icon
+pair is the Swap token selector's balance column and row menu; stacking it
+clipped both inside the fixed 60dp row on Android.
+
+Icon names are a closed set drawn from the app's 24-unit Icon sources on every
+platform (`iconPaths` on Android, `NativeListIcons.xcassets` on iOS,
+`selectorIcons` on Web); an unmapped name renders an empty slot rather than a
+placeholder. The set includes every name the app's NativeList builders pass,
+including `DotVerSolid`, `Document2Outline`, `WalletOutline`, `PlusLargeOutline`
+and `TicketOutline` (added 2026-10-30 after the OK-66072 audit found them missing
+on native).
+
 A `message` row may opt into `bodyLines: 0`; its complete body wraps within its
 existing text area and determines natural height unless an explicit row or
 container height overrides it. Existing omitted and one-to-three-line behavior
@@ -164,7 +182,11 @@ Status: implemented in source for local consumers, unreleased. Focused validatio
 Web DOM tests, native builds and device acceptance are tracked separately below.
 The optional `identity.titleIcon` is a static, non-actionable icon after the
 title: a 20-point glyph with a 4-point gap, optional tint and accessibility
-label. Its optional Web-only `hoverActionKey` emits an anchored help action
+label. "After the title" means directly after the title text: the title row
+packs at its start on every platform (Android `PackedTitleLineLayout`, Web flex
+`0 1 auto`, iOS a slack-absorbing filler at the end of the title row), so the
+glyph and any badge follow the text and never drift toward the trailing column
+(OK-66041). Its optional Web-only `hoverActionKey` emits an anchored help action
 from the icon alone on mouse/pen hover or touch press; the consumer owns the
 tooltip. Mouse/pen press closes the anchor until pointer leave. Touch press
 toggles the icon anchor. The icon adds no tab stop or separate click action;
@@ -571,7 +593,8 @@ an action-less accessory as a `span`, so its click reaches the row.
 ### Leading badge overhang (OK-65694)
 
 Status: implemented on Android, the only platform that clipped. Android JVM
-policy test (`NativeListLeadingVisualClipPolicyTest`); Android emulator
+policy tests (`NativeListLeadingVisualClipPolicyTest`,
+`NativeListActivityHostClipPolicyTest`); Android emulator
 acceptance on the example account selector (API 36, 2026-10-27) is recorded in
 the changelog entry. iOS and Web are unchanged.
 
@@ -590,6 +613,12 @@ overhanging badge (`requestsUnclippedHost`, decided by
 already do for their network badges; a visual without such a badge keeps the
 row's default clipping.
 
+Host clipping is per-bind state. A row view that serves several row shapes
+(the Android Activity view serves the legacy row and the rich `amounts` row) is
+reused across binds, so each bind MUST derive clipping from the item it binds
+(`nativeListActivityHostClips`): a view that last showed an overhanging badge
+clips again when it is rebound to a row without one.
+
 The row's own shape still clips on every platform: iOS masks the cell to its
 corner radius (`masksToBounds`), Web keeps the row `overflow: hidden`, and
 Android keeps `clipToOutline` for a `style.container.cornerRadius` row (its
@@ -600,6 +629,34 @@ badge (`offsetY` 4) starts inside a 12-unit corner radius with the default
 padding. The example `NativeListRowStylePage` row `identity-badge-rounded`
 combines both badges with `container.cornerRadius` as the rendering check for
 that combination.
+
+### Activity leading pair (OK-66071)
+
+Status: implemented on iOS and Android; Web already drew the pair. Android JVM
+geometry test (`NativeListLeadingSlotFrameTest`); Android emulator acceptance on
+the example row-style page is recorded in the changelog entry.
+
+An Activity row whose `leading` and `secondaryLeading` are both tokens with an
+image (the app's swap and multi-asset history rows) draws them as a pair inside
+the 40-unit visual box, as the legacy avatar and the Web renderer do: the
+primary token at the top-left at 0.6 of the box (24 units), the secondary at the
+same size at the bottom-right inside a 2-unit ring in the row background, above
+the primary. The ring is shown only while the secondary image is displayed:
+while that image loads, after a failed load and after recycling it stays hidden,
+so it never covers the primary's corner with a blank disc. The token `networkImage` badge, when present, keeps its single-token
+geometry at the box's bottom-right corner above the secondary; a pair shows one
+badge, never one per member. A secondary token without an image leaves the
+primary alone at full size, and a primary without an image lets the secondary
+take its place. Before this rule Android laid the secondary over the whole box
+(hiding the primary and the badge) and iOS drew it in the badge's corner slot
+over the badge. The per-source geometry is one pure function on Android
+(`nativeListLeadingSlotFrame`) and the same arithmetic in
+`NativeListLeadingVisual.layoutSubviews` on iOS; both restore the stacking
+order by role on every bind because slots are reused across roles.
+
+The Android Activity renderer also applies the badge-overhang rule above
+(`requestsUnclippedHost` stops the content row and the row padding clipping),
+so the history rows' network badges render whole instead of cut flat.
 
 ## Failures, fallback and limits
 

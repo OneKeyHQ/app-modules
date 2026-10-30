@@ -139,6 +139,12 @@ func nativeListIcon(named name: String) -> UIImage? {
   case "ErrorSolid": assetName = "onekey_error_solid"
   case "QuestionmarkSolid": assetName = "onekey_questionmark_solid"
   case "ImageSquareWavesOutline": assetName = "onekey_image_square_waves"
+  // Asset-list icons the app passes by name (OK-66072 audit): unmapped names rendered nothing.
+  case "DotVerSolid": assetName = "onekey_dot_ver_solid"
+  case "Document2Outline": assetName = "onekey_document2"
+  case "WalletOutline": assetName = "onekey_wallet"
+  case "PlusLargeOutline": assetName = "onekey_plus_large"
+  case "TicketOutline": assetName = "onekey_ticket"
   default: return nil
   }
   return UIImage(named: assetName, in: NativeListResources.bundle, compatibleWith: nil)?
