@@ -154,7 +154,14 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
   private val floatingRoot = object : FrameLayout(context) {
     override fun drawChild(canvas: Canvas, child: View, drawingTime: Long): Boolean {
       if (child === floatingBar && usesBottomBlur) {
-        drawBlurBackdrop(canvas, width, floatingBar.top, height) { recording ->
+        drawBlurBackdrop(
+          canvas,
+          floatingBar.left,
+          floatingBar.top,
+          floatingBar.right,
+          floatingBar.bottom,
+          floatingBar.height / 2f,
+        ) { recording ->
           super.drawChild(recording, layoutHolder, drawingTime)
         }
       }
@@ -994,18 +1001,31 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
   }
 
   private fun drawBlurBackdrop(
-    canvas: Canvas, width: Int, barTop: Int, bottom: Int, drawScenes: (Canvas) -> Unit,
+    canvas: Canvas,
+    left: Int,
+    top: Int,
+    right: Int,
+    bottom: Int,
+    cornerRadius: Float,
+    drawScenes: (Canvas) -> Unit,
   ) {
     if (!usesBottomBlur || !canvas.isHardwareAccelerated || Build.VERSION.SDK_INT < 31) return
     val blur = bottomBarBlur ?: BottomBarBlurRenderer(resources.displayMetrics.density).also {
       bottomBarBlur = it
     }
-    blur.draw(canvas, width, barTop, bottom, blurSurfaceColor, drawScenes)
+    blur.draw(canvas, left, top, right, bottom, cornerRadius, blurSurfaceColor, drawScenes)
   }
 
   override fun drawChild(canvas: Canvas, child: View, drawingTime: Long): Boolean {
     if (child === bottomNavigation && androidTabBarStyle == AndroidTabBarStyle.DEFAULT) {
-      drawBlurBackdrop(canvas, width, bottomNavigation.top, bottomNavigation.bottom) { recording ->
+      drawBlurBackdrop(
+        canvas,
+        bottomNavigation.left,
+        bottomNavigation.top,
+        bottomNavigation.right,
+        bottomNavigation.bottom,
+        0f,
+      ) { recording ->
         super.drawChild(recording, layoutHolder, drawingTime)
       }
     }

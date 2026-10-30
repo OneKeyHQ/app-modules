@@ -172,10 +172,10 @@ bottom gap, or 0 while hidden.
 
 Floating appearance with background blur disabled: the bar surface is `barTintColor` (or the theme background)
 at 95% opacity (lightened slightly for dark colors), with
-a hairline rim and an outline shadow. When background blur is enabled (see below), the bottom strip extends from
-24 dp above the capsule to the bottom of the scene, including the gap beneath
-the capsule. The existing capsule keeps its rim/shadow and uses a 12 percent
-surface fill over the blurred strip; its lens and navigation controls remain
+a hairline rim and an outline shadow. When background blur is enabled (see below), the live blur and translucent
+surface tint are confined and clipped to the capsule bounds; the region above,
+beside, and beneath the capsule remains unblurred. The existing capsule keeps its rim/shadow and uses a 12 percent
+surface fill over the blurred capsule backdrop; its lens and navigation controls remain
 sharp. The selected tab sits on a capsule pill inset 4 dp
 (`activeIndicatorColor` when provided). The Material ripple is disabled; the
 lens provides press feedback.
@@ -211,7 +211,7 @@ coverage. Complete consumer-app and physical-device acceptance remain pending;
 API 31-35 and visual dark-mode acceptance have not been reverified for this port.
 
 `androidBottomBlurEnabled?: boolean` controls the native Android tab bar's live
-background blur, translucent surface tint, and 24 dp fade into the page above it.
+background blur and translucent surface tint behind the bar.
 Omitting it (including `undefined`) MUST enable the effect only on Android 16
 (API 36) and newer. `false` MUST restore the existing appearance and layout for the current
 `androidTabBarStyle`: docked scenes reserve bar height; floating scenes retain
@@ -229,19 +229,22 @@ report zero bar height. Toggling, resizing, theme changes, and system/keyboard
 insets MUST refresh geometry and appearance without remounting scenes.
 
 The module owns the GPU resources on the UI thread. It MUST sample only the
-scene layer, excluding the tab bar and its own output. It MUST use hardware
-RenderNode/RenderEffect rendering of a bottom strip at one-quarter resolution
-in each dimension, with a 20 dp blur radius and 40 dp sampling margin above the
-fade. It MUST NOT capture bitmaps, read pixels back to the CPU, emit scroll
-events to JS, or run a recurring frame callback for this effect. Rendering MUST
-follow the normal view invalidation cycle, using the scene's existing display
-lists. The translucent tint MUST follow `tabBarStyle.backgroundColor` when set,
-otherwise the docked Material surface color or floating theme background,
-with opacity capped at 78 percent.
+scene layer directly behind the active tab bar bounds (the docked bar rectangle
+in `default` style or the capsule bounds in `floating` style), excluding the
+tab bar and its own output, and clip the blurred backdrop and tint to those
+bounds (including the capsule corner radius in `floating` style) with no blur
+or fade bleeding above or outside the bar. It MUST use hardware
+RenderNode/RenderEffect rendering of the bar bounds at one-quarter resolution
+in each dimension, with a 20 dp blur radius. It MUST NOT capture bitmaps, read
+pixels back to the CPU, emit scroll events to JS, or run a recurring frame
+callback for this effect. Rendering MUST follow the normal view invalidation
+cycle, using the scene's existing display lists. The translucent tint MUST
+follow `tabBarStyle.backgroundColor` when set, otherwise the docked Material
+surface color or floating theme background, with opacity capped at 78 percent.
 
-Only one blur RenderNode and cached paints/shaders MAY be retained per mounted
-tab view. Its offscreen dimensions MUST be bounded by one-quarter of the view
-width and the smaller of the view height or reported bar footprint plus 64 dp (rounded up).
+Only one blur RenderNode and cached paints/paths MAY be retained per mounted
+tab view. Its offscreen dimensions MUST be bounded by one-quarter of the bar
+width and one-quarter of the bar height (rounded up).
 Disabling, hiding, detaching, and dropping the native view MUST discard the
 display list; no scene snapshots, disk cache, timers, or background workers are
 owned. SurfaceView content is outside the normal View display list and is not
