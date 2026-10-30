@@ -192,9 +192,9 @@ presses. The consumer owns the tooltip text and presentation. Omitted
 
 Full snapshots without `titleImage` remove the image and old help anchor.
 Explicit patch replacement updates the descriptor; an omitted patch field
-leaves it unchanged. Removal requires a full snapshot. Snapshot/patch guards
-reject null, malformed descriptors, empty URIs, invalid geometry and empty help
-keys. The field travels in existing JSON and does not change the Nitro ABI;
+leaves it unchanged. Null patches and empty image URIs remove the image. Development guards
+reject malformed descriptors and invalid display geometry; production sanitizes
+optional decoration as described in the validation contract. The field travels in existing JSON and does not change the Nitro ABI;
 consumers must use a native SDK that implements the field before enabling it.
 
 Acceptance covers protocol validation, image/source replacement and removal,
@@ -467,37 +467,61 @@ row positions. An accepted complete snapshot reuses that index only when its
 generation and ordered `(key, type)` sequence match the prior accepted
 snapshot; otherwise it replaces the index. Reorder commits rebuild it and
 disposal clears it. Patch batches reuse the index and never include retiring
-presentation rows in it. They validate the whole batch against the current
-accepted row models before changing config or presentation; invalid batches
-leave both unchanged. iOS updates only changed accepted entries in its
+presentation rows in it. Native hosts validate each received canonical batch before changing config or
+presentation; invalid native batches leave both unchanged. The shared production
+JS boundary first isolates rejected row/group units, so a native batch contains
+only accepted canonical updates. iOS updates only changed accepted entries in its
 presentation lookup after a valid patch, preserving any retiring rows.
 
 ### Validation environments and rejected input
 
-Development builds (`__DEV__ === true`) run the complete snapshot and patch
-contract assertions. Production builds run only serialization, required data
-shape, supported renderer, finite geometry, identity and patch consistency
-guards. Display budgets and style allowlists are development assertions.
-Typography token resolution runs in both environments. Production treats empty
-optional image URIs as missing images, preserving the existing visual fallback.
-An empty optional image field omitted from a patch is a no-op, matching its
-serialized native payload. Sparkline sample arrays retain their existing
-256-sample resource bound because the Web renderer passes samples as function
-arguments; this protects the runtime's argument limit.
+Status: implemented in source; acceptance and remaining runtime gaps are recorded below.
 
-The component and Web engine contain input validation failures in both modes:
-initial invalid input renders an empty list; rejected later snapshots or patch
-batches preserve the last accepted state and are not dispatched to native.
-On iOS and Android, the React wrapper captures caller data before validation
-and owns an immutable accepted snapshot. Later caller mutation cannot rewrite
-that accepted state. Imperative selection keys are captured on entry. Eligible
-value-only `identity` and `dataRow` patches validate their complete changed
-rows; other patches and snapshots without this private ownership use the
-existing complete-snapshot validation path. This does not change exported
-validators or Web behavior.
-An `undefined` value in an eligible field stays on the changed-row path only
-when that field was already `undefined`; clearing a present value uses the
-complete-snapshot path.
+Development runs strict contract assertions after shared null/empty-image
+normalization. Production sanitizes optional decorations without rejecting
+valid business content: invalid colors/styles are omitted, invalid images use
+existing placeholders, and positive title-image dimensions are clamped to a
+square of 1...40 logical units. Image headers are string dictionaries, never
+interpreted as geometry. Unsafe object graphs are rejected before normalization.
+
+A complete snapshot remains atomic after decoration sanitization: invalid
+schema, duplicate/missing identities, required business fields or wallet-group
+parent/children relationships reject the snapshot. No row is silently removed.
+Production normalizes contiguous group positions and filters selection to
+selectable keys, respecting none/single modes.
+
+Patches use omitted/undefined fields as no-ops. Null explicitly removes an
+optional field on JS, Web, iOS and Android; required fields cannot be cleared.
+Empty optional images and empty top-level segment arrays normalize to null in
+patches and absence in snapshots. Empty images remove their outer titleImage
+or media wrapper. This protocol requires native binaries with null-removal
+support; callers must not enable it against older native SDK implementations.
+
+Market price remains required and nonblank. Updating nonempty priceSegments
+requires a price in the same canonical patch; callers own matching formatted
+text (the validator does not reconstruct subscript prices). Updating price
+without segments clears an existing overlay. For identity/market subtitles,
+updating one representation clears the old other representation unless both
+are supplied; clearing segments alone retains the base text. Activity has no
+subtitle pair. Market quote changes with an existing/new webTable must include
+matching table data or explicitly remove webTable.
+
+Development rejects invalid patch batches atomically. Production isolates
+failures to each target key and its coupled groupId: all updates to a key are
+merged in order before validation, and a failure rejects that unit while other
+valid units commit. Financial-value and interactive accessories with missing
+required data fail their row; malformed purely decorative accessories are
+removed. Diagnostics contain locations, never row values or image URLs.
+
+All targets share the canonical accepted patches. The accepted JS rows and
+serialized native changes derive from the same result. Native owned snapshots
+and accepted Web engine snapshots validate only changed rows during patches;
+unchanged rows are not rescanned. Direct helpers receiving an unowned baseline
+validate that baseline once before incremental merging. Native owned snapshots
+are immutable and indexed by key. Initial invalid snapshots render empty;
+rejected later snapshots retain the last accepted snapshot. Rejected patch
+units retain their previous complete rows. Direct validators still throw on
+unrecoverable input. Image loading failures remain the loader's responsibility.
 
 `planNativeListPatches(previous, next)` is an explicit, pure public helper for
 callers that own two valid, immutable snapshots. It returns a readonly empty
@@ -520,14 +544,21 @@ Rejection emits a diagnostic without including row keys, text or image URLs.
 Explicit calls to the exported validation functions still throw on rejected
 input, so development tooling can inspect the full contract failure. Rejection
 does not imply that the requested update succeeded. No row identity is trimmed,
-truncated or regenerated, and no invalid row is silently dropped from a batch.
+truncated or regenerated, and no row is silently dropped from a snapshot.
 
-Status: implemented. Development/production JS regressions pass, including
-native wrappers for iOS/Android and the Web DOM engine. Real Swift XCTest on an
-iOS 27 simulator and Android instrumentation on API 35 verify production
-serialization, normalized typography, opaque identities and duplicate-key
-protection against the shipping native parsers. Full app/device rendering and
-gesture acceptance remain separate from these input-boundary checks.
+Acceptance for this revision: 427 JS/Web tests pass, including native React
+wrapper containment, canonical null/undefined semantics, price/segment pairing,
+production row/group isolation and unchanged-row access checks. Package type
+checks, lint (zero errors; existing warnings) and test-integrity checks pass.
+iOS production/XCTest targets and Android production/instrumentation targets
+compile; 21 Android JVM tests pass. The new native null-removal tests have not
+been executed on a simulator/device. Full App acceptance remains pending.
+
+Wallet groups use the actual embedded parent/children model, not memberKeys
+references. groupId/groupPosition remain snapshot-owned fields; production
+patch failures also reject other patched rows in the same existing groupId.
+Unknown extension fields (including unsupported sparkline/changeHighlight
+models) are ignored in production rather than introducing a new renderer API.
 
 ## Platform contract
 

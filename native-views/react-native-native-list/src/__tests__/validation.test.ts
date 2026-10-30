@@ -146,10 +146,8 @@ describe.each([true, false])(
       environment.__DEV__ = development;
       try {
         const invalid = [
-          null,
           {},
           { image: null },
-          { ...titleImage, image: { ...titleImage.image, uri: '' } },
           { ...titleImage, image: { ...titleImage.image, width: 0 } },
           {
             ...titleImage,
@@ -165,18 +163,22 @@ describe.each([true, false])(
         ];
         for (const descriptor of invalid) {
           const value = descriptor as unknown as IdentityRow['titleImage'];
-          expect(() =>
-            validateSnapshot(snapshot([{ ...row('stock'), titleImage: value }]))
-          ).toThrow();
-          expect(() =>
+          const validate = () =>
+            validateSnapshot(
+              snapshot([{ ...row('stock'), titleImage: value }])
+            );
+          if (development) expect(validate).toThrow();
+          else expect(validate().rows).toHaveLength(1);
+          const validatePatch = () =>
             validatePatches([
               {
                 type: 'identity',
                 key: 'stock',
                 changes: { titleImage: value },
               },
-            ])
-          ).toThrow();
+            ]);
+          if (development) expect(validatePatch).toThrow();
+          else expect(validatePatch).not.toThrow();
         }
       } finally {
         environment.__DEV__ = original;
@@ -438,14 +440,14 @@ describe('native owned snapshot patch boundary', () => {
         if (family === 'identity') {
           expect(
             Object.hasOwn(accepted.snapshot.rows[0], 'subtitleSegments')
-          ).toBe(true);
+          ).toBe(false);
         }
         expect(JSON.stringify(accepted.snapshot)).not.toContain('$bodySm');
         expect(JSON.stringify(accepted.snapshot)).not.toContain('$bodyLg');
         if (!development) {
           expect(
             (accepted.snapshot.rows[0] as IdentityRow | DataRow).leading
-          ).toHaveProperty('image', undefined);
+          ).not.toHaveProperty('image');
         }
       } finally {
         environment.__DEV__ = previous;
@@ -524,11 +526,11 @@ describe('native owned snapshot patch boundary', () => {
       expect(Object.hasOwn(accepted.snapshot.rows[0], 'subtitleSegments')).toBe(
         Object.hasOwn(full.rows[0], 'subtitleSegments')
       );
-      if (initial === 'defined') {
-        expect(unchangedReads).toBeGreaterThan(0);
-      } else {
-        expect(unchangedReads).toBe(0);
-      }
+      expect(unchangedReads).toBe(0);
+      if (initial === 'defined')
+        expect(accepted.snapshot.rows[0]).toMatchObject({
+          subtitleSegments: [{ text: 'Old' }],
+        });
     }
   );
 
@@ -1987,7 +1989,9 @@ describe('NativeList model validation', () => {
         image: { uri: '   ', width: 40, height: 40 },
       },
     };
-    expect(() => validateSnapshot(snapshot([invalidUri]))).toThrow('uri');
+    expect(validateSnapshot(snapshot([invalidUri])).rows[0]).toMatchObject({
+      leading: { kind: 'token' },
+    });
 
     const invalidOverscan: IdentityRow = {
       ...row('bad-overscan'),
@@ -2333,13 +2337,15 @@ describe('NativeList patches', () => {
       key: 'btc',
       changes: { title: 'BTC' },
     };
-    expect(() => validatePatches([patch, patch])).toThrow('duplicate key');
+    expect(validatePatches([patch, patch])).toHaveLength(1);
     const mismatch = {
       type: 'rail',
       key: 'btc',
       changes: { title: 'BTC' },
     } as RowPatch;
-    expect(() => applyRowPatches(snapshot(), [mismatch])).toThrow('not rail');
+    expect(() => applyRowPatches(snapshot(), [mismatch])).toThrow(
+      'does not match row type'
+    );
   });
 
   it('rejects invalid image descriptors before sending a patch', () => {
@@ -2420,156 +2426,45 @@ describe('NativeList production validation', () => {
     environment.__DEV__ = development;
   });
 
-  it('rejects malformed identity action and overlay fields in production snapshots and patches', () => {
+  it('sanitizes production decorations while retaining essential action checks', () => {
     const invalid = {
       ...row('risk'),
-      titleIcon: { name: 'GasSolid' },
+      secondaryTitleIcon: { name: 'TicketSolid', tintColor: 'red' },
       trailing: [
         { kind: 'button', label: 'Show', actionKey: 'show', textColor: 'red' },
       ],
       style: { leadingContentMaxWidthRatio: 2 },
     } as unknown as IdentityRow;
-    expect(() => validateSnapshot(snapshot([invalid]))).toThrow();
-    expect(() =>
-      validatePatches([
-        {
-          type: 'identity',
-          key: invalid.key,
-          changes: { trailing: invalid.trailing },
-        },
-      ])
-    ).toThrow('textColor');
-    expect(() =>
-      validatePatches([
-        {
-          type: 'identity',
-          key: invalid.key,
-          changes: { style: invalid.style },
-        },
-      ])
-    ).toThrow('leadingContentMaxWidthRatio');
-    expect(() =>
-      validateSnapshot(
-        snapshot([
-          {
-            ...invalid,
-            titleIcon: { name: 'GasSolid', hoverActionKey: '' },
-            trailing: [],
-            style: undefined,
-          },
-        ])
-      )
-    ).toThrow('hoverActionKey');
-    expect(() =>
-      validatePatches([
-        {
-          type: 'identity',
-          key: invalid.key,
-          changes: { titleIcon: { name: 'GasSolid', hoverActionKey: '' } },
-        },
-      ])
-    ).toThrow('hoverActionKey');
+    const accepted = validateSnapshot(snapshot([invalid]));
+    expect(accepted.rows[0]).toMatchObject({
+      secondaryTitleIcon: { name: 'TicketSolid' },
+      trailing: [{ kind: 'button', label: 'Show', actionKey: 'show' }],
+    });
+    expect(accepted.rows[0]).not.toHaveProperty('secondaryTitleIcon.tintColor');
+    expect(accepted.rows[0]).not.toHaveProperty(
+      'style.leadingContentMaxWidthRatio'
+    );
     expect(() =>
       validateSnapshot(
         snapshot([
           {
             ...row('risk'),
-            secondaryTitleIcon: { name: 'TicketSolid', tintColor: 'red' },
-          } as unknown as IdentityRow,
+            trailing: [{ kind: 'button', label: 'Show', actionKey: '' }],
+          },
         ])
       )
-    ).toThrow('secondaryTitleIcon.tintColor');
-    expect(() =>
-      validatePatches([
+    ).toThrow('actionKey');
+    expect(
+      applyOwnedNativePatches(ownValidatedNativeSnapshot(accepted), [
         {
           type: 'identity',
-          key: invalid.key,
+          key: 'risk',
           changes: {
-            secondaryTitleIcon: { name: 'TicketSolid', hoverActionKey: '' },
+            trailing: [{ kind: 'button', label: 'Show', actionKey: '' }],
           },
         },
-      ])
-    ).toThrow('secondaryTitleIcon.hoverActionKey');
-    expect(() =>
-      validatePatches([
-        {
-          type: 'identity',
-          key: invalid.key,
-          changes: { secondaryTitleIcon: null },
-        } as unknown as RowPatch,
-      ])
-    ).toThrow('secondaryTitleIcon');
-    expect(() =>
-      validateSnapshot({
-        ...snapshot(),
-        theme: { rowHoverBackground: 'bad' } as NativeListSnapshot['theme'],
-      })
-    ).toThrow('rowHoverBackground');
-    expect(() =>
-      validatePatches([
-        {
-          type: 'identity',
-          key: invalid.key,
-          changes: {
-            leading: {
-              kind: 'token',
-              overlays: [
-                { position: 'bottomRight', text: 'E', fontWeight: 'heavy' },
-              ],
-            },
-          },
-        } as unknown as RowPatch,
-      ])
-    ).toThrow('fontWeight');
-    expect(() =>
-      validatePatches([
-        {
-          type: 'identity',
-          key: invalid.key,
-          changes: {
-            leading: {
-              kind: 'token',
-              fallbackIcon: {
-                name: 'CryptoCoinOutline',
-                size: 0,
-              },
-            },
-          },
-        } as RowPatch,
-      ])
-    ).toThrow('size');
-    expect(() =>
-      validatePatches([
-        {
-          type: 'identity',
-          key: invalid.key,
-          changes: {
-            leading: {
-              kind: 'token',
-              overlays: [
-                {
-                  position: 'bottomRight',
-                  fallbackIcon: { name: 'GlobusOutline' },
-                },
-              ],
-            },
-          },
-        } as RowPatch,
-      ])
-    ).toThrow('requires image');
-    expect(() =>
-      validatePatches([
-        {
-          type: 'identity',
-          key: invalid.key,
-          changes: {
-            trailing: [
-              { kind: 'icon', name: 'EditOutline', buttonStyle: 'other' },
-            ],
-          },
-        } as unknown as RowPatch,
-      ])
-    ).toThrow('buttonStyle');
+      ]).patches
+    ).toEqual([]);
   });
 
   it('keeps production identity and text without enforcing display budgets', () => {
@@ -2601,7 +2496,7 @@ describe('NativeList production validation', () => {
     const invalidRow = { ...validRow };
     Reflect.deleteProperty(invalidRow, 'leading');
     expect(() => validateSnapshot(snapshot([invalidRow as RowModel]))).toThrow(
-      'rows[0].leading: must be an object'
+      'rows[0].leading'
     );
   });
 
@@ -2617,7 +2512,7 @@ describe('NativeList production validation', () => {
       },
     ]);
     expect(validateSnapshot(input).rows[0]).toMatchObject({
-      leading: { fallbackText: 'I', image: undefined },
+      leading: { fallbackText: 'I' },
     });
     const patches: RowPatch[] = [
       {
@@ -2632,7 +2527,7 @@ describe('NativeList production validation', () => {
     expect(validatePatches(patches)[0]).toMatchObject({
       changes: {
         style: { title: { fontSize: 16, lineHeight: 24 } },
-        leading: { image: undefined },
+        leading: { kind: 'token' },
       },
     });
     expect(
@@ -2689,16 +2584,17 @@ describe('NativeList production validation', () => {
         snapshot([{ ...row('x'), type: 'unknown' } as unknown as RowModel])
       )
     ).toThrow('supported');
-    expect(() =>
+    expect(
       validateSnapshot(
         snapshot([{ ...row('x'), trailing: [null] } as unknown as RowModel])
-      )
-    ).toThrow('object');
-    expect(() =>
-      applyRowPatches(snapshot(), [
+      ).rows[0]
+    ).toMatchObject({ trailing: [] });
+    const baseline = validateSnapshot(snapshot());
+    expect(
+      applyRowPatches(baseline, [
         { type: 'identity', key: 'missing', changes: { title: 'No' } },
       ])
-    ).toThrow('unknown');
+    ).toBe(baseline);
   });
 
   it('retains complete assertions in development', () => {
@@ -2718,10 +2614,10 @@ describe('NativeList production validation', () => {
           },
         ])
       )
-    ).toThrow('empty');
-    expect(() =>
+    ).not.toThrow();
+    expect(
       validatePatches([{ type: 'identity', key: 'x', changes: {} }])
-    ).toThrow('at least one');
+    ).toEqual([]);
   });
 });
 
@@ -3269,4 +3165,443 @@ describe('Web Market table presentation contract', () => {
       )
     ).toThrow();
   });
+});
+
+describe.each([true, false])(
+  'canonical input and partial patches (development=%s)',
+  (development) => {
+    const environment = globalThis as typeof globalThis & { __DEV__: boolean };
+    let original: boolean;
+    const titleImage = {
+      image: { uri: 'https://example.com/logo.png', width: 14, height: 14 },
+    };
+    beforeEach(() => {
+      original = environment.__DEV__;
+      environment.__DEV__ = development;
+    });
+    afterEach(() => {
+      environment.__DEV__ = original;
+    });
+    const owned = (rows: readonly RowModel[]) =>
+      ownValidatedNativeSnapshot(validateSnapshot(snapshot(rows)));
+    const table = (price: string) => ({
+      columns: [{ key: 'price', width: 100 }],
+      cells: [
+        { key: 'price', kind: 'text' as const, primary: [{ text: price }] },
+      ],
+    });
+    const quote = (key: string) => ({
+      ...marketRow(key),
+      webTable: table('$64,230.00'),
+    });
+    const replay = (initial: NativeListSnapshot, json: string) => {
+      const copy = JSON.parse(JSON.stringify(initial)) as {
+        rows: Record<string, unknown>[];
+      };
+      const patches = JSON.parse(json) as {
+        key: string;
+        changes: Record<string, unknown>;
+      }[];
+      patches.forEach((patch) => {
+        const target = copy.rows.find((value) => value.key === patch.key)!;
+        Object.entries(patch.changes).forEach(([key, value]) => {
+          if (value === null) delete target[key];
+          else target[key] = value;
+        });
+      });
+      return copy;
+    };
+
+    it('normalizes empty image wrappers before strict validation and sends explicit removals', () => {
+      const empty = { image: { ...titleImage.image, uri: '   ' } };
+      const normalized = validateSnapshot(
+        snapshot([{ ...row('btc'), titleImage: empty }])
+      );
+      expect(normalized.rows[0]).not.toHaveProperty('titleImage');
+      const initial = owned([{ ...row('btc'), titleImage }]);
+      const accepted = applyOwnedNativePatches(initial, [
+        { type: 'identity', key: 'btc', changes: { titleImage: empty } },
+      ]);
+      expect(accepted.snapshot.rows[0]).not.toHaveProperty('titleImage');
+      expect(JSON.parse(accepted.json)[0].changes).toEqual({
+        titleImage: null,
+      });
+      expect(replay(initial, accepted.json)).toEqual(
+        JSON.parse(JSON.stringify(accepted.snapshot))
+      );
+    });
+
+    it('distinguishes explicit null removals from omitted and undefined changes', () => {
+      const initial = owned([
+        {
+          ...row('btc'),
+          titleImage,
+          titleIcon: { name: 'InfoSolid' },
+          subtitle: 'Old',
+        },
+      ]);
+      const retained = applyOwnedNativePatches(initial, [
+        {
+          type: 'identity',
+          key: 'btc',
+          changes: { title: 'New', subtitle: undefined, titleImage: undefined },
+        },
+      ]);
+      expect(retained.snapshot.rows[0]).toMatchObject({
+        title: 'New',
+        subtitle: 'Old',
+        titleImage,
+      });
+      expect(JSON.parse(retained.json)[0].changes).toEqual({ title: 'New' });
+      const noOp = applyOwnedNativePatches(initial, [
+        { type: 'identity', key: 'btc', changes: { subtitle: undefined } },
+      ]);
+      expect(noOp.snapshot).toBe(initial);
+      expect(noOp.patches).toEqual([]);
+      const cleared = applyOwnedNativePatches(initial, [
+        {
+          type: 'identity',
+          key: 'btc',
+          changes: { titleImage: null, titleIcon: null, subtitle: null },
+        },
+      ]);
+      expect(cleared.snapshot.rows[0]).not.toHaveProperty('titleImage');
+      expect(cleared.snapshot.rows[0]).not.toHaveProperty('titleIcon');
+      expect(cleared.snapshot.rows[0]).not.toHaveProperty('subtitle');
+      expect(replay(initial, cleared.json)).toEqual(
+        JSON.parse(JSON.stringify(cleared.snapshot))
+      );
+    });
+
+    it('treats headers as a string dictionary in snapshots and patches', () => {
+      const image = {
+        ...titleImage.image,
+        headers: {
+          width: 'small',
+          height: '10',
+          start: '0',
+          count: '1',
+          key: '   ',
+          padding: 'x',
+          end: 'z',
+        },
+      };
+      const initial = owned([{ ...row('btc'), titleImage: { image } }]);
+      expect(initial.rows[0]).toMatchObject({ titleImage: { image } });
+      const next = applyOwnedNativePatches(initial, [
+        { type: 'identity', key: 'btc', changes: { titleImage: { image } } },
+      ]);
+      expect(next.snapshot.rows[0]).toMatchObject({ titleImage: { image } });
+    });
+
+    it('rejects missing core snapshot fields and never silently removes a row', () => {
+      for (const invalid of [
+        { ...row('eth'), title: undefined },
+        { ...row('btc') },
+        { ...row('eth'), key: undefined },
+      ]) {
+        expect(() =>
+          validateSnapshot(
+            snapshot([
+              row('btc'),
+              invalid as unknown as IdentityRow,
+              row('sol'),
+            ])
+          )
+        ).toThrow();
+      }
+      expect(() =>
+        validateSnapshot(
+          snapshot([
+            {
+              type: 'walletGroup',
+              key: 'wallet',
+              parent: row('wrong-parent'),
+              children: [],
+            },
+          ])
+        )
+      ).toThrow();
+    });
+
+    it('clears stale subtitle overlays in either direction and preserves explicit pairs', () => {
+      const initial = owned([
+        {
+          ...row('btc'),
+          subtitle: 'Old',
+          subtitleSegments: [{ text: 'Old segment' }],
+        },
+      ]);
+      for (const changes of [
+        { subtitle: 'Plain' },
+        { subtitleSegments: [{ text: 'New segment' }] },
+        { subtitle: '$1', subtitleSegments: [{ text: 'first' }] },
+        { subtitleSegments: [] },
+      ]) {
+        const accepted = applyOwnedNativePatches(initial, [
+          { type: 'identity', key: 'btc', changes },
+        ]);
+        expect(replay(initial, accepted.json)).toEqual(
+          JSON.parse(JSON.stringify(accepted.snapshot))
+        );
+        if ('subtitle' in changes && !('subtitleSegments' in changes))
+          expect(accepted.snapshot.rows[0]).not.toHaveProperty(
+            'subtitleSegments'
+          );
+        if (!('subtitle' in changes) && changes.subtitleSegments?.length)
+          expect(accepted.snapshot.rows[0]).not.toHaveProperty('subtitle');
+      }
+    });
+
+    it('enforces base-price synchronization and table coupling while isolating production failures', () => {
+      const initial = owned([quote('btc'), quote('eth'), quote('sol')]);
+      const changes: readonly RowPatch[] = [
+        {
+          type: 'market',
+          key: 'btc',
+          changes: { price: '$2', webTable: table('$2') },
+        },
+        { type: 'market', key: 'eth', changes: { price: '$3' } },
+        {
+          type: 'market',
+          key: 'sol',
+          changes: { price: '$4', webTable: table('$4') },
+        },
+      ];
+      if (development)
+        expect(() => applyOwnedNativePatches(initial, changes)).toThrow(
+          'webTable'
+        );
+      else {
+        const accepted = applyOwnedNativePatches(initial, changes);
+        expect(accepted.patches.map((patch) => patch.key)).toEqual([
+          'btc',
+          'sol',
+        ]);
+        expect(accepted.snapshot.rows[1]).toBe(initial.rows[1]);
+        expect(replay(initial, accepted.json)).toEqual(
+          JSON.parse(JSON.stringify(accepted.snapshot))
+        );
+      }
+      const missingPrice = [
+        {
+          type: 'market',
+          key: 'btc',
+          changes: { priceSegments: [{ text: '2', style: 'subscript' }] },
+        },
+      ] as const;
+      if (development)
+        expect(() => applyOwnedNativePatches(initial, missingPrice)).toThrow(
+          'price'
+        );
+      else
+        expect(applyOwnedNativePatches(initial, missingPrice).snapshot).toBe(
+          initial
+        );
+      const overlay = owned([
+        {
+          ...marketRow('btc'),
+          priceSegments: [
+            { text: '$0.0' },
+            { text: '4', style: 'subscript' },
+            { text: '42' },
+          ],
+        },
+      ]);
+      const updated = applyOwnedNativePatches(overlay, [
+        { type: 'market', key: 'btc', changes: { price: '$0.01' } },
+      ]);
+      expect(updated.snapshot.rows[0]).toMatchObject({ price: '$0.01' });
+      expect(JSON.parse(updated.json)[0].changes).toEqual({
+        price: '$0.01',
+        priceSegments: null,
+      });
+      for (const segments of [[], null]) {
+        const cleared = applyOwnedNativePatches(overlay, [
+          { type: 'market', key: 'btc', changes: { priceSegments: segments } },
+        ]);
+        expect(cleared.snapshot.rows[0]).not.toHaveProperty('priceSegments');
+        expect(cleared.snapshot.rows[0]).toMatchObject({ price: '$64,230.00' });
+      }
+      const paired = applyOwnedNativePatches(overlay, [
+        {
+          type: 'market',
+          key: 'btc',
+          changes: {
+            price: '$0.000001',
+            priceSegments: [
+              { text: '$0.0' },
+              { text: '5', style: 'subscript' },
+              { text: '1' },
+            ],
+          },
+        },
+      ]);
+      expect(paired.snapshot.rows[0]).toMatchObject({ price: '$0.000001' });
+    });
+
+    it('merges repeated-key changes before validating one atomic target', () => {
+      const initial = owned([marketRow('btc')]);
+      const accepted = applyOwnedNativePatches(initial, [
+        {
+          type: 'market',
+          key: 'btc',
+          changes: { priceSegments: [{ text: '$2' }] },
+        },
+        { type: 'market', key: 'btc', changes: { price: '$2' } },
+      ]);
+      expect(accepted.patches).toHaveLength(1);
+      expect(accepted.snapshot.rows[0]).toMatchObject({
+        price: '$2',
+        priceSegments: [{ text: '$2' }],
+      });
+    });
+
+    it('does not read unmodified row content while validating a patch', () => {
+      let reads = 0;
+      const unchanged = row('eth');
+      Object.defineProperty(unchanged, 'title', {
+        enumerable: true,
+        get() {
+          reads += 1;
+          return 'ETH';
+        },
+      });
+      const initial = ownValidatedNativeSnapshot(
+        snapshot([row('btc'), unchanged])
+      );
+      reads = 0;
+      const accepted = applyOwnedNativePatches(initial, [
+        { type: 'identity', key: 'btc', changes: { titleImage } },
+      ]);
+      expect(reads).toBe(0);
+      expect(accepted.snapshot.rows[1]).toBe(initial.rows[1]);
+    });
+
+    it('contains production decoration errors but preserves financial and actionable controls', () => {
+      const invalid = {
+        ...row('btc'),
+        titleImage: {
+          ...titleImage,
+          image: { ...titleImage.image, width: 48, height: 20 },
+        },
+        titleIcon: { name: 'InfoSolid', tintColor: 'bad-color' },
+        trailing: [
+          {
+            kind: 'valuePair',
+            primary: '$1',
+            secondary: '1 BTC',
+            primaryFontWeight: 'bold',
+          },
+        ],
+      } as unknown as IdentityRow;
+      if (development)
+        expect(() => validateSnapshot(snapshot([invalid]))).toThrow();
+      else {
+        const accepted = validateSnapshot(snapshot([invalid]));
+        expect(accepted.rows[0]).toMatchObject({
+          titleImage: { image: { width: 20, height: 20 } },
+          titleIcon: { name: 'InfoSolid' },
+          trailing: [{ kind: 'valuePair', primary: '$1', secondary: '1 BTC' }],
+        });
+        expect(accepted.rows[0]).not.toHaveProperty('titleIcon.tintColor');
+        expect(accepted.rows[0]).not.toHaveProperty(
+          'trailing.0.primaryFontWeight'
+        );
+      }
+      expect(() =>
+        validateSnapshot(
+          snapshot([
+            {
+              ...row('btc'),
+              trailing: [{ kind: 'button', label: 'Send', actionKey: '' }],
+            },
+          ])
+        )
+      ).toThrow();
+    });
+  }
+);
+
+it('isolates a failed production coupled group without dropping unrelated rows', () => {
+  const environment = globalThis as typeof globalThis & { __DEV__: boolean };
+  const original = environment.__DEV__;
+  environment.__DEV__ = false;
+  try {
+    const initial = ownValidatedNativeSnapshot(
+      validateSnapshot(
+        snapshot([
+          { ...row('a'), groupId: 'coupled', groupPosition: 'first' },
+          { ...row('b'), groupId: 'coupled', groupPosition: 'last' },
+          row('independent'),
+        ])
+      )
+    );
+    const accepted = applyOwnedNativePatches(initial, [
+      { type: 'identity', key: 'a', changes: { title: 'Rejected with group' } },
+      {
+        type: 'identity',
+        key: 'b',
+        changes: { trailing: [{ kind: 'valuePair', primary: '$2' }] },
+      } as unknown as RowPatch,
+      {
+        type: 'identity',
+        key: 'independent',
+        changes: { title: 'Accepted independently' },
+      },
+      { type: 'identity', key: 'missing', changes: { title: 'Unknown' } },
+    ]);
+    expect(accepted.patches.map((patch) => patch.key)).toEqual(['independent']);
+    expect(accepted.snapshot.rows[0]).toBe(initial.rows[0]);
+    expect(accepted.snapshot.rows[1]).toBe(initial.rows[1]);
+    expect(accepted.snapshot.rows[2]).toMatchObject({
+      title: 'Accepted independently',
+    });
+  } finally {
+    environment.__DEV__ = original;
+  }
+});
+
+it('sanitizes optional production styles and images without changing valid style dimensions', () => {
+  const environment = globalThis as typeof globalThis & { __DEV__: boolean };
+  const original = environment.__DEV__;
+  environment.__DEV__ = false;
+  try {
+    const result = validateSnapshot(
+      snapshot([
+        {
+          ...row('styled'),
+          titleImage: {
+            image: { uri: 'ftp://invalid', width: 14, height: 14 },
+          },
+          titleIcon: 123,
+          style: {
+            container: { cornerRadius: 12, backgroundColor: 'invalid' },
+            image: { width: 28, height: 28 },
+            title: {
+              fontSize: 'invalid',
+              color: 'invalid',
+              token: '$bodySm',
+              extra: { width: 'metadata' },
+            },
+          },
+        } as unknown as IdentityRow,
+      ])
+    );
+    expect(result.rows[0]).not.toHaveProperty('titleImage');
+    expect(result.rows[0]).not.toHaveProperty('titleIcon');
+    expect(result.rows[0]).toMatchObject({
+      style: {
+        container: { cornerRadius: 12 },
+        image: { width: 28, height: 28 },
+        title: { fontSize: 12, lineHeight: 16 },
+      },
+    });
+    const cleared = validateSnapshot(
+      snapshot([{ ...row('styled'), style: false } as unknown as IdentityRow])
+    );
+    expect(cleared.rows[0]).not.toHaveProperty('style');
+  } finally {
+    environment.__DEV__ = original;
+  }
 });

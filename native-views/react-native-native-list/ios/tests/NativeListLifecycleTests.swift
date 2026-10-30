@@ -4,6 +4,25 @@ import XCTest
 
 @MainActor
 final class NativeListLifecycleTests: XCTestCase {
+  func testCanonicalNullPatchRemovesStoredOptionalFields() throws {
+    let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+    let row: [String: Any] = ["key": "token", "type": "identity", "title": "Token",
+      "leading": ["kind": "token"], "subtitle": "Old",
+      "titleImage": ["image": ["uri": "data:image/png;base64,AA==", "width": 14, "height": 14]]]
+    let snapshot: [String: Any] = ["schemaVersion": 1, "generation": 1,
+      "layout": ["kind": "linear"], "rows": [row]]
+    view.applySnapshotJson(String(decoding: try JSONSerialization.data(withJSONObject: snapshot), as: UTF8.self))
+    let patches: [[String: Any]] = [["key": "token", "type": "identity",
+      "changes": ["title": "New", "subtitle": NSNull(), "titleImage": NSNull()]]]
+    view.applyPatchesJson(String(decoding: try JSONSerialization.data(withJSONObject: patches), as: UTF8.self))
+    let items = try XCTUnwrap(Mirror(reflecting: view).descendant("itemsByKey") as? [String: NativeListItem])
+    let accepted = try XCTUnwrap(items["token"])
+    XCTAssertEqual(accepted.data.string("title"), "New")
+    XCTAssertNil(accepted.data["subtitle"])
+    XCTAssertNil(accepted.data["titleImage"])
+    XCTAssertEqual(accepted.key, "token")
+  }
+
   func testAcceptedRowIndexReusesStableShapeAndRejectsLateInvalidPatch() throws {
     let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
     func snapshot(_ keys: [String], generation: Int, title: String = "Old") throws -> String {

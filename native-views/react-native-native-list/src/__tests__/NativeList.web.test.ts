@@ -688,7 +688,7 @@ describe('web row style', () => {
   );
 
   test.each([undefined, Array(257).fill(1)])(
-    'contains unsafe production sparkline samples before changing the rendered snapshot (%j)',
+    'sanitizes unsafe production sparkline samples without rejecting the row (%j)',
     (points) => {
       const environment = globalThis as typeof globalThis & {
         __DEV__: boolean;
@@ -710,9 +710,13 @@ describe('web row style', () => {
         change: { text: '0%', tone: 'neutral' },
         leading: { kind: 'token', fallbackText: 'C' },
         webTable: {
-          columns: [{ key: 'chart', width: 100 }],
+          columns: [
+            { key: 'chart', width: 100 },
+            { key: 'label', width: 100 },
+          ],
           cells: [
             { key: 'chart', kind: 'sparkline', points, width: 100, height: 40 },
+            { key: 'label', kind: 'text', primary: [{ text: 'Chart' }] },
           ],
         },
       } as unknown as RowModel;
@@ -720,8 +724,22 @@ describe('web row style', () => {
         expect(() =>
           engine.applySnapshot(snapshot({ kind: 'linear' }, [malformed]))
         ).not.toThrow();
-        expect(engine.currentSnapshot()).toBe(valid);
-        expect(host.textContent).toContain('Identity');
+        expect(engine.currentSnapshot().rows[0]).toMatchObject({
+          key: 'chart',
+          title: 'Chart',
+          price: '$1',
+        });
+        const accepted = engine.currentSnapshot().rows[0];
+        if (accepted.type === 'market') {
+          const cell = accepted.webTable?.cells[0];
+          if (points)
+            expect(cell).toMatchObject({
+              kind: 'sparkline',
+              points: Array(256).fill(1),
+            });
+          else expect(cell).toMatchObject({ kind: 'text', primary: [] });
+        }
+        expect(host.textContent).toContain('Chart');
       } finally {
         engine.destroy();
         environment.__DEV__ = previous;
@@ -6666,4 +6684,62 @@ describe('DeFi position Web controls', () => {
       global.HTMLElement = previousHTMLElement;
     }
   });
+});
+
+test('commits valid production rows and renders null-cleared overlays in one patch transaction', () => {
+  const { JSDOM } = require('jsdom') as {
+    JSDOM: new (html: string) => { window: { document: Document } };
+  };
+  const environment = globalThis as typeof globalThis & { __DEV__: boolean };
+  const previous = environment.__DEV__;
+  environment.__DEV__ = false;
+  const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  const { document } = new JSDOM('<!doctype html><body></body>').window;
+  const host = document.createElement('div');
+  document.body.appendChild(host);
+  const identity = rows[2] as IdentityRow;
+  const initial = snapshot({ kind: 'linear' }, [
+    {
+      ...identity,
+      key: 'good',
+      subtitle: 'Before',
+      subtitleSegments: [{ text: 'Old overlay' }],
+    },
+    { ...identity, key: 'bad', title: 'Retained' },
+  ]);
+  const engine = new NativeListWebEngine(host, initial, {}, false);
+  try {
+    engine.applyPatches([
+      {
+        type: 'identity',
+        key: 'good',
+        changes: { title: 'Updated', subtitle: 'Fresh' },
+      },
+      {
+        type: 'identity',
+        key: 'bad',
+        changes: {
+          trailing: [{ kind: 'button', label: 'Send', actionKey: '' }],
+        },
+      },
+    ]);
+    expect(host.textContent).toContain('Updated');
+    expect(host.textContent).toContain('Fresh');
+    expect(host.textContent).not.toContain('Old overlay');
+    expect(host.textContent).toContain('Retained');
+    expect(host.textContent).not.toContain('Send');
+    expect(engine.currentSnapshot().rows[0]).not.toHaveProperty(
+      'subtitleSegments'
+    );
+    expect(engine.currentSnapshot().rows[1]).toBe(initial.rows[1]);
+    engine.applyPatches([
+      { type: 'identity', key: 'good', changes: { subtitle: null } },
+    ]);
+    expect(host.textContent).not.toContain('Fresh');
+    expect(engine.currentSnapshot().rows[0]).not.toHaveProperty('subtitle');
+  } finally {
+    engine.destroy();
+    environment.__DEV__ = previous;
+    warning.mockRestore();
+  }
 });

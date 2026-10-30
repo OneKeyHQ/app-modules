@@ -74,13 +74,15 @@ export function emptyNativeListSnapshot(): NativeListSnapshot {
 function assertPlainSerializable(
   value: unknown,
   path: string,
-  seen: Set<object>
+  seen: Set<object>,
+  requireFinite = true
 ): void {
   if (value === null || value === undefined) return;
   const valueType = typeof value;
   if (valueType === 'string' || valueType === 'boolean') return;
   if (valueType === 'number') {
-    if (!Number.isFinite(value)) fail(path, 'numbers must be finite');
+    if (requireFinite && !Number.isFinite(value))
+      fail(path, 'numbers must be finite');
     return;
   }
   if (valueType !== 'object')
@@ -91,16 +93,21 @@ function assertPlainSerializable(
   seen.add(objectValue);
   if (Array.isArray(value)) {
     value.forEach((item, index) =>
-      assertPlainSerializable(item, `${path}[${index}]`, seen)
+      assertPlainSerializable(item, `${path}[${index}]`, seen, requireFinite)
     );
   } else {
     const prototype = Object.getPrototypeOf(value);
     if (prototype !== Object.prototype && prototype !== null) {
       fail(path, 'must contain plain objects only');
     }
-    Object.entries(value as Record<string, unknown>).forEach(([key, item]) =>
-      assertPlainSerializable(item, `${path}.${key}`, seen)
-    );
+    Object.entries(value as Record<string, unknown>).forEach(([key, item]) => {
+      if (
+        key === '__proto__' ||
+        (key === 'constructor' && typeof item === 'object')
+      )
+        fail(path, 'unsafe object key');
+      assertPlainSerializable(item, `${path}.${key}`, seen, requireFinite);
+    });
   }
   seen.delete(objectValue);
 }
@@ -1317,6 +1324,8 @@ function assertIdentityExtras(
 
 function assertImage(image: ImageSource | undefined, path: string): void {
   if (!image) return;
+  if (!isAllowedImageUri(image.uri))
+    fail(`${path}.uri`, 'unsupported image URI');
   if (!image.uri.trim()) fail(`${path}.uri`, 'must not be empty');
   if (image.fallbackUris !== undefined) {
     if (!Array.isArray(image.fallbackUris))
@@ -1658,6 +1667,7 @@ function assertRow(
   path = `rows[${index}]`
 ): void {
   assertRowType(row.type, path);
+  assertUnknownKeys(row, ROW_FIELDS[row.type], path, 'row key');
   assertKey(row.key, `${path}.key`);
   // OneKey patch: explicit dimensions and opacity cannot corrupt list layout.
   if (row.height !== undefined && (row.height < 0 || row.height > 4096))
@@ -2274,6 +2284,338 @@ function assertSnapshotContract(
   return snapshot;
 }
 
+const COMMON_ROW_FIELDS = [
+  'height',
+  'heightRounding',
+  'testID',
+  'opacity',
+  'backgroundColor',
+  'backgroundFullWidth',
+  'pressDisabled',
+  'key',
+  'revision',
+  'sectionKey',
+  'groupId',
+  'groupPosition',
+  'size',
+  'density',
+  'disabled',
+  'selected',
+  'accessibilityLabel',
+  'separator',
+  'type',
+  'style',
+];
+
+const ROW_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  identity: [
+    ...COMMON_ROW_FIELDS,
+    'contentHeight',
+    'longPressActionKey',
+    'titleMatch',
+    'titleActionKey',
+    'titleActionOnHover',
+    'subtitleSegments',
+    'presentation',
+    'leading',
+    'leadingAction',
+    'title',
+    'titleSuffixes',
+    'titleIcon',
+    'secondaryTitleIcon',
+    'titleImage',
+    'subtitle',
+    'tertiary',
+    'tertiaryTone',
+    'titleLines',
+    'subtitleLines',
+    'badges',
+    'trailing',
+    'draggable',
+  ],
+  walletGroup: [...COMMON_ROW_FIELDS, 'parent', 'children', 'draggable'],
+  rail: [
+    ...COMMON_ROW_FIELDS,
+    'visual',
+    'title',
+    'status',
+    'badge',
+    'draggable',
+  ],
+  activity: [
+    ...COMMON_ROW_FIELDS,
+    'leading',
+    'hideLeading',
+    'secondaryLeading',
+    'title',
+    'description',
+    'status',
+    'primaryAmount',
+    'secondaryAmount',
+    'amounts',
+    'badges',
+    'presentation',
+    'fee',
+    'descriptionActionKey',
+    'footerActions',
+  ],
+  message: [
+    ...COMMON_ROW_FIELDS,
+    'presentation',
+    'unread',
+    'leading',
+    'title',
+    'body',
+    'bodyLines',
+    'time',
+    'thumbnail',
+  ],
+  dataRow: [
+    ...COMMON_ROW_FIELDS,
+    'leading',
+    'columns',
+    'trailing',
+    'checkbox',
+    'index',
+    'badge',
+    'badges',
+    'favorite',
+    'favoriteActive',
+  ],
+  market: [
+    ...COMMON_ROW_FIELDS,
+    'variant',
+    'webTable',
+    'leadingAction',
+    'leading',
+    'title',
+    'subtitle',
+    'subtitlePrefix',
+    'subtitleSegments',
+    'price',
+    'priceSegments',
+    'change',
+    'badges',
+    'pressActionKey',
+    'pressInActionKey',
+    'longPressActionKey',
+    'diagnostics',
+  ],
+  mediaTile: [
+    ...COMMON_ROW_FIELDS,
+    'variant',
+    'media',
+    'image',
+    'imageState',
+    'networkImage',
+    'title',
+    'subtitle',
+    'badge',
+    'closeActionKey',
+  ],
+  metricCard: [
+    ...COMMON_ROW_FIELDS,
+    'variant',
+    'title',
+    'value',
+    'subtitle',
+    'trend',
+    'trendTone',
+    'visual',
+    'badge',
+    'metrics',
+    'progress',
+  ],
+  sectionHeader: [
+    ...COMMON_ROW_FIELDS,
+    'sticky',
+    'valueActionTestID',
+    'valueSegments',
+    'titleActionKey',
+    'titleActionOnHover',
+    'presentation',
+    'indexTitle',
+    'variant',
+    'title',
+    'leadingBadge',
+    'titleLoading',
+    'subtitle',
+    'value',
+    'valueHelp',
+    'valueActionKey',
+    'titleIcon',
+    'valueIcon',
+    'checkbox',
+  ],
+  action: [
+    ...COMMON_ROW_FIELDS,
+    'presentation',
+    'title',
+    'actionKey',
+    'tone',
+    'icon',
+    'checkbox',
+    'trailing',
+  ],
+  buttonGroup: [...COMMON_ROW_FIELDS, 'buttons'],
+  system: [
+    ...COMMON_ROW_FIELDS,
+    'variant',
+    'presentation',
+    'loadingStyle',
+    'message',
+    'actionKey',
+    'actionText',
+    'title',
+    'borderColor',
+  ],
+};
+
+const COMMON_PATCH_FIELDS = [
+  'height',
+  'heightRounding',
+  'opacity',
+  'pressDisabled',
+  'revision',
+  'disabled',
+  'selected',
+  'accessibilityLabel',
+  'separator',
+  'style',
+];
+
+const PATCH_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  identity: [
+    ...COMMON_PATCH_FIELDS,
+    'contentHeight',
+    'longPressActionKey',
+    'titleMatch',
+    'titleActionKey',
+    'titleActionOnHover',
+    'subtitleSegments',
+    'leading',
+    'leadingAction',
+    'title',
+    'titleSuffixes',
+    'titleIcon',
+    'secondaryTitleIcon',
+    'titleImage',
+    'subtitle',
+    'tertiary',
+    'tertiaryTone',
+    'subtitleLines',
+    'badges',
+    'trailing',
+  ],
+  rail: [...COMMON_PATCH_FIELDS, 'title', 'visual', 'status', 'badge'],
+  activity: [
+    ...COMMON_PATCH_FIELDS,
+    'presentation',
+    'leading',
+    'title',
+    'badges',
+    'status',
+    'hideLeading',
+    'secondaryLeading',
+    'description',
+    'primaryAmount',
+    'secondaryAmount',
+    'amounts',
+    'fee',
+    'descriptionActionKey',
+    'footerActions',
+  ],
+  message: [
+    ...COMMON_PATCH_FIELDS,
+    'presentation',
+    'title',
+    'unread',
+    'body',
+    'bodyLines',
+    'time',
+    'thumbnail',
+  ],
+  dataRow: [
+    ...COMMON_PATCH_FIELDS,
+    'leading',
+    'badges',
+    'trailing',
+    'badge',
+    'columns',
+    'checkbox',
+    'index',
+    'favorite',
+    'favoriteActive',
+  ],
+  market: [
+    ...COMMON_PATCH_FIELDS,
+    'longPressActionKey',
+    'subtitleSegments',
+    'leading',
+    'leadingAction',
+    'title',
+    'subtitle',
+    'badges',
+    'webTable',
+    'price',
+    'priceSegments',
+    'change',
+    'pressActionKey',
+    'pressInActionKey',
+    'diagnostics',
+  ],
+  mediaTile: [
+    ...COMMON_PATCH_FIELDS,
+    'title',
+    'subtitle',
+    'badge',
+    'media',
+    'image',
+    'imageState',
+    'networkImage',
+    'closeActionKey',
+  ],
+  metricCard: [
+    ...COMMON_PATCH_FIELDS,
+    'title',
+    'subtitle',
+    'visual',
+    'badge',
+    'variant',
+    'value',
+    'trend',
+    'trendTone',
+    'metrics',
+    'progress',
+  ],
+  sectionHeader: [
+    ...COMMON_PATCH_FIELDS,
+    'titleActionKey',
+    'titleActionOnHover',
+    'title',
+    'titleIcon',
+    'subtitle',
+    'checkbox',
+    'variant',
+    'value',
+    'leadingBadge',
+    'titleLoading',
+    'valueHelp',
+    'valueActionKey',
+    'valueIcon',
+  ],
+  action: [
+    ...COMMON_PATCH_FIELDS,
+    'title',
+    'trailing',
+    'checkbox',
+    'tone',
+    'icon',
+  ],
+  buttonGroup: [...COMMON_PATCH_FIELDS, 'buttons'],
+  system: ['revision', 'disabled', 'message'],
+};
+
 function protocolObject(value: unknown, path: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     fail(path, 'must be an object');
@@ -2413,6 +2755,14 @@ function assertProtocolFields(
     fail(`${path}.uri`, 'must be a string');
   Object.entries(value).forEach(([field, item]) => {
     if (item === undefined) return;
+    if (field === 'headers') {
+      const headers = protocolObject(item, `${path}.headers`);
+      for (const [name, headerValue] of Object.entries(headers)) {
+        if (!name.trim() || typeof headerValue !== 'string')
+          fail(`${path}.headers`, 'must contain string headers');
+      }
+      return;
+    }
     const fieldPath = `${path}.${field}`;
     if (
       !path.endsWith('.style') &&
@@ -2442,6 +2792,7 @@ function assertProtocolFields(
     if (
       field === 'key' ||
       field === 'sectionKey' ||
+      field === 'groupId' ||
       field === 'actionKey' ||
       field.endsWith('ActionKey')
     )
@@ -2490,6 +2841,7 @@ function assertRowProtocol(row: RowModel, path: string): void {
   protocolObject(row, path);
   assertRowType(row.type, path);
   protocolKey(row.key, `${path}.key`);
+  assertCoreRow(row, path);
   assertProtocolFields(row, path);
   for (const field of ['leading', 'visual', 'secondaryLeading'] as const) {
     const visual = (row as unknown as Record<string, unknown>)[field];
@@ -2519,7 +2871,7 @@ function assertRowProtocol(row: RowModel, path: string): void {
   if (row.height !== undefined && row.height < 0)
     fail(`${path}.height`, 'must be non-negative');
   if (row.type === 'identity') {
-    assertIdentityExtras(row, path);
+    if (isDevelopment()) assertIdentityExtras(row, path);
     if (row.titleSuffixes !== undefined && !Array.isArray(row.titleSuffixes))
       fail(`${path}.titleSuffixes`, 'must be an array');
     row.titleSuffixes?.forEach((suffix, index) => {
@@ -2553,8 +2905,9 @@ function assertRowProtocol(row: RowModel, path: string): void {
       end = match.end;
     });
   }
-  if (row.type === 'buttonGroup') assertButtonGroup(row, path);
-  if (row.type === 'sectionHeader')
+  if (row.type === 'buttonGroup' && isDevelopment())
+    assertButtonGroup(row, path);
+  if (row.type === 'sectionHeader' && isDevelopment())
     assertTextHelp(row.valueHelp, `${path}.valueHelp`);
   if (row.type === 'mediaTile' && row.media) {
     protocolObject(row.media.source, `${path}.media.source`);
@@ -2582,9 +2935,10 @@ function assertRowProtocol(row: RowModel, path: string): void {
     row.columns.forEach((column, index) => {
       const columnPath = `${path}.columns[${index}]`;
       protocolObject(column, columnPath);
-      assertIdentityExtras(column, columnPath);
+      if (isDevelopment()) assertIdentityExtras(column, columnPath);
     });
-    assertTrailingAccessories(row.trailing, `${path}.trailing`);
+    if (isDevelopment())
+      assertTrailingAccessories(row.trailing, `${path}.trailing`);
   }
   if (row.type === 'market') {
     protocolObject(row.change, `${path}.change`);
@@ -2720,19 +3074,780 @@ function assertSnapshotProtocol(snapshot: NativeListSnapshot): void {
   }
 }
 
-/** Empty optional image descriptors must take the same path as absent images. */
-function normalizeEmptyImages(value: unknown, field = ''): unknown {
-  if (!value || typeof value !== 'object') return value;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isAllowedImageUri(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.trim().length > 0 &&
+    (!/^[a-z][a-z\d+.-]*:/i.test(value) ||
+      /^(https?|file|content|ph|assets-library|asset|res|blob):/i.test(value) ||
+      /^data:image\//i.test(value))
+  );
+}
+
+const IMAGE_FIELDS = [
+  'uri',
+  'width',
+  'height',
+  'headers',
+  'contentFit',
+  'cachePolicy',
+  'autoplay',
+  'optimizeTos',
+  'overscan',
+  'loadingStrategy',
+  'fallbackUri',
+  'fallbackUris',
+  'retryTimes',
+];
+const ICON_FIELDS = [
+  'name',
+  'tintColor',
+  'backgroundColor',
+  'size',
+  'accessibilityLabel',
+  'hoverActionKey',
+];
+const VISUAL_FIELDS = [
+  'kind',
+  'name',
+  'image',
+  'images',
+  'networkImage',
+  'shape',
+  'tintColor',
+  'backgroundColor',
+  'fallbackIcon',
+  'fallbackText',
+  'fallbackTextColor',
+  'overlays',
+  'borderStyle',
+  'borderColor',
+  'cornerIcon',
+];
+const TEXT_STYLE_FIELDS = [
+  'token',
+  'fontSize',
+  'fontWeight',
+  'color',
+  'lineHeight',
+  'lines',
+  'truncate',
+  'alignment',
+  'verticalAlignment',
+  'offsetY',
+];
+const ACCESSORY_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  value: ['kind', 'text', 'secondary', 'textSegments'],
+  valuePair: [
+    'kind',
+    'primary',
+    'secondary',
+    'primaryFontWeight',
+    'primaryHelp',
+    'primaryTextSegments',
+    'secondaryTextSegments',
+    'primaryTone',
+    'secondaryTone',
+  ],
+  button: [
+    'kind',
+    'label',
+    'actionKey',
+    'disabled',
+    'testID',
+    'accessibilityLabel',
+    'textColor',
+    'backgroundColor',
+    'pressedBackgroundColor',
+    'hoverBackgroundColor',
+    'focusRingColor',
+  ],
+  icon: [
+    'kind',
+    'name',
+    'tintColor',
+    'buttonStyle',
+    'disabled',
+    'actionKey',
+    'testID',
+    'hoverActionKey',
+    'accessibilityLabel',
+  ],
+  checkbox: ['kind', 'state', 'disabled', 'loading', 'target', 'actionKey'],
+  radio: ['kind', 'checked', 'disabled', 'actionKey'],
+  switch: ['kind', 'value', 'disabled', 'actionKey'],
+  chevron: ['kind', 'actionKey'],
+  menu: ['kind', 'actionKey'],
+  drag: ['kind', 'actionKey'],
+  spinner: ['kind'],
+  progress: ['kind', 'value'],
+};
+
+const REQUIRED_ROW_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  identity: ['title', 'leading'],
+  walletGroup: ['parent', 'children'],
+  rail: ['title', 'visual'],
+  activity: ['title', 'leading'],
+  message: ['title', 'body', 'time'],
+  dataRow: ['columns'],
+  market: ['title', 'leading', 'variant', 'price', 'change'],
+  mediaTile: ['title', 'variant'],
+  metricCard: ['title', 'value'],
+  sectionHeader: ['title', 'sectionKey'],
+  action: ['title', 'actionKey'],
+  buttonGroup: ['buttons'],
+  system: ['variant'],
+};
+
+function assertCoreRow(row: RowModel, path: string): void {
+  const object = row as unknown as Record<string, unknown>;
+  for (const key of REQUIRED_ROW_FIELDS[row.type]) {
+    const value = object[key];
+    if (value === undefined || value === null)
+      fail(`${path}.${key}`, 'required field');
+    if (
+      ['title', 'body', 'time', 'price', 'value', 'variant'].includes(key) &&
+      typeof value !== 'string'
+    )
+      fail(`${path}.${key}`, 'must be a string');
+  }
+  if (row.type === 'market') {
+    if (!row.price.trim()) fail(`${path}.price`, 'must be nonblank');
+    if (typeof row.change?.text !== 'string')
+      fail(`${path}.change.text`, 'must be a string');
+  }
+  if (row.type === 'activity') {
+    row.amounts?.forEach((amount, index) => {
+      protocolKey(amount.key, `${path}.amounts[${index}].key`);
+      if (typeof amount.text !== 'string')
+        fail(`${path}.amounts[${index}].text`, 'required financial text');
+    });
+    if (row.fee && typeof row.fee.primary !== 'string')
+      fail(`${path}.fee.primary`, 'required financial text');
+    row.footerActions?.forEach((action, index) => {
+      protocolKey(action.key, `${path}.footerActions[${index}].key`);
+      protocolKey(action.label, `${path}.footerActions[${index}].label`);
+    });
+  }
+  if (row.type === 'action') protocolKey(row.actionKey, `${path}.actionKey`);
+  if (row.type === 'sectionHeader')
+    protocolKey(row.sectionKey, `${path}.sectionKey`);
+  if (
+    row.type === 'system' &&
+    ['retry', 'warning', 'noMatch'].includes(row.variant)
+  ) {
+    if (typeof object.message !== 'string')
+      fail(`${path}.message`, 'must be a string');
+    if (row.variant === 'retry')
+      protocolKey(row.actionKey, `${path}.actionKey`);
+  }
+  if (row.type === 'dataRow') {
+    if (!Array.isArray(row.columns) || row.columns.length === 0)
+      fail(`${path}.columns`, 'required columns');
+    row.columns.forEach((column, index) => {
+      protocolObject(column, `${path}.columns[${index}]`);
+      protocolKey(column.key, `${path}.columns[${index}].key`);
+      if (typeof column.text !== 'string')
+        fail(`${path}.columns[${index}].text`, 'must be a string');
+    });
+  }
+  if (row.type === 'buttonGroup') {
+    if (!Array.isArray(row.buttons) || row.buttons.length === 0)
+      fail(`${path}.buttons`, 'required buttons');
+    const keys = new Set<string>();
+    row.buttons.forEach((button, index) => {
+      const field = `${path}.buttons[${index}]`;
+      protocolObject(button, field);
+      protocolKey(button.key, `${field}.key`);
+      protocolKey(button.actionKey, `${field}.actionKey`);
+      protocolKey(button.label, `${field}.label`);
+      if (keys.has(button.key)) fail(field, 'duplicate button identity');
+      keys.add(button.key);
+    });
+  }
+  for (const field of [
+    'trailing',
+    'leadingAction',
+    'titleIcon',
+    'valueIcon',
+  ] as const) {
+    const value = object[field];
+    if (value === undefined) continue;
+    // Identity title icons are decorative descriptors, not trailing controls.
+    if (field === 'titleIcon' && row.type !== 'sectionHeader') continue;
+    const accessories = field === 'trailing' ? value : [value];
+    if (!Array.isArray(accessories))
+      fail(`${path}.${field}`, 'must be an array');
+    accessories.forEach((accessory, index) => {
+      const entry = protocolObject(accessory, `${path}.${field}[${index}]`);
+      for (const key of entry.kind === 'value'
+        ? ['text']
+        : entry.kind === 'valuePair'
+        ? ['primary', 'secondary']
+        : []) {
+        if (typeof entry[key] !== 'string')
+          fail(`${path}.${field}[${index}].${key}`, 'required financial text');
+      }
+      if (
+        ['button', 'menu', 'switch'].includes(entry.kind as string) ||
+        'actionKey' in entry
+      ) {
+        protocolKey(entry.actionKey, `${path}.${field}[${index}].actionKey`);
+        if (entry.kind === 'button')
+          protocolKey(entry.label, `${path}.${field}[${index}].label`);
+      }
+      if (entry.kind === 'icon')
+        protocolKey(entry.name, `${path}.${field}[${index}].name`);
+    });
+  }
+}
+
+function pickFields(
+  object: Record<string, unknown>,
+  fields: readonly string[]
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(object).filter(([key]) => fields.includes(key))
+  );
+}
+
+function sanitizeImage(value: unknown): Record<string, unknown> | undefined {
+  if (
+    !isRecord(value) ||
+    !isAllowedImageUri(value.uri) ||
+    typeof value.width !== 'number' ||
+    !Number.isFinite(value.width) ||
+    value.width <= 0 ||
+    typeof value.height !== 'number' ||
+    !Number.isFinite(value.height) ||
+    value.height <= 0
+  )
+    return undefined;
+  const next = pickFields(value, IMAGE_FIELDS);
+  next.width = Math.min(MAX_IMAGE_EDGE, value.width);
+  next.height = Math.min(MAX_IMAGE_EDGE, value.height);
+  if (next.headers !== undefined) {
+    if (!isRecord(next.headers)) delete next.headers;
+    else
+      next.headers = Object.fromEntries(
+        Object.entries(next.headers)
+          .filter(
+            ([key, item]) =>
+              key.trim() &&
+              key.length <= MAX_HEADER_LENGTH &&
+              typeof item === 'string' &&
+              item.length <= MAX_HEADER_LENGTH
+          )
+          .slice(0, MAX_IMAGE_HEADERS)
+      );
+  }
+  if (next.fallbackUris !== undefined) {
+    if (Array.isArray(next.fallbackUris))
+      next.fallbackUris = next.fallbackUris.filter(isAllowedImageUri);
+    else delete next.fallbackUris;
+  }
+  if (next.fallbackUri !== undefined && !isAllowedImageUri(next.fallbackUri))
+    delete next.fallbackUri;
+  if (
+    next.overscan !== undefined &&
+    (typeof next.overscan !== 'number' ||
+      !Number.isFinite(next.overscan) ||
+      next.overscan < 1 ||
+      next.overscan > 4)
+  )
+    delete next.overscan;
+  if (
+    next.retryTimes !== undefined &&
+    (typeof next.retryTimes !== 'number' ||
+      !Number.isFinite(next.retryTimes) ||
+      next.retryTimes < 0)
+  )
+    delete next.retryTimes;
+  const options: Readonly<Record<string, readonly string[]>> = {
+    contentFit: ['cover', 'contain', 'fill', 'center'],
+    cachePolicy: ['memory-disk', 'memory', 'disk', 'none'],
+    loadingStrategy: ['static', 'skeleton', 'none'],
+  };
+  for (const [key, allowed] of Object.entries(options))
+    if (next[key] !== undefined && !allowed.includes(next[key] as string))
+      delete next[key];
+  for (const key of ['autoplay', 'optimizeTos'])
+    if (next[key] !== undefined && typeof next[key] !== 'boolean')
+      delete next[key];
+  return next;
+}
+
+const NESTED_DECORATION_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  webTable: ['columns', 'cells', 'testID', 'draggable', 'contextMenuActionKey'],
+  columns: [
+    'key',
+    'text',
+    'textSegments',
+    'titleIcon',
+    'secondaryTitleIcon',
+    'secondaryLeadingText',
+    'secondaryText',
+    'secondaryTextSegments',
+    'weight',
+    'alignment',
+    'tone',
+    'secondaryTone',
+    'width',
+    'minWidth',
+    'flex',
+    'paddingStart',
+    'paddingEnd',
+  ],
+  cells: [
+    'key',
+    'kind',
+    'active',
+    'disabled',
+    'testID',
+    'hoverActionKey',
+    'actionKey',
+    'accessibilityLabel',
+    'leading',
+    'title',
+    'secondary',
+    'lineGap',
+    'secondaryBadges',
+    'hoverImages',
+    'hoverSecondary',
+    'hoverActionLabel',
+    'badges',
+    'primary',
+    'partGap',
+    'points',
+    'width',
+    'height',
+    'strokeColor',
+    'fillColor',
+  ],
+  badges: [
+    'key',
+    'text',
+    'tone',
+    'iconName',
+    'icon',
+    'textColor',
+    'backgroundColor',
+    'actionKey',
+    'accessibilityLabel',
+    'style',
+  ],
+  overlays: [
+    'position',
+    'size',
+    'width',
+    'height',
+    'padding',
+    'offset',
+    'offsetX',
+    'offsetY',
+    'image',
+    'fallbackIcon',
+    'name',
+    'text',
+    'fontWeight',
+    'tintColor',
+    'backgroundColor',
+  ],
+  primaryHelp: ['actionKey', 'presentation', 'underline'],
+  valueHelp: ['actionKey', 'presentation', 'underline'],
+};
+
+function sanitizeDecoration(value: unknown, field: string): unknown {
+  if (value === undefined || value === null) return undefined;
+  if (
+    !Array.isArray(value) &&
+    [
+      'image',
+      'networkImage',
+      'thumbnail',
+      'source',
+      'images',
+      'hoverImages',
+    ].includes(field)
+  )
+    return sanitizeImage(value);
+  if (
+    [
+      'titleImage',
+      'titleIcon',
+      'secondaryTitleIcon',
+      'fallbackIcon',
+      'cornerIcon',
+      'media',
+    ].includes(field) &&
+    !isRecord(value)
+  )
+    return undefined;
+  if (field === 'style' && typeof value !== 'string' && !isRecord(value))
+    return undefined;
+  if (
+    ['badges', 'overlays'].includes(field) &&
+    !Array.isArray(value) &&
+    !isRecord(value)
+  )
+    return undefined;
+  if (field === 'style' && typeof value === 'string')
+    return value === 'subscript' ? value : undefined;
   if (Array.isArray(value)) {
-    const next = value.map((item) => normalizeEmptyImages(item));
-    const filtered =
-      field === 'images'
-        ? next.filter((item) => item !== undefined)
-        : next.map((item) => (item === undefined ? null : item));
-    return filtered.length === value.length &&
-      filtered.every((item, index) => item === value[index])
+    const items = value.map((item) => sanitizeDecoration(item, field));
+    return field === 'hoverImages'
+      ? items.map((item) => item ?? null)
+      : items.filter((item) => item !== undefined);
+  }
+  if (!isRecord(value)) return value;
+  let object = value;
+  if (field === 'titleImage') {
+    const image = sanitizeImage(value.image);
+    if (!image) return undefined;
+    const edge = Math.min(
+      40,
+      Math.max(
+        1,
+        Math.round(Math.min(image.width as number, image.height as number))
+      )
+    );
+    object = {
+      ...pickFields(value, ['image', 'accessibilityLabel', 'hoverActionKey']),
+      image: { ...image, width: edge, height: edge },
+    };
+  } else if (
+    ['titleIcon', 'secondaryTitleIcon', 'fallbackIcon', 'cornerIcon'].includes(
+      field
+    ) &&
+    value.kind === undefined
+  ) {
+    if (typeof value.name !== 'string' || !value.name.trim()) return undefined;
+    object = pickFields(value, ICON_FIELDS);
+  } else if (['leading', 'visual', 'secondaryLeading'].includes(field)) {
+    object = pickFields(value, VISUAL_FIELDS);
+  } else if (field === 'media') {
+    object = pickFields(value, ['source', 'probeOrder']);
+  }
+  if (
+    field === 'trailing' ||
+    (['leadingAction', 'titleIcon', 'valueIcon'].includes(field) &&
+      object.kind !== undefined)
+  ) {
+    const fields = ACCESSORY_FIELDS[object.kind as string];
+    if (fields) object = pickFields(object, fields);
+  } else if (field === 'buttons')
+    object = pickFields(object, [
+      'key',
+      'label',
+      'actionKey',
+      'disabled',
+      'loading',
+      'testID',
+      'accessibilityLabel',
+    ]);
+  else if (field === 'container')
+    object = pickFields(object, [
+      'height',
+      'backgroundColor',
+      'opacity',
+      'cornerRadius',
+      'borderWidth',
+      'borderColor',
+      'contentVerticalAlignment',
+    ]);
+  else if (field === 'imageStyle')
+    object = pickFields(object, [
+      'width',
+      'height',
+      'shape',
+      'cornerRadius',
+      'contentFit',
+    ]);
+  else if (field === 'style')
+    object = pickFields(object, [
+      ...TEXT_STYLE_FIELDS,
+      'container',
+      ...new Set(Object.values(ROW_BOX_STYLE_KEYS_BY_TYPE).flat()),
+      ...new Set(Object.values(TEXT_STYLE_KEYS_BY_ROW_TYPE).flat()),
+      ...new Set(Object.values(EXTRA_STYLE_KEYS_BY_ROW_TYPE).flat()),
+      'height',
+    ]);
+  else if (
+    [
+      'title',
+      'subtitle',
+      'tertiary',
+      'body',
+      'time',
+      'price',
+      'change',
+      'value',
+      'valueSecondary',
+      'columnSecondary',
+      'primaryAmount',
+      'secondaryAmount',
+      'description',
+      'status',
+      'trend',
+      'message',
+      'actionText',
+    ].includes(field) &&
+    !('text' in object)
+  ) {
+    object = pickFields(object, TEXT_STYLE_FIELDS);
+  }
+  if (NESTED_DECORATION_FIELDS[field])
+    object = pickFields(object, NESTED_DECORATION_FIELDS[field]);
+  if (
+    [
+      'textSegments',
+      'primaryTextSegments',
+      'secondaryTextSegments',
+      'priceSegments',
+      'segments',
+    ].includes(field)
+  )
+    object = pickFields(object, ['text', 'style']);
+  if (field === 'subtitleSegments')
+    object = pickFields(object, [
+      'text',
+      'style',
+      'textSegments',
+      'tone',
+      'separatorBefore',
+    ]);
+  const styleObject =
+    ['style', 'imageStyle', 'container'].includes(field) ||
+    TEXT_STYLE_FIELDS.some((key) => key in object);
+  const next: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(object)) {
+    if (item === undefined || item === null) continue;
+    if (
+      (/color$/i.test(key) || /background$/i.test(key)) &&
+      (typeof item !== 'string' || !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(item))
+    )
+      continue;
+    if (
+      /TextSegments$/.test(key) ||
+      [
+        'textSegments',
+        'priceSegments',
+        'subtitleSegments',
+        'segments',
+      ].includes(key)
+    ) {
+      if (
+        !Array.isArray(item) ||
+        item.some(
+          (segment) => !isRecord(segment) || typeof segment.text !== 'string'
+        )
+      )
+        continue;
+    }
+    if (
+      styleObject &&
+      PROTOCOL_NUMBER_FIELDS.has(key) &&
+      typeof item !== 'number'
+    )
+      continue;
+    if (
+      key === 'token' &&
+      (typeof item !== 'string' || !Object.hasOwn(TYPOGRAPHY_TOKENS, item))
+    )
+      continue;
+    if (
+      key === 'fontWeight' &&
+      !['regular', 'medium', 'semibold', 'bold'].includes(item as string)
+    )
+      continue;
+    if (
+      [
+        'disabled',
+        'loading',
+        'checked',
+        'selected',
+        'separator',
+        'hideLeading',
+        'pressDisabled',
+        'draggable',
+        'active',
+        'autoplay',
+      ].includes(key) &&
+      typeof item !== 'boolean'
+    )
+      continue;
+    if (key === 'primaryFontWeight' && item !== 'medium') continue;
+    if (key === 'buttonStyle' && item !== 'tertiary') continue;
+    if (key === 'hoverActionKey' && (typeof item !== 'string' || !item.trim()))
+      continue;
+    if (key === 'accessibilityLabel' && typeof item !== 'string') continue;
+    if (
+      (field === 'style' || PROTOCOL_NUMBER_FIELDS.has(key)) &&
+      typeof item !== 'object' &&
+      typeof item === 'number' &&
+      (!Number.isFinite(item) ||
+        (item < 0 && !['offsetX', 'offsetY'].includes(key)))
+    )
+      continue;
+    if (
+      field === 'style' &&
+      PROTOCOL_NUMBER_FIELDS.has(key) &&
+      typeof item !== 'number'
+    )
+      continue;
+    if (
+      key === 'leadingContentMaxWidthRatio' &&
+      (typeof item !== 'number' || item <= 0 || item > 1)
+    )
+      continue;
+    const normalized = sanitizeDecoration(
+      item,
+      field === 'style' && key === 'image' ? 'imageStyle' : key
+    );
+    if (normalized !== undefined) next[key] = normalized;
+  }
+  if (field === 'titleImage') {
+    // The nested image was already normalized with title-specific geometry.
+    if (!next.image) return undefined;
+  }
+  if (field === 'media' && (!next.source || !Array.isArray(next.probeOrder)))
+    return undefined;
+  if (['leading', 'visual', 'secondaryLeading'].includes(field)) {
+    if (next.kind === 'image' && !next.image)
+      return {
+        kind: 'token',
+        ...pickFields(next, [
+          'fallbackIcon',
+          'fallbackText',
+          'fallbackTextColor',
+        ]),
+      };
+    if (
+      next.kind === 'stackedImages' &&
+      (!Array.isArray(next.images) || next.images.length < 2)
+    )
+      return { kind: 'token' };
+    if (
+      next.kind === 'icon' &&
+      (typeof next.name !== 'string' || !next.name.trim())
+    )
+      return { kind: 'token' };
+    if (
+      ![
+        'token',
+        'account',
+        'wallet',
+        'network',
+        'image',
+        'icon',
+        'stackedImages',
+      ].includes(next.kind as string)
+    )
+      return { kind: 'token' };
+  }
+  if (
+    field === 'overlays' &&
+    (!['topLeft', 'bottomRight'].includes(next.position as string) ||
+      (!next.image && !next.name && !next.text))
+  )
+    return undefined;
+  if (
+    field === 'trailing' &&
+    next.kind === 'icon' &&
+    !('actionKey' in value) &&
+    (typeof next.name !== 'string' || !next.name.trim())
+  )
+    return undefined;
+  if (
+    field === 'trailing' &&
+    ![
+      'value',
+      'valuePair',
+      'button',
+      'checkbox',
+      'radio',
+      'switch',
+      'chevron',
+      'menu',
+      'drag',
+      'icon',
+      'spinner',
+      'progress',
+    ].includes(next.kind as string) &&
+    !('actionKey' in value)
+  )
+    return undefined;
+  if (
+    field === 'badges' &&
+    (typeof next.key !== 'string' ||
+      (!next.text && !next.iconName && !next.icon))
+  )
+    return undefined;
+  if (next.kind === 'sparkline') {
+    const points = Array.isArray(value.points)
+      ? value.points
+          .filter(
+            (point) => typeof point === 'number' && Number.isFinite(point)
+          )
+          .slice(0, 256)
+      : [];
+    // Preserve the table's column identity even when its optional drawing fails.
+    return points.length < 2
+      ? { key: next.key, kind: 'text', primary: [] }
+      : { ...next, points };
+  }
+  return next;
+}
+
+function sanitizeRowForProduction(row: RowModel): RowModel {
+  const object = protocolObject(row, 'row');
+  const fields = ROW_FIELDS[row.type];
+  if (!fields) return row;
+  const next = pickFields(object, fields);
+  for (const [field, value] of Object.entries(next)) {
+    if (
+      (/color$/i.test(field) || /background$/i.test(field)) &&
+      (typeof value !== 'string' ||
+        !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(value))
+    ) {
+      delete next[field];
+      continue;
+    }
+    if (field === 'parent' && isRecord(value))
+      next[field] = sanitizeRowForProduction(value as unknown as RowModel);
+    else if (field === 'children' && Array.isArray(value))
+      next[field] = value.map((child) =>
+        sanitizeRowForProduction(child as RowModel)
+      );
+    else {
+      const normalized = sanitizeDecoration(value, field);
+      if (normalized === undefined) delete next[field];
+      else next[field] = normalized;
+    }
+  }
+  if (isRecord(next.style))
+    next.style = pickFields(next.style, [
+      'container',
+      ...ROW_BOX_STYLE_KEYS_BY_TYPE[row.type],
+      ...(TEXT_STYLE_KEYS_BY_ROW_TYPE[row.type] ?? []),
+      ...(EXTRA_STYLE_KEYS_BY_ROW_TYPE[row.type] ?? []),
+    ]);
+  return sameJsonValue(row, next) ? row : (next as unknown as RowModel);
+}
+
+/** Empty images and optional nulls share one meaning before strict assertions. */
+function normalizeEmptyImages(value: unknown, field = ''): unknown {
+  if (value === null || value === undefined || typeof value !== 'object')
+    return value;
+  if (Array.isArray(value)) {
+    const next = value.map((item) => normalizeEmptyImages(item, field));
+    return next.every((item, index) => item === value[index])
       ? value
-      : filtered;
+      : next.filter((item) => item !== undefined);
   }
   const object = value as Record<string, unknown>;
   if (
@@ -2743,30 +3858,146 @@ function normalizeEmptyImages(value: unknown, field = ''): unknown {
   )
     return undefined;
   let changed = false;
-  const next = { ...object };
-  Object.entries(object).forEach(([key, item]) => {
-    const normalized = normalizeEmptyImages(item, key);
-    if (normalized !== item) {
-      // Omitted JSON patch fields must also be absent from the JS merge.
-      if (field === 'changes' && normalized === undefined) delete next[key];
-      else next[key] = normalized;
+  const next: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(object)) {
+    const optional =
+      object.type &&
+      ![
+        'key',
+        'type',
+        ...(REQUIRED_ROW_FIELDS[object.type as string] ?? []),
+      ].includes(key);
+    if (
+      item === undefined ||
+      (item === null && optional) ||
+      (['priceSegments', 'subtitleSegments'].includes(key) &&
+        Array.isArray(item) &&
+        item.length === 0)
+    ) {
       changed = true;
+      continue;
     }
-  });
-  if (field === 'media' && next.source === undefined) return undefined;
+    const normalized =
+      field === 'headers' ? item : normalizeEmptyImages(item, key);
+    if (normalized !== undefined) next[key] = normalized;
+    if (normalized !== item) changed = true;
+  }
+  if (
+    (field === 'media' &&
+      object.source !== undefined &&
+      next.source === undefined) ||
+    (field === 'titleImage' &&
+      object.image !== undefined &&
+      next.image === undefined)
+  )
+    return undefined;
+  if (
+    ['leading', 'visual', 'secondaryLeading'].includes(field) &&
+    next.kind === 'image' &&
+    !next.image
+  )
+    return { kind: 'token' };
+  if (field === 'overlays' && object.image !== undefined && !next.image)
+    return undefined;
   return changed ? next : value;
+}
+
+function normalizeSnapshotForProduction(
+  snapshot: NativeListSnapshot
+): NativeListSnapshot {
+  if (!Array.isArray(snapshot.rows)) return snapshot;
+  let rows = snapshot.rows.map(sanitizeRowForProduction);
+  rows = rows.map((row, index) => {
+    if (!row.groupId) return row;
+    const previous = rows[index - 1]?.groupId === row.groupId;
+    const following = rows[index + 1]?.groupId === row.groupId;
+    return {
+      ...row,
+      groupPosition: previous
+        ? following
+          ? 'middle'
+          : 'last'
+        : following
+        ? 'first'
+        : 'single',
+    };
+  });
+  const next = {
+    ...snapshot,
+    rows,
+    ...(snapshot.emptyState
+      ? {
+          emptyState: sanitizeRowForProduction(
+            snapshot.emptyState
+          ) as NativeListSnapshot['emptyState'],
+        }
+      : {}),
+    ...(snapshot.fixedFooter
+      ? {
+          fixedFooter: sanitizeRowForProduction(
+            snapshot.fixedFooter
+          ) as NativeListSnapshot['fixedFooter'],
+        }
+      : {}),
+  };
+  if (snapshot.theme)
+    next.theme = sanitizeDecoration(
+      snapshot.theme,
+      'theme'
+    ) as NativeListSnapshot['theme'];
+  if (snapshot.listStyle)
+    next.listStyle = sanitizeDecoration(
+      snapshot.listStyle,
+      'style'
+    ) as NativeListSnapshot['listStyle'];
+  if (snapshot.selection && Array.isArray(snapshot.selection.selectedKeys)) {
+    const selectable = new Set(
+      rows
+        .filter(
+          (row) =>
+            !row.disabled &&
+            ![
+              'sectionHeader',
+              'action',
+              'system',
+              'buttonGroup',
+              'market',
+              'walletGroup',
+            ].includes(row.type)
+        )
+        .map((row) => row.key)
+    );
+    const selectedKeys = [
+      ...new Set(
+        snapshot.selection.selectedKeys.filter((key) => selectable.has(key))
+      ),
+    ];
+    next.selection = {
+      ...snapshot.selection,
+      selectedKeys:
+        snapshot.selection.mode === 'none'
+          ? []
+          : snapshot.selection.mode === 'single'
+          ? selectedKeys.slice(0, 1)
+          : selectedKeys,
+    };
+  }
+  return sameJsonValue(snapshot, next) ? snapshot : next;
 }
 
 export function validateSnapshot(
   snapshot: NativeListSnapshot
 ): NativeListSnapshot {
-  assertPlainSerializable(snapshot, 'snapshot', new Set<object>());
-  if (isDevelopment()) assertSnapshotContract(snapshot);
-  const normalized = isDevelopment()
-    ? snapshot
-    : (normalizeEmptyImages(snapshot) as NativeListSnapshot);
-  assertSnapshotProtocol(normalized);
-  return normalizeSnapshotStyles(normalized);
+  assertPlainSerializable(snapshot, 'snapshot', new Set<object>(), false);
+  protocolObject(snapshot, 'snapshot');
+  const normalized = normalizeEmptyImages(snapshot) as NativeListSnapshot;
+  const canonical = isDevelopment()
+    ? normalized
+    : normalizeSnapshotForProduction(normalized);
+  assertPlainSerializable(canonical, 'snapshot', new Set<object>());
+  if (isDevelopment()) assertSnapshotContract(canonical);
+  assertSnapshotProtocol(canonical);
+  return normalizeSnapshotStyles(canonical);
 }
 
 const ownedNativeSnapshots = new WeakMap<
@@ -2862,10 +4093,23 @@ function normalizeSnapshotStyles(
   ) {
     return snapshot;
   }
-  return { ...snapshot, rows, emptyState, fixedFooter };
+  return {
+    ...snapshot,
+    rows,
+    ...(emptyState !== undefined ? { emptyState } : {}),
+    ...(fixedFooter !== undefined ? { fixedFooter } : {}),
+  };
 }
 
-function assertPatchChanges(patch: RowPatch, index: number): void {
+type PatchValues<Patch = RowPatch> = Patch extends RowPatch
+  ? Omit<Patch, 'changes'> & {
+      changes: {
+        [Key in keyof Patch['changes']]: Exclude<Patch['changes'][Key], null>;
+      };
+    }
+  : never;
+
+function assertPatchChanges(patch: PatchValues, index: number): void {
   const path = `patches[${index}].changes`;
   const patchedStyle = (patch.changes as { style?: unknown }).style;
   if (patchedStyle !== undefined) {
@@ -3159,36 +4403,149 @@ function assertPatchChanges(patch: RowPatch, index: number): void {
   }
 }
 
+function normalizePatch(patch: RowPatch, index: number): RowPatch | undefined {
+  const path = `patches[${index}]`;
+  protocolObject(patch, path);
+  protocolKey(patch.key, `${path}.key`);
+  if (isDevelopment()) assertKey(patch.key, `${path}.key`);
+  assertRowType(patch.type, path);
+  const raw = protocolObject(patch.changes, `${path}.changes`);
+  assertPlainSerializable(raw, `${path}.changes`, new Set<object>(), false);
+  const fields = PATCH_FIELDS[patch.type];
+  const changes: Record<string, unknown> = {};
+  for (const [field, value] of Object.entries(raw)) {
+    if (value === undefined) continue;
+    if (!fields?.includes(field)) {
+      if (isDevelopment())
+        fail(`${path}.changes.${field}`, 'unsupported patch field');
+      continue;
+    }
+    if (value === null) {
+      if (
+        REQUIRED_ROW_FIELDS[patch.type].includes(field) ||
+        (patch.type === 'system' && field === 'message')
+      ) {
+        // The concrete system variant is checked after merging with its baseline.
+        if (patch.type !== 'system')
+          fail(`${path}.changes.${field}`, 'required field cannot be cleared');
+      }
+      changes[field] = null;
+      continue;
+    }
+    if (
+      ['priceSegments', 'subtitleSegments'].includes(field) &&
+      Array.isArray(value) &&
+      value.length === 0
+    ) {
+      changes[field] = null;
+      continue;
+    }
+    const normalized = normalizeEmptyImages(value, field);
+    if (normalized === undefined) {
+      if (!REQUIRED_ROW_FIELDS[patch.type].includes(field))
+        changes[field] = null;
+      continue;
+    }
+    const canonical = isDevelopment()
+      ? normalized
+      : sanitizeDecoration(normalized, field);
+    if (canonical !== undefined) changes[field] = canonical;
+  }
+  if (
+    patch.type === 'market' &&
+    Array.isArray(changes.priceSegments) &&
+    changes.priceSegments.length > 0 &&
+    (typeof changes.price !== 'string' || !changes.price.trim())
+  )
+    fail(`${path}.changes.price`, 'is required when priceSegments is updated');
+  if (!isDevelopment()) {
+    const sanitized = sanitizeRowForProduction({
+      type: patch.type,
+      ...changes,
+    } as unknown as RowModel) as unknown as Record<string, unknown>;
+    for (const [field, value] of Object.entries(changes)) {
+      if (value === null) continue;
+      if (sanitized[field] === undefined) delete changes[field];
+      else changes[field] = sanitized[field];
+    }
+  }
+  const values = Object.fromEntries(
+    Object.entries(changes).filter(([, value]) => value !== null)
+  );
+  assertPlainSerializable(values, `${path}.changes`, new Set<object>());
+  assertProtocolFields(values, `${path}.changes`);
+  if (isDevelopment())
+    assertPatchChanges({ ...patch, changes: values } as PatchValues, index);
+  const normalizedPatch = {
+    type: patch.type,
+    key: patch.key,
+    changes,
+  } as RowPatch;
+  return Object.keys(changes).length > 0
+    ? normalizePatchStyles([normalizedPatch])[0]
+    : undefined;
+}
+
+function reportRejectedPatch(index: number): void {
+  console.warn(`NativeList rejected invalid patch unit at patches[${index}]`);
+}
+
 export function validatePatches(
   patches: readonly RowPatch[]
 ): readonly RowPatch[] {
-  assertPlainSerializable(patches, 'patches', new Set<object>());
   if (!Array.isArray(patches)) fail('patches', 'must be an array');
-  const keys = new Set<string>();
-  for (const [index, patch] of patches.entries()) {
-    protocolObject(patch, `patches[${index}]`);
-    protocolKey(patch.key, `patches[${index}].key`);
-    if (keys.has(patch.key))
-      fail(`patches[${index}].key`, `duplicate key "${patch.key}"`);
-    keys.add(patch.key);
-    protocolObject(patch.changes, `patches[${index}].changes`);
-    assertRowType(patch.type, `patches[${index}]`);
-    assertProtocolFields(patch.changes, `patches[${index}].changes`);
-    if (patch.type === 'identity')
-      assertIdentityExtras(patch.changes, `patches[${index}].changes`);
-    if (!isDevelopment()) continue;
-    assertKey(patch.key, `patches[${index}].key`);
-    if (Object.keys(patch.changes).length === 0) {
-      fail(`patches[${index}].changes`, 'must contain at least one field');
+  const units = new Map<string, { patch: RowPatch; index: number }>();
+  const rejectedKeys = new Set<string>();
+  const reject = (key: string, index: number, error: unknown) => {
+    if (isDevelopment()) throw error;
+    rejectedKeys.add(key);
+    reportRejectedPatch(index);
+  };
+  patches.forEach((input, index) => {
+    const key =
+      isRecord(input) && typeof input.key === 'string' ? input.key : '';
+    try {
+      protocolObject(input, `patches[${index}]`);
+      protocolKey(input.key, `patches[${index}].key`);
+      assertRowType(input.type, `patches[${index}]`);
+      const changes = capturePlainData(
+        protocolObject(input.changes, `patches[${index}].changes`)
+      );
+      assertPlainSerializable(
+        changes,
+        `patches[${index}].changes`,
+        new Set<object>(),
+        false
+      );
+      const previous = units.get(key);
+      if (previous && previous.patch.type !== input.type)
+        fail(`patches[${index}].type`, 'conflicting row types');
+      const defined = Object.fromEntries(
+        Object.entries(changes).filter(([, value]) => value !== undefined)
+      );
+      units.set(key, {
+        index,
+        patch: {
+          key,
+          type: input.type,
+          changes: { ...previous?.patch.changes, ...defined },
+        } as RowPatch,
+      });
+    } catch (error) {
+      reject(key, index, error);
     }
-    assertPatchChanges(patch, index);
+  });
+  const accepted: RowPatch[] = [];
+  for (const [key, unit] of units) {
+    if (rejectedKeys.has(key)) continue;
+    try {
+      const patch = normalizePatch(unit.patch, unit.index);
+      if (patch) accepted.push(patch);
+    } catch (error) {
+      reject(key, unit.index, error);
+    }
   }
-  const normalized = isDevelopment()
-    ? patches
-    : (normalizeEmptyImages(patches) as readonly RowPatch[]);
-  return normalizePatchStyles(
-    normalized.filter((patch) => Object.keys(patch.changes).length > 0)
-  );
+  return accepted;
 }
 
 /** Patches reach the native side without passing through a snapshot. */
@@ -3320,50 +4677,65 @@ export function planNativeListPatches(
   return patches.length === 0 ? EMPTY_ROW_PATCHES : patches;
 }
 
-export function applyRowPatches(
-  snapshot: NativeListSnapshot,
-  patches: readonly RowPatch[]
-): NativeListSnapshot {
-  const normalizedPatches = validatePatches(patches);
-  const patchByKey = new Map(
-    normalizedPatches.map((patch) => [patch.key, patch])
-  );
-  const knownKeys = new Set(snapshot.rows.map((row) => row.key));
-  normalizedPatches.forEach((patch) => {
-    if (!knownKeys.has(patch.key))
-      fail('patches', `unknown row key "${patch.key}"`);
-  });
-  const rows = snapshot.rows.map((row): RowModel => {
-    const patch = patchByKey.get(row.key);
-    if (!patch) return row;
-    if (patch.type !== row.type) {
-      fail('patches', `row "${row.key}" is ${row.type}, not ${patch.type}`);
-    }
+function mergeAndValidateSingleRow(
+  previous: RowModel,
+  patch: RowPatch,
+  index: number
+): { row: RowModel; patch: RowPatch } {
+  if (previous.key !== patch.key)
+    fail(`patches[${index}].key`, 'does not match row identity');
+  if (previous.type !== patch.type)
+    fail(`patches[${index}].type`, 'does not match row type');
+  const changes = { ...patch.changes } as Record<string, unknown>;
+  if (previous.type === 'market') {
     if (
-      row.type === 'market' &&
-      row.webTable &&
-      patch.type === 'market' &&
-      (patch.changes.price !== undefined ||
-        patch.changes.priceSegments !== undefined ||
-        patch.changes.change !== undefined) &&
-      patch.changes.webTable === undefined
+      typeof changes.price === 'string' &&
+      !('priceSegments' in changes) &&
+      previous.priceSegments !== undefined
+    )
+      changes.priceSegments = null;
+    if (
+      (previous.webTable !== undefined || 'webTable' in changes) &&
+      ['price', 'priceSegments', 'change'].some((field) => field in changes) &&
+      changes.webTable === undefined
     )
       fail(
-        'patches',
-        'table quote changes must include the visible table cells'
+        `patches[${index}].changes.webTable`,
+        'table quote changes require visible table cells'
       );
-    return {
-      ...row,
-      ...patch.changes,
-      key: row.key,
-      type: row.type,
-    } as RowModel;
-  });
-  return validateSnapshot({ ...snapshot, rows });
+  }
+  if (previous.type === 'identity' || previous.type === 'market') {
+    if (
+      typeof changes.subtitle === 'string' &&
+      !('subtitleSegments' in changes) &&
+      previous.subtitleSegments !== undefined
+    )
+      changes.subtitleSegments = null;
+    if (
+      Array.isArray(changes.subtitleSegments) &&
+      changes.subtitleSegments.length > 0 &&
+      !('subtitle' in changes) &&
+      previous.subtitle !== undefined
+    )
+      changes.subtitle = null;
+  }
+  const merged = { ...previous } as unknown as Record<string, unknown>;
+  for (const [field, value] of Object.entries(changes)) {
+    if (value === null) delete merged[field];
+    else if (value !== undefined) merged[field] = value;
+  }
+  const next = normalizeRowStyles(merged as unknown as RowModel);
+  assertPlainSerializable(next, `rows[${index}]`, new Set<object>());
+  if (isDevelopment()) assertRow(next, index);
+  assertRowProtocol(next, `rows[${index}]`);
+  return {
+    row: next,
+    patch: { type: patch.type, key: patch.key, changes } as RowPatch,
+  };
 }
 
-/** Native wrapper only: preserve full public validation for unsupported patches. */
-export function applyOwnedNativePatches(
+/** One canonical batch owns both accepted rows and the native wire payload. */
+export function applyValidatedRowPatches(
   snapshot: NativeListSnapshot,
   patches: readonly RowPatch[]
 ): {
@@ -3371,74 +4743,127 @@ export function applyOwnedNativePatches(
   snapshot: NativeListSnapshot;
   json: string;
 } {
-  const acceptedPatches = deepFreeze(
-    validatePatches(capturePlainData(patches))
-  );
-  const rowIndexes = ownedNativeSnapshots.get(snapshot);
-  const canPatchRows =
-    rowIndexes !== undefined &&
-    acceptedPatches.every((patch) => {
-      const index = rowIndexes.get(patch.key);
-      if (index === undefined || snapshot.rows[index].type !== patch.type)
-        return false;
-      const allowed =
-        patch.type === 'identity'
-          ? ['subtitle', 'subtitleSegments', 'trailing']
-          : patch.type === 'dataRow'
-          ? ['columns', 'trailing']
-          : undefined;
-      return (
-        allowed !== undefined &&
-        Object.entries(patch.changes).every(
-          ([key, value]) =>
-            allowed.includes(key) &&
-            (value !== undefined ||
-              (snapshot.rows[index] as unknown as Record<string, unknown>)[
-                key
-              ] === undefined)
-        )
-      );
-    });
-  if (!canPatchRows) {
-    const baseline = rowIndexes ? snapshot : capturePlainData(snapshot);
-    return {
-      patches: acceptedPatches,
-      snapshot: ownValidatedNativeSnapshot(
-        applyRowPatches(baseline, acceptedPatches)
-      ),
-      json: JSON.stringify(acceptedPatches),
-    };
-  }
-
-  const nextRows = snapshot.rows.slice();
-  for (const patch of acceptedPatches) {
-    const index = rowIndexes.get(patch.key)!;
-    const previous = nextRows[index];
-    const merged = {
-      ...previous,
-      ...patch.changes,
-      key: previous.key,
-      type: previous.type,
-    } as RowModel;
-    const path = `rows[${index}]`;
-    assertPlainSerializable(merged, path, new Set<object>());
-    if (isDevelopment()) assertRow(merged, index);
-    const normalized = isDevelopment()
-      ? merged
-      : (normalizeEmptyImages(merged) as RowModel);
-    assertRowProtocol(normalized, path);
-    nextRows[index] = deepFreeze(normalizeRowStyles(normalized));
-  }
-  const nextSnapshot = Object.freeze({
-    ...snapshot,
-    rows: Object.freeze(nextRows),
-  });
-  ownedNativeSnapshots.set(nextSnapshot, rowIndexes);
-  return {
-    patches: acceptedPatches,
-    snapshot: nextSnapshot,
-    json: JSON.stringify(acceptedPatches),
+  if (!Array.isArray(patches)) fail('patches', 'must be an array');
+  const owned = ownedNativeSnapshots.has(snapshot);
+  const rowIndexes =
+    ownedNativeSnapshots.get(snapshot) ??
+    validatedRowIndexes.get(snapshot) ??
+    new Map(snapshot.rows.map((row, index) => [row.key, index]));
+  validatedRowIndexes.set(snapshot, rowIndexes);
+  const units = new Map<
+    string,
+    { index: number; changes: Record<string, unknown>; type: RowPatch['type'] }
+  >();
+  const rejected = new Set<string>();
+  const rejectedGroups = new Set<string>();
+  const reject = (key: string, index: number, error: unknown) => {
+    if (isDevelopment()) throw error;
+    rejected.add(key);
+    const rowIndex = rowIndexes.get(key);
+    const group =
+      rowIndex === undefined ? undefined : snapshot.rows[rowIndex].groupId;
+    if (group) rejectedGroups.add(group);
+    reportRejectedPatch(index);
   };
+  patches.forEach((input, index) => {
+    const key =
+      isRecord(input) && typeof input.key === 'string' ? input.key : '';
+    try {
+      protocolObject(input, `patches[${index}]`);
+      protocolKey(input.key, `patches[${index}].key`);
+      const rowIndex = rowIndexes.get(input.key);
+      if (rowIndex === undefined)
+        fail(`patches[${index}].key`, 'unknown row identity');
+      if (snapshot.rows[rowIndex].type !== input.type)
+        fail(`patches[${index}].type`, 'does not match row type');
+      const changes = protocolObject(
+        input.changes,
+        `patches[${index}].changes`
+      );
+      const captured = capturePlainData(changes);
+      assertPlainSerializable(
+        captured,
+        `patches[${index}].changes`,
+        new Set<object>(),
+        false
+      );
+      const previous = units.get(input.key);
+      // Undefined is omitted at every merge, so it cannot overwrite an earlier change.
+      const defined = Object.fromEntries(
+        Object.entries(captured).filter(([, value]) => value !== undefined)
+      );
+      units.set(input.key, {
+        index,
+        type: input.type,
+        changes: { ...previous?.changes, ...defined },
+      });
+    } catch (error) {
+      reject(key, index, error);
+    }
+  });
+  const pending = new Map<string, { row: RowModel; patch: RowPatch }>();
+  for (const [key, unit] of units) {
+    if (rejected.has(key)) continue;
+    try {
+      const patch = normalizePatch(
+        { key, type: unit.type, changes: unit.changes } as RowPatch,
+        unit.index
+      );
+      if (!patch) continue;
+      const merged = mergeAndValidateSingleRow(
+        snapshot.rows[rowIndexes.get(key)!],
+        patch,
+        rowIndexes.get(key)!
+      );
+      if (merged.row.disabled && snapshot.selection?.selectedKeys.includes(key))
+        fail(`patches[${unit.index}]`, 'cannot disable a selected row');
+      pending.set(key, merged);
+    } catch (error) {
+      reject(key, unit.index, error);
+    }
+  }
+  const accepted: RowPatch[] = [];
+  let rows: RowModel[] | undefined;
+  for (const [key, value] of pending) {
+    const index = rowIndexes.get(key)!;
+    const group = snapshot.rows[index].groupId;
+    if (rejected.has(key) || (group && rejectedGroups.has(group))) continue;
+    if (!rows) rows = snapshot.rows.slice();
+    rows[index] = owned ? deepFreeze(value.row) : value.row;
+    accepted.push(owned ? deepFreeze(value.patch) : value.patch);
+  }
+  if (!rows) return { patches: EMPTY_ROW_PATCHES, snapshot, json: '[]' };
+  const next = owned
+    ? Object.freeze({ ...snapshot, rows: Object.freeze(rows) })
+    : { ...snapshot, rows };
+  if (owned) ownedNativeSnapshots.set(next, rowIndexes);
+  else validatedRowIndexes.set(next, rowIndexes);
+  return { patches: accepted, snapshot: next, json: JSON.stringify(accepted) };
+}
+
+const validatedRowIndexes = new WeakMap<
+  NativeListSnapshot,
+  ReadonlyMap<string, number>
+>();
+
+export function applyOwnedNativePatches(
+  snapshot: NativeListSnapshot,
+  patches: readonly RowPatch[]
+) {
+  const owned = ownedNativeSnapshots.has(snapshot)
+    ? snapshot
+    : ownValidatedNativeSnapshot(validateSnapshot(capturePlainData(snapshot)));
+  return applyValidatedRowPatches(owned, patches);
+}
+
+export function applyRowPatches(
+  snapshot: NativeListSnapshot,
+  patches: readonly RowPatch[]
+): NativeListSnapshot {
+  const baseline = ownedNativeSnapshots.has(snapshot)
+    ? snapshot
+    : validateSnapshot(snapshot);
+  return applyValidatedRowPatches(baseline, patches).snapshot;
 }
 
 export function serializeSnapshot(snapshot: NativeListSnapshot): string {

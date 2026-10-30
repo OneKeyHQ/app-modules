@@ -66,6 +66,21 @@ class NativeListRiskAccessoryTest : InstrumentationTestCase() {
     super.tearDown()
   }
 
+  fun testCanonicalNullPatchRemovesStoredOptionalFields() {
+    val original = JSONObject().put("key", "token").put("type", "identity")
+      .put("title", "Token").put("subtitle", "Old")
+      .put("titleImage", JSONObject().put("image", JSONObject().put("uri", "data:image/png;base64,AA==")
+        .put("width", 14).put("height", 14)))
+    val changes = JSONObject().put("title", "New").put("subtitle", JSONObject.NULL)
+      .put("titleImage", JSONObject.NULL)
+    val accepted = mergeRow(original, changes)
+    assertEquals("New", accepted.getString("title"))
+    assertEquals("token", accepted.getString("key"))
+    assertFalse(accepted.has("subtitle"))
+    assertFalse(accepted.has("titleImage"))
+    assertTrue(original.has("titleImage"))
+  }
+
   fun testTitleImageRetainsRequestAndClearsOnProductionRowReuse() {
     onMain {
       val context = ThemedReactContext(BridgeReactContext(activity), activity, "TitleImageTest", 1)

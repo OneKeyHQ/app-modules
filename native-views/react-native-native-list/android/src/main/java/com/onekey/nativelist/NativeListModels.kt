@@ -287,7 +287,9 @@ internal fun mergeRow(original: JSONObject, changes: JSONObject): JSONObject {
   val keys = changes.keys()
   while (keys.hasNext()) {
     val key = keys.next()
-    if (key != "key" && key != "type") result.put(key, changes.get(key))
+    if (key != "key" && key != "type") {
+      if (changes.isNull(key)) result.remove(key) else result.put(key, changes.get(key))
+    }
   }
   return result
 }
