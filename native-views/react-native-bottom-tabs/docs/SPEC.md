@@ -4,7 +4,7 @@
 
 Status: implemented in module source. Package TypeScript, iOS/Android Fabric
 code generation, iOS Objective-C++ Fabric bridge compilation against RN 0.86.2,
-13 React wrapper checks, eleven Android API 36 native tests and four real-Fabric
+13 React wrapper checks, twelve Android API 36 native tests and four real-Fabric
 iOS review cases passed (shared-header/body arbitration and bar-height switches).
 The static Home example also passed a focused TypeScript check.
 Detailed iOS runtime evidence is recorded separately; physical-device and exact
@@ -110,6 +110,8 @@ disable/remove-content, resize, detach, accessibility, RTL and bottom-bar
 gesture ownership, including a real pager, nested horizontal list and vertical
 scrolling in the complete Fabric example. Source checks and emulator checks do not establish physical
 device smoothness or exact reference-video fidelity.
+The Android native suite also exercises generated drawer prop forwarding in RTL,
+physical-left placement, and closing pans while opening swipes are disabled.
 
 The standalone `example/react-native/pages/BottomTabsHomeDrawerExample.tsx`
 reproduces Home’s wallet toolbar, balance/actions/banner shared header and
@@ -278,6 +280,10 @@ placement and can draw one round accessory button above the vertical bar.
   `sideAccessoryLabel` (accessibility label), and `onSideAccessoryPress`. The
   button is 48 pt, a Liquid Glass capsule on iOS 26+, centered horizontally on
   the vertical bar's item platter and 12 pt above it.
+- Android MUST accept `sideAccessoryIcon` and `sideAccessoryLabel`, including
+  null resets, as no-ops through its generated ViewManager interface. It MUST
+  NOT create a side accessory or emit placement/accessory events. Shared Fabric
+  props still require Android setters even when the feature is iOS-only.
 - The button shows only when all hold: the placement is `leading` or
   `trailing`, the tab bar is not hidden, the icon has loaded, and the platter
   is found. Otherwise it is hidden; a bottom bar never shows it.

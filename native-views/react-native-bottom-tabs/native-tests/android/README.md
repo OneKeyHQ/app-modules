@@ -39,12 +39,14 @@ test toggles native configuration but does not establish dark-mode visual
 acceptance. API <31 intentionally skips GPU-only cases.
 
 The same opt-in build also includes `com.onekey.bottomtabs.BottomTabsDrawerTest`.
-Run that class with the same instrumentation command for eleven focused native
+Run that class with the same instrumentation command for twelve focused native
 drawer tests. They exercise full-size foreground translation, stable child slots,
 one settled event and prop echoes, native gesture start/end cancellation, vertical
 and bottom-bar exclusions, disabled opening swipes, cancelled/newer targets,
 interrupted programmatic targets, Back, resize, detach/reattach and disabling,
 plus integration with both shipping native bar styles. Boundary regressions
+also exercise generated drawer props in RTL, physical-left placement, and closing
+pans while opening swipes are disabled. They
 cover a real ViewPager2 (including disabled input on a non-first page),
 horizontal-scroll ownership through BOX_NONE/NONE overlays, and retaining
 an eligible DOWN stream when a disabled native page declines the touch.
