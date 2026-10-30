@@ -51,6 +51,24 @@ ordinary press for that gesture. Motion cancellation, row rebind/recycle,
 disabled state and disposal cancel pending recognition. Trailing accessory
 actions remain independent. Omission preserves existing tap behavior.
 
+Identity trailing accessories stack vertically, except for the pairs every
+platform lays out side by side: `value` + `checkbox`, `valuePair` + `menu`,
+`valuePair` + an `icon` named `DotVerSolid` whose `actionKey` is `menu`,
+`valuePair` + `chevron`, a `RefreshCcwOutline` icon without an action key +
+`chevron`, and `PencilOutline` + `DragOutline` icons. iOS decides this in
+`configureTrailingStack`; Android in `nativeListIdentityTrailingIsHorizontal`
+(JVM test `NativeListIdentityTrailingAxisTest`). The `valuePair` + menu-icon
+pair is the Swap token selector's balance column and row menu; stacking it
+clipped both inside the fixed 60dp row on Android.
+
+Icon names are a closed set drawn from the app's 24-unit Icon sources on every
+platform (`iconPaths` on Android, `NativeListIcons.xcassets` on iOS,
+`selectorIcons` on Web); an unmapped name renders an empty slot rather than a
+placeholder. The set includes every name the app's NativeList builders pass,
+including `DotVerSolid`, `Document2Outline`, `WalletOutline`, `PlusLargeOutline`
+and `TicketOutline` (added 2026-10-30 after the OK-66072 audit found them missing
+on native).
+
 A `message` row may opt into `bodyLines: 0`; its complete body wraps within its
 existing text area and determines natural height unless an explicit row or
 container height overrides it. Existing omitted and one-to-three-line behavior

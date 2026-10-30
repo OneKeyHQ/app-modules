@@ -98,6 +98,60 @@ function buildRows(styled: boolean): RowModel[] {
       horizontalPadding: 12,
     },
   });
+  // Swap token selector rendering check, styled in both modes: a `valuePair`
+  // balance column followed by the row's DotVerSolid menu icon inside a fixed
+  // 60dp row. The pair must lay out side by side (as iOS does); Android used
+  // to stack it, pushing the balance above the menu and clipping both.
+  rows.push({
+    ...identity,
+    key: 'identity-valuepair-menu',
+    title: 'KITE',
+    subtitle: 'Kite',
+    badges: [{ key: 'fee', text: '0 Fee', tone: 'success' }],
+    height: 60,
+    trailing: [
+      {
+        kind: 'valuePair',
+        primary: '27,497,421.1856',
+        secondary: '$3,139,518.06',
+      },
+      {
+        kind: 'icon',
+        name: 'DotVerSolid',
+        buttonStyle: 'tertiary',
+        actionKey: 'menu',
+      },
+    ],
+    style: {
+      horizontalPadding: 20,
+      leadingGap: 12,
+      trailingGap: 8,
+      image: { width: 40, height: 40, shape: 'circle' },
+      title: { fontSize: 16, lineHeight: 24, fontWeight: 'medium' },
+      subtitle: { fontSize: 14, lineHeight: 20 },
+    },
+  });
+  // Icon-set check, styled in both modes: the asset-list icons the app passes
+  // by name. Every slot must show a glyph; an unmapped name draws nothing.
+  rows.push({
+    ...identity,
+    key: 'identity-asset-icons',
+    title: 'Contract Interaction',
+    subtitle: 'Document2 · Ticket · Wallet · PlusLarge',
+    badges: [],
+    height: 60,
+    leading: { kind: 'icon', name: 'Document2Outline' },
+    titleIcon: { name: 'TicketOutline' },
+    trailing: [
+      { kind: 'icon', name: 'WalletOutline', buttonStyle: 'tertiary' },
+      { kind: 'icon', name: 'PlusLargeOutline' },
+    ],
+    style: {
+      horizontalPadding: 12,
+      title: { fontSize: 16, lineHeight: 24, fontWeight: 'medium' },
+      subtitle: { fontSize: 14, lineHeight: 20 },
+    },
+  });
   rows.push({
     ...identity,
     key: 'identity-styled',

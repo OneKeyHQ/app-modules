@@ -48,6 +48,39 @@ internal fun nativeListLeadingVisualOverhangsFrame(
   overlayCount: Int,
 ): Boolean = kind == "token" && sourceCount > 1 || hasCornerIcon || overlayCount > 0
 
+internal data class NativeListTrailingDescriptor(
+  val kind: String,
+  val name: String = "",
+  val actionKey: String = "",
+)
+
+/**
+ * Identity trailing accessories stack vertically unless they form one of the
+ * pairs every platform lays out side by side. The `valuePair` + `DotVerSolid`
+ * menu icon pair (the Swap token selector's balance and row menu) matches
+ * iOS `configureTrailingStack`; stacking it put the menu under the balance and
+ * clipped both inside the fixed row height on Android only.
+ */
+internal fun nativeListIdentityTrailingIsHorizontal(
+  accessories: List<NativeListTrailingDescriptor>,
+): Boolean {
+  val kinds = accessories.map { it.kind }
+  if (kinds.containsAll(listOf("value", "checkbox"))) return true
+  if (accessories.size != 2) return false
+  val (first, second) = accessories
+  return kinds == listOf("valuePair", "menu") ||
+    kinds == listOf("valuePair", "chevron") ||
+    (kinds == listOf("valuePair", "icon") &&
+      second.name == "DotVerSolid" &&
+      second.actionKey == "menu") ||
+    (kinds == listOf("icon", "chevron") &&
+      first.name == "RefreshCcwOutline" &&
+      first.actionKey.isEmpty()) ||
+    (kinds == listOf("icon", "icon") &&
+      first.name == "PencilOutline" &&
+      second.name == "DragOutline")
+}
+
 internal fun resolveNativeListSelectorBackgroundColor(
   rowType: String,
   styleBackgroundColor: String?,
