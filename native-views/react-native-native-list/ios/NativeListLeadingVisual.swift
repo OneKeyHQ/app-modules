@@ -17,6 +17,8 @@ final class NativeListLeadingVisual: UIView {
   private let icon = UIImageView()
   private let unread = UIView()
   private let networkBackdrop = UIView()
+  // Ring under the secondary token of an Activity pair (SPEC "Activity leading pair").
+  private let pairBackdrop = UIView()
   private let corner = UIImageView()
   private let cornerBackdrop = UIView()
   private var slots: [NativeListImageSlot] = []
@@ -27,10 +29,14 @@ final class NativeListLeadingVisual: UIView {
   private var visual: [String: Any] = [:]
   private var imageStyle: [String: Any] = [:]
   private var sources: [([String: Any], String)] = []
+  // Roles inside `sources`: the token `networkImage` badge and the Activity
+  // `secondaryLeading` token; nil when absent.
+  private var networkIndex: Int?
+  private var pairIndex: Int?
 
   override init(frame: CGRect) {
     super.init(frame: frame)
-    [fallback, icon, networkBackdrop, cornerBackdrop, corner, unread].forEach(addSubview)
+    [fallback, icon, pairBackdrop, networkBackdrop, cornerBackdrop, corner, unread].forEach(addSubview)
     fallback.textAlignment = .center
     fallback.font = nativeListFont(ofSize: 13, weight: .bold, fonts: fonts)
     icon.contentMode = .scaleAspectFit
@@ -57,11 +63,14 @@ final class NativeListLeadingVisual: UIView {
       kind == "token"
       ? "token"
       : kind == "network" ? "network" : ["account", "wallet"].contains(kind) ? "avatar" : "generic"
+    networkIndex = nil
+    pairIndex = nil
     sources =
       kind == "stackedImages"
       ? visual.dictionaries("images").prefix(3).map { ($0, "generic") }
       : kind == "icon" ? [] : visual.dictionary("image").map { [($0, variant)] } ?? []
     if kind == "token", !sources.isEmpty, let network = visual.dictionary("networkImage") {
+      networkIndex = sources.count
       sources.append((network, "network"))
     }
     if let secondaryVisual {
@@ -71,6 +80,9 @@ final class NativeListLeadingVisual: UIView {
         ? secondaryVisual.dictionaries("images").first
         : secondaryKind == "icon" ? nil : secondaryVisual.dictionary("image")
       if let source {
+        // A second token forms a pair only next to a primary image; without one
+        // it simply takes the primary's place (OK-66071).
+        if kind == "token", !sources.isEmpty { pairIndex = sources.count }
         sources.append(
           (
             source,
@@ -146,8 +158,19 @@ final class NativeListLeadingVisual: UIView {
         self.icon.isHidden = loaded || fallbackIcon == nil
       }
     }
-    networkBackdrop.isHidden = !(kind == "token" && sources.count > 1)
+    networkBackdrop.isHidden = networkIndex == nil
     networkBackdrop.backgroundColor = nativeListColor(theme, "rowBackground", "#FFFFFF")
+    pairBackdrop.isHidden = pairIndex == nil
+    pairBackdrop.backgroundColor = nativeListColor(theme, "rowBackground", "#FFFFFF")
+    // Stacking order by role: primary, pair ring, secondary token, badge
+    // backdrop, badge, corner icon. Slots are reused across binds with
+    // different roles, so the order is restored on every bind.
+    bringSubviewToFront(pairBackdrop)
+    if let pairIndex { bringSubviewToFront(slots[pairIndex].view) }
+    bringSubviewToFront(networkBackdrop)
+    if let networkIndex { bringSubviewToFront(slots[networkIndex].view) }
+    bringSubviewToFront(cornerBackdrop)
+    bringSubviewToFront(corner)
     let badge = visual.dictionary("cornerIcon")
     corner.isHidden = badge == nil
     cornerBackdrop.isHidden = badge == nil
@@ -229,7 +252,7 @@ final class NativeListLeadingVisual: UIView {
       frame.subviews.forEach { $0.removeFromSuperview() }
       frame.addSubview(child)
       if data.dictionary("image") != nil && fallbackData != nil { frame.addSubview(fallbackGlyph) }
-      if frame.superview == nil { addSubview(frame) }
+      if frame.superview == nil { addSubview(frame) } else { bringSubviewToFront(frame) }
       overlays.append((frame, data))
     }
     previousOverlays.dropFirst(descriptors.count).forEach { $0.0.removeFromSuperview() }
@@ -284,13 +307,22 @@ final class NativeListLeadingVisual: UIView {
     icon.frame = CGRect(
       x: (bounds.width - iconSize) / 2, y: (bounds.height - iconSize) / 2, width: iconSize,
       height: iconSize)
-    let tokenPair = kind == "token" && sources.count > 1
+    // Same geometry as Android's `nativeListLeadingSlotFrame` (SPEC "Activity leading pair").
+    let pairMember = (bounds.height * 0.6).rounded()
+    let pairRing: CGFloat = 2
     for (index, slot) in slots.prefix(sources.count).enumerated() {
       let frame: CGRect
-      if sources.count == 1 || tokenPair && index == 0 {
-        frame = bounds
-      } else if tokenPair {
+      if index == networkIndex {
         frame = CGRect(x: bounds.width - 14, y: bounds.height - 14, width: 16, height: 16)
+      } else if pairIndex != nil {
+        frame =
+          index == pairIndex
+          ? CGRect(
+            x: bounds.width - pairMember - pairRing, y: bounds.height - pairMember - pairRing,
+            width: pairMember, height: pairMember)
+          : CGRect(x: 0, y: 0, width: pairMember, height: pairMember)
+      } else if sources.count == 1 || networkIndex != nil {
+        frame = bounds
       } else {
         let side = bounds.height * 0.72
         frame = CGRect(
@@ -302,10 +334,23 @@ final class NativeListLeadingVisual: UIView {
       slot.view.clipsToBounds =
         !(singleOuterMask && sources.count == 1 && overlays.isEmpty
         && visual.dictionary("cornerIcon") == nil)
+      let fillsFrame = index == 0 && pairIndex == nil && (sources.count == 1 || networkIndex != nil)
+      // Pair members keep the token shape at their own size (rounded NFTs use
+      // the box's 10pt rule scaled to the member).
+      let pairRadius: CGFloat = shape == "rounded" ? min(10, frame.height / 4) : frame.height / 2
       slot.view.layer.cornerRadius =
         index == 0 && singleOuterMask && sources.count == 1 && overlays.isEmpty
           && visual.dictionary("cornerIcon") == nil
-        ? 0 : index == 0 && (sources.count == 1 || tokenPair) ? radius : frame.height / 2
+        ? 0
+        : fillsFrame
+          ? radius : pairIndex != nil && index != networkIndex ? pairRadius : frame.height / 2
+    }
+    if pairIndex != nil {
+      let box = pairMember + 2 * pairRing
+      pairBackdrop.frame = logical(
+        CGRect(x: bounds.width - box, y: bounds.height - box, width: box, height: box))
+      pairBackdrop.layer.cornerRadius =
+        shape == "rounded" ? min(10, pairMember / 4) + pairRing : box / 2
     }
     for (index, slot) in slots.enumerated() {
       if index == 0 && bitmapBorderWidth > 0 {
@@ -399,6 +444,9 @@ final class NativeListLeadingVisual: UIView {
     icon.image = nil
     icon.isHidden = true
     networkBackdrop.isHidden = true
+    pairBackdrop.isHidden = true
+    networkIndex = nil
+    pairIndex = nil
     corner.isHidden = true
     cornerBackdrop.isHidden = true
     unread.isHidden = true

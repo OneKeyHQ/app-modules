@@ -619,6 +619,32 @@ padding. The example `NativeListRowStylePage` row `identity-badge-rounded`
 combines both badges with `container.cornerRadius` as the rendering check for
 that combination.
 
+### Activity leading pair (OK-66071)
+
+Status: implemented on iOS and Android; Web already drew the pair. Android JVM
+geometry test (`NativeListLeadingSlotFrameTest`); Android emulator acceptance on
+the example row-style page is recorded in the changelog entry.
+
+An Activity row whose `leading` and `secondaryLeading` are both tokens with an
+image (the app's swap and multi-asset history rows) draws them as a pair inside
+the 40-unit visual box, as the legacy avatar and the Web renderer do: the
+primary token at the top-left at 0.6 of the box (24 units), the secondary at the
+same size at the bottom-right inside a 2-unit ring in the row background, above
+the primary. The token `networkImage` badge, when present, keeps its single-token
+geometry at the box's bottom-right corner above the secondary; a pair shows one
+badge, never one per member. A secondary token without an image leaves the
+primary alone at full size, and a primary without an image lets the secondary
+take its place. Before this rule Android laid the secondary over the whole box
+(hiding the primary and the badge) and iOS drew it in the badge's corner slot
+over the badge. The per-source geometry is one pure function on Android
+(`nativeListLeadingSlotFrame`) and the same arithmetic in
+`NativeListLeadingVisual.layoutSubviews` on iOS; both restore the stacking
+order by role on every bind because slots are reused across roles.
+
+The Android Activity renderer also applies the badge-overhang rule above
+(`requestsUnclippedHost` stops the content row and the row padding clipping),
+so the history rows' network badges render whole instead of cut flat.
+
 ## Failures, fallback and limits
 
 Snapshot validation rejects malformed/duplicate-key input without partial

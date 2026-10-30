@@ -23,6 +23,8 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
   private val icon = OneKeyIconView(context)
   private val unread = View(context)
   private val networkBackdrop = View(context)
+  // Ring under the secondary token of an Activity pair (SPEC "Activity leading pair").
+  private val pairBackdrop = View(context)
   private val corner = OneKeyIconView(context)
   private val cornerBackdrop = View(context)
   private val slots = mutableListOf<NativeListImageSlot>()
@@ -32,6 +34,10 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
   private var visual = JSONObject()
   private var style = JSONObject()
   private var sources = emptyList<Pair<JSONObject, String>>()
+  // Roles inside [sources]: the token `networkImage` badge and the Activity
+  // `secondaryLeading` token; null when absent.
+  private var networkIndex: Int? = null
+  private var pairIndex: Int? = null
   val fallbackTextView: TextView
     get() = fallback
 
@@ -90,7 +96,9 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
     }
 
   init {
-    listOf(fallback, icon, networkBackdrop, cornerBackdrop, corner, unread).forEach { addView(it) }
+    listOf(fallback, icon, pairBackdrop, networkBackdrop, cornerBackdrop, corner, unread).forEach {
+      addView(it)
+    }
     clipChildren = false
     clipToPadding = false
   }
@@ -119,6 +127,8 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
         "wallet" -> "avatar"
         else -> "generic"
       }
+    networkIndex = null
+    pairIndex = null
     sources =
       if (kind == "stackedImages")
         visual
@@ -132,7 +142,10 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
       else if (kind == "icon") emptyList()
       else visual.optJSONObject("image")?.let { listOf(it to variant) }.orEmpty()
     if (kind == "token" && sources.isNotEmpty())
-      visual.optJSONObject("networkImage")?.let { sources = sources + (it to "network") }
+      visual.optJSONObject("networkImage")?.let {
+        networkIndex = sources.size
+        sources = sources + (it to "network")
+      }
     secondaryVisual?.let { second ->
       val kind = second.optString("kind")
       val source =
@@ -141,7 +154,10 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
           "icon" -> null
           else -> second.optJSONObject("image")
         }
-      if (source != null)
+      if (source != null) {
+        // A second token forms a pair only next to a primary image; without one
+        // it simply takes the primary's place (OK-66071).
+        if (this.visual.optString("kind") == "token" && sources.isNotEmpty()) pairIndex = sources.size
         sources =
           sources +
             (source to
@@ -152,6 +168,7 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
                 "wallet" -> "avatar"
                 else -> "generic"
               })
+      }
     }
     while (slots.size < sources.size) {
       val slot = NativeListImageSlot(reactContext)
@@ -242,9 +259,21 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
         }
       }
     }
-    networkBackdrop.visibility = if (kind == "token" && sources.size > 1) VISIBLE else GONE
+    networkBackdrop.visibility = if (networkIndex != null) VISIBLE else GONE
     networkBackdrop.background =
       fill(color(theme?.optString("rowBackground", "#FFFFFF") ?: "#FFFFFF"), dp(10).toFloat())
+    pairBackdrop.visibility = if (pairIndex != null) VISIBLE else GONE
+    pairBackdrop.background =
+      fill(color(theme?.optString("rowBackground", "#FFFFFF") ?: "#FFFFFF"), 0f)
+    // Stacking order by role: primary, pair ring, secondary token, badge
+    // backdrop, badge, corner icon. Slots are reused across binds with
+    // different roles, so the order is restored on every bind.
+    pairBackdrop.bringToFront()
+    pairIndex?.let { slots[it].view.bringToFront() }
+    networkBackdrop.bringToFront()
+    networkIndex?.let { slots[it].view.bringToFront() }
+    cornerBackdrop.bringToFront()
+    corner.bringToFront()
     val badge = visual.optJSONObject("cornerIcon")
     corner.visibility = if (badge == null) GONE else VISIBLE
     cornerBackdrop.visibility = corner.visibility
@@ -353,7 +382,7 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
         (fallbackGlyph.parent as? android.view.ViewGroup)?.removeView(fallbackGlyph)
         frame.addView(fallbackGlyph, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
       }
-      if (frame.parent == null) addView(frame)
+      if (frame.parent == null) addView(frame) else frame.bringToFront()
       overlays.add(frame to data)
     }
     previousOverlays.drop(descriptors.size).forEach { (frame, _) ->
@@ -426,28 +455,46 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
       iconSize,
       iconSize,
     )
-    val tokenPair = kind == "token" && sources.size > 1
+    val ring = dp(2)
     slots.take(sources.size).forEachIndexed { index, slot ->
-      val size =
-        if (tokenPair && index == 1) dp(16)
-        else if (sources.size == 1 || tokenPair) h else (h * 0.72f).roundToInt()
-      val x =
-        if (tokenPair && index == 1) w - size + dp(2)
-        else if (sources.size == 1 || tokenPair) 0
-        else (index * (w - size).toFloat() / maxOf(1, sources.size - 1)).roundToInt()
-      val y = if (tokenPair && index == 1) h - size + dp(2) else (h - size) / 2
-      val imageWidth = if (sources.size == 1 || tokenPair && index == 0) w else size
+      val frame =
+        nativeListLeadingSlotFrame(
+          index = index,
+          sourceCount = sources.size,
+          networkIndex = networkIndex,
+          pairIndex = pairIndex,
+          width = w,
+          height = h,
+          badgeSize = dp(16),
+          badgeOverhang = dp(2),
+          pairRing = ring,
+        )
       slot.view.measure(
-        MeasureSpec.makeMeasureSpec(imageWidth, MeasureSpec.EXACTLY),
-        MeasureSpec.makeMeasureSpec(size, MeasureSpec.EXACTLY),
+        MeasureSpec.makeMeasureSpec(frame.width, MeasureSpec.EXACTLY),
+        MeasureSpec.makeMeasureSpec(frame.height, MeasureSpec.EXACTLY),
       )
       val inset = if (index == 0) bitmapBorderWidth else 0
-      place(slot.view, x + inset, y + inset, imageWidth - 2 * inset, size - 2 * inset)
+      place(
+        slot.view,
+        frame.x + inset,
+        frame.y + inset,
+        frame.width - 2 * inset,
+        frame.height - 2 * inset,
+      )
       val imageRadius =
         if (shape == "rounded" && !style.has("shape") && !style.has("cornerRadius"))
           dp(roundedImageRadius).toFloat()
         else radius
-      val r = if (index == 0 && (sources.size == 1 || tokenPair)) imageRadius else size / 2f
+      val fillsFrame = index == 0 && pairIndex == null && (sources.size == 1 || networkIndex != null)
+      val r =
+        when {
+          fillsFrame -> imageRadius
+          // Pair members keep the token shape at their own size (rounded NFTs
+          // use the box's 10dp rule scaled to the member).
+          pairIndex != null && index != networkIndex && shape == "rounded" ->
+            minOf(dp(roundedImageRadius).toFloat(), frame.height / 4f)
+          else -> frame.height / 2f
+        }
       slot.view.outlineProvider =
         object : ViewOutlineProvider() {
           override fun getOutline(view: View, outline: Outline) {
@@ -457,6 +504,14 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
           }
         }
       slot.view.clipToOutline = true
+    }
+    if (pairIndex != null) {
+      val member = nativeListLeadingPairMemberSize(h)
+      val box = member + 2 * ring
+      (pairBackdrop.background as? GradientDrawable)?.cornerRadius =
+        if (shape == "rounded") minOf(dp(roundedImageRadius).toFloat(), member / 4f) + ring
+        else box / 2f
+      place(pairBackdrop, w - box, h - box, box, box)
     }
     place(networkBackdrop, w - dp(16), h - dp(16), dp(20), dp(20))
     place(cornerBackdrop, w - dp(16), h - dp(16), dp(20), dp(20))

@@ -279,6 +279,69 @@ function buildRows(styled: boolean): RowModel[] {
       : {}),
   });
 
+  // OK-66071 rendering check, styled in both modes: the Home history rows'
+  // leading visuals. The network badge hangs past the 40dp avatar and must
+  // render whole (Android used to clip it at the row content box), and a
+  // `secondaryLeading` token must form a top-left / bottom-right pair with the
+  // single badge above it (Android drew the second token over the whole box).
+  rows.push(header('activity-badges', 'activity', 'network badge / token pair'));
+  const usdc = {
+    uri: 'https://uni.onekey-asset.com/server-service-indexer/evm--1/tokens/address-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.png',
+    width: 40,
+    height: 40,
+  };
+  const eth = {
+    uri: 'https://cdn.jsdelivr.net/gh/atomiclabs/cryptocurrency-icons@1a63530be6e374711a8554f31b17e4cb92c25fa5/128/color/eth.png',
+    width: 40,
+    height: 40,
+  };
+  const arbitrumBadge = {
+    uri: 'https://uni.onekey-asset.com/static/chain/arbitrum.png',
+    width: 16,
+    height: 16,
+  };
+  rows.push({
+    type: 'activity',
+    key: 'activity-network-badge',
+    sectionKey: 'activity-badges',
+    leading: {
+      kind: 'token',
+      image: usdc,
+      shape: 'circle',
+      fallbackIcon: { name: 'CryptoCoinOutline' },
+      networkImage: arbitrumBadge,
+    },
+    title: 'Send',
+    description: 'Hidden #1 / Account #1',
+    primaryAmount: '-0.001 USDC',
+    secondaryAmount: '< $0.01',
+    height: 60,
+  });
+  rows.push({
+    type: 'activity',
+    key: 'activity-token-pair',
+    sectionKey: 'activity-badges',
+    leading: {
+      kind: 'token',
+      image: eth,
+      shape: 'circle',
+      fallbackIcon: { name: 'CryptoCoinOutline' },
+      networkImage: arbitrumBadge,
+    },
+    secondaryLeading: {
+      kind: 'token',
+      image: usdc,
+      shape: 'circle',
+      fallbackIcon: { name: 'CryptoCoinOutline' },
+      networkImage: arbitrumBadge,
+    },
+    title: 'Swap',
+    description: 'OKX DEX',
+    primaryAmount: '+0.2292 USDC',
+    secondaryAmount: '-0.0000966 ETH',
+    height: 60,
+  });
+
   // Cover remaining templates with local text/image/gap overrides. Outer row
   // callers can override allocation with container.height and choose fitting dimensions.
   const additional: readonly [RowModel, RowModel['style']][] = [

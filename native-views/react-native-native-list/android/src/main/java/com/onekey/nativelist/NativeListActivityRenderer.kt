@@ -157,6 +157,16 @@ internal class NativeListActivityRowView(context: ThemedReactContext, fonts: Nat
       sourceScale,
       data.optJSONObject("secondaryLeading"),
     )
+    // The token network badge hangs 4dp past the 40dp visual and Android clips a
+    // child to its own bounds while its parent clips children, so with the
+    // default clipping the history rows showed the badge cut flat (OK-66071).
+    // Stop clipping the content row and this row's padding exactly when the
+    // bound visual reports such a badge (SPEC "Leading badge overhang"), as the
+    // Identity renderer does.
+    val unclipped = !hideLeading && visual.requestsUnclippedHost
+    content.clipChildren = !unclipped
+    clipChildren = !unclipped
+    clipToPadding = !unclipped
     bind(
       title,
       data.optString("title"),

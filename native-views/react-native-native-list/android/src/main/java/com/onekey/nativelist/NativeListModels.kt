@@ -4,6 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.nio.ByteBuffer
 import java.security.MessageDigest
+import kotlin.math.roundToInt
 import java.util.Locale
 
 internal data class NativeSelectionTarget(val scope: String, val key: String?)
@@ -47,6 +48,51 @@ internal fun nativeListLeadingVisualOverhangsFrame(
   hasCornerIcon: Boolean,
   overlayCount: Int,
 ): Boolean = kind == "token" && sourceCount > 1 || hasCornerIcon || overlayCount > 0
+
+internal data class NativeListSlotFrame(val x: Int, val y: Int, val width: Int, val height: Int)
+
+/** Side of one member of an Activity token pair inside a [frame]-unit box (24 in 40). */
+internal fun nativeListLeadingPairMemberSize(frame: Int): Int = (frame * 0.6f).roundToInt()
+
+/**
+ * Frame of image source [index] of a leading visual inside its [width]×[height]
+ * box (SPEC "Activity leading pair", OK-66071). [networkIndex] is the token
+ * `networkImage` badge and [pairIndex] the Activity `secondaryLeading` token;
+ * either is null when absent. A pair draws the primary at the top-left and the
+ * secondary at the bottom-right, both [nativeListLeadingPairMemberSize] wide and
+ * the secondary inset by its [pairRing]; the badge keeps its corner geometry
+ * above them. A lone token, or a token with only a badge, fills the box. Any
+ * other multi-source visual (stackedImages) steps 0.72-sized images diagonally.
+ */
+internal fun nativeListLeadingSlotFrame(
+  index: Int,
+  sourceCount: Int,
+  networkIndex: Int?,
+  pairIndex: Int?,
+  width: Int,
+  height: Int,
+  badgeSize: Int,
+  badgeOverhang: Int,
+  pairRing: Int,
+): NativeListSlotFrame {
+  if (index == networkIndex)
+    return NativeListSlotFrame(
+      width - badgeSize + badgeOverhang,
+      height - badgeSize + badgeOverhang,
+      badgeSize,
+      badgeSize,
+    )
+  if (pairIndex != null) {
+    val member = nativeListLeadingPairMemberSize(height)
+    return if (index == pairIndex)
+      NativeListSlotFrame(width - member - pairRing, height - member - pairRing, member, member)
+    else NativeListSlotFrame(0, 0, member, member)
+  }
+  if (sourceCount == 1 || networkIndex != null) return NativeListSlotFrame(0, 0, width, height)
+  val side = (height * 0.72f).roundToInt()
+  val x = (index * (width - side).toFloat() / maxOf(1, sourceCount - 1)).roundToInt()
+  return NativeListSlotFrame(x, (height - side) / 2, side, side)
+}
 
 internal data class NativeListTrailingDescriptor(
   val kind: String,
