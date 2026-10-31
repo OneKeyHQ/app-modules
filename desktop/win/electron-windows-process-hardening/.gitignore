@@ -1,0 +1,7 @@
+/target/
+/node_modules/
+/*.node
+/*.exe
+/*.dll
+/*.tgz
+/.build-tools/
