@@ -1,12 +1,11 @@
 package com.margelo.nitro.nativelist
 
+import android.test.InstrumentationTestCase
 import org.json.JSONArray
 import org.json.JSONObject
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
 
-class NativeListMarketMetricStructureTest {
+@Suppress("DEPRECATION")
+class NativeListMarketMetricStructureTest : InstrumentationTestCase() {
   private fun item(metrics: JSONArray? = null): NativeListItem {
     val json = JSONObject()
       .put("type", "market")
@@ -28,8 +27,7 @@ class NativeListMarketMetricStructureTest {
       }
     }
 
-  @Test
-  fun textOnlyQuoteUpdateKeepsStructureWhileColumnChangesRequireRebind() {
+  fun testTextOnlyQuoteUpdateKeepsStructureWhileColumnChangesRequireRebind() {
     val compact = item()
     val two = item(metrics(Triple("price", 1, "$42"), Triple("change", 1, "+2%")))
     val updated = item(metrics(Triple("price", 1, "$43"), Triple("change", 1, "+3%")))

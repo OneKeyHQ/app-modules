@@ -79,7 +79,12 @@ final class NativeListMarketMetricsTests: XCTestCase {
     XCTAssertEqual((metricStack.arrangedSubviews.first as? UILabel)?.text, "$49")
     let changeStack = try XCTUnwrap(cell.root.arrangedSubviews.last as? UIStackView)
     XCTAssertEqual((changeStack.arrangedSubviews.first as? UILabel)?.text, "+2%")
-    leadingAction.sendActions(for: .touchUpInside)
+    XCTAssertTrue(leadingAction.allTargets.contains(cell))
+    let action = try XCTUnwrap(
+      leadingAction.actions(forTarget: cell, forControlEvent: .touchUpInside)?.first)
+    let selector = NSSelectorFromString(action)
+    XCTAssertTrue(cell.responds(to: selector))
+    _ = cell.perform(selector)
     XCTAssertEqual(actions, ["favorite"])
     XCTAssertEqual(metricLabel.text, "$49")
   }
