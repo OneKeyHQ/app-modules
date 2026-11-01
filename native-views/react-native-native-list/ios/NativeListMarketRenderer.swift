@@ -22,6 +22,15 @@ final class NativeListMarketCell: NativeListRendererCell {
   private let marketSubtitleStack = UIStackView()
   private let marketSubtitleSpacer = UIView()
   private let trailingStack = UIStackView()
+  private let metricStacks = (0..<3).map { _ -> UIStackView in
+    let stack = UIStackView()
+    stack.axis = .vertical
+    stack.alignment = .fill
+    stack.spacing = 2
+    return stack
+  }
+  private let metricPrimaryLabels = (0..<3).map { _ in NativeListTextLabel() }
+  private let metricSecondaryLabels = (0..<3).map { _ in NativeListTextLabel() }
   private let accessoryButtons = (0..<2).map { _ in NativeListAccessoryButton(type: .system) }
   private let marketBadgeButtons = (0..<3).map { _ in NativeListAccessoryButton(type: .system) }
   private let badgeSlots = (0..<3).map { _ in NativeListImageSlot() }
@@ -69,6 +78,10 @@ final class NativeListMarketCell: NativeListRendererCell {
     trailingStack.setContentHuggingPriority(.required, for: .horizontal)
     trailingStack.setContentCompressionResistancePriority(.required, for: .horizontal)
     accessoryButtons.forEach(trailingStack.addArrangedSubview)
+    for index in metricStacks.indices {
+      metricStacks[index].addArrangedSubview(metricPrimaryLabels[index])
+      metricStacks[index].addArrangedSubview(metricSecondaryLabels[index])
+    }
     visual.translatesAutoresizingMaskIntoConstraints = false
     leadingWidth = visual.widthAnchor.constraint(equalToConstant: 32)
     leadingHeight = visual.heightAnchor.constraint(equalToConstant: 32)
@@ -130,6 +143,14 @@ final class NativeListMarketCell: NativeListRendererCell {
       }
     }
     accessoryButtons.forEach(resetButton)
+    for label in metricPrimaryLabels + metricSecondaryLabels {
+      label.attributedText = nil
+      label.text = nil
+      label.isHidden = true
+      label.numberOfLines = 1
+      label.lineBreakMode = .byTruncatingTail
+      label.textAlignment = .natural
+    }
     bindMarket(item, theme: theme)
     let style = item.data.dictionary("style")
     for (label, descriptor) in [
@@ -175,11 +196,21 @@ final class NativeListMarketCell: NativeListRendererCell {
   }
   override func updateMarketQuote(_ item: NativeListItem, theme: [String: Any]?) {
     guard retainBoundItem(item) else { return }
-    bindQuote(item, theme: theme)
+    let metrics = item.data.dictionaries("metrics")
+    if metrics.count == 2 || metrics.count == 3 {
+      updateMetricLabels(metrics, theme: theme)
+      updateQuoteAccessibility(item)
+    } else {
+      bindQuote(item, theme: theme)
+    }
   }
   override func recycleContent() {
     visual.recycle()
     badgeSlots.forEach { $0.recycle() }
+    for label in metricPrimaryLabels + metricSecondaryLabels {
+      label.attributedText = nil
+      label.text = nil
+    }
     imageSignature = ""
   }
   @objc private func leadingPressed() {
@@ -254,6 +285,61 @@ final class NativeListMarketCell: NativeListRendererCell {
     case "start": return effectiveUserInterfaceLayoutDirection == .rightToLeft ? .right : .left
     case "end": return effectiveUserInterfaceLayoutDirection == .rightToLeft ? .left : .right
     default: return .natural
+    }
+  }
+  private func metricColor(_ tone: String, theme: [String: Any]?) -> UIColor {
+    switch tone {
+    case "positive": return nativeListColor(theme, "positive", "#218358")
+    case "negative": return nativeListColor(theme, "negative", "#CE2C31")
+    case "secondary": return nativeListColor(theme, "secondaryText", "#646464")
+    default: return nativeListColor(theme, "primaryText", "#202020")
+    }
+  }
+  private func bindMetrics(
+    _ columns: [[String: Any]], theme: [String: Any]?, gap: CGFloat
+  ) {
+    for (index, column) in columns.enumerated() {
+      let stack = metricStacks[index]
+      root.addArrangedSubview(stack)
+      root.setCustomSpacing(gap, after: stack)
+      let weight = max(1, min(3, column.int("weight", default: 1)))
+      let width = stack.widthAnchor.constraint(
+        equalTo: mainStack.widthAnchor, multiplier: CGFloat(weight) / 2)
+      width.isActive = true
+      selectorConstraints.append(width)
+    }
+    updateMetricLabels(columns, theme: theme)
+  }
+  private func updateMetricLabels(_ columns: [[String: Any]], theme: [String: Any]?) {
+    for (index, column) in columns.enumerated() {
+      let alignment = marketTextAlignment(column.string("alignment", default: "end"))
+      let primary = metricPrimaryLabels[index]
+      let primaryText = column.string("text")
+      show(primary, primaryText, lines: 1)
+      let primaryColor = metricColor(column.string("tone"), theme: theme)
+      applyMarketTextStyle(
+        primary, data: nil, theme: theme, defaultSize: 14, defaultLineHeight: 20,
+        defaultWeight: .medium, defaultColor: primaryColor, defaultAlignment: alignment)
+      if !column.dictionaries("textSegments").isEmpty {
+        primary.attributedText = marketAttributedText(
+          primaryText, segments: column.dictionaries("textSegments"), style: nil,
+          defaultSize: 14, defaultLineHeight: 20, defaultWeight: .medium,
+          color: primaryColor, defaultAlignment: alignment)
+      }
+      let secondary = metricSecondaryLabels[index]
+      let secondaryText = column.string("secondaryText")
+      show(secondary, secondaryText, lines: 1)
+      let secondaryColor = metricColor(
+        column.string("secondaryTone", default: "secondary"), theme: theme)
+      applyMarketTextStyle(
+        secondary, data: nil, theme: theme, defaultSize: 12, defaultLineHeight: 16,
+        defaultWeight: .regular, defaultColor: secondaryColor, defaultAlignment: alignment)
+      if !column.dictionaries("secondaryTextSegments").isEmpty {
+        secondary.attributedText = marketAttributedText(
+          secondaryText, segments: column.dictionaries("secondaryTextSegments"), style: nil,
+          defaultSize: 12, defaultLineHeight: 16, defaultWeight: .regular,
+          color: secondaryColor, defaultAlignment: alignment)
+      }
     }
   }
   private func applyMarketTextStyle(
@@ -623,11 +709,31 @@ final class NativeListMarketCell: NativeListRendererCell {
       }
       marketSubtitleStack.isHidden = tertiaryLabel.isHidden && subtitleLabel.isHidden
     }
-    root.addArrangedSubview(trailingStack)
-    trailingStack.axis = .horizontal
-    trailingStack.alignment = .center
-    trailingStack.spacing = CGFloat(style?.double("trailingGap", default: 8) ?? 8)
-    bindQuote(item, theme: theme)
+    let metrics = item.data.dictionaries("metrics")
+    if metrics.count == 2 || metrics.count == 3 {
+      let metricGap = CGFloat(style?.double("trailingGap", default: 8) ?? 8)
+      root.setCustomSpacing(metricGap, after: mainStack)
+      bindMetrics(metrics, theme: theme, gap: metricGap)
+    } else {
+      root.addArrangedSubview(trailingStack)
+      trailingStack.axis = .horizontal
+      trailingStack.alignment = .center
+      trailingStack.spacing = CGFloat(style?.double("trailingGap", default: 8) ?? 8)
+    }
+    if metrics.count == 2 || metrics.count == 3 {
+      updateQuoteAccessibility(item)
+    } else {
+      bindQuote(item, theme: theme)
+    }
+  }
+  private func updateQuoteAccessibility(_ item: NativeListItem) {
+    let changeData = item.data.dictionary("change") ?? [:]
+    accessibilityLabel = item.data.string(
+      "accessibilityLabel",
+      default: [
+        item.data.string("title"), item.data.string("subtitle"), item.data.string("price"),
+        changeData.string("text"),
+      ].filter { !$0.isEmpty }.joined(separator: ", "))
   }
   private func bindQuote(_ item: NativeListItem, theme: [String: Any]?) {
     NSLayoutConstraint.deactivate(accessorySizeConstraints)
@@ -696,11 +802,6 @@ final class NativeListMarketCell: NativeListRendererCell {
     if let changeStyle = style?.dictionary("change"), !textLayoutStyle(changeStyle).isEmpty {
       NativeListTextStyles.applyStyledButton(change, textLayoutStyle(changeStyle), fonts: fonts)
     }
-    accessibilityLabel = item.data.string(
-      "accessibilityLabel",
-      default: [
-        item.data.string("title"), item.data.string("subtitle"), item.data.string("price"),
-        changeData.string("text"),
-      ].filter { !$0.isEmpty }.joined(separator: ", "))
+    updateQuoteAccessibility(item)
   }
 }

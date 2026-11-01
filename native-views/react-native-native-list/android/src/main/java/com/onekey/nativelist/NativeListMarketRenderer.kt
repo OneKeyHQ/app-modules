@@ -38,6 +38,9 @@ internal class NativeListMarketRowView(context: ThemedReactContext, fonts: Nativ
   private val marketSubtitleLine = PackedTitleLineLayout(context)
   private val trailingColumn = LinearLayout(context)
   private val trailingViews = List(2) { NativeListTextView(context) }
+  private val metricColumns = List(3) { LinearLayout(context) }
+  private val metricPrimaryViews = List(3) { NativeListTextView(context) }
+  private val metricSecondaryViews = List(3) { NativeListTextView(context) }
   private val marketBadgeViews = List(3) { LinearLayout(context) }
   private val marketBadgeLabels = List(3) { TextView(context) }
   private val badgeSlots = List(3) { NativeListImageSlot(context) }
@@ -88,6 +91,12 @@ internal class NativeListMarketRowView(context: ThemedReactContext, fonts: Nativ
     mainColumn.addView(subtitle)
     mainColumn.addView(tertiary)
     trailingViews.forEach(trailingColumn::addView)
+    metricColumns.forEachIndexed { index, column ->
+      column.orientation = VERTICAL
+      column.gravity = Gravity.CENTER_VERTICAL
+      column.addView(metricPrimaryViews[index])
+      column.addView(metricSecondaryViews[index])
+    }
     leadingActionIcon.useSourceScale = true
     marketBadgeViews.forEachIndexed { index, badge ->
       badge.orientation = HORIZONTAL
@@ -128,6 +137,50 @@ internal class NativeListMarketRowView(context: ThemedReactContext, fonts: Nativ
   private fun wrap() = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
 
   private fun weighted() = LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)
+
+  private fun metricColor(theme: JSONObject?, tone: String): Int =
+    when (tone) {
+      "positive" -> color(theme, "positive", "#218358")
+      "negative" -> color(theme, "negative", "#CE2C31")
+      "secondary" -> color(theme, "secondaryText", "#646464")
+      else -> color(theme, "primaryText", "#202020")
+    }
+
+  private fun bindMetrics(metrics: JSONArray, theme: JSONObject?, gap: Int) {
+    updateMetricLabels(metrics, theme)
+    for (index in 0 until metrics.length()) {
+      val metric = metrics.getJSONObject(index)
+      addView(
+        metricColumns[index],
+        LayoutParams(0, LayoutParams.WRAP_CONTENT, metric.optInt("weight", 1).toFloat()).apply {
+          marginStart = dp(gap)
+        },
+      )
+    }
+  }
+
+  private fun updateMetricLabels(metrics: JSONArray, theme: JSONObject?) {
+    for (index in 0 until metrics.length()) {
+      val metric = metrics.getJSONObject(index)
+      val alignment = metric.optString("alignment", "end")
+      val primary = metricPrimaryViews[index]
+      val secondary = metricSecondaryViews[index]
+      applyMarketTextStyle(
+        primary, null, 14f, 20, "medium",
+        metricColor(theme, metric.optString("tone")), alignment,
+      )
+      primary.text = marketText(metric.optString("text"), metric.optJSONArray("textSegments"), 14f)
+      primary.visibility = VISIBLE
+      applyMarketTextStyle(
+        secondary, null, 12f, 16, "regular",
+        metricColor(theme, metric.optString("secondaryTone", "secondary")), alignment,
+      )
+      secondary.text = marketText(
+        metric.optString("secondaryText"), metric.optJSONArray("secondaryTextSegments"), 12f,
+      )
+      secondary.visibility = if (secondary.text.isEmpty()) GONE else VISIBLE
+    }
+  }
 
   private fun showText(view: TextView, text: String, lines: Int) {
     view.text = text
@@ -183,7 +236,8 @@ internal class NativeListMarketRowView(context: ThemedReactContext, fonts: Nativ
       if (item.json.optJSONArray("badges")?.optJSONObject(index)?.optJSONObject("icon") == null)
         badgeSlots[index].recycle()
     }
-    for (view in listOf(title, subtitle, tertiary) + trailingViews) {
+    for (view in listOf(title, subtitle, tertiary) + trailingViews +
+      metricPrimaryViews + metricSecondaryViews) {
       view.text = ""
       view.visibility = GONE
       view.maxLines = 1
@@ -217,7 +271,12 @@ internal class NativeListMarketRowView(context: ThemedReactContext, fonts: Nativ
   }
 
   override fun bindMarketQuote(item: NativeListItem, theme: JSONObject?) {
-    if (retainBoundItem(item)) bindQuote(item, theme)
+    if (retainBoundItem(item)) {
+      bindQuote(item, theme)
+      item.json.optJSONArray("metrics")?.takeIf { it.length() in 2..3 }?.let {
+        updateMetricLabels(it, theme)
+      }
+    }
   }
 
   private fun cancelMarketHold() {
@@ -304,6 +363,7 @@ internal class NativeListMarketRowView(context: ThemedReactContext, fonts: Nativ
     longPressFired = false
     leadingFrame.recycle()
     badgeSlots.forEach { it.recycle() }
+    (metricPrimaryViews + metricSecondaryViews).forEach { it.text = "" }
     imageSignature = ""
   }
 
@@ -561,10 +621,12 @@ internal class NativeListMarketRowView(context: ThemedReactContext, fonts: Nativ
     )
     // OneKey patch: retain the source gap without changing other templates.
     // addView(mainColumn, weighted())
+    val metrics = item.json.optJSONArray("metrics")?.takeIf { it.length() in 2..3 }
     addView(
       mainColumn,
       weighted().apply {
-        marginEnd = dp(style?.optDouble("contentTrailingGap", 0.0)?.roundToInt() ?: 0)
+        if (metrics != null) weight = 2f
+        else marginEnd = dp(style?.optDouble("contentTrailingGap", 0.0)?.roundToInt() ?: 0)
       },
     )
     titleLine.packsChildrenAtStart = true
@@ -748,7 +810,11 @@ internal class NativeListMarketRowView(context: ThemedReactContext, fonts: Nativ
     }
     trailingColumn.orientation = HORIZONTAL
     trailingColumn.gravity = Gravity.END or Gravity.CENTER_VERTICAL
-    addView(trailingColumn, wrap())
+    if (metrics != null) {
+      bindMetrics(metrics, theme, style?.optDouble("trailingGap", 8.0)?.roundToInt() ?: 8)
+    } else {
+      addView(trailingColumn, wrap())
+    }
     bindQuote(item, theme)
     val nextImageSignature =
       nativeListCanonical(
@@ -912,7 +978,7 @@ internal class NativeListMarketRowView(context: ThemedReactContext, fonts: Nativ
         ?.has("contentVerticalAlignment") == true
     if (item.type == "market" && item.json.optJSONObject("style") != null) {
       // OneKey patch: preserve Yoga's half-pixel centering for Market columns and badges.
-      for (column in listOf(leadingFrame, mainColumn, trailingColumn)) {
+      for (column in listOf(leadingFrame, mainColumn, trailingColumn) + metricColumns) {
         if (!hasContainerAlignment && column.parent === this && column.visibility != GONE) {
           column.offsetTopAndBottom((height - column.height + 1) / 2 - column.top)
         }

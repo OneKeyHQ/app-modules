@@ -2943,6 +2943,7 @@ class NativeListView(
           previous.type == "market" &&
           changes.keys().asSequence().all(MARKET_QUOTE_FIELDS::contains)
         val merged = NativeListItem.parse(mergeRow(previous.json, changes))
+        marketQuoteOnly = marketQuoteOnly && hasSameMarketMetricStructure(previous, merged)
         nextItems[index] = merged
         if (changes.has("selected")) {
           if (changes.optBoolean("selected")) selected.add(merged.key) else selected.remove(merged.key)
@@ -4838,6 +4839,7 @@ class NativeListView(
       "priceSegments",
       "change",
       "accessibilityLabel",
+      "metrics",
     )
     private const val SECTION_INDEX_CONTENT_INSET_DP = 16
     private const val SECTION_INDEX_RAIL_WIDTH_DP = 32

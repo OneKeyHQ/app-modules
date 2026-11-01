@@ -1634,6 +1634,48 @@ row/presentation recycling, strict validation, native dictionary safe-ignore,
 header/body geometry, 100 quote ticks preserving nodes with zero geometry reads,
 then a real complex Market table before expanding to all five families.
 
+### Native Market metric columns
+
+Status: implemented in local source, unreleased; native runtime verification
+pending. A `market` row may supply two or three ordered, uniquely
+keyed text columns through `metrics`, typed as a `Pick<DataColumn, ...>` of
+the supported text fields. Each column uses
+the text subset of `DataColumn`: key, primary text and segments, optional
+secondary text and segments, weight, alignment, and primary/secondary tone.
+Icon and secondary-leading fields are rejected in development and stripped by
+the existing production decoration sanitizer.
+Keys are nonempty and callers format all text. The row keeps its required
+`price` and `change` fields as compact fallbacks. When `metrics` is present,
+iOS and Android display the existing leading action, visual, title, subtitle,
+and Market badges, then the metric columns in place of the compact price and
+change block. The metrics are authoritative for this native presentation; the
+SDK does not infer their values from the fallback fields or product data.
+The metrics use their own text tones and alignment, with both lines aligned
+the same way; omitted alignment defaults to `end`. Existing change block
+width, height, and corner radius do not
+apply to metric columns. The title content receives a relative weight of two;
+metric columns receive their declared `weight` (1...3, default one) after the
+row's existing action, visual, padding, and gaps take their space. The SDK
+does not choose a mode from screen width. Without `metrics`, all platforms
+retain their existing compact Market presentation. Web ignores `metrics` and
+continues using `webTable` when supplied.
+
+Metric values travel in the existing row snapshot JSON and do not change the
+Nitro ABI, row key, action keys, badge anchors, or scroll ownership. Full
+snapshots may add, replace, or omit `metrics`; omission restores compact mode.
+An explicit patch with a valid two- or three-column array replaces metrics,
+while an omitted patch field leaves them unchanged. A full snapshot is used
+to remove metrics from a wide row; this contract adds no null patch meaning.
+Binding and recycling clear inactive metric and compact views in both
+directions, including changes between two and three columns, so reused rows
+cannot show stale text or targets. Metric fields contain no new action target;
+Market badge, leading action, press, press-in, and long-press behavior remains
+owned by the existing Market row. Conformance requires validation and patch
+tests, native bind/reuse and action-anchor checks, then consuming App device
+checks at narrow and wide list widths. Source and unit tests alone do not
+establish native layout acceptance.
+
+
 
 ### Web grid fractional column geometry
 
