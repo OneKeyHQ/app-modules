@@ -124,6 +124,15 @@ describe.each([true, false])(
     it.each([
       'onekey-avatar://blockie/v1/testaccount0',
       `onekey-avatar://blockie/v1/${encodeURIComponent('account/with spaces')}`,
+      'onekey-avatar://other/v1/account',
+      'onekey-avatar://blockie/v2/account',
+      'onekey-avatar://blockie/v1/',
+      'onekey-avatar://blockie/v1/account/extra',
+      'onekey-avatar://blockie/v1/account?query',
+      'onekey-avatar://blockie/v1/account#fragment',
+      'onekey-avatar://files/folder/avatar.png?size=32#preview',
+      'ONEKEY-AVATAR://files/avatar.png',
+      'onekey-avatar:folder/avatar.png',
     ])('preserves %s in snapshots and row patches', (uri) => {
       const value = account(uri);
       expect(validateSnapshot(snapshot([value])).rows[0]).toMatchObject({
@@ -143,12 +152,8 @@ describe.each([true, false])(
     it.each([
       // eslint-disable-next-line no-script-url -- Exercise executable URI rejection.
       'javascript:alert(1)',
-      'onekey-avatar://other/v1/account',
-      'onekey-avatar://blockie/v2/account',
-      'onekey-avatar://blockie/v1/',
-      'onekey-avatar://blockie/v1/account/extra',
-      'onekey-avatar://blockie/v1/account?query',
-      'onekey-avatar://blockie/v1/account#fragment',
+      'onekey-avatar-other://files/avatar.png',
+      'ftp://example.com/avatar.png',
     ])('rejects %s in snapshots and row patches', (uri) => {
       const value = account(uri);
       const validateRow = () => validateSnapshot(snapshot([value])).rows[0];

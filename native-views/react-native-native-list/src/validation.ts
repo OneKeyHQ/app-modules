@@ -3083,8 +3083,9 @@ function isAllowedImageUri(value: unknown): value is string {
     typeof value === 'string' &&
     value.trim().length > 0 &&
     (!/^[a-z][a-z\d+.-]*:/i.test(value) ||
-      /^(https?|file|content|ph|assets-library|asset|res|blob):/i.test(value) ||
-      /^onekey-avatar:\/\/blockie\/v1\/[^/?#]+$/.test(value) ||
+      /^(https?|file|content|ph|assets-library|asset|res|blob|onekey-avatar):/i.test(
+        value
+      ) ||
       /^data:image\//i.test(value))
   );
 }
