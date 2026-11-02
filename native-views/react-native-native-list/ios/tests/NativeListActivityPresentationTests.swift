@@ -97,7 +97,7 @@ final class NativeListActivityPresentationTests: XCTestCase {
     }
   }
 
-  func testTableColumnsStayStableAcrossFeeLeadingAndAmountReuse() throws {
+  func testTableColumnsStayStableAcrossFeeLeadingAndAmountReuseWithForcedRendererDirection() throws {
     let width: CGFloat = 900
     let horizontal: CGFloat = 16
     let contentWidth = width - horizontal * 2
@@ -115,7 +115,12 @@ final class NativeListActivityPresentationTests: XCTestCase {
     let amounts = try XCTUnwrap(main.arrangedSubviews[2] as? UIStackView)
     let fee = try XCTUnwrap(main.arrangedSubviews[3] as? UIStackView)
     for rtl in [false, true] {
-      details.semanticContentAttribute = rtl ? .forceRightToLeft : .forceLeftToRight
+      let direction: UIUserInterfaceLayoutDirection = rtl ? .rightToLeft : .leftToRight
+      // This fixture covers renderer geometry; App-level RTL propagation is separate.
+      func applyDirection(_ view: UIView) {
+        view.semanticContentAttribute = rtl ? .forceRightToLeft : .forceLeftToRight
+        view.subviews.forEach(applyDirection)
+      }
       for hasFee in [true, false, true] {
         var previousHeight: CGFloat = 0
         for count in [1, 2, 6, 32] {
@@ -137,9 +142,15 @@ final class NativeListActivityPresentationTests: XCTestCase {
                   "primary": feeKind == 1 ? "0.000000012345678 ETH" : "1 ETH",
                   "secondary": "$0.20", "hidden": feeKind == 2]
               }
+              // Create amount views before applying the fixture direction; each transition binds once.
+              details.bind(try NativeListItem(data: data), theme: nil, fonts: NativeListFontFamilies())
+              applyDirection(details)
               for presentation in ["table", "stacked", "table"] {
                 data["presentation"] = presentation
                 details.bind(try NativeListItem(data: data), theme: nil, fonts: NativeListFontFamilies())
+                XCTAssertEqual(main.effectiveUserInterfaceLayoutDirection, direction)
+                XCTAssertEqual(amounts.effectiveUserInterfaceLayoutDirection, direction)
+                XCTAssertEqual(fee.effectiveUserInterfaceLayoutDirection, direction)
                 container.setNeedsLayout()
                 container.layoutIfNeeded()
                 guard presentation == "table" else { continue }

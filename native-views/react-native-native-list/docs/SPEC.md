@@ -1467,7 +1467,9 @@ center across short/long/hidden fee, leading visibility, 1/2/6/32 amount lines a
 table/stacked reuse. Android DataRow primary and secondary groups honor their
 resolved text-role alignment (role style first, then column alignment), including
 start/center/end and styled/unstyled reuse. The secondary-prefix gap is present
-only when that prefix is visible; legacy linear rendering is unchanged.
+only when that prefix is visible; legacy linear rendering is unchanged. The UIKit
+regression explicitly forces each renderer view's direction; React Native/Fabric
+host direction propagation and real App RTL remain unverified.
 
 ### Android ancestor scroll distance
 
