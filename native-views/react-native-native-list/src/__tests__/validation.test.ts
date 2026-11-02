@@ -100,6 +100,78 @@ const snapshot = (
 });
 
 describe.each([true, false])(
+  'account avatar image URIs in development=%s',
+  (development) => {
+    const environment = globalThis as typeof globalThis & { __DEV__: boolean };
+    let original: boolean;
+    beforeEach(() => {
+      original = environment.__DEV__;
+      environment.__DEV__ = development;
+    });
+    afterEach(() => {
+      environment.__DEV__ = original;
+    });
+
+    const account = (uri: string): IdentityRow => ({
+      ...row('account'),
+      leading: {
+        kind: 'account',
+        image: { uri, width: 32, height: 32 },
+        fallbackIcon: { name: 'CrossedSmallSolid' },
+      },
+    });
+
+    it.each([
+      'onekey-avatar://blockie/v1/testaccount0',
+      `onekey-avatar://blockie/v1/${encodeURIComponent('account/with spaces')}`,
+    ])('preserves %s in snapshots and row patches', (uri) => {
+      const value = account(uri);
+      expect(validateSnapshot(snapshot([value])).rows[0]).toMatchObject({
+        leading: value.leading,
+      });
+      expect(
+        validatePatches([
+          {
+            type: 'identity',
+            key: value.key,
+            changes: { leading: value.leading },
+          },
+        ])[0]!.changes
+      ).toMatchObject({ leading: value.leading });
+    });
+
+    it.each([
+      // eslint-disable-next-line no-script-url -- Exercise executable URI rejection.
+      'javascript:alert(1)',
+      'onekey-avatar://other/v1/account',
+      'onekey-avatar://blockie/v2/account',
+      'onekey-avatar://blockie/v1/',
+      'onekey-avatar://blockie/v1/account/extra',
+      'onekey-avatar://blockie/v1/account?query',
+      'onekey-avatar://blockie/v1/account#fragment',
+    ])('rejects %s in snapshots and row patches', (uri) => {
+      const value = account(uri);
+      const validateRow = () => validateSnapshot(snapshot([value])).rows[0];
+      const validatePatch = () =>
+        validatePatches([
+          {
+            type: 'identity',
+            key: value.key,
+            changes: { leading: value.leading },
+          },
+        ])[0]!.changes;
+      if (development) {
+        expect(validateRow).toThrow('unsupported image URI');
+        expect(validatePatch).toThrow('unsupported image URI');
+      } else {
+        expect(validateRow()).not.toHaveProperty('leading.image');
+        expect(validatePatch()).not.toHaveProperty('leading.image');
+      }
+    });
+  }
+);
+
+describe.each([true, false])(
   'identity title image protocol in development=%s',
   (development) => {
     const environment = globalThis as typeof globalThis & { __DEV__: boolean };
