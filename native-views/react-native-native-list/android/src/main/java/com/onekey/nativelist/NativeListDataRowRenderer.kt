@@ -292,12 +292,14 @@ private class NativeListTableColumnView(context: android.content.Context, privat
 
   fun reset() {
     primaryLine.gravity = Gravity.CENTER_VERTICAL
+    secondaryLine.gravity = Gravity.CENTER_VERTICAL
     for (icon in listOf(titleIcon, secondaryTitleIcon)) {
       icon.visibility = GONE
       icon.iconName = ""
       icon.contentDescription = null
       icon.setOnClickListener(null)
     }
+    (primaryLine.layoutParams as LayoutParams).gravity = -1
     primaryLine.layoutParams.width = LayoutParams.WRAP_CONTENT
     primaryLine.layoutParams.height = LayoutParams.WRAP_CONTENT
     secondaryLine.layoutParams.height = LayoutParams.WRAP_CONTENT
@@ -357,6 +359,17 @@ private class NativeListTableColumnView(context: android.content.Context, privat
         "end" -> Gravity.END
         else -> Gravity.START
       }
+    fun horizontalGravity(alignment: String) = when (alignment) {
+      "center" -> Gravity.CENTER_HORIZONTAL
+      "end" -> Gravity.END
+      else -> Gravity.START
+    }
+    val primaryAlignment = style.optJSONObject("columns")?.optString("alignment")
+      ?.takeIf(String::isNotEmpty) ?: column.optString("alignment", "start")
+    (primaryLine.layoutParams as LayoutParams).gravity = horizontalGravity(primaryAlignment)
+    val secondaryAlignment = style.optJSONObject("columnSecondary")?.optString("alignment")
+      ?.takeIf(String::isNotEmpty) ?: column.optString("alignment", "start")
+    secondaryLine.gravity = Gravity.CENTER_VERTICAL or horizontalGravity(secondaryAlignment)
     fun bindText(
       view: NativeListTextView,
       value: String,
@@ -433,6 +446,8 @@ private class NativeListTableColumnView(context: android.content.Context, privat
       secondaryLine.visibility = VISIBLE
     }
     if (!fixedTableGeometry) applyStyle(style)
+    (secondary.layoutParams as LayoutParams).marginStart =
+      if (secondaryLeading.visibility == VISIBLE) dp(4) else 0
     if (fixedTableGeometry) {
       // Legacy table lines: fixed 20dp primary and 16dp secondary/badge boxes.
       primaryLine.layoutParams.height = dp(20)

@@ -1434,9 +1434,14 @@ secondary text and subscript text segments. Segments are caller-formatted and
 never interpreted as numbers by NativeList. Omission preserves the legacy tree.
 
 `presentation: stacked` places the amount lines after the identity column and
-right-aligns them; `table` uses equal identity/amount columns, left-aligns amount
-lines and adds an optional trailing fee column. Fee supports label, primary and
-secondary text with their own segments; `hidden` preserves its column width
+right-aligns them. In `table`, the identity column includes its leading visual
+and gap; identity, amounts and an optional fee use stable widths in the ratio
+`1:1:0.6` after inter-column gaps. Without fee, identity and amounts split the
+remaining width equally. Amount content stays start-aligned within its column;
+native fee content stays end-aligned; Web retains its existing start alignment.
+Fee text length and leading visibility cannot move the amount column. These
+native widths match the existing Web table layout. Fee supports label, primary
+and secondary text with their own segments; `hidden` preserves its column width
 while hiding its contents. Up to four uniquely keyed title badges use declared
 tones. `descriptionActionKey` makes only the description emit that action with
 source `description`; footer actions retain their existing source/keys and
@@ -1456,6 +1461,13 @@ small-number segments in amounts/fiat/fee (ceil(0.6 × parent font size), unchan
 baseline, matching NumberSizeableText), badge tone/clear, hidden fee, disabled
 actions, description anchors, dark/RTL/font scaling and explicit/automatic height.
 
+
+Table regression acceptance additionally measures amount-column start, width and
+center across short/long/hidden fee, leading visibility, 1/2/6/32 amount lines and
+table/stacked reuse. Android DataRow primary and secondary groups honor their
+resolved text-role alignment (role style first, then column alignment), including
+start/center/end and styled/unstyled reuse. The secondary-prefix gap is present
+only when that prefix is visible; legacy linear rendering is unchanged.
 
 ### Android ancestor scroll distance
 
