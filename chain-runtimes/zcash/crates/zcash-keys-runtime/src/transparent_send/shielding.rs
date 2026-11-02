@@ -441,7 +441,8 @@ fn validate_original(
     let expected_anchor = has_ironwood.then(|| orchard::Anchor::empty_tree().to_bytes());
     if *global.tx_version() != zcash_protocol::constants::V6_TX_VERSION
         || *global.version_group_id() != zcash_protocol::constants::V6_VERSION_GROUP_ID
-        || *global.consensus_branch_id() != u32::from(BranchId::Nu6_3)
+        || *global.consensus_branch_id()
+            != u32::from(BranchId::for_height(&MAIN_NETWORK, plan.target_height))
         || *global.expiry_height() != u32::from(plan.expiry_height)
         || pczt::common::determine_lock_time(global, pczt.transparent().inputs()) != Some(0)
         || !pczt.sapling().spends().is_empty()
