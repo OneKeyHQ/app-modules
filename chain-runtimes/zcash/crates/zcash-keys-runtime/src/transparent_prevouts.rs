@@ -119,4 +119,20 @@ mod tests {
             serde_json::from_str(&parse_json(&request.to_string()).unwrap()).unwrap();
         assert_eq!(parsed[0]["isCoinbase"], true);
     }
+
+    #[test]
+    fn parses_outputs_of_an_nu7_transaction() {
+        let mut request = request();
+        let mut bytes = hex::decode(request["transactions"][1]["rawTx"].as_str().unwrap()).unwrap();
+        // v6 header: version, version group id, then the consensus branch id.
+        bytes[8..12].copy_from_slice(&u32::from(BranchId::Nu7).to_le_bytes());
+        let tx = Transaction::read(&bytes[..], BranchId::Sprout).unwrap();
+        assert_eq!(tx.consensus_branch_id(), BranchId::Nu7);
+        request["transactions"] = json!([{
+            "txid": tx.txid().to_string(), "rawTx": hex::encode(bytes),
+        }]);
+        let parsed: Value =
+            serde_json::from_str(&parse_json(&request.to_string()).unwrap()).unwrap();
+        assert_eq!(parsed[0]["outputs"][0]["valueZat"], "1000");
+    }
 }

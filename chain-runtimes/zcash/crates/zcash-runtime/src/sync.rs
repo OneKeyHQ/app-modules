@@ -1140,6 +1140,24 @@ mod tests {
         assert!(parse_enhancement(&trailing, BranchId::Nu6_2, expected).is_err());
     }
 
+    #[test]
+    fn enhancement_parses_an_nu7_transaction() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../zcash-keys-runtime/tests/fixtures/previous-transactions.json"
+        ))
+        .unwrap();
+        let mut raw = hex::decode(fixture["transactions"][1]["rawTx"].as_str().unwrap()).unwrap();
+        // v6 header: version, version group id, then the consensus branch id.
+        raw[8..12].copy_from_slice(&u32::from(BranchId::Nu7).to_le_bytes());
+        let nu7 = Network::MainNetwork
+            .activation_height(NetworkUpgrade::Nu7)
+            .unwrap();
+        let branch = BranchId::for_height(&Network::MainNetwork, nu7);
+        let expected = Transaction::read(&raw[..], branch).unwrap().txid();
+        let tx = parse_enhancement(&raw, branch, expected).unwrap();
+        assert_eq!(tx.consensus_branch_id(), BranchId::Nu7);
+    }
+
     fn test_ufvk(network: &Network, seed_byte: u8) -> UnifiedFullViewingKey {
         UnifiedSpendingKey::from_seed(
             network,

@@ -14,7 +14,7 @@ license = "Apache-2.0"
 rust-version = "1.85"
 
 # Unmodified crates.io releases, except zcash_client_sqlite's Cargo.toml drops rusqlite "bundled"
-# (needs a libc sysroot wasm32 lacks). See patches/manifest.json.
+# (needs a libc sysroot wasm32 lacks) and zcash_protocol gains NU7 mainnet. See patches/manifest.json.
 [workspace.dependencies]
 blake2b_simd = "1"
 zcash_client_backend = { version = "0.24.0", default-features = false, features = ["orchard", "transparent-inputs", "lightwalletd-tonic", "sync", "pczt"] }
@@ -64,6 +64,8 @@ tonic-web-wasm-client = "0.9.1"
 
 # Run `bash scripts/vendor-deps.sh` first to create vendor/.
 [patch.crates-io]
+# Sets NU7's mainnet height and real branch ID; needs the nu7 cfg in .cargo/config.toml.
+zcash_protocol = { path = "vendor/zcash_protocol-0.10.5" }
 zcash_client_sqlite = { path = "vendor/zcash_client_sqlite-0.22.0" }
 tonic-web-wasm-client = { path = "vendor/tonic-web-wasm-client-0.9.1" }
 
