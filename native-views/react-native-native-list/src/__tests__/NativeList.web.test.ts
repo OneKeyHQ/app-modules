@@ -34,7 +34,7 @@ import {
 } from '../web/NativeListWebEngine';
 import { applyTextStyleToSlot } from '../web/templates/RowText';
 
-jest.mock('../../../react-native-image/src/icon/assetUrls', () => ({
+jest.mock('#onekey-icon-assets', () => ({
   iconResourceHref: (name: string) =>
     `https://fixture.invalid/${name}.svg#onekey-${name}`,
 }));

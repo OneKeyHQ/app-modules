@@ -56,10 +56,10 @@ class OneKeyIconDecoderTest : InstrumentationTestCase() {
     assertFalse(pixels.any {Color.alpha(it)>0 && Color.red(it)>Color.green(it)})
   }
 
-  fun testAllBundledSourcesAndAlpha() {
+  fun testAllBundledSDKFixturesAndAlpha() {
     val context = instrumentation.targetContext
     val names = context.assets.list("icons")!!.filter { it.endsWith(".svg") }.sorted()
-    assertEquals(1909, names.size)
+    assertEquals(58, names.size)
     val failures = mutableListOf<String>()
     val output = File(context.filesDir, "icon-probe").apply { mkdirs() }
     val representatives = setOf("GooglePayIllus.svg", "ShortcutsCustom.svg", "SidebarLeftArrowCustom.svg", "PassKeySolid.svg", "BotIllus.svg", "OnekeyPrimeLightColored.svg", "AppleBrand.svg", "ArrowTopRightIllus.svg", "OnekeyTextIllus.svg", "CheckboxCheckedCustom.svg", "ShieldDeviceDarkIllus.svg", "CoinsIllus.svg", "MaticCircleIllus.svg", "UserAvatarFallbackColored.svg")
@@ -319,14 +319,22 @@ class OneKeyIconDecoderTest : InstrumentationTestCase() {
         assertNull(icon.view.drawable)
       }
       val assets = instrumentation.targetContext.assets
-      for (name in assets.list("icons")!!.filter { it.endsWith(".svg") }.take(150)) {
+      var firstSizeBitmap: Bitmap? = null
+      var lastSizeBitmap: Bitmap? = null
+      for (width in 24 until 174) {
         val latch = CountDownLatch(1)
-        OneKeyNamedSVG.request(Any(), assets, name.removeSuffix(".svg"), "rgba(0,0,0,1)",128,128,1f) { latch.countDown() }
+        val output = java.util.concurrent.atomic.AtomicReference<Bitmap>()
+        OneKeyNamedSVG.request(Any(), assets, "DotVerSolid", "rgba(0,0,0,1)",width,24,1f) { output.set(it); latch.countDown() }
         assertTrue(latch.await(5,TimeUnit.SECONDS))
+        assertNotNull(output.get())
+        if (width == 24) firstSizeBitmap = output.get()
+        lastSizeBitmap = output.get()
       }
       val cacheField = OneKeyNamedSVG::class.java.getDeclaredField("cache").apply { isAccessible = true }
       @Suppress("UNCHECKED_CAST") val cache = cacheField.get(OneKeyNamedSVG) as Map<String,OneKeyNamedSVG.RenderResult>
-      assertTrue(cache.size <= 128)
+      assertEquals(128,cache.size)
+      assertFalse(cache.values.any { it.bitmap === firstSizeBitmap })
+      assertTrue(cache.values.any { it.bitmap === lastSizeBitmap })
       assertTrue(cache.values.sumOf { it.bitmap.allocationByteCount.toLong() } <= 8388608)
       val executorField = OneKeyNamedSVG::class.java.getDeclaredField("workers").apply { isAccessible = true }
       val executor = executorField.get(OneKeyNamedSVG) as ExecutorService

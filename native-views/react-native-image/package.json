@@ -51,21 +51,18 @@
     "!**/__tests__",
     "!**/.*",
     "!**/*.map",
-    "resources",
     "scripts"
   ],
   "scripts": {
     "clean": "del-cli android/build lib",
-    "prepare": "rm -rf lib && bob build && cp -r nitrogen lib/nitrogen && node scripts/copy-icon-assets.mjs",
+    "prepare": "rm -rf lib && bob build && cp -r nitrogen lib/nitrogen && node scripts/configure-icon-imports.mjs",
     "nitrogen": "nitrogen",
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
     "test": "jest",
     "release": "yarn nitrogen && yarn prepare && npm whoami && npm publish --access public",
-    "icons:generate": "node scripts/generate-icons.mjs",
-    "icons:check": "node scripts/generate-icons.mjs --check",
-    "icons:test": "node scripts/generate-icons.test.mjs",
-    "icons:copy": "node scripts/copy-icon-assets.mjs"
+    "icons:check": "node scripts/icon-fixtures.test.mjs",
+    "icons:test": "node scripts/icon-fixtures.test.mjs"
   },
   "keywords": [
     "react-native",
@@ -153,6 +150,16 @@
     "preset": "react-native",
     "modulePathIgnorePatterns": [
       "<rootDir>/lib/"
-    ]
+    ],
+    "moduleNameMapper": {
+      "^#onekey-icon-assets$": "<rootDir>/../react-native-image/src/icon/assetUrls.ts"
+    }
+  },
+  "imports": {
+    "#onekey-icon-assets": {
+      "types": "./src/icon/assetUrls.ts",
+      "source": "./src/icon/assetUrls.ts",
+      "default": "./lib/module/icon/assetUrls.js"
+    }
   }
 }

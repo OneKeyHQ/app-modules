@@ -11,7 +11,7 @@ import type { NativeListSnapshot } from '../models';
 jest.mock('react-native', () => ({
   View: require('react-native-web').View,
 }));
-jest.mock('../../../react-native-image/src/icon/assetUrls', () => ({
+jest.mock('#onekey-icon-assets', () => ({
   iconResourceHref: (name: string) =>
     `https://fixture.invalid/${name}.svg#onekey-${name}`,
 }));

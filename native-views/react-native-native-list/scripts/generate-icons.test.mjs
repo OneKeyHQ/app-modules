@@ -7,19 +7,14 @@ import test from 'node:test';
 import { generateOutputs, resolveRecords } from './generate-icons.mjs';
 const scripts = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.dirname(scripts);
-const index = process.argv.indexOf('--app-root');
-assert.ok(
-  index >= 0 && process.argv[index + 1],
-  'Pass --app-root <App checkout>'
+const fixtureRoot = path.resolve(
+  packageRoot,
+  '../../example/react-native/icon-fixtures/native/icons'
 );
-const appRoot = path.resolve(process.argv[index + 1]);
 const manifest = JSON.parse(
   fs.readFileSync(path.join(scripts, 'native-list-icons.json'), 'utf8')
 );
-const catalogFile = path.join(
-  packageRoot,
-  '../react-native-image/resources/icons/manifest.json'
-);
+const catalogFile = path.join(fixtureRoot, 'manifest.json');
 const catalog = JSON.parse(fs.readFileSync(catalogFile, 'utf8'));
 // Frozen migration coverage, independent from the production manifest.
 const migrationCoverage = {
@@ -158,7 +153,7 @@ test('preserves frozen coverage, canonical aliases and intrinsic metadata withou
       )
     )
   );
-  const records = resolveRecords(manifest, catalog, appRoot);
+  const records = resolveRecords(manifest, catalog, fixtureRoot);
   assert.equal(
     records.find((e) => e.name === 'BadgeVerifiedSolid').canonical,
     'BadgeRecognizedSolid'
@@ -171,12 +166,14 @@ test('preserves frozen coverage, canonical aliases and intrinsic metadata withou
     const record = records.find((e) => e.name === name);
     assert.deepEqual([record.width, record.height], [w, h]);
   }
-  const outputs = generateOutputs(appRoot);
+  const outputs = generateOutputs(fixtureRoot);
   assert.equal(outputs.size, 3);
-  assert.deepEqual([...outputs], [...generateOutputs(appRoot)]);
+  assert.deepEqual([...outputs], [...generateOutputs(fixtureRoot)]);
   const contents = [...outputs.values()];
   assert.ok(
-    contents.every((text) => !text.includes(appRoot) && !text.includes('<path'))
+    contents.every(
+      (text) => !text.includes(fixtureRoot) && !text.includes('<path')
+    )
   );
   const keys = [
     [...contents[0].matchAll(/^    "([^"]+)":/gm)].map((m) => m[1]),
@@ -196,15 +193,15 @@ test('rejects invalid coverage metadata and missing, ambiguous or stale canonica
     { ...manifest[0], platforms: ['ios', 'ios'] },
   ])
     assert.throws(
-      () => resolveRecords([invalid], catalog, appRoot),
+      () => resolveRecords([invalid], catalog, fixtureRoot),
       /Invalid icon manifest/
     );
   assert.throws(
-    () => resolveRecords([manifest[0], manifest[0]], catalog, appRoot),
+    () => resolveRecords([manifest[0], manifest[0]], catalog, fixtureRoot),
     /Invalid icon manifest/
   );
   assert.throws(
-    () => resolveRecords(manifest, {}, appRoot),
+    () => resolveRecords(manifest, {}, fixtureRoot),
     /Missing shared SVG/
   );
   assert.throws(
@@ -220,7 +217,7 @@ test('rejects invalid coverage metadata and missing, ambiguous or stale canonica
               )
             ],
         },
-        appRoot
+        fixtureRoot
       ),
     /Ambiguous shared SVG/
   );
@@ -228,14 +225,14 @@ test('rejects invalid coverage metadata and missing, ambiguous or stale canonica
   changed[
     Object.keys(changed).find((k) => changed[k].source === manifest[0].source)
   ].digest = '0';
-  assert.throws(() => resolveRecords(manifest, changed, appRoot), /stale/);
+  assert.throws(() => resolveRecords(manifest, changed, fixtureRoot), /stale/);
 });
 test('generation is idempotent, check is read-only and invalid late input cannot partially write', () => {
   const tempRoot = path.join(packageRoot, '.tmp');
   fs.mkdirSync(tempRoot, { recursive: true });
   const temp = fs.mkdtempSync(path.join(tempRoot, 'metadata-'));
   try {
-    const sdk = path.join(temp, 'react-native-native-list');
+    const sdk = path.join(temp, 'native-views/react-native-native-list');
     fs.mkdirSync(path.join(sdk, 'scripts'), { recursive: true });
     for (const name of ['generate-icons.mjs', 'native-list-icons.json'])
       fs.copyFileSync(
@@ -253,17 +250,15 @@ test('generation is idempotent, check is read-only and invalid late input cannot
     );
     const targetCatalog = path.join(
       temp,
-      'react-native-image/resources/icons/manifest.json'
+      'example/react-native/icon-fixtures/native/icons/manifest.json'
     );
     fs.mkdirSync(path.dirname(targetCatalog), { recursive: true });
-    fs.copyFileSync(catalogFile, targetCatalog);
+    fs.cpSync(fixtureRoot, path.dirname(targetCatalog), { recursive: true });
     const run = (check = false) =>
       spawnSync(
         process.execPath,
         [
           path.join(sdk, 'scripts/generate-icons.mjs'),
-          '--app-root',
-          appRoot,
           ...(check ? ['--check'] : []),
         ],
         { encoding: 'utf8' }
@@ -271,7 +266,7 @@ test('generation is idempotent, check is read-only and invalid late input cannot
     assert.equal(run().status, 0);
     assert.equal(JSON.parse(run().stdout).changed, 0);
     assert.equal(run(true).status, 0);
-    const files = [...generateOutputs(appRoot, sdk).keys()];
+    const files = [...generateOutputs(fixtureRoot, sdk).keys()];
     const snapshot = () => files.map((file) => fs.readFileSync(file, 'utf8'));
     fs.appendFileSync(files[0], '// stale\n');
     const stale = snapshot();

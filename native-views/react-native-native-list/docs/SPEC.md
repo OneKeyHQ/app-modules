@@ -2027,3 +2027,17 @@ Circle remains local; Apple and checkbox rectangles and coverage are unchanged.
 iOS retains its existing black template/original request and synchronous retint.
 Web React and DOM use the image package's demand-loaded external per-icon symbol
 URLs, with existing coverage/aliases/action labels and CSS color inheritance.
+
+## Host-owned named resources — Implemented; SDK fixture runtime verified
+
+Image provides decoding and the static Web `#onekey-icon-assets` provider boundary;
+the application owns complete named SVG resources. NativeList keeps its existing
+43-name platform coverage and three generated metadata tables, including its
+legacy `BadgeVerifiedSolid` to canonical `BadgeRecognizedSolid` mapping. No list
+props, naming coverage, geometry or rendering strategy changes.
+
+The SDK metadata generator validates against the shared 58-sample example/test
+catalog without an App checkout, including raw source digests and viewBox sizes.
+It emits metadata only. Production consumers must supply the complete host icon
+bundle/assets and Web provider; SDK-only fixture tests prove their closed sample
+coverage, while the App's independent generator verifies all 1,909 resources.

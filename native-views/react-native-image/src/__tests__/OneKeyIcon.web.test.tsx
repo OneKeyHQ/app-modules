@@ -2,7 +2,7 @@ import { StyleSheet, View } from 'react-native';
 import renderer, { act } from 'react-test-renderer';
 import { OneKeyIcon } from '../icon/index.web';
 
-jest.mock('../icon/assetUrls', () => ({
+jest.mock('#onekey-icon-assets', () => ({
   iconResourceHref: (name: string) => `/icons/${name}.svg#onekey-${name}`,
 }));
 

@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { View } from 'react-native';
 import { isIconName, type OneKeyIconProps } from './props';
 import type { TextStyle } from 'react-native';
-import { iconResourceHref } from './assetUrls';
+import { iconResourceHref } from '#onekey-icon-assets';
 
 export type { OneKeyIconProps } from './props';
 

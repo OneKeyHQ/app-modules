@@ -2,11 +2,46 @@
 gradle.beforeProject { project ->
   if (project.path == ':onekeyfe_react-native-image') {
     project.plugins.withId('com.android.library') {
+      project.androidComponents.finalizeDsl { dsl ->
+        // Apply after the library's production packaging exclusions are configured.
+        dsl.packagingOptions.excludes.removeAll { it.endsWith('.so') }
+        // React's runtime JNI inputs also appear through the library's CMake imports.
+        dsl.packagingOptions.pickFirsts.addAll([
+          '**/libc++_shared.so', '**/libfbjni.so', '**/libjsi.so', '**/libreactnative.so'
+        ])
+      }
+      project.tasks.matching { it.name == 'mergeDebugAndroidTestNativeLibs' }.configureEach { mergeTask ->
+        outputs.upToDateWhen { false }
+        doLast {
+          // The standalone test APK uses the resolved React AAR's runtime explicitly.
+          // CMake's imported NDK runtime is another version; pickFirst order is insufficient.
+          def reactArtifact = project.configurations.getByName('debugAndroidTestRuntimeClasspath')
+            .incoming.artifactView { view ->
+              view.componentFilter { component ->
+                component instanceof org.gradle.api.artifacts.component.ModuleComponentIdentifier &&
+                  component.group == 'com.facebook.react' && component.module == 'react-android'
+              }
+              view.attributes.attribute(org.gradle.api.artifacts.type.ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, 'aar')
+            }.files.singleFile
+          new java.util.zip.ZipFile(reactArtifact).withCloseable { archive ->
+            def runtimes = mergeTask.outputs.files.asFileTree.matching { include '**/libc++_shared.so' }.files
+            if (runtimes.empty) throw new GradleException('Missing merged C++ runtime for icon tests')
+            runtimes.each { runtime ->
+              def entry = archive.getEntry("jni/${runtime.parentFile.name}/libc++_shared.so")
+              if (entry == null) throw new GradleException("Missing React C++ runtime for ${runtime.parentFile.name}")
+              archive.getInputStream(entry).withCloseable { input ->
+                runtime.withOutputStream { output -> output << input }
+              }
+            }
+          }
+        }
+      }
       project.android {
         useLibrary 'android.test.runner'
         useLibrary 'android.test.base'
         defaultConfig { testInstrumentationRunner 'android.test.InstrumentationTestRunner' }
         sourceSets {
+          main.assets.srcDirs += [project.rootProject.file("../icon-fixtures/native")]
           androidTest {
             java.srcDirs = ['../native-tests/android']
             manifest.srcFile '../native-tests/android/AndroidManifest.xml'

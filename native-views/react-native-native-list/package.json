@@ -124,7 +124,10 @@
     "preset": "react-native",
     "modulePathIgnorePatterns": [
       "<rootDir>/lib/"
-    ]
+    ],
+    "moduleNameMapper": {
+      "^#onekey-icon-assets$": "<rootDir>/../react-native-image/src/icon/assetUrls.ts"
+    }
   },
   "prettier": {
     "singleQuote": true,

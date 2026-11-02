@@ -1,4 +1,4 @@
-import { iconResourceHref } from './assetUrls';
+import { iconResourceHref } from '#onekey-icon-assets';
 
 /** Native SDK DOM consumers own name coverage, styling and accessible labels. */
 export function createNamedIcon(

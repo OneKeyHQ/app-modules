@@ -658,3 +658,59 @@ contains production changes; later focused test-only acceptance changes are kept
 in source and do not claim that archived candidate's test files were regenerated.
 No formal publication, dependency pin alignment, signed release or full native
 wallet acceptance is included.
+
+## 16. Host-owned icon resources — Implemented; SDK fixture runtime verified
+
+This section supersedes earlier SDK-owned catalog and generator paths. The App
+repository alone owns canonical artwork and the complete 1,909-source generator
+and validation. Every App build retains the complete catalog; selecting a small
+SDK fixture set is not application tree-shaking. The production Image npm, Pod
+and AAR artifacts contain no named SVG artwork or catalog. Native SVG decoders,
+shape classification metadata, cache limits, request generations and public
+`OneKeyIcon` / NativeList props remain unchanged.
+
+Hosts provide `OneKeyIcons.bundle` on iOS, containing `manifest.json` and
+`CanonicalName.svg` files at its root. Android hosts merge the equivalent files
+under `assets/icons/`. The deterministic manifest retains `source`, SHA-256
+`digest`, `viewBox` and `recolorMode` fields. Names, currentColor semantics and
+source digests retain their previous meaning. Native resources belong to the
+host binary; JS OTA alone cannot install new native artwork. Missing resources
+clear the icon through the existing failure path.
+
+Web React and DOM consumers statically import `#onekey-icon-assets`. A host build
+aliases that module to its generated `iconResourceHref(name: string): string |
+undefined` implementation. The SDK's package-imports default is an empty
+provider. No runtime setter, JS initialization ordering, XML/URI prop or new
+third-party dependency is introduced. Generated resources keep
+`#onekey-CanonicalName` symbol fragments and namespaced internal references.
+All App resource URLs remain reachable in the generated registry and emit as
+external files; unused artwork remains packaged, while browsers request only
+referenced files. Extension background stubs do not import the provider.
+
+SDK examples and native tests share 58 checked-in samples under
+`example/react-native/icon-fixtures`, with independent native and Web packaging.
+Only example targets, explicitly named XCTest target phases and opt-in Android test runners include
+these fixtures; the production Image pod and AAR have no fixture resource input.
+The fixture manifest covers NativeList's 42 canonical names and additional Image
+semantics, including `EditOutline`, fixed/mixed colors, gradients and non-square
+geometry. NativeList's legacy `BadgeVerifiedSolid` still maps to
+`BadgeRecognizedSolid`; the Image sample named `BadgeVerifiedSolid` remains its
+distinct canonical artwork. Cache pressure tests use more than 128 actual size
+identities rather than relying on a full SDK catalog.
+
+Acceptance requires SDK-only fixture integrity, JS/type checks, example/native
+resource packaging and a zero-artwork production package check. App acceptance
+separately validates all 1,909 sources and generated artifacts, native embedding,
+Web/Desktop/extension/web-embed builds and resource-aware native shell caches.
+A passing SDK sample test does not establish complete App catalog acceptance.
+
+SDK fixture acceptance on 2026-11-02: iOS 26.5 real UIApplication host runs all
+7 Image icon tests without failure or skip. Normal NativeList hosted checks run
+9 cases (8 pass, one archived-legacy-bundle skip). CI-style hostless checks run
+16 cases (9 pass, 7 UIApplication/legacy skips). Every test bundle has exactly
+58 raw samples with matching source digests. Android API 34 runs all 7 Image
+instrumentation cases and 5 NativeList consumer cases without failure. The
+standalone Image instrumentation APK supplies existing React JNI dependencies
+through its opt-in test configuration; its C++ runtime is selected explicitly
+from the resolved React AAR. Production dependency and JNI exclusions remain
+unchanged. Full application catalog and wallet UI acceptance are separate.

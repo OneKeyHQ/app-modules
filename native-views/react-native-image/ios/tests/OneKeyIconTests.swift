@@ -78,14 +78,14 @@ final class OneKeyIconTests: XCTestCase {
     XCTAssertTrue(stride(from: 0, to: bytes.count, by: 4).contains { bytes[$0 + 1] > bytes[$0] && bytes[$0 + 3] == 255 })
   }
 
-  func testAllBundledSVGResourcesDecode() throws {
+  func testAllBundledSDKFixturesDecode() throws {
     let ownerBundle = Bundle(for: HybridOneKeyIcon.self)
     let url = try XCTUnwrap(ownerBundle.url(forResource: "OneKeyIcons", withExtension: "bundle")
       ?? Bundle.main.url(forResource: "OneKeyIcons", withExtension: "bundle"))
     let bundle = try XCTUnwrap(Bundle(url: url))
     let manifestURL = try XCTUnwrap(bundle.url(forResource: "manifest", withExtension: "json"))
     let manifest = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [String: Any])
-    XCTAssertEqual(manifest.count, 1909)
+    XCTAssertEqual(manifest.count, 58)
     let all = expectation(description: "All named resources")
     all.expectedFulfillmentCount = manifest.count
     let owners = manifest.keys.sorted().map { _ in NSObject() }
@@ -170,16 +170,22 @@ final class OneKeyIconTests: XCTestCase {
       stateLock.lock(); defer { stateLock.unlock() }
       return (try? self.field("workers", as: Int.self)) == 0
     }
-    let entries: [String: [String: Any]]? = try field("metadata")
-    for name in try XCTUnwrap(entries).keys.sorted().prefix(150) {
-      _ = try XCTUnwrap(resolve(name, width: 24, height: 24))
+    var firstSizeImage: UIImage?
+    var lastSizeImage: UIImage?
+    for width in 24..<174 {
+      let image = try XCTUnwrap(resolve("DotVerSolid", color: "rgba(0,0,0,1)", width: width, height: 24))
+      if width == 24 { firstSizeImage = image }
+      lastSizeImage = image
     }
     let smallCount: Int = try {
       stateLock.lock(); defer { stateLock.unlock() }
       let cache: [String: OneKeyNamedSVG.RenderResult] = try field("cache")
       return cache.count
     }()
-    XCTAssertLessThanOrEqual(smallCount, 128)
+    XCTAssertEqual(smallCount, 128)
+    let sizeCache: [String: OneKeyNamedSVG.RenderResult] = try field("cache")
+    XCTAssertFalse(sizeCache.values.contains { $0.image === firstSizeImage })
+    XCTAssertTrue(sizeCache.values.contains { $0.image === lastSizeImage })
     _ = try XCTUnwrap(resolve("AppleBrand", width: 1024, height: 1024))
     _ = try XCTUnwrap(resolve("BotIllus", width: 1024, height: 1024))
     let uncached = try XCTUnwrap(resolve("BotIllus", width: 1536, height: 1536))
