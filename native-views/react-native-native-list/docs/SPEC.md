@@ -375,6 +375,33 @@ migration itself does not change any other protocol field.
 
 ## Lifecycle and concurrency
 
+### Updates before native host binding
+
+Status: implemented in local source, unreleased. The delayed-host regression fails
+on the previous wrapper and passes with this change; 438 package JS/Web tests and
+the package type check pass. This local JavaScript revision is verified with real
+iOS Fabric/UICollectionView rendering on an iPad simulator: delayed-ref,
+parent-layout-before-ref without an artificial delay, and host-ready control
+scenarios all retain the three complete rows after a later single-row update.
+The actual Home list also recovered all six rows after the task-specific Metro
+reload. Earlier natural re-entry evidence included development Metro bundle
+re-requests, so it does not establish a menu-only trigger or a Sui-specific natural
+reproduction. Android device acceptance remains unverified.
+
+Valid snapshots and row patches accepted before the native host is available MUST
+retain the latest owned logical state. When that host binds, its rows MUST reflect
+all accepted updates that are eligible for presentation, including updates to rows
+that do not change again afterward. Later single-row updates MUST NOT leave other
+rows at their initial placeholders. Existing disclosure measurement gates and
+snapshot replacement semantics still apply. Once the host is ready, ordinary row
+patches MUST remain incremental rather than requiring a complete snapshot for each
+patch. This contract does not add a public prop, method, or Nitro ABI field.
+
+Conformance covers multiple pre-bind patch batches, newer complete prop and
+imperative snapshots, rejected updates, equivalent prop clones after slot layout,
+selection state, repeated callbacks, distinct replacement hosts, and incremental
+single-row updates after binding.
+
 Full binding must work without a preceding recycle callback, including
 style set/change/clear and content A → B. A binding epoch invalidates stale
 image callbacks and action anchors. Recycling/disposal releases pending work
