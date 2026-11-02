@@ -188,6 +188,90 @@ and Web acceptance must cover narrow addresses, dynamic type/fonts, long press
 versus tap, keyboard interaction, and the horizontal warning border. Source or
 build success alone is not runtime evidence.
 
+### Identity title segments and leading title icon
+
+Status: implemented in source for iOS, Android and Web; device and Web runtime
+acceptance is pending. These fields travel in snapshot/patch JSON and do not
+change the Nitro ABI. They serve recipient rows whose title is a wallet and an
+account name in two styles, and address book rows marked by an icon before the
+name.
+
+`identity.titleSegments` is an optional list of 1...4 runs drawn on the title
+line in place of `title`:
+
+```ts
+titleSegments?: readonly {
+  text: string;
+  tone?: 'primary' | 'secondary';
+  fontWeight?: 'regular' | 'medium';
+  shrink?: boolean;
+  maxWidthRatio?: number; // (0, 1]
+}[];
+```
+
+- `title` stays required. It is the spoken label and the fallback text, so it
+  carries the same words as the runs; every renderer exposes `title`, not the
+  runs, to accessibility.
+- Each run uses the title's font family, size and line height, including
+  `style.title` and the configured fonts. `tone` picks the primary or secondary
+  text color and defaults to the title color; `fontWeight` picks the weight and
+  defaults to the title weight.
+- The runs share one line. `titleLines` and `style.title.lines` do not apply.
+- Layout. The runs take the whole width the title line leaves after the
+  leading title icon and the title accessories (title icon, title image,
+  suffixes, badges), so those accessories sit at the line's end rather than
+  right after the text. W is that width:
+  1. A run's base width is its natural width, capped at `maxWidthRatio x W`
+     when given. A run longer than its cap truncates at the cap with a tail
+     ellipsis.
+  2. At most one run sets `shrink: true`. Every other run keeps its base width.
+  3. The shrinking run gets `min(base, W - sum of the other runs)` and
+     truncates with a tail ellipsis; it may shrink to zero width.
+  4. When the runs that do not shrink exceed W on their own, the line is cut at
+     its end. Native renderers end the last visible run with an ellipsis; Web
+     clips it. This divergence is accepted: callers avoid the case with
+     `maxWidthRatio`.
+- Development validation rejects an empty or oversized list, blank or
+  oversized text (the 4096-code-unit text bound), unknown keys, tones or
+  weights, a ratio outside `(0, 1]`, more than one shrinking run, `titleMatch`
+  on the same row (its ranges index `title`), and
+  `presentation: 'walletSidebar'`. Production treats the runs as decoration:
+  an invalid list is dropped and the row shows `title`. Renderers draw `title`
+  instead of runs on a row that also has `titleMatch`, and ignore runs and the
+  leading icon with `presentation: 'walletSidebar'`.
+
+`identity.titleLeadingIcon` is an optional `{ name, tintColor?,
+accessibilityLabel? }`: a 16-point glyph before the title text or its runs,
+with a 6-point gap, vertically centered on the title line. The name comes from
+the same closed icon set as `titleIcon`; an unmapped name leaves an empty
+16-point slot. `tintColor` is a hex `#RRGGBB` or `#RRGGBBAA` color and defaults
+to the theme's `iconSubdued`. Without `accessibilityLabel` the glyph is hidden
+from accessibility. It has no action of its own. Development validation
+rejects unknown keys, a blank name, a malformed color and
+`presentation: 'walletSidebar'`; production drops an invalid icon.
+
+Both fields are identity patch fields. Omission in a full snapshot removes
+them; omission in a patch keeps the current value. Rebind and recycle remove the
+previous runs and glyph, so a row without them never shows another row's.
+
+| Platform | Title runs | Leading icon |
+| --- | --- | --- |
+| iOS | `NativeListTitleSegmentsLabel` draws the runs at the widths that `NativeListTitleSegmentLayout.swift` allocates for its bounds; it fills the title row in place of the row's filler. | `UIImageView`, first in the title row stack. |
+| Android | `NativeListTitleSegmentsView`, a `TextView` whose text is rebuilt for each measured width from `NativeListTitleSegmentLayout.kt` and which measures to the width it is offered. `PackedTitleLineLayout.titleChild` names the flexible title view, so a view may precede it. | `OneKeyIconView`, first in the title line. |
+| Web | A flex line that fills the title line: the shrinking run is `flex: 0 1 auto; min-width: 0`, the others `flex: 0 0 auto` with a `max-width` percentage for a cap. | An icon element before the title text. |
+
+Conformance: `src/validation.ts` (`assertTitleSegments`,
+`assertTitleLeadingIcon`, production sanitizing) with `validation.test.ts`;
+`src/web/templates/IdentityRowRenderer.ts` with `IdentityTitleRunsWeb.test.ts`
+(run styles, flex behavior, accessibility, rebind);
+`ios/NativeListTitleSegmentLayout.swift` with the SwiftPM
+`NativeListTitleSegmentLayoutTests`; `NativeListTitleSegmentLayout.kt` with the
+JVM `NativeListTitleSegmentLayoutTest`. iOS, Android and Web runtime acceptance is pending: recipient rows
+with long wallet and account names in both truncation directions, narrow rows,
+dark mode, dynamic type and configured fonts, and recycling between rows with
+and without runs or a leading icon. Source and build success alone are not
+runtime evidence.
+
 ### DeFi position row controls
 
 Status: implemented in local source, unreleased. Focused validation and Web
