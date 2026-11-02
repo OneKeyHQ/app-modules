@@ -396,7 +396,9 @@ class NativeListRiskAccessoryTest : InstrumentationTestCase() {
             row.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
               View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
             row.layout(0, 0, width, row.measuredHeight)
+            assertEquals("row resolves requested direction", direction, row.layoutDirection)
             for (cell in field<List<View>>(row, "cells").take(count)) {
+              assertEquals("column resolves requested direction", direction, cell.layoutDirection)
               val primary = field<TextView>(cell, "primary")
               val secondary = field<TextView>(cell, "secondary")
               val expected = expectedAnchor(cell, alignment)
@@ -463,11 +465,13 @@ class NativeListRiskAccessoryTest : InstrumentationTestCase() {
                 details.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
                   View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
                 details.layout(0, 0, width, details.measuredHeight)
+                assertEquals("activity resolves requested direction", direction, details.layoutDirection)
               }
               for (presentation in listOf("table", "stacked", "table")) {
                 bind(presentation)
                 if (presentation != "table") continue
                 val column = field<LinearLayout>(details, "amounts")
+                assertEquals("amount column resolves requested direction", direction, column.layoutDirection)
                 val expectedWidth = (width - gap * if (hasFee) 2 else 1) / if (hasFee) 2.6f else 2f
                 assertEquals("amount width", expectedWidth, column.width.toFloat(), 2f)
                 val expectedStart = if (direction == View.LAYOUT_DIRECTION_RTL) width - expectedWidth * 2 - gap else expectedWidth + gap
