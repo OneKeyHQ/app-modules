@@ -25,6 +25,7 @@ enum NativeListGeneratedIcons {
     "ChevronTopOutline": NativeListIconMetadata(name: "ChevronTopOutline", size: CGSize(width: 24, height: 24), original: false),
     "CrossedSmallSolid": NativeListIconMetadata(name: "CrossedSmallSolid", size: CGSize(width: 24, height: 24), original: false),
     "CryptoCoinOutline": NativeListIconMetadata(name: "CryptoCoinOutline", size: CGSize(width: 24, height: 24), original: false),
+    "Document2Outline": NativeListIconMetadata(name: "Document2Outline", size: CGSize(width: 24, height: 24), original: false),
     "DotHorOutline": NativeListIconMetadata(name: "DotHorOutline", size: CGSize(width: 24, height: 24), original: false),
     "DotVerSolid": NativeListIconMetadata(name: "DotVerSolid", size: CGSize(width: 24, height: 24), original: false),
     "DragOutline": NativeListIconMetadata(name: "DragOutline", size: CGSize(width: 24, height: 24), original: false),
@@ -39,6 +40,7 @@ enum NativeListGeneratedIcons {
     "MinusCircleSolid": NativeListIconMetadata(name: "MinusCircleSolid", size: CGSize(width: 24, height: 24), original: false),
     "PencilOutline": NativeListIconMetadata(name: "PencilOutline", size: CGSize(width: 24, height: 24), original: false),
     "PlusCircleOutline": NativeListIconMetadata(name: "PlusCircleOutline", size: CGSize(width: 24, height: 24), original: false),
+    "PlusLargeOutline": NativeListIconMetadata(name: "PlusLargeOutline", size: CGSize(width: 24, height: 24), original: false),
     "PlusSmallOutline": NativeListIconMetadata(name: "PlusSmallOutline", size: CGSize(width: 24, height: 24), original: false),
     "QuestionmarkSolid": NativeListIconMetadata(name: "QuestionmarkSolid", size: CGSize(width: 24, height: 24), original: false),
     "RefreshCcwOutline": NativeListIconMetadata(name: "RefreshCcwOutline", size: CGSize(width: 24, height: 24), original: false),
@@ -47,5 +49,7 @@ enum NativeListGeneratedIcons {
     "StarOutline": NativeListIconMetadata(name: "StarOutline", size: CGSize(width: 24, height: 24), original: false),
     "StarSolid": NativeListIconMetadata(name: "StarSolid", size: CGSize(width: 24, height: 24), original: false),
     "SwapHorOutline": NativeListIconMetadata(name: "SwapHorOutline", size: CGSize(width: 24, height: 24), original: false),
+    "TicketOutline": NativeListIconMetadata(name: "TicketOutline", size: CGSize(width: 24, height: 24), original: false),
+    "WalletOutline": NativeListIconMetadata(name: "WalletOutline", size: CGSize(width: 24, height: 24), original: false),
   ]
 }

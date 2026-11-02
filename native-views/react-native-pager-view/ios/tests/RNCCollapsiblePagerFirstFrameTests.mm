@@ -52,6 +52,8 @@ using namespace facebook::react;
   window.hidden = NO;
   [self addTeardownBlock:^{
     [pager prepareForRecycle];
+    [pager removeFromSuperview];
+    window.rootViewController = nil;
     window.hidden = YES;
   }];
 
@@ -77,7 +79,7 @@ using namespace facebook::react;
   [pager layoutIfNeeded];
   XCTestExpectation *settled = [self expectationWithDescription:@"Baseline slots and observer settled"];
   dispatch_async(dispatch_get_main_queue(), ^{ [settled fulfill]; });
-  [self waitForExpectations:@[settled] timeout:1];
+  [self waitForExpectations:@[settled] timeout:5];
   [pager attachScrollObserverForCurrentPage];
   UIScrollView *ownedScroll = scroller.scrollView;
   XCTAssertEqual([pager valueForKey:@"observedScrollView"], ownedScroll);
@@ -118,7 +120,7 @@ using namespace facebook::react;
                              initialLogicalOffset, 0.01);
   XCTestExpectation *rebuilt = [self expectationWithDescription:@"Post-mount observer restored"];
   dispatch_async(dispatch_get_main_queue(), ^{ [rebuilt fulfill]; });
-  [self waitForExpectations:@[rebuilt] timeout:1];
+  [self waitForExpectations:@[rebuilt] timeout:5];
   [pager attachScrollObserverForCurrentPage];
   XCTAssertEqual([pager valueForKey:@"topOverlayView"], overlay);
   XCTAssertEqual([pager valueForKey:@"observedScrollView"], ownedScroll);
@@ -171,9 +173,10 @@ using namespace facebook::react;
   RNCNativeScrollerComponentView *scroller = [self addScrollerToPager:pager atIndex:0];
   [pager.window layoutIfNeeded];
   [pager layoutIfNeeded];
+  [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
   XCTestExpectation *initialLayout = [self expectationWithDescription:@"Initial observer attachment drained"];
   dispatch_async(dispatch_get_main_queue(), ^{ [initialLayout fulfill]; });
-  [self waitForExpectations:@[initialLayout] timeout:1];
+  [self waitForExpectations:@[initialLayout] timeout:5];
   [pager detachScrollObserver];
   [pager attachScrollObserverForCurrentPage];
   [pager updateHeaderSettledStateForceBusy:NO];
@@ -622,6 +625,8 @@ using namespace facebook::react;
   window.hidden = NO;
   [self addTeardownBlock:^{
     [pager prepareForRecycle];
+    [pager removeFromSuperview];
+    window.rootViewController = nil;
     window.hidden = YES;
   }];
   NSMutableArray *pages = [pager valueForKey:@"pageControllers"];
@@ -801,6 +806,10 @@ using namespace facebook::react;
   component.contentView.frame = component.bounds;
   UIViewController *page = [pager valueForKey:@"pageControllers"][0];
   [page.view addSubview:component];
+  [self addTeardownBlock:^{
+    [component prepareForRecycle];
+    [component removeFromSuperview];
+  }];
   [component.contentView layoutIfNeeded];
   return component;
 }

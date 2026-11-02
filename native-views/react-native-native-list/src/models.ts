@@ -544,6 +544,13 @@ export type IdentityRow = RowBase &
     }>;
     /** Web-only additional help icon after titleIcon. */
     secondaryTitleIcon?: IdentityRow['titleIcon'];
+    /** Circular image after title icons; image dimensions must be square, 1...40. */
+    titleImage?: Readonly<{
+      image: ImageSource;
+      accessibilityLabel?: string;
+      /** Web-only help anchor; the consumer owns tooltip content. */
+      hoverActionKey?: string;
+    }>;
     subtitle?: string;
     tertiary?: string;
     tertiaryTone?: 'secondary' | 'info';
@@ -1056,218 +1063,202 @@ type CommonPatchFields =
   | 'accessibilityLabel'
   | 'style';
 
+/** Null removes optional fields; undefined leaves the existing value unchanged. */
+export type PatchClearableChanges<Row, Keys extends keyof Row> = Readonly<{
+  [K in Keys]?: undefined extends Row[K] ? Row[K] | null : Row[K];
+}>;
+
 export type RowPatch =
   | Readonly<{
       type: 'identity';
       key: string;
-      changes: Partial<
-        Pick<
-          IdentityRow,
-          | CommonPatchFields
-          | 'title'
-          | 'titleSuffixes'
-          | 'titleIcon'
-          | 'secondaryTitleIcon'
-          | 'subtitle'
-          | 'subtitleLines'
-          | 'contentHeight'
-          | 'longPressActionKey'
-          | 'tertiary'
-          | 'tertiaryTone'
-          | 'badges'
-          | 'trailing'
-          | 'leading'
-          | 'leadingAction'
-          | 'titleMatch'
-          | 'titleActionKey'
-          | 'titleActionOnHover'
-          | 'subtitleSegments'
-        >
+      changes: PatchClearableChanges<
+        IdentityRow,
+        | CommonPatchFields
+        | 'title'
+        | 'titleSuffixes'
+        | 'titleIcon'
+        | 'secondaryTitleIcon'
+        | 'titleImage'
+        | 'subtitle'
+        | 'subtitleLines'
+        | 'contentHeight'
+        | 'longPressActionKey'
+        | 'tertiary'
+        | 'tertiaryTone'
+        | 'badges'
+        | 'trailing'
+        | 'leading'
+        | 'leadingAction'
+        | 'titleMatch'
+        | 'titleActionKey'
+        | 'titleActionOnHover'
+        | 'subtitleSegments'
       >;
     }>
   | Readonly<{
       type: 'rail';
       key: string;
-      changes: Partial<
-        Pick<
-          RailRow,
-          CommonPatchFields | 'title' | 'status' | 'badge' | 'visual'
-        >
+      changes: PatchClearableChanges<
+        RailRow,
+        CommonPatchFields | 'title' | 'status' | 'badge' | 'visual'
       >;
     }>
   | Readonly<{
       type: 'activity';
       key: string;
-      changes: Partial<
-        Pick<
-          ActivityRow,
-          | CommonPatchFields
-          | 'title'
-          | 'description'
-          | 'status'
-          | 'amounts'
-          | 'badges'
-          | 'presentation'
-          | 'fee'
-          | 'descriptionActionKey'
-          | 'primaryAmount'
-          | 'secondaryAmount'
-          | 'leading'
-          | 'hideLeading'
-          | 'secondaryLeading'
-          | 'footerActions'
-        >
+      changes: PatchClearableChanges<
+        ActivityRow,
+        | CommonPatchFields
+        | 'title'
+        | 'description'
+        | 'status'
+        | 'amounts'
+        | 'badges'
+        | 'presentation'
+        | 'fee'
+        | 'descriptionActionKey'
+        | 'primaryAmount'
+        | 'secondaryAmount'
+        | 'leading'
+        | 'hideLeading'
+        | 'secondaryLeading'
+        | 'footerActions'
       >;
     }>
   | Readonly<{
       type: 'message';
       key: string;
-      changes: Partial<
-        Pick<
-          MessageRow,
-          | CommonPatchFields
-          | 'unread'
-          | 'title'
-          | 'body'
-          | 'bodyLines'
-          | 'presentation'
-          | 'time'
-          | 'thumbnail'
-        >
+      changes: PatchClearableChanges<
+        MessageRow,
+        | CommonPatchFields
+        | 'unread'
+        | 'title'
+        | 'body'
+        | 'bodyLines'
+        | 'presentation'
+        | 'time'
+        | 'thumbnail'
       >;
     }>
   | Readonly<{
       type: 'dataRow';
       key: string;
-      changes: Partial<
-        Pick<
-          DataRow,
-          | CommonPatchFields
-          | 'leading'
-          | 'columns'
-          | 'trailing'
-          | 'checkbox'
-          | 'index'
-          | 'badge'
-          | 'badges'
-          | 'favorite'
-          | 'favoriteActive'
-        >
+      changes: PatchClearableChanges<
+        DataRow,
+        | CommonPatchFields
+        | 'leading'
+        | 'columns'
+        | 'trailing'
+        | 'checkbox'
+        | 'index'
+        | 'badge'
+        | 'badges'
+        | 'favorite'
+        | 'favoriteActive'
       >;
     }>
   | Readonly<{
       type: 'market';
       key: string;
-      changes: Partial<
-        Pick<
-          MarketRow,
-          | CommonPatchFields
-          | 'leadingAction'
-          | 'leading'
-          | 'title'
-          | 'subtitle'
-          | 'subtitleSegments'
-          | 'price'
-          | 'priceSegments'
-          | 'change'
-          | 'badges'
-          | 'pressActionKey'
-          | 'pressInActionKey'
-          | 'longPressActionKey'
-          | 'diagnostics'
-          | 'webTable'
-          | 'style'
-        >
+      changes: PatchClearableChanges<
+        MarketRow,
+        | CommonPatchFields
+        | 'leadingAction'
+        | 'leading'
+        | 'title'
+        | 'subtitle'
+        | 'subtitleSegments'
+        | 'price'
+        | 'priceSegments'
+        | 'change'
+        | 'badges'
+        | 'pressActionKey'
+        | 'pressInActionKey'
+        | 'longPressActionKey'
+        | 'diagnostics'
+        | 'webTable'
+        | 'style'
       >;
     }>
   | Readonly<{
       type: 'mediaTile';
       key: string;
-      changes: Partial<
-        Pick<
-          MediaTileRow,
-          | CommonPatchFields
-          | 'image'
-          | 'imageState'
-          | 'media'
-          | 'networkImage'
-          | 'title'
-          | 'subtitle'
-          | 'badge'
-          | 'closeActionKey'
-        >
+      changes: PatchClearableChanges<
+        MediaTileRow,
+        | CommonPatchFields
+        | 'image'
+        | 'imageState'
+        | 'media'
+        | 'networkImage'
+        | 'title'
+        | 'subtitle'
+        | 'badge'
+        | 'closeActionKey'
       >;
     }>
   | Readonly<{
       type: 'metricCard';
       key: string;
-      changes: Partial<
-        Pick<
-          MetricCardRow,
-          | CommonPatchFields
-          | 'variant'
-          | 'title'
-          | 'value'
-          | 'subtitle'
-          | 'trend'
-          | 'trendTone'
-          | 'visual'
-          | 'badge'
-          | 'metrics'
-          | 'progress'
-        >
+      changes: PatchClearableChanges<
+        MetricCardRow,
+        | CommonPatchFields
+        | 'variant'
+        | 'title'
+        | 'value'
+        | 'subtitle'
+        | 'trend'
+        | 'trendTone'
+        | 'visual'
+        | 'badge'
+        | 'metrics'
+        | 'progress'
       >;
     }>
   | Readonly<{
       type: 'sectionHeader';
       key: string;
-      changes: Partial<
-        Pick<
-          SectionHeaderRow,
-          | CommonPatchFields
-          | 'variant'
-          | 'titleLoading'
-          | 'title'
-          | 'subtitle'
-          | 'value'
-          | 'valueHelp'
-          | 'leadingBadge'
-          | 'valueActionKey'
-          | 'titleActionKey'
-          | 'titleActionOnHover'
-          | 'titleIcon'
-          | 'valueIcon'
-          | 'checkbox'
-        >
+      changes: PatchClearableChanges<
+        SectionHeaderRow,
+        | CommonPatchFields
+        | 'variant'
+        | 'titleLoading'
+        | 'title'
+        | 'subtitle'
+        | 'value'
+        | 'valueHelp'
+        | 'leadingBadge'
+        | 'valueActionKey'
+        | 'titleActionKey'
+        | 'titleActionOnHover'
+        | 'titleIcon'
+        | 'valueIcon'
+        | 'checkbox'
       >;
     }>
   | Readonly<{
       type: 'action';
       key: string;
-      changes: Partial<
-        Pick<
-          ActionRow,
-          | CommonPatchFields
-          | 'title'
-          | 'tone'
-          | 'icon'
-          | 'checkbox'
-          | 'trailing'
-        >
+      changes: PatchClearableChanges<
+        ActionRow,
+        CommonPatchFields | 'title' | 'tone' | 'icon' | 'checkbox' | 'trailing'
       >;
     }>
   | Readonly<{
       type: 'buttonGroup';
       key: string;
-      changes: Partial<Pick<ButtonGroupRow, CommonPatchFields | 'buttons'>>;
+      changes: PatchClearableChanges<
+        ButtonGroupRow,
+        CommonPatchFields | 'buttons'
+      >;
     }>
   | Readonly<{
       type: 'system';
       key: string;
       changes: Readonly<{
-        revision?: number;
-        disabled?: boolean;
-        message?: string;
+        revision?: number | null;
+        disabled?: boolean | null;
+        message?: string | null;
       }>;
     }>;
 

@@ -11,6 +11,7 @@ export const nativeListGeneratedIcons: Readonly<Record<string, string>> = {
   Circle: 'Circle',
   CrossedSmallSolid: 'CrossedSmallSolid',
   CryptoCoinOutline: 'CryptoCoinOutline',
+  Document2Outline: 'Document2Outline',
   DotHorOutline: 'DotHorOutline',
   DotVerSolid: 'DotVerSolid',
   DragOutline: 'DragOutline',
@@ -19,7 +20,9 @@ export const nativeListGeneratedIcons: Readonly<Record<string, string>> = {
   GoogleIllus: 'GoogleIllus',
   LockSolid: 'LockSolid',
   PencilOutline: 'PencilOutline',
+  PlusLargeOutline: 'PlusLargeOutline',
   PlusSmallOutline: 'PlusSmallOutline',
   RefreshCcwOutline: 'RefreshCcwOutline',
   TicketOutline: 'TicketOutline',
+  WalletOutline: 'WalletOutline',
 };

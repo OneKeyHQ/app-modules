@@ -18,6 +18,7 @@ internal val nativeListGeneratedIcons: Map<String, NativeListIconMetadata> = map
   "Circle" to NativeListIconMetadata("Circle", 24f, 24f),
   "CrossedSmallSolid" to NativeListIconMetadata("CrossedSmallSolid", 24f, 24f),
   "CryptoCoinOutline" to NativeListIconMetadata("CryptoCoinOutline", 24f, 24f),
+  "Document2Outline" to NativeListIconMetadata("Document2Outline", 24f, 24f),
   "DotHorOutline" to NativeListIconMetadata("DotHorOutline", 24f, 24f),
   "DotVerSolid" to NativeListIconMetadata("DotVerSolid", 24f, 24f),
   "DragOutline" to NativeListIconMetadata("DragOutline", 24f, 24f),
@@ -32,6 +33,7 @@ internal val nativeListGeneratedIcons: Map<String, NativeListIconMetadata> = map
   "MinusCircleSolid" to NativeListIconMetadata("MinusCircleSolid", 24f, 24f),
   "PencilOutline" to NativeListIconMetadata("PencilOutline", 24f, 24f),
   "PlusCircleOutline" to NativeListIconMetadata("PlusCircleOutline", 24f, 24f),
+  "PlusLargeOutline" to NativeListIconMetadata("PlusLargeOutline", 24f, 24f),
   "PlusSmallOutline" to NativeListIconMetadata("PlusSmallOutline", 24f, 24f),
   "QuestionmarkSolid" to NativeListIconMetadata("QuestionmarkSolid", 24f, 24f),
   "RefreshCcwOutline" to NativeListIconMetadata("RefreshCcwOutline", 24f, 24f),
@@ -40,4 +42,6 @@ internal val nativeListGeneratedIcons: Map<String, NativeListIconMetadata> = map
   "StarOutline" to NativeListIconMetadata("StarOutline", 24f, 24f),
   "StarSolid" to NativeListIconMetadata("StarSolid", 24f, 24f),
   "SwapHorOutline" to NativeListIconMetadata("SwapHorOutline", 24f, 24f),
+  "TicketOutline" to NativeListIconMetadata("TicketOutline", 24f, 24f),
+  "WalletOutline" to NativeListIconMetadata("WalletOutline", 24f, 24f),
 )

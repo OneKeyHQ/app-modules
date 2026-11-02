@@ -136,7 +136,10 @@ open class BottomBlurTest : InstrumentationTestCase() {
 
   fun testLiveBackdropReducesContrastAndUpdatesDuringScroll() {
     if (Build.VERSION.SDK_INT < 31) return
-    var barTop = 0
+    var sampleY = 0
+    var aboveBarY = 0
+    var sampleStartX = 0
+    var sampleEndX = 0
     onMain {
       tabs.setAndroidBottomBlurEnabled(true)
       scroll.scrollTo(0, dp(30))
@@ -145,7 +148,12 @@ open class BottomBlurTest : InstrumentationTestCase() {
     onMain {
       val position = IntArray(2)
       tabs.getLocationOnScreen(position)
-      barTop = position[1] + backdropBar().top + dp(2)
+      val bar = backdropBar()
+      val cornerInset = if (floatingStyle) bar.height / 2 else dp(8)
+      sampleY = position[1] + bar.top + dp(2)
+      aboveBarY = position[1] + bar.top - dp(12)
+      sampleStartX = position[0] + bar.left + cornerInset
+      sampleEndX = position[0] + bar.right - cornerInset
     }
     val blurred = screenshot()
     onMain { tabs.setTabBarHidden(true) }
@@ -158,21 +166,24 @@ open class BottomBlurTest : InstrumentationTestCase() {
     }
     onMain {
       instrumentation.sendStatus(0, Bundle().apply {
-        putString("geometry", "host=${tabs.width}x${tabs.height}, scene=${tabs.layoutHolder.width}x${tabs.layoutHolder.height}, scroll=${scroll.width}x${scroll.height}, source=${scroll.getChildAt(0).width}x${scroll.getChildAt(0).height}, sampleY=$barTop")
+        putString("geometry", "host=${tabs.width}x${tabs.height}, scene=${tabs.layoutHolder.width}x${tabs.layoutHolder.height}, scroll=${scroll.width}x${scroll.height}, source=${scroll.getChildAt(0).width}x${scroll.getChildAt(0).height}, sampleY=$sampleY, sampleX=$sampleStartX..$sampleEndX")
       })
     }
-    val rawContrast = rowContrast(raw, barTop)
-    val blurredContrast = rowContrast(blurred, barTop)
+    val rawContrast = rowContrast(raw, sampleY, sampleStartX, sampleEndX)
+    val blurredContrast = rowContrast(blurred, sampleY, sampleStartX, sampleEndX)
+    val aboveRawContrast = rowContrast(raw, aboveBarY, sampleStartX, sampleEndX)
+    val aboveBlurredContrast = rowContrast(blurred, aboveBarY, sampleStartX, sampleEndX)
     assertTrue("Expected visible source stripes: $rawContrast", rawContrast > 60)
     assertTrue("Backdrop must reduce stripe contrast: raw=$rawContrast blur=$blurredContrast", blurredContrast < rawContrast / 2)
-    val firstColor = rowColor(blurred, barTop)
+    assertEquals("Scene above tab bar must remain sharp", aboveRawContrast, aboveBlurredContrast)
+    val firstColor = rowColor(blurred, sampleY, sampleStartX, sampleEndX)
     onMain {
       tabs.setTabBarHidden(false)
       scroll.scrollBy(0, dp(160))
     }
     settle()
     val next = screenshot()
-    val nextColor = rowColor(next, barTop)
+    val nextColor = rowColor(next, sampleY, sampleStartX, sampleEndX)
     assertTrue("Backdrop must track scrolling: $firstColor -> $nextColor",
       abs(firstColor.first - nextColor.first) + abs(firstColor.second - nextColor.second) > 8)
     raw.recycle()
@@ -383,13 +394,13 @@ open class BottomBlurTest : InstrumentationTestCase() {
 
   private fun screenshot(): Bitmap = checkNotNull(instrumentation.uiAutomation.takeScreenshot())
 
-  private fun rowContrast(bitmap: Bitmap, y: Int): Int {
-    val values = (dp(8) until bitmap.width - dp(8)).map { Color.green(bitmap.getPixel(it, y)) }
+  private fun rowContrast(bitmap: Bitmap, y: Int, startX: Int = dp(8), endX: Int = bitmap.width - dp(8)): Int {
+    val values = (startX until endX).map { Color.green(bitmap.getPixel(it, y)) }
     return values.max() - values.min()
   }
 
-  private fun rowColor(bitmap: Bitmap, y: Int): Pair<Int, Int> {
-    val values = (dp(8) until bitmap.width - dp(8)).map { bitmap.getPixel(it, y) }
+  private fun rowColor(bitmap: Bitmap, y: Int, startX: Int = dp(8), endX: Int = bitmap.width - dp(8)): Pair<Int, Int> {
+    val values = (startX until endX).map { bitmap.getPixel(it, y) }
     return values.map { Color.red(it) }.average().toInt() to values.map { Color.blue(it) }.average().toInt()
   }
 

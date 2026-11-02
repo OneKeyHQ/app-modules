@@ -54,6 +54,13 @@ internal class NativeListActivityRowView(context: ThemedReactContext, fonts: Nat
     details.onAction = { key, view, source, slot -> emitAction(key, view, source, slot) }
   }
 
+  /** Host clipping for the current bind; see [nativeListActivityHostClips]. */
+  private fun setHostClipping(clips: Boolean) {
+    content.clipChildren = clips
+    clipChildren = clips
+    clipToPadding = clips
+  }
+
   override fun defaultHeight(item: NativeListItem, layout: String) =
     if (item.json.has("amounts")) 0 else if ((item.json.optJSONArray("footerActions")?.length() ?: 0) > 0) 104 else 60
 
@@ -76,6 +83,10 @@ internal class NativeListActivityRowView(context: ThemedReactContext, fonts: Nat
       setPadding(hp, vp, hp, vp)
       visual.recycle()
       details.bind(item, theme, sourceScale)
+      // This view may be reused from a legacy row whose overhanging badge
+      // switched clipping off; a rich row has no badge on the host, so restore
+      // the defaults before returning.
+      setHostClipping(nativeListActivityHostClips(rich = true, leadingOverhangs = false))
       return
     }
     details.recycle()
@@ -156,6 +167,18 @@ internal class NativeListActivityRowView(context: ThemedReactContext, fonts: Nat
       false,
       sourceScale,
       data.optJSONObject("secondaryLeading"),
+    )
+    // The token network badge hangs 4dp past the 40dp visual and Android clips a
+    // child to its own bounds while its parent clips children, so with the
+    // default clipping the history rows showed the badge cut flat (OK-66071).
+    // Stop clipping the content row and this row's padding exactly when the
+    // bound visual reports such a badge (SPEC "Leading badge overhang"), as the
+    // Identity renderer does.
+    setHostClipping(
+      nativeListActivityHostClips(
+        rich = false,
+        leadingOverhangs = !hideLeading && visual.requestsUnclippedHost,
+      )
     )
     bind(
       title,

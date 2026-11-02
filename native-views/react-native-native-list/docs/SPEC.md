@@ -4,8 +4,9 @@
 
 Static icons use the image package's named resources and SVG implementation:
 the main registry, Activity's ten private glyphs, Market stars/recognized badge,
-Media fallback and Android checkbox. Existing per-platform name coverage remains
-unchanged; unknown-name text fallbacks remain. The NativeList-only legacy name
+Media fallback and Android checkbox. The closed per-platform coverage, including
+the main-line asset-list additions, is recorded under Built-in icon metadata
+generation; unknown-name text fallbacks remain. The NativeList-only legacy name
 `BadgeVerifiedSolid` resolves to canonical `BadgeRecognizedSolid`. Circle and
 dynamic charts/spinners/dotted decoration remain local primitives.
 
@@ -29,7 +30,7 @@ requesting a proportionate raster and drawing at the old origin. Checkboxes
 retain their 16 dp glyph plus 2 dp border offset in selector geometry, otherwise
 80 percent centered geometry. Shared images are immutable; no cross-view mutable
 Drawable bounds or pixel changes are allowed. Named work uses image's existing
-two-worker and bounded cache service. Web consumers use its pure DOM sprite
+two-worker and bounded cache service. Web consumers use its pure DOM external-icon
 helper while keeping inherited color, action labels, anchors and exact sizes.
 
 Acceptance must cover actual slots, first bind and repeated row reuse, unknown
@@ -123,7 +124,11 @@ ambiguous sources, invalid metadata and stale output. Stable sorting emits no
 machine paths or timestamps. Frozen tests compare exact registry key sets;
 this does not prove that every application-computed name is registered.
 
-Main registry coverage stays iOS 38, Android 37, Web 22 (including DotVerSolid).
+The closed manifest contains 43 names with iOS 42, Android 41 and Web 25
+registry entries (including DotVerSolid). Document2Outline, WalletOutline and
+PlusLargeOutline are registered on all three platforms; TicketOutline also
+retains Web and adds native coverage. These main-line names use image-owned
+canonical SVGs, not duplicate NativeList paths or asset catalogs.
 Existing Activity ten-name and Market/Media private call sites resolve canonical
 names through the same DOM helper; their previous coverage does not expand.
 Image preserves raw path order, fill rules, fixed colors, opacity and viewBoxes.
@@ -133,6 +138,17 @@ Focused SDK fixture acceptance covers native attached lifecycle/rebinding,
 legacy iOS asset comparisons, shared alpha semantics and real Web/Electron
 source/lib consumers. This is not full App, balance, transaction or signed
 release acceptance.
+
+Identity trailing accessories stack vertically, except for the pairs every
+platform lays out side by side: `value` + `checkbox`, `valuePair` + `menu`,
+`valuePair` + an `icon` named `DotVerSolid` whose `actionKey` is `menu`,
+`valuePair` + `chevron`, a `RefreshCcwOutline` icon without an action key +
+`chevron`, and `PencilOutline` + `DragOutline` icons. iOS decides this in
+`configureTrailingStack`; Android in `nativeListIdentityTrailingIsHorizontal`
+(JVM test `NativeListIdentityTrailingAxisTest`). The `valuePair` + menu-icon
+pair is the Swap token selector's balance column and row menu; stacking it
+clipped both inside the fixed 60dp row on Android.
+
 
 A `message` row may opt into `bodyLines: 0`; its complete body wraps within its
 existing text area and determines natural height unless an explicit row or
@@ -241,13 +257,68 @@ after semantic text styling. Both lines retain their default size, tone, line
 height, right alignment and accessibility text. These fields add no action or
 hit target and travel in existing snapshot JSON without a Nitro ABI change.
 
+### Identity title image
+
+Status: implemented in local source, unreleased. Type checks, JS/Web tests,
+Web runtime checks, package build, iOS XCTest-target compilation, Android
+production/instrumentation-test compilation and JVM tests pass. Focused iOS
+Simulator XCTest and Android emulator instrumentation verify image lifecycle,
+null removal and wallet-sidebar layout. Complete wallet App acceptance remains
+pending.
+An `identity` row may supply `titleImage: { image, accessibilityLabel?,
+hoverActionKey? }`. `image` uses the existing `ImageSource` contract and must
+declare equal finite width and height within 1...40 logical units. The image
+is circular, follows the title and any title icons with a 4-point gap, and
+precedes title suffixes and inline badges. It reserves its declared square
+while loading or after failure, so neither state moves the text. Existing
+rows without this field keep their current layout. The image does not change
+row identity or infer a stock, issuer, or other product meaning.
+
+iOS and Android use the existing OneKeyImage-backed slot, request options and
+retry limits. Slots belong to the mounted row renderer; OneKeyImage owns image
+caches. Text-only rebinds retain an unchanged row/source request. Source or row
+changes, removal, recycling and disposal cancel prior work and prevent stale
+completion from painting the next binding. Failure leaves the reserved square
+empty; the SDK adds no title-image fallback request or separate cache.
+
+On Web, optional `hoverActionKey` uses the title icon's existing help semantics
+and `leadingAction` anchor source: mouse/pen entry opens an anchored help event,
+departure invalidates it, mouse/pen press closes it until departure, and touch
+press toggles it. Pressing this help target does not activate the row. Without
+help, the image participates in the ordinary row press. It adds no tab stop.
+Native renderers ignore this Web-only help field and preserve ordinary row
+presses. The consumer owns the tooltip text and presentation. Omitted
+`accessibilityLabel` makes the image decorative; a supplied label describes it.
+
+Android wallet-sidebar rows with a title image reserve image width and pack the
+wallet name with the image as one centered group. Long names ellipsize within
+the remaining space; removing the image restores the full-width centered name.
+
+Full snapshots without `titleImage` remove the image and old help anchor.
+Explicit patch replacement updates the descriptor; an omitted patch field
+leaves it unchanged. Null patches and empty image URIs remove the image. Development guards
+reject malformed descriptors and invalid display geometry; production sanitizes
+optional decoration as described in the validation contract. A production patch
+that supplies a malformed title-image replacement explicitly clears the old
+image and help target instead of retaining stale decoration. The field travels in existing JSON and does not change the Nitro ABI;
+consumers must use a native SDK that implements the field before enabling it.
+
+Acceptance covers protocol validation, image/source replacement and removal,
+text-only request retention, Web help-action isolation and anchor cleanup,
+native bind/recycle geometry, and native compilation. Device and complete App
+acceptance must be reported separately from source and DOM tests.
+
 ### Identity row risk-management controls
 
 Status: implemented in source for local consumers, unreleased. Focused validation,
 Web DOM tests, native builds and device acceptance are tracked separately below.
 The optional `identity.titleIcon` is a static, non-actionable icon after the
 title: a 20-point glyph with a 4-point gap, optional tint and accessibility
-label. Its optional Web-only `hoverActionKey` emits an anchored help action
+label. "After the title" means directly after the title text: the title row
+packs at its start on every platform (Android `PackedTitleLineLayout`, Web flex
+`0 1 auto`, iOS a slack-absorbing filler at the end of the title row), so the
+glyph and any badge follow the text and never drift toward the trailing column
+(OK-66041). Its optional Web-only `hoverActionKey` emits an anchored help action
 from the icon alone on mouse/pen hover or touch press; the consumer owns the
 tooltip. Mouse/pen press closes the anchor until pointer leave. Touch press
 toggles the icon anchor. The icon adds no tab stop or separate click action;
@@ -394,6 +465,46 @@ image that already loaded. Common container styling clears what it wrote on the
 next bind, including properties it set on template children. UI mutation remains on the platform
 UI thread; [DESIGN.md](DESIGN.md) describes update and event ownership.
 
+### Android vertical-drag React touch cancellation
+
+Status: implemented; four real Android MotionEvent/JSTouchDispatcher regressions
+passed on a dedicated API 34 emulator on 2026-10-30. The focused regression is
+in `native-tests/android/NativeListTouchDeliveryTest.kt`; build and run
+instructions are in that directory's README. Physical-device press/scroll
+acceptance remains separate.
+
+This behavior applies to every vertical NativeList, including standalone lists
+outside a CollapsiblePager and touches beginning on React container slots.
+On the UI thread, movement exceeding Android touch slop with vertical
+displacement at least equal to horizontal displacement confirms a vertical
+drag. An initially horizontal movement may become vertical while the list still
+receives the stream; once vertical, ownership stays vertical until release or
+cancellation. Horizontal lists retain their existing touch behavior.
+
+The list notifies its React root of native gesture ownership once per confirmed
+drag, cancelling the active React touch before finger-up. Later MOVE events MUST
+NOT repeat that notification. The listener does not consume the stream: native
+RecyclerView scrolling continues. A stationary tap or movement below touch slop
+MUST retain ordinary React touch-end delivery without native-gesture start/end
+notifications. The existing `keyboardDismissMode: 'on-drag'` behavior shares the
+confirmed-drag boundary.
+
+ACTION_UP and ACTION_CANCEL finish a started native gesture exactly once and
+release the parent's interception restriction, even after RecyclerView has
+intercepted its child and stops invoking the item-touch interception listener.
+They clear vertical ownership; the next ACTION_DOWN resets direction and
+gesture tracking. Android's touch-target removal cancellation must finish the
+old stream before a retained list is reattached or its slots are reused, so the
+next tap is not suppressed by the previous drag. Disposal releases the listener
+through the existing detached-resource cleanup. This change adds no prop or
+callback and changes neither iOS nor Web touch handling.
+
+Conformance uses real MotionEvent dispatch through NativeListView/RecyclerView
+and React Native's JSTouchDispatcher: vertical drag produces one touch-cancel
+and one native end, a tap produces touch-end, and cancellation/removal followed
+by reuse leaves the next tap functional. This proves native touch delivery, not
+execution of a JavaScript press handler or physical-device gesture feel.
+
 ### Android reorder cancellation
 
 Status: implemented; three real Android View/callback regressions verified on
@@ -506,37 +617,61 @@ row positions. An accepted complete snapshot reuses that index only when its
 generation and ordered `(key, type)` sequence match the prior accepted
 snapshot; otherwise it replaces the index. Reorder commits rebuild it and
 disposal clears it. Patch batches reuse the index and never include retiring
-presentation rows in it. They validate the whole batch against the current
-accepted row models before changing config or presentation; invalid batches
-leave both unchanged. iOS updates only changed accepted entries in its
+presentation rows in it. Native hosts validate each received canonical batch before changing config or
+presentation; invalid native batches leave both unchanged. The shared production
+JS boundary first isolates rejected row/group units, so a native batch contains
+only accepted canonical updates. iOS updates only changed accepted entries in its
 presentation lookup after a valid patch, preserving any retiring rows.
 
 ### Validation environments and rejected input
 
-Development builds (`__DEV__ === true`) run the complete snapshot and patch
-contract assertions. Production builds run only serialization, required data
-shape, supported renderer, finite geometry, identity and patch consistency
-guards. Display budgets and style allowlists are development assertions.
-Typography token resolution runs in both environments. Production treats empty
-optional image URIs as missing images, preserving the existing visual fallback.
-An empty optional image field omitted from a patch is a no-op, matching its
-serialized native payload. Sparkline sample arrays retain their existing
-256-sample resource bound because the Web renderer passes samples as function
-arguments; this protects the runtime's argument limit.
+Status: implemented in source; acceptance and remaining runtime gaps are recorded below.
 
-The component and Web engine contain input validation failures in both modes:
-initial invalid input renders an empty list; rejected later snapshots or patch
-batches preserve the last accepted state and are not dispatched to native.
-On iOS and Android, the React wrapper captures caller data before validation
-and owns an immutable accepted snapshot. Later caller mutation cannot rewrite
-that accepted state. Imperative selection keys are captured on entry. Eligible
-value-only `identity` and `dataRow` patches validate their complete changed
-rows; other patches and snapshots without this private ownership use the
-existing complete-snapshot validation path. This does not change exported
-validators or Web behavior.
-An `undefined` value in an eligible field stays on the changed-row path only
-when that field was already `undefined`; clearing a present value uses the
-complete-snapshot path.
+Development runs strict contract assertions after shared null/empty-image
+normalization. Production sanitizes optional decorations without rejecting
+valid business content: invalid colors/styles are omitted, invalid images use
+existing placeholders, and positive title-image dimensions are clamped to a
+square of 1...40 logical units. Image headers are string dictionaries, never
+interpreted as geometry. Unsafe object graphs are rejected before normalization.
+
+A complete snapshot remains atomic after decoration sanitization: invalid
+schema, duplicate/missing identities, required business fields or wallet-group
+parent/children relationships reject the snapshot. No row is silently removed.
+Production normalizes contiguous group positions and filters selection to
+selectable keys, respecting none/single modes.
+
+Patches use omitted/undefined fields as no-ops. Null explicitly removes an
+optional field on JS, Web, iOS and Android; required fields cannot be cleared.
+Empty optional images and empty top-level segment arrays normalize to null in
+patches and absence in snapshots. Empty images remove their outer titleImage
+or media wrapper. This protocol requires native binaries with null-removal
+support; callers must not enable it against older native SDK implementations.
+
+Market price remains required and nonblank. Updating nonempty priceSegments
+requires a price in the same canonical patch; callers own matching formatted
+text (the validator does not reconstruct subscript prices). Updating price
+without segments clears an existing overlay. For identity/market subtitles,
+updating one representation clears the old other representation unless both
+are supplied; clearing segments alone retains the base text. Activity has no
+subtitle pair. Market quote changes with an existing/new webTable must include
+matching table data or explicitly remove webTable.
+
+Development rejects invalid patch batches atomically. Production isolates
+failures to each target key and its coupled groupId: all updates to a key are
+merged in order before validation, and a failure rejects that unit while other
+valid units commit. Financial-value and interactive accessories with missing
+required data fail their row; malformed purely decorative accessories are
+removed. Diagnostics contain locations, never row values or image URLs.
+
+All targets share the canonical accepted patches. The accepted JS rows and
+serialized native changes derive from the same result. Native owned snapshots
+and accepted Web engine snapshots validate only changed rows during patches;
+unchanged rows are not rescanned. Direct helpers receiving an unowned baseline
+validate that baseline once before incremental merging. Native owned snapshots
+are immutable and indexed by key. Initial invalid snapshots render empty;
+rejected later snapshots retain the last accepted snapshot. Rejected patch
+units retain their previous complete rows. Direct validators still throw on
+unrecoverable input. Image loading failures remain the loader's responsibility.
 
 `planNativeListPatches(previous, next)` is an explicit, pure public helper for
 callers that own two valid, immutable snapshots. It returns a readonly empty
@@ -559,14 +694,25 @@ Rejection emits a diagnostic without including row keys, text or image URLs.
 Explicit calls to the exported validation functions still throw on rejected
 input, so development tooling can inspect the full contract failure. Rejection
 does not imply that the requested update succeeded. No row identity is trimmed,
-truncated or regenerated, and no invalid row is silently dropped from a batch.
+truncated or regenerated, and no row is silently dropped from a snapshot.
 
-Status: implemented. Development/production JS regressions pass, including
-native wrappers for iOS/Android and the Web DOM engine. Real Swift XCTest on an
-iOS 27 simulator and Android instrumentation on API 35 verify production
-serialization, normalized typography, opaque identities and duplicate-key
-protection against the shipping native parsers. Full app/device rendering and
-gesture acceptance remain separate from these input-boundary checks.
+Acceptance for this revision: 429 JS/Web tests pass, including native React
+wrapper containment, canonical null/undefined semantics, price/segment pairing,
+production row/group isolation and unchanged-row access checks. Package type
+checks, lint (zero errors; existing warnings) and test-integrity checks pass.
+iOS production/XCTest targets and Android production/instrumentation targets
+compile; 29 Android JVM tests pass. Four focused iOS 26.5 XCTest cases verify
+title-icon packing, title-image reuse and null removal. Android 15/API 35
+instrumentation verifies wallet-sidebar image bounds, long-title ellipsis,
+and full-width title restoration after removal. Shared JS/Web regressions also
+verify that malformed production title-image replacements clear the previous
+image and help anchor. Full App acceptance remains pending.
+
+Wallet groups use the actual embedded parent/children model, not memberKeys
+references. groupId/groupPosition remain snapshot-owned fields; production
+patch failures also reject other patched rows in the same existing groupId.
+Unknown extension fields (including unsupported sparkline/changeHighlight
+models) are ignored in production rather than introducing a new renderer API.
 
 ## Platform contract
 
@@ -654,7 +800,8 @@ an action-less accessory as a `span`, so its click reaches the row.
 ### Leading badge overhang (OK-65694)
 
 Status: implemented on Android, the only platform that clipped. Android JVM
-policy test (`NativeListLeadingVisualClipPolicyTest`); Android emulator
+policy tests (`NativeListLeadingVisualClipPolicyTest`,
+`NativeListActivityHostClipPolicyTest`); Android emulator
 acceptance on the example account selector (API 36, 2026-10-27) is recorded in
 the changelog entry. iOS and Web are unchanged.
 
@@ -673,6 +820,12 @@ overhanging badge (`requestsUnclippedHost`, decided by
 already do for their network badges; a visual without such a badge keeps the
 row's default clipping.
 
+Host clipping is per-bind state. A row view that serves several row shapes
+(the Android Activity view serves the legacy row and the rich `amounts` row) is
+reused across binds, so each bind MUST derive clipping from the item it binds
+(`nativeListActivityHostClips`): a view that last showed an overhanging badge
+clips again when it is rebound to a row without one.
+
 The row's own shape still clips on every platform: iOS masks the cell to its
 corner radius (`masksToBounds`), Web keeps the row `overflow: hidden`, and
 Android keeps `clipToOutline` for a `style.container.cornerRadius` row (its
@@ -683,6 +836,34 @@ badge (`offsetY` 4) starts inside a 12-unit corner radius with the default
 padding. The example `NativeListRowStylePage` row `identity-badge-rounded`
 combines both badges with `container.cornerRadius` as the rendering check for
 that combination.
+
+### Activity leading pair (OK-66071)
+
+Status: implemented on iOS and Android; Web already drew the pair. Android JVM
+geometry test (`NativeListLeadingSlotFrameTest`); Android emulator acceptance on
+the example row-style page is recorded in the changelog entry.
+
+An Activity row whose `leading` and `secondaryLeading` are both tokens with an
+image (the app's swap and multi-asset history rows) draws them as a pair inside
+the 40-unit visual box, as the legacy avatar and the Web renderer do: the
+primary token at the top-left at 0.6 of the box (24 units), the secondary at the
+same size at the bottom-right inside a 2-unit ring in the row background, above
+the primary. The ring is shown only while the secondary image is displayed:
+while that image loads, after a failed load and after recycling it stays hidden,
+so it never covers the primary's corner with a blank disc. The token `networkImage` badge, when present, keeps its single-token
+geometry at the box's bottom-right corner above the secondary; a pair shows one
+badge, never one per member. A secondary token without an image leaves the
+primary alone at full size, and a primary without an image lets the secondary
+take its place. Before this rule Android laid the secondary over the whole box
+(hiding the primary and the badge) and iOS drew it in the badge's corner slot
+over the badge. The per-source geometry is one pure function on Android
+(`nativeListLeadingSlotFrame`) and the same arithmetic in
+`NativeListLeadingVisual.layoutSubviews` on iOS; both restore the stacking
+order by role on every bind because slots are reused across roles.
+
+The Android Activity renderer also applies the badge-overhang rule above
+(`requestsUnclippedHost` stops the content row and the row padding clipping),
+so the history rows' network badges render whole instead of cut flat.
 
 ## Failures, fallback and limits
 

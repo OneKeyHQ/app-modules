@@ -59,6 +59,10 @@ separately from source implementation in STYLE_SPEC §9.
   a 4-point gap. It has no click action; an optional Web `hoverActionKey`
   emits an icon-anchored tooltip request on hover or touch. A trailing `button` is the fixed small
   secondary text action and uses the normal accessory event slot.
+- **Title image:** optional `titleImage` renders a circular image after the title
+  icons and before suffixes/badges. Its `ImageSource` dimensions must be square,
+  1...40 logical units. Optional Web `hoverActionKey` uses the existing anchored
+  help event; native keeps the image decorative for touch. See SPEC.md.
 - **Second Web help icon:** `secondaryTitleIcon` uses the same descriptor after
   `titleIcon`; each glyph has its own hover/touch anchor. Native ignores it.
 - **Decorative refresh:** a trailing `RefreshCcwOutline` without `actionKey`

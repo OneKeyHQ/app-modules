@@ -13,18 +13,20 @@ import com.facebook.react.uimanager.ThemedReactContext
 /**
  * Native segmented slider. Draws the track, fill bar, segment marks, thumb and
  * value bubble in [View.onDraw] and handles the drag in [View.onTouchEvent], so
- * a drag never crosses the JS bridge per frame. Mirrors the web variant
- * (`composite/SegmentSlider/index.tsx`) pixel-for-pixel.
+ * a drag never crosses the JS bridge per frame. Follows the web variant's
+ * semantics, with extra endpoint space for the enlarged drag thumb.
  */
 @DoNotStrip
 class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSliderSpec() {
 
   private val density = context.resources.displayMetrics.density
 
-  // Geometry (dp), identical to the web constants.
+  // Geometry (dp).
   private val thumbSizePx = 16f * density
+  private val activeThumbScale = 1.15f
   private val markSizePx = 10f * density
-  private val insetPx = thumbSizePx / 2f
+  // Keep the enlarged thumb and node halo inside the horizontal view bounds.
+  private val insetPx = 12f * density
   private val haloRingPx = 4f * density // translucent halo width beyond each mark
 
   // Paints.
@@ -95,7 +97,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
           touchStartX = event.x
           lastTouchX = event.x
           onSlideStart?.invoke()
-          animateThumbScale(1.15f)
+          animateThumbScale(activeThumbScale)
           // Tap-snap mode: defer the value commit until we know this is a tap or
           // a drag, so a tap never jumps to the raw touch point first.
           if (!snapTapsActive) commitDragValue(valueFromX(event.x))
@@ -255,7 +257,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
   }
 
   // MARK: - Geometry helpers
-  private val trackWidth: Float get() = (view.width - thumbSizePx).coerceAtLeast(0f)
+  private val trackWidth: Float get() = (view.width - insetPx * 2f).coerceAtLeast(0f)
   private val rangeSafe: Double get() = (max - min).let { if (it == 0.0) 1.0 else it }
   private val markCount: Int get() = if (segments >= 1) segments.toInt() + 1 else 0
 
@@ -418,12 +420,12 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
       val padH = 8f * density
       val bw = textW + padH * 2
       val bh = 20f * density
-      val left = thumbX - bw / 2f
+      val left = (thumbX - bw / 2f).coerceIn(0f, (w - bw).coerceAtLeast(0f))
       val top = trackTop - 8f * density - bh
       rect.set(left, top, left + bw, top + bh)
       canvas.drawRoundRect(rect, 4f * density, 4f * density, bubblePaint)
       val baseline = top + bh / 2f - (bubbleTextPaint.descent() + bubbleTextPaint.ascent()) / 2f
-      canvas.drawText(text, thumbX, baseline, bubbleTextPaint)
+      canvas.drawText(text, left + bw / 2f, baseline, bubbleTextPaint)
     }
   }
 

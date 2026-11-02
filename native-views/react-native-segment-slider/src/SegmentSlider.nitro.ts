@@ -13,12 +13,13 @@ import type {
  * (`packages/components/src/composite/SegmentSlider/index.tsx`) which avoids
  * React state per frame by mutating the DOM imperatively.
  *
- * Geometry contract (points), matching the web layout 1:1:
+ * Geometry contract (points):
  *   THUMB_SIZE = 16, MARK_SIZE = 10, hit/container height = 24
- *   track is inset by THUMB_SIZE/2 on each end → usable width W' = W - 16
+ *   END_INSET = 12 on iOS and Android (room for the enlarged thumb and halo)
+ *   usable track width W' = max(W - 2 * END_INSET, 0)
  *   pct        = (clamp(value,min,max) - min) / (max - min)
- *   thumb x    = 8 + pct * W'
- *   mark i x   = 8 + (i / segments) * W'   (i in 0..segments)
+ *   thumb x    = END_INSET + pct * W'
+ *   mark i x   = END_INSET + (i / segments) * W'   (i in 0..segments)
  *
  * Colors are resolved from the Tamagui theme in the JS wrapper and passed in as
  * hex / rgba() strings so the native side never depends on the theme system.
@@ -95,4 +96,7 @@ export interface SegmentSliderMethods extends HybridViewMethods {
   setValue(value: number): void;
 }
 
-export type SegmentSlider = HybridView<SegmentSliderProps, SegmentSliderMethods>;
+export type SegmentSlider = HybridView<
+  SegmentSliderProps,
+  SegmentSliderMethods
+>;

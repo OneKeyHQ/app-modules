@@ -43,3 +43,15 @@ Run it on a task-owned emulator by replacing the `-e class` value above with
 view transitions in both attachment directions, then checks delayed transition
 completion, visibility/configuration changes, RTL, and detach/reattach ownership.
 It does not establish physical-device interaction acceptance.
+
+## Vertical-drag React touch cancellation
+
+The same build command includes `NativeListTouchDeliveryTest`. Run it with
+`-e class com.margelo.nitro.nativelist.NativeListTouchDeliveryTest` and require
+`OK (4 tests)`. It dispatches actual MotionEvents through a standalone
+NativeListView, its RecyclerView and a clickable container slot, using React
+Native's JSTouchDispatcher at the root. It checks one React touch-cancel per
+vertical drag, continued native scrolling, ordinary tap touch-end/click,
+ACTION_CANCEL cleanup, and removal/reattachment with the retained list and slot.
+It uses the existing platform runner without additional dependencies. It does
+not run JavaScript press handlers or establish physical-device gesture feel.

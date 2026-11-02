@@ -91,7 +91,10 @@ final class NativeListIdentityCell: NativeListRendererCell {
       let tertiary = NativeListResolvedText(
         item.data.string("tertiary"), style: style.dictionary("tertiary"), size: 14,
         color: .black, lineHeight: 20, lines: 1, fonts: fonts)
-      let textHeight = title.measure(width: textWidth)
+      let titleImageSize = CGFloat(item.data.dictionary("titleImage")?.dictionary("image")?.double("width") ?? 0)
+      let titleImageWidth = titleImageSize > 0
+        ? titleImageSize + 4 + (item.data.dictionary("titleIcon") == nil ? 0 : 24) : 0
+      let textHeight = max(titleImageSize, title.measure(width: max(1, textWidth - titleImageWidth)))
         + subtitle.measure(width: textWidth)
         + tertiary.measure(width: textWidth)
         + (item.data.string("subtitle").isEmpty ? 0 : CGFloat(style.double("lineGap", default: 0)))
@@ -107,6 +110,12 @@ final class NativeListIdentityCell: NativeListRendererCell {
   private let titleRowStack = UIStackView()
   private let titleLabel = NativeListTextLabel()
   private let titleIconView = NativeListIconImageView()
+  private var titleImageSlot: NativeListImageSlot?
+  private var titleImageConstraints: [NSLayoutConstraint] = []
+  // Absorbs the title row's slack so the title keeps its intrinsic width and the
+  // title icon / badge follow the text (OK-66041); Android's PackedTitleLineLayout
+  // and the Web flex row already pack the title row at its start.
+  private let titleRowFiller = UIView()
   private let subtitleLabel = NativeListTextLabel()
   private let tertiaryLabel = NativeListTextLabel()
   private let badgeLabel = NativeListInsetLabel()
@@ -127,7 +136,7 @@ final class NativeListIdentityCell: NativeListRendererCell {
   private var currentItem: NativeListItem?
   private var currentTheme: [String: Any]?
   private var leadingActionKey: String?
-  override var assetFields: [String] { ["leading"] }
+  override var assetFields: [String] { ["leading", "titleImage"] }
   override var defaultSeparatorInset: CGFloat { 60 }
   override var defaultCornerRadius: CGFloat {
     guard let item = currentItem else { return 0 }
@@ -164,6 +173,9 @@ final class NativeListIdentityCell: NativeListRendererCell {
     titleRowStack.addArrangedSubview(titleLabel)
     titleRowStack.addArrangedSubview(titleIconView)
     titleRowStack.addArrangedSubview(badgeLabel)
+    titleRowStack.addArrangedSubview(titleRowFiller)
+    titleRowFiller.setContentHuggingPriority(UILayoutPriority(1), for: .horizontal)
+    titleRowFiller.setContentCompressionResistancePriority(UILayoutPriority(1), for: .horizontal)
     titleIconView.translatesAutoresizingMaskIntoConstraints = false
     let titleIconWidth = titleIconView.widthAnchor.constraint(equalToConstant: 20)
     titleIconWidth.priority = UILayoutPriority(999)
@@ -237,6 +249,11 @@ final class NativeListIdentityCell: NativeListRendererCell {
     titleIconView.isHidden = true
     titleIconView.accessibilityLabel = nil
     titleIconView.isAccessibilityElement = false
+    titleImageSlot?.view.isHidden = true
+    titleImageSlot?.view.accessibilityLabel = nil
+    titleImageSlot?.view.isAccessibilityElement = false
+    NSLayoutConstraint.deactivate(titleImageConstraints)
+    titleImageConstraints = []
     titleRowStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
     titleRowStack.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
     for label in [titleLabel, subtitleLabel, tertiaryLabel, badgeLabel] {
@@ -294,6 +311,42 @@ final class NativeListIdentityCell: NativeListRendererCell {
       titleIconView.accessibilityLabel = label.isEmpty ? nil : label
       titleIconView.isAccessibilityElement = !label.isEmpty
       titleRowStack.setCustomSpacing(4, after: titleLabel)
+      // A long title truncates ahead of the 20pt glyph (Android caps the title
+      // at row width minus accessories, Web shrinks the title first); with the
+      // title at `.required` the icon's 999 width constraint collapsed to 0.
+      titleLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+    }
+    if let descriptor = item.data.dictionary("titleImage"),
+      let image = descriptor.dictionary("image"), !image.string("uri").isEmpty
+    {
+      let size = CGFloat(image.double("width"))
+      let slot = titleImageSlot ?? NativeListImageSlot()
+      titleImageSlot = slot
+      let view = slot.view
+      if view.superview == nil {
+        let index = titleRowStack.arrangedSubviews.firstIndex(of: titleIconView)! + 1
+        titleRowStack.insertArrangedSubview(view, at: index)
+      }
+      view.clipsToBounds = true
+      view.setContentHuggingPriority(.required, for: .horizontal)
+      view.setContentCompressionResistancePriority(.required, for: .horizontal)
+      view.translatesAutoresizingMaskIntoConstraints = false
+      view.layer.cornerRadius = size / 2
+      view.isHidden = false
+      let label = descriptor.string("accessibilityLabel")
+      view.accessibilityLabel = label.isEmpty ? nil : label
+      view.isAccessibilityElement = !label.isEmpty
+      titleImageConstraints = [
+        view.widthAnchor.constraint(equalToConstant: size),
+        view.heightAnchor.constraint(equalToConstant: size),
+      ]
+      titleImageConstraints.forEach { $0.priority = UILayoutPriority(999) }
+      NSLayoutConstraint.activate(titleImageConstraints)
+      titleRowStack.setCustomSpacing(4, after: titleIconView.isHidden ? titleLabel : titleIconView)
+      titleLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+      slot.bind(image, key: "\(item.key):titleImage", placeholder: "#00000000")
+    } else {
+      titleImageSlot?.recycle()
     }
     if let ratio = style["leadingContentMaxWidthRatio"] as? NSNumber,
       root.arrangedSubviews.contains(visual)
@@ -331,7 +384,8 @@ final class NativeListIdentityCell: NativeListRendererCell {
       } else {
         titleRowStack.setCustomSpacing(
           CGFloat(style.double("titleBadgeGap")),
-          after: titleIconView.isHidden ? titleLabel : titleIconView)
+          after: titleImageSlot?.view.isHidden == false ? titleImageSlot!.view
+            : titleIconView.isHidden ? titleLabel : titleIconView)
       }
     }
     if style["trailingGap"] != nil { trailingStack.spacing = CGFloat(style.double("trailingGap")) }
@@ -354,8 +408,19 @@ final class NativeListIdentityCell: NativeListRendererCell {
         : style.dictionary("container")?.string("contentVerticalAlignment") == "bottom"
           ? .bottom : .center
     }
+    settleTitleRowFillerSpacing()
     applySelectorTypography(item)
 
+  }
+
+  /// The filler is the title row's last arranged view; the stack's default
+  /// spacing before it would shave 8pt off the title's available width (visible
+  /// under `leadingContentMaxWidthRatio`), so the gap before the filler is zero.
+  private func settleTitleRowFillerSpacing() {
+    let visible = titleRowStack.arrangedSubviews.filter { $0 !== titleRowFiller && !$0.isHidden }
+    if let last = visible.last {
+      titleRowStack.setCustomSpacing(0, after: last)
+    }
   }
   override func bindSelectionContent(
     _ item: NativeListItem,
@@ -399,6 +464,10 @@ final class NativeListIdentityCell: NativeListRendererCell {
   }
   override func recycleContent() {
     visual.recycle()
+    titleImageSlot?.recycle()
+    titleImageSlot?.view.isHidden = true
+    titleImageSlot?.view.accessibilityLabel = nil
+    titleImageSlot?.view.isAccessibilityElement = false
     trailingStack.reset()
     currentItem = nil
   }
@@ -595,7 +664,10 @@ final class NativeListIdentityCell: NativeListRendererCell {
           limit.isActive = true
           selectorConstraints.append(limit)
         }
-        titleRowStack.insertArrangedSubview(label, at: titleRowStack.arrangedSubviews.count - 1)
+        titleRowStack.insertArrangedSubview(
+          label,
+          at: titleRowStack.arrangedSubviews.firstIndex(of: badgeLabel)
+            ?? titleRowStack.arrangedSubviews.count)
         selectorViews.append(label)
       }
     }

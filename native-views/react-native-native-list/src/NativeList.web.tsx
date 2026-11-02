@@ -25,7 +25,6 @@ import {
   applyRowPatches,
   containNativeListInput,
   emptyNativeListSnapshot,
-  validatePatches,
   validateSnapshot,
 } from './validation';
 import {
@@ -454,20 +453,17 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
         synchronizeSlots(next);
       },
       applyPatches(patches) {
-        const accepted = containNativeListInput(() => validatePatches(patches));
-        if (accepted && accepted.length > 0) {
-          const engine = engineRef.current;
-          if (engine) {
-            engine.applyPatches(accepted);
-            snapshotRef.current = engine.currentSnapshot();
-          } else {
-            const next = containNativeListInput(() =>
-              applyRowPatches(snapshotRef.current, accepted)
-            );
-            if (next) snapshotRef.current = next;
-          }
-          acceptedSnapshotRef.current = snapshotRef.current;
+        const engine = engineRef.current;
+        if (engine) {
+          engine.applyPatches(patches);
+          snapshotRef.current = engine.currentSnapshot();
+        } else {
+          const next = containNativeListInput(() =>
+            applyRowPatches(snapshotRef.current, patches)
+          );
+          if (next) snapshotRef.current = next;
         }
+        acceptedSnapshotRef.current = snapshotRef.current;
       },
       reconcileSelection(selectedKeys) {
         engineRef.current?.reconcileSelection(selectedKeys);

@@ -4,6 +4,25 @@ import XCTest
 
 @MainActor
 final class NativeListLifecycleTests: XCTestCase {
+  func testCanonicalNullPatchRemovesStoredOptionalFields() throws {
+    let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+    let row: [String: Any] = ["key": "token", "type": "identity", "title": "Token",
+      "leading": ["kind": "token"], "subtitle": "Old",
+      "titleImage": ["image": ["uri": "data:image/png;base64,AA==", "width": 14, "height": 14]]]
+    let snapshot: [String: Any] = ["schemaVersion": 1, "generation": 1,
+      "layout": ["kind": "linear"], "rows": [row]]
+    view.applySnapshotJson(String(decoding: try JSONSerialization.data(withJSONObject: snapshot), as: UTF8.self))
+    let patches: [[String: Any]] = [["key": "token", "type": "identity",
+      "changes": ["title": "New", "subtitle": NSNull(), "titleImage": NSNull()]]]
+    view.applyPatchesJson(String(decoding: try JSONSerialization.data(withJSONObject: patches), as: UTF8.self))
+    let items = try XCTUnwrap(Mirror(reflecting: view).descendant("itemsByKey") as? [String: NativeListItem])
+    let accepted = try XCTUnwrap(items["token"])
+    XCTAssertEqual(accepted.data.string("title"), "New")
+    XCTAssertNil(accepted.data["subtitle"])
+    XCTAssertNil(accepted.data["titleImage"])
+    XCTAssertEqual(accepted.key, "token")
+  }
+
   func testAcceptedRowIndexReusesStableShapeAndRejectsLateInvalidPatch() throws {
     let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
     func snapshot(_ keys: [String], generation: Int, title: String = "Old") throws -> String {
@@ -227,6 +246,47 @@ final class NativeListLifecycleTests: XCTestCase {
     cell.prepareForReuse()
     XCTAssertEqual(invalidatedEpochs, [originalEpoch, changedEpoch])
     XCTAssertNotEqual(cell.bindingEpoch, changedEpoch)
+  }
+
+  func testIdentityTitleImageRetainsRequestAndClearsOnProductionCellReuse() throws {
+    let cell = NativeListIdentityCell(frame: CGRect(x: 0, y: 0, width: 320, height: 60))
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 200))
+    window.addSubview(cell)
+    func bind(_ descriptor: [String: Any]?, title: String = "STOCK") throws {
+      var data: [String: Any] = ["key": "stock", "type": "identity", "title": title,
+        "height": 60, "leading": ["kind": "token", "fallbackIcon": ["name": "CryptoCoinOutline"]]]
+      if let descriptor { data["titleImage"] = descriptor }
+      cell.bind(item: try NativeListItem(data: data), theme: nil, layout: "linear", selected: false,
+        checkboxState: { _, _, fallback in fallback }, fonts: NativeListFontFamilies())
+      cell.layoutIfNeeded()
+    }
+    let descriptor: [String: Any] = ["image": ["uri": "data:image/png;base64,AA==", "width": 14, "height": 14],
+      "accessibilityLabel": "Issuer", "hoverActionKey": "issuer-info"]
+    try bind(descriptor)
+    let slot = try XCTUnwrap(Mirror(reflecting: cell).children.first {
+      $0.label == "titleImageSlot"
+    }?.value as? NativeListImageSlot)
+    XCTAssertFalse(slot.view.isHidden)
+    XCTAssertEqual(slot.view.bounds.width, 14, accuracy: 0.5)
+    XCTAssertEqual(slot.view.bounds.height, 14, accuracy: 0.5)
+    XCTAssertEqual(slot.view.layer.cornerRadius, 7, accuracy: 0.1)
+    XCTAssertEqual(slot.view.accessibilityLabel, "Issuer")
+    let identity = Mirror(reflecting: slot).children.first { $0.label == "identity" }?.value as? String
+    XCTAssertNotNil(identity)
+    try bind(descriptor, title: "Changed title")
+    XCTAssertEqual(Mirror(reflecting: slot).children.first { $0.label == "identity" }?.value as? String, identity)
+    try bind(["image": ["uri": "data:image/png;base64,AQ==", "width": 20, "height": 20]])
+    XCTAssertEqual(slot.view.bounds.width, 20, accuracy: 0.5)
+    XCTAssertEqual(slot.view.layer.cornerRadius, 10, accuracy: 0.1)
+    XCTAssertNil(slot.view.accessibilityLabel)
+    XCTAssertNotEqual(Mirror(reflecting: slot).children.first { $0.label == "identity" }?.value as? String, identity)
+    try bind(nil)
+    XCTAssertTrue(slot.view.isHidden)
+    XCTAssertNil(Mirror(reflecting: slot).children.first { $0.label == "identity" }?.value as? String)
+    try bind(descriptor)
+    cell.prepareForReuse()
+    XCTAssertTrue(slot.view.isHidden)
+    XCTAssertNil(slot.view.accessibilityLabel)
   }
 
   func testRiskIdentityTitleIconAndButtonResetOnProductionCellBind() throws {
@@ -1559,12 +1619,15 @@ final class NativeListLifecycleTests: XCTestCase {
     let thousandCells = try sampleCells(count: 1000)
     print("NativeList 100 visible/attached first/mid/tail: \(hundredCells)")
     print("NativeList 1000 visible/attached first/mid/tail: \(thousandCells)")
+    let visibleCellLimit = Int(ceil(list.bounds.height / 60)) + 2
     XCTAssertTrue(hundredCells.allSatisfy {
-      $0.visible > 0 && $0.visible <= 24 && $0.attached > 0 && $0.attached <= 24
+      $0.visible > 0 && $0.visible <= visibleCellLimit && $0.attached >= $0.visible
     })
     XCTAssertTrue(thousandCells.allSatisfy {
-      $0.visible > 0 && $0.visible <= 24 && $0.attached > 0 && $0.attached <= 24
+      $0.visible > 0 && $0.visible <= visibleCellLimit && $0.attached >= $0.visible
     })
+    // UIKit also retains offscreen cells in subviews. Their count may exceed
+    // the visible budget, but must remain bounded as the data grows tenfold.
     XCTAssertLessThanOrEqual(thousandCells.map(\.attached).max() ?? 0,
       (hundredCells.map(\.attached).max() ?? 0) + 4)
   }
@@ -1881,6 +1944,7 @@ final class NativeListLifecycleTests: XCTestCase {
     for (index, slot) in slots.enumerated() { view.mountContainerSlot(slot, atIndex: index) }
     view.setContainerSlotHeightsJson("[0,0,140,0,100,40]")
     var settlements: [(String, String, Bool)] = []
+    let latestSettled = expectation(description: "Latest disclosure transition settled")
     view.onStructuralTransitionSettled = { payload in
       guard let data = payload.data(using: .utf8),
             let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -1888,6 +1952,7 @@ final class NativeListLifecycleTests: XCTestCase {
             let status = object["status"] as? String,
             let expanded = object["settledExpanded"] as? Bool else { return }
       settlements.append((id, status, expanded))
+      if id == "collapse-latest" { latestSettled.fulfill() }
     }
     view.applySnapshotJson(try structuralRowsSnapshot(count: 6, generation: 1,
       disclosureExpanded: false))
@@ -1908,11 +1973,15 @@ final class NativeListLifecycleTests: XCTestCase {
     view.applySnapshotJson(try structuralRowsSnapshot(count: 50, generation: 4,
       transitionID: "expand-superseded", durationMs: 400,
       disclosureExpanded: true))
-    waitForStructuralFrames(0.08)
+    // Supersede on the same main-thread turn: a timed wait can outlast the
+    // expansion on a busy simulator and legitimately deliver its settlement.
+    XCTAssertNotNil(Mirror(reflecting: view).descendant("structuralDisplayLink")
+      as? CADisplayLink)
+    XCTAssertEqual(settlements.map(\.0), ["same-rows"])
     view.applySnapshotJson(try structuralRowsSnapshot(count: 6, generation: 5,
       transitionID: "collapse-latest", durationMs: 400,
       disclosureExpanded: false))
-    waitForStructuralFrames(0.5)
+    wait(for: [latestSettled], timeout: 2)
     XCTAssertEqual(settlements.map(\.0), ["same-rows", "collapse-latest"])
     XCTAssertEqual(settlements.last?.1, "completed")
     XCTAssertEqual(settlements.last?.2, false)

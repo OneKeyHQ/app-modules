@@ -45,6 +45,18 @@ All notable changes to this project will be documented in this file.
 - Stop tracking `nitrogen/generated` for `react-native-image` and `react-native-native-list`. Every other Nitro package already ignores `nitrogen/` and regenerates it from the spec at release time; these two were missing a package `.gitignore`, so 117 generated files rode along in every diff that touched a prop. `react-native-native-list` now runs `yarn nitrogen` in its `release` script like the other view packages, and local builds need `yarn nitrogen` in the package before the first native build.
 - No version bump here; these changes ship with the next release. Note that 3.0.157 was published from this branch before the review fixes landed and should not be used.
 
+## [6.7.0-20] - 2026-10-30
+
+### Bug Fixes
+- **native-list (iOS)**: Keep an Identity row's `titleIcon` beside the title text. The title label stretched across the title row, so the Home native-token gas glyph landed next to the value column instead of after "ETH" (OK-66041); Android and Web already packed the title row at its start. A low-priority filler now absorbs the row's slack, and title suffixes still insert ahead of the badge. XCTest `NativeListIdentityTitleIconLayoutTests`.
+- **native-list (Android)**: Stop the Activity row clipping its leading visual's network badge. The badge hangs 4dp past the 40dp avatar (SPEC "Leading badge overhang") and the row's content box kept Android's default `clipChildren`, so the Home history rows showed the badge cut flat at the bottom (OK-66071). The renderer now applies the same `requestsUnclippedHost` rule as Identity, derived on every bind, so a view reused from a badge row clips again when it is rebound to a rich (`amounts`) row.
+- **native-list**: Draw an Activity row's `leading` + `secondaryLeading` tokens as a pair, as the legacy avatar and the Web renderer do: primary 24 at the top-left, secondary 24 at the bottom-right inside a 2-unit row-background ring (shown only while the secondary image is displayed), and the single network badge above them at the corner. Android laid the secondary over the whole 40dp box, hiding the primary and the network badge in the history swap rows (OK-66071); iOS drew it in the badge's corner slot over the badge. The per-source geometry is one pure rule on Android (`nativeListLeadingSlotFrame`, JVM test `NativeListLeadingSlotFrameTest`), mirrored in Swift.
+- **native-list (Android)**: Lay out an Identity row's `valuePair` + `DotVerSolid` menu icon trailing pair side by side, as iOS already does (`configureTrailingStack`). Android stacked the two vertically, so inside the Swap token selector's fixed 60dp row the balance was pushed above the menu icon and both were clipped. The side-by-side pairs are now one pure rule (`nativeListIdentityTrailingIsHorizontal`, JVM test `NativeListIdentityTrailingAxisTest`).
+- **native-list**: Add the `DotVerSolid`, `Document2Outline`, `WalletOutline`, `PlusLargeOutline` and `TicketOutline` glyphs to the built-in icon set on iOS, Android and Web. The app's migrated asset lists pass them by name (Swap token selector row menu, history fallback, recipient wallet fallback, aggregate selector create-address action, Home receipt help), and an unmapped name rendered an empty slot.
+
+### Chores
+- Bump all 44 publishable packages to 6.7.0-20. 6.7.0-17, 6.7.0-18 and 6.7.0-19 were published from other branches before merge and carry no changelog section of their own.
+
 ## [6.7.0-16] - 2026-10-27
 
 ### Bug Fixes

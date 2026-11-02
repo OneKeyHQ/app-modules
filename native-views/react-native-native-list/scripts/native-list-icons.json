@@ -102,6 +102,12 @@
     "rendering": "template"
   },
   {
+    "name": "Document2Outline",
+    "source": "outline/document-2.svg",
+    "platforms": ["ios", "android", "web"],
+    "rendering": "template"
+  },
+  {
     "name": "DotHorOutline",
     "source": "outline/dot-hor.svg",
     "platforms": ["ios", "android", "web"],
@@ -186,6 +192,12 @@
     "rendering": "template"
   },
   {
+    "name": "PlusLargeOutline",
+    "source": "outline/plus-large.svg",
+    "platforms": ["ios", "android", "web"],
+    "rendering": "template"
+  },
+  {
     "name": "PlusSmallOutline",
     "source": "outline/plus-small.svg",
     "platforms": ["ios", "android", "web"],
@@ -236,7 +248,13 @@
   {
     "name": "TicketOutline",
     "source": "outline/ticket.svg",
-    "platforms": ["web"],
+    "platforms": ["ios", "android", "web"],
+    "rendering": "template"
+  },
+  {
+    "name": "WalletOutline",
+    "source": "outline/wallet.svg",
+    "platforms": ["ios", "android", "web"],
     "rendering": "template"
   }
 ]

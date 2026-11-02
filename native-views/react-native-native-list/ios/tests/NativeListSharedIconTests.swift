@@ -131,6 +131,21 @@ final class NativeListSharedIconTests: XCTestCase {
     context.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
     return stride(from: 3, to: bytes.count, by: 4).filter { bytes[$0] > 0 }.count
   }
+  func testMainLineGlyphsPaintInTheSharedNativeSlot() throws {
+    let window = try window(); defer { window.isHidden = true }
+    let view = NativeListIconImageView(frame: CGRect(x: 10, y: 80, width: 64, height: 64))
+    window.rootViewController!.view.addSubview(view)
+    for name in ["Document2Outline", "WalletOutline", "PlusLargeOutline", "TicketOutline"] {
+      let metadata = try XCTUnwrap(nativeListIconMetadata(named: name))
+      XCTAssertEqual(metadata.name, name)
+      XCTAssertEqual(metadata.size, CGSize(width: 24, height: 24))
+      view.bindIcon(name)
+      eventually("Shared main-line glyph paints: " + name) { self.alphaCount(view.image) > 0 }
+      let image = try XCTUnwrap(view.image)
+      XCTAssertEqual(image.renderingMode, .alwaysTemplate)
+      try save(image.withTintColor(.red, renderingMode: .alwaysOriginal), "ios-main-integration-" + name)
+    }
+  }
   private func maximumAlpha(_ image: UIImage) -> UInt8 {
     guard let cg = image.cgImage else { return 0 }
     var bytes = [UInt8](repeating: 0, count: cg.width * cg.height * 4)
