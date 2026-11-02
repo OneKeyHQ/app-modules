@@ -11,7 +11,9 @@ import android.view.View
 import android.widget.FrameLayout
 import android.graphics.drawable.BitmapDrawable
 import com.facebook.react.bridge.BridgeReactContext
+import com.facebook.react.soloader.OpenSourceMergedSoMapping
 import com.facebook.react.uimanager.ThemedReactContext
+import com.facebook.soloader.SoLoader
 import com.caverock.androidsvg.SVG
 import java.io.File
 import java.io.FileOutputStream
@@ -24,6 +26,16 @@ class OneKeyIconTestActivity : Activity()
 
 @Suppress("DEPRECATION")
 class OneKeyIconDecoderTest : InstrumentationTestCase() {
+  fun testReactPackageRegistersImageAndIconExactlyOnce() {
+    instrumentation.runOnMainSync {
+      SoLoader.init(instrumentation.targetContext, OpenSourceMergedSoMapping)
+      val context = BridgeReactContext(instrumentation.targetContext)
+      val names = OneKeyImagePackage().createViewManagers(context).map { it.name }
+      assertEquals(listOf("OneKeyImage", "OneKeyIcon"), names)
+      assertEquals(names.size, names.distinct().size)
+    }
+  }
+
   fun testNamedCSSAlphaIsExactAndFixedColorsRemain() {
     fun resolve(name: String,alpha: String): Bitmap {
       val latch=CountDownLatch(1)
