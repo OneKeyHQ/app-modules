@@ -66,6 +66,11 @@ are retained. No storage, persistence, cache, migrations or network access.
 | Recording event       | UIScreen capture change notification                | Upstream-derived virtual-display heuristic            |
 | Permissions           | None                                                | DETECT_SCREEN_CAPTURE, normal permission, Android 14+ |
 
+iOS adds the app-switcher window only on resign/background notifications, or on
+prevent while the app is already in `.background`. Prevent during transient
+`.inactive` (Face ID, system alerts, Control Center) must not cover the visible
+page; the window is removed on didBecomeActive.
+
 Android below 14 intentionally has no screenshot notification; blocking remains
 available. Android virtual-display events are a heuristic and may also represent
 casting/external displays; they are not proof that a recording was made.
@@ -100,7 +105,8 @@ disposal and secure-layer owner isolation; physical capture acceptance remains
 separate.
 Required runtime acceptance: prevent/allow, nested sensitive pages, repeated
 navigation, recording started before/after subscription, background snapshots,
-activity recreation, subscription cleanup, and main/background object isolation.
+prevent right after Face ID (no blank overlay), activity recreation, subscription
+cleanup, and main/background object isolation.
 Inspect merged Android manifest and packaged iOS plist for media-read permissions.
 Build/type/unit results do not prove screenshot prevention on physical devices.
 
