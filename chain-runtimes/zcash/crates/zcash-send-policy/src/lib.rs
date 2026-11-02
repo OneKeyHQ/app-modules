@@ -4,7 +4,7 @@ use std::cell::Cell;
 
 use zcash_primitives::transaction::fees::zip317::{self, FeeRule};
 use zcash_protocol::{
-    consensus::{BlockHeight, BranchId, NetworkType, Parameters},
+    consensus::{BlockHeight, BranchId, NetworkType, NetworkUpgrade, Parameters},
     value::Zatoshis,
 };
 
@@ -12,6 +12,8 @@ pub const ZIP2009_MAINNET_HEIGHT: u32 = 3_590_000;
 // Match Ledger's rollout margin; `target` is the next block, not the synced tip.
 pub const ZIP2009_SWITCH_MARGIN: u32 = 100;
 pub const EXPIRY_DELTA: u32 = 40;
+// Blocks come every 25 s from NU7; 120 keeps the same ~50 minutes, as upstream does.
+pub const NU7_EXPIRY_DELTA: u32 = 120;
 pub const MIN_VALID_BLOCKS: u32 = 8;
 
 /// The mainnet height sends move to the ZIP 2009 fee at, configured as Ledger Live
@@ -99,9 +101,17 @@ pub fn fee_rule<P: Parameters>(params: &P, target: BlockHeight) -> FeeRule {
     .expect("standard ZIP-317 input and output sizes are nonzero")
 }
 
+pub fn expiry_delta<P: Parameters>(params: &P, target: BlockHeight) -> u32 {
+    if params.is_nu_active(NetworkUpgrade::Nu7, target) {
+        NU7_EXPIRY_DELTA
+    } else {
+        EXPIRY_DELTA
+    }
+}
+
 pub fn expiry_height<P: Parameters>(params: &P, target: BlockHeight) -> Option<BlockHeight> {
     let target_u32 = u32::from(target);
-    let expiry = target_u32.checked_add(EXPIRY_DELTA)?;
+    let expiry = target_u32.checked_add(expiry_delta(params, target))?;
     let next_upgrade = BranchId::for_height(params, target)
         .height_bounds(params)
         .and_then(|(_, upper)| upper);
@@ -129,7 +139,7 @@ pub fn transaction_policy<P: Parameters>(params: &P, target: BlockHeight) -> Tra
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zcash_protocol::consensus::{NetworkUpgrade, MAIN_NETWORK, TEST_NETWORK};
+    use zcash_protocol::consensus::{MAIN_NETWORK, TEST_NETWORK};
 
     // Each test runs on its own thread, so the setting stays local to it.
     fn mainnet_fee(height: u32, zip2009: Zip2009Switch) -> u64 {
@@ -232,6 +242,35 @@ mod tests {
     }
 
     #[test]
+    fn nu7_activates_on_mainnet_with_its_branch_id() {
+        let nu7 = MAIN_NETWORK.activation_height(NetworkUpgrade::Nu7).unwrap();
+        assert_eq!(u32::from(nu7), 3_543_405);
+        assert_eq!(
+            BranchId::for_height(&MAIN_NETWORK, nu7 - 1),
+            BranchId::Nu6_3
+        );
+        assert_eq!(BranchId::for_height(&MAIN_NETWORK, nu7), BranchId::Nu7);
+        assert_eq!(u32::from(BranchId::Nu7), 0x7719_0ad9);
+        assert_eq!(BranchId::try_from(0x7719_0ad9), Ok(BranchId::Nu7));
+        assert_eq!(
+            TEST_NETWORK.activation_height(NetworkUpgrade::Nu7),
+            Some(BlockHeight::from_u32(4_465_026))
+        );
+    }
+
+    #[test]
+    fn expiry_keeps_its_duration_across_nu7() {
+        let nu7 = MAIN_NETWORK.activation_height(NetworkUpgrade::Nu7).unwrap();
+        // An NU6.3 transaction cannot be mined from NU7 on.
+        assert_eq!(expiry_height(&MAIN_NETWORK, nu7 - 20), Some(nu7 - 1));
+        assert_eq!(expiry_height(&MAIN_NETWORK, nu7 - 8), None);
+        assert_eq!(
+            expiry_height(&MAIN_NETWORK, nu7),
+            Some(nu7 + NU7_EXPIRY_DELTA)
+        );
+    }
+
+    #[test]
     fn overflow_cannot_create_a_nonexpiring_transaction() {
         assert_eq!(
             expiry_height(&MAIN_NETWORK, BlockHeight::from_u32(u32::MAX)),
@@ -239,6 +278,6 @@ mod tests {
         );
         let policy = transaction_policy(&MAIN_NETWORK, BlockHeight::from_u32(3_590_100));
         assert_eq!(policy.minimum_fee_zat, "2000");
-        assert_eq!(policy.expiry_height, Some(3_590_140));
+        assert_eq!(policy.expiry_height, Some(3_590_220));
     }
 }
