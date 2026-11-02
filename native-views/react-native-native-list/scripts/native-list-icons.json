@@ -1,0 +1,242 @@
+[
+  {
+    "name": "AccountErrorCustom",
+    "source": "custom/account-error.svg",
+    "platforms": ["ios", "android", "web"],
+    "rendering": "original"
+  },
+  {
+    "name": "AllNetworksSolid",
+    "source": "solid/all-networks.svg",
+    "platforms": ["ios", "android", "web"],
+    "rendering": "template"
+  },
+  {
+    "name": "AppleBrand",
+    "source": "brand/apple.svg",
+    "platforms": ["ios", "android", "web"],
+    "rendering": "template"
+  },
+  {
+    "name": "ArrowBottomOutline",
+    "source": "outline/arrow-bottom.svg",
+    "platforms": ["ios", "android"],
+    "rendering": "template"
+  },
+  {
+    "name": "ArrowTopOutline",
+    "source": "outline/arrow-top.svg",
+    "platforms": ["ios", "android"],
+    "rendering": "template"
+  },
+  {
+    "name": "BadgeVerifiedSolid",
+    "source": "solid/badge-recognized.svg",
+    "platforms": ["ios", "android", "web"],
+    "rendering": "template"
+  },
+  {
+    "name": "BotIllus",
+    "source": "illus/bot.svg",
+    "platforms": ["ios", "android", "web"],
+    "rendering": "original"
+  },
+  {
+    "name": "ChartTrendingUpOutline",
+    "source": "outline/chart-trending-up.svg",
+    "platforms": ["ios", "android"],
+    "rendering": "template"
+  },
+  {
+    "name": "CheckboxCheckedCustom",
+    "source": "custom/checkbox-checked.svg",
+    "platforms": ["ios", "web"],
+    "rendering": "template"
+  },
+  {
+    "name": "CheckboxIndeterminateCustom",
+    "source": "custom/checkbox-indeterminate.svg",
+    "platforms": ["ios", "web"],
+    "rendering": "template"
+  },
+  {
+    "name": "ChevronBottomOutline",
+    "source": "outline/chevron-bottom.svg",
+    "platforms": ["ios", "android"],
+    "rendering": "template"
+  },
+  {
+    "name": "ChevronGrabberVerOutline",
+    "source": "outline/chevron-grabber-ver.svg",
+    "platforms": ["ios", "android"],
+    "rendering": "template"
+  },
+  {
+    "name": "ChevronRightSmallOutline",
+    "source": "outline/chevron-right-small.svg",
+    "platforms": ["ios", "android", "web"],
+    "rendering": "template"
+  },
+  {
+    "name": "ChevronTopOutline",
+    "source": "outline/chevron-top.svg",
+    "platforms": ["ios", "android"],
+    "rendering": "template"
+  },
+  {
+    "name": "Circle",
+    "source": null,
+    "platforms": ["android", "web"],
+    "rendering": "template"
+  },
+  {
+    "name": "CrossedSmallSolid",
+    "source": "solid/crossed-small.svg",
+    "platforms": ["ios", "android", "web"],
+    "rendering": "template"
+  },
+  {
+    "name": "CryptoCoinOutline",
+    "source": "outline/crypto-coin.svg",
+    "platforms": ["ios", "android", "web"],
+    "rendering": "template"
+  },
+  {
+    "name": "DotHorOutline",
+    "source": "outline/dot-hor.svg",
+    "platforms": ["ios", "android", "web"],
+    "rendering": "template"
+  },
+  {
+    "name": "DotVerSolid",
+    "source": "solid/dot-ver.svg",
+    "platforms": ["ios", "android", "web"],
+    "rendering": "template"
+  },
+  {
+    "name": "DragOutline",
+    "source": "outline/drag.svg",
+    "platforms": ["ios", "android", "web"],
+    "rendering": "template"
+  },
+  {
+    "name": "ErrorSolid",
+    "source": "solid/error.svg",
+    "platforms": ["ios", "android"],
+    "rendering": "template"
+  },
+  {
+    "name": "GasSolid",
+    "source": "solid/gas.svg",
+    "platforms": ["ios", "android", "web"],
+    "rendering": "template"
+  },
+  {
+    "name": "GlobusOutline",
+    "source": "outline/globus.svg",
+    "platforms": ["ios", "android", "web"],
+    "rendering": "template"
+  },
+  {
+    "name": "GoogleIllus",
+    "source": "illus/google.svg",
+    "platforms": ["ios", "android", "web"],
+    "rendering": "original"
+  },
+  {
+    "name": "ImageSquareWavesOutline",
+    "source": "outline/image-square-waves.svg",
+    "platforms": ["ios", "android"],
+    "rendering": "template"
+  },
+  {
+    "name": "InfoCircleOutline",
+    "source": "outline/info-circle.svg",
+    "platforms": ["ios", "android"],
+    "rendering": "template"
+  },
+  {
+    "name": "LockSolid",
+    "source": "solid/lock.svg",
+    "platforms": ["ios", "android", "web"],
+    "rendering": "template"
+  },
+  {
+    "name": "MinusCircleOutline",
+    "source": "outline/minus-circle.svg",
+    "platforms": ["ios", "android"],
+    "rendering": "template"
+  },
+  {
+    "name": "MinusCircleSolid",
+    "source": "solid/minus-circle.svg",
+    "platforms": ["ios", "android"],
+    "rendering": "template"
+  },
+  {
+    "name": "PencilOutline",
+    "source": "outline/pencil.svg",
+    "platforms": ["ios", "android", "web"],
+    "rendering": "template"
+  },
+  {
+    "name": "PlusCircleOutline",
+    "source": "outline/plus-circle.svg",
+    "platforms": ["ios", "android"],
+    "rendering": "template"
+  },
+  {
+    "name": "PlusSmallOutline",
+    "source": "outline/plus-small.svg",
+    "platforms": ["ios", "android", "web"],
+    "rendering": "template"
+  },
+  {
+    "name": "QuestionmarkSolid",
+    "source": "solid/questionmark.svg",
+    "platforms": ["ios", "android"],
+    "rendering": "template"
+  },
+  {
+    "name": "RefreshCcwOutline",
+    "source": "outline/refresh-ccw.svg",
+    "platforms": ["ios", "android", "web"],
+    "rendering": "template"
+  },
+  {
+    "name": "ShieldExclamationOutline",
+    "source": "outline/shield-exclamation.svg",
+    "platforms": ["ios", "android"],
+    "rendering": "template"
+  },
+  {
+    "name": "SpeakerPromoteOutline",
+    "source": "outline/speaker-promote.svg",
+    "platforms": ["ios", "android"],
+    "rendering": "template"
+  },
+  {
+    "name": "StarOutline",
+    "source": "outline/star.svg",
+    "platforms": ["ios", "android"],
+    "rendering": "template"
+  },
+  {
+    "name": "StarSolid",
+    "source": "solid/star.svg",
+    "platforms": ["ios", "android"],
+    "rendering": "template"
+  },
+  {
+    "name": "SwapHorOutline",
+    "source": "outline/swap-hor.svg",
+    "platforms": ["ios", "android"],
+    "rendering": "template"
+  },
+  {
+    "name": "TicketOutline",
+    "source": "outline/ticket.svg",
+    "platforms": ["web"],
+    "rendering": "template"
+  }
+]

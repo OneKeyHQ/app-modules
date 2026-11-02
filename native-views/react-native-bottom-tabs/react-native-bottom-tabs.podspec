@@ -32,5 +32,7 @@ Pod::Spec.new do |s|
     'DEFINES_MODULE' => 'YES'
   }
 
+  s.dependency "OneKeyImage", package["peerDependencies"]["@onekeyfe/react-native-image"]
+
   install_modules_dependencies(s)
 end

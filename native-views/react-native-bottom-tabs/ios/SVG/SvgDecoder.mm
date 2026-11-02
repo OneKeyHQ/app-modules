@@ -1,5 +1,5 @@
 #import "SvgDecoder.h"
-#import "CoreSVG.h"
+#import <OneKeyImage/OneKeyImageCoderBridge.h>
 
 @implementation SvgDecoder
 
@@ -7,7 +7,11 @@ RCT_EXPORT_MODULE()
 
 - (BOOL)canDecodeImageData:(NSData *)imageData
 {
-  return [CoreSVGWrapper isSVGData:imageData];
+  if (!imageData) return NO;
+  // Preserve the existing global React image-decoder selection boundary.
+  return [imageData rangeOfData:[@"</svg>" dataUsingEncoding:NSUTF8StringEncoding]
+                       options:NSDataSearchBackwards
+                         range:NSMakeRange(imageData.length - MIN(100, imageData.length), MIN(100, imageData.length))].location != NSNotFound;
 }
 
 - (RCTImageLoaderCancellationBlock)decodeImageData:(NSData *)imageData
@@ -16,7 +20,7 @@ RCT_EXPORT_MODULE()
                                         resizeMode:(RCTResizeMode)resizeMode
                                  completionHandler:(RCTImageLoaderCompletionBlock)completionHandler
 {
-  UIImage *image = [CoreSVGWrapper.shared imageFromSVGData:imageData];
+  UIImage *image = [OneKeyImageCoderBridge decodeSVGData:imageData pixelSize:CGSizeZero];
 
   if (image) {
     completionHandler(nil, image);

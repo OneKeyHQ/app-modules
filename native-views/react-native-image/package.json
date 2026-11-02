@@ -10,7 +10,27 @@
       "types": "./lib/typescript/src/index.d.ts",
       "default": "./lib/module/index.js"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./icon": {
+      "browser": {
+        "source": "./src/icon/index.web.tsx",
+        "types": "./lib/typescript/src/icon/index.d.ts",
+        "default": "./lib/module/icon/index.web.js"
+      },
+      "react-native": {
+        "source": "./src/icon/index.tsx",
+        "types": "./lib/typescript/src/icon/index.d.ts",
+        "default": "./lib/module/icon/index.js"
+      },
+      "types": "./lib/typescript/src/icon/index.d.ts",
+      "source": "./src/icon/index.tsx",
+      "default": "./lib/module/icon/index.js"
+    },
+    "./icon/dom": {
+      "source": "./src/icon/dom.ts",
+      "types": "./lib/typescript/src/icon/dom.d.ts",
+      "default": "./lib/module/icon/dom.js"
+    }
   },
   "files": [
     "src",
@@ -30,16 +50,22 @@
     "!android/local.properties",
     "!**/__tests__",
     "!**/.*",
-    "!**/*.map"
+    "!**/*.map",
+    "resources",
+    "scripts"
   ],
   "scripts": {
     "clean": "del-cli android/build lib",
-    "prepare": "rm -rf lib && bob build && cp -r nitrogen lib/nitrogen",
+    "prepare": "rm -rf lib && bob build && cp -r nitrogen lib/nitrogen && node scripts/copy-icon-assets.mjs",
     "nitrogen": "nitrogen",
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
     "test": "jest",
-    "release": "yarn nitrogen && yarn prepare && npm whoami && npm publish --access public"
+    "release": "yarn nitrogen && yarn prepare && npm whoami && npm publish --access public",
+    "icons:generate": "node scripts/generate-icons.mjs",
+    "icons:check": "node scripts/generate-icons.mjs --check",
+    "icons:test": "node scripts/generate-icons.test.mjs",
+    "icons:copy": "node scripts/copy-icon-assets.mjs"
   },
   "keywords": [
     "react-native",

@@ -1,5 +1,43 @@
 # NativeList contract
 
+## Shared image SVG integration — Implemented
+
+Static icons use the image package's named resources and SVG implementation:
+the main registry, Activity's ten private glyphs, Market stars/recognized badge,
+Media fallback and Android checkbox. Existing per-platform name coverage remains
+unchanged; unknown-name text fallbacks remain. The NativeList-only legacy name
+`BadgeVerifiedSolid` resolves to canonical `BadgeRecognizedSolid`. Circle and
+dynamic charts/spinners/dotted decoration remain local primitives.
+
+Each iOS glyph slot owns a request owner and revision, including overlays and
+UIButton states. Final graphical identity (name, raster geometry/scale and render
+strategy) controls requests. A private synchronous bind transaction preserves
+both an identical pending request and a ready raster across reset/rebind calls;
+changed or empty identities cancel and clear. Only the current attached revision
+may apply a completion. Detach, reuse and raster geometry changes invalidate
+ownership. UIKit template tint changes reuse the immutable mask. UIButton states
+share one decode, retaining template/original and disabled tint/alpha/action
+behavior. Name validity and descriptor geometry control visibility, layout and
+touch bounds; image availability does not control them.
+Detached binds and auto-height measurement use only known intrinsic metadata;
+they MUST NOT submit named requests or read/decode SVG resources. Initial attach
+starts loading without changing the measured glyph or button dimensions.
+
+iOS original brand/opacity modes and the size overload's always-template behavior
+remain. Android preserves Apple 16 × 20 width-based scaling and clipping by
+requesting a proportionate raster and drawing at the old origin. Checkboxes
+retain their 16 dp glyph plus 2 dp border offset in selector geometry, otherwise
+80 percent centered geometry. Shared images are immutable; no cross-view mutable
+Drawable bounds or pixel changes are allowed. Named work uses image's existing
+two-worker and bounded cache service. Web consumers use its pure DOM sprite
+helper while keeping inherited color, action labels, anchors and exact sizes.
+
+Acceptance must cover actual slots, first bind and repeated row reuse, unknown
+and empty inputs, detach/reattach, resize/tint changes, both UIButton states,
+checkboxes, Apple, original brands, legacy badge, and Web/desktop menus. All
+static path readers must be removed from migrated routes; procedural drawings
+and unrelated URI image loading retain their existing ownership.
+
 This is the entry point for the package's behavioral contract. The linked
 documents are part of this spec; implementation status is separate from target
 architecture and runtime evidence.
@@ -50,6 +88,51 @@ without a physical touch retains the row anchor without a press point. It suppre
 ordinary press for that gesture. Motion cancellation, row rebind/recycle,
 disabled state and disposal cancel pending recognition. Trailing accessory
 actions remain independent. Omission preserves existing tap behavior.
+
+### Native Swap token menu backport
+
+Status: implemented in local native source, unreleased. Native build and runtime
+acceptance are separate checks. Web and Desktop layout and actions stay unchanged;
+their generated icon artwork is covered in the following section.
+
+iOS and Android render `DotVerSolid` with the app's existing 24-unit solid icon
+geometry. On Android, exactly two identity trailing accessories consisting of
+`valuePair` followed by an `icon` named `DotVerSolid` with `actionKey: 'menu'`
+lay out horizontally, matching iOS. Other icon names or action keys retain the
+existing axis rules. This backport does not change row padding, accessory spacing,
+button dimensions, actions, disabled state, or the public snapshot contract.
+
+`NativeListAccessoryStackTests` checks the iOS image lookup and bound button image.
+`NativeListRiskAccessoryTest` checks Android's actual icon drawing and the target
+horizontal pair, including vertical controls on rebind.
+
+### Built-in icon metadata generation
+
+The closed `scripts/native-list-icons.json` manifest retains platform coverage,
+canonical App source paths and iOS rendering strategy. `Circle` is a local
+primitive. The NativeList-only legacy `BadgeVerifiedSolid` name maps to
+`solid/badge-recognized.svg` / canonical `BadgeRecognizedSolid`, preserving its
+thumbs-up artwork without adding a general alias.
+
+`scripts/generate-icons.mjs --app-root <app-root>` matches each source uniquely
+against image's generated catalog, validates source digests and manifest
+metadata, then emits exactly three small Swift/Kotlin/Web name/geometry tables.
+It writes no SVG, path data or xcassets; image owns the single resource pipeline.
+All validation precedes writes. `--check` is read-only and detects missing or
+ambiguous sources, invalid metadata and stale output. Stable sorting emits no
+machine paths or timestamps. Frozen tests compare exact registry key sets;
+this does not prove that every application-computed name is registered.
+
+Main registry coverage stays iOS 38, Android 37, Web 22 (including DotVerSolid).
+Existing Activity ten-name and Market/Media private call sites resolve canonical
+names through the same DOM helper; their previous coverage does not expand.
+Image preserves raw path order, fill rules, fixed colors, opacity and viewBoxes.
+NativeList retains its layout, button bounds, actions and snapshot interfaces.
+
+Focused SDK fixture acceptance covers native attached lifecycle/rebinding,
+legacy iOS asset comparisons, shared alpha semantics and real Web/Electron
+source/lib consumers. This is not full App, balance, transaction or signed
+release acceptance.
 
 A `message` row may opt into `bodyLines: 0`; its complete body wraps within its
 existing text area and determines natural height unless an explicit row or
@@ -1751,3 +1834,15 @@ A containing Web pager therefore applies insets, collapse/top commands and route
 restoration to the owned host, with slot content as its padding target. The
 ordinary no-slot viewport and explicit external-host paths keep their existing
 ownership; no Pager dependency or new API is required.
+
+### Shared icon recoloring revision — Implemented; scoped runtime acceptance
+
+Android named glyph slots consume image's typed immutable shape-cache results:
+compatible fixed/single/same-alpha multiple colors update per-view tint without a
+request; new alpha or mixed-color raster requests preserve the last successful
+same-source/geometry bitmap until completion. Name/geometry changes, invalid,
+hidden/detach/recycle clear immediately and revisions reject old callbacks.
+Circle remains local; Apple and checkbox rectangles and coverage are unchanged.
+iOS retains its existing black template/original request and synchronous retint.
+Web React and DOM use the image package's demand-loaded external per-icon symbol
+URLs, with existing coverage/aliases/action labels and CSS color inheritance.

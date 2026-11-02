@@ -104,6 +104,9 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
     sourceScale: Boolean,
     secondaryVisual: JSONObject? = null,
   ) {
+    val iconUpdate = NativeListIconUpdate(this)
+    try {
+
     fallback.typeface = fonts.bold(context)
     this.visual = visual
     this.style = style
@@ -364,6 +367,8 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
     overlaySlots.drop(descriptors.size).forEach { it.recycle() }
     unread.bringToFront()
     requestLayout()
+
+    } finally { iconUpdate.finish() }
   }
 
   override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {

@@ -15,6 +15,7 @@ Pod::Spec.new do |s|
   s.source_files = ["ios/**/*.{h,swift,m,mm}", "cpp/**/*.{hpp,cpp}"]
   s.exclude_files = "ios/tests/**/*"
   s.public_header_files = ["ios/OneKeyImageCoderBridge.h"]
+  s.resource_bundles = { "OneKeyIcons" => ["resources/icons/*"] }
 
   s.dependency "React-jsi"
   s.dependency "React-callinvoker"

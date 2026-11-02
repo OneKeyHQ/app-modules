@@ -39,7 +39,6 @@ import androidx.core.view.forEachIndexed
 import coil3.ImageLoader
 import coil3.asDrawable
 import coil3.request.ImageRequest
-import coil3.svg.SvgDecoder
 import coil3.size.Precision
 import coil3.size.Size as CoilSize
 import coil3.size.Scale
@@ -253,7 +252,7 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
 
   private val imageLoader = ImageLoader.Builder(context)
     .components {
-      add(SvgDecoder.Factory())
+      add(SharedSvgDecoder.Factory())
     }
     .build()
 

@@ -1,0 +1,7 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <uses-sdk android:minSdkVersion="24" />
+  <application android:theme="@android:style/Theme.Material.Light.NoActionBar">
+    <uses-library android:name="android.test.runner" />
+    <activity android:name="com.margelo.nitro.onekeyimage.OneKeyIconTestActivity" android:exported="false" />
+  </application>
+</manifest>

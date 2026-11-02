@@ -33,6 +33,9 @@
     "scripts"
   ],
   "scripts": {
+    "icons:generate": "node scripts/generate-icons.mjs",
+    "icons:check": "node scripts/generate-icons.mjs --check",
+    "icons:test": "node scripts/generate-icons.test.mjs",
     "clean": "del-cli lib",
     "prepare": "del-cli lib && bob build && cp -r nitrogen lib/nitrogen",
     "nitrogen": "nitrogen && node scripts/enable-container-slots.mjs",

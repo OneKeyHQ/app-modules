@@ -26,7 +26,7 @@ final class NativeListMarketCell: NativeListRendererCell {
   private let marketBadgeButtons = (0..<3).map { _ in NativeListAccessoryButton(type: .system) }
   private let badgeSlots = (0..<3).map { _ in NativeListImageSlot() }
   private var marketBadgeImages: [UIView] { badgeSlots.map { $0.view } }
-  private let leadingActionButton = UIButton(type: .system)
+  private let leadingActionButton = NativeListIconButton(type: .system)
   private var leadingWidth: NSLayoutConstraint!
   private var leadingHeight: NSLayoutConstraint!
   private var selectorConstraints: [NSLayoutConstraint] = []
@@ -86,6 +86,9 @@ final class NativeListMarketCell: NativeListRendererCell {
     _ item: NativeListItem, theme: [String: Any]?, layout: String,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
   ) {
+    let iconUpdate = NativeListIconUpdate(self)
+    defer { iconUpdate.finish() }
+
     NSLayoutConstraint.deactivate(selectorConstraints + accessorySizeConstraints)
     selectorConstraints = []
     accessorySizeConstraints = []
@@ -145,6 +148,7 @@ final class NativeListMarketCell: NativeListRendererCell {
       ? .top
       : style?.dictionary("container")?.string("contentVerticalAlignment") == "bottom"
         ? .bottom : .center
+
   }
   private func resetButton(_ button: NativeListAccessoryButton) {
     button.setTitle(nil, for: .normal)
@@ -404,13 +408,7 @@ final class NativeListMarketCell: NativeListRendererCell {
         fallback: .darkGray
       )
       leadingActionButton.tintColor = tintColor
-      if let image = nativeListIcon(named: leadingAction.string("name")) {
-        leadingActionButton.setImage(image, for: .normal)
-        leadingActionButton.setImage(
-          image.withTintColor(tintColor, renderingMode: .alwaysOriginal),
-          for: .disabled
-        )
-      }
+      leadingActionButton.bindIcon(leadingAction.string("name"))
       leadingActionButton.isEnabled = !leadingAction.bool("disabled")
       leadingActionButton.alpha = leadingActionButton.isEnabled ? 1 : 0.4
       leadingActionButton.accessibilityIdentifier = leadingAction["testID"] as? String
@@ -533,11 +531,7 @@ final class NativeListMarketCell: NativeListRendererCell {
       button.titleEdgeInsets = .zero
       button.imageView?.contentMode = .scaleAspectFit
       if hasBuiltInIcon {
-        button.setImage(
-          nativeListIcon(
-            named: "BadgeVerifiedSolid", size: CGSize(width: iconSize, height: iconSize)),
-          for: .normal
-        )
+        button.bindIcon("BadgeVerifiedSolid", size: CGSize(width: iconSize, height: iconSize))
       }
       // OneKey patch: match source badge metrics at physical-pixel precision.
       // let height = button.heightAnchor.constraint(equalToConstant: 18)

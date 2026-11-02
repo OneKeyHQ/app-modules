@@ -883,6 +883,9 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
           .let { kinds ->
             kinds.containsAll(listOf("value", "checkbox")) ||
               kinds == listOf("valuePair", "menu") ||
+              (kinds == listOf("valuePair", "icon") &&
+                accessories.getJSONObject(1).optString("name") == "DotVerSolid" &&
+                accessories.getJSONObject(1).optString("actionKey") == "menu") ||
               kinds == listOf("valuePair", "chevron") ||
               (kinds == listOf("icon", "chevron") &&
                 accessories.getJSONObject(0).optString("name") == "RefreshCcwOutline" &&

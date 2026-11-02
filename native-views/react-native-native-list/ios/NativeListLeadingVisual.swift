@@ -14,14 +14,14 @@ final class NativeListLeadingVisual: UIView {
   var overlayTextFontSize: CGFloat = 10
   var overlayTextLineHeight: CGFloat?
   var overlayTextHorizontalInset: CGFloat?
-  private let icon = UIImageView()
+  private let icon = NativeListIconImageView()
   private let unread = UIView()
   private let networkBackdrop = UIView()
-  private let corner = UIImageView()
+  private let corner = NativeListIconImageView()
   private let cornerBackdrop = UIView()
   private var slots: [NativeListImageSlot] = []
   private var overlaySlots: [NativeListImageSlot] = []
-  private var overlayFallbackIcons: [UIImageView] = []
+  private var overlayFallbackIcons: [NativeListIconImageView] = []
   private var overlays: [(UIView, [String: Any])] = []
   private let dashedBorder = CAShapeLayer()
   private var visual: [String: Any] = [:]
@@ -48,6 +48,8 @@ final class NativeListLeadingVisual: UIView {
     isUnread: Bool, secondaryVisual: [String: Any]? = nil,
     fonts: NativeListFontFamilies
   ) {
+    let iconUpdate = NativeListIconUpdate(self)
+    defer { iconUpdate.finish() }
     self.fonts = fonts
     fallback.font = nativeListFont(ofSize: 13, weight: .bold, fonts: fonts)
     self.visual = visual
@@ -99,7 +101,7 @@ final class NativeListLeadingVisual: UIView {
     fallback.text = String(visual.string("fallbackText").prefix(2))
     fallback.textColor = UIColor(
       nativeListHex: visual.string("fallbackTextColor", default: "#8D8D8D"), fallback: .gray)
-    icon.image = fallbackData.map { nativeListIcon(named: $0.string("name")) } ?? nil
+    icon.bindIcon(fallbackData?.string("name"))
     icon.tintColor = UIColor(
       nativeListHex: fallbackData?.string("tintColor", default: "#646464") ?? "#646464",
       fallback: .darkGray)
@@ -151,7 +153,7 @@ final class NativeListLeadingVisual: UIView {
     let badge = visual.dictionary("cornerIcon")
     corner.isHidden = badge == nil
     cornerBackdrop.isHidden = badge == nil
-    corner.image = badge.flatMap { nativeListIcon(named: $0.string("name")) }
+    corner.bindIcon(badge?.string("name"))
     corner.tintColor = UIColor(
       nativeListHex: badge?.string("tintColor", default: "#646464") ?? "#646464",
       fallback: .darkGray)
@@ -163,12 +165,12 @@ final class NativeListLeadingVisual: UIView {
     overlays.removeAll(keepingCapacity: true)
     let descriptors = Array(visual.dictionaries("overlays").prefix(2))
     while overlaySlots.count < descriptors.count { overlaySlots.append(NativeListImageSlot()) }
-    while overlayFallbackIcons.count < descriptors.count { overlayFallbackIcons.append(UIImageView()) }
+    while overlayFallbackIcons.count < descriptors.count { overlayFallbackIcons.append(NativeListIconImageView()) }
     for (index, data) in descriptors.enumerated() {
       let frame = index < previousOverlays.count ? previousOverlays[index].0 : UIView()
       let fallbackData = data.dictionary("fallbackIcon")
       let fallbackGlyph = overlayFallbackIcons[index]
-      fallbackGlyph.image = fallbackData.flatMap { nativeListIcon(named: $0.string("name")) }
+      fallbackGlyph.bindIcon(fallbackData?.string("name"))
       fallbackGlyph.tintColor = UIColor(
         nativeListHex: fallbackData?.string("tintColor", default: "#646464") ?? "#646464",
         fallback: .darkGray)
@@ -219,8 +221,8 @@ final class NativeListLeadingVisual: UIView {
         child = label
       } else {
         overlaySlots[index].recycle()
-        let glyph = frame.subviews.first as? UIImageView ?? UIImageView()
-        glyph.image = nativeListIcon(named: data.string("name"))
+        let glyph = frame.subviews.first as? NativeListIconImageView ?? NativeListIconImageView()
+        glyph.bindIcon(data.string("name"))
         glyph.contentMode = .scaleAspectFit
         glyph.tintColor = UIColor(
           nativeListHex: data.string("tintColor", default: "#646464"), fallback: .darkGray)
