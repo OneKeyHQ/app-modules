@@ -1401,6 +1401,8 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
       }
       return
     }
+    val token = Any()
+    iconRequestTokens[index] = token
     val iconSizePx = bottomNavigation.itemIconSize
     val request = ImageRequest.Builder(context)
       .data(imageSource.getUri(context))
@@ -1409,9 +1411,15 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
       .precision(Precision.EXACT)
       .target { drawable ->
         post {
+          if (iconRequestTokens[index] !== token) {
+            return@post
+          }
+          iconRequestTokens.remove(index)
           val stateDrawable = drawable.asDrawable(context.resources)
           drawableCache[imageSource] = stateDrawable
-          onDrawableReady(stateDrawable)
+          if (iconSources[index] == imageSource) {
+            onDrawableReady(stateDrawable)
+          }
         }
       }
       .listener(

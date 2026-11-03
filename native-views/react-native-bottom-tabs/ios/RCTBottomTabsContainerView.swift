@@ -1,13 +1,15 @@
 import Foundation
 import UIKit
+#if canImport(React)
 import React
+#endif
 
 @objc private protocol OneKeyNamedSVGBridgeProtocol: AnyObject {
   @objc(cancelWithOwner:)
-  static func cancel(owner: AnyObject)
+  func cancel(owner: AnyObject)
 
   @objc(requestWithOwner:name:color:width:height:scale:complete:)
-  static func request(
+  func request(
     owner: AnyObject,
     name: String,
     color: String,
@@ -21,13 +23,23 @@ import React
 /// Bridges to OneKeyNamedSVG.shared in OneKeyImage without importing the OneKeyImage
 /// Swift module (which transitively imports NitroModules C++ headers).
 private enum OneKeyNamedSVGLoader {
-  private static var bridgeClass: OneKeyNamedSVGBridgeProtocol.Type? {
-    (NSClassFromString("OneKeyNamedSVGBridge") ?? NSClassFromString("OneKeyImage.OneKeyNamedSVGBridge"))
-      as? OneKeyNamedSVGBridgeProtocol.Type
+  private static var bridge: OneKeyNamedSVGBridgeProtocol? {
+    guard let cls: AnyClass = NSClassFromString("OneKeyNamedSVGBridge")
+      ?? NSClassFromString("OneKeyImage.OneKeyNamedSVGBridge")
+    else {
+      return nil
+    }
+    let meta = cls as AnyObject
+    guard meta.responds(to: #selector(OneKeyNamedSVGBridgeProtocol.cancel(owner:))),
+          meta.responds(to: #selector(OneKeyNamedSVGBridgeProtocol.request(owner:name:color:width:height:scale:complete:)))
+    else {
+      return nil
+    }
+    return unsafeBitCast(meta, to: OneKeyNamedSVGBridgeProtocol.self)
   }
 
   static func cancel(owner: AnyObject) {
-    bridgeClass?.cancel(owner: owner)
+    bridge?.cancel(owner: owner)
   }
 
   static func request(
@@ -39,7 +51,7 @@ private enum OneKeyNamedSVGLoader {
     scale: CGFloat,
     complete: @escaping (UIImage?) -> Void
   ) {
-    guard let bridge = bridgeClass else {
+    guard let bridge else {
       complete(nil)
       return
     }
@@ -290,7 +302,7 @@ class RCTBottomTabsContainerView: UIView {
   /// Where the system draws the tab bar: "bottom", or "leading"/"trailing" for
   /// the vertical bar some devices (iPhone Duo) place in a side strip.
   private func currentTabBarPlacement() -> String {
-    #if compiler(>=6.4)
+    #if compiler(>=6.4) && !targetEnvironment(macCatalyst)
     if #available(iOS 27.1, *), let tbc = tabBarController {
       switch tbc.traitCollection.verticalBarEdge {
       case .leading: return "leading"
@@ -303,7 +315,7 @@ class RCTBottomTabsContainerView: UIView {
   }
 
   private func registerVerticalBarTraitChanges(_ tbc: UITabBarController) {
-    #if compiler(>=6.4)
+    #if compiler(>=6.4) && !targetEnvironment(macCatalyst)
     if #available(iOS 27.1, *) {
       tbc.registerForTraitChanges(
         UITraitCollection.systemTraitsAffectingVerticalBarEdge
@@ -880,15 +892,21 @@ class RCTBottomTabsContainerView: UIView {
     let iconSources = iconDicts.map { IconSource(dict: $0) }
     let imageLoader = self.imageLoader
 
+    for staleIndex in iconRequestTokens.keys where staleIndex >= iconSources.count {
+      if let previous = iconRequestTokens.removeValue(forKey: staleIndex) {
+        OneKeyNamedSVGLoader.cancel(owner: previous)
+      }
+    }
+
     for (index, source) in iconSources.enumerated() {
       if let previous = iconRequestTokens.removeValue(forKey: index) {
         OneKeyNamedSVGLoader.cancel(owner: previous)
       }
       guard !source.uri.isEmpty else { continue }
+      let token = NSObject()
+      iconRequestTokens[index] = token
 
       if let iconName = Self.oneKeyIconName(from: source.uri) {
-        let token = NSObject()
-        iconRequestTokens[index] = token
         let scale = max(1.0, window?.screen.scale ?? UIScreen.main.scale)
         let pxW = max(1, Int(ceil(iconSize.width * scale)))
         let pxH = max(1, Int(ceil(iconSize.height * scale)))
@@ -933,6 +951,7 @@ class RCTBottomTabsContainerView: UIView {
           if error != nil { return }
           guard let image, let self else { return }
           DispatchQueue.main.async {
+            guard self.iconRequestTokens[index] === token else { return }
             self.loadedIcons[index] = image.resizeImageTo(size: self.iconSize)
             self.rebuildViewControllers()
           }
@@ -946,15 +965,21 @@ class RCTBottomTabsContainerView: UIView {
     let iconSources = iconDicts.map { IconSource(dict: $0) }
     let imageLoader = self.imageLoader
 
+    for staleIndex in selectedIconRequestTokens.keys where staleIndex >= iconSources.count {
+      if let previous = selectedIconRequestTokens.removeValue(forKey: staleIndex) {
+        OneKeyNamedSVGLoader.cancel(owner: previous)
+      }
+    }
+
     for (index, source) in iconSources.enumerated() {
       if let previous = selectedIconRequestTokens.removeValue(forKey: index) {
         OneKeyNamedSVGLoader.cancel(owner: previous)
       }
       guard !source.uri.isEmpty else { continue }
+      let token = NSObject()
+      selectedIconRequestTokens[index] = token
 
       if let iconName = Self.oneKeyIconName(from: source.uri) {
-        let token = NSObject()
-        selectedIconRequestTokens[index] = token
         let scale = max(1.0, window?.screen.scale ?? UIScreen.main.scale)
         let pxW = max(1, Int(ceil(iconSize.width * scale)))
         let pxH = max(1, Int(ceil(iconSize.height * scale)))
@@ -999,6 +1024,7 @@ class RCTBottomTabsContainerView: UIView {
           if error != nil { return }
           guard let image, let self else { return }
           DispatchQueue.main.async {
+            guard self.selectedIconRequestTokens[index] === token else { return }
             self.loadedSelectedIcons[index] = image.resizeImageTo(size: self.iconSize)
             self.rebuildViewControllers()
           }
