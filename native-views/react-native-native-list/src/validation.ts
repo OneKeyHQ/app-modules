@@ -19,6 +19,7 @@ import type {
   WebMarketTableCell,
   WebMarketTablePresentation,
   WebMarketTableText,
+  ValueTextSegment,
 } from './models';
 
 const MAX_KEY_LENGTH = 256;
@@ -32,6 +33,17 @@ const MAX_HEADER_LENGTH = 4096;
 const MAX_SPACER_HEIGHT = 512;
 const MAX_SECTION_INDEX_TITLE_LENGTH = 8;
 const MAX_MARKET_BADGES = 3;
+const MARKET_METRIC_FIELDS = [
+  'key',
+  'text',
+  'textSegments',
+  'secondaryText',
+  'secondaryTextSegments',
+  'weight',
+  'alignment',
+  'tone',
+  'secondaryTone',
+] as const;
 
 function isDevelopment(): boolean {
   return typeof __DEV__ !== 'undefined' && __DEV__;
@@ -982,8 +994,88 @@ function assertWebMarketTable(
   });
 }
 
+function assertMarketMetrics(
+  metrics: MarketRow['metrics'],
+  path: string
+): void {
+  if (metrics === undefined) return;
+  if (!Array.isArray(metrics) || ![2, 3].includes(metrics.length))
+    fail(path, 'must contain 2 or 3 columns');
+  const keys = new Set<string>();
+  metrics.forEach(
+    (column: NonNullable<MarketRow['metrics']>[number], index: number) => {
+      const columnPath = `${path}[${index}]`;
+      const value = protocolObject(column, columnPath);
+      protocolKey(value.key, `${columnPath}.key`);
+      if (keys.has(column.key)) fail(`${columnPath}.key`, 'must be unique');
+      keys.add(column.key);
+      if (typeof value.text !== 'string')
+        fail(`${columnPath}.text`, 'must be a string');
+      for (const field of ['textSegments', 'secondaryTextSegments'] as const) {
+        const segments = column[field];
+        if (segments !== undefined && !Array.isArray(segments))
+          fail(`${columnPath}.${field}`, 'must be an array');
+        segments?.forEach((segment: ValueTextSegment, segmentIndex: number) => {
+          const segmentPath = `${columnPath}.${field}[${segmentIndex}]`;
+          protocolObject(segment, segmentPath);
+          if (typeof segment.text !== 'string')
+            fail(`${segmentPath}.text`, 'must be a string');
+          if (segment.style !== undefined && segment.style !== 'subscript')
+            fail(`${segmentPath}.style`, 'must be subscript');
+        });
+      }
+      if (
+        value.weight !== undefined &&
+        ![1, 2, 3].includes(value.weight as number)
+      )
+        fail(`${columnPath}.weight`, 'must be 1, 2, or 3');
+      if (
+        value.alignment !== undefined &&
+        !['start', 'center', 'end'].includes(value.alignment as string)
+      )
+        fail(`${columnPath}.alignment`, 'must be start, center, or end');
+      if (
+        value.secondaryText !== undefined &&
+        typeof value.secondaryText !== 'string'
+      )
+        fail(`${columnPath}.secondaryText`, 'must be a string');
+      assertTextTone(value.tone as string | undefined, `${columnPath}.tone`);
+      assertTextTone(
+        value.secondaryTone as string | undefined,
+        `${columnPath}.secondaryTone`
+      );
+    }
+  );
+}
+
 function assertMarketRow(row: MarketRow, path: string): void {
   assertWebMarketTable(row.webTable, `${path}.webTable`);
+  assertMarketMetrics(row.metrics, `${path}.metrics`);
+  if (row.metrics !== undefined) {
+    row.metrics.forEach((column, index) => {
+      const columnPath = `${path}.metrics[${index}]`;
+      const value = protocolObject(column, columnPath);
+      assertUnknownKeys(
+        value,
+        MARKET_METRIC_FIELDS,
+        columnPath,
+        'Market metric key'
+      );
+      assertKey(column.key, `${columnPath}.key`);
+      assertText(column.text, `${columnPath}.text`);
+      assertText(column.secondaryText, `${columnPath}.secondaryText`);
+      assertTextTone(column.tone, `${columnPath}.tone`);
+      assertTextTone(column.secondaryTone, `${columnPath}.secondaryTone`);
+      for (const field of ['textSegments', 'secondaryTextSegments'] as const) {
+        column[field]?.forEach((segment, segmentIndex) => {
+          const segmentPath = `${columnPath}.${field}[${segmentIndex}]`;
+          assertText(segment.text, `${segmentPath}.text`);
+          if (segment.style !== undefined && segment.style !== 'subscript')
+            fail(`${segmentPath}.style`, 'must be subscript');
+        });
+      }
+    });
+  }
   if (!['token', 'stock', 'perp'].includes(row.variant)) {
     fail(`${path}.variant`, 'must be token, stock, or perp');
   }
@@ -2386,6 +2478,7 @@ const ROW_FIELDS: Readonly<Record<string, readonly string[]>> = {
     ...COMMON_ROW_FIELDS,
     'variant',
     'webTable',
+    'metrics',
     'leadingAction',
     'leading',
     'title',
@@ -2557,6 +2650,7 @@ const PATCH_FIELDS: Readonly<Record<string, readonly string[]>> = {
     'subtitle',
     'badges',
     'webTable',
+    'metrics',
     'price',
     'priceSegments',
     'change',
@@ -2942,6 +3036,7 @@ function assertRowProtocol(row: RowModel, path: string): void {
   }
   if (row.type === 'market') {
     protocolObject(row.change, `${path}.change`);
+    assertMarketMetrics(row.metrics, `${path}.metrics`);
     if (row.webTable) {
       const { columns, cells } = row.webTable;
       if (
@@ -3805,6 +3900,21 @@ function sanitizeDecoration(value: unknown, field: string): unknown {
   return next;
 }
 
+function sanitizeMarketMetrics(value: unknown): unknown {
+  if (!Array.isArray(value)) return value;
+  return value.map((metric) => {
+    const next = pickFields(
+      metric as Record<string, unknown>,
+      MARKET_METRIC_FIELDS
+    );
+    for (const field of ['textSegments', 'secondaryTextSegments'] as const) {
+      if (next[field] !== undefined)
+        next[field] = sanitizeDecoration(next[field], field);
+    }
+    return next;
+  });
+}
+
 function sanitizeRowForProduction(row: RowModel): RowModel {
   const object = protocolObject(row, 'row');
   const fields = ROW_FIELDS[row.type];
@@ -3826,7 +3936,10 @@ function sanitizeRowForProduction(row: RowModel): RowModel {
         sanitizeRowForProduction(child as RowModel)
       );
     else {
-      const normalized = sanitizeDecoration(value, field);
+      const normalized =
+        row.type === 'market' && field === 'metrics'
+          ? sanitizeMarketMetrics(value)
+          : sanitizeDecoration(value, field);
       if (normalized === undefined) delete next[field];
       else next[field] = normalized;
     }
@@ -3871,7 +3984,9 @@ function normalizeEmptyImages(value: unknown, field = ''): unknown {
       ].includes(key);
     if (
       item === undefined ||
-      (item === null && optional) ||
+      (item === null &&
+        optional &&
+        !(object.type === 'market' && key === 'metrics')) ||
       (['priceSegments', 'subtitleSegments'].includes(key) &&
         Array.isArray(item) &&
         item.length === 0)
@@ -3993,6 +4108,12 @@ export function validateSnapshot(
   assertPlainSerializable(snapshot, 'snapshot', new Set<object>(), false);
   protocolObject(snapshot, 'snapshot');
   const normalized = normalizeEmptyImages(snapshot) as NativeListSnapshot;
+  if (Array.isArray(normalized.rows)) {
+    normalized.rows.forEach((row, index) => {
+      if (row.type === 'market')
+        assertMarketMetrics(row.metrics, `snapshot.rows[${index}].metrics`);
+    });
+  }
   const canonical = isDevelopment()
     ? normalized
     : normalizeSnapshotForProduction(normalized);
@@ -4423,6 +4544,11 @@ function normalizePatch(patch: RowPatch, index: number): RowPatch | undefined {
       continue;
     }
     if (value === null) {
+      if (patch.type === 'market' && field === 'metrics')
+        fail(
+          `${path}.changes.metrics`,
+          'use a full snapshot to remove metrics'
+        );
       if (
         REQUIRED_ROW_FIELDS[patch.type].includes(field) ||
         (patch.type === 'system' && field === 'message')
@@ -4434,6 +4560,11 @@ function normalizePatch(patch: RowPatch, index: number): RowPatch | undefined {
       changes[field] = null;
       continue;
     }
+    if (patch.type === 'market' && field === 'metrics')
+      assertMarketMetrics(
+        value as MarketRow['metrics'],
+        `${path}.changes.metrics`
+      );
     if (
       ['priceSegments', 'subtitleSegments'].includes(field) &&
       Array.isArray(value) &&
@@ -4450,6 +4581,8 @@ function normalizePatch(patch: RowPatch, index: number): RowPatch | undefined {
     }
     const canonical = isDevelopment()
       ? normalized
+      : patch.type === 'market' && field === 'metrics'
+      ? sanitizeMarketMetrics(normalized)
       : sanitizeDecoration(normalized, field);
     if (canonical !== undefined) changes[field] = canonical;
     else if (field === 'titleImage') changes[field] = null;
@@ -4475,6 +4608,11 @@ function normalizePatch(patch: RowPatch, index: number): RowPatch | undefined {
   const values = Object.fromEntries(
     Object.entries(changes).filter(([, value]) => value !== null)
   );
+  if (patch.type === 'market' && 'metrics' in changes)
+    assertMarketMetrics(
+      changes.metrics as MarketRow['metrics'],
+      `${path}.changes.metrics`
+    );
   assertPlainSerializable(values, `${path}.changes`, new Set<object>());
   assertProtocolFields(values, `${path}.changes`);
   if (isDevelopment())

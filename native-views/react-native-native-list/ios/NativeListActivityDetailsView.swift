@@ -114,8 +114,9 @@ final class NativeListActivityDetailsView: UIStackView {
     let feeColumn = data.dictionary("fee") == nil ? 0 : gap + feeWidth
     let identityWidth: CGFloat
     if table {
-      let shared = (mainWidth - leadingWidth - gap - feeColumn) / 2
-      identityWidth = min(mainWidth * 0.42, shared)
+      let hasFee = data.dictionary("fee") != nil
+      let columnWidth = max(0, mainWidth - gap * (hasFee ? 2 : 1)) / (hasFee ? 2.6 : 2)
+      identityWidth = columnWidth - leadingWidth
     } else {
       identityWidth = mainWidth - leadingWidth - gap - feeColumn - min(amountsWidth, mainWidth * 0.5)
     }
@@ -163,9 +164,17 @@ final class NativeListActivityDetailsView: UIStackView {
     dimensions = [
       visualWidth,
       visual.heightAnchor.constraint(equalToConstant: CGFloat(image.double("height", default: 40))),
-      amounts.widthAnchor.constraint(lessThanOrEqualTo: main.widthAnchor, multiplier: table ? 0.42 : 0.5),
     ]
-    if table { dimensions.append(amounts.widthAnchor.constraint(equalTo: identity.widthAnchor)) }
+    if table {
+      // The leading visual belongs to identity, so its visibility cannot shift amounts.
+      let leadingWidth = hideLeading ? 0 : CGFloat(image.double("width", default: 40)) + gap
+      dimensions.append(amounts.widthAnchor.constraint(equalTo: identity.widthAnchor, constant: leadingWidth))
+      if data.dictionary("fee") != nil {
+        dimensions.append(fee.widthAnchor.constraint(equalTo: amounts.widthAnchor, multiplier: 0.6))
+      }
+    } else {
+      dimensions.append(amounts.widthAnchor.constraint(lessThanOrEqualTo: main.widthAnchor, multiplier: 0.5))
+    }
     NSLayoutConstraint.activate(dimensions)
     visual.isHidden = hideLeading
     if hideLeading {

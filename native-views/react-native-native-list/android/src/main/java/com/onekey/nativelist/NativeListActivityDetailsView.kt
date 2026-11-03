@@ -16,6 +16,7 @@ internal class NativeListActivityDetailsView(private val reactContext: ThemedRea
   var onAction: ((String, View, String, Int) -> Unit)? = null
   private var sourceScale = false
   private val main = LinearLayout(context).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+  private val identityColumn = LinearLayout(context).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
   private val visual = NativeListLeadingVisual(reactContext, fonts)
   private val identity = LinearLayout(context).apply { orientation = VERTICAL }
   private val titleLine = LinearLayout(context).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
@@ -40,8 +41,9 @@ internal class NativeListActivityDetailsView(private val reactContext: ThemedRea
     identity.addView(status)
     feeLine.addView(feePrimary); feeLine.addView(feeSecondary)
     fee.addView(feeLabel); fee.addView(feeLine)
-    main.addView(visual)
-    main.addView(identity, LayoutParams(0, -2, 1f))
+    identityColumn.addView(visual)
+    identityColumn.addView(identity, LayoutParams(0, -2, 1f))
+    main.addView(identityColumn, LayoutParams(0, -2, 1f))
     main.addView(amounts)
     main.addView(fee)
     addView(main, LayoutParams(-1, -2))
@@ -110,7 +112,9 @@ internal class NativeListActivityDetailsView(private val reactContext: ThemedRea
     val feeData = data.optJSONObject("fee")
     fee.visibility = if (feeData == null) GONE else VISIBLE
     fee.alpha = if (feeData?.optBoolean("hidden") == true) 0f else 1f
-    fee.layoutParams = LayoutParams(-2, -2).apply { marginStart = gap }
+    fee.layoutParams = (if (table) LayoutParams(0, -2, 0.6f) else LayoutParams(-2, -2)).apply { marginStart = gap }
+    feeLabel.layoutParams.width = if (table) LayoutParams.WRAP_CONTENT else LayoutParams.MATCH_PARENT
+    feeLine.layoutParams.width = if (table) LayoutParams.WRAP_CONTENT else LayoutParams.MATCH_PARENT
     text(feeLabel, feeData?.optString("label") ?: "", style.optJSONObject("secondaryAmount"), 12f, color("secondary", theme), 16)
     text(feePrimary, feeData?.optString("primary") ?: "", style.optJSONObject("secondaryAmount"), 14f, color("primary", theme), 20)
     text(feeSecondary, feeData?.optString("secondary") ?: "", style.optJSONObject("secondaryAmount"), 12f, color("secondary", theme), 16)

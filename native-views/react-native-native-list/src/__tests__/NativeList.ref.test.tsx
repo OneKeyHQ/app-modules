@@ -4,6 +4,7 @@ import type { NativeListRef } from '../NativeList.types';
 import type { NativeListSnapshot, RowPatch } from '../models';
 import { configureNativeListFonts } from '../fonts';
 import { ScrollEdgeEffect } from '../ScrollEdgeEffect';
+import { applyRowPatches } from '../validation';
 
 const mockNativeMethods = {
   applySnapshot: jest.fn(),
@@ -22,6 +23,8 @@ let mockOnRowAction: (payloadJson: string) => void;
 const mockFontRenders = jest.fn();
 let mockRenderNativeChildren = false;
 let mockWrapNativeCallbacks = false;
+let mockDelayFirstNativeRef = false;
+let mockDeliverFirstNativeRef: (() => void) | undefined;
 const mockWebEngine = {
   setStickyInset: jest.fn(),
   currentSnapshot: jest.fn(() => snapshot),
@@ -84,12 +87,21 @@ jest.mock('react-native-nitro-modules', () => ({
       mockOnReorder = props.onReorder;
       mockOnRowAction = props.onRowAction;
       const ReactForMock = require('react') as typeof React;
+      const deliveredRef = ReactForMock.useRef(false);
       ReactForMock.useEffect(() => {
         const setRef =
           typeof props.hybridRef === 'function'
             ? props.hybridRef
             : props.hybridRef.f;
-        setRef(mockNativeMethods);
+        const deliver = () => {
+          deliveredRef.current = true;
+          setRef(mockNativeMethods);
+        };
+        if (mockDelayFirstNativeRef && !deliveredRef.current) {
+          mockDeliverFirstNativeRef = deliver;
+        } else {
+          deliver();
+        }
       }, [props]);
       return mockRenderNativeChildren
         ? ReactForMock.createElement('native-host', null, props.children)
@@ -145,7 +157,240 @@ describe('NativeList imperative ref', () => {
     jest.clearAllMocks();
     mockRenderNativeChildren = false;
     mockWrapNativeCallbacks = false;
+    mockDelayFirstNativeRef = false;
+    mockDeliverFirstNativeRef = undefined;
   });
+
+  it('presents all accepted row values when the first host binds before a later single-row patch', async () => {
+    const { NativeList } = jest.requireActual(
+      '../NativeList'
+    ) as typeof import('../NativeList');
+    const ref = createRef<NativeListRef>();
+    const input: NativeListSnapshot = {
+      schemaVersion: 1,
+      generation: 1,
+      layout: { kind: 'linear' },
+      rows: ['a', 'b', 'c'].map((key) => ({
+        type: 'identity' as const,
+        key,
+        title: key,
+        leading: { kind: 'icon' as const, name: 'coin' },
+        subtitle: '--',
+        trailing: [
+          { kind: 'valuePair' as const, primary: '--', secondary: '--' },
+        ],
+      })),
+    };
+    let nativeSnapshot = input;
+    mockNativeMethods.applySnapshot.mockImplementation((json: string) => {
+      nativeSnapshot = JSON.parse(json) as NativeListSnapshot;
+    });
+    mockNativeMethods.applyPatches.mockImplementation((json: string) => {
+      nativeSnapshot = applyRowPatches(
+        nativeSnapshot,
+        JSON.parse(json) as RowPatch[]
+      );
+    });
+    mockDelayFirstNativeRef = true;
+    let renderer: TestRenderer.ReactTestRenderer | undefined;
+    try {
+      await act(async () => {
+        renderer = TestRenderer.create(
+          <NativeList
+            ref={ref}
+            snapshot={input}
+            listStructureToggle={<React.Fragment />}
+          />
+        );
+      });
+      nativeSnapshot = JSON.parse(
+        mockFontRenders.mock.calls.at(-1)?.[0].snapshotJson as string
+      ) as NativeListSnapshot;
+      const quote = (key: string, price: string): RowPatch => ({
+        type: 'identity',
+        key,
+        changes: {
+          subtitle: price,
+          trailing: [{ kind: 'valuePair', primary: '10', secondary: price }],
+        },
+      });
+      act(() =>
+        ref.current?.applyPatches([
+          quote('a', '$1'),
+          quote('b', '$2'),
+          quote('c', '$3'),
+        ])
+      );
+      act(() => ref.current?.applyPatches([quote('b', '$5')]));
+      const toggleSlot = React.Children.toArray(
+        mockFontRenders.mock.calls.at(-1)?.[0].children
+      )[5] as React.ReactElement<{ children: React.ReactNode }>;
+      const measurementView = React.Children.only(
+        toggleSlot.props.children
+      ) as React.ReactElement<{
+        onLayout: (event: {
+          nativeEvent: { layout: { height: number } };
+        }) => void;
+      }>;
+      await act(async () =>
+        measurementView.props.onLayout({
+          nativeEvent: { layout: { height: 40 } },
+        })
+      );
+      await act(async () =>
+        renderer?.update(
+          <NativeList
+            ref={ref}
+            snapshot={{ ...input }}
+            listStructureToggle={<React.Fragment />}
+          />
+        )
+      );
+      expect(mockDeliverFirstNativeRef).toEqual(expect.any(Function));
+      act(() => mockDeliverFirstNativeRef?.());
+      const snapshotsOnBind = mockNativeMethods.applySnapshot.mock.calls.length;
+      const patchesOnBind = mockNativeMethods.applyPatches.mock.calls.length;
+      act(() => mockDeliverFirstNativeRef?.());
+      expect(mockNativeMethods.applySnapshot).toHaveBeenCalledTimes(
+        snapshotsOnBind
+      );
+      act(() => ref.current?.applyPatches([quote('a', '$4')]));
+      expect(mockNativeMethods.applySnapshot).toHaveBeenCalledTimes(
+        snapshotsOnBind
+      );
+      expect(mockNativeMethods.applyPatches).toHaveBeenCalledTimes(
+        patchesOnBind + 1
+      );
+      expect(nativeSnapshot.rows).toMatchObject([
+        { key: 'a', subtitle: '$4', trailing: [{ secondary: '$4' }] },
+        { key: 'b', subtitle: '$5', trailing: [{ secondary: '$5' }] },
+        { key: 'c', subtitle: '$3', trailing: [{ secondary: '$3' }] },
+      ]);
+      const latestSnapshot = nativeSnapshot;
+      const replacementHost = {
+        ...mockNativeMethods,
+        applySnapshot: jest.fn((json: string) => {
+          nativeSnapshot = JSON.parse(json) as NativeListSnapshot;
+        }),
+      };
+      const bind = mockFontRenders.mock.calls.at(-1)?.[0].hybridRef as (
+        host: typeof mockNativeMethods
+      ) => void;
+      nativeSnapshot = input;
+      act(() => bind(replacementHost));
+      expect(nativeSnapshot).toEqual(latestSnapshot);
+      act(() => bind(replacementHost));
+      expect(replacementHost.applySnapshot).toHaveBeenCalledTimes(1);
+    } finally {
+      await act(async () => renderer?.unmount());
+      mockNativeMethods.applySnapshot.mockReset();
+      mockNativeMethods.applyPatches.mockReset();
+    }
+  });
+
+  it.each(['prop', 'imperative'] as const)(
+    'retains the latest pre-bind values after a new %s snapshot and rejected updates',
+    async (source) => {
+      const { NativeList } = jest.requireActual(
+        '../NativeList'
+      ) as typeof import('../NativeList');
+      const ref = createRef<NativeListRef>();
+      const input: NativeListSnapshot = {
+        schemaVersion: 1,
+        generation: 1,
+        layout: { kind: 'linear' },
+        rows: [
+          {
+            type: 'identity',
+            key: 'wallet',
+            title: 'Wallet',
+            leading: { kind: 'icon', name: 'wallet' },
+            subtitle: '--',
+          },
+        ],
+        selection: { mode: 'multiple', selectedKeys: [] },
+      };
+      const replacement: NativeListSnapshot = {
+        ...input,
+        generation: 2,
+        rows: input.rows.map((row) => ({ ...row, title: 'Replacement' })),
+      };
+      let nativeSnapshot = input;
+      mockNativeMethods.applySnapshot.mockImplementation((json: string) => {
+        nativeSnapshot = JSON.parse(json) as NativeListSnapshot;
+      });
+      mockNativeMethods.applyPatches.mockImplementation((json: string) => {
+        nativeSnapshot = applyRowPatches(
+          nativeSnapshot,
+          JSON.parse(json) as RowPatch[]
+        );
+      });
+      mockDelayFirstNativeRef = true;
+      const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      let renderer: TestRenderer.ReactTestRenderer | undefined;
+      try {
+        await act(async () => {
+          renderer = TestRenderer.create(
+            <NativeList ref={ref} snapshot={input} />
+          );
+        });
+        act(() =>
+          ref.current?.applyPatches([
+            { type: 'identity', key: 'wallet', changes: { subtitle: 'old' } },
+          ])
+        );
+        if (source === 'prop') {
+          await act(async () =>
+            renderer?.update(<NativeList ref={ref} snapshot={replacement} />)
+          );
+        } else {
+          act(() => ref.current?.applySnapshot(replacement));
+        }
+        act(() => {
+          ref.current?.applyPatches([
+            {
+              type: 'identity',
+              key: 'wallet',
+              changes: { subtitle: 'latest' },
+            },
+          ]);
+          ref.current?.reconcileSelection(['wallet']);
+          ref.current?.applyPatches([
+            {
+              type: 'identity',
+              key: 'missing',
+              changes: { subtitle: 'invalid' },
+            },
+          ]);
+          ref.current?.applySnapshot({
+            ...replacement,
+            schemaVersion: 2,
+          } as unknown as NativeListSnapshot);
+        });
+        expect(warning).toHaveBeenCalledTimes(2);
+        await act(async () =>
+          renderer?.update(
+            <NativeList
+              ref={ref}
+              snapshot={{ ...(source === 'prop' ? replacement : input) }}
+              testID="equivalent-pre-bind-render"
+            />
+          )
+        );
+        act(() => mockDeliverFirstNativeRef?.());
+        expect(nativeSnapshot.generation).toBe(2);
+        expect(nativeSnapshot.rows).toMatchObject([
+          { key: 'wallet', title: 'Replacement', subtitle: 'latest' },
+        ]);
+        expect(nativeSnapshot.selection?.selectedKeys).toEqual(['wallet']);
+      } finally {
+        await act(async () => renderer?.unmount());
+        mockNativeMethods.applySnapshot.mockReset();
+        mockNativeMethods.applyPatches.mockReset();
+        warning.mockRestore();
+      }
+    }
+  );
 
   it('registers a settlement bridge only while a listener is present', async () => {
     const { NativeList } = jest.requireActual(
