@@ -10,8 +10,7 @@ release file list. CocoaPods compiles the core on iOS; Android CMake builds the
 JNI library. Source, simulator/JNI and cryptographic vector evidence are separate
 from physical-card and wallet-app acceptance.
 
-See [provenance](docs/PROVENANCE.md), [original vendor usage](docs/UPSTREAM_USAGE.md)
-and the package [behavior contract](../docs/SPEC.md).
+See the package [behavior contract](../docs/SPEC.md).
 
 ## Build from source
 
@@ -169,7 +168,7 @@ run it with AddressSanitizer/UBSan compiler and linker flags when supported.
 
 `tests/android/GPChannelProxy.java` and `tests/android_verify.py` run the same oracle
 against real Android ART/JNI and a separately loaded original `.so` in an isolated
-emulator. See [acceptance evidence](docs/ACCEPTANCE.md) for the exact run scope.
+emulator.
 
 Physical Lite cards, NFC transport, real PIN/backup operations, the React Native
 app flow and Android armv7 runtime remain separate acceptance requirements. No

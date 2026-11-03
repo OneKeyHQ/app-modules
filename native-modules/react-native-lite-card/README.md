@@ -70,5 +70,5 @@ Keep mnemonic and PIN values out of diagnostic messages and event logs.
 
 ## License
 
-The React Native wrapper is MIT licensed. SDK source origins and dependency
-license notices are documented in [sdk/docs/PROVENANCE.md](sdk/docs/PROVENANCE.md).
+The React Native wrapper is MIT licensed. Vendored SDK sources retain their
+upstream notices and are not relicensed by the wrapper.

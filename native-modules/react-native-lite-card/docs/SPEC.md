@@ -48,8 +48,8 @@ Source recovery and host differential checks do not prove physical-card behavior
 Android runtime parity, cancellation or app integration. Acceptance must record
 source provenance, build targets, valid/invalid protocol vectors, state reuse,
 receipt/MAC rejection and the remaining hardware gaps. No performance or bounded
-production concurrency claim is made. Current results and remaining runtime
-requirements are recorded in `sdk/docs/ACCEPTANCE.md`.
+production concurrency claim is made. Build and verification commands are
+documented in `sdk/README.md`.
 
 ### Observed vendor platform differences
 

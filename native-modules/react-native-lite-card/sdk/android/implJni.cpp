@@ -1,4 +1,4 @@
-// Recovered JNI contract from ziancube/GPChannel-test; see docs/PROVENANCE.md.
+// Recovered JNI contract from ziancube/GPChannel-test.
 #include <jni.h>
 #include <atomic>
 #include <string>
