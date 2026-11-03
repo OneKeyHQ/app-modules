@@ -29,6 +29,7 @@ import com.margelo.nitro.nativelogger.OneKeyLog
 import com.facebook.soloader.SoLoader
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.math.roundToInt
 
 @Suppress("DEPRECATION")
 class NativeListRiskAccessoryTest : InstrumentationTestCase() {
@@ -767,6 +768,42 @@ class NativeListRiskAccessoryTest : InstrumentationTestCase() {
     }
   }
 
+  fun testNamedGlyphsFitBothViewDimensionsAndSizeLimits() {
+    onMain {
+      val icon = object : OneKeyIconView(activity) {
+        fun rect(width: Float, height: Float) = glyphRect(NativeListIconMetadata("Probe", width, height))
+      }
+      fun check(sourceWidth: Float, sourceHeight: Float, left: Float, top: Float, right: Float, bottom: Float) {
+        val rect = icon.rect(sourceWidth, sourceHeight)
+        assertEquals(left, rect.left, 0.001f)
+        assertEquals(top, rect.top, 0.001f)
+        assertEquals(right, rect.right, 0.001f)
+        assertEquals(bottom, rect.bottom, 0.001f)
+        assertTrue(rect.left >= 0f && rect.top >= 0f && rect.right <= icon.width && rect.bottom <= icon.height)
+        assertEquals(sourceWidth / sourceHeight, rect.width() / rect.height(), 0.001f)
+      }
+      icon.layout(0, 0, 96, 96)
+      check(16f, 20f, 9.6f, 0f, 86.4f, 96f)
+      check(20f, 16f, 0f, 9.6f, 96f, 86.4f)
+      check(24f, 24f, 0f, 0f, 96f, 96f)
+      icon.layout(0, 0, 120, 60)
+      check(16f, 20f, 36f, 0f, 84f, 60f)
+      icon.layout(0, 0, 40, 120)
+      check(16f, 20f, 0f, 35f, 40f, 85f)
+      icon.layout(0, 0, 256, 256)
+      icon.glyphSizeDp = 16
+      for (sourceScale in listOf(false, true)) {
+        icon.useSourceScale = sourceScale
+        val size = if (sourceScale) (16 * activity.resources.displayMetrics.density).roundToInt().toFloat()
+          else NativeListScale.dp(activity.resources, 16).toFloat()
+        check(16f, 20f, (256 - size * 0.8f) / 2f, (256 - size) / 2f,
+          (256 + size * 0.8f) / 2f, (256 + size) / 2f)
+        check(24f, 24f, (256 - size) / 2f, (256 - size) / 2f,
+          (256 + size) / 2f, (256 + size) / 2f)
+      }
+    }
+  }
+
   fun testSharedShapeTintAndPendingAlphaRetention() {
     lateinit var icon:OneKeyIconView
     val service=com.margelo.nitro.onekeyimage.OneKeyNamedSVG
@@ -791,19 +828,26 @@ class NativeListRiskAccessoryTest : InstrumentationTestCase() {
         val mask=field<Bitmap>(icon,"bitmap")
         icon.tintColor=Color.BLUE;assertSame(mask,field<Bitmap>(icon,"bitmap"))
         icon.tintColor=Color.argb(128,0,255,0);assertSame(mask,field<Bitmap>(icon,"bitmap"))
-        icon.iconName="UnknownIcon";assertNull(field<Bitmap?>(icon,"bitmap"))
       }
     }
-    SystemClock.sleep(100);onMain{assertNull(field<Bitmap?>(icon,"bitmap"));icon.iconName="AppleBrand";icon.tintColor=Color.argb(128,0,255,0)}
+    // Unknown names query manifest metadata on the UI thread; release the worker gate first.
+    onMain { icon.iconName="UnknownIcon";assertNull(field<Bitmap?>(icon,"bitmap")) }
+    SystemClock.sleep(100)
+    onMain {
+      assertNull(field<Bitmap?>(icon,"bitmap"))
+      // Integral fitted edges isolate alpha from fractional bitmap resampling; geometry is tested above.
+      icon.layoutParams=android.widget.FrameLayout.LayoutParams(100,100);icon.layout(0,0,100,100)
+      icon.iconName="AppleBrand";icon.tintColor=Color.argb(128,0,255,0)
+    }
     awaitCondition { field<Bitmap?>(icon,"bitmap")!=null }
     val raw=activity.assets.open("icons/AppleBrand.svg").bufferedReader().use{it.readText()}.replace("currentColor","#00ff0080")
-    val decoded=com.margelo.nitro.onekeyimage.OneKeySVG.decode(raw.byteInputStream()).render(96,120)
+    val decoded=com.margelo.nitro.onekeyimage.OneKeySVG.decode(raw.byteInputStream()).render(80,100)
     onMain {
-      val actual=Bitmap.createBitmap(96,96,Bitmap.Config.ARGB_8888);icon.draw(Canvas(actual))
-      val expected=Bitmap.createBitmap(96,96,Bitmap.Config.ARGB_8888);Canvas(expected).drawBitmap(decoded,0f,0f,null)
+      val actual=Bitmap.createBitmap(100,100,Bitmap.Config.ARGB_8888);icon.draw(Canvas(actual))
+      val expected=Bitmap.createBitmap(100,100,Bitmap.Config.ARGB_8888);Canvas(expected).drawBitmap(decoded,10f,0f,null)
       var maximum=0
-      for(y in 0 until 96)for(x in 0 until 96){val a=actual.getPixel(x,y);val b=expected.getPixel(x,y);maximum=maxOf(maximum,kotlin.math.abs(Color.alpha(a)-Color.alpha(b)),kotlin.math.abs(Color.green(a)*Color.alpha(a)/255-Color.green(b)*Color.alpha(b)/255))}
-      assertTrue("Actual NativeList Apple half-alpha draw matches independent raw SVG with existing cropped geometry",maximum<=1)
+      for(y in 0 until 100)for(x in 0 until 100){val a=actual.getPixel(x,y);val b=expected.getPixel(x,y);maximum=maxOf(maximum,kotlin.math.abs(Color.alpha(a)-Color.alpha(b)),kotlin.math.abs(Color.green(a)*Color.alpha(a)/255-Color.green(b)*Color.alpha(b)/255))}
+      assertTrue("Actual NativeList Apple half-alpha draw matches independent raw SVG fitted and centered in the slot (maximum error $maximum)",maximum<=1)
     }
   }
 

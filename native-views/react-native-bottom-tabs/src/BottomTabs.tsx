@@ -63,10 +63,16 @@ export const resolveTabIconSource = (
     if (!trimmed) {
       return { uri: "", width: 0, height: 0, scale: 1 };
     }
-    const uri = trimmed.startsWith(ONEKEY_ICON_URI_PREFIX)
-      ? trimmed
-      : `${ONEKEY_ICON_URI_PREFIX}${trimmed}`;
-    return { uri, width: 24, height: 24, scale: 1 };
+    if (
+      trimmed.startsWith(ONEKEY_ICON_URI_PREFIX) ||
+      /^[A-Z][A-Za-z0-9]*$/.test(trimmed)
+    ) {
+      const uri = trimmed.startsWith(ONEKEY_ICON_URI_PREFIX)
+        ? trimmed
+        : `${ONEKEY_ICON_URI_PREFIX}${trimmed}`;
+      return { uri, width: 24, height: 24, scale: 1 };
+    }
+    icon = { uri: trimmed };
   }
   if (
     typeof icon === "object" &&

@@ -32,6 +32,17 @@ not silently repaired as part of decoding unification. Builds and runtime
 evidence are reported separately. This implementation does not change global image
 loader registration or default-device configuration.
 
+## Tab icon source resolution
+
+String names matching `[A-Z][A-Za-z0-9]*` and explicit `{ iconName }` sources
+resolve to `onekey-icon://` resources. An already prefixed string keeps that
+scheme. Ordinary URI strings (including HTTP(S), file, data and other schemes,
+absolute/relative paths and protocol-relative URLs) use the existing React Native
+image-source path with `{ uri }`; they MUST NOT receive the named-icon prefix.
+Whitespace-only strings resolve to an empty source. Numeric assets, URI objects
+and SF Symbols retain their existing resolution. The shared resolver is used for
+focused/unfocused icons and the iOS side-accessory icon.
+
 ## Native left drawer
 
 Status: implemented in module source. Package TypeScript, iOS/Android Fabric

@@ -211,13 +211,16 @@ internal open class OneKeyIconView(context: android.content.Context) : View(cont
     return NativeListIconMetadata(iconName, meta.width, meta.height)
   }
   protected open fun glyphRect(icon: NativeListIconMetadata): android.graphics.RectF {
-    val size = minOf(minOf(width,height).toFloat(), glyphSizeDp?.let {
+    val limit = glyphSizeDp?.let {
       if (useSourceScale) (it * resources.displayMetrics.density).roundToInt().toFloat()
       else NativeListScale.dp(resources,it).toFloat()
-    } ?: Float.MAX_VALUE)
-    val left = (width-size)/2f
-    val top = (height-size)/2f
-    return android.graphics.RectF(left,top,left+size,top+size*icon.height/icon.width)
+    } ?: Float.MAX_VALUE
+    val scale = minOf(minOf(width.toFloat(), limit) / icon.width, minOf(height.toFloat(), limit) / icon.height)
+    val drawWidth = icon.width * scale
+    val drawHeight = icon.height * scale
+    val left = (width - drawWidth) / 2f
+    val top = (height - drawHeight) / 2f
+    return android.graphics.RectF(left, top, left + drawWidth, top + drawHeight)
   }
 
   protected fun refresh(force: Boolean = false) {

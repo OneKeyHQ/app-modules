@@ -25,10 +25,11 @@ they MUST NOT submit named requests or read/decode SVG resources. Initial attach
 starts loading without changing the measured glyph or button dimensions.
 
 iOS original brand/opacity modes and the size overload's always-template behavior
-remain. Android preserves Apple 16 × 20 width-based scaling and clipping by
-requesting a proportionate raster and drawing at the old origin. Checkboxes
-retain their 16 dp glyph plus 2 dp border offset in selector geometry, otherwise
-80 percent centered geometry. Shared images are immutable; no cross-view mutable
+remain. Android named glyphs preserve their source aspect ratio, fit both source
+dimensions within the view and optional glyph-size limit, and center the result
+on both axes. This includes the non-square 16 × 20 Apple artwork; it MUST NOT
+extend beyond the view. Checkboxes retain their 16 dp glyph plus 2 dp border
+offset in selector geometry, otherwise 80 percent centered geometry. Shared images are immutable; no cross-view mutable
 Drawable bounds or pixel changes are allowed. Named work uses image's existing
 two-worker and bounded cache service. Web consumers use its pure DOM external-icon
 helper while keeping inherited color, action labels, anchors and exact sizes.
@@ -38,6 +39,11 @@ and empty inputs, detach/reattach, resize/tint changes, both UIButton states,
 checkboxes, Apple, original brands, legacy badge, and Web/desktop menus. All
 static path readers must be removed from migrated routes; procedural drawings
 and unrelated URI image loading retain their existing ownership.
+
+`NativeListRiskAccessoryTest` checks fractional and integral glyph bounds,
+portrait/landscape sources, rectangular slots and both glyph-size scaling modes.
+Its raw-SVG alpha comparison uses integral destination edges to isolate color
+semantics from fractional bitmap interpolation.
 
 This is the entry point for the package's behavioral contract. The linked
 documents are part of this spec; implementation status is separate from target
@@ -2125,7 +2131,8 @@ compatible fixed/single/same-alpha multiple colors update per-view tint without 
 request; new alpha or mixed-color raster requests preserve the last successful
 same-source/geometry bitmap until completion. Name/geometry changes, invalid,
 hidden/detach/recycle clear immediately and revisions reject old callbacks.
-Circle remains local; Apple and checkbox rectangles and coverage are unchanged.
+Circle remains local; checkbox rectangles and icon coverage are unchanged.
+Android non-square named glyphs use the aspect-fit geometry defined above.
 iOS retains its existing black template/original request and synchronous retint.
 Web React and DOM use the image package's demand-loaded external per-icon symbol
 URLs, with existing coverage/aliases/action labels and CSS color inheritance.
@@ -2136,7 +2143,8 @@ Image provides decoding and the static Web `#onekey-icon-assets` provider bounda
 the application owns complete named SVG resources. NativeList keeps its existing
 43-name platform coverage and three generated metadata tables, including its
 legacy `BadgeVerifiedSolid` to canonical `BadgeRecognizedSolid` mapping. No list
-props, naming coverage, geometry or rendering strategy changes.
+props, naming coverage or rendering strategy changes. Android non-square glyph
+geometry follows the aspect-fit contract above.
 
 The SDK metadata generator validates against the shared 63-sample example/test
 catalog without an App checkout, including raw source digests and viewBox sizes.
