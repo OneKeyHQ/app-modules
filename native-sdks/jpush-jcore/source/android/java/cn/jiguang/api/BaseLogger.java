@@ -1,95 +1,72 @@
 package cn.jiguang.api;
 
+import android.util.Log;
+import cn.jiguang.core.JCoreStorage;
+
 public abstract class BaseLogger {
-   public abstract String getCommonTag();
+    public abstract String getCommonTag();
 
-   private void log(int var1, boolean var2, String var3, String var4, Throwable var5) {
-      JCoreManager.onEvent(null, this.getCommonTag(), 18, var3, null, var1, var2, var4, var5);
-   }
+    private void log(int priority, boolean force, String tag, String msg, Throwable tr) {
+        if (!force && !JCoreStorage.isDebugMode()) {
+            return;
+        }
+        String fullTag = "[" + getCommonTag() + "]" + (tag != null ? tag : "");
+        String body = msg != null ? msg : "";
+        if (tr != null) {
+            body = body + '\n' + Log.getStackTraceString(tr);
+        }
+        Log.println(priority, fullTag, body);
+    }
 
-   public void recoverMethod_v_e925fa09(String var1, String var2) {
-      this.log(2, true, var1, var2, null);
-   }
+    public void v(String tag, String msg) {
+        log(Log.VERBOSE, false, tag, msg, null);
+    }
 
-   public void recoverMethod_vv_e925fa09(String var1, String var2) {
-      this.log(2, false, var1, var2, null);
-   }
+    public void vv(String tag, String msg) {
+        log(Log.VERBOSE, true, tag, msg, null);
+    }
 
-   public void recoverMethod_d_e925fa09(String var1, String var2) {
-      this.log(3, true, var1, var2, null);
-   }
+    public void d(String tag, String msg) {
+        log(Log.DEBUG, false, tag, msg, null);
+    }
 
-   public void recoverMethod_dd_e925fa09(String var1, String var2) {
-      this.log(3, false, var1, var2, null);
-   }
+    public void dd(String tag, String msg) {
+        log(Log.DEBUG, true, tag, msg, null);
+    }
 
-   public void recoverMethod_i_e925fa09(String var1, String var2) {
-      this.log(4, true, var1, var2, null);
-   }
+    public void i(String tag, String msg) {
+        log(Log.INFO, false, tag, msg, null);
+    }
 
-   public void recoverMethod_ii_e925fa09(String var1, String var2) {
-      this.log(4, false, var1, var2, null);
-   }
+    public void ii(String tag, String msg) {
+        log(Log.INFO, true, tag, msg, null);
+    }
 
-   public void recoverMethod_w_e925fa09(String var1, String var2) {
-      this.log(5, true, var1, var2, null);
-   }
+    public void w(String tag, String msg) {
+        log(Log.WARN, false, tag, msg, null);
+    }
 
-   public void recoverMethod_ww_e925fa09(String var1, String var2) {
-      this.log(5, false, var1, var2, null);
-   }
+    public void ww(String tag, String msg) {
+        log(Log.WARN, true, tag, msg, null);
+    }
 
-   public void recoverMethod_e_e925fa09(String var1, String var2) {
-      this.log(6, true, var1, var2, null);
-   }
+    public void ww(String tag, String msg, Throwable tr) {
+        log(Log.WARN, true, tag, msg, tr);
+    }
 
-   public void recoverMethod_ee_e925fa09(String var1, String var2) {
-      this.log(6, false, var1, var2, null);
-   }
+    public void e(String tag, String msg) {
+        log(Log.ERROR, false, tag, msg, null);
+    }
 
-   public void recoverMethod_v_1765c98c(String var1, String var2, Throwable var3) {
-      this.log(2, true, var1, var2, var3);
-   }
+    public void ee(String tag, String msg) {
+        log(Log.ERROR, true, tag, msg, null);
+    }
 
-   public void recoverMethod_vv_1765c98c(String var1, String var2, Throwable var3) {
-      this.log(2, false, var1, var2, var3);
-   }
+    public void e(String tag, String msg, Throwable tr) {
+        log(Log.ERROR, false, tag, msg, tr);
+    }
 
-   public void recoverMethod_d_1765c98c(String var1, String var2, Throwable var3) {
-      this.log(3, true, var1, var2, var3);
-   }
-
-   public void recoverMethod_dd_1765c98c(String var1, String var2, Throwable var3) {
-      this.log(3, false, var1, var2, var3);
-   }
-
-   public void recoverMethod_i_1765c98c(String var1, String var2, Throwable var3) {
-      this.log(4, true, var1, var2, var3);
-   }
-
-   public void recoverMethod_ii_1765c98c(String var1, String var2, Throwable var3) {
-      this.log(4, false, var1, var2, var3);
-   }
-
-   public void recoverMethod_w_1765c98c(String var1, String var2, Throwable var3) {
-      this.log(5, true, var1, var2, var3);
-   }
-
-   public void recoverMethod_ww_1765c98c(String var1, String var2, Throwable var3) {
-      this.log(5, false, var1, var2, var3);
-   }
-
-   public void recoverMethod_e_1765c98c(String var1, String var2, Throwable var3) {
-      this.log(6, true, var1, var2, var3);
-   }
-
-   public void recoverMethod_ee_1765c98c(String var1, String var2, Throwable var3) {
-      this.log(6, false, var1, var2, var3);
-   }
-
-   public void recoverMethod__d_adb25a88(String var1, String var2, Object... var3) {
-   }
-
-   public static void flushCached2File() {
-   }
+    public void ee(String tag, String msg, Throwable tr) {
+        log(Log.ERROR, true, tag, msg, tr);
+    }
 }

@@ -1,47 +1,47 @@
 package cn.jpush.android.ups;
 
 public class TokenResult {
-   private String token;
-   private int returnCode;
-   private String actionType;
+    private String token;
+    private int returnCode;
+    private String actionType;
 
-   public TokenResult(String var1, int var2) {
-      this.token = var1;
-      this.returnCode = var2;
-   }
+    public TokenResult(String token, int returnCode) {
+        this.token = token;
+        this.returnCode = returnCode;
+    }
 
-   public TokenResult(String var1, int var2, String var3) {
-      this.token = var1;
-      this.returnCode = var2;
-      this.actionType = var3;
-   }
+    public TokenResult(String token, int returnCode, String actionType) {
+        this.token = token;
+        this.returnCode = returnCode;
+        this.actionType = actionType;
+    }
 
-   public String getToken() {
-      return this.token;
-   }
+    public String getToken() {
+        return token;
+    }
 
-   public void setToken(String var1) {
-      this.token = var1;
-   }
+    public void setToken(String token) {
+        this.token = token;
+    }
 
-   public int getReturnCode() {
-      return this.returnCode;
-   }
+    public int getReturnCode() {
+        return returnCode;
+    }
 
-   public void setReturnCode(int var1) {
-      this.returnCode = var1;
-   }
+    public void setReturnCode(int returnCode) {
+        this.returnCode = returnCode;
+    }
 
-   public String getActionType() {
-      return this.actionType;
-   }
+    public String getActionType() {
+        return actionType;
+    }
 
-   public void setActionType(String var1) {
-      this.actionType = var1;
-   }
+    public void setActionType(String actionType) {
+        this.actionType = actionType;
+    }
 
-   @Override
-   public String toString() {
-      return "TokenResult{token='" + this.token + '\'' + ", returnCode=" + this.returnCode + ", actionType='" + this.actionType + '\'' + '}';
-   }
+    @Override
+    public String toString() {
+        return "TokenResult{token='" + token + "', returnCode=" + returnCode + ", actionType='" + actionType + "'}";
+    }
 }

@@ -3,17 +3,26 @@ package cn.jpush.android.service;
 import android.app.Service;
 import android.content.Intent;
 import android.os.IBinder;
+import cn.jiguang.internal.JConstants;
+import cn.jiguang.internal.JCoreInternalHelper;
 
 public class PushService extends Service {
-   private static final String TAG = "PushService";
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        JConstants.getAppContext(getApplicationContext());
+    }
 
-   @Override
-   public IBinder onBind(Intent var1) {
-      return null;
-   }
+    @Override
+    public IBinder onBind(Intent intent) {
+        return null;
+    }
 
-   @Override
-   public int onStartCommand(Intent var1, int var2, int var3) {
-      return 2;
-   }
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent != null) {
+            JCoreInternalHelper.getInstance().onEvent(this, "JCore", 2, true, intent.getAction(), intent.getExtras());
+        }
+        return Service.START_NOT_STICKY;
+    }
 }

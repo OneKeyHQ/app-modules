@@ -3,77 +3,77 @@ package cn.jpush.android.data;
 import java.io.Serializable;
 
 public class JPushConfig implements Serializable {
-   private static final long serialVersionUID = -3135447319267244288L;
-   private String recoverField_a;
-   private String recoverField_b;
-   private String recoverField_c;
-   private String recoverField_d;
-   private String recoverField_e;
-   private String recoverField_f;
-   private String recoverField_g;
-   private String recoverField_h;
+    private static final long serialVersionUID = -3135447319267244288L;
+    private String jAppKey;
+    private String oppoAppKey;
+    private String oppoAppId;
+    private String oppoAppSecret;
+    private String mzAppId;
+    private String mzAppKey;
+    private String xmAppId;
+    private String xmAppKey;
 
-   public String getOppoAppKey() {
-      return this.recoverField_b;
-   }
+    public String getjAppKey() {
+        return jAppKey;
+    }
 
-   public void setOppoAppKey(String var1) {
-      this.recoverField_b = var1;
-   }
+    public void setjAppKey(String jAppKey) {
+        this.jAppKey = jAppKey;
+    }
 
-   public String getOppoAppSecret() {
-      return this.recoverField_d;
-   }
+    public String getOppoAppKey() {
+        return oppoAppKey;
+    }
 
-   public void setOppoAppSecret(String var1) {
-      this.recoverField_d = var1;
-   }
+    public void setOppoAppKey(String oppoAppKey) {
+        this.oppoAppKey = oppoAppKey;
+    }
 
-   public String getMzAppId() {
-      return this.recoverField_e;
-   }
+    public String getOppoAppId() {
+        return oppoAppId;
+    }
 
-   public void setMzAppId(String var1) {
-      this.recoverField_e = var1;
-   }
+    public void setOppoAppId(String oppoAppId) {
+        this.oppoAppId = oppoAppId;
+    }
 
-   public String getMzAppKey() {
-      return this.recoverField_f;
-   }
+    public String getOppoAppSecret() {
+        return oppoAppSecret;
+    }
 
-   public void setMzAppKey(String var1) {
-      this.recoverField_f = var1;
-   }
+    public void setOppoAppSecret(String oppoAppSecret) {
+        this.oppoAppSecret = oppoAppSecret;
+    }
 
-   public String getXmAppId() {
-      return this.recoverField_g;
-   }
+    public String getMzAppId() {
+        return mzAppId;
+    }
 
-   public void setXmAppId(String var1) {
-      this.recoverField_g = var1;
-   }
+    public void setMzAppId(String mzAppId) {
+        this.mzAppId = mzAppId;
+    }
 
-   public String getXmAppKey() {
-      return this.recoverField_h;
-   }
+    public String getMzAppKey() {
+        return mzAppKey;
+    }
 
-   public void setXmAppKey(String var1) {
-      this.recoverField_h = var1;
-   }
+    public void setMzAppKey(String mzAppKey) {
+        this.mzAppKey = mzAppKey;
+    }
 
-   public String getOppoAppId() {
-      return this.recoverField_c;
-   }
+    public String getXmAppId() {
+        return xmAppId;
+    }
 
-   public void setOppoAppId(String var1) {
-      this.recoverField_c = var1;
-   }
+    public void setXmAppId(String xmAppId) {
+        this.xmAppId = xmAppId;
+    }
 
-   public String getjAppKey() {
-      return this.recoverField_a;
-   }
+    public String getXmAppKey() {
+        return xmAppKey;
+    }
 
-   public void setjAppKey(String var1) {
-      this.recoverField_a = var1;
-   }
+    public void setXmAppKey(String xmAppKey) {
+        this.xmAppKey = xmAppKey;
+    }
 }

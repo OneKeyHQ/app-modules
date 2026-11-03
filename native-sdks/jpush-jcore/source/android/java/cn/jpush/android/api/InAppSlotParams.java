@@ -4,72 +4,62 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 public class InAppSlotParams {
-   public int recoverField_a = 0;
-   public String recoverField_b = "";
-   public String recoverField_c = "";
+    public int sequence = 0;
+    public String adSlot = "";
+    public String adEvent = "";
 
-   public static InAppSlotParams.Member7771e473 builder() {
-      return new InAppSlotParams.Member7771e473();
-   }
+    public static Builder builder() {
+        return new Builder();
+    }
 
-   @Override
-   public String toString() {
-      return "InAppSlotParams{sequence=" + this.recoverField_a + ", adSlot='" + this.recoverField_b + '\'' + ", adEvent='" + this.recoverField_c + '\'' + '}';
-   }
+    public String toJSONString() {
+        JSONObject json = new JSONObject();
+        try {
+            json.put("sequence", sequence);
+            json.put("slot", adSlot);
+            json.put("event", adEvent);
+        } catch (JSONException ignored) {
+        }
+        return json.toString();
+    }
 
-   public String toJSONString() {
-      JSONObject var1 = new JSONObject();
+    public static InAppSlotParams parseJSONString(String raw) {
+        InAppSlotParams params = new InAppSlotParams();
+        try {
+            JSONObject json = new JSONObject(raw);
+            params.sequence = json.optInt("sequence", 0);
+            params.adSlot = json.optString("slot", "");
+            params.adEvent = json.optString("event", "");
+        } catch (Throwable ignored) {
+        }
+        return params;
+    }
 
-      try {
-         var1.put("sequence", this.recoverField_a);
-         var1.put("slot", this.recoverField_b);
-         var1.put("event", this.recoverField_c);
-      } catch (JSONException var3) {
-      }
+    @Override
+    public String toString() {
+        return "InAppSlotParams{sequence=" + sequence + ", adSlot='" + adSlot + "', adEvent='" + adEvent + "'}";
+    }
 
-      return var1.toString();
-   }
+    public static class Builder {
+        private final InAppSlotParams params = new InAppSlotParams();
 
-   public static InAppSlotParams parseJSONString(String var0) {
-      InAppSlotParams var1 = new InAppSlotParams();
+        public Builder setSequence(int sequence) {
+            params.sequence = sequence;
+            return this;
+        }
 
-      try {
-         JSONObject var2 = new JSONObject(var0);
-         var1.recoverField_a = var2.optInt("sequence", 0);
-         var1.recoverField_b = var2.optString("slot", "");
-         var1.recoverField_c = var2.optString("event", "");
-      } catch (Throwable var3) {
-      }
+        public Builder setAdSlot(String adSlot) {
+            params.adSlot = adSlot != null ? adSlot : "";
+            return this;
+        }
 
-      return var1;
-   }
+        public Builder setAdEvent(String adEvent) {
+            params.adEvent = adEvent != null ? adEvent : "";
+            return this;
+        }
 
-   public static class Member7771e473 {
-      InAppSlotParams recoverField_a = new InAppSlotParams();
-
-      public InAppSlotParams.Member7771e473 setSequence(int var1) {
-         this.recoverField_a.recoverField_a = var1;
-         return this;
-      }
-
-      public InAppSlotParams.Member7771e473 setAdSlot(String var1) {
-         this.recoverField_a.recoverField_b = var1;
-         return this;
-      }
-
-      public InAppSlotParams.Member7771e473 setAdEvent(String var1) {
-         this.recoverField_a.recoverField_c = var1;
-         return this;
-      }
-
-      public InAppSlotParams build() {
-         return this.recoverField_a;
-      }
-   }
-
-   public interface Memberb62c4686 {
-      String SEQ = "sequence";
-      String SLOT = "slot";
-      String EVENT = "event";
-   }
+        public InAppSlotParams build() {
+            return params;
+        }
+    }
 }

@@ -1,20 +1,40 @@
 package cn.jiguang.net;
 
-import android.text.TextUtils;
-import cn.jiguang.am.RecoverTypeaf2a9ae9;
+import java.security.cert.Certificate;
 import javax.net.ssl.HostnameVerifier;
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLPeerUnverifiedException;
 import javax.net.ssl.SSLSession;
 
 public class DefaultHostVerifier implements HostnameVerifier {
-   public String recoverField_a = null;
+    public String expectedHost;
 
-   public DefaultHostVerifier(String var1) {
-      this.recoverField_a = var1;
-   }
+    public DefaultHostVerifier(String expectedHost) {
+        this.expectedHost = expectedHost;
+    }
 
-   @Override
-   public boolean verify(String var1, SSLSession var2) {
-      RecoverTypeaf2a9ae9.recoverMethod_c_e925fa09("DefaultHostVerifier", "host:" + var1 + ",checkHost:" + this.recoverField_a);
-      return TextUtils.isEmpty(var1) ? false : TextUtils.equals(this.recoverField_a, var1);
-   }
+    @Override
+    public boolean verify(String hostname, SSLSession session) {
+        if (hostname == null || hostname.isEmpty() || session == null) {
+            return false;
+        }
+        String targetHost = (this.expectedHost != null && !this.expectedHost.isEmpty())
+            ? this.expectedHost
+            : hostname;
+        if (!targetHost.equalsIgnoreCase(hostname)) {
+            return false;
+        }
+        try {
+            Certificate[] peerCertificates = session.getPeerCertificates();
+            if (peerCertificates == null || peerCertificates.length == 0) {
+                return false;
+            }
+        } catch (SSLPeerUnverifiedException e) {
+            return false;
+        } catch (Throwable ignored) {
+            return false;
+        }
+        HostnameVerifier defaultVerifier = HttpsURLConnection.getDefaultHostnameVerifier();
+        return defaultVerifier != null && defaultVerifier != this && defaultVerifier.verify(targetHost, session);
+    }
 }

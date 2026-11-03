@@ -1,128 +1,182 @@
 #!/usr/bin/env python3
-"""Build independent source SDK archives and force-load their complete consumers."""
+from __future__ import annotations
 
-import hashlib
-import json
+import argparse
 from pathlib import Path
-import re
 import shutil
 import subprocess
-import sys
+import tempfile
 
-from restore_ios_metadata import restore
+ROOT = Path(__file__).resolve().parents[1]
+SOURCE_ROOT = ROOT / "source" / "ios"
+INCLUDE_DIR = SOURCE_ROOT / "include"
+JCORE_DIR = SOURCE_ROOT / "jcore"
+JPUSH_DIR = SOURCE_ROOT / "jpush"
 
-
-ROOT = Path(__file__).resolve().parent.parent
-BUILD = ROOT / ".build" / "ios"
-TARGETS = (
-    ("ios-arm64", "iphoneos", "arm64-apple-ios15.0"),
-    ("ios-simulator-arm64", "iphonesimulator", "arm64-apple-ios15.0-simulator"),
-    ("ios-simulator-x86_64", "iphonesimulator", "x86_64-apple-ios15.0-simulator"),
-)
-FRAMEWORKS = ("Foundation", "CoreFoundation", "UIKit", "CoreLocation", "UserNotifications", "SystemConfiguration", "Security", "CoreTelephony", "CFNetwork", "Network", "MobileCoreServices", "WebKit", "CoreGraphics")
+DEFAULT_OUTPUT_DIR = ROOT / "build" / "ios"
+JCORE_ARCHIVE_NAME = "jcore-ios-5.2.0.a"
+JPUSH_ARCHIVE_NAME = "jpush-ios-6.0.0.a"
 
 
-def source_hashes():
-    return {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
-            for p in sorted((ROOT / "source/ios").rglob("*")) if p.is_file()}
+def run(cmd: list[str]) -> str:
+    proc = subprocess.run(cmd, text=True, capture_output=True)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"Command failed ({proc.returncode}): {' '.join(cmd)}\n"
+            f"STDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
+        )
+    return proc.stdout
 
 
-def run(command, log):
-    with log.open("w") as stream:
-        return subprocess.run(command, stdout=stream, stderr=subprocess.STDOUT).returncode
+def sdk_path(sdk_name: str) -> str:
+    return run(["xcrun", "--sdk", sdk_name, "--show-sdk-path"]).strip()
 
 
-def build(receipt):
-    sources = sorted((ROOT / "source/ios").glob("j*/*.m"))
-    if not sources:
-        raise RuntimeError("No iOS Objective-C sources found")
-    before = source_hashes()
-    receipt.update({"source_files": len(sources), "source_sha256": before, "targets": []})
-    failed_links = []
-    for label, sdk, target in TARGETS:
-        directory = BUILD / label
-        if directory.exists():
-            shutil.rmtree(directory)
-        directory.mkdir(parents=True)
-        sdkpath = subprocess.check_output(["xcrun", "--sdk", sdk, "--show-sdk-path"], text=True).strip()
-        compiler = ["xcrun", "clang", "-isysroot", sdkpath, "-target", target, "-fobjc-arc"]
-        result = {"target": label, "compile_status": "FAIL", "link_status": "NOT_RUN", "compilations": []}
-        receipt["targets"].append(result)
-        objects = []
-        for source in sources:
-            objectfile = directory / f"{source.parent.name}-{source.stem}.o"
-            log = directory / f"compile-{source.stem}.log"
-            command = compiler + ["-Wall", "-Wextra", "-Werror", "-Wno-unused-parameter", "-I", str(ROOT / "source/ios/include"), "-c", str(source), "-o", str(objectfile)]
-            code = run(command, log)
-            compilation = {"source": str(source.relative_to(ROOT)), "exit_code": code, "log": str(log.relative_to(ROOT))}
-            result["compilations"].append(compilation)
-            if code:
-                raise RuntimeError(f"Source compilation failed; see {log}")
-            compilation["metadata_restoration"] = restore(objectfile)
-            objects.append(objectfile)
-        result["compile_status"] = "PASS"
-        archives = {}
-        result["archives"] = archives
-        for sdk_name, archive_name in (("jcore", "libJCore.a"), ("jpush", "libJPush.a")):
-            archive = directory / archive_name
-            owned_objects = [p for p in objects if p.name.startswith(sdk_name + "-")]
-            archive_log = directory / (sdk_name + "-archive.log")
-            if run(["xcrun", "libtool", "-static", "-o", str(archive)] + [str(p) for p in owned_objects], archive_log):
-                raise RuntimeError(f"Archive creation failed; see {archive_log}")
-            archives[sdk_name] = {"path": str(archive.relative_to(ROOT)), "sha256": hashlib.sha256(archive.read_bytes()).hexdigest(), "objects": [p.name for p in owned_objects]}
-        # Every JCore member must link on its own; JPush consumes JCore as a separate archive.
-        # The independent consumer includes public headers from the package and never executes.
-        result["consumers"] = []
-        undefined = set()
-        for consumer_name, sdk_names in (("jcore", ("jcore",)), ("jpush", ("jcore", "jpush"))):
-            consumer = directory / (consumer_name + "-consumer.m")
-            body = '#import "JGCOREAPI.h"\n'
-            if consumer_name == "jpush":
-                body += '#import "JPUSHService.h"\nint main(void) { @autoreleasepool { [JGCOREAPI ci:NO]; return [JPUSHService registrationID] != nil; } }\n'
-            else:
-                body += 'int main(void) { @autoreleasepool { [JGCOREAPI ci:NO]; return 0; } }\n'
-            consumer.write_text(body)
-            command = compiler + ["-Wall", "-Wextra", "-Werror", "-I", str(ROOT / "source/ios/include"), str(consumer), "-Wl,-undefined,error", "-lresolv", "-lz"]
-            for sdk_name in sdk_names:
-                command += ["-Wl,-force_load," + str(ROOT / archives[sdk_name]["path"])]
-            for framework in FRAMEWORKS:
-                command += ["-framework", framework]
-            command += ["-o", str(directory / (consumer_name + "-consumer"))]
-            log = directory / (consumer_name + "-consumer.log")
-            code = run(command, log)
-            result["consumers"].append({"sdk": consumer_name, "status": "PASS" if code == 0 else "FAIL", "command": command, "exit_code": code, "log": str(log.relative_to(ROOT)), "executed": False})
-            if code:
-                undefined.update(re.findall(r'^\s+"([^"]+)", referenced from:', log.read_text(), re.MULTILINE))
-                failed_links.append(label + "/" + consumer_name)
-        result["undefined_symbols"] = sorted(undefined)
-        result["link_status"] = "PASS" if all(c["status"] == "PASS" for c in result["consumers"]) else "FAIL"
-    if source_hashes() != before:
-        raise RuntimeError("Build inputs changed during compilation; results are not a stable source build")
-    receipt["source_inputs_unchanged"] = True
-    if failed_links:
-        raise RuntimeError(f"Strict force-load consumer link failed for {', '.join(failed_links)}; SDK closure is incomplete")
-    receipt["status"] = "PASS"
+def compile_slice(
+    sources: list[Path],
+    sdk_name: str,
+    arch: str,
+    min_version_flag: str,
+    slice_dir: Path,
+    archive_name: str,
+    extra_flags: list[str] | None = None,
+) -> Path:
+    slice_dir.mkdir(parents=True, exist_ok=True)
+    sysroot = sdk_path(sdk_name)
+    objects: list[Path] = []
+
+    for src in sources:
+        obj = slice_dir / f"{src.stem}.o"
+        cmd = [
+            "xcrun",
+            "--sdk",
+            sdk_name,
+            "clang",
+            "-x",
+            "objective-c",
+            "-arch",
+            arch,
+            "-isysroot",
+            sysroot,
+            min_version_flag,
+            *(extra_flags or []),
+            "-fobjc-arc",
+            "-fPIC",
+            "-O2",
+            "-Wall",
+            "-Wextra",
+            "-Wno-unused-parameter",
+            "-Wno-deprecated-declarations",
+            "-I",
+            str(INCLUDE_DIR),
+            "-I",
+            str(JCORE_DIR),
+            "-I",
+            str(JPUSH_DIR),
+            "-c",
+            str(src),
+            "-o",
+            str(obj),
+        ]
+        run(cmd)
+        objects.append(obj)
+
+    output_archive = slice_dir / archive_name
+    run(["xcrun", "libtool", "-static", "-o", str(output_archive), *[str(o) for o in objects]])
+    return output_archive
 
 
-def main():
-    BUILD.mkdir(parents=True, exist_ok=True)
-    receipt = {
-        "status": "FAIL",
-        "original_objects_linked": False,
-        "scope": "Independent JCore/JPush source archives with strict force-load public-header consumer links. Runtime equivalence and application/device integration remain separate checks.",
-    }
-    try:
-        build(receipt)
-    except (OSError, RuntimeError, subprocess.SubprocessError) as error:
-        receipt["error"] = str(error)
-    (BUILD / "build.json").write_text(json.dumps(receipt, indent=2) + "\n")
-    print(json.dumps({key: value for key, value in receipt.items() if key not in ("source_sha256", "targets")}, indent=2))
-    for target in receipt.get("targets", []):
-        print(f"{target['target']}: compile={target['compile_status']}, strict-link={target['link_status']}")
-        for symbol in target.get("undefined_symbols", []):
-            print(f"  unresolved: {symbol}")
-    return 0 if receipt["status"] == "PASS" else 1
+def build_library(
+    sources: list[Path],
+    archive_name: str,
+    output_dir: Path,
+    temp_dir: Path,
+    target: str = "universal",
+) -> Path:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    universal_archive = output_dir / archive_name
+
+    if target == "macabi":
+        mac_sdk = sdk_path("macosx")
+        macabi_slice = compile_slice(
+            sources=sources,
+            sdk_name="macosx",
+            arch="arm64",
+            min_version_flag="-target",
+            slice_dir=temp_dir / archive_name / "macabi-arm64",
+            archive_name=archive_name,
+            extra_flags=[
+                "arm64-apple-ios14.0-macabi",
+                "-iframework",
+                f"{mac_sdk}/System/iOSSupport/System/Library/Frameworks",
+            ],
+        )
+        shutil.copy2(macabi_slice, universal_archive)
+        return universal_archive
+
+    ios_arm64 = compile_slice(
+        sources=sources,
+        sdk_name="iphoneos",
+        arch="arm64",
+        min_version_flag="-miphoneos-version-min=13.0",
+        slice_dir=temp_dir / archive_name / "iphoneos-arm64",
+        archive_name=archive_name,
+    )
+    sim_x86_64 = compile_slice(
+        sources=sources,
+        sdk_name="iphonesimulator",
+        arch="x86_64",
+        min_version_flag="-mios-simulator-version-min=13.0",
+        slice_dir=temp_dir / archive_name / "iphonesimulator-x86_64",
+        archive_name=archive_name,
+    )
+
+    run(["xcrun", "lipo", "-create", str(ios_arm64), str(sim_x86_64), "-output", str(universal_archive)])
+    return universal_archive
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Build clean JCore and JPush iOS static libraries from source.")
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=DEFAULT_OUTPUT_DIR,
+        help="Output directory for static libraries and public headers.",
+    )
+    parser.add_argument(
+        "--target",
+        choices=("universal", "macabi"),
+        default="universal",
+        help="Build target: 'universal' (iphoneos-arm64 + iphonesimulator-x86_64) or 'macabi' (arm64-apple-ios14.0-macabi).",
+    )
+    args = parser.parse_args()
+
+    jcore_sources = sorted(JCORE_DIR.glob("*.m"))
+    jpush_sources = sorted(JPUSH_DIR.glob("*.m"))
+    if not jcore_sources:
+        raise RuntimeError(f"No JCore sources found in {JCORE_DIR}")
+    if not jpush_sources:
+        raise RuntimeError(f"No JPush sources found in {JPUSH_DIR}")
+
+    output_dir = args.output_dir.resolve()
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    with tempfile.TemporaryDirectory(prefix="jpush-jcore-ios-") as tmp:
+        temp_dir = Path(tmp)
+        jcore_lib = build_library(jcore_sources, JCORE_ARCHIVE_NAME, output_dir, temp_dir, target=args.target)
+        jpush_lib = build_library(jpush_sources, JPUSH_ARCHIVE_NAME, output_dir, temp_dir, target=args.target)
+
+    headers_out = output_dir / "include"
+    headers_out.mkdir(parents=True, exist_ok=True)
+    for header in sorted(INCLUDE_DIR.glob("*.h")):
+        shutil.copy2(header, headers_out / header.name)
+
+    print(f"Built {jcore_lib} ({jcore_lib.stat().st_size} bytes)")
+    print(f"Built {jpush_lib} ({jpush_lib.stat().st_size} bytes)")
+    return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

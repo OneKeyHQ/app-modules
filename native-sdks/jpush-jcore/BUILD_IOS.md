@@ -1,67 +1,35 @@
-# iOS source build and link gate
+# iOS Source Build (`JCore` + `JPush`)
 
-Recovered iOS versions: JPush 5.9.0 and JCore 5.2.1.
+## Overview
 
-The source implementations cover the original SDK class and method sets:
-271 classes / 5006 methods on device arm64 and 206 / 3690 on both simulator
-architectures, including categories. All 34 exported C functions and 77 / 71 / 71
-SDK global initializers are present. A passing build receipt establishes source
-symbol closure for its exact inputs; it does not establish device behavior.
-JCore and JPush are packaged separately according to original SDK ownership.
-No original SDK object, archive, disassembly, or diagnostic fixture is an input.
+This directory contains a clean, human-readable Objective-C source implementation of JCore (`5.2.0`) and JPush (`6.0.0`) tailored for OneKey's mobile notification runtime and `jpush-react-native` / `jcore-react-native`.
 
-Prerequisites: macOS, Python 3.9+, and Xcode with the iPhoneOS and
-iPhoneSimulator SDKs selected through `xcode-select`.
+### Module Layout
 
-```sh
-python3 scripts/build_ios_source.py
+- `source/ios/include/`
+  - `JGInforCollectionAuth.h`, `JGInforCollectionAuthItems.h` — Collection authorization configuration (`JGInforCollectionAuth`, `JGInforCollectionAuthItems`).
+  - `JGCOREAPI.h`, `JCOREService.h` — JCore runtime flags (`JGCOREAPI`) and socket/HTTP controller facade (`JCOREService`, `JPUSHReportPacketConfiguration`).
+  - `JGPushNotificationTrigger.h` — Notification trigger/content/sound/identifier/request models.
+  - `JPUSHService.h` — Public JPush service, notification entities, delegates, and `kJPFNetwork*` notification constants.
+- `source/ios/jcore/` (`jcore-ios-5.2.0.a`)
+  - `JCOREConfiguration.{h,m}` — Persistent configuration (`appKey`, `channel`, `uid`, `password`, `registrationID`, `deviceToken`, `voipToken`, live activity tokens, SIS cache, tags, alias, properties, mobileNumber, and HTTP report pipeline).
+  - `JCORECrypto.{h,m}` — CommonCrypto + Security.framework + zlib primitives (`generateSeedKey`, `AES-256-CBC` with 32-byte ASCII hex key, `SM4-CBC` 32-round S-Box + key schedule, `RSA-1024 PKCS1/OAEP`, `GZIP`, `MD5`/`SHA1`/`HMAC-SHA256`).
+  - `JCOREWireProtocol.{h,m}` — Asymmetric 24-byte Client->Server and 20-byte Server->Client TCP wire framing, 10-byte UDP SIS packet codec (`'U','G'`, `(0x11 << 24) | seed`), HTTP `/v3/report` & `/v3/push/sdk/badge` builders, and binary command payloads (`Register cmd=0 v30`, `Login cmd=1 v27`, `Heartbeat cmd=2 v8`, `PushMessage cmd=3`, `MessageReceipt cmd=4 v3`, `DeviceToken cmd=13 v3`, `CtrlCommand cmd=25 v1`, `MobileNumber cmd=26 v1`, `Tags cmd=28 v1`, `Alias cmd=29 v1`, `VoIPToken cmd=33 v2`, `UserProperties cmd=38 v1`, `LiveActivityToken cmd=39 v1`).
+  - `JCORESisResolver.{h,m}` — 10-byte UDP SIS + HTTPS SIS resolver (`NSURLSession` with system TLS and hostname validation), full SIS payload persistence, and fallback endpoint resolution.
+  - `JCORETcpSession.{h,m}` — `Network.framework` (`nw_connection_t`) dual-stack TCP/TLS session manager with multi-IP waterfall failover, `fail_ips` blacklist, registered fast-login (`cmd=1`), `statusCode 108/1012` recovery, exponential backoff auto-reconnect, `NWPathMonitor` network recovery, and pre-login FIFO request queue.
+- `source/ios/jpush/` (`jpush-ios-6.0.0.a`)
+  - `JPUSHModels.m` — Data models (`JPUSHRegisterEntity`, `JPushNotificationIdentifier`, `JPushNotificationSound`, `JPushNotificationContent`, `JPushNotificationTrigger`, `JPushNotificationRequest`, `JPushInAppMessage`, `JPushCollectControl`).
+  - `JPUSHNotificationManager.{h,m}` — `UNUserNotificationCenter` delegate forwarding, APNs registration, and local notification scheduling.
+  - `JPUSHService.m` — Public `JPUSHService` & `JCOREService` API implementation.
+
+## Build Command
+
+```bash
+python3 native-sdks/jpush-jcore/scripts/build_ios_source.py
 ```
 
-The script builds every `source/ios/j*/*.m` for iOS arm64, simulator arm64, and
-simulator x86_64, targeting iOS 15. It uses ARC and strict compiler warnings
-(`-Wall -Wextra -Werror -Wno-unused-parameter`). It restores approved property
-metadata from `source/ios/abi/` without changing compiled instructions.
-Only this package's sources, headers, ABI metadata, and Apple SDKs participate;
-the build never reads or links original JPush/JCore objects or fixture mocks.
+## Verification Command
 
-Each target produces `.build/ios/<target>/libJCore.a` and `libJPush.a`.
-JCore is force-loaded into an isolated executable that includes its public
-header. A second public-header consumer force-loads both independent archives
-for JPush. Both use `-undefined error`; the consumers are linked, never run.
-The framework set is Foundation, CoreFoundation, UIKit, CoreLocation,
-UserNotifications, SystemConfiguration, Security, CoreTelephony, CFNetwork,
-Network, MobileCoreServices, WebKit, and CoreGraphics. `libresolv` supplies mDNS resolver
-functions and zlib supplies compression (`-lresolv -lz`). A missing SDK class,
-function, or constant makes the command fail even if archive creation succeeds.
-Use JCore alone or JPush together with JCore; each object is packaged once.
-
-All output stays in `.build/`. `.build/ios/build.json` records the source
-hashes, metadata adjustments, archive hashes, per-target compile/link status,
-and unresolved symbols. Compiler and linker diagnostics are stored next to
-each target's archive. This repository does not commit those generated files.
-
-A passing link proves only static symbol closure for these source inputs.
-Objective-C selector behavior, transport and push delivery, framework/device
-availability, and real application integration require separate validation.
-No App dependency or React Native package is changed by this build.
-
-The recovery defines safe failures for original allocation failures, receive
-buffer overflow, truncated packet reads, and short crash-backtrace allocations.
-Decoded TCP responses preserve their decoded prefix and original packet length;
-bytes beyond the decoded data are zero-filled. Network data conversion uses a
-bounded heap temporary. CF Create/Copy references are released after use, and
-borrowed Wi-Fi interfaces retain their container ownership. These changes bound
-original undefined memory behavior; they are not byte-equivalence claims for
-out-of-bounds original memory.
-
-The recovered TLS paths retain the original Basic X.509 trust policy, including
-its lack of hostname verification. Real device TLS, APNs delivery and App
-integration remain separate acceptance work. Host instruction comparisons and
-sanitizer checks do not establish those results.
-
-Raw static metadata retains eight inherited-layout differences per architecture
-for JCORELightCache, JCORELargeCache and JCORENetDataMoniter. Original binaries
-use older superclass sizes; Objective-C runtime ivar sliding produces the same
-loaded sizes and offsets as the source. These differences are documented rather
-than patched away. Current Apple SDK optional delegate-protocol additions are
-framework metadata, separate from SDK-owned protocol contracts.
+```bash
+python3 native-sdks/jpush-jcore/scripts/verify_clean_sdk.py
+```

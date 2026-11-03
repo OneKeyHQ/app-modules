@@ -6,19 +6,17 @@ import android.os.IBinder;
 import java.nio.ByteBuffer;
 
 public interface JAction {
-   boolean isSupportedCMD(int var1);
+    long dispatchMessage(Context context, long connectionId, int command, Object header, ByteBuffer body);
 
-   long dispatchMessage(Context var1, long var2, int var4, Object var5, ByteBuffer var6);
+    void dispatchTimeOutMessage(Context context, long connectionId, long rid, int command);
 
-   void onActionRun(Context var1, long var2, Bundle var4, Object var5);
+    boolean isSupportedCMD(int command);
 
-   void onEvent(Context var1, long var2, int var4);
+    void onActionRun(Context context, long rid, Bundle bundle, Object handler);
 
-   void handleMessage(Context var1, long var2, Object var4);
+    void onEvent(Context context, long rid, int eventType);
 
-   IBinder getBinderByType(String var1);
+    IBinder getBinderByType(String type);
 
-   String getSdkVersion();
-
-   void dispatchTimeOutMessage(Context var1, long var2, long var4, int var6);
+    String getSdkVersion();
 }

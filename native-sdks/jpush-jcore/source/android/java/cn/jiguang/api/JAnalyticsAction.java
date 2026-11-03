@@ -3,9 +3,9 @@ package cn.jiguang.api;
 import android.content.Context;
 
 public interface JAnalyticsAction {
-   void dispatchResume(Context var1);
+    void dispatchResume(Context context);
 
-   void dispatchPause(Context var1);
+    void dispatchPause(Context context);
 
-   void dispatchStatus(Context var1, String var2);
+    void dispatchStatus(Context context, String status);
 }

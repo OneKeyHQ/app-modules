@@ -5,72 +5,62 @@ import android.os.Bundle;
 import java.nio.ByteBuffer;
 
 public abstract class JDispatchAction {
-   public static final int SDK_NORMAL_TYPE = 0;
-   public static final int SDK_CUSTOM_TYPE = 1;
-   public static final int SDK_NORMAL_GOOGLE_TYPE = 2;
-   public static final int SDK_NORMAL_PURE_TYPE = 3;
-   public static final int SDK_CUSTOM_GOOGLE_TYPE = 4;
-   public static final int SDK_CUSTOM_PURE_TYPE = 5;
+    public abstract void dispatchMessage(
+        Context context,
+        String sdkType,
+        int command,
+        int version,
+        long rid,
+        long uid,
+        ByteBuffer body
+    );
 
-   public abstract boolean isSupportedCMD(String var1, int var2);
+    public void dispatchTimeOutMessage(Context context, String sdkType, long rid, int command) {
+    }
 
-   public abstract void dispatchMessage(Context var1, String var2, int var3, int var4, long var5, long var7, ByteBuffer var9);
+    public abstract boolean isSupportedCMD(String sdkType, int command);
 
-   public void onActionRun(Context var1, String var2, String var3, Bundle var4) {
-   }
+    public abstract short getRegFlag(String sdkType);
 
-   public void onEvent(Context var1, String var2, int var3, int var4, String var5) {
-   }
+    public abstract short getLogPriority(String sdkType);
 
-   public void handleMessage(Context var1, String var2, Object var3) {
-   }
+    public abstract short getLoginFlag(String sdkType);
 
-   public abstract String getSdkVersion(String var1);
+    public abstract String getRegPriority(String sdkType);
 
-   public abstract String getReportVersionKey(String var1);
+    public abstract String getReportVersionKey(String sdkType);
 
-   public void dispatchTimeOutMessage(Context var1, String var2, long var3, int var5) {
-   }
+    public abstract String getSdkVersion(String sdkType);
 
-   public boolean checkAction(String var1, int var2) {
-      return true;
-   }
+    public abstract short getUserCtrlProperty(String sdkType);
 
-   public Object beforRegister(Context var1, String var2, int var3, String var4) {
-      return null;
-   }
+    public void handleMessage(Context context, String sdkType, Object message) {
+    }
 
-   public Object beforLogin(Context var1, String var2, int var3, String var4) {
-      return null;
-   }
+    public void onActionRun(Context context, String sdkType, String internalAction, Bundle bundle) {
+    }
 
-   public Object onSendData(Context var1, String var2, long var3, int var5, int var6) {
-      return null;
-   }
+    public boolean checkActionInfo(String sdkType) {
+        return true;
+    }
 
-   public abstract short getRegFlag(String var1);
+    public Object beforRegister(Context context, String sdkType, int cmd, String key, int type) {
+        return null;
+    }
 
-   public abstract short getLoginFlag(String var1);
+    public Object beforLogin(Context context, String sdkType, int cmd, String key, int type) {
+        return null;
+    }
 
-   public abstract short getRegPriority(String var1);
+    public Object getDataByCmd(Context context, int cmd) {
+        return null;
+    }
 
-   public abstract short getLogPriority(String var1);
+    public Bundle getPInfo(String sdkType) {
+        return null;
+    }
 
-   public Bundle getPInfo(String var1) {
-      return null;
-   }
-
-   public abstract short getUserCtrlProperty(String var1);
-
-   public Object getDataByCmd(Context var1, int var2) {
-      return null;
-   }
-
-   public Object getDataByAction(Context var1, String var2, String var3, Bundle var4, Object var5) {
-      return null;
-   }
-
-   public int getSdkType() {
-      return 0;
-   }
+    public Object onSendData(Context context, String sdkType, long rid, int cmd, int sid) {
+        return null;
+    }
 }

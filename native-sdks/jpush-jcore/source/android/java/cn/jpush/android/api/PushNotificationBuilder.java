@@ -5,9 +5,9 @@ import android.content.Context;
 import java.util.Map;
 
 public interface PushNotificationBuilder {
-   Notification buildNotification(Map var1);
+    Notification buildNotification(Map<String, String> params);
 
-   Notification buildNotification(Context var1, NotificationMessage var2);
+    Notification buildNotification(Context context, NotificationMessage message);
 
-   String getDeveloperArg0();
+    String getDeveloperArg0();
 }

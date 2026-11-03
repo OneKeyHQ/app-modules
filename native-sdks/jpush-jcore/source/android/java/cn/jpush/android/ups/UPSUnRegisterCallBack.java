@@ -1,4 +1,4 @@
 package cn.jpush.android.ups;
 
-public interface UPSUnRegisterCallBack extends ICallbackResult {
+public interface UPSUnRegisterCallBack extends ICallbackResult<TokenResult> {
 }

@@ -2,76 +2,109 @@ package cn.jiguang.api;
 
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.os.Build.VERSION;
+import cn.jiguang.core.JCoreStorage;
 
 public class MultiSpHelper {
-   private static final String TAG = "MultiSpHelper";
-   private static final String SP_FILE = "cn.jpush.android.user.profile";
-   private static SharedPreferences sharedPref;
+    private static final String SP_FILE = "cn.jpush.android.user.profile";
+    private static SharedPreferences sharedPref;
 
-   private MultiSpHelper() {
-   }
+    private MultiSpHelper() {
+    }
 
-   private static void init(Context var0) {
-      sharedPref = var0.getSharedPreferences("cn.jpush.android.user.profile", 0);
-   }
+    public static void commitString(Context context, String key, String value) {
+        JCoreStorage.putSpValue(context, key, value != null ? value : "");
+        SharedPreferences sp = getSp(context);
+        if (sp != null) {
+            sp.edit().putString(key, value).apply();
+        }
+    }
 
-   private static SharedPreferences getSp(Context var0) {
-      if (sharedPref == null) {
-         init(var0);
-      }
+    public static String getString(Context context, String key, String defaultValue) {
+        SharedPreferences sp = getSp(context);
+        if (sp != null) {
+            String val = sp.getString(key, null);
+            if (val != null) {
+                return val;
+            }
+        }
+        return JCoreStorage.getSpValue(context, key, defaultValue);
+    }
 
-      return sharedPref;
-   }
+    public static void commitLong(Context context, String key, long value) {
+        JCoreStorage.putSpValue(context, key, String.valueOf(value));
+        SharedPreferences sp = getSp(context);
+        if (sp != null) {
+            sp.edit().putLong(key, value).apply();
+        }
+    }
 
-   private static SharedPreferences reload(Context var0) {
-      if (var0 != null) {
-         if (VERSION.SDK_INT >= 11) {
-            var0.getSharedPreferences("cn.jpush.android.user.profile", 4);
-         }
+    public static long getLong(Context context, String key, long defaultValue) {
+        SharedPreferences sp = getSp(context);
+        if (sp != null && sp.contains(key)) {
+            return sp.getLong(key, defaultValue);
+        }
+        String raw = JCoreStorage.getSpValue(context, key, null);
+        if (raw != null && !raw.isEmpty()) {
+            try {
+                return Long.parseLong(raw);
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return defaultValue;
+    }
 
-         return var0.getSharedPreferences("cn.jpush.android.user.profile", 0);
-      } else {
-         return null;
-      }
-   }
+    public static void commitInt(Context context, String key, int value) {
+        JCoreStorage.putSpValue(context, key, String.valueOf(value));
+        SharedPreferences sp = getSp(context);
+        if (sp != null) {
+            sp.edit().putInt(key, value).apply();
+        }
+    }
 
-   public static void commitString(Context var0, String var1, String var2) {
-      getSp(var0).edit().putString(var1, var2).apply();
-   }
+    public static int getInt(Context context, String key, int defaultValue) {
+        SharedPreferences sp = getSp(context);
+        if (sp != null && sp.contains(key)) {
+            return sp.getInt(key, defaultValue);
+        }
+        String raw = JCoreStorage.getSpValue(context, key, null);
+        if (raw != null && !raw.isEmpty()) {
+            try {
+                return Integer.parseInt(raw);
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return defaultValue;
+    }
 
-   public static String getString(Context var0, String var1, String var2) {
-      return getSp(var0).getString(var1, var2);
-   }
+    public static void commitBoolean(Context context, String key, boolean value) {
+        JCoreStorage.putSpValue(context, key, String.valueOf(value));
+        SharedPreferences sp = getSp(context);
+        if (sp != null) {
+            sp.edit().putBoolean(key, value).apply();
+        }
+    }
 
-   public static void commitLong(Context var0, String var1, long var2) {
-      getSp(var0).edit().putLong(var1, var2).apply();
-   }
+    public static boolean getBoolean(Context context, String key, boolean defaultValue) {
+        SharedPreferences sp = getSp(context);
+        if (sp != null && sp.contains(key)) {
+            return sp.getBoolean(key, defaultValue);
+        }
+        String raw = JCoreStorage.getSpValue(context, key, null);
+        if (raw != null && !raw.isEmpty()) {
+            return Boolean.parseBoolean(raw);
+        }
+        return defaultValue;
+    }
 
-   public static long getLong(Context var0, String var1, long var2) {
-      return getSp(var0).getLong(var1, var2);
-   }
-
-   public static void commitInt(Context var0, String var1, int var2) {
-      getSp(var0).edit().putInt(var1, var2).apply();
-   }
-
-   public static int getInt(Context var0, String var1, int var2) {
-      if (var1.equals("jpush_register_code") || var1.equals("service_stoped")) {
-         SharedPreferences var3 = reload(var0);
-         if (var3 != null) {
-            return var3.getInt(var1, var2);
-         }
-      }
-
-      return getSp(var0).getInt(var1, var2);
-   }
-
-   public static void commitBoolean(Context var0, String var1, boolean var2) {
-      getSp(var0).edit().putBoolean(var1, var2).apply();
-   }
-
-   public static boolean getBoolean(Context var0, String var1, boolean var2) {
-      return getSp(var0).getBoolean(var1, var2);
-   }
+    private static SharedPreferences getSp(Context context) {
+        if (context == null) {
+            return null;
+        }
+        if (sharedPref == null) {
+            Context appContext = context.getApplicationContext();
+            Context target = appContext != null ? appContext : context;
+            sharedPref = target.getSharedPreferences(SP_FILE, Context.MODE_PRIVATE);
+        }
+        return sharedPref;
+    }
 }

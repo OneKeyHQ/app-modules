@@ -4,9 +4,9 @@ import android.content.Context;
 import android.os.Bundle;
 
 public abstract class JCoreHelperAction {
-   public abstract Object onEvent(Context var1, String var2, int var3, String var4, Bundle var5, Object... var6);
+    public abstract Object onEvent(Context context, String sdkType, int cmd, String action, Bundle bundle, Object... extras);
 
-   public abstract Bundle directHandle(Context var1, String var2, String var3, Bundle var4);
+    public abstract Bundle directHandle(Context context, String sdkType, String action, Bundle bundle);
 
-   public abstract Object onCommonMethod(Context var1, String var2, Object var3);
+    public abstract Object onCommonMethod(Context context, String action, Object arg);
 }

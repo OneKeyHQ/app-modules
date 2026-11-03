@@ -1,5 +1,5 @@
 package cn.jpush.android.ups;
 
-public interface ICallbackResult {
-   void onResult(Object var1);
+public interface ICallbackResult<R> {
+    void onResult(R result);
 }

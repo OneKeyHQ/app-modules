@@ -6,112 +6,91 @@ import java.util.HashSet;
 import java.util.Set;
 
 public class JPushCollectControl implements Serializable {
-   private static final long serialVersionUID = -3135447319267654288L;
-   private ArrayList mEnableDatas = new ArrayList();
-   private ArrayList mDisableDatas = new ArrayList();
-   private static final int GPS = 1000;
-   private static final int APP_LISTS = 1001;
-   private static final int IMEI = 1003;
-   private static final int MAC = 1005;
-   private static final int SSID = 1006;
-   private static final int BSSID = 1007;
-   private static final int CELL = 1008;
-   public static final int IMSI = 1010;
-   public static final int WIFI = 1012;
-   public static final int APP_RUNNING = 1013;
+    private static final long serialVersionUID = -3135447319267654288L;
+    private static final int IMEI = 1003;
+    private static final int MAC = 1005;
+    private static final int SSID = 1006;
+    private static final int BSSID = 1007;
+    private static final int CELL = 1008;
+    public static final int IMSI = 1010;
+    public static final int WIFI = 1012;
+    public static final int APP_RUNNING = 1013;
 
-   public JPushCollectControl(JPushCollectControl.Memberd6392c58 var1) {
-      if (null != var1.mDisableDatas && !var1.mDisableDatas.isEmpty()) {
-         this.mDisableDatas.addAll(var1.mDisableDatas);
-      }
+    private final ArrayList<Integer> mEnableDatas = new ArrayList<Integer>();
+    private final ArrayList<Integer> mDisableDatas = new ArrayList<Integer>();
 
-      if (null != var1.mEnableDatas && !var1.mEnableDatas.isEmpty()) {
-         this.mEnableDatas.addAll(var1.mEnableDatas);
-      }
-   }
+    public JPushCollectControl(Builder builder) {
+        if (builder != null) {
+            mDisableDatas.addAll(builder.mDisableDatas);
+            mEnableDatas.addAll(builder.mEnableDatas);
+        }
+    }
 
-   public ArrayList getEnableDatas() {
-      return this.mEnableDatas;
-   }
+    public ArrayList<Integer> getEnableDatas() {
+        return mEnableDatas;
+    }
 
-   public ArrayList getDisableDatas() {
-      return this.mDisableDatas;
-   }
+    public ArrayList<Integer> getDisableDatas() {
+        return mDisableDatas;
+    }
 
-   public static class Memberd6392c58 {
-      private Set mEnableDatas = new HashSet();
-      private Set mDisableDatas = new HashSet();
+    public static class Builder {
+        private final Set<Integer> mEnableDatas = new HashSet<Integer>();
+        private final Set<Integer> mDisableDatas = new HashSet<Integer>();
 
-      private void enable(int var1) {
-         this.mDisableDatas.remove(var1);
-         this.mEnableDatas.add(var1);
-      }
+        private void set(boolean enable, int code) {
+            if (enable) {
+                mDisableDatas.remove(code);
+                mEnableDatas.add(code);
+            } else {
+                mEnableDatas.remove(code);
+                mDisableDatas.add(code);
+            }
+        }
 
-      private void disable(int var1) {
-         this.mEnableDatas.remove(var1);
-         this.mDisableDatas.add(var1);
-      }
+        public Builder imei(boolean enable) {
+            set(enable, IMEI);
+            return this;
+        }
 
-      private void set(boolean var1, int var2) {
-         if (var1) {
-            this.enable(var2);
-         } else {
-            this.disable(var2);
-         }
-      }
+        public Builder mac(boolean enable) {
+            set(enable, MAC);
+            return this;
+        }
 
-      public JPushCollectControl.Memberd6392c58 imei(boolean var1) {
-         short var2 = 1003;
-         this.set(var1, var2);
-         return this;
-      }
+        public Builder ssid(boolean enable) {
+            set(enable, SSID);
+            if (!enable) {
+                wifi(false);
+            }
+            return this;
+        }
 
-      public JPushCollectControl.Memberd6392c58 mac(boolean var1) {
-         short var2 = 1005;
-         this.set(var1, var2);
-         return this;
-      }
+        public Builder bssid(boolean enable) {
+            set(enable, BSSID);
+            if (!enable) {
+                wifi(false);
+            }
+            return this;
+        }
 
-      public JPushCollectControl.Memberd6392c58 ssid(boolean var1) {
-         short var2 = 1006;
-         this.set(var1, var2);
-         if (!var1) {
-            this.wifi(false);
-         }
+        public Builder cell(boolean enable) {
+            set(enable, CELL);
+            return this;
+        }
 
-         return this;
-      }
+        public Builder imsi(boolean enable) {
+            set(enable, IMSI);
+            return this;
+        }
 
-      public JPushCollectControl.Memberd6392c58 bssid(boolean var1) {
-         short var2 = 1007;
-         this.set(var1, var2);
-         if (!var1) {
-            this.wifi(false);
-         }
+        public Builder wifi(boolean enable) {
+            set(enable, WIFI);
+            return this;
+        }
 
-         return this;
-      }
-
-      public JPushCollectControl.Memberd6392c58 cell(boolean var1) {
-         short var2 = 1008;
-         this.set(var1, var2);
-         return this;
-      }
-
-      public JPushCollectControl.Memberd6392c58 imsi(boolean var1) {
-         short var2 = 1010;
-         this.set(var1, var2);
-         return this;
-      }
-
-      public JPushCollectControl.Memberd6392c58 wifi(boolean var1) {
-         short var2 = 1012;
-         this.set(var1, var2);
-         return this;
-      }
-
-      public JPushCollectControl build() {
-         return new JPushCollectControl(this);
-      }
-   }
+        public JPushCollectControl build() {
+            return new JPushCollectControl(this);
+        }
+    }
 }

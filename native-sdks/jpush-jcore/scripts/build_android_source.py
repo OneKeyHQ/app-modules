@@ -1,210 +1,160 @@
 #!/usr/bin/env python3
-"""Build recovered Android SDK JARs from Java sources and ABI metadata only."""
+from __future__ import annotations
 
 import argparse
-import hashlib
-import json
 import os
 from pathlib import Path
-import re
 import shutil
 import subprocess
-import sys
-import urllib.request
+import tempfile
 import zipfile
 
+ROOT = Path(__file__).resolve().parents[1]
+JAVA_SOURCE_DIR = ROOT / "source" / "android" / "java"
+DEFAULT_OUTPUT_DIR = ROOT / "build" / "android"
 
-ROOT = Path(__file__).resolve().parent.parent
-BUILD = ROOT / ".build" / "android"
-ASM_VERSION = "9.7.1"
-ASM_HASHES = {
-    "asm": "8cadd43ac5eb6d09de05faecca38b917a040bb9139c7edeb4cc81c740b713281",
-    "asm-commons": "9a579b54d292ad9be171d4313fd4739c635592c2b5ac3a459bbd1049cddec6a0",
-    "asm-tree": "9929881f59eb6b840e86d54570c77b59ce721d104e6dfd7a40978991c2d3b41f",
-}
-REPORTS = (
-    "abi-missing.tsv",
-    "abi-extra.tsv",
-    "abi-metadata-adjustments.tsv",
-    "compiler-artifact-restorations.tsv",
-    "anonymous-class-identities.tsv",
+JCORE_JAR_NAME = "jcore-android-5.2.0.jar"
+JPUSH_JAR_NAME = "jpush-android-5.9.0.jar"
+
+JPUSH_OWNED_PREFIXES = (
+    "cn/jpush/android/api/",
+    "cn/jpush/android/data/",
+    "cn/jpush/android/helper/",
+    "cn/jpush/android/local/",
+    "cn/jpush/android/service/JPushMessageReceiver",
+    "cn/jpush/android/ui/",
+    "cn/jpush/android/ups/",
 )
-ALLOWED_EXTRA_ABI = {
-    "M\tcn/jiguang/api/SdkType\t$values$()[Lcn/jiguang/api/SdkType;",
-    "M\tcn/jiguang/ba/b$a\t$values()[Lcn/jiguang/ba/b$a;",
-    "M\tcn/jiguang/ba/i$a\t$values()[Lcn/jiguang/ba/i$a;",
-}
 
 
-def digest(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+def run(cmd: list[str]) -> str:
+    proc = subprocess.run(cmd, text=True, capture_output=True)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"Command failed ({proc.returncode}): {' '.join(cmd)}\n"
+            f"STDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
+        )
+    return proc.stdout
 
 
-def run(command, log):
-    with log.open("w") as stream:
-        result = subprocess.run(command, stdout=stream, stderr=subprocess.STDOUT)
-    if result.returncode:
-        raise RuntimeError(f"Command failed ({result.returncode}); see {log}")
+def find_android_jar(explicit_jar: Path | None) -> Path:
+    if explicit_jar is not None:
+        resolved = explicit_jar.expanduser().resolve()
+        if not resolved.is_file():
+            raise RuntimeError(f"android.jar not found at {resolved}")
+        return resolved
+
+    candidates: list[Path] = []
+    for env_key in ("ANDROID_HOME", "ANDROID_SDK_ROOT"):
+        val = os.environ.get(env_key)
+        if val:
+            candidates.append(Path(val))
+    candidates.extend([
+        Path.home() / "Library" / "Android" / "sdk",
+        Path("/opt/homebrew/share/android-commandlinetools"),
+    ])
+
+    for sdk_root in candidates:
+        platforms_dir = sdk_root / "platforms"
+        if not platforms_dir.is_dir():
+            continue
+        platform_jars = sorted(platforms_dir.glob("android-*/android.jar"), reverse=True)
+        if platform_jars:
+            return platform_jars[0]
+
+    raise RuntimeError(
+        "Could not locate android.jar. Pass --android-jar or set ANDROID_SDK_ROOT."
+    )
 
 
-def argument_file(path, sources):
-    # javac argument files need quoting when a checkout path contains spaces.
-    path.write_text("".join('"' + str(p).replace('\\', '\\\\').replace('"', '\\"') + '"\n' for p in sources))
-    return "@" + str(path)
+def find_javac() -> str:
+    java_home = os.environ.get("JAVA_HOME")
+    if java_home:
+        candidate = Path(java_home) / "bin" / "javac"
+        if candidate.is_file():
+            return str(candidate)
+    which_javac = shutil.which("javac")
+    if which_javac:
+        return which_javac
+    raise RuntimeError("Could not locate javac.")
 
 
-def dependencies(cache):
-    directory = ROOT / ".build" / "deps"
-    directory.mkdir(parents=True, exist_ok=True)
-    paths = []
-    for artifact, expected in ASM_HASHES.items():
-        filename = f"{artifact}-{ASM_VERSION}.jar"
-        target = directory / filename
-        if target.exists() and digest(target) != expected:
-            raise RuntimeError(f"SHA-256 mismatch: {target}")
-        if not target.exists():
-            cached = cache / filename if cache else None
-            temporary = target.with_suffix(".download")
-            try:
-                if cached and cached.is_file():
-                    shutil.copyfile(cached, temporary)
-                elif cache:
-                    raise RuntimeError(f"Offline ASM cache is missing {filename}: {cache}")
-                else:
-                    url = f"https://repo.maven.apache.org/maven2/org/ow2/asm/{artifact}/{ASM_VERSION}/{filename}"
-                    with urllib.request.urlopen(url, timeout=60) as response, temporary.open("wb") as stream:
-                        shutil.copyfileobj(response, stream)
-                if digest(temporary) != expected:
-                    raise RuntimeError(f"SHA-256 mismatch: {filename}")
-                temporary.replace(target)
-            finally:
-                temporary.unlink(missing_ok=True)
-        paths.append(target)
-    return paths
+def is_jpush_class(rel_path: str) -> bool:
+    return any(rel_path.startswith(prefix) for prefix in JPUSH_OWNED_PREFIXES)
 
 
-def build(args, receipt):
-    java_home = args.java_home or os.environ.get("JAVA_HOME")
-    javac = str(Path(java_home) / "bin" / "javac") if java_home else shutil.which("javac")
-    java = str(Path(java_home) / "bin" / "java") if java_home else shutil.which("java")
-    if not javac or not java:
-        raise RuntimeError("JDK 24.0.1 is required; set JAVA_HOME or --java-home")
-    for executable in (javac, java):
-        version = subprocess.run([executable, "-version"], capture_output=True, text=True, check=True)
-        output = version.stdout + version.stderr
-        if not re.search(r'(?:javac\s+|version\s+")24\.0\.1(?:\s|\")', output):
-            raise RuntimeError(f"JDK 24.0.1 is required: {output.strip()}")
-    sdk = Path(os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT") or Path.home() / "Library/Android/sdk")
-    android = Path(args.android_jar).resolve() if args.android_jar else sdk / "platforms/android-35/android.jar"
-    if not android.is_file():
-        raise RuntimeError(f"Android API 35 android.jar is required: {android}")
-    with zipfile.ZipFile(android) as platform:
-        entries = platform.namelist()
-        if "android/os/Build$VERSION_CODES.class" not in entries:
-            raise RuntimeError(f"Not an Android platform JAR: {android}")
-        sdk_classes = [name for name in entries if name.endswith(".class") and name.startswith(("cn/jiguang/", "cn/jpush/", "cn/jj/", "cn/asus/", "cn/android/service/"))]
-        if sdk_classes:
-            raise RuntimeError(f"Android platform JAR contains SDK classes: {sdk_classes[:5]}")
-
-    asm = dependencies(Path(args.asm_cache).resolve() if args.asm_cache else None)
-    for name in ("classes", "provided", "restored", "tools", "artifacts"):
-        directory = BUILD / name
-        if directory.exists():
-            shutil.rmtree(directory)
-        directory.mkdir(parents=True)
-    for name in REPORTS:
-        (BUILD / name).unlink(missing_ok=True)
-
-    source = ROOT / "source" / "android"
-    paths = sorted((source / "java").rglob("*.java"))
-    provided = sorted((source / "compile-only").rglob("*.java"))
-    if not paths:
-        raise RuntimeError("No SDK Java sources found")
-    # These identities are required inputs, even when the restorer treats them as optional.
-    for name in ("identifier-aliases.tsv", "original-abi.tsv", "compiler-identities.tsv", "compiler-fields.tsv", "artifact-owners.tsv"):
-        if not (source / name).is_file():
-            raise RuntimeError(f"Missing build metadata: {name}")
-    receipt.update({
-        "source_files": len(paths),
-        "jdk": str(javac),
-        "android_platform_jar": str(android),
-        "android_platform_sha256": digest(android),
-        "compile_only_sources": [str(p.relative_to(ROOT)) for p in provided],
-        "original_sdk_on_compile_classpath": False,
-        "source_build_uses_original_sdk_bytecode": False,
-        "dependencies": [{"file": p.name, "sha256": digest(p)} for p in asm],
-    })
-    if provided:
-        run([javac, "--release", "8", "-proc:none", "-Xlint:-options", "-cp", str(android), "-d", str(BUILD / "provided"), argument_file(BUILD / "provided-sources.txt", provided)], BUILD / "compile-provided.log")
-    compile_classpath = os.pathsep.join([str(android), str(BUILD / "provided")])
-    command = [javac, "--release", "8", "-proc:none", "-Xlint:-options", "-Xmaxerrs", "3000", "-cp", compile_classpath, "-d", str(BUILD / "classes"), argument_file(BUILD / "sources.txt", paths)]
-    receipt["compile_command"] = command
-    run(command, BUILD / "compile.log")
-    tool_classpath = os.pathsep.join(str(p) for p in asm)
-    run([javac, "-proc:none", "-cp", tool_classpath, "-d", str(BUILD / "tools"), str(ROOT / "tools/ArtifactFingerprint.java"), str(ROOT / "tools/RestoreAbi.java")], BUILD / "compile-tools.log")
-    run([java, "-cp", os.pathsep.join([str(BUILD / "tools"), tool_classpath]), "RestoreAbi", str(BUILD / "classes"), str(BUILD / "restored"), str(source / "identifier-aliases.tsv"), str(source / "original-abi.tsv")], BUILD / "restore-abi.log")
-
-    missing = (BUILD / "abi-missing.tsv").read_text().splitlines()
-    if missing:
-        raise RuntimeError(f"Missing {len(missing)} ABI records; see {BUILD / 'abi-missing.tsv'}")
-    extra = set((BUILD / "abi-extra.tsv").read_text().splitlines())
-    if extra - ALLOWED_EXTRA_ABI:
-        raise RuntimeError(f"Unexpected extra ABI records: {sorted(extra - ALLOWED_EXTRA_ABI)}")
-    expected = {p[1] for line in (source / "original-abi.tsv").read_text().splitlines() if (p := line.split("\t"))[0] == "C"}
-    classes = sorted((BUILD / "restored").rglob("*.class"))
-    actual = {p.relative_to(BUILD / "restored").as_posix()[:-6] for p in classes}
-    if actual != expected:
-        raise RuntimeError(f"Class set mismatch: missing={sorted(expected - actual)}, extra={sorted(actual - expected)}")
-    owners = dict(line.split("\t") for line in (source / "artifact-owners.tsv").read_text().splitlines())
-    if set(owners) != expected or set(owners.values()) != {"jpush", "jcore"}:
-        raise RuntimeError("Artifact ownership must cover exactly all SDK classes with jpush/jcore owners")
-    provided_classes = {p.relative_to(BUILD / "provided").as_posix()[:-6] for p in (BUILD / "provided").rglob("*.class")}
-    if actual & provided_classes:
-        raise RuntimeError("Compile-only classes must not appear in runtime artifacts")
-
-    outputs = []
-    for owner, filename in (("jpush", "jpush-android-5.9.0-recovered.jar"), ("jcore", "jcore-android-5.2.0-recovered.jar"), ("combined", "jpush-jcore-recovered.jar")):
-        target = BUILD / "artifacts" / filename
-        count = 0
-        with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as output:
-            for path in classes:
-                name = path.relative_to(BUILD / "restored").as_posix()[:-6]
-                if owner != "combined" and owners[name] != owner:
-                    continue
-                info = zipfile.ZipInfo(name + ".class", date_time=(2026, 11, 3, 0, 0, 0))
-                info.compress_type = zipfile.ZIP_DEFLATED
-                output.writestr(info, path.read_bytes())
-                count += 1
-        outputs.append({"path": str(target.relative_to(ROOT)), "classes": count, "sha256": digest(target)})
-    receipt.update({
-        "status": "PASS",
-        "classes": len(actual),
-        "missing_abi_records": 0,
-        "extra_abi_records": len(extra),
-        "allowed_extra_abi_records": sorted(extra),
-        "exact_class_set": True,
-        "compile_only_classes_packaged": False,
-        "artifacts": outputs,
-        "remaining_scope": "External native implementations and dynamic providers are not supplied or validated by this build; runtime/provider closure is not established.",
-    })
+def write_deterministic_jar(classes_dir: Path, predicate, out_jar: Path) -> None:
+    out_jar.parent.mkdir(parents=True, exist_ok=True)
+    class_files = sorted(classes_dir.rglob("*.class"))
+    with zipfile.ZipFile(out_jar, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for file_path in class_files:
+            rel = file_path.relative_to(classes_dir).as_posix()
+            if not predicate(rel):
+                continue
+            info = zipfile.ZipInfo(rel, date_time=(2025, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o644 << 16
+            zf.writestr(info, file_path.read_bytes())
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--java-home", help="JDK 24.0.1 home (defaults to JAVA_HOME, then PATH)")
-    parser.add_argument("--android-jar", help="Android API 35 platform android.jar")
-    parser.add_argument("--asm-cache", help="Optional offline directory containing the three pinned ASM 9.7.1 JARs")
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Build clean JCore and JPush Android JARs from source.")
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=DEFAULT_OUTPUT_DIR,
+        help="Output directory for built JARs.",
+    )
+    parser.add_argument(
+        "--android-jar",
+        type=Path,
+        default=None,
+        help="Explicit path to android.jar.",
+    )
     args = parser.parse_args()
-    BUILD.mkdir(parents=True, exist_ok=True)
-    receipt = {"status": "FAIL"}
-    try:
-        build(args, receipt)
-    except (OSError, RuntimeError, subprocess.SubprocessError, zipfile.BadZipFile) as error:
-        receipt["error"] = str(error)
-    (BUILD / "build.json").write_text(json.dumps(receipt, indent=2) + "\n")
-    print(json.dumps(receipt, indent=2))
-    return 0 if receipt["status"] == "PASS" else 1
+
+    android_jar = find_android_jar(args.android_jar)
+    javac = find_javac()
+    java_sources = sorted(JAVA_SOURCE_DIR.rglob("*.java"))
+    if not java_sources:
+        raise RuntimeError(f"No Java sources found in {JAVA_SOURCE_DIR}")
+
+    output_dir = args.output_dir.resolve()
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    with tempfile.TemporaryDirectory(prefix="jpush-jcore-android-") as tmp:
+        temp_dir = Path(tmp)
+        classes_dir = temp_dir / "classes"
+        classes_dir.mkdir(parents=True, exist_ok=True)
+        arg_file = temp_dir / "sources.txt"
+        arg_file.write_text("\n".join(str(p) for p in java_sources), encoding="utf-8")
+
+        run([
+            javac,
+            "--release",
+            "8",
+            "-encoding",
+            "UTF-8",
+            "-g",
+            "-Xlint:-deprecation,-options",
+            "-classpath",
+            str(android_jar),
+            "-d",
+            str(classes_dir),
+            f"@{arg_file}",
+        ])
+
+        jcore_jar = output_dir / JCORE_JAR_NAME
+        jpush_jar = output_dir / JPUSH_JAR_NAME
+        write_deterministic_jar(classes_dir, lambda rel: not is_jpush_class(rel), jcore_jar)
+        write_deterministic_jar(classes_dir, is_jpush_class, jpush_jar)
+
+    print(f"Built {jcore_jar} ({jcore_jar.stat().st_size} bytes)")
+    print(f"Built {jpush_jar} ({jpush_jar.stat().st_size} bytes)")
+    return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

@@ -5,129 +5,117 @@ import java.util.Map;
 import java.util.Set;
 
 public class JPushMessage implements Serializable {
-   public int recoverField_a = 0;
-   public int recoverField_b = 0;
-   private static final long serialVersionUID = 1L;
-   private String recoverField_c;
-   private Set recoverField_d;
-   private Map recoverField_e;
-   private String recoverField_f;
-   private int recoverField_g;
-   private boolean recoverField_h;
-   private boolean recoverField_i;
-   private int recoverField_j;
-   private String recoverField_k;
+    private static final long serialVersionUID = 1L;
+    private int protoType = 0;
+    private int action = 0;
+    private String alias;
+    private Set<String> tags;
+    private Map<String, Object> pros;
+    private String checkTag;
+    private int errorCode;
+    private boolean tagCheckStateResult;
+    private boolean tagCheckOperator;
+    private int sequence;
+    private String mobileNumber;
 
-   public String getAlias() {
-      return this.recoverField_c;
-   }
+    public String getAlias() {
+        return alias;
+    }
 
-   public void setAlias(String var1) {
-      this.recoverField_c = var1;
-   }
+    public void setAlias(String alias) {
+        this.alias = alias;
+    }
 
-   public Set getTags() {
-      return this.recoverField_d;
-   }
+    public Set<String> getTags() {
+        return tags;
+    }
 
-   public void setTags(Set var1) {
-      this.recoverField_d = var1;
-   }
+    public void setTags(Set<String> tags) {
+        this.tags = tags;
+    }
 
-   public Map getPros() {
-      return this.recoverField_e;
-   }
+    public Map<String, Object> getPros() {
+        return pros;
+    }
 
-   public void setPros(Map var1) {
-      this.recoverField_e = var1;
-   }
+    public void setPros(Map<String, Object> pros) {
+        this.pros = pros;
+    }
 
-   public int getErrorCode() {
-      return this.recoverField_g;
-   }
+    public int getErrorCode() {
+        return errorCode;
+    }
 
-   public void setErrorCode(int var1) {
-      this.recoverField_g = var1;
-   }
+    public void setErrorCode(int errorCode) {
+        this.errorCode = errorCode;
+    }
 
-   public int getSequence() {
-      return this.recoverField_j;
-   }
+    public int getSequence() {
+        return sequence;
+    }
 
-   public void setSequence(int var1) {
-      this.recoverField_j = var1;
-   }
+    public void setSequence(int sequence) {
+        this.sequence = sequence;
+    }
 
-   public String getCheckTag() {
-      return this.recoverField_f;
-   }
+    public String getCheckTag() {
+        return checkTag;
+    }
 
-   public void setCheckTag(String var1) {
-      this.recoverField_f = var1;
-   }
+    public void setCheckTag(String checkTag) {
+        this.checkTag = checkTag;
+    }
 
-   public boolean getTagCheckStateResult() {
-      return this.recoverField_h;
-   }
+    public boolean getTagCheckStateResult() {
+        return tagCheckStateResult;
+    }
 
-   public void setTagCheckStateResult(boolean var1) {
-      this.recoverField_h = var1;
-   }
+    public void setTagCheckStateResult(boolean tagCheckStateResult) {
+        this.tagCheckStateResult = tagCheckStateResult;
+    }
 
-   public boolean isTagCheckOperator() {
-      return this.recoverField_i;
-   }
+    public boolean isTagCheckOperator() {
+        return tagCheckOperator;
+    }
 
-   public void setTagCheckOperator(boolean var1) {
-      this.recoverField_i = var1;
-   }
+    public void setTagCheckOperator(boolean tagCheckOperator) {
+        this.tagCheckOperator = tagCheckOperator;
+    }
 
-   public String getMobileNumber() {
-      return this.recoverField_k;
-   }
+    public String getMobileNumber() {
+        return mobileNumber;
+    }
 
-   public void setMobileNumber(String var1) {
-      this.recoverField_k = var1;
-   }
+    public void setMobileNumber(String mobileNumber) {
+        this.mobileNumber = mobileNumber;
+    }
 
-   public int getProtoType() {
-      return this.recoverField_a;
-   }
+    public int getProtoType() {
+        return protoType;
+    }
 
-   public void setProtoType(int var1) {
-      this.recoverField_a = var1;
-   }
+    public void setProtoType(int protoType) {
+        this.protoType = protoType;
+    }
 
-   public int getAction() {
-      return this.recoverField_b;
-   }
+    public int getAction() {
+        return action;
+    }
 
-   public void setAction(int var1) {
-      this.recoverField_b = var1;
-   }
+    public void setAction(int action) {
+        this.action = action;
+    }
 
-   @Override
-   public String toString() {
-      return "JPushMessage{alias='"
-         + this.recoverField_c
-         + '\''
-         + ", tags="
-         + this.recoverField_d
-         + ", pros="
-         + this.recoverField_e
-         + ", checkTag='"
-         + this.recoverField_f
-         + '\''
-         + ", errorCode="
-         + this.recoverField_g
-         + ", tagCheckStateResult="
-         + this.recoverField_h
-         + ", isTagCheckOperator="
-         + this.recoverField_i
-         + ", sequence="
-         + this.recoverField_j
-         + ", mobileNumber="
-         + this.recoverField_k
-         + '}';
-   }
+    @Override
+    public String toString() {
+        return "JPushMessage{alias='" + alias
+            + "', tags=" + tags
+            + ", pros=" + pros
+            + ", checkTag='" + checkTag
+            + "', errorCode=" + errorCode
+            + ", tagCheckStateResult=" + tagCheckStateResult
+            + ", isTagCheckOperator=" + tagCheckOperator
+            + ", sequence=" + sequence
+            + ", mobileNumber=" + mobileNumber + '}';
+    }
 }

@@ -1,254 +1,885 @@
 package cn.jpush.android.local;
 
 import android.app.Activity;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ApplicationInfo;
+import android.os.Build;
 import android.os.Bundle;
-import cn.jiguang.api.JCoreManager;
-import cn.jpush.android.ad.RecoverType9b4c5aea;
-import cn.jpush.android.api.CallBackParams;
+import cn.jiguang.core.JCoreStorage;
+import cn.jiguang.core.JCoreTcpEngine;
+import cn.jiguang.core.JCoreWireCodec;
+import cn.jpush.android.api.CmdMessage;
 import cn.jpush.android.api.CustomMessage;
+import cn.jpush.android.api.JPushInterface;
+import cn.jpush.android.api.JPushMessage;
+import cn.jpush.android.api.NotificationCustomButton;
 import cn.jpush.android.api.NotificationMessage;
 import cn.jpush.android.api.TagAliasCallback;
-import cn.jpush.android.helper.JCoreHelper;
-import cn.jpush.android.helper.Logger;
-import cn.jpush.android.l.RecoverType2e4cec2f;
+import cn.jpush.android.data.JPushLocalNotification;
+import cn.jpush.android.service.JNotifyActivity;
 import cn.jpush.android.service.JPushMessageReceiver;
-import cn.jpush.android.y.RecoverType2e4d1cfc;
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
+import org.json.JSONObject;
 
 public class ActionHelper {
-   private static final String TAG = "ActionHelper";
-   private static final Object locker = new Object();
-   private static volatile ActionHelper actionHelper;
-   private JPushAction jPushAction;
-   private RecoverType2e4d1cfc loadedResource;
-   int sequence = 10;
+    public static final String ACTION_RECEIVER_MESSAGE = "cn.jpush.android.intent.RECEIVER_MESSAGE";
+    public static final String ACTION_RECEIVE_MESSAGE = "cn.jpush.android.intent.RECEIVE_MESSAGE";
+    public static final String DEFAULT_CHANNEL_ID = "jpush_default_channel";
 
-   private ActionHelper() {
-   }
+    private static final String KEY_EVENT_TYPE = "jpush_event_type";
+    private static final String KEY_SEQUENCE = "jpush_sequence";
+    private static final String KEY_ERROR_CODE = "jpush_error_code";
+    private static final String KEY_ALIAS = "jpush_alias";
+    private static final String KEY_TAGS = "jpush_tags";
+    private static final String KEY_CHECK_TAG = "jpush_check_tag";
+    private static final String KEY_TAG_BIND_STATE = "jpush_tag_bind_state";
+    private static final String KEY_MOBILE_NUMBER = "jpush_mobile_number";
+    private static final String KEY_PROPS_MAP = "jpush_props_map";
+    private static final String KEY_NOTIFICATION_MESSAGE = "jpush_notification_message";
+    private static final String KEY_CUSTOM_MESSAGE = "jpush_custom_message";
+    private static final String KEY_CUSTOM_BUTTON = "jpush_custom_button";
 
-   public void onEvent(Thread var1, Throwable var2) {
-      JCoreManager.onEvent(null, "JPUSH", 93, null, null, var1, var2);
-   }
+    private static volatile ActionHelper instance;
+    private final List<JPushMessageReceiver> registeredReceivers = new CopyOnWriteArrayList<JPushMessageReceiver>();
 
-   public static ActionHelper getInstance() {
-      if (actionHelper == null) {
-         synchronized (locker) {
-            if (actionHelper == null) {
-               actionHelper = new ActionHelper();
+    private ActionHelper() {
+    }
+
+    public static ActionHelper getInstance() {
+        if (instance == null) {
+            synchronized (ActionHelper.class) {
+                if (instance == null) {
+                    instance = new ActionHelper();
+                }
             }
-         }
-      }
+        }
+        return instance;
+    }
 
-      return actionHelper;
-   }
+    public void registerReceiver(JPushMessageReceiver receiver) {
+        if (receiver != null && !registeredReceivers.contains(receiver)) {
+            registeredReceivers.add(receiver);
+        }
+    }
 
-   private synchronized void initLoad(Context var1) {
-      if (this.jPushAction == null) {
-         if (this.jPushAction == null) {
-            Logger.recoverMethod_d_e925fa09("ActionHelper", "load from local");
-            this.jPushAction = new RecoverType2e4cec2f();
-         }
-      }
-   }
+    public void unregisterReceiver(JPushMessageReceiver receiver) {
+        if (receiver != null) {
+            registeredReceivers.remove(receiver);
+        }
+    }
 
-   public int getResourceID(Context var1, String var2, String var3, String var4) {
-      return 0;
-   }
+    public void clearRegisteredReceivers() {
+        registeredReceivers.clear();
+    }
 
-   public Class getClassInPlugin(String var1) {
-      return null;
-   }
+    public void init(Context context) {
+        JPushConstants.init(context);
+    }
 
-   public void doAction(Context var1, String var2, Object var3) {
-      Logger.recoverMethod_dd_e925fa09("ActionHelper", "doAction:" + var2);
-      JCoreHelper.majorExecutor(var1, "ActionHelper", new ActionHelper.Memberdb37ff4(var1, var2, var3));
-   }
+    public void doAction(Context context, String action, Object data) {
+    }
 
-   public void doSingleAction(Context var1, String var2, Object var3) {
-      Logger.recoverMethod_dd_e925fa09("ActionHelper", "doSingleAction: " + var2);
-      JCoreHelper.futureExecutor(var1, "ActionHelper", new ActionHelper.Memberdb37ff4(var1, var2, var3));
-   }
+    public void doSingleAction(Context context, String action, Object data) {
+    }
 
-   public String getSdkVersion(String var1) {
-      return this.jPushAction != null ? this.jPushAction.getSdkVersion(var1) : JPushConstants.SDK_VERSION_NAME;
-   }
+    public void onEvent(Thread thread, Throwable error) {
+    }
 
-   public Object beforLogin(Context var1, String var2, int var3, String var4) {
-      this.initLoad(var1);
-      return null != this.jPushAction ? this.jPushAction.beforLogin(var1, var2, var3, var4) : null;
-   }
+    public void onActivityLifeCallback(Activity activity, String lifecycleEvent) {
+    }
 
-   public boolean isSupportedCMD(String var1, int var2) {
-      return this.jPushAction != null
-         ? this.jPushAction.isSupportedCMD(var1, var2)
-         : var2 == 3 || var2 == 29 || var2 == 28 || var2 == 27 || var2 == 10 || var2 == 26 || var2 == 25 || var2 == 34 || var2 == 36 || var2 == 37;
-   }
+    public ProxyActivityAction getPopWinActivity(Context context) {
+        return null;
+    }
 
-   public void onJPushMessageReceive(Context var1, JPushMessageReceiver var2, Intent var3) {
-      this.initLoad(var1);
-      if (this.jPushAction != null) {
-         this.jPushAction.onJPushMessageReceive(var1, var2, var3);
-      }
-   }
+    public ProxyActivityAction getPushActivity(Context context) {
+        return null;
+    }
 
-   public void onJPushMessageReceive(Context var1, String var2, String var3, Bundle var4) {
-      this.initLoad(var1);
-      if (this.jPushAction != null) {
-         this.jPushAction.onJPushMessageReceive(var1, var2, var3, var4);
-      }
-   }
+    public void handleNotificationIntent(Context context, Intent intent) {
+        if (context == null || intent == null) {
+            return;
+        }
+        Serializable msg = intent.getSerializableExtra("multi_notification_msg");
+        if (msg instanceof NotificationMessage) {
+            NotificationMessage notificationMessage = (NotificationMessage) msg;
+            dispatchNotificationEvent(context, "notify_opened", notificationMessage);
+            broadcastNotificationOpened(context, notificationMessage);
+        }
+    }
 
-   public void onMessage(Context var1, CustomMessage var2) {
-      this.initLoad(var1);
-      if (this.jPushAction != null) {
-         this.jPushAction.onMessage(var1, var2);
-      }
-   }
+    public void broadcastNotificationOpened(Context context, NotificationMessage message) {
+        Context app = JCoreStorage.getAppContext(context);
+        if (app == null || message == null) {
+            return;
+        }
+        try {
+            Intent openIntent = new Intent(JPushInterface.ACTION_NOTIFICATION_OPENED);
+            String pkg = app.getPackageName();
+            if (pkg != null && !pkg.isEmpty()) {
+                openIntent.setPackage(pkg);
+                openIntent.addCategory(pkg);
+            }
+            openIntent.putExtra(JPushInterface.EXTRA_MSG_ID, message.msgId != null ? message.msgId : "");
+            openIntent.putExtra(
+                JPushInterface.EXTRA_NOTIFICATION_TITLE,
+                message.notificationTitle != null ? message.notificationTitle : ""
+            );
+            openIntent.putExtra(
+                JPushInterface.EXTRA_ALERT,
+                message.notificationContent != null ? message.notificationContent : ""
+            );
+            openIntent.putExtra(
+                JPushInterface.EXTRA_EXTRA,
+                message.notificationExtras != null ? message.notificationExtras : ""
+            );
+            openIntent.putExtra(JPushInterface.EXTRA_NOTIFICATION_ID, message.notificationId);
+            app.sendBroadcast(openIntent);
+        } catch (Throwable ignored) {
+        }
+    }
 
-   public void onNotifyMessageOpened(Context var1, NotificationMessage var2) {
-      this.initLoad(var1);
-      if (this.jPushAction != null) {
-         this.jPushAction.onNotifyMessageOpened(var1, var2);
-      }
-   }
+    public void postSystemNotification(Context context, NotificationMessage message) {
+        Context app = JCoreStorage.getAppContext(context);
+        if (app == null || message == null) {
+            return;
+        }
+        try {
+            NotificationManager nm = (NotificationManager) app.getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm == null) {
+                return;
+            }
+            String channelId = (message.notificationChannelId != null && !message.notificationChannelId.isEmpty())
+                ? message.notificationChannelId
+                : DEFAULT_CHANNEL_ID;
+            if (Build.VERSION.SDK_INT >= 26) {
+                String channelName = JCoreStorage.getChannel(app);
+                if (channelName == null || channelName.isEmpty()) {
+                    channelName = "Notifications";
+                }
+                NotificationChannel channel = new NotificationChannel(
+                    channelId,
+                    channelName,
+                    NotificationManager.IMPORTANCE_HIGH
+                );
+                nm.createNotificationChannel(channel);
+            }
 
-   public void onNotifyMessageArrived(Context var1, NotificationMessage var2) {
-      this.initLoad(var1);
-      if (this.jPushAction != null) {
-         this.jPushAction.onNotifyMessageArrived(var1, var2);
-      }
-   }
+            Notification.Builder builder;
+            if (Build.VERSION.SDK_INT >= 26) {
+                builder = new Notification.Builder(app, channelId);
+            } else {
+                builder = new Notification.Builder(app);
+            }
 
-   public void handleNotificationIntent(Context var1, Intent var2) {
-      this.initLoad(var1);
-      if (this.jPushAction != null) {
-         this.jPushAction.handleNotificationIntent(var1, var2);
-      }
-   }
+            int smallIcon = android.R.drawable.ic_dialog_info;
+            try {
+                ApplicationInfo appInfo = app.getApplicationInfo();
+                if (appInfo != null && appInfo.icon != 0) {
+                    smallIcon = appInfo.icon;
+                }
+            } catch (Throwable ignored) {
+            }
 
-   public void onMultiAction(Context var1, Intent var2) {
-      this.initLoad(var1);
-      if (this.jPushAction != null) {
-         this.jPushAction.onMultiAction(var1, var2);
-      }
-   }
+            builder.setSmallIcon(smallIcon)
+                .setContentTitle(message.notificationTitle != null ? message.notificationTitle : "")
+                .setContentText(message.notificationContent != null ? message.notificationContent : "")
+                .setAutoCancel(true);
 
-   public void onTagAliasResponse(Context var1, long var2, int var4, Intent var5) {
-      this.initLoad(var1);
-      if (this.jPushAction != null) {
-         this.jPushAction.onTagAliasResponse(var1, var2, var4, var5);
-      }
-   }
+            Intent clickIntent = new Intent(app, JNotifyActivity.class);
+            clickIntent.setAction("cn.jpush.android.intent.JNotifyActivity");
+            clickIntent.putExtra("multi_notification_msg", message);
+            clickIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (Build.VERSION.SDK_INT >= 23) {
+                flags |= PendingIntent.FLAG_IMMUTABLE;
+            }
+            PendingIntent pendingIntent = PendingIntent.getActivity(app, message.notificationId, clickIntent, flags);
+            if (pendingIntent != null) {
+                builder.setContentIntent(pendingIntent);
+            }
 
-   public void onActivityLifeCallback(Activity var1, String var2) {
-      if (null != var1 && this.jPushAction != null) {
-         this.jPushAction.onActivityLifeCallback(var1, var2);
-      }
-   }
+            Notification notification = builder.build();
+            int notifyId = message.notificationId != 0
+                ? message.notificationId
+                : (message.msgId != null ? Math.abs(message.msgId.hashCode()) : 1);
+            nm.notify(notifyId, notification);
+        } catch (Throwable ignored) {
+        }
+    }
 
-   public ProxyActivityAction getPopWinActivity(Context var1) {
-      this.initLoad(var1);
-      return this.jPushAction != null ? this.jPushAction.getPopWinActivity(var1) : null;
-   }
+    public void handleDownlinkPushMessage(Context context, byte messageType, long messageId, String rawContent) {
+        String content = rawContent != null ? rawContent : "";
+        int lastNewline = content.lastIndexOf('\n');
+        if (lastNewline >= 0 && lastNewline + 1 < content.length()) {
+            content = content.substring(lastNewline + 1).trim();
+        }
+        String msgId = String.valueOf(messageId);
+        String parsedMsgId = JCoreWireCodec.extractJsonString(content, "_j_msgid");
+        if (parsedMsgId.isEmpty()) {
+            parsedMsgId = JCoreWireCodec.extractJsonString(content, "msg_id");
+        }
+        if (!parsedMsgId.isEmpty()) {
+            msgId = parsedMsgId;
+        }
 
-   public ProxyActivityAction getPushActivity(Context var1) {
-      this.initLoad(var1);
-      return this.jPushAction != null ? this.jPushAction.getPushActivity(var1) : null;
-   }
+        String nTitle = JCoreWireCodec.extractJsonString(content, "n_title");
+        if (nTitle.isEmpty()) {
+            nTitle = JCoreWireCodec.extractJsonString(content, "notificationTitle");
+        }
+        String nContent = JCoreWireCodec.extractJsonString(content, "n_content");
+        if (nContent.isEmpty()) {
+            nContent = JCoreWireCodec.extractJsonString(content, "notificationContent");
+        }
+        if (nContent.isEmpty()) {
+            nContent = JCoreWireCodec.extractJsonString(content, "alert");
+        }
 
-   public void setAliasAndTagsWithCallBack(Context var1, String var2, Set var3, TagAliasCallback var4, int var5, int var6) {
-      CallBackParams var7 = new CallBackParams(var2, var3, var4, System.currentTimeMillis(), var5, var6);
-      JCoreHelper.majorExecutor(var1, "ActionHelper", new ActionHelper.Memberdb37ff5(var1, var2, var3, 0, var7));
-   }
+        boolean isCustom = (messageType == 2) || (nTitle.isEmpty() && nContent.isEmpty() && content.contains("\"message\""));
+        if (!isCustom && (!nTitle.isEmpty() || !nContent.isEmpty() || messageType == 0 || messageType == 1)) {
+            NotificationMessage notification = new NotificationMessage();
+            notification.msgId = msgId;
+            notification.notificationId = JCoreWireCodec.extractJsonInt(
+                content,
+                "notification_id",
+                (int) (messageId & 0x7FFFFFFFL)
+            );
+            notification.notificationTitle = !nTitle.isEmpty()
+                ? nTitle
+                : JCoreWireCodec.extractJsonString(content, "title");
+            notification.notificationContent = !nContent.isEmpty()
+                ? nContent
+                : JCoreWireCodec.extractJsonString(content, "content");
+            notification.notificationExtras = extractJsonObjectAsString(content, "n_extras", "extras");
+            notification.notificationType = JCoreWireCodec.extractJsonInt(
+                content,
+                "notification_type",
+                JCoreWireCodec.extractJsonInt(content, "notificaion_type", 0)
+            );
+            notification.platform = JCoreWireCodec.extractJsonInt(content, "platform", 0);
+            postSystemNotification(context, notification);
+            dispatchNotificationEvent(context, "notify_arrived", notification);
+            return;
+        }
 
-   public void setAliasWithCallBack(Context var1, int var2, String var3, int var4, int var5) {
-      CallBackParams var6 = new CallBackParams(var2, var3, System.currentTimeMillis(), var4, var5);
-      JCoreHelper.majorExecutor(var1, "ActionHelper", new ActionHelper.Memberdb37ff5(var1, var3, null, var2, var6));
-   }
+        CustomMessage custom = new CustomMessage();
+        custom.messageId = msgId;
+        custom.title = JCoreWireCodec.extractJsonString(content, "title");
+        String msgBody = JCoreWireCodec.extractJsonString(content, "message");
+        if (msgBody.isEmpty()) {
+            msgBody = JCoreWireCodec.extractJsonString(content, "content");
+        }
+        if (msgBody.isEmpty() && !content.startsWith("{")) {
+            msgBody = content;
+        }
+        custom.message = msgBody;
+        custom.contentType = JCoreWireCodec.extractJsonString(content, "content_type");
+        custom.extra = extractJsonObjectAsString(content, "extras", "n_extras");
+        custom.platform = (byte) JCoreWireCodec.extractJsonInt(content, "platform", 0);
+        dispatchCustomMessageEvent(context, custom);
+    }
 
-   public void setTagsWithCallBack(Context var1, int var2, Set var3, int var4, int var5) {
-      CallBackParams var6 = new CallBackParams(var2, var3, System.currentTimeMillis(), var4, var5);
-      JCoreHelper.majorExecutor(var1, "ActionHelper", new ActionHelper.Memberdb37ff5(var1, null, var3, var2, var6));
-   }
+    private static String extractJsonObjectAsString(String json, String primaryKey, String fallbackKey) {
+        if (json == null || json.isEmpty()) {
+            return "{}";
+        }
+        try {
+            JSONObject obj = new JSONObject(json);
+            JSONObject nested = obj.optJSONObject(primaryKey);
+            if (nested == null && fallbackKey != null) {
+                nested = obj.optJSONObject(fallbackKey);
+            }
+            if (nested != null) {
+                return nested.toString();
+            }
+            JSONObject mContent = obj.optJSONObject("m_content");
+            if (mContent != null) {
+                nested = mContent.optJSONObject(primaryKey);
+                if (nested == null && fallbackKey != null) {
+                    nested = mContent.optJSONObject(fallbackKey);
+                }
+                if (nested != null) {
+                    return nested.toString();
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        Map<String, String> map = JCoreWireCodec.extractJsonStringMap(json, primaryKey);
+        if (map.isEmpty() && fallbackKey != null) {
+            map = JCoreWireCodec.extractJsonStringMap(json, fallbackKey);
+        }
+        if (map.isEmpty()) {
+            return "{}";
+        }
+        StringBuilder sb = new StringBuilder("{");
+        boolean first = true;
+        for (Map.Entry<String, String> entry : map.entrySet()) {
+            if (!first) {
+                sb.append(',');
+            }
+            first = false;
+            sb.append('"').append(entry.getKey()).append("\":\"").append(entry.getValue()).append('"');
+        }
+        sb.append('}');
+        return sb.toString();
+    }
 
-   public void setPropertyWithCallBack(Context var1, int var2, Map var3, int var4, int var5) {
-      CallBackParams var6 = new CallBackParams(var2, var3, System.currentTimeMillis(), var4, var5);
-      JCoreHelper.majorExecutor(var1, "ActionHelper", new ActionHelper.Memberdb37ff5(var1, null, null, var2, var6));
-   }
+    public void setAliasAndTagsWithCallBack(
+        final Context context,
+        final String alias,
+        final Set<String> tags,
+        final TagAliasCallback callback,
+        int protoType,
+        int action
+    ) {
+        JCoreTcpEngine.getInstance().executeAsync(new Runnable() {
+            @Override
+            public void run() {
+                if (alias != null) {
+                    JCoreStorage.saveAlias(context, alias);
+                }
+                Set<String> validTags = JPushInterface.filterValidTags(tags);
+                if (tags != null) {
+                    JCoreStorage.saveTags(context, validTags);
+                }
+                if (callback != null) {
+                    callback.gotResult(0, alias, validTags);
+                }
+            }
+        });
+    }
 
-   public void setPushStatusWithCallBack(Context var1, int var2, int var3) {
-      this.sequence++;
-      CallBackParams var4 = new CallBackParams(this.sequence, System.currentTimeMillis(), var2, var3);
-      JCoreHelper.majorExecutor(var1, "ActionHelper", new ActionHelper.Memberdb37ff5(var1, null, null, this.sequence, var4));
-   }
+    private boolean shouldQueueOrWaitForServerAck() {
+        JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
+        return engine.isRequireServerAckForOperations()
+            || (!engine.isLoggedIn() && !engine.getCustomHost().isEmpty());
+    }
 
-   public void onInAppMessageShow(Context var1, NotificationMessage var2) {
-      this.initLoad(var1);
-      if (this.jPushAction != null) {
-         this.jPushAction.onInAppMessageShow(var1, var2);
-      }
-   }
+    public void setAliasWithCallBack(
+        final Context context,
+        final int sequence,
+        String alias,
+        int protoType,
+        int action
+    ) {
+        String resolvedAlias = alias != null ? alias : "";
+        if (action == 2) {
+            JCoreStorage.saveAlias(context, resolvedAlias);
+        } else if (action == 3) {
+            JCoreStorage.saveAlias(context, "");
+            resolvedAlias = "";
+        } else if (action == 5) {
+            resolvedAlias = JCoreStorage.getAlias(context);
+        }
+        final String effectiveAlias = resolvedAlias;
 
-   public void onInAppMessageClick(Context var1, NotificationMessage var2) {
-      this.initLoad(var1);
-      if (this.jPushAction != null) {
-         this.jPushAction.onInAppMessageClick(var1, var2);
-      }
-   }
+        byte[] wireBody = JCoreWireCodec.buildAliasOperationPayload(action, sequence, effectiveAlias);
+        if (shouldQueueOrWaitForServerAck()) {
+            JCoreTcpEngine.getInstance().enqueueOrSendRequest(
+                context,
+                JCoreWireCodec.CMD_ALIAS_OP,
+                JCoreWireCodec.VER_ALIAS_OP,
+                sequence,
+                wireBody,
+                JCoreTcpEngine.getInstance().getDefaultRequestTimeoutMs(),
+                0,
+                new JCoreTcpEngine.RequestCallback() {
+                    @Override
+                    public void onResult(JCoreWireCodec.DecodedFrame responseFrame, int statusCode) {
+                        Intent intent = buildBaseReceiverIntent(context, "alias_op", sequence, statusCode);
+                        intent.putExtra(KEY_ALIAS, effectiveAlias);
+                        sendToReceiver(context, intent);
+                    }
+                }
+            );
+            return;
+        }
 
-   public Object getDataByCmd(Context var1, int var2) {
-      this.initLoad(var1);
-      return this.jPushAction != null ? this.jPushAction.getDataByCmd(var1, var2) : null;
-   }
+        JCoreTcpEngine.getInstance().sendFrameRaw(
+            JCoreWireCodec.CMD_ALIAS_OP,
+            JCoreWireCodec.VER_ALIAS_OP,
+            sequence,
+            JCoreTcpEngine.getInstance().getSessionId(),
+            JCoreStorage.getUid(context),
+            wireBody
+        );
 
-   class Memberdb37ff4 extends RecoverType9b4c5aea {
-      private Context recoverField_b;
-      private String recoverField_c;
-      private Object recoverField_d;
+        Intent intent = buildBaseReceiverIntent(context, "alias_op", sequence, 0);
+        intent.putExtra(KEY_ALIAS, effectiveAlias);
+        sendToReceiver(context, intent);
+    }
 
-      public Memberdb37ff4(Context var2, String var3, Object var4) {
-         this.recoverField_b = var2;
-         this.recoverField_c = var3;
-         this.recoverField_d = var4;
-         this.recoverField_e = "ActionHelper#Action";
-      }
+    public void setTagsWithCallBack(
+        final Context context,
+        final int sequence,
+        Set<String> tags,
+        int protoType,
+        final int action
+    ) {
+        final Set<String> validInput = JPushInterface.filterValidTags(tags);
+        Set<String> stored = JCoreStorage.getTags(context);
 
-      @Override
-      public void recoverMethod_a_9b75() {
-         try {
-            ActionHelper.this.initLoad(this.recoverField_b);
-            ActionHelper.this.jPushAction.handleAction(this.recoverField_b, this.recoverField_c, this.recoverField_d);
-         } catch (Throwable var2) {
-         }
-      }
-   }
+        if (action == 1) { // add
+            stored.addAll(validInput);
+            JCoreStorage.saveTags(context, stored);
+        } else if (action == 2) { // set
+            stored = new HashSet<String>(validInput);
+            JCoreStorage.saveTags(context, stored);
+        } else if (action == 3) { // delete
+            stored.removeAll(validInput);
+            JCoreStorage.saveTags(context, stored);
+        } else if (action == 4) { // clean
+            stored.clear();
+            JCoreStorage.saveTags(context, stored);
+        }
+        final Set<String> finalStored = new HashSet<String>(stored);
 
-   class Memberdb37ff5 extends RecoverType9b4c5aea {
-      private Context recoverField_b;
-      private String recoverField_c;
-      private int recoverField_d;
-      private Set recoverField_f;
-      private CallBackParams recoverField_g;
+        byte[] wireBody = JCoreWireCodec.buildTagOperationPayload(action, sequence, validInput);
+        if (shouldQueueOrWaitForServerAck()) {
+            JCoreTcpEngine.getInstance().enqueueOrSendRequest(
+                context,
+                JCoreWireCodec.CMD_TAG_OP,
+                JCoreWireCodec.VER_TAG_OP,
+                sequence,
+                wireBody,
+                JCoreTcpEngine.getInstance().getDefaultRequestTimeoutMs(),
+                0,
+                new JCoreTcpEngine.RequestCallback() {
+                    @Override
+                    public void onResult(JCoreWireCodec.DecodedFrame responseFrame, int statusCode) {
+                        dispatchTagResultIntent(context, sequence, action, statusCode, validInput, finalStored);
+                    }
+                }
+            );
+            return;
+        }
 
-      public Memberdb37ff5(Context var2, String var3, Set var4, int var5, CallBackParams var6) {
-         this.recoverField_g = var6;
-         this.recoverField_c = var3;
-         this.recoverField_d = var5;
-         this.recoverField_b = var2;
-         this.recoverField_f = var4;
-         this.recoverField_e = "ActionHelper#TagAliasAction";
-      }
+        JCoreTcpEngine.getInstance().sendFrameRaw(
+            JCoreWireCodec.CMD_TAG_OP,
+            JCoreWireCodec.VER_TAG_OP,
+            sequence,
+            JCoreTcpEngine.getInstance().getSessionId(),
+            JCoreStorage.getUid(context),
+            wireBody
+        );
+        dispatchTagResultIntent(context, sequence, action, 0, validInput, finalStored);
+    }
 
-      @Override
-      public void recoverMethod_a_9b75() {
-         try {
-            ActionHelper.this.initLoad(this.recoverField_b);
-            ActionHelper.this.jPushAction.setAliasAndTags(this.recoverField_b, this.recoverField_c, this.recoverField_f, this.recoverField_g);
-         } catch (Throwable var2) {
-         }
-      }
-   }
+    private void dispatchTagResultIntent(
+        Context context,
+        int sequence,
+        int action,
+        int statusCode,
+        Set<String> validInput,
+        Set<String> stored
+    ) {
+        if (action == 6) { // checkTagBindState
+            String checkTag = validInput.isEmpty() ? "" : validInput.iterator().next();
+            boolean isBind = !checkTag.isEmpty() && stored.contains(checkTag);
+            Intent checkIntent = buildBaseReceiverIntent(context, "check_tag_op", sequence, statusCode);
+            checkIntent.putExtra(KEY_CHECK_TAG, checkTag);
+            checkIntent.putExtra(KEY_TAG_BIND_STATE, isBind);
+            sendToReceiver(context, checkIntent);
+            return;
+        }
+
+        Set<String> resultTags = (action == 5) ? stored : validInput;
+        Intent intent = buildBaseReceiverIntent(context, "tag_op", sequence, statusCode);
+        intent.putStringArrayListExtra(KEY_TAGS, new ArrayList<String>(resultTags));
+        sendToReceiver(context, intent);
+    }
+
+    public void setPropertyWithCallBack(
+        final Context context,
+        final int sequence,
+        final Map<String, Object> properties,
+        int protoType,
+        int action
+    ) {
+        Map<String, Object> stored = JCoreStorage.getProperties(context);
+        if (action == 1 && properties != null) {
+            stored.putAll(properties);
+            JCoreStorage.saveProperties(context, stored);
+        } else if (action == 2 && properties != null) {
+            for (String key : properties.keySet()) {
+                stored.remove(key);
+            }
+            JCoreStorage.saveProperties(context, stored);
+        } else if (action == 3) {
+            stored.clear();
+            JCoreStorage.saveProperties(context, stored);
+        }
+
+        byte[] wireBody = JCoreWireCodec.buildPropertyOperationPayload(action, sequence, properties);
+        if (shouldQueueOrWaitForServerAck()) {
+            JCoreTcpEngine.getInstance().enqueueOrSendRequest(
+                context,
+                JCoreWireCodec.CMD_PROPERTY_OP,
+                JCoreWireCodec.VER_PROPERTY_OP,
+                sequence,
+                wireBody,
+                JCoreTcpEngine.getInstance().getDefaultRequestTimeoutMs(),
+                0,
+                new JCoreTcpEngine.RequestCallback() {
+                    @Override
+                    public void onResult(JCoreWireCodec.DecodedFrame responseFrame, int statusCode) {
+                        Intent intent = buildBaseReceiverIntent(context, "property_op", sequence, statusCode);
+                        HashMap<String, Object> serializableProps = new HashMap<String, Object>();
+                        if (properties != null) {
+                            serializableProps.putAll(properties);
+                        }
+                        intent.putExtra(KEY_PROPS_MAP, serializableProps);
+                        sendToReceiver(context, intent);
+                    }
+                }
+            );
+            return;
+        }
+
+        JCoreTcpEngine.getInstance().sendFrameRaw(
+            JCoreWireCodec.CMD_PROPERTY_OP,
+            JCoreWireCodec.VER_PROPERTY_OP,
+            sequence,
+            JCoreTcpEngine.getInstance().getSessionId(),
+            JCoreStorage.getUid(context),
+            wireBody
+        );
+
+        Intent intent = buildBaseReceiverIntent(context, "property_op", sequence, 0);
+        HashMap<String, Object> serializableProps = new HashMap<String, Object>();
+        if (properties != null) {
+            serializableProps.putAll(properties);
+        }
+        intent.putExtra(KEY_PROPS_MAP, serializableProps);
+        sendToReceiver(context, intent);
+    }
+
+    public void setMobileNumberWithCallBack(final Context context, final int sequence, final String mobileNumber) {
+        JCoreStorage.saveMobileNumber(context, mobileNumber);
+        byte[] wireBody = JCoreWireCodec.buildMobileNumberPayload(sequence, mobileNumber);
+        if (shouldQueueOrWaitForServerAck()) {
+            JCoreTcpEngine.getInstance().enqueueOrSendRequest(
+                context,
+                JCoreWireCodec.CMD_MOBILE_NUMBER,
+                JCoreWireCodec.VER_MOBILE_NUMBER,
+                sequence,
+                wireBody,
+                JCoreTcpEngine.getInstance().getDefaultRequestTimeoutMs(),
+                0,
+                new JCoreTcpEngine.RequestCallback() {
+                    @Override
+                    public void onResult(JCoreWireCodec.DecodedFrame responseFrame, int statusCode) {
+                        Intent intent = buildBaseReceiverIntent(context, "mobile_number_op", sequence, statusCode);
+                        intent.putExtra(KEY_MOBILE_NUMBER, mobileNumber != null ? mobileNumber : "");
+                        sendToReceiver(context, intent);
+                    }
+                }
+            );
+            return;
+        }
+
+        JCoreTcpEngine.getInstance().sendFrameRaw(
+            JCoreWireCodec.CMD_MOBILE_NUMBER,
+            JCoreWireCodec.VER_MOBILE_NUMBER,
+            sequence,
+            JCoreTcpEngine.getInstance().getSessionId(),
+            JCoreStorage.getUid(context),
+            wireBody
+        );
+
+        Intent intent = buildBaseReceiverIntent(context, "mobile_number_op", sequence, 0);
+        intent.putExtra(KEY_MOBILE_NUMBER, mobileNumber != null ? mobileNumber : "");
+        sendToReceiver(context, intent);
+    }
+
+    public void setThirdTokenWithCallBack(
+        final Context context,
+        final String token,
+        final byte platform,
+        final boolean unbind
+    ) {
+        byte[] wireBody = JCoreWireCodec.buildThirdTokenPayload(token, platform, unbind);
+        JCoreTcpEngine.getInstance().enqueueOrSendRequest(
+            context,
+            JCoreWireCodec.CMD_THIRD_TOKEN,
+            JCoreWireCodec.VER_THIRD_TOKEN,
+            JCoreStorage.nextRid(),
+            wireBody,
+            JCoreTcpEngine.getInstance().getDefaultRequestTimeoutMs(),
+            3,
+            new JCoreTcpEngine.RequestCallback() {
+                @Override
+                public void onResult(JCoreWireCodec.DecodedFrame responseFrame, int statusCode) {
+                    if (statusCode == 0) {
+                        JCoreStorage.saveThirdToken(context, platform, unbind ? "" : token);
+                    }
+                    Intent intent = buildBaseReceiverIntent(context, "cmd_result", 0, statusCode);
+                    intent.putExtra("cmd", 10000);
+                    intent.putExtra("msg", unbind ? "unbind" : "bind");
+                    intent.putExtra("token", token != null ? token : "");
+                    intent.putExtra("platform", (int) platform);
+                    sendToReceiver(context, intent);
+                }
+            }
+        );
+    }
+
+    public void setPushStatusWithCallBack(Context context, int protoType, int action) {
+        boolean stopped = (action == 0);
+        byte[] wireBody = JCoreWireCodec.buildPushControlPayload(stopped);
+        JCoreTcpEngine.getInstance().sendFrameRaw(
+            JCoreWireCodec.CMD_PUSH_CTRL,
+            JCoreWireCodec.VER_PUSH_CTRL,
+            JCoreStorage.nextRid(),
+            JCoreTcpEngine.getInstance().getSessionId(),
+            JCoreStorage.getUid(context),
+            wireBody
+        );
+    }
+
+    public void dispatchRegisterEvent(Context context, String registrationId) {
+        Intent intent = buildBaseReceiverIntent(context, "register", 0, 0);
+        intent.putExtra("registration_id", registrationId != null ? registrationId : "");
+        sendToReceiver(context, intent);
+    }
+
+    public void dispatchConnectedEvent(Context context, boolean connected) {
+        Intent intent = buildBaseReceiverIntent(context, "connected", 0, 0);
+        intent.putExtra("connected", connected);
+        sendToReceiver(context, intent);
+    }
+
+    public void dispatchLocalNotification(Context context, JPushLocalNotification localNotification) {
+        if (localNotification == null) {
+            return;
+        }
+        NotificationMessage message = new NotificationMessage();
+        message.notificationId = (int) localNotification.getNotificationId();
+        message.msgId = String.valueOf(localNotification.getNotificationId());
+        message.notificationTitle = localNotification.getTitle() != null ? localNotification.getTitle() : "";
+        message.notificationContent = localNotification.getContent() != null ? localNotification.getContent() : "";
+        message.notificationExtras = localNotification.getExtras() != null ? localNotification.getExtras() : "";
+        message.notificationType = 1;
+        message.notificationPriority = localNotification.getPriority();
+        message.notificationCategory = localNotification.getCategory();
+        postSystemNotification(context, message);
+        dispatchNotificationEvent(context, "notify_arrived", message);
+    }
+
+    public void dispatchNotificationEvent(Context context, String eventType, NotificationMessage message) {
+        if (message == null) {
+            return;
+        }
+        Intent intent = buildBaseReceiverIntent(context, eventType, 0, 0);
+        intent.putExtra(KEY_NOTIFICATION_MESSAGE, message);
+        sendToReceiver(context, intent);
+    }
+
+    public void dispatchCustomMessageEvent(Context context, CustomMessage message) {
+        if (message == null) {
+            return;
+        }
+        Intent intent = buildBaseReceiverIntent(context, "custom_msg", 0, 0);
+        intent.putExtra(KEY_CUSTOM_MESSAGE, message);
+        sendToReceiver(context, intent);
+    }
+
+    private Intent buildBaseReceiverIntent(Context context, String eventType, int sequence, int errorCode) {
+        Intent intent = new Intent(ACTION_RECEIVER_MESSAGE);
+        Context app = JCoreStorage.getAppContext(context);
+        if (app != null) {
+            try {
+                String pkg = app.getPackageName();
+                if (pkg != null && !pkg.isEmpty()) {
+                    intent.setPackage(pkg);
+                    intent.addCategory(pkg);
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        intent.putExtra(KEY_EVENT_TYPE, eventType);
+        intent.putExtra(KEY_SEQUENCE, sequence);
+        intent.putExtra(KEY_ERROR_CODE, errorCode);
+        return intent;
+    }
+
+    private void sendToReceiver(Context context, Intent intent) {
+        if (intent == null) {
+            return;
+        }
+        Context app = JCoreStorage.getAppContext(context);
+        for (JPushMessageReceiver receiver : registeredReceivers) {
+            try {
+                onJPushMessageReceive(app != null ? app : context, receiver, intent);
+            } catch (Throwable ignored) {
+            }
+        }
+        if (app != null && registeredReceivers.isEmpty()) {
+            try {
+                app.sendBroadcast(intent);
+            } catch (Throwable ignored) {
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    public void onJPushMessageReceive(Context context, JPushMessageReceiver receiver, Intent intent) {
+        if (receiver == null || intent == null) {
+            return;
+        }
+        String eventType = intent.getStringExtra(KEY_EVENT_TYPE);
+        if (eventType == null) {
+            return;
+        }
+        int sequence = intent.getIntExtra(KEY_SEQUENCE, 0);
+        int errorCode = intent.getIntExtra(KEY_ERROR_CODE, 0);
+
+        if ("register".equals(eventType)) {
+            String regId = intent.getStringExtra("registration_id");
+            receiver.onRegister(context, regId != null ? regId : "");
+            return;
+        }
+        if ("connected".equals(eventType)) {
+            boolean connected = intent.getBooleanExtra("connected", true);
+            receiver.onConnected(context, connected);
+            return;
+        }
+        if ("alias_op".equals(eventType)) {
+            JPushMessage msg = new JPushMessage();
+            msg.setSequence(sequence);
+            msg.setErrorCode(errorCode);
+            msg.setAlias(intent.getStringExtra(KEY_ALIAS));
+            receiver.onAliasOperatorResult(context, msg);
+            return;
+        }
+        if ("tag_op".equals(eventType)) {
+            JPushMessage msg = new JPushMessage();
+            msg.setSequence(sequence);
+            msg.setErrorCode(errorCode);
+            ArrayList<String> tagList = intent.getStringArrayListExtra(KEY_TAGS);
+            msg.setTags(tagList != null ? new HashSet<String>(tagList) : new HashSet<String>());
+            receiver.onTagOperatorResult(context, msg);
+            return;
+        }
+        if ("check_tag_op".equals(eventType)) {
+            JPushMessage msg = new JPushMessage();
+            msg.setSequence(sequence);
+            msg.setErrorCode(errorCode);
+            msg.setCheckTag(intent.getStringExtra(KEY_CHECK_TAG));
+            msg.setTagCheckStateResult(intent.getBooleanExtra(KEY_TAG_BIND_STATE, false));
+            msg.setTagCheckOperator(true);
+            receiver.onCheckTagOperatorResult(context, msg);
+            return;
+        }
+        if ("property_op".equals(eventType)) {
+            JPushMessage msg = new JPushMessage();
+            msg.setSequence(sequence);
+            msg.setErrorCode(errorCode);
+            Serializable mapObj = intent.getSerializableExtra(KEY_PROPS_MAP);
+            if (mapObj instanceof Map) {
+                msg.setPros((Map<String, Object>) mapObj);
+            }
+            receiver.onPropertyOperatorResult(context, msg);
+            return;
+        }
+        if ("mobile_number_op".equals(eventType)) {
+            JPushMessage msg = new JPushMessage();
+            msg.setSequence(sequence);
+            msg.setErrorCode(errorCode);
+            msg.setMobileNumber(intent.getStringExtra(KEY_MOBILE_NUMBER));
+            receiver.onMobileNumberOperatorResult(context, msg);
+            return;
+        }
+        if ("notify_arrived".equals(eventType)) {
+            Serializable nMsg = intent.getSerializableExtra(KEY_NOTIFICATION_MESSAGE);
+            if (nMsg instanceof NotificationMessage) {
+                receiver.onNotifyMessageArrived(context, (NotificationMessage) nMsg);
+            }
+            return;
+        }
+        if ("notify_opened".equals(eventType)) {
+            Serializable nMsg = intent.getSerializableExtra(KEY_NOTIFICATION_MESSAGE);
+            if (nMsg instanceof NotificationMessage) {
+                receiver.onNotifyMessageOpened(context, (NotificationMessage) nMsg);
+            }
+            return;
+        }
+        if ("notify_dismiss".equals(eventType)) {
+            Serializable nMsg = intent.getSerializableExtra(KEY_NOTIFICATION_MESSAGE);
+            if (nMsg instanceof NotificationMessage) {
+                receiver.onNotifyMessageDismiss(context, (NotificationMessage) nMsg);
+            }
+            return;
+        }
+        if ("custom_msg".equals(eventType)) {
+            Serializable cMsg = intent.getSerializableExtra(KEY_CUSTOM_MESSAGE);
+            if (cMsg instanceof CustomMessage) {
+                receiver.onMessage(context, (CustomMessage) cMsg);
+            }
+            return;
+        }
+        if ("inapp_show".equals(eventType)) {
+            Serializable nMsg = intent.getSerializableExtra(KEY_NOTIFICATION_MESSAGE);
+            if (nMsg instanceof NotificationMessage) {
+                receiver.onInAppMessageShow(context, (NotificationMessage) nMsg);
+            }
+            return;
+        }
+        if ("inapp_click".equals(eventType)) {
+            Serializable nMsg = intent.getSerializableExtra(KEY_NOTIFICATION_MESSAGE);
+            if (nMsg instanceof NotificationMessage) {
+                receiver.onInAppMessageClick(context, (NotificationMessage) nMsg);
+            }
+            return;
+        }
+        if ("notify_button_click".equals(eventType)) {
+            Serializable btn = intent.getSerializableExtra(KEY_CUSTOM_BUTTON);
+            if (btn instanceof NotificationCustomButton) {
+                receiver.onNotifyButtonClick(context, (NotificationCustomButton) btn);
+            }
+            return;
+        }
+        if ("cmd_result".equals(eventType)) {
+            int cmd = intent.getIntExtra("cmd", 0);
+            String msgText = intent.getStringExtra("msg");
+            receiver.onCommandResult(context, new CmdMessage(cmd, errorCode, msgText, intent.getExtras()));
+        }
+    }
+
+    public void onJPushMessageReceive(Context context, String receiverClassName, String messageType, Bundle bundle) {
+    }
+
+    public void onMessage(Context context, CustomMessage message) {
+    }
+
+    public void onNotifyMessageArrived(Context context, NotificationMessage message) {
+    }
+
+    public void onNotifyMessageOpened(Context context, NotificationMessage message) {
+    }
+
+    public void onMultiAction(Context context, Intent intent) {
+    }
+
+    public void onInAppMessageShow(Context context, NotificationMessage message) {
+    }
+
+    public void onInAppMessageClick(Context context, NotificationMessage message) {
+    }
+
+    public boolean isSupportedCMD(String sdkType, int command) {
+        return command == 3 || command == 10 || command == 26 || command == 27 || command == 28 || command == 29 || command == 38 || command == 40;
+    }
 }

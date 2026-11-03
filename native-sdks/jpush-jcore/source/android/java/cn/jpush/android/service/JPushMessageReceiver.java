@@ -12,82 +12,82 @@ import cn.jpush.android.api.NotificationMessage;
 import cn.jpush.android.local.ActionHelper;
 
 public abstract class JPushMessageReceiver extends BroadcastReceiver {
-   @Override
-   public final void onReceive(Context var1, Intent var2) {
-      ActionHelper.getInstance().onJPushMessageReceive(var1, this, var2);
-   }
+    @Override
+    public final void onReceive(Context context, Intent intent) {
+        ActionHelper.getInstance().onJPushMessageReceive(context, this, intent);
+    }
 
-   public Notification getNotification(Context var1, NotificationMessage var2) {
-      return null;
-   }
+    public Notification getNotification(Context context, NotificationMessage notificationMessage) {
+        return null;
+    }
 
-   public void onMessage(Context var1, CustomMessage var2) {
-      ActionHelper.getInstance().onMessage(var1, var2);
-   }
+    public void onMessage(Context context, CustomMessage customMessage) {
+        ActionHelper.getInstance().onMessage(context, customMessage);
+    }
 
-   public void onNotifyMessageOpened(Context var1, NotificationMessage var2) {
-      ActionHelper.getInstance().onNotifyMessageOpened(var1, var2);
-   }
+    public void onNotifyMessageOpened(Context context, NotificationMessage notificationMessage) {
+        ActionHelper.getInstance().onNotifyMessageOpened(context, notificationMessage);
+    }
 
-   public void onNotifyMessageArrived(Context var1, NotificationMessage var2) {
-      ActionHelper.getInstance().onNotifyMessageArrived(var1, var2);
-   }
+    public void onNotifyMessageArrived(Context context, NotificationMessage notificationMessage) {
+        ActionHelper.getInstance().onNotifyMessageArrived(context, notificationMessage);
+    }
 
-   public void onNotifyMessageUnShow(Context var1, NotificationMessage var2) {
-   }
+    public void onNotifyMessageUnShow(Context context, NotificationMessage notificationMessage) {
+    }
 
-   public void onNotifyMessageDismiss(Context var1, NotificationMessage var2) {
-   }
+    public void onNotifyMessageDismiss(Context context, NotificationMessage notificationMessage) {
+    }
 
-   public void onRegister(Context var1, String var2) {
-   }
+    public void onRegister(Context context, String registrationId) {
+    }
 
-   public void onConnected(Context var1, boolean var2) {
-   }
+    public void onConnected(Context context, boolean isConnected) {
+    }
 
-   public void onCommandResult(Context var1, CmdMessage var2) {
-   }
+    public void onCommandResult(Context context, CmdMessage cmdMessage) {
+    }
 
-   public void onNotifyButtonClick(Context var1, NotificationCustomButton var2) {
-   }
+    public void onNotifyButtonClick(Context context, NotificationCustomButton button) {
+    }
 
-   public void onMultiActionClicked(Context var1, Intent var2) {
-      ActionHelper.getInstance().onMultiAction(var1, var2);
-   }
+    public void onMultiActionClicked(Context context, Intent intent) {
+        ActionHelper.getInstance().onMultiAction(context, intent);
+    }
 
-   public void onPropertyOperatorResult(Context var1, JPushMessage var2) {
-   }
+    public void onPropertyOperatorResult(Context context, JPushMessage jPushMessage) {
+    }
 
-   public void onTagOperatorResult(Context var1, JPushMessage var2) {
-   }
+    public void onTagOperatorResult(Context context, JPushMessage jPushMessage) {
+    }
 
-   public void onCheckTagOperatorResult(Context var1, JPushMessage var2) {
-   }
+    public void onCheckTagOperatorResult(Context context, JPushMessage jPushMessage) {
+    }
 
-   public void onAliasOperatorResult(Context var1, JPushMessage var2) {
-   }
+    public void onAliasOperatorResult(Context context, JPushMessage jPushMessage) {
+    }
 
-   public void onMobileNumberOperatorResult(Context var1, JPushMessage var2) {
-   }
+    public void onMobileNumberOperatorResult(Context context, JPushMessage jPushMessage) {
+    }
 
-   public void onNotificationSettingsCheck(Context var1, boolean var2, int var3) {
-   }
+    public void onNotificationSettingsCheck(Context context, boolean isOn, int source) {
+    }
 
-   public boolean isNeedShowNotification(Context var1, NotificationMessage var2, String var3) {
-      return true;
-   }
+    public boolean isNeedShowNotification(Context context, NotificationMessage notificationMessage, String processName) {
+        return true;
+    }
 
-   public void onInAppMessageShow(Context var1, NotificationMessage var2) {
-      ActionHelper.getInstance().onInAppMessageShow(var1, var2);
-   }
+    public void onInAppMessageShow(Context context, NotificationMessage notificationMessage) {
+        ActionHelper.getInstance().onInAppMessageShow(context, notificationMessage);
+    }
 
-   public void onInAppMessageClick(Context var1, NotificationMessage var2) {
-      ActionHelper.getInstance().onInAppMessageClick(var1, var2);
-   }
+    public void onInAppMessageClick(Context context, NotificationMessage notificationMessage) {
+        ActionHelper.getInstance().onInAppMessageClick(context, notificationMessage);
+    }
 
-   public void onGeofenceRegion(Context var1, String var2, double var3, double var5) {
-   }
+    public void onGeofenceRegion(Context context, String geofenceId, double longitude, double latitude) {
+    }
 
-   public void onGeofenceReceived(Context var1, String var2) {
-   }
+    public void onGeofenceReceived(Context context, String geofenceJson) {
+    }
 }
