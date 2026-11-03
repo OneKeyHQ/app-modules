@@ -2,6 +2,7 @@
 import { ImageCropPickerError } from '../shared';
 import {
   INITIAL_STATE,
+  cropAspectRatio,
   MAX_ZOOM,
   MIN_ZOOM,
   fitCropBox,
@@ -15,7 +16,7 @@ import {
 import { resolveTheme } from './theme';
 
 import type { ImageCropperAppearance } from '../ReactNativeImageCropPicker.nitro';
-import type { CropState, Point, Size } from './geometry';
+import type { CropState, Point, Rotation, Size } from './geometry';
 
 // The web counterpart of ImageCropperViewController / ImageCropperActivity:
 // the same header, crop area and Cancel / Confirm footer, drawn with the DOM.
@@ -83,7 +84,7 @@ const STYLES = `
 .okicp-image{position:absolute;left:50%;top:50%;max-width:none;max-height:none;transform-origin:center;pointer-events:none;-webkit-user-drag:none;will-change:transform}
 .okicp-animate .okicp-image{transition:transform ${ANIMATION_MS}ms cubic-bezier(.2,.8,.2,1)}
 .okicp-box{position:absolute;left:50%;top:50%;box-sizing:border-box;border:1px solid var(--okicp-title);box-shadow:0 0 0 9999px var(--okicp-dim);pointer-events:none}
-.okicp-circle{border-radius:50%}
+.okicp-circle{border-radius:50%;border-color:transparent}
 .okicp-grid{position:absolute;inset:0;opacity:0;transition:opacity .2s;background-image:linear-gradient(rgba(255,255,255,.8),rgba(255,255,255,.8)),linear-gradient(rgba(255,255,255,.8),rgba(255,255,255,.8)),linear-gradient(rgba(255,255,255,.8),rgba(255,255,255,.8)),linear-gradient(rgba(255,255,255,.8),rgba(255,255,255,.8));background-size:1px 100%,1px 100%,100% 1px,100% 1px;background-position:33.333% 0,66.667% 0,0 33.333%,0 66.667%;background-repeat:no-repeat}
 .okicp-guides .okicp-grid{opacity:1}
 .okicp-toolbar{flex:none;display:flex;align-items:center;gap:calc(4px * var(--okicp-s));padding:calc(12px * var(--okicp-s)) calc(16px * var(--okicp-s)) 0}
@@ -175,9 +176,16 @@ export function presentCropper<T>(
       width: options.image.naturalWidth,
       height: options.image.naturalHeight,
     };
-    const lockedAspect = options.aspectRatio;
-    const freeAspect = imageSize.width / imageSize.height;
-    const showGuidelines = options.showGuidelines !== false;
+    const aspectFor = (rotation: Rotation) =>
+      cropAspectRatio({
+        image: imageSize,
+        rotation,
+        targetAspectRatio: options.aspectRatio,
+        circular: options.circular,
+      });
+    // Native hides the grid in circular mode.
+    const showGuidelines =
+      options.showGuidelines !== false && !options.circular;
 
     let state: CropState = INITIAL_STATE;
     // Cumulative CSS angle, so a turn from 270° to 0° keeps going
@@ -299,13 +307,6 @@ export function presentCropper<T>(
     root.appendChild(panel);
 
     // Rendering
-    const aspectRatio = () => {
-      if (lockedAspect) {
-        return lockedAspect;
-      }
-      return state.rotation % 180 === 0 ? freeAspect : 1 / freeAspect;
-    };
-
     const render = () => {
       cropBox.style.width = `${box.width}px`;
       cropBox.style.height = `${box.height}px`;
@@ -362,7 +363,7 @@ export function presentCropper<T>(
         return;
       }
       stageSize = nextStage;
-      const nextBox = fitCropBox(stageSize, aspectRatio());
+      const nextBox = fitCropBox(stageSize, aspectFor(state.rotation));
       state = rescale(state, box, nextBox, imageSize);
       box = nextBox;
       render();
@@ -393,11 +394,11 @@ export function presentCropper<T>(
         return;
       }
       visualRotation += 90;
-      // The free crop box swaps its ratio with the image.
-      const turnsSideways = state.rotation % 180 === 0;
-      const nextBox = lockedAspect
-        ? box
-        : fitCropBox(stageSize, turnsSideways ? 1 / freeAspect : freeAspect);
+      // An unlocked crop box swaps its ratio with the image.
+      const nextBox = fitCropBox(
+        stageSize,
+        aspectFor(((state.rotation + 90) % 360) as Rotation)
+      );
       const rotated = rotateCounterclockwise(state, imageSize, nextBox);
       box = nextBox;
       update(rotated, true);
@@ -409,7 +410,7 @@ export function presentCropper<T>(
       if (visualRotation % 360 !== 0) {
         visualRotation = Math.round(visualRotation / 360) * 360;
       }
-      box = fitCropBox(stageSize, lockedAspect ?? freeAspect);
+      box = fitCropBox(stageSize, aspectFor(0));
       update(INITIAL_STATE, true);
     };
 

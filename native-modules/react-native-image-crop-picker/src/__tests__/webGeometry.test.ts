@@ -4,6 +4,7 @@ import {
   MAX_ZOOM,
   constrain,
   coverScale,
+  cropAspectRatio,
   cropRectOf,
   fitCropBox,
   outputSizeOf,
@@ -14,6 +15,30 @@ import {
 } from '../web/geometry';
 
 const image = { width: 4000, height: 3000 };
+
+describe('cropAspectRatio', () => {
+  it('is 1:1 in circular mode for non-square images and targets', () => {
+    for (const rotation of [0, 90] as const) {
+      expect(
+        cropAspectRatio({
+          image,
+          rotation,
+          targetAspectRatio: 300 / 200,
+          circular: true,
+        })
+      ).toBe(1);
+      expect(cropAspectRatio({ image, rotation, circular: true })).toBe(1);
+    }
+  });
+
+  it('uses the target ratio, else the rotated image ratio', () => {
+    expect(
+      cropAspectRatio({ image, rotation: 90, targetAspectRatio: 1.5 })
+    ).toBe(1.5);
+    expect(cropAspectRatio({ image, rotation: 0 })).toBeCloseTo(4 / 3);
+    expect(cropAspectRatio({ image, rotation: 90 })).toBeCloseTo(3 / 4);
+  });
+});
 
 describe('fitCropBox', () => {
   it('fits the ratio inside the area less 20px on every side', () => {

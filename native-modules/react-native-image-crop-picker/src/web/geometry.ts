@@ -56,6 +56,33 @@ export function rotatedSize(image: Size, rotation: Rotation): Size {
     : { width: image.height, height: image.width };
 }
 
+export interface CropAspectOptions {
+  image: Size;
+  rotation: Rotation;
+  // Width / height of the requested result, if any.
+  targetAspectRatio?: number;
+  circular?: boolean;
+}
+
+// The crop box ratio, as on iOS and Android: 1:1 in circular mode whatever
+// the image or target, the target ratio when there is one, and otherwise the
+// image's own ratio, swapped on every quarter turn.
+export function cropAspectRatio({
+  image,
+  rotation,
+  targetAspectRatio,
+  circular,
+}: CropAspectOptions): number {
+  if (circular) {
+    return 1;
+  }
+  if (targetAspectRatio !== undefined && targetAspectRatio > 0) {
+    return targetAspectRatio;
+  }
+  const size = rotatedSize(image, rotation);
+  return size.width / size.height;
+}
+
 // The largest box of `aspectRatio` (width / height) inside `area`, less the
 // crop box padding on every side.
 export function fitCropBox(area: Size, aspectRatio: number): Size {
