@@ -12,6 +12,10 @@ using namespace facebook::react;
 - (void)updateTopScrollEdgeForScrollView:(UIScrollView *)scrollView;
 - (void)updateScrollEdgeContentMasks;
 - (void)layoutSharedHeaders;
+- (void)adoptCurrentScrollEdgeForProgrammaticTransition;
+- (void)restorePinnedStickyHeader;
+- (void)finishProgrammaticScrollEdges;
+- (void)clearProgrammaticScrollEdges;
 @end
 
 @interface UIView (NativeTabReservationTesting)
@@ -387,6 +391,128 @@ using namespace facebook::react;
     [self.root removeFromSuperview];
   } else {
     XCTSkip(@"Scroll-edge interactions require iOS 26 or newer");
+  }
+}
+
+- (UIScrollView *)preparePinnedLocalHardSource
+{
+  UIWindow *window = [[UIWindow alloc] initWithFrame:self.root.bounds];
+  [window addSubview:self.root];
+  window.hidden = NO;
+  [self addTeardownBlock:^{
+    [self.pager prepareForRecycle];
+    window.hidden = YES;
+  }];
+  UIView *container = [self.pager valueForKey:@"containerView"];
+  container.frame = self.pager.bounds;
+  UIViewController *page = [UIViewController new];
+  page.view = [[UIView alloc] initWithFrame:container.bounds];
+  UIScrollView *source = [[UIScrollView alloc] initWithFrame:page.view.bounds];
+  source.contentSize = CGSizeMake(320, 1200);
+  source.topEdgeEffect.style = UIScrollEdgeEffectStyle.softStyle;
+  [page.view addSubview:source];
+  [container insertSubview:page.view atIndex:0];
+  [[self.pager valueForKey:@"pageControllers"] addObject:page];
+  [self.pager setValue:source forKey:@"observedScrollView"];
+  [self.pager setValue:source forKey:@"sharedHeaderScrollView"];
+  [self.pager setValue:@YES forKey:@"directNativePagerEnabled"];
+  [self.pager setValue:@YES forKey:@"topScrollEdgeEnabled"];
+  [self.pager setValue:@(static_cast<NSInteger>(RNCCollapsiblePagerViewTopScrollEdgeEffect::Hard))
+               forKey:@"topScrollEdgeEffect"];
+  UIView *overlayHost = [self.pager valueForKey:@"topOverlayHostView"];
+  overlayHost.frame = CGRectMake(0, 0, 320, 50);
+  overlayHost.hidden = NO;
+  UIView *overlay = [[UIView alloc] initWithFrame:overlayHost.bounds];
+  [overlayHost addSubview:overlay];
+  [self.pager setValue:overlay forKey:@"topOverlayView"];
+  [self.pager setValue:@50 forKey:@"topOverlayHeight"];
+  [self.pager setValue:@100 forKey:@"headerHeight"];
+  [self.pager setValue:@44 forKey:@"stickyHeaderHeight"];
+  [self.pager setValue:@100 forKey:@"headerOffset"];
+  UIView *pinnedHost = [self.pager valueForKey:@"pinnedStickyHostView"];
+  pinnedHost.frame = CGRectMake(0, 50, 320, 44);
+  pinnedHost.hidden = NO;
+  [source addSubview:pinnedHost];
+  [pinnedHost addSubview:self.sticky];
+  [self.pager setValue:self.sticky forKey:@"stickyHeaderView"];
+  [self.pager setValue:@YES forKey:@"stickyHeaderIsPinned"];
+  [self.pager updateTopScrollEdgeForScrollView:source];
+  return source;
+}
+
+- (void)testAnimatedDirectPageCommandBorrowsRealSourceEdgeUntilCompletion
+{
+  if (@available(iOS 27.0, *)) {
+    UIScrollView *source = [self preparePinnedLocalHardSource];
+    UIView *topHost = [self.pager valueForKey:@"topEdgeInteractionHost"];
+    UIView *pinnedHost = [self.pager valueForKey:@"pinnedStickyHostView"];
+    UIScrollEdgeElementContainerInteraction *top = [self.pager valueForKey:@"topEdgeInteraction"];
+    UIScrollEdgeElementContainerInteraction *sticky = [self.pager valueForKey:@"stickyEdgeInteraction"];
+    UIView *topMarker = [self.pager valueForKey:@"topEdgeMarker"];
+    UIView *stickyMarker = [self.pager valueForKey:@"stickyEdgeMarker"];
+    XCTAssertNotNil(top);
+    XCTAssertNotNil(sticky);
+    XCTAssertEqual([self.pager valueForKey:@"originalTopEdgeStyle"], UIScrollEdgeEffectStyle.softStyle);
+
+    [self.pager adoptCurrentScrollEdgeForProgrammaticTransition];
+    id owner = [[self.pager valueForKey:@"programmaticScrollEdgeOwners"] firstObject];
+    XCTAssertNotNil(owner);
+    XCTAssertEqual([owner valueForKey:@"topInteraction"], top);
+    XCTAssertEqual([owner valueForKey:@"stickyInteraction"], sticky);
+    XCTAssertEqual([owner valueForKey:@"topMarker"], topMarker);
+    XCTAssertEqual([owner valueForKey:@"stickyMarker"], stickyMarker);
+    XCTAssertEqual([owner valueForKey:@"originalStyle"], UIScrollEdgeEffectStyle.softStyle);
+    XCTAssertTrue([[owner valueForKey:@"borrowsPinnedStickyHost"] boolValue]);
+    XCTAssertTrue([topHost.interactions containsObject:top]);
+    XCTAssertTrue([pinnedHost.interactions containsObject:sticky]);
+    XCTAssertEqual(top.scrollView, source);
+    XCTAssertEqual(sticky.scrollView, source);
+    XCTAssertEqual(topMarker.superview, topHost);
+    XCTAssertEqual(stickyMarker.superview, pinnedHost);
+    XCTAssertEqual(source.topEdgeEffect.style, UIScrollEdgeEffectStyle.hardStyle);
+
+    [self.pager restorePinnedStickyHeader];
+    XCTAssertEqual(pinnedHost.superview, source);
+    XCTAssertFalse(pinnedHost.hidden);
+    [self.pager setValue:nil forKey:@"observedScrollView"];
+    [self.pager finishProgrammaticScrollEdges];
+    XCTAssertFalse([topHost.interactions containsObject:top]);
+    XCTAssertFalse([pinnedHost.interactions containsObject:sticky]);
+    XCTAssertNil(top.scrollView);
+    XCTAssertNil(sticky.scrollView);
+    XCTAssertNil(topMarker.superview);
+    XCTAssertNil(stickyMarker.superview);
+    XCTAssertEqual(source.topEdgeEffect.style, UIScrollEdgeEffectStyle.softStyle);
+    XCTAssertEqual(pinnedHost.superview, [self.pager valueForKey:@"containerView"]);
+    XCTAssertTrue(pinnedHost.hidden);
+    XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 0);
+  } else {
+    XCTSkip(@"Animated local Hard edge handoff requires iOS 27 or newer");
+  }
+}
+
+- (void)testCancelledDirectPageCommandReleasesBorrowedSourceEdge
+{
+  if (@available(iOS 27.0, *)) {
+    UIScrollView *source = [self preparePinnedLocalHardSource];
+    UIView *topHost = [self.pager valueForKey:@"topEdgeInteractionHost"];
+    UIView *pinnedHost = [self.pager valueForKey:@"pinnedStickyHostView"];
+    UIScrollEdgeElementContainerInteraction *top = [self.pager valueForKey:@"topEdgeInteraction"];
+    UIScrollEdgeElementContainerInteraction *sticky = [self.pager valueForKey:@"stickyEdgeInteraction"];
+    UIView *topMarker = [self.pager valueForKey:@"topEdgeMarker"];
+    UIView *stickyMarker = [self.pager valueForKey:@"stickyEdgeMarker"];
+    [self.pager adoptCurrentScrollEdgeForProgrammaticTransition];
+    [self.pager restorePinnedStickyHeader];
+    [self.pager clearProgrammaticScrollEdges];
+    XCTAssertFalse([topHost.interactions containsObject:top]);
+    XCTAssertFalse([pinnedHost.interactions containsObject:sticky]);
+    XCTAssertNil(topMarker.superview);
+    XCTAssertNil(stickyMarker.superview);
+    XCTAssertEqual(source.topEdgeEffect.style, UIScrollEdgeEffectStyle.softStyle);
+    XCTAssertEqual(pinnedHost.superview, [self.pager valueForKey:@"containerView"]);
+    XCTAssertTrue(pinnedHost.hidden);
+  } else {
+    XCTSkip(@"Animated local Hard edge handoff requires iOS 27 or newer");
   }
 }
 
