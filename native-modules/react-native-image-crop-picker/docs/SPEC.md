@@ -6,7 +6,7 @@ acceptance remains pending.
 
 ## Purpose and scope
 
-Pick one user-selected image, optionally crop it, using private temporary files. Supported native platforms are iOS and Android. Album enumeration,
+Pick one user-selected image, optionally crop it, using private temporary files. Supported native platforms are iOS and Android. The web entry (`src/index.web.tsx`, `browser` export condition) serves browsers, Electron and extensions with the same API, options, results and error codes, and no Nitro object. Album enumeration,
 deletion, videos, camera capture, and product UI are outside this package.
 
 ## Ownership and boundaries
@@ -54,6 +54,18 @@ JS cache, persistent resource index or migration. No save authorization state is
 | Original | Copy item-provider file before callback returns | Stream the granted content URI to private cache |
 | Failure cleanup | Failed private copies are removed | Failed private copies are removed |
 
+Web: `<input type="file" accept="image/*">` picks without any permission;
+dismissing it (the `cancel` event, or focus returning without a file in
+engines that lack it) rejects `E_PICKER_CANCELLED`. The DOM cropper follows the
+native screen (header with title and rotate, crop area with the 70% dimmed
+background and thirds grid while moving, Cancel / Confirm footer) as one flex
+column sized to the window, so no part can overflow it; it adds zoom controls,
+wheel, double click, pinch and keyboard input. Results are JPEG blobs exposed
+as `blob:` URLs owned by the module; clean/cleanSingle revoke only those.
+Original selection returns the selected file itself. The 64 MiB input limit,
+4096 px processed long side, exact target size and 0.8 default quality match
+iOS. `freeStyleCropEnabled` is not implemented on the web.
+
 The picker requires no photo read or write authorization and declares neither.
 The App may omit NSPhotoLibraryUsageDescription. The separate save module owns
 add-only authorization, with declarations configured by the App.
@@ -86,5 +98,10 @@ Required runtime acceptance: iOS picker with Photos denied; PNG/JPEG/HEIC origin
 byte identity and QR scan; crop still JPEG; original metadata validation. Android API 36 and 28:
 selected URI copy, back/cancel, repeated picker launches, activity teardown,
 private copy cleanup and merged permission declarations.
+Web entry: jest covers crop geometry (cover, clamping, anchored zoom,
+counterclockwise rotation, cropRect, output sizing) and picker cancellation,
+exclusivity, the input limit and blob URL ownership in jsdom. Canvas encoding
+and the DOM cropper run only in a real browser; their acceptance is a consumer
+check in the OneKey web/desktop/extension builds.
 Web/desktop/extension picking and both app share entry points are consumer tests.
 Source/unit checks must not be reported as device or App Store validation.

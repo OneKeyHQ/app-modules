@@ -3,11 +3,13 @@
   "version": "6.7.0-22",
   "description": "Single photo picker and cropper Nitro module for OneKey, replacing react-native-image-crop-picker",
   "main": "./lib/module/index.js",
+  "browser": "./lib/module/index.web.js",
   "types": "./lib/typescript/src/index.d.ts",
   "exports": {
     ".": {
       "source": "./src/index.tsx",
       "types": "./lib/typescript/src/index.d.ts",
+      "browser": "./lib/module/index.web.js",
       "default": "./lib/module/index.js"
     },
     "./package.json": "./package.json"
@@ -49,7 +51,8 @@
     "image",
     "picker",
     "crop",
-    "cropping"
+    "cropping",
+    "web"
   ],
   "repository": {
     "type": "git",
