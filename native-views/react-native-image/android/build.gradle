@@ -63,7 +63,9 @@ android {
     targetCompatibility JavaVersion.VERSION_1_8
   }
   sourceSets {
-    main { java.srcDirs += ["generated/java", "generated/jni"] }
+    main {
+      java.srcDirs += ["generated/java", "generated/jni"]
+    }
   }
 }
 

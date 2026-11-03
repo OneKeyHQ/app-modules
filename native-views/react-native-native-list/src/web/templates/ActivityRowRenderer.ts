@@ -1,3 +1,4 @@
+import { createNamedIcon } from '@onekeyfe/react-native-image/icon/dom';
 import type { ActivityAmount, ActivityRow, LeadingVisual } from '../../models';
 import { createElement, tagSlot, markActionAnchorSource } from './RowElements';
 import { RowVisualStyle, type RowPrimitives } from './RowVisual';
@@ -270,41 +271,18 @@ function createHistory(body: HTMLElement, primitives: RowPrimitives) {
   histories.set(body, v);
   return v;
 }
-const historyIconPaths: Readonly<Record<string, readonly string[]>> = {
-  ArrowTopOutline: [
-    'M19.414 10 18 11.414l-5-5V21h-2V6.414l-5 5L4.586 10 12 2.586z',
-  ],
-  ArrowBottomOutline: [
-    'm13 17.586 5-5L19.414 14 12 21.414 4.586 14 6 12.586l5 5V3h2z',
-  ],
-  SwitchHorOutline: [
-    'm9.414 13-3 3H21v2H6.414l3 3L8 22.414 2.586 17 8 11.586zm12-6L16 12.414 14.586 11l3-3H3V6h14.586l-3-3L16 1.586z',
-  ],
-  CoinsOutline: [
-    'M9 3a7 7 0 0 1 6.328 4.008 7 7 0 1 1-6.657 9.983A7 7 0 0 1 9 3m5.718 6.008a5 5 0 1 0 .566 9.985 5 5 0 0 0-.566-9.985M9 5a5 5 0 0 0-.941 9.91 7 7 0 0 1 5.11-7.667A4.99 4.99 0 0 0 8.999 5Z',
-  ],
-  ShieldCheckDoneOutline: [
-    'M15.914 9.75 11 14.664 8.086 11.75 9.5 10.336l1.5 1.5 3.5-3.5z',
-    'M12.325 2.055 21 5.036v6.876c0 2.807-1.149 4.83-2.813 6.404-1.615 1.53-3.745 2.66-5.712 3.722l-.475.256-.475-.256c-1.967-1.061-4.097-2.192-5.713-3.722C4.15 16.741 3 14.72 3 11.912V5.036l8.675-2.981.325-.113zM5 6.463v5.45c0 2.165.851 3.686 2.188 4.951 1.275 1.208 2.965 2.154 4.812 3.154 1.847-1 3.537-1.946 4.813-3.154C18.148 15.6 19 14.078 19 11.912v-5.45l-7-2.405z',
-  ],
-  UnlockedOutline: [
-    'M13 18h-2v-5h2z',
-    'M12 2a5 5 0 0 1 5 5h-2a3 3 0 0 0-6 0v2h11v13H4V9h3V7a5 5 0 0 1 5-5M6 20h12v-9H6z',
-  ],
-  Document2Outline: [
-    'M12 16H8v-2h4zm4-4H8v-2h8zm0-4H8V6h8z',
-    'M20 22H4V2h16zM6 20h12V4H6z',
-  ],
-  CryptoCoinOutline: [
-    'M11 16.387a4.5 4.5 0 0 1 0-8.775V6h2v1.613a4.5 4.5 0 0 1 2.856 2.067l-1.712 1.032a2.5 2.5 0 1 0 0 2.576l1.712 1.032A4.5 4.5 0 0 1 13 16.386V18h-2z',
-    'M22 12c0 5.523-4.477 10-10 10S2 17.523 2 12 6.477 2 12 2s10 4.477 10 10m-2 0a8 8 0 1 0-16 0 8 8 0 0 0 16 0',
-  ],
-  ImageSquareWavesOutline: [
-    'M14.25 7a2 2 0 1 1 0 4 2 2 0 0 1 0-4',
-    'M21 21H3V3h18zM5 16.414V19h12.586L14 15.414l-2 2-4-4zm0-2.828 3-3 4 4 2-2 5 5V5H5z',
-  ],
-  DotHorOutline: ['M6 14H2v-4h4zm8 0h-4v-4h4zm8 0h-4v-4h4z'],
-};
+const historyIconNames = new Set([
+  'ArrowTopOutline',
+  'ArrowBottomOutline',
+  'SwitchHorOutline',
+  'CoinsOutline',
+  'ShieldCheckDoneOutline',
+  'UnlockedOutline',
+  'Document2Outline',
+  'CryptoCoinOutline',
+  'ImageSquareWavesOutline',
+  'DotHorOutline',
+]);
 function historyIcon(
   node: HTMLElement,
   source: LeadingVisual | undefined,
@@ -316,8 +294,7 @@ function historyIcon(
       : source?.kind === 'token'
       ? source.fallbackIcon?.name
       : undefined;
-  const paths = name && historyIconPaths[name];
-  if (!paths) return;
+  if (!name || !historyIconNames.has(name)) return;
   const placeholder = node.querySelector<HTMLElement>(
     '.ok-native-list-visual-fallback'
   );
@@ -334,24 +311,9 @@ function historyIcon(
     fallback.style.color = source.tintColor;
   else if (source && 'fallbackIcon' in source && source.fallbackIcon?.tintColor)
     fallback.style.color = source.fallbackIcon.tintColor;
-  const svg = node.ownerDocument.createElementNS(
-    'http://www.w3.org/2000/svg',
-    'svg'
-  );
-  svg.setAttribute('viewBox', '0 0 24 24');
+  const svg = createNamedIcon(node.ownerDocument, name);
   svg.setAttribute('width', String(size));
   svg.setAttribute('height', String(size));
-  svg.setAttribute('fill', 'currentColor');
-  svg.setAttribute('aria-hidden', 'true');
-  for (const d of paths) {
-    const path = node.ownerDocument.createElementNS(
-      'http://www.w3.org/2000/svg',
-      'path'
-    );
-    path.setAttribute('d', d);
-    path.setAttribute('fill-rule', 'evenodd');
-    svg.append(path);
-  }
   fallback.replaceChildren(svg);
 }
 function bindHistory(

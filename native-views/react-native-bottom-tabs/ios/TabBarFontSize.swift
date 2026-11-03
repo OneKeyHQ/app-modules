@@ -1,4 +1,6 @@
+#if canImport(React)
 import React
+#endif
 import UIKit
 
 enum TabBarFontSize {

@@ -186,6 +186,9 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
     useSourceScale: Boolean,
   ) {
+    val iconUpdate = NativeListIconUpdate(this)
+    try {
+
     val update = update(current, item)
     val signature =
       nativeListCanonical(
@@ -246,6 +249,8 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
     bindSelectionContent(item, checkboxState)
     appearance()
     requestLayout()
+
+    } finally { iconUpdate.finish() }
   }
 
   override fun bindSelection(

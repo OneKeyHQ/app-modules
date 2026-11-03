@@ -1,3 +1,4 @@
+import { createNamedIcon } from '@onekeyfe/react-native-image/icon/dom';
 import type { MediaTileRow, NativeListTextStyle } from '../../models';
 import type { RowPrimitives } from './RowVisual';
 
@@ -220,21 +221,7 @@ function initGallery(body: HTMLElement, primitives: RowPrimitives) {
   };
   const frame = element('ok-native-list-media-image');
   const fallback = element('ok-native-list-media-fallback');
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', '0 0 24 24');
-  svg.setAttribute('width', '24');
-  svg.setAttribute('height', '24');
-  svg.setAttribute('aria-hidden', 'true');
-  svg.setAttribute('fill', 'currentColor');
-  for (const d of [
-    'M14.25 7a2 2 0 1 1 0 4 2 2 0 0 1 0-4',
-    'M21 21H3V3h18zM5 16.414V19h12.586L14 15.414l-2 2-4-4zm0-2.828 3-3 4 4 2-2 5 5V5H5z',
-  ]) {
-    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('d', d);
-    path.setAttribute('fill-rule', 'evenodd');
-    svg.append(path);
-  }
+  const svg = createNamedIcon(document, 'ImageSquareWavesOutline');
   fallback.append(svg);
   Object.assign(fallback.style, {
     position: 'absolute',

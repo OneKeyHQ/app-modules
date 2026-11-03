@@ -1,7 +1,7 @@
 import UIKit
 
 // OneKey patch: explicit summary actions use the source text's physical-pixel line box.
-final class NativeListAccessoryButton: UIButton {
+final class NativeListAccessoryButton: NativeListIconButton {
   var pressedBackgroundColor: UIColor?
   var normalBackgroundColor: UIColor = .clear
   var fixedTextLineHeight: CGFloat?
@@ -197,7 +197,7 @@ final class NativeListAccessoryButton: UIButton {
 final class NativeListAccessoryStack: UIStackView {
   var fonts = NativeListFontFamilies()
   private let accessoryButtons = (0..<2).map { _ in NativeListAccessoryButton(type: .system) }
-  private let checkboxButton = UIButton(type: .system)
+  private let checkboxButton = NativeListIconButton(type: .system)
   private let spinner = UIActivityIndicatorView(style: .medium)
   private var accessoryActions: [(String, NativeSelectionTarget?)] = []
   private var checkboxAction: (String, NativeSelectionTarget?)?
@@ -250,6 +250,8 @@ final class NativeListAccessoryStack: UIStackView {
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
     fonts: NativeListFontFamilies
   ) {
+    let iconUpdate = NativeListIconUpdate(self)
+    defer { iconUpdate.finish() }
     self.fonts = fonts
     reset()
     currentItem = item
@@ -501,10 +503,7 @@ final class NativeListAccessoryStack: UIStackView {
       state == "indeterminate"
       ? "CheckboxIndeterminateCustom"
       : "CheckboxCheckedCustom"
-    checkboxButton.setImage(
-      state == "unchecked" ? nil : nativeListIcon(named: glyphName),
-      for: .normal
-    )
+    checkboxButton.bindIcon(state == "unchecked" ? nil : glyphName)
     checkboxButton.tintColor = checkboxIconColor
     // A disabled ListItem already applies 0.5 to its complete content. Avoid
     // multiplying that opacity on the nested control a second time.
@@ -666,16 +665,7 @@ final class NativeListAccessoryStack: UIStackView {
     button.tintColor = tintColor
     let isDecorativeRefresh =
       data.string("name") == "RefreshCcwOutline" && data.string("actionKey").isEmpty
-    let image = isDecorativeRefresh
-      ? nativeListIcon(named: data.string("name"), size: CGSize(width: 16, height: 16))
-      : nativeListIcon(named: data.string("name"))
-    if let image {
-      button.setImage(image, for: .normal)
-      button.setImage(
-        image.withTintColor(tintColor, renderingMode: .alwaysOriginal),
-        for: .disabled
-      )
-    }
+    button.bindIcon(data.string("name"), size: isDecorativeRefresh ? CGSize(width: 16, height: 16) : nil)
     let isDrillIn = data.string("kind") == "chevron"
     let isTertiary = data.string("buttonStyle") == "tertiary"
     if data.string("kind") == "icon" && isTertiary {

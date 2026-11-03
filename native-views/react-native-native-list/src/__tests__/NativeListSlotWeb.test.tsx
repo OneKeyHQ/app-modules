@@ -11,6 +11,10 @@ import type { NativeListSnapshot } from '../models';
 jest.mock('react-native', () => ({
   View: require('react-native-web').View,
 }));
+jest.mock('@onekeyfe/react-native-image/icon/dom', () =>
+  jest.requireActual('../../../react-native-image/src/icon/dom')
+);
+
 jest.mock('../web/NativeListWebAvatarCache', () => ({
   acquireNativeListAvatar: jest.fn(),
   canonicalNativeListAvatarUri: jest.fn(),

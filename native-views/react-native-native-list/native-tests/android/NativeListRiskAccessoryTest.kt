@@ -29,6 +29,7 @@ import com.margelo.nitro.nativelogger.OneKeyLog
 import com.facebook.soloader.SoLoader
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.math.roundToInt
 
 @Suppress("DEPRECATION")
 class NativeListRiskAccessoryTest : InstrumentationTestCase() {
@@ -286,30 +287,35 @@ class NativeListRiskAccessoryTest : InstrumentationTestCase() {
   }
 
   fun testDecorativeRefreshKeepsSixteenDpFrameAndResetsForActionIcon() {
+    lateinit var icon: OneKeyIconView
+    lateinit var bind: (String?) -> Unit
     onMain {
       val context = ThemedReactContext(BridgeReactContext(activity), activity, "RefreshTest", 1)
       val stack = NativeListAccessoryStack(context, NativeListFonts())
       activity.setContentView(stack)
       val item = NativeListItem("refresh", "identity", null, 0,
         JSONObject().put("key", "refresh").put("type", "identity").put("title", "Network"))
-      fun bind(actionKey: String? = null) {
+      bind = { actionKey ->
         val descriptor = JSONObject().put("kind", "icon").put("name", "RefreshCcwOutline")
         if (actionKey != null) descriptor.put("actionKey", actionKey)
         stack.bind(item, JSONArray().put(descriptor), null, JSONObject(), false,
           { _, _, fallback -> fallback })
       }
-      bind()
-      val icon = stack.firstVisibleIcon as OneKeyIconView
+      bind(null)
+      icon = stack.firstVisibleIcon as OneKeyIconView
       assertEquals(NativeListScale.dp(activity.resources, 16), icon.layoutParams.width)
       assertEquals(NativeListScale.dp(activity.resources, 16), icon.layoutParams.height)
       assertEquals(16, icon.glyphSizeDp)
       assertEquals(0, (icon.layoutParams as LinearLayout.LayoutParams).marginStart)
       icon.layout(0, 0, icon.layoutParams.width, icon.layoutParams.height)
+    }
+    awaitCondition { paintedPixelCount(icon) > 0 }
+    onMain {
       assertTrue(paintedPixelCount(icon) > 0)
       bind("refresh")
       assertEquals(NativeListScale.dp(activity.resources, 36), icon.layoutParams.width)
       assertEquals(24, icon.glyphSizeDp)
-      bind()
+      bind(null)
       assertEquals(NativeListScale.dp(activity.resources, 16), icon.layoutParams.width)
       assertEquals(16, icon.glyphSizeDp)
       assertFalse(icon.isClickable)
@@ -634,16 +640,38 @@ class NativeListRiskAccessoryTest : InstrumentationTestCase() {
   }
 
   fun testOfficialRiskGlyphsPaintPixels() {
+    lateinit var gas: OneKeyIconView
+    lateinit var crypto: OneKeyIconView
+    onMain { gas = field(holder().rowView as NativeListIdentityRowView, "titleIcon") }
+    awaitCondition { paintedPixelCount(gas) > 0 }
     onMain {
-      val identity = holder().rowView as NativeListIdentityRowView
-      val gas = field<OneKeyIconView>(identity, "titleIcon")
       assertTrue(paintedPixelCount(gas) > 0)
-      val crypto = OneKeyIconView(activity).apply {
-        iconName = "CryptoCoinOutline"
-        tintColor = Color.BLACK
-        layout(0, 0, 48, 48)
+      crypto = OneKeyIconView(activity).apply { iconName = "CryptoCoinOutline"; tintColor = Color.BLACK }
+      val container = android.widget.FrameLayout(activity)
+      container.addView(crypto, android.widget.FrameLayout.LayoutParams(48,48))
+      activity.setContentView(container)
+      crypto.layout(0,0,48,48)
+    }
+    awaitCondition { paintedPixelCount(crypto) > 0 }
+    onMain { assertTrue(paintedPixelCount(crypto) > 0) }
+  }
+
+  fun testMainLineGlyphsPaintInTheSharedNativeSlot() {
+    lateinit var icon: OneKeyIconView
+    onMain {
+      icon = OneKeyIconView(activity).apply { tintColor = Color.RED }
+      val container = android.widget.FrameLayout(activity)
+      container.addView(icon, android.widget.FrameLayout.LayoutParams(48, 48))
+      activity.setContentView(container)
+      icon.layout(0, 0, 48, 48)
+    }
+    for (name in listOf("Document2Outline", "WalletOutline", "PlusLargeOutline", "TicketOutline")) {
+      onMain {
+        assertEquals(name, nativeListGeneratedIcons[name]?.name)
+        icon.iconName = name
       }
-      assertTrue(paintedPixelCount(crypto) > 0)
+      awaitCondition { paintedPixelCount(icon) > 0 }
+      onMain { assertTrue("Shared main-line glyph paints: $name", paintedPixelCount(icon) > 0) }
     }
   }
 
@@ -678,6 +706,187 @@ class NativeListRiskAccessoryTest : InstrumentationTestCase() {
       bind(row("risk", "hide", "button", titleIcon = true, border = true))
       assertEquals("Hide", trailing.visibleValues.single().text.toString())
       assertEquals(View.VISIBLE, field<View>(renderer, "titleIcon").visibility)
+    }
+  }
+
+  fun testSwapMenuIconDrawsAndOnlyTheMenuPairUsesHorizontalLayout() {
+    lateinit var renderer: NativeListIdentityRowView
+    lateinit var menu: NativeListAccessoryStack
+    fun bind(name: String, actionKey: String, amount: String = "1", kind: String = "icon") {
+      val json = row("swap-menu", "", "none", titleIcon = false, border = false)
+        .put("height", 60)
+        .put("style", JSONObject().put("horizontalPadding", 20).put("verticalPadding", 8)
+          .put("leadingGap", 12).put("trailingGap", 8))
+        .put("trailing", JSONArray()
+          .put(JSONObject().put("kind", "valuePair").put("primary", amount).put("secondary", "$1"))
+          .put(JSONObject().put("kind", kind).put("name", name).put("text", "Text")
+            .put("buttonStyle", "tertiary").put("actionKey", actionKey)))
+      renderer.bind(NativeListItem("swap-menu", "identity", null, 0, json), null, "linear", "vertical", 0, false,
+        { _, _, fallback -> fallback }, false)
+      renderer.measure(View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY),
+        View.MeasureSpec.makeMeasureSpec(NativeListScale.dp(activity.resources, 60), View.MeasureSpec.EXACTLY))
+      renderer.layout(0, 0, 1080, renderer.measuredHeight)
+      menu = field(renderer, "trailingColumn")
+    }
+    val service = com.margelo.nitro.onekeyimage.OneKeyNamedSVG
+    synchronized(field<Any>(service, "manifestLock")) {
+      onMain {
+        renderer = NativeListIdentityRowView(list.context as ThemedReactContext, NativeListFonts())
+        bind("DotVerSolid", "menu")
+        val icon = menu.firstVisibleIcon as OneKeyIconView
+        assertNull(field<Bitmap?>(icon, "bitmap"))
+        activity.setContentView(renderer)
+        renderer.layout(0, 0, 1080, renderer.measuredHeight)
+        val generation = field<Long>(icon, "generation")
+        repeat(100) { bind("DotVerSolid", "menu", it.toString()) }
+        assertEquals("Identical pending glyph survives real amount binds", generation, field<Long>(icon, "generation"))
+      }
+    }
+    awaitCondition { field<Bitmap?>(menu.firstVisibleIcon!!, "bitmap") != null }
+    onMain {
+      assertEquals(LinearLayout.HORIZONTAL, menu.orientation)
+      val icon = menu.firstVisibleIcon!!
+      assertTrue(paintedPixelCount(icon) > 0)
+      val ready = field<Bitmap>(icon, "bitmap")
+      bind("DotVerSolid", "menu", "101")
+      assertSame(ready, field<Bitmap>(icon, "bitmap"))
+      val iconRect = android.graphics.Rect(0, 0, icon.width, icon.height)
+      renderer.offsetDescendantRectToMyCoords(icon, iconRect)
+      assertTrue(iconRect.top >= 0 && iconRect.bottom <= renderer.height)
+      val value = menu.visibleValues.single()
+      val valueRect = android.graphics.Rect(0, 0, value.width, value.height)
+      renderer.offsetDescendantRectToMyCoords(value, valueRect)
+      assertTrue(valueRect.top >= 0 && valueRect.bottom <= renderer.height)
+      assertTrue(valueRect.right <= iconRect.left)
+      assertTrue(kotlin.math.abs(valueRect.centerY() - iconRect.centerY()) <= 1)
+      bind("DotVerSolid", ""); assertEquals(LinearLayout.VERTICAL, menu.orientation)
+      bind("DotVerSolid", "other"); assertEquals(LinearLayout.VERTICAL, menu.orientation)
+      bind("InfoCircleOutline", "menu"); assertEquals(LinearLayout.VERTICAL, menu.orientation)
+      bind("DotVerSolid", "menu"); assertEquals(LinearLayout.HORIZONTAL, menu.orientation)
+      bind("UnknownIcon", "menu"); assertNull(field<Bitmap?>(icon,"bitmap"))
+      bind("DotVerSolid", "menu", kind = "value"); assertNull(field<Bitmap?>(icon,"bitmap"))
+    }
+  }
+
+  fun testNamedGlyphsFitBothViewDimensionsAndSizeLimits() {
+    onMain {
+      val icon = object : OneKeyIconView(activity) {
+        fun rect(width: Float, height: Float) = glyphRect(NativeListIconMetadata("Probe", width, height))
+      }
+      fun check(sourceWidth: Float, sourceHeight: Float, left: Float, top: Float, right: Float, bottom: Float) {
+        val rect = icon.rect(sourceWidth, sourceHeight)
+        assertEquals(left, rect.left, 0.001f)
+        assertEquals(top, rect.top, 0.001f)
+        assertEquals(right, rect.right, 0.001f)
+        assertEquals(bottom, rect.bottom, 0.001f)
+        assertTrue(rect.left >= 0f && rect.top >= 0f && rect.right <= icon.width && rect.bottom <= icon.height)
+        assertEquals(sourceWidth / sourceHeight, rect.width() / rect.height(), 0.001f)
+      }
+      icon.layout(0, 0, 96, 96)
+      check(16f, 20f, 9.6f, 0f, 86.4f, 96f)
+      check(20f, 16f, 0f, 9.6f, 96f, 86.4f)
+      check(24f, 24f, 0f, 0f, 96f, 96f)
+      icon.layout(0, 0, 120, 60)
+      check(16f, 20f, 36f, 0f, 84f, 60f)
+      icon.layout(0, 0, 40, 120)
+      check(16f, 20f, 0f, 35f, 40f, 85f)
+      icon.layout(0, 0, 256, 256)
+      icon.glyphSizeDp = 16
+      for (sourceScale in listOf(false, true)) {
+        icon.useSourceScale = sourceScale
+        val size = if (sourceScale) (16 * activity.resources.displayMetrics.density).roundToInt().toFloat()
+          else NativeListScale.dp(activity.resources, 16).toFloat()
+        check(16f, 20f, (256 - size * 0.8f) / 2f, (256 - size) / 2f,
+          (256 + size * 0.8f) / 2f, (256 + size) / 2f)
+        check(24f, 24f, (256 - size) / 2f, (256 - size) / 2f,
+          (256 + size) / 2f, (256 + size) / 2f)
+      }
+    }
+  }
+
+  fun testSharedShapeTintAndPendingAlphaRetention() {
+    lateinit var icon:OneKeyIconView
+    val service=com.margelo.nitro.onekeyimage.OneKeyNamedSVG
+    onMain {
+      icon=OneKeyIconView(activity);icon.iconName="DotVerSolid";icon.tintColor=Color.RED
+      val container=android.widget.FrameLayout(activity);container.addView(icon,android.widget.FrameLayout.LayoutParams(96,96));activity.setContentView(container);icon.layout(0,0,96,96)
+    }
+    awaitCondition { field<Bitmap?>(icon,"bitmap")!=null }
+    synchronized(field<Any>(service,"manifestLock")) {
+      onMain {
+        val mask=field<Bitmap>(icon,"bitmap")
+        icon.tintColor=Color.BLUE;icon.tintColor=Color.argb(128,0,255,0)
+        assertSame(mask,field<Bitmap>(icon,"bitmap"))
+        val drawn=Bitmap.createBitmap(96,96,Bitmap.Config.ARGB_8888);icon.draw(Canvas(drawn))
+        assertEquals(Color.argb(128,0,255,0),drawn.getPixel(48,48))
+        icon.iconName="AppleBrand";icon.tintColor=Color.RED;assertNull(field<Bitmap?>(icon,"bitmap"))
+      }
+    }
+    awaitCondition { field<Bitmap?>(icon,"bitmap")!=null }
+    synchronized(field<Any>(service,"manifestLock")) {
+      onMain {
+        val mask=field<Bitmap>(icon,"bitmap")
+        icon.tintColor=Color.BLUE;assertSame(mask,field<Bitmap>(icon,"bitmap"))
+        icon.tintColor=Color.argb(128,0,255,0);assertSame(mask,field<Bitmap>(icon,"bitmap"))
+      }
+    }
+    // Unknown names query manifest metadata on the UI thread; release the worker gate first.
+    onMain { icon.iconName="UnknownIcon";assertNull(field<Bitmap?>(icon,"bitmap")) }
+    SystemClock.sleep(100)
+    onMain {
+      assertNull(field<Bitmap?>(icon,"bitmap"))
+      // Integral fitted edges isolate alpha from fractional bitmap resampling; geometry is tested above.
+      icon.layoutParams=android.widget.FrameLayout.LayoutParams(100,100);icon.layout(0,0,100,100)
+      icon.iconName="AppleBrand";icon.tintColor=Color.argb(128,0,255,0)
+    }
+    awaitCondition { field<Bitmap?>(icon,"bitmap")!=null }
+    val raw=activity.assets.open("icons/AppleBrand.svg").bufferedReader().use{it.readText()}.replace("currentColor","#00ff0080")
+    val decoded=com.margelo.nitro.onekeyimage.OneKeySVG.decode(raw.byteInputStream()).render(80,100)
+    onMain {
+      val actual=Bitmap.createBitmap(100,100,Bitmap.Config.ARGB_8888);icon.draw(Canvas(actual))
+      val expected=Bitmap.createBitmap(100,100,Bitmap.Config.ARGB_8888);Canvas(expected).drawBitmap(decoded,10f,0f,null)
+      var maximum=0
+      for(y in 0 until 100)for(x in 0 until 100){val a=actual.getPixel(x,y);val b=expected.getPixel(x,y);maximum=maxOf(maximum,kotlin.math.abs(Color.alpha(a)-Color.alpha(b)),kotlin.math.abs(Color.green(a)*Color.alpha(a)/255-Color.green(b)*Color.alpha(b)/255))}
+      assertTrue("Actual NativeList Apple half-alpha draw matches independent raw SVG fitted and centered in the slot (maximum error $maximum)",maximum<=1)
+    }
+  }
+
+  fun testSharedIconDetachAndCircleAlphaReuse() {
+    lateinit var icon: OneKeyIconView
+    lateinit var container: android.widget.FrameLayout
+    val service = com.margelo.nitro.onekeyimage.OneKeyNamedSVG
+    synchronized(field<Any>(service,"manifestLock")) {
+      onMain {
+        icon = OneKeyIconView(activity)
+        icon.iconName = "DotVerSolid"
+        icon.tintColor = Color.argb(128,0,0,255)
+        container = android.widget.FrameLayout(activity)
+        container.addView(icon, android.widget.FrameLayout.LayoutParams(96,96))
+        activity.setContentView(container)
+        icon.layout(0,0,96,96)
+        container.removeView(icon)
+      }
+    }
+    SystemClock.sleep(150)
+    onMain { assertNull(field<Bitmap?>(icon,"bitmap")); container.addView(icon,android.widget.FrameLayout.LayoutParams(96,96)); icon.layout(0,0,96,96) }
+    awaitCondition { field<Bitmap?>(icon,"bitmap") != null }
+    onMain {
+      icon.iconName="Circle"
+      val circle=Bitmap.createBitmap(96,96,Bitmap.Config.ARGB_8888); icon.draw(Canvas(circle))
+      assertEquals(128,Color.alpha(circle.getPixel(48,48)))
+      icon.iconName="DotVerSolid"
+    }
+    awaitCondition { field<Bitmap?>(icon,"bitmap") != null }
+    onMain {
+      val dots=Bitmap.createBitmap(96,96,Bitmap.Config.ARGB_8888); icon.draw(Canvas(dots))
+      assertEquals(128,Color.alpha(dots.getPixel(48,48)))
+      icon.iconName="BotIllus"
+    }
+    awaitCondition { field<Bitmap?>(icon,"bitmap") != null }
+    onMain {
+      val bot=Bitmap.createBitmap(96,96,Bitmap.Config.ARGB_8888); icon.draw(Canvas(bot))
+      val pixels=IntArray(96*96);bot.getPixels(pixels,0,96,0,0,96,96)
+      assertTrue("Fixed brand color remains opaque after translucent Circle",pixels.any { Color.alpha(it)==255 && Color.red(it)==63 && Color.green(it)==169 && Color.blue(it)==245 })
     }
   }
 

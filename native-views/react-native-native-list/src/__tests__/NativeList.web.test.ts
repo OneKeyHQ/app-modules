@@ -34,6 +34,10 @@ import {
 } from '../web/NativeListWebEngine';
 import { applyTextStyleToSlot } from '../web/templates/RowText';
 
+jest.mock('@onekeyfe/react-native-image/icon/dom', () =>
+  jest.requireActual('../../../react-native-image/src/icon/dom')
+);
+
 jest.mock('../web/NativeListWebAvatarCache', () => ({
   acquireNativeListAvatar: jest.fn(),
   canonicalNativeListAvatarUri: jest.fn(),
@@ -927,6 +931,122 @@ describe('web row style', () => {
     applyRowStyle(body, styledRow);
     return body;
   };
+
+  it('renders the Swap menu as an SVG while preserving its name and disabled state', () => {
+    for (const accessibilityLabel of [undefined, 'Token actions']) {
+      for (const disabled of [false, true]) {
+        const body = render({
+          key: 'swap-menu',
+          type: 'identity',
+          title: 'USDC',
+          leading: { kind: 'token', image },
+          trailing: [
+            {
+              kind: 'icon',
+              name: 'DotVerSolid',
+              actionKey: 'menu',
+              buttonStyle: 'tertiary',
+              accessibilityLabel,
+              disabled,
+            },
+          ],
+        });
+        const button = body.querySelector<HTMLButtonElement>('button')!;
+        expect(button.getAttribute('aria-label')).toBe(
+          accessibilityLabel ?? '⋮'
+        );
+        expect(button.disabled).toBe(disabled);
+        expect(button.textContent).toBe('');
+        expect(button.querySelector('svg')?.getAttribute('aria-hidden')).toBe(
+          'true'
+        );
+        expect(button.querySelector('svg use')?.getAttribute('href')).toBe(
+          'https://fixture.invalid/assets/DotVerSolid.svg#onekey-DotVerSolid'
+        );
+      }
+    }
+  });
+
+  it('resolves migrated NativeList Web built-in icons through the SDK fixture provider', () => {
+    const marketCopy = render({
+      key: 'market-copy',
+      type: 'market',
+      variant: 'token',
+      title: 'ONEKEY',
+      price: '$1',
+      change: { text: '+1%', tone: 'positive' },
+      leading: { kind: 'token', image },
+      webTable: {
+        columns: [{ key: 'asset', width: 200 }],
+        cells: [
+          {
+            key: 'asset',
+            kind: 'asset',
+            leading: { kind: 'token', image },
+            title: { text: 'ONEKEY' },
+            secondary: [{ text: '0x1234' }],
+            hoverSecondary: [{ text: '0x1234' }],
+            hoverActionKey: 'copy-address',
+          },
+        ],
+      },
+    });
+    expect(
+      marketCopy
+        .querySelector('[data-native-list-action="copy-address"] svg use')
+        ?.getAttribute('href')
+    ).toBe(
+      'https://fixture.invalid/assets/Copy3Outline.svg#onekey-Copy3Outline'
+    );
+
+    for (const name of [
+      'ArrowTopOutline',
+      'ArrowBottomOutline',
+      'SwitchHorOutline',
+      'CoinsOutline',
+      'ShieldCheckDoneOutline',
+      'UnlockedOutline',
+      'Document2Outline',
+      'CryptoCoinOutline',
+      'ImageSquareWavesOutline',
+      'DotHorOutline',
+    ]) {
+      const history = render({
+        key: `history-${name}`,
+        type: 'activity',
+        presentation: 'stacked',
+        leading: { kind: 'icon', name },
+        title: name,
+        amounts: [{ key: 'amount', text: '1 ETH' }],
+      });
+      expect(
+        history
+          .querySelector('.ok-native-list-history-visual svg use')
+          ?.getAttribute('href')
+      ).toBe(`https://fixture.invalid/assets/${name}.svg#onekey-${name}`);
+    }
+  });
+
+  it('keeps Circle primitive and unknown icon fallback outside shared coverage', () => {
+    const row: IdentityRow = {
+      key: 'coverage',
+      type: 'identity',
+      title: 'Coverage',
+      leading: { kind: 'token', image },
+    };
+    const circle = render({
+      ...row,
+      trailing: [{ kind: 'icon', name: 'Circle', actionKey: 'menu' }],
+    });
+    expect(circle.querySelector('svg circle')?.getAttribute('r')).toBe('12');
+    expect(circle.querySelector('svg use')).toBeNull();
+    const unknown = render({
+      ...row,
+      trailing: [{ kind: 'icon', name: 'AirplaneOutline', actionKey: 'menu' }],
+    });
+    expect(unknown.querySelector('svg use')).toBeNull();
+    expect(unknown.querySelector('button')?.textContent).not.toBe('');
+  });
 
   it('honors legacy identity line limits and restores them when style is cleared', () => {
     const base: IdentityRow = {
@@ -3474,6 +3594,36 @@ describe('complex renderer lifecycle', () => {
       global.Node = previousNode;
     }
   });
+  it.each([
+    'Document2Outline',
+    'WalletOutline',
+    'PlusLargeOutline',
+    'TicketOutline',
+  ])(
+    'binds the main-line %s title glyph through the shared external resource',
+    (name) => {
+      const { document } = new JSDOM('<!doctype html><body></body>').window;
+      const host = document.createElement('div');
+      document.body.appendChild(host);
+      const row: IdentityRow = {
+        type: 'identity',
+        key: 'main-line-glyph',
+        title: 'Asset',
+        leading: { kind: 'token', image },
+        titleIcon: { name },
+      };
+      const engine = new NativeListWebEngine(host, snap(row), {}, false);
+      try {
+        const icon = host.querySelector('.ok-native-list-identity-title-icon');
+        expect(icon?.querySelector('svg use')?.getAttribute('href')).toContain(
+          `#onekey-${name}`
+        );
+        expect(icon?.querySelector('path')).toBeNull();
+      } finally {
+        engine.destroy();
+      }
+    }
+  );
   it('anchors two title help icons to their own rectangles and clears removed icons', () => {
     const { document } = new JSDOM('<!doctype html><body></body>').window;
     const host = document.createElement('div');
@@ -3513,11 +3663,11 @@ describe('complex renderer lifecycle', () => {
     try {
       expect(icons()).toHaveLength(2);
       expect(
-        Array.from(icons(), (icon) => icon.querySelectorAll('svg path').length)
-      ).toEqual([2, 1]);
-      expect(icons()[0]!.querySelector('svg path')?.getAttribute('d')).toBe(
-        'M16 17.01h-2V15h2v2.01Zm0-4h-2V11h2v2.01Zm0-4h-2V7h2v2.01Z'
-      );
+        Array.from(icons(), (icon) => icon.querySelectorAll('svg use').length)
+      ).toEqual([1, 1]);
+      expect(
+        icons()[0]!.querySelector('svg use')?.getAttribute('href')
+      ).toContain('#onekey-TicketOutline');
       expect(
         Array.from(icons(), (icon) => icon.dataset.nativeListHoverAction)
       ).toEqual(['ticket-info', 'gas-info']);
@@ -3585,7 +3735,7 @@ describe('complex renderer lifecycle', () => {
       );
       pointer(icons()[0]!, 'pointerdown', 'touch');
       pointer(icons()[0]!, 'pointerup', 'touch');
-      const glyph = icons()[0]!.querySelector('svg path')!;
+      const glyph = icons()[0]!.querySelector('svg use')!;
       const glyphClick = new document.defaultView!.Event('click', {
         bubbles: true,
         cancelable: true,
@@ -3650,9 +3800,9 @@ describe('complex renderer lifecycle', () => {
       const refresh = host.querySelector<HTMLElement>(
         '[data-native-list-hover-action="missing-detail"]'
       )!;
-      expect(refresh.querySelectorAll('svg path')).toHaveLength(1);
-      expect(refresh.querySelector('svg path')?.getAttribute('d')).toContain(
-        'M5 12a7 7'
+      expect(refresh.querySelectorAll('svg use')).toHaveLength(1);
+      expect(refresh.querySelector('svg use')?.getAttribute('href')).toContain(
+        '#onekey-RefreshCcwOutline'
       );
       expect(refresh.tagName).toBe('SPAN');
       expect(refresh.querySelector('svg')?.getAttribute('width')).toBe('16');
@@ -3941,14 +4091,14 @@ describe('complex renderer lifecycle', () => {
     try {
       expect(
         host
-          .querySelector('.ok-native-list-identity-title-icon svg path')
-          ?.getAttribute('d')
-      ).toContain('M15 9h4v7');
+          .querySelector('.ok-native-list-identity-title-icon svg use')
+          ?.getAttribute('href')
+      ).toContain('#onekey-GasSolid');
       expect(
         host
-          .querySelector('.ok-native-list-visual-fallback svg path')
-          ?.getAttribute('d')
-      ).toContain('M11 16.387');
+          .querySelector('.ok-native-list-visual-fallback svg use')
+          ?.getAttribute('href')
+      ).toContain('#onekey-CryptoCoinOutline');
       expect(
         host.querySelector<HTMLElement>('.ok-native-list-visual')?.style
           .background
@@ -3977,7 +4127,7 @@ describe('complex renderer lifecycle', () => {
         host.querySelector('.ok-native-list-visual-overlay img')
       ).toBeNull();
       expect(
-        host.querySelector('.ok-native-list-overlay-fallback svg path')
+        host.querySelector('.ok-native-list-overlay-fallback svg use')
       ).not.toBeNull();
       engine.applySnapshot(
         snap({
@@ -5719,6 +5869,9 @@ describe('Web migration layout and table regressions', () => {
       const bitmap = body.querySelector('img');
       expect(bitmap).not.toBeNull();
       expect(bitmap!.getAttribute('src')).toBe(image.uri);
+      expect(favorite.querySelector('use')?.getAttribute('href')).toContain(
+        '#onekey-StarOutline'
+      );
       favorite.focus();
       for (let tick = 0; tick < 100; tick++) {
         const price = `$${43 + tick}`;
@@ -5753,6 +5906,9 @@ describe('Web migration layout and table regressions', () => {
       );
       expect(document.activeElement).toBe(favorite);
       expect(favorite.getAttribute('aria-pressed')).toBe('true');
+      expect(favorite.querySelector('use')?.getAttribute('href')).toContain(
+        '#onekey-StarSolid'
+      );
       expect(body.textContent).toContain('$142');
     } finally {
       engine.destroy();
@@ -6104,6 +6260,9 @@ describe.each([375, 1920])('review DOM regressions at %ipx', (width) => {
         ]);
         expect(host.querySelector('button')).toBe(button);
         expect(button.getAttribute('aria-label')).toBe(label ?? 'Copy address');
+        expect(button.querySelector('svg use')?.getAttribute('href')).toContain(
+          '#onekey-Copy3Outline'
+        );
         engine.applySnapshot(
           snapshot({ kind: 'sectioned' }, [
             row(label === undefined ? 'Snapshot label' : 'Snapshot translated'),

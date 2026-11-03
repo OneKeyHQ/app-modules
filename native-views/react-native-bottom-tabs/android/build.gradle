@@ -107,7 +107,7 @@ dependencies {
 
   implementation("io.coil-kt.coil3:coil:${COIL_VERSION}")
   implementation("io.coil-kt.coil3:coil-network-okhttp:${COIL_VERSION}")
-  implementation("io.coil-kt.coil3:coil-svg:${COIL_VERSION}")
+  implementation project(":onekeyfe_react-native-image")
 }
 
 if (isNewArchitectureEnabled()) {

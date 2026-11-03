@@ -1,3 +1,5 @@
+import { createNamedIcon } from '@onekeyfe/react-native-image/icon/dom';
+import { nativeListGeneratedIcons as selectorIcons } from './NativeListGeneratedIcons';
 import { applyTextWeight } from './templates/RowText';
 import {
   applyRowContainerStyle,
@@ -97,8 +99,6 @@ export const WEB_REORDER_ANIMATION = {
 const REORDER_TOUCH_LONG_PRESS_MS = 120;
 const MARKET_LONG_PRESS_MS = 800;
 const MARKET_MOVE_CANCEL_PX = 10;
-export const WEB_MARKET_VERIFIED_PATH =
-  'M9.483 11.458v3.5h-1v-3.5z M10.467 2.698a2.03 2.03 0 0 1 3.065 0l1.358 1.564a.03.03 0 0 0 .028.01l2.046-.325a2.03 2.03 0 0 1 2.347 1.971l.037 2.07q0 .016.014.026l1.776 1.066a2.03 2.03 0 0 1 .532 3.019l-1.304 1.609a.03.03 0 0 0-.005.03l.675 1.956a2.03 2.03 0 0 1-1.533 2.656l-2.033.394a.03.03 0 0 0-.023.019l-.741 1.933a2.03 2.03 0 0 1-2.88 1.05l-1.811-1.006a.03.03 0 0 0-.03 0l-1.811 1.005a2.03 2.03 0 0 1-2.88-1.049l-.742-1.933a.03.03 0 0 0-.023-.019l-2.033-.394a2.03 2.03 0 0 1-1.532-2.656l.675-1.957a.03.03 0 0 0-.005-.029l-1.304-1.61a2.03 2.03 0 0 1 .532-3.018l1.776-1.066a.03.03 0 0 0 .014-.026l.035-2.07a2.03 2.03 0 0 1 2.349-1.97l2.045.324a.03.03 0 0 0 .028-.01zm1.516 3.76a.5.5 0 0 0-.447.276l-1.861 3.724H8.483a1 1 0 0 0-1 1v3.5a1 1 0 0 0 1 1h6.692a2 2 0 0 0 1.981-1.73l.341-2.5a2 2 0 0 0-1.982-2.27h-1.939l.197-1.269a1.5 1.5 0 0 0-1.481-1.731z';
 const REORDER_MOUSE_MOVE_THRESHOLD_PX = 5;
 const REORDER_EDGE_RATIO = 0.25;
 const REORDER_MAX_SPEED_ZONE_RATIO = 0.05;
@@ -1179,416 +1179,35 @@ function paintSelectorImageBackground(
   if (image.complete && image.naturalWidth > 0) update();
 }
 
-// OneKey patch: use source SVG paths for selector actions and wallet provider marks.
-const selectorIcons: Readonly<
-  Record<
-    string,
-    Readonly<{
-      viewBox: string;
-      paths: readonly Readonly<{
-        d: string;
-        fill: string;
-        fillRule: string;
-        opacity: number;
-      }>[];
-    }>
-  >
-> = {
-  RefreshCcwOutline: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M5 12a7 7 0 0 0 7 7 7.15 7.15 0 0 0 4.955-2h-2.943v-2h6v6h-2v-2.257A9.148 9.148 0 0 1 12 21a9 9 0 0 1-9-9v-1h2v1Zm1-6.754A9.148 9.148 0 0 1 12 3a9 9 0 0 1 9 9v1h-2v-1a7 7 0 0 0-7-7 7.15 7.15 0 0 0-4.955 2H10v2H4V3h2v2.246Z',
-        fill: 'currentColor',
-        fillRule: 'nonzero',
-        opacity: 1,
-      },
-    ],
-  },
-  DotVerSolid: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M14 18v4h-4v-4zm0-4h-4v-4h4zm0-8h-4V2h4z',
-        fill: 'currentColor',
-        fillRule: 'nonzero',
-        opacity: 1,
-      },
-    ],
-  },
-  Document2Outline: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M12 16H8v-2h4zm4-4H8v-2h8zm0-4H8V6h8z',
-        fill: 'currentColor',
-        fillRule: 'nonzero',
-        opacity: 1,
-      },
-      {
-        d: 'M20 22H4V2h16zM6 20h12V4H6z',
-        fill: 'currentColor',
-        fillRule: 'evenodd',
-        opacity: 1,
-      },
-    ],
-  },
-  WalletOutline: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M15.5 13.25a1.25 1.25 0 1 1 0 2.5 1.25 1.25 0 0 1 0-2.5',
-        fill: 'currentColor',
-        fillRule: 'nonzero',
-        opacity: 1,
-      },
-      {
-        d: 'M17 8h4v13H7a4 4 0 0 1-4-4V6.5A3.5 3.5 0 0 1 6.5 3H17zM5 17a2 2 0 0 0 2 2h12v-9H6.5c-.537 0-1.045-.12-1.5-.337zM6.5 5a1.5 1.5 0 1 0 0 3H15V5z',
-        fill: 'currentColor',
-        fillRule: 'evenodd',
-        opacity: 1,
-      },
-    ],
-  },
-  PlusLargeOutline: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M13 11h8v2h-8v8h-2v-8H3v-2h8V3h2z',
-        fill: 'currentColor',
-        fillRule: 'nonzero',
-        opacity: 1,
-      },
-    ],
-  },
-  TicketOutline: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M16 17.01h-2V15h2v2.01Zm0-4h-2V11h2v2.01Zm0-4h-2V7h2v2.01Z',
-        fill: 'currentColor',
-        fillRule: 'nonzero',
-        opacity: 1,
-      },
-      {
-        d: 'm22 9.927-.629.252c-1.661.665-1.661 2.977 0 3.642l.629.252V20H2v-5.927l.629-.252c1.661-.665 1.661-2.977 0-3.642L2 9.927V4h20v5.927ZM4 8.636c2.5 1.52 2.499 5.207 0 6.727V18h16v-2.637c-2.499-1.52-2.5-5.208 0-6.727V6H4v2.636Z',
-        fill: 'currentColor',
-        fillRule: 'evenodd',
-        opacity: 1,
-      },
-    ],
-  },
-  GasSolid: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M15 9h4v7h1V8.414L17.586 6 19 4.586l3 3V18h-5v-7h-2v8h1v2H2v-2h1V3h12zM6 9v2h6V9z',
-        fill: 'currentColor',
-        fillRule: 'evenodd',
-        opacity: 1,
-      },
-    ],
-  },
-  CryptoCoinOutline: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M11 16.387a4.5 4.5 0 0 1 0-8.775V6h2v1.613a4.5 4.5 0 0 1 2.856 2.067l-1.712 1.032a2.5 2.5 0 1 0 0 2.576l1.712 1.032A4.5 4.5 0 0 1 13 16.386V18h-2z',
-        fill: 'currentColor',
-        fillRule: 'nonzero',
-        opacity: 1,
-      },
-      {
-        d: 'M22 12c0 5.523-4.477 10-10 10S2 17.523 2 12 6.477 2 12 2s10 4.477 10 10m-2 0a8 8 0 1 0-16 0 8 8 0 0 0 16 0',
-        fill: 'currentColor',
-        fillRule: 'evenodd',
-        opacity: 1,
-      },
-    ],
-  },
-  GlobusOutline: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M12 2c5.185 0 9.448 3.947 9.95 9H22v2h-.05c-.502 5.053-4.765 9-9.95 9s-9.448-3.947-9.95-9H2v-2h.05C2.552 5.947 6.815 2 12 2M9.523 13c.09 1.982.438 3.726.934 5.002.29.746.612 1.282.917 1.614.304.331.517.384.626.384s.322-.053.626-.384c.305-.332.627-.868.917-1.614.496-1.276.845-3.02.934-5.002zm-5.459 0a8 8 0 0 0 4.8 6.36 10 10 0 0 1-.271-.633C7.994 17.187 7.61 15.189 7.52 13zm12.416 0c-.09 2.189-.474 4.187-1.073 5.727a10 10 0 0 1-.271.633 8 8 0 0 0 4.8-6.36zM8.863 4.639A8 8 0 0 0 4.064 11h3.457c.09-2.189.473-4.187 1.072-5.727q.127-.327.27-.634M12 4c-.109 0-.322.053-.626.384-.305.332-.627.868-.917 1.614-.496 1.276-.844 3.02-.934 5.002h4.954c-.09-1.982-.438-3.726-.934-5.002-.29-.746-.612-1.282-.917-1.614C12.322 4.053 12.109 4 12 4m3.136.639q.144.307.271.634c.599 1.54.982 3.538 1.073 5.727h3.456a8 8 0 0 0-4.8-6.361',
-        fill: 'currentColor',
-        fillRule: 'evenodd',
-        opacity: 1.0,
-      },
-    ],
-  },
-  LockSolid: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M12 2a5 5 0 0 1 5 5v2h3v13H4V9h3V7a5 5 0 0 1 5-5m-1 11v5h2v-5zm1-9a3 3 0 0 0-3 3v2h6V7a3 3 0 0 0-3-3',
-        fill: 'currentColor',
-        fillRule: 'evenodd',
-        opacity: 1.0,
-      },
-    ],
-  },
-  GoogleIllus: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09',
-        fill: '#4285F4',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-      {
-        d: 'M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23',
-        fill: '#34A853',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-      {
-        d: 'M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22z',
-        fill: '#FBBC05',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-      {
-        d: 'M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53',
-        fill: '#EA4335',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-    ],
-  },
-  AppleBrand: {
-    viewBox: '0 0 16 20',
-    paths: [
-      {
-        d: 'M11.67.834c.117 1.074-.315 2.153-.955 2.928-.64.773-1.692 1.378-2.718 1.298-.14-1.054.38-2.151.971-2.836C9.63 1.45 10.746.872 11.67.834M14.994 7.093c-.176.108-1.992 1.224-1.972 3.482.025 2.769 2.428 3.693 2.46 3.705l-.004.015a10.1 10.1 0 0 1-1.264 2.593c-.764 1.116-1.556 2.229-2.806 2.254-.598.011-1-.162-1.416-.343-.437-.19-.891-.386-1.609-.386-.751 0-1.226.203-1.683.398-.397.169-.78.333-1.32.354-1.208.047-2.124-1.207-2.895-2.32C.909 14.57-.294 10.414 1.322 7.612c.803-1.395 2.237-2.275 3.794-2.298.671-.014 1.32.244 1.89.47.434.172.821.326 1.135.326.282 0 .659-.149 1.099-.323.692-.273 1.539-.607 2.41-.518.599.026 2.276.24 3.354 1.818z',
-        fill: 'currentColor',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-    ],
-  },
-  BotIllus: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M11 2a1 1 0 1 1 2 0v1.8l1.6 1.6a1 1 0 1 1-1.4 1.4L12 5.6l-1.2 1.2a1 1 0 0 1-1.4-1.4L11 3.8z',
-        fill: '#8897A5',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-      {
-        d: 'M8.0 6.0h8.0a5.0 5.0 0 0 1 5.0 5.0v4.0a5.0 5.0 0 0 1 -5.0 5.0h-8.0a5.0 5.0 0 0 1 -5.0 -5.0v-4.0a5.0 5.0 0 0 1 5.0 -5.0z',
-        fill: '#3FA9F5',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-      {
-        d: 'M3.0 10.0h0.0a1.5 1.5 0 0 1 1.5 1.5v3.0a1.5 1.5 0 0 1 -1.5 1.5h0.0a1.5 1.5 0 0 1 -1.5 -1.5v-3.0a1.5 1.5 0 0 1 1.5 -1.5z',
-        fill: '#8897A5',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-      {
-        d: 'M21.0 10.0h0.0a1.5 1.5 0 0 1 1.5 1.5v3.0a1.5 1.5 0 0 1 -1.5 1.5h0.0a1.5 1.5 0 0 1 -1.5 -1.5v-3.0a1.5 1.5 0 0 1 1.5 -1.5z',
-        fill: '#8897A5',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-      {
-        d: 'M7.5 12.0a1.5 1.5 0 1 0 3.0 0a1.5 1.5 0 1 0 -3.0 0',
-        fill: '#10243E',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-      {
-        d: 'M13.5 12.0a1.5 1.5 0 1 0 3.0 0a1.5 1.5 0 1 0 -3.0 0',
-        fill: '#10243E',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-      {
-        d: 'M8.5 15.4c.9.8 2.08 1.2 3.5 1.2s2.6-.4 3.5-1.2c.24-.2.6-.18.8.06.2.23.17.6-.06.8-1.14.98-2.58 1.46-4.24 1.46s-3.1-.48-4.24-1.46a.58.58 0 0 1-.06-.8c.2-.24.56-.26.8-.06',
-        fill: '#10243E',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-    ],
-  },
-  AllNetworksSolid: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M15.333 13.998a1.335 1.335 0 1 1 0 2.67 1.335 1.335 0 0 1 0-2.67',
-        fill: 'currentColor',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-      {
-        d: 'M12 0c6.627 0 12 5.373 12 12s-5.373 12-12 12S0 18.627 0 12 5.373 0 12 0M8 12.668A2 2 0 0 0 6 14.666V16c0 1.103.895 1.997 1.998 1.998h1.334A2 2 0 0 0 11.33 16v-1.334a2 2 0 0 0-1.998-1.998zm7.333 0a2.665 2.665 0 1 0 0 5.33 2.665 2.665 0 0 0 0-5.33M7.999 6.001A2 2 0 0 0 6.001 8v1.334c0 1.103.895 1.998 1.998 1.998h1.334a2 2 0 0 0 1.998-1.998V7.999a2 2 0 0 0-1.998-1.998zm6.667 0A2 2 0 0 0 12.668 8v1.334c0 1.103.895 1.998 1.998 1.998H16a2 2 0 0 0 1.998-1.998V7.999A2 2 0 0 0 16 6.001z',
-        fill: 'currentColor',
-        fillRule: 'evenodd',
-        opacity: 1.0,
-      },
-    ],
-  },
-  CrossedSmallSolid: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M17.87 8.25 14.12 12l3.75 3.75-2.12 2.121-3.75-3.75-3.75 3.75-2.121-2.121L9.879 12l-3.75-3.75 2.12-2.121L12 9.879l3.75-3.75 2.122 2.121Z',
-        fill: 'currentColor',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-    ],
-  },
-  AccountErrorCustom: {
-    viewBox: '0 0 18 18',
-    paths: [
-      {
-        d: 'M12.5 12.75a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5',
-        fill: '#000',
-        fillRule: 'nonzero',
-        opacity: 0.447,
-      },
-      {
-        d: 'M0 3.5A3.5 3.5 0 0 1 3.5 0h8.088A2.41 2.41 0 0 1 14 2.412V5h1a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3H4a4 4 0 0 1-4-4zm2 3.163V14a2 2 0 0 0 2 2h11a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1H3.5c-.537 0-1.045-.12-1.5-.337M2 3.5A1.5 1.5 0 0 0 3.5 5H12V2.412A.41.41 0 0 0 11.588 2H3.5A1.5 1.5 0 0 0 2 3.5',
-        fill: '#000',
-        fillRule: 'evenodd',
-        opacity: 0.447,
-      },
-    ],
-  },
-  PlusSmallOutline: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M13 11h5v2h-5v5h-2v-5H6v-2h5V6h2z',
-        fill: 'currentColor',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-    ],
-  },
-  DotHorOutline: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M6 14H2v-4h4zm8 0h-4v-4h4zm8 0h-4v-4h4z',
-        fill: 'currentColor',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-    ],
-  },
-  ChevronRightSmallOutline: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M15.414 12 10 17.414 8.586 16l4-4-4-4L10 6.586z',
-        fill: 'currentColor',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-    ],
-  },
-  DragOutline: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M11 21H7v-4h4zm6 0h-4v-4h4zm-6-7H7v-4h4zm6 0h-4v-4h4zm-6-7H7V3h4zm6 0h-4V3h4z',
-        fill: 'currentColor',
-        fillRule: 'nonzero',
-        opacity: 1.0,
-      },
-    ],
-  },
-  PencilOutline: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M22.414 7.5 7.914 22H2v-5.914l14.5-14.5zM4 16.914V20h3.086l9.5-9.5L13.5 7.414zM14.914 6 18 9.086 19.586 7.5 16.5 4.414z',
-        fill: 'currentColor',
-        fillRule: 'evenodd',
-        opacity: 1.0,
-      },
-    ],
-  },
-  CheckboxCheckedCustom: {
-    viewBox: '0 0 16 16',
-    paths: [
-      {
-        d: 'M12.204 5.043a1 1 0 0 1 0 1.414l-4.5 4.5a1 1 0 0 1-1.414 0l-2-2a1 1 0 1 1 1.414-1.414l1.293 1.293 3.793-3.793a1 1 0 0 1 1.414 0',
-        fill: 'currentColor',
-        fillRule: 'evenodd',
-        opacity: 1.0,
-      },
-    ],
-  },
-  CheckboxIndeterminateCustom: {
-    viewBox: '0 0 16 16',
-    paths: [
-      {
-        d: 'M4 8a1 1 0 0 1 1-1h6a1 1 0 0 1 0 2H5a1 1 0 0 1-1-1',
-        fill: 'currentColor',
-        fillRule: 'evenodd',
-        opacity: 1.0,
-      },
-    ],
-  },
-  Circle: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M0 12a12 12 0 1 0 24 0a12 12 0 1 0 -24 0',
-        fill: 'currentColor',
-        fillRule: 'nonzero',
-        opacity: 1,
-      },
-    ],
-  },
-  BadgeVerifiedSolid: {
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: WEB_MARKET_VERIFIED_PATH,
-        fill: 'currentColor',
-        fillRule: 'evenodd',
-        opacity: 1,
-      },
-    ],
-  },
-};
 function applySelectorIcon(element: HTMLElement, name: string) {
-  const icon = selectorIcons[name];
-  if (!icon) return;
-  element.textContent = '';
-  const svg = element.ownerDocument.createElementNS(
-    'http://www.w3.org/2000/svg',
-    'svg'
-  );
-  svg.setAttribute('viewBox', icon.viewBox);
-  svg.setAttribute('width', '24');
-  svg.setAttribute('height', '24');
-  svg.setAttribute('aria-hidden', 'true');
-  icon.paths.forEach((path) => {
-    const child = element.ownerDocument.createElementNS(
+  const canonical = selectorIcons[name];
+  if (!canonical) return;
+  if (canonical === 'Circle') {
+    const svg = element.ownerDocument.createElementNS(
       'http://www.w3.org/2000/svg',
-      'path'
+      'svg'
     );
-    child.setAttribute('d', path.d);
-    child.setAttribute('fill', path.fill);
-    child.setAttribute('fill-rule', path.fillRule);
-    child.setAttribute('fill-opacity', String(path.opacity));
-    svg.appendChild(child);
-  });
-  element.appendChild(svg);
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('width', '24');
+    svg.setAttribute('height', '24');
+    svg.setAttribute('aria-hidden', 'true');
+    const circle = element.ownerDocument.createElementNS(
+      'http://www.w3.org/2000/svg',
+      'circle'
+    );
+    circle.setAttribute('cx', '12');
+    circle.setAttribute('cy', '12');
+    circle.setAttribute('r', '12');
+    circle.setAttribute('fill', 'currentColor');
+    svg.append(circle);
+    element.replaceChildren(svg);
+    return;
+  }
+  element.replaceChildren(createNamedIcon(element.ownerDocument, canonical));
 }
 
 function iconGlyph(name: string): string {
   const normalized = name.toLocaleLowerCase();
-  if (normalized === 'dotversolid') return '⋮';
   if (normalized.includes('chevron')) {
     if (normalized.includes('top')) return '⌃';
     if (normalized.includes('bottom')) return '⌄';
@@ -2022,6 +1641,7 @@ function createIconAction(
   if (element.tagName === 'BUTTON') {
     element.setAttribute('type', 'button');
     element.toggleAttribute('disabled', Boolean(disabled));
+    if (name === 'DotVerSolid') element.setAttribute('aria-label', '⋮');
   }
   applySelectorIcon(element, name);
   if (actionKey) setData(element, 'nativeListAction', actionKey);

@@ -124,8 +124,8 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
   private let trailingStack = UIStackView()
   private let accessoryButtons = [NativeListAccessoryButton(type: .system)]
   private let checkboxControl = NativeListAccessoryStack(frame: .zero)
-  private let headerTitleIconImageView = UIImageView()
-  private let headerValueIconImageView = UIImageView()
+  private let headerTitleIconImageView = NativeListIconImageView()
+  private let headerValueIconImageView = NativeListIconImageView()
   private var accessoryActions: [(String, NativeSelectionTarget?)] = []
   private var currentItem: NativeListItem?
   private var currentTheme: [String: Any]?
@@ -187,6 +187,9 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
     _ item: NativeListItem, theme: [String: Any]?, layout: String,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
   ) {
+    let iconUpdate = NativeListIconUpdate(self)
+    defer { iconUpdate.finish() }
+
     selectorTypographyRestorers.reversed().forEach { $0() }
     selectorTypographyRestorers = []
     currentItem = item
@@ -297,6 +300,7 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
       width.isActive = true
       selectorConstraints.append(width)
     }
+
   }
   private func bindPositionHeaderFields(_ item: NativeListItem, theme: [String: Any]?) {
     let style = item.data.dictionary("style") ?? [:]
@@ -371,6 +375,9 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
     _ item: NativeListItem,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
   ) {
+    let iconUpdate = NativeListIconUpdate(self)
+    defer { iconUpdate.finish() }
+
     currentItem = item
     checkboxControl.updateSelection(item, checkboxState: checkboxState)
     if item.data.string("variant") == "summary" {
@@ -382,6 +389,7 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
       applyTextStyle(item)
       applySelectorTypography(item)
     }
+
   }
   private func bindCheckbox(
     _ item: NativeListItem, _ descriptor: [String: Any],
@@ -523,7 +531,7 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
       topInset = 12
       bottomInset = -2
       if let icon = item.data.dictionary("titleIcon") {
-        headerTitleIconImageView.image = nativeListIcon(named: icon.string("name"))
+        headerTitleIconImageView.bindIcon(icon.string("name"))
         headerTitleIconImageView.tintColor = UIColor(
           nativeListHex: icon.string("tintColor", default: "#646464"),
           fallback: .darkGray
@@ -593,7 +601,7 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
           for: .normal
         )
         if let icon = item.data.dictionary("valueIcon") {
-          headerValueIconImageView.image = nativeListIcon(named: icon.string("name"))
+          headerValueIconImageView.bindIcon(icon.string("name"))
           headerValueIconImageView.tintColor = UIColor(
             nativeListHex: icon.string("tintColor", default: "#646464"),
             fallback: .darkGray
