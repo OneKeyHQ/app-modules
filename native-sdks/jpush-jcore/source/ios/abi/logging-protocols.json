@@ -1,0 +1,15 @@
+[
+  {
+    "protocol": "JCORELogger",
+    "properties": [
+      {
+        "name": "loggerName",
+        "attributes": "T@\"NSString\",R,N"
+      },
+      {
+        "name": "loggerQueue",
+        "attributes": "T@\"NSObject<OS_dispatch_queue>\",R,N"
+      }
+    ]
+  }
+]

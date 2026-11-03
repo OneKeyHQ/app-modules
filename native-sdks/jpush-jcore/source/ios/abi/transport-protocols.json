@@ -1,0 +1,19 @@
+[
+  {
+    "protocol": "JCORESocketConfigProtocol",
+    "properties": [
+      {
+        "attributes": "T@\"NSString\",C,N",
+        "name": "host"
+      },
+      {
+        "attributes": "TI,N",
+        "name": "port"
+      },
+      {
+        "attributes": "TQ,N",
+        "name": "ipType"
+      }
+    ]
+  }
+]

@@ -1,0 +1,42 @@
+[
+  {
+    "class": "JPUSHBadgeNumberController",
+    "properties": [
+      {
+        "attributes": "T@\"NSNumber\",&,N,V_badgeValue",
+        "name": "badgeValue"
+      },
+      {
+        "attributes": "T@\"JPUSHBadgeNumberReportRequest\",&,N,V_badgeReport",
+        "name": "badgeReport"
+      },
+      {
+        "attributes": "TB,D,N",
+        "name": "isSendingLock"
+      }
+    ],
+    "preserve_properties": [
+      {
+        "name": "isSendingLock",
+        "attributes": "TB,D,N"
+      }
+    ]
+  },
+  {
+    "class": "JPUSHBadgeNumberReportRequest",
+    "properties": [
+      {
+        "attributes": "T@\"NSString\",C,N,V_aesKey",
+        "name": "aesKey"
+      },
+      {
+        "attributes": "Tq,N,V_badgeCount",
+        "name": "badgeCount"
+      },
+      {
+        "attributes": "TB,N,V_isAgainSend",
+        "name": "isAgainSend"
+      }
+    ]
+  }
+]

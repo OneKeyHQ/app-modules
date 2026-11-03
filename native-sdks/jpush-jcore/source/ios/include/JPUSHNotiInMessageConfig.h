@@ -1,0 +1,64 @@
+#pragma once
+#import <Foundation/Foundation.h>
+@class UIColor, UIView, UIViewController;
+@interface JPUSHNotiInMessageConfig : NSObject {
+  BOOL _dismissingEnabled;
+  BOOL _isfixed;
+  double _height;
+  double _width;
+  double _left;
+  double _landscapeLeft;
+  double _right;
+  double _landscapeRight;
+  double _top;
+  double _bottom;
+  double _toH5WhRatio;
+  UIColor * _backgroudColor;
+  UIViewController * _viewController;
+  UIView * _window;
+  double _duration;
+  double _dissmissDuration;
+  double _showTimer;
+  NSDictionary * _messageDic;
+  NSString * _msg_id;
+  NSString * _filepath;
+  NSString * _mouldID;
+  NSString * _networkPath;
+  NSDictionary * _h5Dic;
+  NSDictionary * _networkH5Dic;
+  NSArray * _localimagepaths;
+  NSDictionary * _callbackContent;
+  long long _inapp_display_direct;
+  NSString * _msgData;
+  double _exposureStartTime;
+}
+@property(nonatomic) double height;
+@property(nonatomic) double width;
+@property(nonatomic) double left;
+@property(nonatomic) double landscapeLeft;
+@property(nonatomic) double right;
+@property(nonatomic) double landscapeRight;
+@property(nonatomic) double top;
+@property(nonatomic) double bottom;
+@property(nonatomic) double toH5WhRatio;
+@property(nonatomic, strong) UIColor * backgroudColor;
+@property(nonatomic, strong) UIViewController * viewController;
+@property(nonatomic, strong) UIView * window;
+@property(nonatomic) double duration;
+@property(nonatomic) double dissmissDuration;
+@property(nonatomic) BOOL dismissingEnabled;
+@property(nonatomic) double showTimer;
+@property(nonatomic, strong) NSDictionary * messageDic;
+@property(nonatomic, copy) NSString * msg_id;
+@property(nonatomic, copy) NSString * filepath;
+@property(nonatomic, copy) NSString * mouldID;
+@property(nonatomic, copy) NSString * networkPath;
+@property(nonatomic, strong) NSDictionary * h5Dic;
+@property(nonatomic, strong) NSDictionary * networkH5Dic;
+@property(nonatomic, strong) NSArray * localimagepaths;
+@property(nonatomic, strong) NSDictionary * callbackContent;
+@property(nonatomic) long long inapp_display_direct;
+@property(nonatomic) BOOL isfixed;
+@property(nonatomic, copy) NSString * msgData;
+@property(nonatomic) double exposureStartTime;
+@end

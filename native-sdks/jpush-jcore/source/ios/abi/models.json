@@ -1,0 +1,346 @@
+[
+  {
+    "class": "JCORECacheModel",
+    "properties": [
+      {
+        "attributes": "Tq,N,V_type",
+        "name": "type"
+      },
+      {
+        "attributes": "T@\"NSString\",&,N,V_key",
+        "name": "key"
+      },
+      {
+        "attributes": "T@\"NSString\",&,N,V_dirName",
+        "name": "dirName"
+      },
+      {
+        "attributes": "TB,N,V_encrypt",
+        "name": "encrypt"
+      },
+      {
+        "attributes": "TB,N,V_compress",
+        "name": "compress"
+      },
+      {
+        "attributes": "T@,&,N",
+        "name": "content"
+      },
+      {
+        "attributes": "TQ,R",
+        "name": "hash"
+      },
+      {
+        "attributes": "T#,R",
+        "name": "superclass"
+      },
+      {
+        "attributes": "T@\"NSString\",R,C",
+        "name": "description"
+      },
+      {
+        "attributes": "T@\"NSString\",R,C",
+        "name": "debugDescription"
+      }
+    ]
+  },
+  {
+    "class": "JCORECacheReadModel",
+    "properties": [
+      {
+        "attributes": "T@?,C,N,V_block",
+        "name": "block"
+      }
+    ]
+  },
+  {
+    "class": "JCORECacheWriteModel",
+    "properties": [
+      {
+        "attributes": "T@,&,N,V_content",
+        "name": "content"
+      },
+      {
+        "attributes": "T@?,C,N,V_block",
+        "name": "block"
+      }
+    ]
+  },
+  {
+    "class": "JCommonCrashContexts",
+    "properties": [
+      {
+        "attributes": "T@\"NSDictionary\",C,N,V_app",
+        "name": "app"
+      },
+      {
+        "attributes": "T@\"NSDictionary\",C,N,V_device",
+        "name": "device"
+      },
+      {
+        "attributes": "T@\"NSDictionary\",C,N,V_os",
+        "name": "os"
+      },
+      {
+        "attributes": "TQ,R",
+        "name": "hash"
+      },
+      {
+        "attributes": "T#,R",
+        "name": "superclass"
+      },
+      {
+        "attributes": "T@\"NSString\",R,C",
+        "name": "description"
+      },
+      {
+        "attributes": "T@\"NSString\",R,C",
+        "name": "debugDescription"
+      }
+    ]
+  },
+  {
+    "class": "JCommonCrashException",
+    "properties": [
+      {
+        "attributes": "T@\"NSString\",C,N,V_value",
+        "name": "value"
+      },
+      {
+        "attributes": "T@\"NSString\",C,N,V_type",
+        "name": "type"
+      },
+      {
+        "attributes": "T@\"NSNumber\",C,N,V_threadId",
+        "name": "threadId"
+      },
+      {
+        "attributes": "T@\"JCommonCrashStacktrace\",&,N,V_stacktrace",
+        "name": "stacktrace"
+      },
+      {
+        "attributes": "TQ,R",
+        "name": "hash"
+      },
+      {
+        "attributes": "T#,R",
+        "name": "superclass"
+      },
+      {
+        "attributes": "T@\"NSString\",R,C",
+        "name": "description"
+      },
+      {
+        "attributes": "T@\"NSString\",R,C",
+        "name": "debugDescription"
+      }
+    ]
+  },
+  {
+    "class": "JCommonCrashFrame",
+    "properties": [
+      {
+        "attributes": "T@\"NSString\",C,N,V_symbolAddress",
+        "name": "symbolAddress"
+      },
+      {
+        "attributes": "T@\"NSString\",C,N,V_function",
+        "name": "function"
+      },
+      {
+        "attributes": "T@\"NSString\",C,N,V_package",
+        "name": "package"
+      },
+      {
+        "attributes": "T@\"NSString\",C,N,V_imageAddress",
+        "name": "imageAddress"
+      },
+      {
+        "attributes": "T@\"NSString\",C,N,V_instructionAddress",
+        "name": "instructionAddress"
+      },
+      {
+        "attributes": "T@\"NSNumber\",C,N,V_inApp",
+        "name": "inApp"
+      },
+      {
+        "attributes": "TQ,R",
+        "name": "hash"
+      },
+      {
+        "attributes": "T#,R",
+        "name": "superclass"
+      },
+      {
+        "attributes": "T@\"NSString\",R,C",
+        "name": "description"
+      },
+      {
+        "attributes": "T@\"NSString\",R,C",
+        "name": "debugDescription"
+      }
+    ]
+  },
+  {
+    "class": "JCommonCrashId",
+    "properties": [
+      {
+        "attributes": "T@\"NSUUID\",&,N,V_uuid",
+        "name": "uuid"
+      },
+      {
+        "attributes": "T@\"NSString\",R,C",
+        "name": "sentryIdString"
+      }
+    ]
+  },
+  {
+    "class": "JCommonCrashThread",
+    "properties": [
+      {
+        "attributes": "T@\"NSNumber\",C,N,V_threadId",
+        "name": "threadId"
+      },
+      {
+        "attributes": "T@\"NSString\",C,N,V_name",
+        "name": "name"
+      },
+      {
+        "attributes": "T@\"JCommonCrashStacktrace\",&,N,V_stacktrace",
+        "name": "stacktrace"
+      },
+      {
+        "attributes": "T@\"NSNumber\",C,N,V_crashed",
+        "name": "crashed"
+      },
+      {
+        "attributes": "T@\"NSNumber\",C,N,V_current",
+        "name": "current"
+      },
+      {
+        "attributes": "TQ,R",
+        "name": "hash"
+      },
+      {
+        "attributes": "T#,R",
+        "name": "superclass"
+      },
+      {
+        "attributes": "T@\"NSString\",R,C",
+        "name": "description"
+      },
+      {
+        "attributes": "T@\"NSString\",R,C",
+        "name": "debugDescription"
+      }
+    ]
+  },
+  {
+    "class": "JCommonDataConfig",
+    "properties": [
+      {
+        "attributes": "TQ,N,V_type",
+        "name": "type"
+      }
+    ]
+  },
+  {
+    "class": "JCommonDataControl",
+    "properties": [
+      {
+        "attributes": "T@\"NSMutableDictionary\",&,N,V_configMap",
+        "name": "configMap"
+      },
+      {
+        "attributes": "TB,N,V_idfaSwitch",
+        "name": "idfaSwitch"
+      }
+    ]
+  },
+  {
+    "class": "JCommonReport",
+    "properties": [
+      {
+        "attributes": "T@\"NSMutableURLRequest\",&,N,V_request",
+        "name": "request"
+      },
+      {
+        "attributes": "T@,&,N,V_requestInfo",
+        "name": "requestInfo"
+      },
+      {
+        "attributes": "T@?,C,N,V_completionHandler",
+        "name": "completionHandler"
+      },
+      {
+        "attributes": "TC,N,V_controlFlag",
+        "name": "controlFlag"
+      },
+      {
+        "attributes": "TB,N,V_accountIDRequired",
+        "name": "accountIDRequired"
+      },
+      {
+        "attributes": "TB,N,V_cacheRequired",
+        "name": "cacheRequired"
+      },
+      {
+        "attributes": "T@\"NSString\",C,N,V_reportFlag",
+        "name": "reportFlag"
+      },
+      {
+        "attributes": "T@\"NSArray\",&,N",
+        "name": "addressList"
+      },
+      {
+        "attributes": "TQ,R",
+        "name": "hash"
+      },
+      {
+        "attributes": "T#,R",
+        "name": "superclass"
+      },
+      {
+        "attributes": "T@\"NSString\",R,C",
+        "name": "description"
+      },
+      {
+        "attributes": "T@\"NSString\",R,C",
+        "name": "debugDescription"
+      }
+    ]
+  },
+  {
+    "class": "JPUSHTagAliasVO",
+    "properties": [
+      {
+        "attributes": "Tq,N,V_opearteType",
+        "name": "opearteType"
+      },
+      {
+        "attributes": "Tq,N,V_seq",
+        "name": "seq"
+      },
+      {
+        "attributes": "T@\"NSSet\",C,N,V_tags",
+        "name": "tags"
+      },
+      {
+        "attributes": "T@\"NSString\",C,N,V_alias",
+        "name": "alias"
+      },
+      {
+        "attributes": "T@?,C,N,V_tagsCompletion",
+        "name": "tagsCompletion"
+      },
+      {
+        "attributes": "T@?,C,N,V_tagValidCompletion",
+        "name": "tagValidCompletion"
+      },
+      {
+        "attributes": "T@?,C,N,V_aliasCompletion",
+        "name": "aliasCompletion"
+      }
+    ]
+  }
+]

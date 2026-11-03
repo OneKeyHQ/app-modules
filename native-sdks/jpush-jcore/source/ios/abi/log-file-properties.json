@@ -1,0 +1,57 @@
+[
+  {
+    "class": "JCORELogFileInfo",
+    "preserve_properties": [
+      {
+        "attributes": "T@\"NSString\",R,D,N",
+        "name": "fileName"
+      },
+      {
+        "attributes": "T@\"NSDictionary\",R,D,N",
+        "name": "fileAttributes"
+      },
+      {
+        "attributes": "T@\"NSDate\",R,D,N",
+        "name": "creationDate"
+      },
+      {
+        "attributes": "T@\"NSDate\",R,D,N",
+        "name": "modificationDate"
+      },
+      {
+        "attributes": "TQ,R,D,N",
+        "name": "fileSize"
+      },
+      {
+        "attributes": "Td,R,D,N",
+        "name": "age"
+      },
+      {
+        "attributes": "TB,D,N",
+        "name": "isArchived"
+      }
+    ]
+  },
+  {
+    "class": "JCORELogFileManagerDefault",
+    "properties": [
+      {
+        "name": "logsDirectory",
+        "attributes": "T@\"NSString\",R,C,N"
+      },
+      {
+        "name": "unsortedLogFilePaths",
+        "attributes": "T@\"NSArray\",R,N"
+      }
+    ]
+  },
+  {
+    "class": "JCOREFileLogger",
+    "properties": [
+      {
+        "name": "logFormatter",
+        "attributes": "T@\"<JCORELogFormatter>\",&,N"
+      }
+    ]
+  }
+]

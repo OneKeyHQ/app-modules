@@ -1,0 +1,15 @@
+#pragma once
+#define REC_CORE_e4118 @"[%s] is Wifi/5G stop uaid_token_reuqest pull"
+#define REC_CORE_e4138 @"[%s] appkey is nil \n wait register reset"
+#define REC_CORE_e4158 @"[%s] uid is nil \n wait register reset"
+#define REC_CORE_e4178 @"[%s] is not auth"
+#define REC_CORE_e41d8 @"[%s] There are Custom SDK"
+#define REC_CORE_e41f8 @"sdk service is banned!"
+#define REC_CORE_e4218 @"sdk tcpssl cache ret: %d"
+#define REC_CORE_e4238 @"sdk can start ssl: tcpssl:%d, cetready:%d"
+#define REC_CORE_e4258 @"sdk analytics state: crash: %d, network: %d, crashcount: %d, netMoniter: %d, exception: %d"
+#define REC_CORE_dfa58 @"[%s] completion is bad"
+#define REC_CORE_BAD_APPKEY @"[%s]devid pull appkey is nil"
+#define REC_CORE_BAD_COMPLETION @"[%s]devid pull completion is bad"
+#define REC_CORE_LOG(asyncValue,flagValue,fun,lineValue,fmt,...) [JCORELog log:(asyncValue) level:0x3ff flag:(flagValue) context:0 file:"/Users/jiguang/.jenkins/workspace/ios-reconsitution/JCore/Interface/JCOREService.m" function:(fun) line:(lineValue) tag:nil format:(fmt), ##__VA_ARGS__]
+#define REC_CORE_AUTH_ERROR @"未授权状态，初始化被拒"
