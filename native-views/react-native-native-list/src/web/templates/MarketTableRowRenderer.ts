@@ -14,6 +14,7 @@ type CellViews = {
   signature: string;
   visual?: HTMLElement;
   visualKey?: string;
+  visualImageKey?: string;
   title?: HTMLElement;
   resting?: HTMLElement;
   hover?: HTMLElement;
@@ -287,11 +288,42 @@ function updateCell(
   if (cell.kind === 'asset') {
     const visualKey = JSON.stringify(cell.leading);
     if (view.visualKey !== visualKey) {
-      if (view.visual) {
-        primitives.dispose(view.visual);
-        view.visual.remove();
+      const visualImageKey = JSON.stringify(
+        cell.leading?.kind === 'token'
+          ? { ...cell.leading, overlays: undefined }
+          : cell.leading
+      );
+      if (
+        view.visual &&
+        cell.leading?.kind === 'token' &&
+        view.visualImageKey === visualImageKey
+      ) {
+        // Keep the main frame: its load/error callbacks own its visibility.
+        for (const overlay of view.visual.querySelectorAll<HTMLElement>(
+          ':scope > .ok-native-list-visual-overlay'
+        )) {
+          primitives.dispose(overlay);
+          overlay.remove();
+        }
+        const overlayVisual = primitives.visual({
+          kind: 'token',
+          overlays: cell.leading.overlays,
+        });
+        if (overlayVisual) {
+          for (const overlay of overlayVisual.querySelectorAll<HTMLElement>(
+            ':scope > .ok-native-list-visual-overlay'
+          ))
+            view.visual.appendChild(overlay);
+          primitives.dispose(overlayVisual);
+        }
+      } else {
+        if (view.visual) {
+          primitives.dispose(view.visual);
+          view.visual.remove();
+        }
+        view.visual = primitives.visual(cell.leading);
       }
-      view.visual = primitives.visual(cell.leading);
+      view.visualImageKey = visualImageKey;
       view.visualKey = visualKey;
       if (view.visual)
         Object.assign(view.visual.style, {

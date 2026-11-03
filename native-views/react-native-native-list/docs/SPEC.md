@@ -1839,6 +1839,23 @@ logo groups retain their4px gap and overlap geometry. No other text-part gaps
 change. Regression acceptance includes Dark/Light recycled visuals, preserved
 network overlays, independent copy actions and Stock hover group spacing.
 
+For token visuals in Web/Electron Market tables, changing only `overlays` MUST
+retain the main image frame, its loaded/error visibility and pending image
+callbacks. Removed overlay images release their pending work. Changes to the
+main image descriptor or other leading-visual fields keep the existing full
+rebind behavior. This is a Web renderer lifecycle rule; it changes neither the
+snapshot schema nor the iOS/Android implementations. Acceptance covers adding,
+replacing and removing overlays before and after image load/failure, including
+consumer row-key changes, and replacing the main image source. Overlay-only
+updates MUST retain the existing circular bitmap clipping of padded square
+badges and their caller-provided geometry.
+Status: implemented on the 6.7.0-alpha.402 publication source. Package DOM
+regressions, the built-module Chromium lifecycle fixture and consuming Electron
+refresh/navigation badge rendering are verified. Consuming Electron acceptance
+also covers a manually locked refresh, user password unlock, first Market entry
+and a complete quote polling cycle. No native implementation or public API
+changes are included.
+
 Gallery collection subtitles retain an 8px trailing text inset whether or not
 a network thumbnail is present. The subtitle uses border-box sizing and its row
 has no extra gap, preserving the same 8px separation with a thumbnail and the
