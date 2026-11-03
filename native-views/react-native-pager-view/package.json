@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-pager-view",
-  "version": "6.7.0-21",
+  "version": "6.7.0-22",
   "description": "React Native wrapper for Android and iOS ViewPager",
   "source": "./src/index.tsx",
   "main": "./lib/module/index.js",
@@ -43,7 +43,8 @@
     "prepare": "rm -rf lib && bob build",
     "typecheck": "tsc -b",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
-    "release": "yarn prepare && npm whoami && npm publish --access public"
+    "release": "yarn prepare && npm whoami && npm publish --access public",
+    "test": "jest"
   },
   "keywords": [
     "react-native",
@@ -73,7 +74,7 @@
     "typescript": "^5.9.2"
   },
   "peerDependencies": {
-    "@onekeyfe/react-native-native-logger": "6.7.0-21",
+    "@onekeyfe/react-native-native-logger": "6.7.0-22",
     "react": "*",
     "react-native": "*"
   },
@@ -110,5 +111,16 @@
       }
     }
   },
-  "react-native": "./lib/module/index.native.js"
+  "react-native": "./lib/module/index.native.js",
+  "jest": {
+    "preset": "react-native",
+    "modulePathIgnorePatterns": [
+      "<rootDir>/example/node_modules",
+      "<rootDir>/lib/"
+    ],
+    "watchman": false,
+    "testMatch": [
+      "<rootDir>/src/**/__tests__/*.test.ts?(x)"
+    ]
+  }
 }

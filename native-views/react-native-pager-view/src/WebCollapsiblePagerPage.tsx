@@ -221,7 +221,12 @@ export function WebCollapsiblePagerPage({
     owner.addEventListener("keydown", handleKey);
     owner.addEventListener("ok-collapsible-pager-user-scroll", handleUserInput);
     owner.addEventListener("ok-collapsible-pager-insets-changed", requestMeasure);
-    requestMeasure();
+    // Measure synchronously while still inside the layout phase: the metrics
+    // start at width 0, and deferring this first measurement to the next
+    // animation frame let the page paint once at width 0, which collapsed
+    // shrinkable page content (a fiat hero wrapped one character per line,
+    // OK-66299). Resize and scroll updates stay frame-coalesced.
+    measure();
     return () => {
       observer.disconnect();
       observerRef.current = null;
@@ -235,7 +240,7 @@ export function WebCollapsiblePagerPage({
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
       frameRef.current = null;
     };
-  }, [owner, requestMeasure, syncContentObservation]);
+  }, [owner, measure, requestMeasure, syncContentObservation]);
 
   React.useLayoutEffect(requestMeasure, [isFocused, isRouteActive, headerHeight, stickyHeaderHeight, requestMeasure]);
 
