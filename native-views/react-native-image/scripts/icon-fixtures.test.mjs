@@ -21,7 +21,7 @@ const manifest = JSON.parse(
 const names = Object.keys(manifest).sort();
 
 test('SDK fixtures have paired raw and external symbol resources with verified identities', () => {
-  assert.equal(names.length, 58);
+  assert.equal(names.length, 63);
   for (const root of [nativeRoot, webRoot])
     assert.deepEqual(
       fs
@@ -38,6 +38,20 @@ test('SDK fixtures have paired raw and external symbol resources with verified i
     [...urls.matchAll(/^  ([A-Z][A-Za-z0-9]+):/gm)].map((match) => match[1]),
     names
   );
+  const nativeListWebBuiltins = [
+    'ArrowBottomOutline',
+    'ArrowTopOutline',
+    'CoinsOutline',
+    'Copy3Outline',
+    'CryptoCoinOutline',
+    'Document2Outline',
+    'DotHorOutline',
+    'ImageSquareWavesOutline',
+    'ShieldCheckDoneOutline',
+    'SwitchHorOutline',
+    'UnlockedOutline',
+  ];
+  for (const name of nativeListWebBuiltins) assert.ok(manifest[name], name);
   const modes = new Set();
   for (const name of names) {
     const entry = manifest[name];

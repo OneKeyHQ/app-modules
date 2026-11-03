@@ -59,7 +59,7 @@ class OneKeyIconDecoderTest : InstrumentationTestCase() {
   fun testAllBundledSDKFixturesAndAlpha() {
     val context = instrumentation.targetContext
     val names = context.assets.list("icons")!!.filter { it.endsWith(".svg") }.sorted()
-    assertEquals(58, names.size)
+    assertEquals(63, names.size)
     val failures = mutableListOf<String>()
     val output = File(context.filesDir, "icon-probe").apply { mkdirs() }
     val representatives = setOf("GooglePayIllus.svg", "ShortcutsCustom.svg", "SidebarLeftArrowCustom.svg", "PassKeySolid.svg", "BotIllus.svg", "OnekeyPrimeLightColored.svg", "AppleBrand.svg", "ArrowTopRightIllus.svg", "OnekeyTextIllus.svg", "CheckboxCheckedCustom.svg", "ShieldDeviceDarkIllus.svg", "CoinsIllus.svg", "MaticCircleIllus.svg", "UserAvatarFallbackColored.svg")

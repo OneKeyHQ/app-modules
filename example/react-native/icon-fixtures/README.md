@@ -1,6 +1,6 @@
 # Icon fixtures
 
-These 58 SVG samples support SDK examples and tests. The complete canonical
+These 63 SVG samples support SDK examples and tests. The complete canonical
 artwork and generator live in app-monorepo `packages/components/svg`. NativeList
 coverage includes its legacy metadata aliases; Image additionally exercises
 fixed and mixed colors, alpha, gradients, masks and non-square geometry.

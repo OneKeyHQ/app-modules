@@ -34,10 +34,6 @@ import {
 } from '../web/NativeListWebEngine';
 import { applyTextStyleToSlot } from '../web/templates/RowText';
 
-jest.mock('#onekey-icon-assets', () => ({
-  iconResourceHref: (name: string) =>
-    `https://fixture.invalid/${name}.svg#onekey-${name}`,
-}));
 jest.mock('@onekeyfe/react-native-image/icon/dom', () =>
   jest.requireActual('../../../react-native-image/src/icon/dom')
 );
@@ -965,9 +961,69 @@ describe('web row style', () => {
           'true'
         );
         expect(button.querySelector('svg use')?.getAttribute('href')).toBe(
-          'https://fixture.invalid/DotVerSolid.svg#onekey-DotVerSolid'
+          'https://fixture.invalid/assets/DotVerSolid.svg#onekey-DotVerSolid'
         );
       }
+    }
+  });
+
+  it('resolves migrated NativeList Web built-in icons through the SDK fixture provider', () => {
+    const marketCopy = render({
+      key: 'market-copy',
+      type: 'market',
+      variant: 'token',
+      title: 'ONEKEY',
+      price: '$1',
+      change: { text: '+1%', tone: 'positive' },
+      leading: { kind: 'token', image },
+      webTable: {
+        columns: [{ key: 'asset', width: 200 }],
+        cells: [
+          {
+            key: 'asset',
+            kind: 'asset',
+            leading: { kind: 'token', image },
+            title: { text: 'ONEKEY' },
+            secondary: [{ text: '0x1234' }],
+            hoverSecondary: [{ text: '0x1234' }],
+            hoverActionKey: 'copy-address',
+          },
+        ],
+      },
+    });
+    expect(
+      marketCopy
+        .querySelector('[data-native-list-action="copy-address"] svg use')
+        ?.getAttribute('href')
+    ).toBe(
+      'https://fixture.invalid/assets/Copy3Outline.svg#onekey-Copy3Outline'
+    );
+
+    for (const name of [
+      'ArrowTopOutline',
+      'ArrowBottomOutline',
+      'SwitchHorOutline',
+      'CoinsOutline',
+      'ShieldCheckDoneOutline',
+      'UnlockedOutline',
+      'Document2Outline',
+      'CryptoCoinOutline',
+      'ImageSquareWavesOutline',
+      'DotHorOutline',
+    ]) {
+      const history = render({
+        key: `history-${name}`,
+        type: 'activity',
+        presentation: 'stacked',
+        leading: { kind: 'icon', name },
+        title: name,
+        amounts: [{ key: 'amount', text: '1 ETH' }],
+      });
+      expect(
+        history
+          .querySelector('.ok-native-list-history-visual svg use')
+          ?.getAttribute('href')
+      ).toBe(`https://fixture.invalid/assets/${name}.svg#onekey-${name}`);
     }
   });
 

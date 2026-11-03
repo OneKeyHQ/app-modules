@@ -33,6 +33,10 @@ const urls: Record<string, () => string> = {
   ChevronTopOutline: () =>
     new URL('./assets/ChevronTopOutline.svg', import.meta.url).href,
   CoinsIllus: () => new URL('./assets/CoinsIllus.svg', import.meta.url).href,
+  CoinsOutline: () =>
+    new URL('./assets/CoinsOutline.svg', import.meta.url).href,
+  Copy3Outline: () =>
+    new URL('./assets/Copy3Outline.svg', import.meta.url).href,
   CrossedSmallSolid: () =>
     new URL('./assets/CrossedSmallSolid.svg', import.meta.url).href,
   CryptoCoinOutline: () =>
@@ -84,6 +88,8 @@ const urls: Record<string, () => string> = {
     new URL('./assets/QuestionmarkSolid.svg', import.meta.url).href,
   RefreshCcwOutline: () =>
     new URL('./assets/RefreshCcwOutline.svg', import.meta.url).href,
+  ShieldCheckDoneOutline: () =>
+    new URL('./assets/ShieldCheckDoneOutline.svg', import.meta.url).href,
   ShieldDeviceDarkIllus: () =>
     new URL('./assets/ShieldDeviceDarkIllus.svg', import.meta.url).href,
   ShieldExclamationOutline: () =>
@@ -98,8 +104,12 @@ const urls: Record<string, () => string> = {
   StarSolid: () => new URL('./assets/StarSolid.svg', import.meta.url).href,
   SwapHorOutline: () =>
     new URL('./assets/SwapHorOutline.svg', import.meta.url).href,
+  SwitchHorOutline: () =>
+    new URL('./assets/SwitchHorOutline.svg', import.meta.url).href,
   TicketOutline: () =>
     new URL('./assets/TicketOutline.svg', import.meta.url).href,
+  UnlockedOutline: () =>
+    new URL('./assets/UnlockedOutline.svg', import.meta.url).href,
   UserAvatarFallbackColored: () =>
     new URL('./assets/UserAvatarFallbackColored.svg', import.meta.url).href,
   WalletOutline: () =>

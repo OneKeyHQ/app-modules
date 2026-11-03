@@ -2,349 +2,694 @@
   "AccountErrorCustom": {
     "source": "custom/account-error.svg",
     "digest": "d22df88b6e9705d98eb1431020fb5b1f7a0d7c6cb24c714dc0bfc6097bb264f0",
-    "viewBox": [0, 0, 18, 18],
+    "viewBox": [
+      0,
+      0,
+      18,
+      18
+    ],
     "recolorMode": "fixed"
   },
   "AllNetworksSolid": {
     "source": "solid/all-networks.svg",
     "digest": "1b0521162aa5f34e1834a96fdd64df621f15b1d102f1dcf598167521973e8c99",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "multiple"
   },
   "AppleBrand": {
     "source": "brand/apple.svg",
     "digest": "fa0ab9cc5f90a2fb29b602be9e5002f482229bd586f6207d977be88597979b88",
-    "viewBox": [0, 0, 16, 20],
+    "viewBox": [
+      0,
+      0,
+      16,
+      20
+    ],
     "recolorMode": "multiple"
   },
   "ArrowBottomOutline": {
     "source": "outline/arrow-bottom.svg",
     "digest": "9aec8da306cc4a80a3e6ecaa6abb619dc72e036fc1e001b954ee634f16c5aca2",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "single"
   },
   "ArrowTopOutline": {
     "source": "outline/arrow-top.svg",
     "digest": "2e8362053e098b911269ffe3db4e53bb5a2f4ec07bf90969cb51b9bee8309382",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "single"
   },
   "ArrowTopRightIllus": {
     "source": "illus/arrow-top-right.svg",
     "digest": "5cf855e5faaa9c585a43bff740fc3adcd245b05fb2704226fa561fc021d24428",
-    "viewBox": [0, 0, 69, 36],
+    "viewBox": [
+      0,
+      0,
+      69,
+      36
+    ],
     "recolorMode": "single"
   },
   "BadgeRecognizedSolid": {
     "source": "solid/badge-recognized.svg",
     "digest": "d4d9b03fe31a4ade0a96b99d96fd0513879c24dce3ab34ce106d62c59a7d7ec8",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "multiple"
   },
   "BadgeVerifiedSolid": {
     "source": "solid/badge-verified.svg",
     "digest": "0b92928350bed852baa1e23baedbf49e2b659805bcd0aaf22b556cc8a379f390",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "raster"
   },
   "BotIllus": {
     "source": "illus/bot.svg",
     "digest": "903a3247272c6884807947294d51818f39fafcf626d0af865358e112fbdced87",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "fixed"
   },
   "ChartPositionOutline": {
     "source": "outline/chart-position.svg",
     "digest": "24f6c241cfe6c179ad8710aa5bcdf0abca78464315185b37aebd35d210eddf9b",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "multiple"
   },
   "ChartTrendingUpOutline": {
     "source": "outline/chart-trending-up.svg",
     "digest": "574f511392aae55a56803804665432d4d934c209de6ad034101945bc23f011d1",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "single"
   },
   "CheckboxCheckedCustom": {
     "source": "custom/checkbox-checked.svg",
     "digest": "099ee54ea11bd025015e0c15f83e07b4f7c09182554a66132d4c20b177bcb1c1",
-    "viewBox": [0, 0, 16, 16],
+    "viewBox": [
+      0,
+      0,
+      16,
+      16
+    ],
     "recolorMode": "single"
   },
   "CheckboxIndeterminateCustom": {
     "source": "custom/checkbox-indeterminate.svg",
     "digest": "edd218601cf5729bae514b81505b6870590fa5dd2258bc808993f0b40be45231",
-    "viewBox": [0, 0, 16, 16],
+    "viewBox": [
+      0,
+      0,
+      16,
+      16
+    ],
     "recolorMode": "single"
   },
   "ChevronBottomOutline": {
     "source": "outline/chevron-bottom.svg",
     "digest": "2a1bc428cbc94fae40f3d3c35e18deb1ae7ed2aa4ab82fa17fc135a6ae28a41a",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "single"
   },
   "ChevronGrabberVerOutline": {
     "source": "outline/chevron-grabber-ver.svg",
     "digest": "6981e503a597e6d011645c59270021e04fe6cab04e24956024f26bc9e08b9a08",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "single"
   },
   "ChevronRightSmallOutline": {
     "source": "outline/chevron-right-small.svg",
     "digest": "f74e391845efe9302768b5dca4550489ccb953c725c54f4e38a41d58149cf430",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "single"
   },
   "ChevronTopOutline": {
     "source": "outline/chevron-top.svg",
     "digest": "a18449f806ccd2c727ff8faf7c858b3fa758946c7cea97ed565ddb3392fd853c",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "single"
   },
   "CoinsIllus": {
     "source": "illus/coins.svg",
     "digest": "325698aa642a3c99e85ed15f959d8b15f22655623e521e9e58c2e7c05a1066f3",
-    "viewBox": [0, 0, 180, 180],
+    "viewBox": [
+      0,
+      0,
+      180,
+      180
+    ],
     "recolorMode": "fixed"
+  },
+  "CoinsOutline": {
+    "source": "outline/coins.svg",
+    "digest": "bd6d26069e933625a968eed341c2b99ea9829f1c221e75701afcc0cdb37d54b9",
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
+    "recolorMode": "single"
+  },
+  "Copy3Outline": {
+    "source": "outline/copy-3.svg",
+    "digest": "d582e751072ef6f2ff6f730a55228cbc743f4f7ba167ba85b116fd0593cad46c",
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
+    "recolorMode": "single"
   },
   "CrossedSmallSolid": {
     "source": "solid/crossed-small.svg",
     "digest": "9291d0a3c5d03544c139032807c08682295b10ab44bc0aa7828523399a901adb",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "single"
   },
   "CryptoCoinOutline": {
     "source": "outline/crypto-coin.svg",
     "digest": "e78ecebcae19aa1492c5120ed840a2831b733a5cc2e1d5434d6edc59897f30c4",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "multiple"
   },
   "Document2Outline": {
     "source": "outline/document-2.svg",
     "digest": "971a7150c198ccd6e9ef2f669dbdcdde1e7f0c7a5dc5c29a9761a0f231177a98",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "multiple"
   },
   "DotHorOutline": {
     "source": "outline/dot-hor.svg",
     "digest": "dd30dff6ec70184bf8e83464a44e5a83cb79032bede93238a7fb434f5b4b19fc",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "single"
   },
   "DotVerSolid": {
     "source": "solid/dot-ver.svg",
     "digest": "d03fb03916177eecbb5c5ad36a01b63517f902a8eff7d59db8116c0ea6929009",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "single"
   },
   "DragOutline": {
     "source": "outline/drag.svg",
     "digest": "c53f98ecf3ed082bf07c4eade8239c0d58c10ee014ee1ef01ddce1d05277f37d",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "single"
   },
   "EditOutline": {
     "source": "outline/edit.svg",
     "digest": "3cd05e3d4c3b78d24ff4c068e3c1d7ec28d41ae955f5b1c1c5049a41f0e7f193",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "multiple"
   },
   "ErrorSolid": {
     "source": "solid/error.svg",
     "digest": "739c36a2cefd45c0134cb526827f7ad7f9a32dff2cf76f024d836645f50c916a",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "single"
   },
   "GasSolid": {
     "source": "solid/gas.svg",
     "digest": "ddfd027fe8de3a61ac25a8103924f652a431f6ff638f0ba8bc761177c8162111",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "single"
   },
   "GlobusOutline": {
     "source": "outline/globus.svg",
     "digest": "02af05c80be6e84022333f1bd5716f8a99215c86efb0a6858af8de31fd7dbaa1",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "single"
   },
   "GoogleIllus": {
     "source": "illus/google.svg",
     "digest": "faf35f07e2822781af246a0a2dcb68f80d666772ec5b1264955232ac142ebe4d",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "fixed"
   },
   "GooglePayIllus": {
     "source": "illus/google-pay.svg",
     "digest": "af530a8fd0f0fb590e769158d1c8bc83ae30e0372ef0520965b5361bd617844c",
-    "viewBox": [0, 0, 32, 12],
+    "viewBox": [
+      0,
+      0,
+      32,
+      12
+    ],
     "recolorMode": "raster"
   },
   "ImageSquareWavesOutline": {
     "source": "outline/image-square-waves.svg",
     "digest": "74bce91f4408547d5205b3ba948af3148e8744641f6cad49f296a8c4ad59142a",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "multiple"
   },
   "InfoCircleOutline": {
     "source": "outline/info-circle.svg",
     "digest": "78990c093581ae13bed71b55ebae834374dbe01ae2c9950fc0e622ceb6882978",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "multiple"
   },
   "LimitOrderOutline": {
     "source": "outline/limit-order.svg",
     "digest": "73a6f11cf31905a876871ed7caf908f1f11725531384d69803d526f29e03ce0b",
-    "viewBox": [0, 0, 36, 36],
+    "viewBox": [
+      0,
+      0,
+      36,
+      36
+    ],
     "recolorMode": "multiple"
   },
   "LockSolid": {
     "source": "solid/lock.svg",
     "digest": "272fa8818624802a01f35c06c29262705660efaddc296f84ed159b7e08f196e9",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "single"
   },
   "MaticCircleIllus": {
     "source": "illus/matic-circle.svg",
     "digest": "f3e5986311df18e1b2431279ef1254b763a096ad25570ddf9fa1e643ac552d00",
-    "viewBox": [0, 0, 32, 32],
+    "viewBox": [
+      0,
+      0,
+      32,
+      32
+    ],
     "recolorMode": "fixed"
   },
   "MinusCircleOutline": {
     "source": "outline/minus-circle.svg",
     "digest": "b6fa3012d6003674e5689d4ece0725cac27aa0747cec8856e8be3b89d7a2b5e7",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "multiple"
   },
   "MinusCircleSolid": {
     "source": "solid/minus-circle.svg",
     "digest": "8d528d428b89aa4a568f60348cf0fc2ff31cfbfabc8644aaacf934680494cd47",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "single"
   },
   "OnekeyPrimeDarkColored": {
     "source": "colored/onekey-prime-dark.svg",
     "digest": "e267154a62a3295ef3d3ad47aac2adc69bebc5ca437db5fcf9db164f4d6f0c44",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "fixed"
   },
   "OnekeyPrimeLightColored": {
     "source": "colored/onekey-prime-light.svg",
     "digest": "6903ced3861012ea344b525002adc479f6ac6366b523f273b9b1c15f0894e585",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "fixed"
   },
   "OnekeyTextIllus": {
     "source": "illus/onekey-text.svg",
     "digest": "aa2cdf1246dd288d111f1e51e8aa44c7e948ccb6be7c884439036d214b78d520",
-    "viewBox": [0, 0, 102, 28],
+    "viewBox": [
+      0,
+      0,
+      102,
+      28
+    ],
     "recolorMode": "raster"
   },
   "PassKeySolid": {
     "source": "solid/pass-key.svg",
     "digest": "29221731a42c08888f29cd90842574397e7a37f9fd2f938ec503c9db188b5bf1",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "multiple"
   },
   "PencilOutline": {
     "source": "outline/pencil.svg",
     "digest": "1309251b6978f17857bd85e23b3dcb2050e56c03fa69b6dd05fdbf727e7b52ec",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "single"
   },
   "PlusCircleOutline": {
     "source": "outline/plus-circle.svg",
     "digest": "2300710bf4f3a0cd4c1db7a9207ec47d9a13f371a6ba4a976b3b92e38b928e5d",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "multiple"
   },
   "PlusLargeOutline": {
     "source": "outline/plus-large.svg",
     "digest": "cc1ad6aa72c2a90df7503db3bfa6dda5afc9fd7c666146f087f62d1a8082e79e",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "single"
   },
   "PlusSmallOutline": {
     "source": "outline/plus-small.svg",
     "digest": "c3279ff7a460a26ae6e1424e336de256e7722b9427c3cee82409eeaf70f3857e",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "single"
   },
   "QuestionmarkSolid": {
     "source": "solid/questionmark.svg",
     "digest": "b7bdb110210ff2fabacd12ad2f1d9feac33972c90aa274ac3e3764675692ae27",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "single"
   },
   "RefreshCcwOutline": {
     "source": "outline/refresh-ccw.svg",
     "digest": "77a8c00218cb98ccdc4abb36420185cdc991af8c2f27ad873bc943eada2dba41",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "single"
+  },
+  "ShieldCheckDoneOutline": {
+    "source": "outline/shield-check-done.svg",
+    "digest": "c7cadf53f3a7da35bfe936f5ec571bcc29b5b0b6721bbfaf4279e7ffc4e5893d",
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
+    "recolorMode": "multiple"
   },
   "ShieldDeviceDarkIllus": {
     "source": "illus/shield-device-dark.svg",
     "digest": "185914a52a974d52f91ccc04749fb23351185e45a938794e98a0dd800353ac39",
-    "viewBox": [0, 0, 180, 180],
+    "viewBox": [
+      0,
+      0,
+      180,
+      180
+    ],
     "recolorMode": "fixed"
   },
   "ShieldExclamationOutline": {
     "source": "outline/shield-exclamation.svg",
     "digest": "601b0e85244a25a2bf7dafa658792181f175dbd0fa62382fbcf4f3342385576f",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "multiple"
   },
   "ShortcutsCustom": {
     "source": "custom/shortcuts.svg",
     "digest": "95deca2b3988d5e258e688c12774d4a742c361b5d43abdf8473d0422b0f58916",
-    "viewBox": [0, 0, 24, 25],
+    "viewBox": [
+      0,
+      0,
+      24,
+      25
+    ],
     "recolorMode": "single"
   },
   "SidebarLeftArrowCustom": {
     "source": "custom/sidebar-left-arrow.svg",
     "digest": "b5dd05c76b285f17e729436c4011f9cd9e88b8c3deff221a6a9f053ddf56b047",
-    "viewBox": [0, 0, 24, 25],
+    "viewBox": [
+      0,
+      0,
+      24,
+      25
+    ],
     "recolorMode": "multiple"
   },
   "SpeakerPromoteOutline": {
     "source": "outline/speaker-promote.svg",
     "digest": "210f1142f1975638df23b59b662ee28aa38460ab768d11b941dfe71564803604",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "single"
   },
   "StarOutline": {
     "source": "outline/star.svg",
     "digest": "37c429e392fe622ec88845ac0f22fba55ef84965549eb463f032d2573509850c",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "single"
   },
   "StarSolid": {
     "source": "solid/star.svg",
     "digest": "b5447f6d329c0708aa252e49a1e1ab8ebba4f96d0e7cfb72c604232e6d56620e",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "single"
   },
   "SwapHorOutline": {
     "source": "outline/swap-hor.svg",
     "digest": "d3581efa0e65de47215b447dee5f36445194e3a2fed8ebf792217e7dce47007a",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
+    "recolorMode": "single"
+  },
+  "SwitchHorOutline": {
+    "source": "outline/switch-hor.svg",
+    "digest": "417cb861af6730767eb63b74f62288bf6f2d00bbd7429476a8d31083a7f5d6a8",
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "single"
   },
   "TicketOutline": {
     "source": "outline/ticket.svg",
     "digest": "a5ef95f7d9bcb2ec28561925cd0bd062d9cbe87f742ce1f3da58c8f9b506c274",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
+    "recolorMode": "multiple"
+  },
+  "UnlockedOutline": {
+    "source": "outline/unlocked.svg",
+    "digest": "facf859df43069c43fcf84fa8fd846900ef86d045b197fcc0ea9762065d06084",
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "multiple"
   },
   "UserAvatarFallbackColored": {
     "source": "colored/user-avatar-fallback.svg",
     "digest": "1facf3cfd67621d82abdcfdb047161c9c27927b715f7ed279904ce31b3d2d9e8",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "fixed"
   },
   "WalletOutline": {
     "source": "outline/wallet.svg",
     "digest": "9cc4d94caf8a8b628b770f14ba50868440631042831248baea12a00fd9ccc14e",
-    "viewBox": [0, 0, 24, 24],
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
     "recolorMode": "multiple"
   }
 }

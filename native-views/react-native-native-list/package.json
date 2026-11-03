@@ -126,7 +126,7 @@
       "<rootDir>/lib/"
     ],
     "moduleNameMapper": {
-      "^#onekey-icon-assets$": "<rootDir>/../react-native-image/src/icon/assetUrls.ts"
+      "^#onekey-icon-assets$": "<rootDir>/../../example/react-native/icon-fixtures/web/assetUrls.ts"
     }
   },
   "prettier": {

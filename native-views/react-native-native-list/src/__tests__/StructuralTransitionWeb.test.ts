@@ -2,10 +2,6 @@ import type { NativeListSnapshot, RowModel } from '../models';
 import * as validation from '../validation';
 import { NativeListWebEngine } from '../web/NativeListWebEngine';
 
-jest.mock('#onekey-icon-assets', () => ({
-  iconResourceHref: (name: string) =>
-    `https://fixture.invalid/${name}.svg#onekey-${name}`,
-}));
 jest.mock('@onekeyfe/react-native-image/icon/dom', () =>
   jest.requireActual('../../../react-native-image/src/icon/dom')
 );

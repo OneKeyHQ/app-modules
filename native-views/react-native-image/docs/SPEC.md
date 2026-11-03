@@ -687,11 +687,12 @@ All App resource URLs remain reachable in the generated registry and emit as
 external files; unused artwork remains packaged, while browsers request only
 referenced files. Extension background stubs do not import the provider.
 
-SDK examples and native tests share 58 checked-in samples under
+SDK examples and native tests share 63 checked-in samples under
 `example/react-native/icon-fixtures`, with independent native and Web packaging.
 Only example targets, explicitly named XCTest target phases and opt-in Android test runners include
 these fixtures; the production Image pod and AAR have no fixture resource input.
-The fixture manifest covers NativeList's 42 canonical names and additional Image
+The fixture manifest covers NativeList's 42 canonical names, NativeList Web's
+built-in renderer icons, and additional Image
 semantics, including `EditOutline`, fixed/mixed colors, gradients and non-square
 geometry. NativeList's legacy `BadgeVerifiedSolid` still maps to
 `BadgeRecognizedSolid`; the Image sample named `BadgeVerifiedSolid` remains its
@@ -707,8 +708,8 @@ A passing SDK sample test does not establish complete App catalog acceptance.
 SDK fixture acceptance on 2026-11-02: iOS 26.5 real UIApplication host runs all
 7 Image icon tests without failure or skip. Normal NativeList hosted checks run
 9 cases (8 pass, one archived-legacy-bundle skip). CI-style hostless checks run
-16 cases (9 pass, 7 UIApplication/legacy skips). Every test bundle has exactly
-58 raw samples with matching source digests. Android API 34 runs all 7 Image
+16 cases (9 pass, 7 UIApplication/legacy skips). Every test bundle has the
+complete raw fixture set with matching source digests. Android API 34 runs all 7 Image
 instrumentation cases and 5 NativeList consumer cases without failure. The
 standalone Image instrumentation APK supplies existing React JNI dependencies
 through its opt-in test configuration; its C++ runtime is selected explicitly

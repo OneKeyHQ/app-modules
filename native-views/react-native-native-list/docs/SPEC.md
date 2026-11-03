@@ -2036,7 +2036,7 @@ the application owns complete named SVG resources. NativeList keeps its existing
 legacy `BadgeVerifiedSolid` to canonical `BadgeRecognizedSolid` mapping. No list
 props, naming coverage, geometry or rendering strategy changes.
 
-The SDK metadata generator validates against the shared 58-sample example/test
+The SDK metadata generator validates against the shared 63-sample example/test
 catalog without an App checkout, including raw source digests and viewBox sizes.
 It emits metadata only. Production consumers must supply the complete host icon
 bundle/assets and Web provider; SDK-only fixture tests prove their closed sample

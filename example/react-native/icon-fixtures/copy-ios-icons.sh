@@ -5,8 +5,8 @@ source_directory="$fixture_directory/native/icons"
 destination="$1"
 test -f "$source_directory/manifest.json"
 count=$(find "$source_directory" -type f -name '*.svg' | wc -l | tr -d ' ')
-if [ "$count" != 58 ]; then
-  echo "error: Expected 58 SDK icon fixtures, found $count" >&2
+if [ "$count" != 63 ]; then
+  echo "error: Expected 63 SDK icon fixtures, found $count" >&2
   exit 1
 fi
 case "$destination" in

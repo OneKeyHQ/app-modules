@@ -85,7 +85,7 @@ final class OneKeyIconTests: XCTestCase {
     let bundle = try XCTUnwrap(Bundle(url: url))
     let manifestURL = try XCTUnwrap(bundle.url(forResource: "manifest", withExtension: "json"))
     let manifest = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [String: Any])
-    XCTAssertEqual(manifest.count, 58)
+    XCTAssertEqual(manifest.count, 63)
     let all = expectation(description: "All named resources")
     all.expectedFulfillmentCount = manifest.count
     let owners = manifest.keys.sorted().map { _ in NSObject() }
