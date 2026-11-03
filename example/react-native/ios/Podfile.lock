@@ -3710,7 +3710,7 @@ SPEC CHECKSUMS:
   ReactNativeDeviceUtils: 684ca0cdd4fa389e75aa02f098671af9130bca59
   ReactNativeGetRandomValues: e4ca5af78c8b8c760894f65d08d6902f11bb4d20
   ReactNativeImageCropPicker: 7236932a7b5974a961534068c844d1af69ffd81f
-  ReactNativeLiteCard: 295e7fae83797c693ef7c6b5164012b7212b44cf
+  ReactNativeLiteCard: dbb298c5b5268777a46817bcbef51ca7d27b14ce
   ReactNativeNativeLogger: f61b86cafe50f2804d3981d2ad0d073cde669fb5
   ReactNativePerfMemory: cf14580c845b9ca75bc5e2de5ea1af2ac3e462e3
   ReactNativePerfStats: d3934033ff3ff84f6cdbbedae8e80638425eafbf
