@@ -69,6 +69,209 @@
      let overridable_owners = overridable_owners_rarray(lock_filter);
      let mut sql_params: Vec<(&str, &dyn ToSql)> = vec![
          (":account_uuid", &account_uuid),
+--- a/src/wallet/db.rs
++++ b/src/wallet/db.rs
+@@ -17,6 +17,7 @@
+ use zcash_protocol::consensus::{NetworkUpgrade, Parameters};
+ 
+ use crate::wallet::scanning::priority_code;
++use rusqlite::OptionalExtension;
+ 
+ /// Stores information about the accounts that the wallet is tracking.
+ ///
+@@ -1755,6 +1756,14 @@
+ FROM unioned
+ GROUP BY transaction_id, output_pool, output_index";
+ 
++/// OneKey: the scan and spending floor. Accounts listed in `ext_onekey_paused_accounts` keep
++/// their data but do not hold it back; with every account paused it is the earliest
++/// birthday of all, which is the upstream wallet birthday.
++pub(crate) const ONEKEY_SCAN_FLOOR_SQL: &str = "COALESCE(
++    (SELECT MIN(birthday_height) FROM accounts
++     WHERE uuid NOT IN (SELECT account_uuid FROM ext_onekey_paused_accounts)),
++    (SELECT MIN(birthday_height) FROM accounts))";
++
+ /// Combines the Sapling tree shards and scan ranges.
+ ///
+ /// Note that in regtest mode when the Sapling NU has no activation height, the
+@@ -1797,7 +1806,7 @@
+ pub(super) fn view_sapling_shard_unscanned_ranges() -> String {
+     format!(
+         "CREATE VIEW v_sapling_shard_unscanned_ranges AS
+-        WITH wallet_birthday AS (SELECT MIN(birthday_height) AS height FROM accounts)
++        WITH wallet_birthday AS (SELECT {} AS height)
+         SELECT
+             shard_index,
+             start_position,
+@@ -1812,6 +1821,7 @@
+         INNER JOIN wallet_birthday
+         WHERE priority > {}
+         AND block_range_end > wallet_birthday.height",
++        ONEKEY_SCAN_FLOOR_SQL,
+         priority_code(&ScanPriority::Scanned)
+     )
+ }
+@@ -1877,7 +1887,7 @@
+ pub(super) fn view_orchard_shard_unscanned_ranges() -> String {
+     format!(
+         "CREATE VIEW v_orchard_shard_unscanned_ranges AS
+-        WITH wallet_birthday AS (SELECT MIN(birthday_height) AS height FROM accounts)
++        WITH wallet_birthday AS (SELECT {} AS height)
+         SELECT
+             shard_index,
+             start_position,
+@@ -1892,6 +1902,7 @@
+         INNER JOIN wallet_birthday
+         WHERE priority > {}
+         AND block_range_end > wallet_birthday.height",
++        ONEKEY_SCAN_FLOOR_SQL,
+         priority_code(&ScanPriority::Scanned),
+     )
+ }
+@@ -1958,7 +1969,7 @@
+ pub(super) fn view_ironwood_shard_unscanned_ranges() -> String {
+     format!(
+         "CREATE VIEW v_ironwood_shard_unscanned_ranges AS
+-        WITH wallet_birthday AS (SELECT MIN(birthday_height) AS height FROM accounts)
++        WITH wallet_birthday AS (SELECT {} AS height)
+         SELECT
+             shard_index,
+             start_position,
+@@ -1973,6 +1984,7 @@
+         INNER JOIN wallet_birthday
+         WHERE priority > {}
+         AND block_range_end > wallet_birthday.height",
++        ONEKEY_SCAN_FLOOR_SQL,
+         priority_code(&ScanPriority::Scanned),
+     )
+ }
+@@ -2035,3 +2047,67 @@
+     GROUP BY
+         address_id, account_id, key_scope,
+         diversifier_index_be, transparent_child_index";
++
++
++/// OneKey: [`VIEW_ORCHARD_SHARDS_SCAN_STATE`] and its siblings, except that an unscanned range
++/// below the scan floor no longer marks its shard unscanned: it waits for a paused account.
++fn onekey_view_shards_scan_state(pool: &str) -> String {
++    format!(
++        "CREATE VIEW v_{pool}_shards_scan_state AS
++SELECT
++    shard_index,
++    start_position,
++    end_position_exclusive,
++    subtree_start_height,
++    subtree_end_height,
++    contains_marked,
++    MAX(priority) AS max_priority
++FROM v_{pool}_shard_scan_ranges
++WHERE NOT (priority > {} AND block_range_end <= IFNULL(({}), 0))
++GROUP BY
++    shard_index,
++    start_position,
++    end_position_exclusive,
++    subtree_start_height,
++    subtree_end_height,
++    contains_marked",
++        priority_code(&ScanPriority::Scanned),
++        ONEKEY_SCAN_FLOOR_SQL,
++    )
++}
++
++/// OneKey: recreates the shard views whose definitions predate the scan floor, so existing
++/// databases follow [`ONEKEY_SCAN_FLOOR_SQL`]. Returns whether anything was recreated.
++pub(crate) fn rebuild_onekey_shard_views(conn: &mut rusqlite::Connection) -> Result<bool, rusqlite::Error> {
++    let views = [
++        ("v_sapling_shard_unscanned_ranges", view_sapling_shard_unscanned_ranges()),
++        ("v_sapling_shards_scan_state", onekey_view_shards_scan_state("sapling")),
++        ("v_orchard_shard_unscanned_ranges", view_orchard_shard_unscanned_ranges()),
++        ("v_orchard_shards_scan_state", onekey_view_shards_scan_state("orchard")),
++        ("v_ironwood_shard_unscanned_ranges", view_ironwood_shard_unscanned_ranges()),
++        ("v_ironwood_shards_scan_state", onekey_view_shards_scan_state("ironwood")),
++    ];
++    let mut stale = Vec::new();
++    for (name, sql) in &views {
++        let current: Option<String> = conn
++            .query_row(
++                "SELECT sql FROM sqlite_master WHERE type = 'view' AND name = ?1",
++                [name],
++                |row| row.get(0),
++            )
++            .optional()?;
++        if current.as_deref() != Some(sql.as_str()) {
++            stale.push((name, sql));
++        }
++    }
++    if stale.is_empty() {
++        return Ok(false);
++    }
++    // Views resolve their dependencies when queried, so each can be replaced on its own.
++    let tx = conn.transaction()?;
++    for (name, sql) in stale {
++        tx.execute_batch(&format!("DROP VIEW IF EXISTS {name}; {sql};"))?;
++    }
++    tx.commit()?;
++    Ok(true)
++}
+--- a/src/wallet/init.rs
++++ b/src/wallet/init.rs
+@@ -597,6 +597,16 @@
+         .execute_batch("PRAGMA foreign_keys = OFF;")
+         .map_err(|e| MigratorError::Adapter(WalletMigrationError::from(e)))?;
+ 
++    // OneKey: the scan floor reads this while migrations run (see `db::ONEKEY_SCAN_FLOOR_SQL`).
++    wdb.conn
++        .borrow()
++        .execute_batch(
++            "CREATE TABLE IF NOT EXISTS ext_onekey_paused_accounts (
++                account_uuid BLOB PRIMARY KEY NOT NULL
++            )",
++        )
++        .map_err(|e| MigratorError::Adapter(WalletMigrationError::from(e)))?;
++
+     // Temporarily take ownership of the connection in a wrapper to perform the initial migration
+     // table setup. This extra adapter creation could be omitted if `RusqliteAdapter` provided an
+     // accessor for the connection that it wraps, or if it provided a mechanism to query to
+@@ -644,6 +654,12 @@
+         .borrow()
+         .execute("PRAGMA foreign_keys = ON", [])
+         .map_err(|e| MigratorError::Adapter(WalletMigrationError::from(e)))?;
++
++    // OneKey: databases migrated before the scan floor get its shard views.
++    if target_migrations.is_empty() {
++        super::db::rebuild_onekey_shard_views(wdb.conn.borrow_mut())
++            .map_err(|e| MigratorError::Adapter(WalletMigrationError::from(e)))?;
++    }
+ 
+     // Now that the migration succeeded, check whether the seed is relevant to the wallet.
+     // We can only check this if we have migrated as far as `full_account_ids::MIGRATION_ID`,
+--- a/src/wallet/scanning.rs
++++ b/src/wallet/scanning.rs
+@@ -549,14 +549,22 @@
+                    WHERE shard.subtree_end_height IS NOT NULL
+                      AND shard.subtree_end_height <= :pruning_floor
+                      AND (commitment_tree_position >> :shard_height) = shard.shard_index
++                     -- OneKey: every account's birthday, a paused one's included; a gap
++                     -- below the scan floor still leaves this shard's witnesses incomplete.
+                      AND shard.shard_index NOT IN (
+-                         SELECT shard_index FROM v_{table_prefix}_shard_unscanned_ranges
++                         SELECT shard_index FROM v_{table_prefix}_shard_scan_ranges
++                         WHERE priority > :scanned
++                           AND block_range_end > (SELECT MIN(birthday_height) FROM accounts)
+                      )
+                )",
+         );
+         conn.execute(
+             &sql,
+-            named_params![":pruning_floor": pruning_floor, ":shard_height": shard_height],
++            named_params![
++                ":pruning_floor": pruning_floor,
++                ":shard_height": shard_height,
++                ":scanned": priority_code(&ScanPriority::Scanned),
++            ],
+         )?;
+         Ok(())
+     }
 --- a/src/wallet.rs
 +++ b/src/wallet.rs
 @@ -127,7 +127,7 @@
@@ -121,3 +324,12 @@
          anchor_height,
          confirmations_policy,
          &mut account_balances,
+@@ -3227,7 +3231,7 @@
+     conn: &rusqlite::Connection,
+ ) -> Result<Option<BlockHeight>, rusqlite::Error> {
+     conn.query_row(
+-        "SELECT MIN(birthday_height) AS wallet_birthday FROM accounts",
++        &format!("SELECT {} AS wallet_birthday", db::ONEKEY_SCAN_FLOOR_SQL),
+         [],
+         |row| {
+             row.get::<_, Option<u32>>(0)
