@@ -43,6 +43,11 @@ Whitespace-only strings resolve to an empty source. Numeric assets, URI objects
 and SF Symbols retain their existing resolution. The shared resolver is used for
 focused/unfocused icons and the iOS side-accessory icon.
 
+The default `getIcon` resolver has a stable identity. With the same routes array
+and resolver, iOS retains both normal and selected icon-source arrays across tab
+selection and unrelated renders. Replacing the routes array or supplying a new
+resolver recomputes both arrays. Android keeps its focus-dependent icon choice.
+
 ## Native left drawer
 
 Status: implemented in module source. Package TypeScript, iOS/Android Fabric

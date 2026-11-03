@@ -332,6 +332,19 @@ interface Props<Route extends BaseRoute> {
   onSideAccessoryPress?: () => void;
 }
 
+const defaultGetIcon = ({
+  route,
+  focused,
+}: {
+  route: BaseRoute;
+  focused: boolean;
+}) =>
+  route.unfocusedIcon
+    ? focused
+      ? route.focusedIcon
+      : route.unfocusedIcon
+    : route.focusedIcon;
+
 const ANDROID_MAX_TABS = 100;
 
 const BottomTabs = <Route extends BaseRoute>({
@@ -353,12 +366,7 @@ const BottomTabs = <Route extends BaseRoute>({
   getBadgeTextColor = ({ route }: { route: Route }) => route.badgeTextColor,
   getLazy = ({ route }: { route: Route }) => route.lazy,
   getLabelText = ({ route }: { route: Route }) => route.title,
-  getIcon = ({ route, focused }: { route: Route; focused: boolean }) =>
-    route.unfocusedIcon
-      ? focused
-        ? route.focusedIcon
-        : route.unfocusedIcon
-      : route.focusedIcon,
+  getIcon = defaultGetIcon,
   getHidden = ({ route }: { route: Route }) => route.hidden,
   getActiveTintColor = ({ route }: { route: Route }) => route.activeTintColor,
   getTestID = ({ route }: { route: Route }) => route.testID,
