@@ -1,4 +1,5 @@
 import CoreText
+import OneKeyImage
 import UIKit
 
 enum NativeListFontWeight {
@@ -70,6 +71,18 @@ func nativeListTabularFont(
 }
 
 func nativeListIconMetadata(named name: String) -> NativeListIconMetadata? {
-  if name == "Circle" { return NativeListIconMetadata(name: "Circle", size: CGSize(width: 24, height: 24), original: false) }
-  return NativeListGeneratedIcons.icons[name]
+  if name == "Circle" {
+    return NativeListIconMetadata(name: "Circle", size: CGSize(width: 24, height: 24), original: false)
+  }
+  if let generated = NativeListGeneratedIcons.icons[name] {
+    return generated
+  }
+  guard let meta = OneKeyNamedSVG.shared.iconMetadata(forName: name) else {
+    return nil
+  }
+  return NativeListIconMetadata(
+    name: name,
+    size: CGSize(width: meta.width, height: meta.height),
+    original: meta.recolorMode == .fixed || meta.recolorMode == .raster
+  )
 }

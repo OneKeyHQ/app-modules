@@ -2,6 +2,59 @@ import Foundation
 import UIKit
 import React
 
+@objc private protocol OneKeyNamedSVGBridgeProtocol: AnyObject {
+  @objc(cancelWithOwner:)
+  static func cancel(owner: AnyObject)
+
+  @objc(requestWithOwner:name:color:width:height:scale:complete:)
+  static func request(
+    owner: AnyObject,
+    name: String,
+    color: String,
+    width: Int,
+    height: Int,
+    scale: Double,
+    complete: @escaping (UIImage?) -> Void
+  )
+}
+
+/// Bridges to OneKeyNamedSVG.shared in OneKeyImage without importing the OneKeyImage
+/// Swift module (which transitively imports NitroModules C++ headers).
+private enum OneKeyNamedSVGLoader {
+  private static var bridgeClass: OneKeyNamedSVGBridgeProtocol.Type? {
+    (NSClassFromString("OneKeyNamedSVGBridge") ?? NSClassFromString("OneKeyImage.OneKeyNamedSVGBridge"))
+      as? OneKeyNamedSVGBridgeProtocol.Type
+  }
+
+  static func cancel(owner: AnyObject) {
+    bridgeClass?.cancel(owner: owner)
+  }
+
+  static func request(
+    owner: AnyObject,
+    name: String,
+    color: String,
+    width: Int,
+    height: Int,
+    scale: CGFloat,
+    complete: @escaping (UIImage?) -> Void
+  ) {
+    guard let bridge = bridgeClass else {
+      complete(nil)
+      return
+    }
+    bridge.request(
+      owner: owner,
+      name: name,
+      color: color,
+      width: width,
+      height: height,
+      scale: Double(scale),
+      complete: complete
+    )
+  }
+}
+
 // MARK: - Data types for props from JS
 
 struct TabItem {
@@ -77,6 +130,10 @@ class RCTBottomTabsContainerView: UIView {
   private var loadedSideAccessoryIcon: UIImage?
   // Increments per icon load; a completion applies only to the latest one.
   private var sideAccessoryIconRequest = 0
+  private static let oneKeyIconSchemePrefix = "onekey-icon://"
+  private var iconRequestTokens: [Int: NSObject] = [:]
+  private var selectedIconRequestTokens: [Int: NSObject] = [:]
+  private var sideAccessoryRequestToken = NSObject()
   private var isSideAccessoryLayoutScheduled = false
   private static let sideAccessorySize: CGFloat = 48
   private static let sideAccessorySpacing: CGFloat = 12
@@ -186,6 +243,22 @@ class RCTBottomTabsContainerView: UIView {
 
   required init?(coder: NSCoder) {
     fatalError("init(coder:) has not been implemented")
+  }
+
+  deinit {
+    for token in iconRequestTokens.values {
+      OneKeyNamedSVGLoader.cancel(owner: token)
+    }
+    for token in selectedIconRequestTokens.values {
+      OneKeyNamedSVGLoader.cancel(owner: token)
+    }
+    OneKeyNamedSVGLoader.cancel(owner: sideAccessoryRequestToken)
+  }
+
+  private static func oneKeyIconName(from uri: String) -> String? {
+    guard uri.hasPrefix(oneKeyIconSchemePrefix) else { return nil }
+    let name = String(uri.dropFirst(oneKeyIconSchemePrefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+    return name.isEmpty ? nil : name
   }
 
   override func didAddSubview(_ subview: UIView) {
@@ -340,6 +413,7 @@ class RCTBottomTabsContainerView: UIView {
   private func loadSideAccessoryIcon() {
     sideAccessoryIconRequest += 1
     let request = sideAccessoryIconRequest
+    OneKeyNamedSVGLoader.cancel(owner: sideAccessoryRequestToken)
     // Drop the previous icon so a slower or failed load never leaves it shown
     // for the new source.
     if loadedSideAccessoryIcon != nil {
@@ -347,7 +421,37 @@ class RCTBottomTabsContainerView: UIView {
       scheduleSideAccessoryLayout()
     }
     let source = sideAccessoryIcon.map { IconSource(dict: $0) }
-    guard let source, let url = URL(string: source.uri) else { return }
+    guard let source, !source.uri.isEmpty else { return }
+    if let iconName = Self.oneKeyIconName(from: source.uri) {
+      let token = NSObject()
+      sideAccessoryRequestToken = token
+      let scale = max(1.0, window?.screen.scale ?? UIScreen.main.scale)
+      let pxW = max(1, Int(ceil(iconSize.width * scale)))
+      let pxH = max(1, Int(ceil(iconSize.height * scale)))
+      OneKeyNamedSVGLoader.request(
+        owner: token,
+        name: iconName,
+        color: "rgba(0,0,0,1)",
+        width: pxW,
+        height: pxH,
+        scale: scale
+      ) { [weak self] image in
+        guard let self,
+              request == self.sideAccessoryIconRequest,
+              self.sideAccessoryRequestToken === token,
+              let image else { return }
+        let scaledImage: UIImage
+        if let cgImage = image.cgImage {
+          scaledImage = UIImage(cgImage: cgImage, scale: scale, orientation: .up)
+        } else {
+          scaledImage = image
+        }
+        self.loadedSideAccessoryIcon = scaledImage.withRenderingMode(.alwaysTemplate)
+        self.scheduleSideAccessoryLayout()
+      }
+      return
+    }
+    guard let url = URL(string: source.uri) else { return }
     // The image loader arrives with the first state update; setImageLoader
     // calls this again.
     guard let imageLoader else { return }
@@ -755,21 +859,63 @@ class RCTBottomTabsContainerView: UIView {
 
   @objc func setImageLoader(_ loader: RCTImageLoaderProtocol) {
     self.imageLoader = loader
-    loadIconsFromSources()
-    loadSelectedIconsFromSources()
-    loadSideAccessoryIcon()
+    let iconSources = (icons ?? []).map { IconSource(dict: $0) }
+    if iconSources.contains(where: { !$0.uri.isEmpty && Self.oneKeyIconName(from: $0.uri) == nil }) {
+      loadIconsFromSources()
+    }
+    let selectedIconSources = (selectedIcons ?? []).map { IconSource(dict: $0) }
+    if selectedIconSources.contains(where: { !$0.uri.isEmpty && Self.oneKeyIconName(from: $0.uri) == nil }) {
+      loadSelectedIconsFromSources()
+    }
+    if let sideSource = sideAccessoryIcon.map({ IconSource(dict: $0) }),
+       !sideSource.uri.isEmpty,
+       Self.oneKeyIconName(from: sideSource.uri) == nil {
+      loadSideAccessoryIcon()
+    }
   }
 
   private func loadIconsFromSources() {
-    guard let imageLoader, let iconDicts = icons else { return }
+    guard let iconDicts = icons else { return }
 
     let iconSources = iconDicts.map { IconSource(dict: $0) }
+    let imageLoader = self.imageLoader
 
     for (index, source) in iconSources.enumerated() {
+      if let previous = iconRequestTokens.removeValue(forKey: index) {
+        OneKeyNamedSVGLoader.cancel(owner: previous)
+      }
       guard !source.uri.isEmpty else { continue }
 
-      let url = URL(string: source.uri)
-      guard let url else { continue }
+      if let iconName = Self.oneKeyIconName(from: source.uri) {
+        let token = NSObject()
+        iconRequestTokens[index] = token
+        let scale = max(1.0, window?.screen.scale ?? UIScreen.main.scale)
+        let pxW = max(1, Int(ceil(iconSize.width * scale)))
+        let pxH = max(1, Int(ceil(iconSize.height * scale)))
+        OneKeyNamedSVGLoader.request(
+          owner: token,
+          name: iconName,
+          color: "rgba(0,0,0,1)",
+          width: pxW,
+          height: pxH,
+          scale: scale
+        ) { [weak self] image in
+          guard let self,
+                self.iconRequestTokens[index] === token,
+                let image else { return }
+          let scaledImage: UIImage
+          if let cgImage = image.cgImage {
+            scaledImage = UIImage(cgImage: cgImage, scale: scale, orientation: .up)
+          } else {
+            scaledImage = image
+          }
+          self.loadedIcons[index] = scaledImage
+          self.rebuildViewControllers()
+        }
+        continue
+      }
+
+      guard let imageLoader, let url = URL(string: source.uri) else { continue }
 
       let request = URLRequest(url: url)
       let size = CGSize(width: source.width, height: source.height)
@@ -795,15 +941,47 @@ class RCTBottomTabsContainerView: UIView {
   }
 
   private func loadSelectedIconsFromSources() {
-    guard let imageLoader, let iconDicts = selectedIcons else { return }
+    guard let iconDicts = selectedIcons else { return }
 
     let iconSources = iconDicts.map { IconSource(dict: $0) }
+    let imageLoader = self.imageLoader
 
     for (index, source) in iconSources.enumerated() {
+      if let previous = selectedIconRequestTokens.removeValue(forKey: index) {
+        OneKeyNamedSVGLoader.cancel(owner: previous)
+      }
       guard !source.uri.isEmpty else { continue }
 
-      let url = URL(string: source.uri)
-      guard let url else { continue }
+      if let iconName = Self.oneKeyIconName(from: source.uri) {
+        let token = NSObject()
+        selectedIconRequestTokens[index] = token
+        let scale = max(1.0, window?.screen.scale ?? UIScreen.main.scale)
+        let pxW = max(1, Int(ceil(iconSize.width * scale)))
+        let pxH = max(1, Int(ceil(iconSize.height * scale)))
+        OneKeyNamedSVGLoader.request(
+          owner: token,
+          name: iconName,
+          color: "rgba(0,0,0,1)",
+          width: pxW,
+          height: pxH,
+          scale: scale
+        ) { [weak self] image in
+          guard let self,
+                self.selectedIconRequestTokens[index] === token,
+                let image else { return }
+          let scaledImage: UIImage
+          if let cgImage = image.cgImage {
+            scaledImage = UIImage(cgImage: cgImage, scale: scale, orientation: .up)
+          } else {
+            scaledImage = image
+          }
+          self.loadedSelectedIcons[index] = scaledImage
+          self.rebuildViewControllers()
+        }
+        continue
+      }
+
+      guard let imageLoader, let url = URL(string: source.uri) else { continue }
 
       let request = URLRequest(url: url)
       let size = CGSize(width: source.width, height: source.height)

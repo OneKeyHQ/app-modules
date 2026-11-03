@@ -204,7 +204,12 @@ internal open class OneKeyIconView(context: android.content.Context) : View(cont
   internal fun beginIconUpdate() { updateDepth++ }
   internal fun endIconUpdate() { updateDepth--; if (updateDepth == 0) refresh() }
 
-  protected open fun metadata(): NativeListIconMetadata? = nativeListGeneratedIcons[iconName]
+  protected open fun metadata(): NativeListIconMetadata? {
+    nativeListGeneratedIcons[iconName]?.let { return it }
+    if (iconName.isEmpty()) return null
+    val meta = com.margelo.nitro.onekeyimage.OneKeyNamedSVG.iconMetadata(context.applicationContext.assets, iconName) ?: return null
+    return NativeListIconMetadata(iconName, meta.width, meta.height)
+  }
   protected open fun glyphRect(icon: NativeListIconMetadata): android.graphics.RectF {
     val size = minOf(minOf(width,height).toFloat(), glyphSizeDp?.let {
       if (useSourceScale) (it * resources.displayMetrics.density).roundToInt().toFloat()

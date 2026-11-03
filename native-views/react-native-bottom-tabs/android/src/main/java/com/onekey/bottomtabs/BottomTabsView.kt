@@ -9,6 +9,7 @@ import androidx.appcompat.view.ContextThemeWrapper
 import android.graphics.Color
 import android.graphics.Canvas
 import android.graphics.Outline
+import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
@@ -54,8 +55,11 @@ import com.google.android.material.navigation.NavigationBarView.LABEL_VISIBILITY
 import com.google.android.material.navigation.NavigationBarView.LABEL_VISIBILITY_LABELED
 import com.google.android.material.navigation.NavigationBarView.LABEL_VISIBILITY_UNLABELED
 import com.google.android.material.transition.platform.MaterialFadeThrough
+import com.margelo.nitro.onekeyimage.OneKeyNamedSVG
 import kotlin.math.abs
 import kotlin.math.roundToInt
+
+private const val ONEKEY_ICON_URI_PREFIX = "onekey-icon://"
 
 private fun getMaterialContext(context: Context): Context {
   return ContextThemeWrapper(context, com.google.android.material.R.style.Theme_MaterialComponents_DayNight)
@@ -192,6 +196,7 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
   var items: MutableList<TabInfo> = mutableListOf()
   private val iconSources: MutableMap<Int, ImageSource> = mutableMapOf()
   private val drawableCache: MutableMap<ImageSource, Drawable> = mutableMapOf()
+  private val iconRequestTokens: MutableMap<Int, Any> = mutableMapOf()
 
   private var isLayoutEnqueued = false
   private var selectedItem: String? = null
@@ -465,7 +470,7 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
     drawableCache.clear()
     iconSources.forEach { (index, source) ->
       bottomNavigation.menu.findItem(index)?.let { menuItem ->
-        getDrawable(source) { menuItem.icon = it }
+        getDrawable(index, source) { menuItem.icon = it }
       }
     }
   }
@@ -1252,7 +1257,7 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
 
       menuItem.isVisible = !item.hidden
       if (iconSources.containsKey(index)) {
-        getDrawable(iconSources[index]!!) {
+        getDrawable(index, iconSources[index]!!) {
           menuItem.icon = it
         }
       }
@@ -1322,7 +1327,7 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
 
       // Update existing item if exists.
       bottomNavigation.menu.findItem(idx)?.let { menuItem ->
-        getDrawable(imageSource) {
+        getDrawable(idx, imageSource) {
           menuItem.icon = it
         }
       }
@@ -1354,9 +1359,46 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
   }
 
   @SuppressLint("CheckResult")
-  private fun getDrawable(imageSource: ImageSource, onDrawableReady: (Drawable?) -> Unit) {
+  private fun getDrawable(index: Int, imageSource: ImageSource, onDrawableReady: (Drawable?) -> Unit) {
+    iconRequestTokens.remove(index)?.let { OneKeyNamedSVG.cancel(it) }
     drawableCache[imageSource]?.let {
       onDrawableReady(it)
+      return
+    }
+    val rawSource = imageSource.uri.orEmpty()
+    if (rawSource.startsWith(ONEKEY_ICON_URI_PREFIX)) {
+      val iconName = rawSource.removePrefix(ONEKEY_ICON_URI_PREFIX).trim()
+      if (iconName.isEmpty()) {
+        onDrawableReady(null)
+        return
+      }
+      val token = Any()
+      iconRequestTokens[index] = token
+      val iconSizePx = bottomNavigation.itemIconSize.coerceAtLeast(1)
+      val density = resources.displayMetrics.density
+      OneKeyNamedSVG.request(
+        owner = token,
+        assets = context.applicationContext.assets,
+        name = iconName,
+        color = "rgba(0,0,0,1)",
+        width = iconSizePx,
+        height = iconSizePx,
+        scale = density,
+      ) { bitmap ->
+        if (iconRequestTokens[index] !== token) {
+          return@request
+        }
+        iconRequestTokens.remove(index)
+        if (bitmap == null) {
+          onDrawableReady(null)
+          return@request
+        }
+        val stateDrawable = BitmapDrawable(context.resources, bitmap)
+        drawableCache[imageSource] = stateDrawable
+        if (iconSources[index] == imageSource) {
+          onDrawableReady(stateDrawable)
+        }
+      }
       return
     }
     val iconSizePx = bottomNavigation.itemIconSize
@@ -1439,6 +1481,8 @@ class BottomTabsView(context: Context) : LinearLayout(context) {
   }
 
   fun onDropViewInstance() {
+    iconRequestTokens.values.forEach { OneKeyNamedSVG.cancel(it) }
+    iconRequestTokens.clear()
     androidBottomBlurEnabled = false
     updateBlurAppearance()
     releaseBottomBlur()

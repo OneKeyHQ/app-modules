@@ -3,11 +3,51 @@ import UIKit
 
 private final class OneKeyIconBundleToken: NSObject {}
 
+@objc(OneKeyNamedSVGBridge)
+internal final class OneKeyNamedSVGBridge: NSObject {
+  @objc(cancelWithOwner:)
+  static func cancel(owner: AnyObject) {
+    OneKeyNamedSVG.shared.cancel(owner: owner)
+  }
+
+  @objc(requestWithOwner:name:color:width:height:scale:complete:)
+  static func request(
+    owner: AnyObject,
+    name: String,
+    color: String,
+    width: Int,
+    height: Int,
+    scale: Double,
+    complete: @escaping (UIImage?) -> Void
+  ) {
+    OneKeyNamedSVG.shared.request(
+      owner: owner,
+      name: name,
+      color: color,
+      width: width,
+      height: height,
+      scale: CGFloat(scale),
+      complete: complete
+    )
+  }
+}
+
 /// Process-owned resource metadata and immutable raster cache, independent of JS runtimes.
 public final class OneKeyNamedSVG {
   public static let shared = OneKeyNamedSVG()
   private init() {}
   public enum RecolorMode: String { case fixed, single, multiple, raster }
+  public struct IconMetadata {
+    public let width: Double
+    public let height: Double
+    public let recolorMode: RecolorMode
+
+    public init(width: Double, height: Double, recolorMode: RecolorMode) {
+      self.width = width
+      self.height = height
+      self.recolorMode = recolorMode
+    }
+  }
   public struct RenderResult {
     public let image: UIImage
     public let mode: RecolorMode
@@ -69,6 +109,42 @@ public final class OneKeyNamedSVG {
     order.removeAll { $0 == key }
   }
 
+  private func loadManifestIfNeeded() {
+    guard metadata == nil else { return }
+    let owner = Bundle(for: OneKeyIconBundleToken.self)
+    let url = owner.url(forResource: "OneKeyIcons", withExtension: "bundle")
+      ?? Bundle.main.url(forResource: "OneKeyIcons", withExtension: "bundle")
+    resourceBundle = url.flatMap(Bundle.init(url:))
+    if let file = resourceBundle?.url(forResource: "manifest", withExtension: "json"),
+       let data = try? Data(contentsOf: file) {
+      metadata = (try? JSONSerialization.jsonObject(with: data)) as? [String: [String: Any]]
+    }
+    if metadata == nil { metadata = [:] }
+  }
+
+  public func iconMetadata(forName name: String) -> IconMetadata? {
+    let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+    metadataLock.lock()
+    loadManifestIfNeeded()
+    let entry = metadata?[trimmed]
+    metadataLock.unlock()
+    guard let entry else { return nil }
+    let mode = (entry["recolorMode"] as? String).flatMap(RecolorMode.init(rawValue:)) ?? .raster
+    let width: Double
+    let height: Double
+    if let vb = entry["viewBox"] as? [NSNumber], vb.count >= 4 {
+      let vbWidth = vb[2].doubleValue
+      let vbHeight = vb[3].doubleValue
+      width = (vbWidth > 0 && vbHeight > 0) ? vbWidth : 24
+      height = (vbWidth > 0 && vbHeight > 0) ? vbHeight : 24
+    } else {
+      width = 24
+      height = 24
+    }
+    return IconMetadata(width: width, height: height, recolorMode: mode)
+  }
+
   public func request(owner: AnyObject, name: String, color: String, width: Int,
                height: Int, scale: CGFloat, complete: @escaping (UIImage?) -> Void) {
     enqueue(owner: owner, name: name, color: color, width: width, height: height, scale: scale,
@@ -117,17 +193,7 @@ public final class OneKeyNamedSVG {
           request.scale > 0,
           let channels = Self.channels(request.color) else { return nil }
     metadataLock.lock()
-    if metadata == nil {
-      let owner = Bundle(for: OneKeyIconBundleToken.self)
-      let url = owner.url(forResource: "OneKeyIcons", withExtension: "bundle")
-        ?? Bundle.main.url(forResource: "OneKeyIcons", withExtension: "bundle")
-      resourceBundle = url.flatMap(Bundle.init(url:))
-      if let file = resourceBundle?.url(forResource: "manifest", withExtension: "json"),
-         let data = try? Data(contentsOf: file) {
-        metadata = (try? JSONSerialization.jsonObject(with: data)) as? [String: [String: Any]]
-      }
-      if metadata == nil { metadata = [:] }
-    }
+    loadManifestIfNeeded()
     let entry = metadata?[request.name]
     let bundle = resourceBundle
     metadataLock.unlock()

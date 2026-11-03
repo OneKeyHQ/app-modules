@@ -16,6 +16,11 @@ import kotlin.math.roundToInt
 /** Process-owned named resources; no React runtime or Activity is retained. */
 object OneKeyNamedSVG {
   enum class RecolorMode { FIXED, SINGLE, MULTIPLE, RASTER }
+  data class IconMetadata(
+    val width: Float,
+    val height: Float,
+    val mode: RecolorMode,
+  )
   data class RenderResult(val bitmap: Bitmap, val mode: RecolorMode,
     val sourceIdentity: String, val maskAlpha: Int) {
     fun canTint(color: String): Boolean {
@@ -55,6 +60,32 @@ object OneKeyNamedSVG {
   private val colorPattern = Regex("rgba\\(\\d{1,3},\\d{1,3},\\d{1,3},(?:0(?:\\.\\d+)?|1(?:\\.0+)?)\\)")
 
   fun cancel(owner: Any) { synchronized(lock) { pending.remove(owner) } }
+
+  fun iconMetadata(assets: AssetManager, name: String): IconMetadata? {
+    val trimmed = name.trim()
+    if (trimmed.isEmpty()) return null
+    val metadata = try {
+      synchronized(manifestLock) {
+        if (manifest == null) {
+          manifest = assets.open("icons/manifest.json").bufferedReader().use { JSONObject(it.readText()) }
+        }
+        manifest!!.optJSONObject(trimmed)
+      }
+    } catch (_: Exception) {
+      null
+    } ?: return null
+    val mode = try {
+      RecolorMode.valueOf(metadata.optString("recolorMode", "raster").uppercase())
+    } catch (_: IllegalArgumentException) {
+      RecolorMode.RASTER
+    }
+    val viewBox = metadata.optJSONArray("viewBox")
+    val vbWidth = if (viewBox != null && viewBox.length() >= 4) viewBox.optDouble(2, 24.0).toFloat() else 24f
+    val vbHeight = if (viewBox != null && viewBox.length() >= 4) viewBox.optDouble(3, 24.0).toFloat() else 24f
+    val width = if (vbWidth > 0f) vbWidth else 24f
+    val height = if (vbHeight > 0f) vbHeight else 24f
+    return IconMetadata(width = width, height = height, mode = mode)
+  }
 
   fun request(owner: Any, assets: AssetManager, name: String, color: String,
     width: Int, height: Int, scale: Float, complete: (Bitmap?) -> Unit) {

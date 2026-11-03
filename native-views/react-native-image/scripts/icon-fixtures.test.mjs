@@ -95,3 +95,77 @@ test('production resource inputs contain no named SVG or example fixture depende
   );
   assert.doesNotMatch(stub, /new URL|\.svg/);
 });
+
+test('cross-module native consumers share OneKeyNamedSVG metadata and onekey-icon:// scheme', () => {
+  const iosSvg = fs.readFileSync(
+    path.join(packageRoot, 'ios/OneKeyNamedSVG.swift'),
+    'utf8'
+  );
+  assert.match(iosSvg, /public func iconMetadata\(forName name: String\)/);
+  assert.match(iosSvg, /@objc\(OneKeyNamedSVGBridge\)/);
+
+  const androidSvg = fs.readFileSync(
+    path.join(
+      packageRoot,
+      'android/src/main/java/com/margelo/nitro/onekeyimage/OneKeyNamedSVG.kt'
+    ),
+    'utf8'
+  );
+  assert.match(
+    androidSvg,
+    /fun iconMetadata\(assets: AssetManager, name: String\)/
+  );
+
+  const nativeListIos = fs.readFileSync(
+    path.resolve(
+      packageRoot,
+      '../react-native-native-list/ios/NativeListDesignAssets.swift'
+    ),
+    'utf8'
+  );
+  assert.match(
+    nativeListIos,
+    /OneKeyNamedSVG\.shared\.iconMetadata\(forName: name\)/
+  );
+
+  const nativeListAndroid = fs.readFileSync(
+    path.resolve(
+      packageRoot,
+      '../react-native-native-list/android/src/main/java/com/onekey/nativelist/NativeListPrimitives.kt'
+    ),
+    'utf8'
+  );
+  assert.match(
+    nativeListAndroid,
+    /OneKeyNamedSVG\.iconMetadata\(context\.applicationContext\.assets, iconName\)/
+  );
+
+  const bottomTabsJs = fs.readFileSync(
+    path.resolve(
+      packageRoot,
+      '../react-native-bottom-tabs/lib/module/BottomTabs.js'
+    ),
+    'utf8'
+  );
+  assert.match(bottomTabsJs, /onekey-icon:\/\//);
+
+  const bottomTabsIos = fs.readFileSync(
+    path.resolve(
+      packageRoot,
+      '../react-native-bottom-tabs/ios/RCTBottomTabsContainerView.swift'
+    ),
+    'utf8'
+  );
+  assert.match(bottomTabsIos, /onekey-icon:\/\//);
+  assert.match(bottomTabsIos, /OneKeyNamedSVGLoader\.request/);
+
+  const bottomTabsAndroid = fs.readFileSync(
+    path.resolve(
+      packageRoot,
+      '../react-native-bottom-tabs/android/src/main/java/com/onekey/bottomtabs/BottomTabsView.kt'
+    ),
+    'utf8'
+  );
+  assert.match(bottomTabsAndroid, /onekey-icon:\/\//);
+  assert.match(bottomTabsAndroid, /OneKeyNamedSVG\.request/);
+});
