@@ -9,6 +9,7 @@
 #ifndef gpc_scp11c_hpp
 #define gpc_scp11c_hpp
 
+#include <TrezorCrypto/memzero.h>
 #include "scp11/scp11.hpp"
 
 

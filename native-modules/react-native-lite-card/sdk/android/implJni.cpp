@@ -32,40 +32,66 @@ jstring result(JNIEnv* env, JUB_RV code, const Output& output) {
 }
 jint getError(JNIEnv*, jobject) { return errorCode.load(); }
 jint initialize(JNIEnv* env, jobject, jstring input) {
-    UtfChars text(env, input);
-    if (!text.get()) return JUBR_ARGUMENTS_BAD;
-    Json::Value root;
-    Json::Reader reader;
-    if (!reader.parse(text.get(), root) || !root.isObject()) return JUBR_ARGUMENTS_BAD;
-    const char* fields[] = {"scpID", "keyUsage", "keyType", "hostID", "cardGroupID", "crt", "sk"};
-    for (const char* name : fields) if (!root[name].isString()) return JUBR_ARGUMENTS_BAD;
-    if (!root["keyLength"].isUInt() || root["keyLength"].asUInt() != 16) return JUBR_ARGUMENTS_BAD;
-    GPC_SCP11_SHAREDINFO info{
-        const_cast<char*>(root["scpID"].asCString()),
-        const_cast<char*>(root["keyUsage"].asCString()),
-        const_cast<char*>(root["keyType"].asCString()),
-        const_cast<char*>("10"),
-        const_cast<char*>(root["hostID"].asCString()),
-        const_cast<char*>(root["cardGroupID"].asCString())};
-    return static_cast<jint>(JUB_GPC_Initialize(info, root["crt"].asCString(), root["sk"].asCString()));
+    try {
+        UtfChars text(env, input);
+        if (!text.get()) return JUBR_ARGUMENTS_BAD;
+        Json::Value root;
+        Json::Reader reader;
+        if (!reader.parse(text.get(), root) || !root.isObject()) return JUBR_ARGUMENTS_BAD;
+        const char* fields[] = {"scpID", "keyUsage", "keyType", "hostID", "cardGroupID", "crt", "sk"};
+        for (const char* name : fields) if (!root[name].isString()) return JUBR_ARGUMENTS_BAD;
+        if (!root["keyLength"].isUInt() || root["keyLength"].asUInt() != 16) return JUBR_ARGUMENTS_BAD;
+        GPC_SCP11_SHAREDINFO info{
+            const_cast<char*>(root["scpID"].asCString()),
+            const_cast<char*>(root["keyUsage"].asCString()),
+            const_cast<char*>(root["keyType"].asCString()),
+            const_cast<char*>("10"),
+            const_cast<char*>(root["hostID"].asCString()),
+            const_cast<char*>(root["cardGroupID"].asCString())};
+        return static_cast<jint>(JUB_GPC_Initialize(info, root["crt"].asCString(), root["sk"].asCString()));
+    } catch (...) {
+        errorCode.store(static_cast<int>(JUBR_ARGUMENTS_BAD));
+        return JUBR_ARGUMENTS_BAD;
+    }
 }
-jint finalize(JNIEnv*, jobject) { return static_cast<jint>(JUB_GPC_Finalize()); }
+jint finalize(JNIEnv*, jobject) {
+    try {
+        return static_cast<jint>(JUB_GPC_Finalize());
+    } catch (...) {
+        return JUBR_ERROR;
+    }
+}
 jint open(JNIEnv* env, jobject, jstring input) {
-    UtfChars text(env, input);
-    if (!text.get()) return JUBR_ARGUMENTS_BAD;
-    return static_cast<jint>(JUB_GPC_OpenSecureChannel(text.get()));
+    try {
+        UtfChars text(env, input);
+        if (!text.get()) return JUBR_ARGUMENTS_BAD;
+        return static_cast<jint>(JUB_GPC_OpenSecureChannel(text.get()));
+    } catch (...) {
+        errorCode.store(static_cast<int>(JUBR_ARGUMENTS_BAD));
+        return JUBR_ARGUMENTS_BAD;
+    }
 }
 jstring mutual(JNIEnv* env, jobject) {
-    Output output;
-    auto code = JUB_GPC_BuildMutualAuthData(&output.value);
-    return result(env, code, output);
+    try {
+        Output output;
+        auto code = JUB_GPC_BuildMutualAuthData(&output.value);
+        return result(env, code, output);
+    } catch (...) {
+        errorCode.store(static_cast<int>(JUBR_ERROR));
+        return nullptr;
+    }
 }
 jstring build(JNIEnv* env, bool safe, jlong cla, jlong ins, jlong p1, jlong p2, jstring input) {
-    UtfChars text(env, input);
-    Output output;
-    auto code = safe ? JUB_GPC_BuildSafeAPDU(cla, ins, p1, p2, text.get(), &output.value)
-                     : JUB_GPC_BuildAPDU(cla, ins, p1, p2, text.get(), &output.value);
-    return result(env, code, output);
+    try {
+        UtfChars text(env, input);
+        Output output;
+        auto code = safe ? JUB_GPC_BuildSafeAPDU(cla, ins, p1, p2, text.get(), &output.value)
+                         : JUB_GPC_BuildAPDU(cla, ins, p1, p2, text.get(), &output.value);
+        return result(env, code, output);
+    } catch (...) {
+        errorCode.store(static_cast<int>(JUBR_ERROR));
+        return nullptr;
+    }
 }
 jstring buildPlain(JNIEnv* env, jobject, jlong cla, jlong ins, jlong p1, jlong p2, jstring input) {
     return build(env, false, cla, ins, p1, p2, input);
@@ -74,39 +100,54 @@ jstring buildSafe(JNIEnv* env, jobject, jlong cla, jlong ins, jlong p1, jlong p2
     return build(env, true, cla, ins, p1, p2, input);
 }
 jstring parse(JNIEnv* env, bool safe, jstring input) {
-    UtfChars text(env, input);
-    Output output;
-    JUB_UINT16 word = 0;
-    auto code = safe ? JUB_GPC_ParseSafeAPDUResponse(text.get(), &word, &output.value)
-                     : JUB_GPC_ParseAPDUResponse(text.get(), &word, &output.value);
-    if (code != JUBR_OK) { errorCode.store(static_cast<int>(code)); return nullptr; }
-    Json::Value root;
-    root["wRet"] = word;
-    root["response"] = output.value;
-    return json(env, root);
+    try {
+        UtfChars text(env, input);
+        Output output;
+        JUB_UINT16 word = 0;
+        auto code = safe ? JUB_GPC_ParseSafeAPDUResponse(text.get(), &word, &output.value)
+                         : JUB_GPC_ParseAPDUResponse(text.get(), &word, &output.value);
+        if (code != JUBR_OK) { errorCode.store(static_cast<int>(code)); return nullptr; }
+        Json::Value root;
+        root["wRet"] = word;
+        root["response"] = output.value;
+        return json(env, root);
+    } catch (...) {
+        errorCode.store(static_cast<int>(JUBR_ERROR));
+        return nullptr;
+    }
 }
 jstring parsePlain(JNIEnv* env, jobject, jstring input) { return parse(env, false, input); }
 jstring parseSafe(JNIEnv* env, jobject, jstring input) { return parse(env, true, input); }
 jstring decodeTLV(JNIEnv* env, jobject, jstring input) {
-    UtfChars text(env, input);
-    Output output;
-    JUB_ULONG tag = 0;
-    auto code = JUB_GPC_TLVDecode(text.get(), &tag, &output.value);
-    if (code != JUBR_OK) { errorCode.store(static_cast<int>(code)); return nullptr; }
-    Json::Value root;
-    root["tag"] = static_cast<Json::Int64>(tag);
-    root["value"] = output.value;
-    return json(env, root);
+    try {
+        UtfChars text(env, input);
+        Output output;
+        JUB_ULONG tag = 0;
+        auto code = JUB_GPC_TLVDecode(text.get(), &tag, &output.value);
+        if (code != JUBR_OK) { errorCode.store(static_cast<int>(code)); return nullptr; }
+        Json::Value root;
+        root["tag"] = static_cast<Json::Int64>(tag);
+        root["value"] = output.value;
+        return json(env, root);
+    } catch (...) {
+        errorCode.store(static_cast<int>(JUBR_ERROR));
+        return nullptr;
+    }
 }
 jstring parseCertificate(JNIEnv* env, jobject, jstring input) {
-    UtfChars text(env, input);
-    Output serial, subject;
-    auto code = JUB_GPC_ParseCertificate(text.get(), &serial.value, &subject.value);
-    if (code != JUBR_OK) { errorCode.store(static_cast<int>(code)); return nullptr; }
-    Json::Value root;
-    root["sn"] = serial.value;
-    root["subjectID"] = subject.value;
-    return json(env, root);
+    try {
+        UtfChars text(env, input);
+        Output serial, subject;
+        auto code = JUB_GPC_ParseCertificate(text.get(), &serial.value, &subject.value);
+        if (code != JUBR_OK) { errorCode.store(static_cast<int>(code)); return nullptr; }
+        Json::Value root;
+        root["sn"] = serial.value;
+        root["subjectID"] = subject.value;
+        return json(env, root);
+    } catch (...) {
+        errorCode.store(static_cast<int>(JUBR_ERROR));
+        return nullptr;
+    }
 }
 #define METHOD(name, signature, function) \
     {const_cast<char*>(name), const_cast<char*>(signature), reinterpret_cast<void*>(function)}

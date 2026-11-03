@@ -16,6 +16,8 @@
 #include <TrezorCrypto/rand.h>
 #include <TrezorCrypto/aes.h>
 #include <TrezorCrypto/cmac.h>
+#include <TrezorCrypto/bignum.h>
+#include <TrezorCrypto/memzero.h>
 #include "utility/Debug.hpp"
 
 
@@ -177,7 +179,7 @@ bool scp11_pk::decode(const std::vector<unsigned char>& data) {
     }
 
     tlv_buf buf;
-    unsigned char skip = 1;
+    size_t skip = 1;
     switch (tag) {
     case GPC_TLV_PK_Q:
     case GPC_TLV_PK_PARAM:
@@ -191,6 +193,10 @@ bool scp11_pk::decode(const std::vector<unsigned char>& data) {
     }
 
     // copy tag into buf
+    if (skip > data.size() || len > data.size() - skip) {
+        delete[] p; p = NULL;
+        return false;
+    }
     buf.tag = tag;
     if (!buf.value.empty()) {
         buf.value.clear();
@@ -280,12 +286,12 @@ bool scp11_crt::decode(const std::vector<unsigned char>& data) {
     }
 
     tlv_buf buf;
-    unsigned char skip = 1;
+    size_t skip = 1;
     switch (tag) {
     case GPC_TLV_SCP11CRT_ENTITY:
     {
         skip = 2;
-        if (0x100 < len) {
+        if (0x100 <= len) {
             skip += 3;
         }
         else {
@@ -318,6 +324,14 @@ bool scp11_crt::decode(const std::vector<unsigned char>& data) {
     }
 
     // copy tag into buf
+    if (skip > data.size() || len > data.size() - skip) {
+        delete[] p; p = NULL;
+        return false;
+    }
+    if (GPC_TLV_SCP11CRT_ENTITY == tag && skip + len != data.size()) {
+        delete[] p; p = NULL;
+        return false;
+    }
     buf.tag = tag;
     if(!buf.value.empty()) {
         buf.value.clear();
@@ -528,7 +542,7 @@ bool scp11_response_msg::decode(const std::vector<unsigned char>& data) {
     }
 
     tlv_buf buf;
-    unsigned char skip = 2;
+    size_t skip = 2;
     switch (tag) {
     case GPC_TLV_MA_PK:
     {
@@ -545,6 +559,10 @@ bool scp11_response_msg::decode(const std::vector<unsigned char>& data) {
     }
 
     // copy tag into buf
+    if (skip > data.size() || len > data.size() - skip) {
+        delete[] p; p = NULL;
+        return false;
+    }
     buf.tag = tag;
     if (!buf.value.empty()) {
         buf.value.clear();
@@ -601,6 +619,7 @@ bool scp11::initialize() {
 
     e_rk.insert(e_rk.begin(), std::begin(oce_e_priv_key), std::end(oce_e_priv_key));
     e_pk.insert(e_pk.begin(), std::begin(oce_e_pub_key),  std::end(oce_e_pub_key));
+    memzero(oce_e_priv_key, sizeof(oce_e_priv_key));
 
     return true;
 }
@@ -615,14 +634,34 @@ bool scp11::generateKeyPair(const char *curve_name,
         return false;
     }
 
-    unsigned char oce_e_priv_key[SHA256_DIGEST_LENGTH] = {0x00,};
-    random_buffer(oce_e_priv_key, sizeof(oce_e_priv_key)/sizeof(unsigned char));
-    unsigned char oce_e_pub_key[MAX_ADDR_RAW_SIZE] = {0x00,};
     curve_info *curi = (curve_info *)get_curve_by_name(curve_name);
+    if (nullptr == curi || nullptr == curi->params) {
+        return false;
+    }
+
+    unsigned char oce_e_priv_key[SHA256_DIGEST_LENGTH] = {0x00,};
+    bignum256 k;
+    bool valid = false;
+    for (int attempt = 0; attempt < 100; ++attempt) {
+        random_buffer(oce_e_priv_key, sizeof(oce_e_priv_key)/sizeof(unsigned char));
+        bn_read_be(oce_e_priv_key, &k);
+        if (!bn_is_zero(&k) && bn_is_less(&k, &curi->params->order)) {
+            valid = true;
+            break;
+        }
+    }
+    memzero(&k, sizeof(k));
+    if (!valid) {
+        memzero(oce_e_priv_key, sizeof(oce_e_priv_key));
+        return false;
+    }
+
+    unsigned char oce_e_pub_key[MAX_ADDR_RAW_SIZE] = {0x00,};
     ecdsa_get_public_key65(curi->params, oce_e_priv_key, oce_e_pub_key);
 
     memcpy(e_pk, oce_e_pub_key, MAX_ADDR_RAW_SIZE);
     memcpy(e_rk, oce_e_priv_key, SHA256_DIGEST_LENGTH);
+    memzero(oce_e_priv_key, sizeof(oce_e_priv_key));
 
     return true;
 }

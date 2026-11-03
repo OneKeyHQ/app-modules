@@ -16,6 +16,7 @@
 
 #include <TrezorCrypto/bip32.h>
 #include <TrezorCrypto/curves.h>
+#include <TrezorCrypto/memzero.h>
 
 #include "tlv.hpp"
 #include "tag.h"
@@ -306,6 +307,11 @@ public:
     }
 
     void clear() {
+        if (!key_dek.empty()) memzero(key_dek.data(), key_dek.size());
+        if (!s_enc.empty())   memzero(s_enc.data(), s_enc.size());
+        if (!s_mac.empty())   memzero(s_mac.data(), s_mac.size());
+        if (!s_rmac.empty())  memzero(s_rmac.data(), s_rmac.size());
+        if (!s_dek.empty())   memzero(s_dek.data(), s_dek.size());
         key_dek.clear();
           s_enc.clear();
           s_mac.clear();
@@ -400,6 +406,9 @@ public:
         sd_crt.clear();
 
         oce_crt.clear();
+        if (!oce_rk.empty()) {
+            memzero(oce_rk.data(), oce_rk.size());
+        }
         oce_rk.clear();
 
         reset();
@@ -434,8 +443,15 @@ public:
     virtual bool isOpen() {
         return !sk.empty();
     }
+    virtual void clearSession() {
+        receipt_key.clear();
+        sk.clear();
+    }
     virtual void reset() {
         e_pk.clear();
+        if (!e_rk.empty()) {
+            memzero(e_rk.data(), e_rk.size());
+        }
         e_rk.clear();
         receipt_key.clear();
         sk.clear();

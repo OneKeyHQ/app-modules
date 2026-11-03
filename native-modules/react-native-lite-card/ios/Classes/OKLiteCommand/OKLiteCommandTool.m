@@ -18,8 +18,11 @@
     id<NFCISO7816Tag> tag = [self.delegate getNFCsessionTag];
     [tag sendCommandAPDU:apdu completionHandler:^(NSData *responseData, uint8_t sw1, uint8_t sw2, NSError *error) {
         NSString *parseRespon = nil;
-        if(modal.parseResp && sw1 == OKNFC_SW1_OK) {
+        if (modal.parseResp) {
             parseRespon = [OKNFCBridge parseSafeAPDUResponse:responseData sw1:sw1 sw2:sw2];
+            if (sw1 == OKNFC_SW1_OK && parseRespon == nil) {
+                sw1 = 0x00;
+            }
         }
 
         [OKNFCUtility logAPDU:modal.desc response:responseData sw1:sw1 sw2:sw2 error:error];

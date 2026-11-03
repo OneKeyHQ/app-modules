@@ -118,7 +118,7 @@ size_t tlv_buf::encodeV(std::vector<unsigned char>& v) {
 
 size_t tlv_buf::decodeLV(const std::vector<unsigned char>& lv, std::vector<unsigned char>& v) {
 
-    if (lv.size() != (lv[0]+1)) {
+    if (lv.empty() || lv.size() != (static_cast<size_t>(lv[0]) + 1)) {
         return 0;
     }
 
@@ -139,6 +139,10 @@ size_t tlv_buf::decodeTV(const int tag, const std::vector<unsigned char>& tv,
     }
     else {
         vTag.push_back(tag);
+    }
+
+    if (tv.size() < vTag.size()) {
+        return 0;
     }
 
     // using c++11 instead of c++14

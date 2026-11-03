@@ -9,11 +9,14 @@ data class SendResponse(
     val sw2: Byte,
     val data: String? = null,
     // Processed result
-    var result: String? = null
+    var result: String? = null,
+    var parseSuccess: Boolean = true
 ) {
-    fun isSuccess() = sw1 == 0x90.toByte() && sw2 == 0x00.toByte()
+    fun isSuccess() = parseSuccess && sw1 == 0x90.toByte() && sw2 == 0x00.toByte()
 
-    fun isConnectFailure() = sw1 == 0x6F.toByte() && sw2 == 0x00.toByte()
+    fun isConnectFailure() =
+        (sw1 == 0x6F.toByte() && sw2 == 0x00.toByte()) ||
+            (sw1 == 0xFF.toByte() && sw2 == 0xFF.toByte())
 
     fun isEmptyData() = data.isNullOrEmpty()
 
