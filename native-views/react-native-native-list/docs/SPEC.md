@@ -778,7 +778,14 @@ Host clipping is per-bind state. A row view that serves several row shapes
 (the Android Activity view serves the legacy row and the rich `amounts` row) is
 reused across binds, so each bind MUST derive clipping from the item it binds
 (`nativeListActivityHostClips`): a view that last showed an overhanging badge
-clips again when it is rebound to a row without one.
+clips again when it is rebound to a row without one. The rule follows the
+visual, not the row shape: the rich row renders its leading visual on the
+details view, so that view and every column between the visual and the host
+stop clipping too, and the host derives its own clipping from the details
+view's visual (`leadingOverhangs`, OK-66275). Before this rule the rich branch
+forced the host's clipping back on and left the details view at Android's
+defaults, so the app's history rows (which always carry `amounts`) still showed
+the badge cut at the bottom-right after the legacy branch had been fixed.
 
 The row's own shape still clips on every platform: iOS masks the cell to its
 corner radius (`masksToBounds`), Web keeps the row `overflow: hidden`, and
@@ -815,9 +822,10 @@ over the badge. The per-source geometry is one pure function on Android
 `NativeListLeadingVisual.layoutSubviews` on iOS; both restore the stacking
 order by role on every bind because slots are reused across roles.
 
-The Android Activity renderer also applies the badge-overhang rule above
-(`requestsUnclippedHost` stops the content row and the row padding clipping),
-so the history rows' network badges render whole instead of cut flat.
+The Android Activity renderer also applies the badge-overhang rule above on
+both of its branches (`requestsUnclippedHost` stops the legacy content row, the
+rich details view with its columns, and the row padding clipping), so the
+history rows' network badges render whole instead of cut flat.
 
 ## Failures, fallback and limits
 
