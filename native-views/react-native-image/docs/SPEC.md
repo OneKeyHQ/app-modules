@@ -416,6 +416,11 @@ this design does not promise a smaller initial download. HTTP and Electron's
 production `file:` protocol MUST work under the application's existing CSP and
 `webSecurity: true`; development HTTP alone is insufficient acceptance.
 
+The SDK ships no artwork. `#onekey-icon-assets` must be aliased to the host's
+generated icon table; the packaged fallback returns no href (so named icons,
+including NativeList's built-in Web icons, render blank) and, when `__DEV__`
+is defined and true, logs one `[OneKeyIcon]` warning naming the missing alias.
+
 ### 12.5 Generation and acceptance
 
 The generation command validates the full source set before writing, produces
