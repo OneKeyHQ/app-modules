@@ -364,6 +364,154 @@ class NativeListRiskAccessoryTest : InstrumentationTestCase() {
     }
   }
 
+  fun testDataColumnGlyphAnchorsFollowResolvedAlignmentAcrossReuse() {
+    onMain {
+      val context = ThemedReactContext(BridgeReactContext(activity), activity, "ColumnAlignmentTest", 1)
+      val row = NativeListDataRowView(context, NativeListFonts())
+      activity.setContentView(row)
+      val width = NativeListScale.dp(activity.resources, 1000)
+      fun anchor(view: TextView, owner: View, alignment: String): Float {
+        val rect = android.graphics.Rect(0, 0, view.width, view.height)
+        (owner as android.view.ViewGroup).offsetDescendantRectToMyCoords(view, rect)
+        val left = rect.left + view.totalPaddingLeft + view.layout.getLineLeft(0)
+        val right = rect.left + view.totalPaddingLeft + view.layout.getLineRight(0)
+        val rtl = owner.layoutDirection == View.LAYOUT_DIRECTION_RTL
+        return when (alignment) { "end" -> if (rtl) left else right; "center" -> (left + right) / 2; else -> if (rtl) right else left }
+      }
+      fun expectedAnchor(cell: View, alignment: String): Float = when (alignment) {
+        "center" -> cell.width / 2f
+        "end" -> if (row.layoutDirection == View.LAYOUT_DIRECTION_RTL) 0f else cell.width.toFloat()
+        else -> if (row.layoutDirection == View.LAYOUT_DIRECTION_RTL) cell.width.toFloat() else 0f
+      }
+      for (direction in listOf(View.LAYOUT_DIRECTION_LTR, View.LAYOUT_DIRECTION_RTL)) {
+        row.layoutDirection = direction
+        for (count in 2..4) for (alignment in listOf("start", "center", "end")) {
+          for (styled in listOf(true, false, true)) for (long in listOf(false, true)) {
+            val columns = JSONArray()
+            repeat(count) { columns.put(JSONObject().put("text", if (long) "123,456.789" else "12")
+              .put("secondaryText", if (long) "$9,876.54" else "$3")
+              .put("alignment", alignment)) }
+            val style = JSONObject()
+            if (styled) style.put("columns", JSONObject().put("fontSize", 14))
+              .put("columnSecondary", JSONObject().put("fontSize", 12))
+            val data = JSONObject().put("type", "dataRow").put("key", "columns")
+              .put("columns", columns).put("style", style)
+            row.bind(NativeListItem("columns", "dataRow", null, 0, data), null,
+              "table", "vertical", 0, false, { _, _, fallback -> fallback }, false)
+            row.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+              View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+            row.layout(0, 0, width, row.measuredHeight)
+            assertEquals("row resolves requested direction", direction, row.layoutDirection)
+            for (cell in field<List<View>>(row, "cells").take(count)) {
+              assertEquals("column resolves requested direction", direction, cell.layoutDirection)
+              val primary = field<TextView>(cell, "primary")
+              val secondary = field<TextView>(cell, "secondary")
+              val expected = expectedAnchor(cell, alignment)
+              assertEquals("primary $count/$alignment/$styled/$long", expected, anchor(primary, cell, alignment), 1f)
+              assertEquals("secondary $count/$alignment/$styled/$long", expected, anchor(secondary, cell, alignment), 1f)
+            }
+            if (styled) {
+              val override = when (alignment) { "start" -> "end"; "end" -> "center"; else -> "start" }
+              style.getJSONObject("columnSecondary").put("alignment", override)
+              row.bind(NativeListItem("columns", "dataRow", null, 0, data), null,
+                "table", "vertical", 0, false, { _, _, fallback -> fallback }, false)
+              row.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+              row.layout(0, 0, width, row.measuredHeight)
+              for (cell in field<List<View>>(row, "cells").take(count)) {
+                val expected = expectedAnchor(cell, override)
+                assertEquals("secondary override", expected, anchor(field(cell, "secondary"), cell, override), 1f)
+              }
+              style.getJSONObject("columns").put("alignment", override)
+              row.bind(NativeListItem("columns", "dataRow", null, 0, data), null,
+                "table", "vertical", 0, false, { _, _, fallback -> fallback }, false)
+              row.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+              row.layout(0, 0, width, row.measuredHeight)
+              for (cell in field<List<View>>(row, "cells").take(count)) {
+                assertEquals("primary override", expectedAnchor(cell, override), anchor(field(cell, "primary"), cell, override), 1f)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  fun testActivityTableColumnsStayStableAcrossFeeLeadingAndAmountReuse() {
+    onMain {
+      val context = ThemedReactContext(BridgeReactContext(activity), activity, "ActivityColumnsTest", 1)
+      val details = NativeListActivityDetailsView(context, NativeListFonts())
+      activity.setContentView(details)
+      val width = NativeListScale.dp(activity.resources, 900)
+      val gap = NativeListScale.dp(activity.resources, 12)
+      for (direction in listOf(View.LAYOUT_DIRECTION_LTR, View.LAYOUT_DIRECTION_RTL)) {
+        details.layoutDirection = direction
+        for (hasFee in listOf(true, false, true)) {
+          var previousHeight = 0
+          for (count in listOf(1, 2, 6, 32)) {
+            for (hiddenLeading in listOf(false, true, false)) for (feeKind in 0..2) {
+              val data = JSONObject().put("type", "activity").put("key", "table")
+                .put("title", "Send").put("description", "Contract interaction with a long description that wraps")
+                .put("leading", JSONObject().put("kind", "icon").put("name", "ArrowTopOutline"))
+                .put("hideLeading", hiddenLeading).put("presentation", "table")
+              val amounts = JSONArray()
+              repeat(count) { index -> amounts.put(JSONObject().put("key", "amount-$index")
+                .put("text", if (index % 2 == 0) "-123456789012345678901234567890.123456789 ETH" else "+1 USDC")
+                .put("secondaryText", "$1,000.00")
+                .put("leading", JSONObject().put("kind", "icon").put("name", "ArrowTopOutline"))) }
+              data.put("amounts", amounts)
+              if (hasFee) data.put("fee", JSONObject().put("label", "Network fee")
+                .put("primary", if (feeKind == 1) "0.000000012345678 ETH" else "1 ETH")
+                .put("secondary", "$0.20").put("hidden", feeKind == 2))
+              fun bind(presentation: String) {
+                data.put("presentation", presentation)
+                details.bind(NativeListItem("table", "activity", null, 0, data), null, false)
+                details.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                  View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+                details.layout(0, 0, width, details.measuredHeight)
+                assertEquals("activity resolves requested direction", direction, details.layoutDirection)
+              }
+              for (presentation in listOf("table", "stacked", "table")) {
+                bind(presentation)
+                if (presentation != "table") continue
+                val column = field<LinearLayout>(details, "amounts")
+                assertEquals("amount column resolves requested direction", direction, column.layoutDirection)
+                val expectedWidth = (width - gap * if (hasFee) 2 else 1) / if (hasFee) 2.6f else 2f
+                assertEquals("amount width", expectedWidth, column.width.toFloat(), 2f)
+                val expectedStart = if (direction == View.LAYOUT_DIRECTION_RTL) width - expectedWidth * 2 - gap else expectedWidth + gap
+                assertEquals("amount start", expectedStart, column.left.toFloat(), 2f)
+                assertEquals("amount center", expectedStart + expectedWidth / 2, (column.left + column.right) / 2f, 2f)
+                assertEquals(count, column.childCount)
+                repeat(count) { index ->
+                  val amount = column.getChildAt(index)
+                  assertEquals(0, amount.left)
+                  assertEquals(column.width, amount.width)
+                  val labels = field<LinearLayout>(amount, "labels")
+                  val leading = field<View>(amount, "leading")
+                  assertTrue(if (direction == View.LAYOUT_DIRECTION_RTL) labels.right <= leading.left else leading.right <= labels.left)
+                  assertTrue(labels.left >= 0 && labels.right <= amount.width)
+                }
+                if (hasFee) {
+                  val fee = field<LinearLayout>(details, "fee")
+                  assertEquals(expectedWidth * 0.6f, fee.width.toFloat(), 2f)
+                  assertEquals(if (feeKind == 2) 0f else 1f, fee.alpha)
+                  for (child in listOf(field<View>(details, "feeLabel"), field<View>(details, "feeLine"))) {
+                    assertTrue("fee content stays inside column", child.left >= 0 && child.right <= fee.width)
+                    if (direction == View.LAYOUT_DIRECTION_RTL) assertEquals("fee trailing edge", 0, child.left)
+                    else assertEquals("fee trailing edge", fee.width, child.right)
+                  }
+                }
+              }
+            }
+            assertTrue("amount count increases natural height", details.height > previousHeight)
+            previousHeight = details.height
+          }
+        }
+      }
+    }
+  }
+
   fun testButtonTouchIsSingleActionAndDisabledCannotPressRow() {
     val button = onMainValue { button() }
     onMain {

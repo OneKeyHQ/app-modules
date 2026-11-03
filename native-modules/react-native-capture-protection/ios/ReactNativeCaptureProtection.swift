@@ -104,7 +104,10 @@ private final class CaptureProtectionCoordinator {
     owners.insert(owner)
     startObservers()
     refreshRecording()
-    if UIApplication.shared.applicationState != .active { showSwitcher() }
+    // `.inactive` is transient (Face ID, system alerts, Control Center) and the app is
+    // still on screen, so covering it here blanks the page until didBecomeActive; the
+    // resign/background observers already cover real app-switcher transitions.
+    if UIApplication.shared.applicationState == .background { showSwitcher() }
   }
 
   func allow(owner: UUID) {

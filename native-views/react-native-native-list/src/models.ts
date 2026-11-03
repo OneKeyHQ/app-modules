@@ -755,6 +755,19 @@ export type MarketRow = RowBase &
     variant: 'token' | 'stock' | 'perp';
     /** Web-only bounded table presentation; native reads the ordinary Market fields. */
     webTable?: WebMarketTablePresentation;
+    /** Two or three ordered native text metrics; omitting them keeps the compact quote. */
+    metrics?: readonly Pick<
+      DataColumn,
+      | 'key'
+      | 'text'
+      | 'textSegments'
+      | 'secondaryText'
+      | 'secondaryTextSegments'
+      | 'weight'
+      | 'alignment'
+      | 'tone'
+      | 'secondaryTone'
+    >[];
     leadingAction?: Extract<TrailingAccessory, { kind: 'icon' }>;
     leading: LeadingVisual;
     title: string;
@@ -1178,6 +1191,7 @@ export type RowPatch =
         | 'longPressActionKey'
         | 'diagnostics'
         | 'webTable'
+        | 'metrics'
         | 'style'
       >;
     }>

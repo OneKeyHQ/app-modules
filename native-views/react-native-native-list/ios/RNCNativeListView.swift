@@ -1524,7 +1524,7 @@ final class NativeListView: UIView {
     var sizeChanged = false
     var reorderStructureChanged = false
     let marketQuoteFields: Set<String> = [
-      "revision", "price", "priceSegments", "change", "accessibilityLabel",
+      "revision", "price", "priceSegments", "change", "accessibilityLabel", "metrics",
     ]
     for (index, changes) in pending {
       let previous = current.items[index]
@@ -1550,7 +1550,20 @@ final class NativeListView: UIView {
         reorderStructureChanged = true
       }
       current.items[index] = item
-      if previous.type == "market", Set(changes.keys).isSubset(of: marketQuoteFields) {
+      let previousMetrics = previous.data.dictionaries("metrics")
+      let nextMetrics = item.data.dictionaries("metrics")
+      let sameMetricStructure = previousMetrics.count == nextMetrics.count &&
+        previousMetrics.indices.allSatisfy { metricIndex in
+          let before = previousMetrics[metricIndex]
+          let after = nextMetrics[metricIndex]
+          return before.string("key") == after.string("key") &&
+            before.int("weight", default: 1) == after.int("weight", default: 1) &&
+            before.string("alignment", default: "end") ==
+              after.string("alignment", default: "end")
+        }
+      if previous.type == "market", Set(changes.keys).isSubset(of: marketQuoteFields),
+        sameMetricStructure
+      {
         marketQuoteKeys.insert(item.key)
       } else {
         changedKeys.insert(item.key)

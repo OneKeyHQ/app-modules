@@ -1153,6 +1153,29 @@ describe('web row style', () => {
     ).not.toBe('none');
   });
 
+  it('keeps the compact Web quote when native Market metrics are present', () => {
+    const body = render({
+      type: 'market',
+      key: 'market-native-metrics',
+      variant: 'token',
+      title: 'ETH',
+      leading: { kind: 'icon', name: 'coin' },
+      price: '$42',
+      change: { text: '+2%', tone: 'positive' },
+      metrics: [
+        { key: 'price', text: '$99' },
+        { key: 'change', text: '+9%' },
+      ],
+    });
+    expect(
+      body.querySelector('.ok-native-list-market-price')?.textContent
+    ).toBe('$42');
+    expect(
+      body.querySelector('.ok-native-list-market-change')?.textContent
+    ).toBe('+2%');
+    expect(body.textContent).not.toContain('$99');
+  });
+
   it('scales Market subscript runs with explicit typography and legacy change colors', () => {
     const body = render({
       type: 'market',

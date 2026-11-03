@@ -456,6 +456,33 @@ migration itself does not change any other protocol field.
 
 ## Lifecycle and concurrency
 
+### Updates before native host binding
+
+Status: implemented in local source, unreleased. The delayed-host regression fails
+on the previous wrapper and passes with this change; 438 package JS/Web tests and
+the package type check pass. This local JavaScript revision is verified with real
+iOS Fabric/UICollectionView rendering on an iPad simulator: delayed-ref,
+parent-layout-before-ref without an artificial delay, and host-ready control
+scenarios all retain the three complete rows after a later single-row update.
+The actual Home list also recovered all six rows after the task-specific Metro
+reload. Earlier natural re-entry evidence included development Metro bundle
+re-requests, so it does not establish a menu-only trigger or a Sui-specific natural
+reproduction. Android device acceptance remains unverified.
+
+Valid snapshots and row patches accepted before the native host is available MUST
+retain the latest owned logical state. When that host binds, its rows MUST reflect
+all accepted updates that are eligible for presentation, including updates to rows
+that do not change again afterward. Later single-row updates MUST NOT leave other
+rows at their initial placeholders. Existing disclosure measurement gates and
+snapshot replacement semantics still apply. Once the host is ready, ordinary row
+patches MUST remain incremental rather than requiring a complete snapshot for each
+patch. This contract does not add a public prop, method, or Nitro ABI field.
+
+Conformance covers multiple pre-bind patch batches, newer complete prop and
+imperative snapshots, rejected updates, equivalent prop clones after slot layout,
+selection state, repeated callbacks, distinct replacement hosts, and incremental
+single-row updates after binding.
+
 Full binding must work without a preceding recycle callback, including
 style set/change/clear and content A → B. A binding epoch invalidates stale
 image callbacks and action anchors. Recycling/disposal releases pending work
@@ -633,6 +660,14 @@ valid business content: invalid colors/styles are omitted, invalid images use
 existing placeholders, and positive title-image dimensions are clamped to a
 square of 1...40 logical units. Image headers are string dictionaries, never
 interpreted as geometry. Unsafe object graphs are rejected before normalization.
+
+Shared image URI validation accepts the entire `onekey-avatar:` scheme,
+case-insensitively, in snapshots and row patches on iOS, Android and Web. It does
+not restrict the host, version, path, query string or fragment, and preserves the
+URI without decoding. Existing image URI schemes retain their acceptance rules.
+Unsupported image URIs fail development assertions and are sanitized out in
+production. This is validation acceptance only; avatar decoding and loading
+remain owned by the platform image loader or Web avatar worker.
 
 A complete snapshot remains atomic after decoration sanitization: invalid
 schema, duplicate/missing identities, required business fields or wallet-group
@@ -824,7 +859,14 @@ Host clipping is per-bind state. A row view that serves several row shapes
 (the Android Activity view serves the legacy row and the rich `amounts` row) is
 reused across binds, so each bind MUST derive clipping from the item it binds
 (`nativeListActivityHostClips`): a view that last showed an overhanging badge
-clips again when it is rebound to a row without one.
+clips again when it is rebound to a row without one. The rule follows the
+visual, not the row shape: the rich row renders its leading visual on the
+details view, so that view and every column between the visual and the host
+stop clipping too, and the host derives its own clipping from the details
+view's visual (`leadingOverhangs`, OK-66275). Before this rule the rich branch
+forced the host's clipping back on and left the details view at Android's
+defaults, so the app's history rows (which always carry `amounts`) still showed
+the badge cut at the bottom-right after the legacy branch had been fixed.
 
 The row's own shape still clips on every platform: iOS masks the cell to its
 corner radius (`masksToBounds`), Web keeps the row `overflow: hidden`, and
@@ -861,9 +903,10 @@ over the badge. The per-source geometry is one pure function on Android
 `NativeListLeadingVisual.layoutSubviews` on iOS; both restore the stacking
 order by role on every bind because slots are reused across roles.
 
-The Android Activity renderer also applies the badge-overhang rule above
-(`requestsUnclippedHost` stops the content row and the row padding clipping),
-so the history rows' network badges render whole instead of cut flat.
+The Android Activity renderer also applies the badge-overhang rule above on
+both of its branches (`requestsUnclippedHost` stops the legacy content row, the
+rich details view with its columns, and the row padding clipping), so the
+history rows' network badges render whole instead of cut flat.
 
 ## Failures, fallback and limits
 
@@ -1515,9 +1558,14 @@ secondary text and subscript text segments. Segments are caller-formatted and
 never interpreted as numbers by NativeList. Omission preserves the legacy tree.
 
 `presentation: stacked` places the amount lines after the identity column and
-right-aligns them; `table` uses equal identity/amount columns, left-aligns amount
-lines and adds an optional trailing fee column. Fee supports label, primary and
-secondary text with their own segments; `hidden` preserves its column width
+right-aligns them. In `table`, the identity column includes its leading visual
+and gap; identity, amounts and an optional fee use stable widths in the ratio
+`1:1:0.6` after inter-column gaps. Without fee, identity and amounts split the
+remaining width equally. Amount content stays start-aligned within its column;
+native fee content stays end-aligned; Web retains its existing start alignment.
+Fee text length and leading visibility cannot move the amount column. These
+native widths match the existing Web table layout. Fee supports label, primary
+and secondary text with their own segments; `hidden` preserves its column width
 while hiding its contents. Up to four uniquely keyed title badges use declared
 tones. `descriptionActionKey` makes only the description emit that action with
 source `description`; footer actions retain their existing source/keys and
@@ -1537,6 +1585,15 @@ small-number segments in amounts/fiat/fee (ceil(0.6 × parent font size), unchan
 baseline, matching NumberSizeableText), badge tone/clear, hidden fee, disabled
 actions, description anchors, dark/RTL/font scaling and explicit/automatic height.
 
+
+Table regression acceptance additionally measures amount-column start, width and
+center across short/long/hidden fee, leading visibility, 1/2/6/32 amount lines and
+table/stacked reuse. Android DataRow primary and secondary groups honor their
+resolved text-role alignment (role style first, then column alignment), including
+start/center/end and styled/unstyled reuse. The secondary-prefix gap is present
+only when that prefix is visible; legacy linear rendering is unchanged. The UIKit
+regression explicitly forces each renderer view's direction; React Native/Fabric
+host direction propagation and real App RTL remain unverified.
 
 ### Android ancestor scroll distance
 
@@ -1714,6 +1771,51 @@ Acceptance: every cell kind, dynamic formatting, hover/focus/keyboard actions,
 row/presentation recycling, strict validation, native dictionary safe-ignore,
 header/body geometry, 100 quote ticks preserving nodes with zero geometry reads,
 then a real complex Market table before expanding to all five families.
+
+### Native Market metric columns
+
+Status: implemented in local source, unreleased; native runtime verification
+pending. A `market` row may supply two or three ordered, uniquely
+keyed text columns through `metrics`, typed as a `Pick<DataColumn, ...>` of
+the supported text fields. Each column uses
+the text subset of `DataColumn`: key, primary text and segments, optional
+secondary text and segments, weight, alignment, and primary/secondary tone.
+Icon and secondary-leading fields are rejected in development and stripped by
+the existing production decoration sanitizer.
+Keys are nonempty and callers format all text. The row keeps its required
+`price` and `change` fields as compact fallbacks. When `metrics` is present,
+iOS and Android display the existing leading action, visual, title, subtitle,
+and Market badges, then the metric columns in place of the compact price and
+change block. The metrics are authoritative for this native presentation; the
+SDK does not infer their values from the fallback fields or product data.
+The default native accessibility label includes the title and subtitle followed
+by the displayed metric text, primary then secondary, in column order. It
+updates with each quote. An explicit row accessibility label takes precedence.
+The metrics use their own text tones and alignment, with both lines aligned
+the same way; omitted alignment defaults to `end`. Existing change block
+width, height, and corner radius do not
+apply to metric columns. The title content receives a relative weight of two;
+metric columns receive their declared `weight` (1...3, default one) after the
+row's existing action, visual, padding, and gaps take their space. The SDK
+does not choose a mode from screen width. Without `metrics`, all platforms
+retain their existing compact Market presentation. Web ignores `metrics` and
+continues using `webTable` when supplied.
+
+Metric values travel in the existing row snapshot JSON and do not change the
+Nitro ABI, row key, action keys, badge anchors, or scroll ownership. Full
+snapshots may add, replace, or omit `metrics`; omission restores compact mode.
+An explicit patch with a valid two- or three-column array replaces metrics,
+while an omitted patch field leaves them unchanged. A full snapshot is used
+to remove metrics from a wide row; this contract adds no null patch meaning.
+Binding and recycling clear inactive metric and compact views in both
+directions, including changes between two and three columns, so reused rows
+cannot show stale text or targets. Metric fields contain no new action target;
+Market badge, leading action, press, press-in, and long-press behavior remains
+owned by the existing Market row. Conformance requires validation and patch
+tests, native bind/reuse and action-anchor checks, then consuming App device
+checks at narrow and wide list widths. Source and unit tests alone do not
+establish native layout acceptance.
+
 
 
 ### Web grid fractional column geometry

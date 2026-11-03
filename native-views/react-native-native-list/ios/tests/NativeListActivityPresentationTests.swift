@@ -97,6 +97,103 @@ final class NativeListActivityPresentationTests: XCTestCase {
     }
   }
 
+  func testTableColumnsStayStableAcrossFeeLeadingAndAmountReuseWithForcedRendererDirection() throws {
+    let width: CGFloat = 900
+    let horizontal: CGFloat = 16
+    let contentWidth = width - horizontal * 2
+    let gap: CGFloat = 12
+    let container = UIView(frame: CGRect(x: 0, y: 0, width: contentWidth, height: 4000))
+    let details = NativeListActivityDetailsView()
+    details.translatesAutoresizingMaskIntoConstraints = false
+    container.addSubview(details)
+    NSLayoutConstraint.activate([
+      details.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+      details.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+      details.topAnchor.constraint(equalTo: container.topAnchor),
+    ])
+    let main = try XCTUnwrap(details.arrangedSubviews.first as? UIStackView)
+    let amounts = try XCTUnwrap(main.arrangedSubviews[2] as? UIStackView)
+    let fee = try XCTUnwrap(main.arrangedSubviews[3] as? UIStackView)
+    for rtl in [false, true] {
+      let direction: UIUserInterfaceLayoutDirection = rtl ? .rightToLeft : .leftToRight
+      // This fixture covers renderer geometry; App-level RTL propagation is separate.
+      func applyDirection(_ view: UIView) {
+        view.semanticContentAttribute = rtl ? .forceRightToLeft : .forceLeftToRight
+        view.subviews.forEach(applyDirection)
+      }
+      for hasFee in [true, false, true] {
+        var previousHeight: CGFloat = 0
+        for count in [1, 2, 6, 32] {
+          for hideLeading in [false, true, false] {
+            for feeKind in 0...2 {
+              var data: [String: Any] = [
+                "type": "activity", "key": "table", "title": "Send",
+                "description": "Contract interaction with a long description that wraps",
+                "leading": ["kind": "icon", "name": "ArrowTopOutline"],
+                "hideLeading": hideLeading,
+                "amounts": (0..<count).map { index in [
+                  "key": "amount-\(index)", "text": index % 2 == 0 ? "-123456789012345678901234567890.123456789 ETH" : "+1 USDC",
+                  "secondaryText": "$1,000.00",
+                  "leading": ["kind": "icon", "name": "ArrowTopOutline"],
+                ] as [String: Any] },
+              ]
+              if hasFee {
+                data["fee"] = ["label": "Network fee",
+                  "primary": feeKind == 1 ? "0.000000012345678 ETH" : "1 ETH",
+                  "secondary": "$0.20", "hidden": feeKind == 2]
+              }
+              // Create amount views before applying the fixture direction; each transition binds once.
+              details.bind(try NativeListItem(data: data), theme: nil, fonts: NativeListFontFamilies())
+              applyDirection(details)
+              for presentation in ["table", "stacked", "table"] {
+                data["presentation"] = presentation
+                details.bind(try NativeListItem(data: data), theme: nil, fonts: NativeListFontFamilies())
+                XCTAssertEqual(main.effectiveUserInterfaceLayoutDirection, direction)
+                XCTAssertEqual(amounts.effectiveUserInterfaceLayoutDirection, direction)
+                XCTAssertEqual(fee.effectiveUserInterfaceLayoutDirection, direction)
+                container.setNeedsLayout()
+                container.layoutIfNeeded()
+                guard presentation == "table" else { continue }
+                let expected = (contentWidth - gap * (hasFee ? 2 : 1)) / (hasFee ? 2.6 : 2)
+                XCTAssertEqual(amounts.frame.width, expected, accuracy: 1)
+                let start = rtl ? contentWidth - expected * 2 - gap : expected + gap
+                XCTAssertEqual(amounts.frame.minX, start, accuracy: 1)
+                XCTAssertEqual(amounts.frame.midX, start + expected / 2, accuracy: 1)
+                XCTAssertEqual(amounts.arrangedSubviews.count, count)
+                for amount in amounts.arrangedSubviews {
+                  XCTAssertEqual(amount.frame.minX, 0, accuracy: 1)
+                  XCTAssertEqual(amount.frame.width, expected, accuracy: 1)
+                  let row = try XCTUnwrap(amount as? UIStackView)
+                  let leading = row.arrangedSubviews[0]
+                  let labels = row.arrangedSubviews[1]
+                  if rtl { XCTAssertLessThanOrEqual(labels.frame.maxX, leading.frame.minX) }
+                  else { XCTAssertLessThanOrEqual(leading.frame.maxX, labels.frame.minX) }
+                  XCTAssertGreaterThanOrEqual(labels.frame.minX, 0)
+                  XCTAssertLessThanOrEqual(labels.frame.maxX, amount.frame.width + 1)
+                }
+                if hasFee {
+                  XCTAssertEqual(fee.frame.width, expected * 0.6, accuracy: 1)
+                  XCTAssertEqual(fee.alpha, feeKind == 2 ? 0 : 1)
+                  for child in fee.arrangedSubviews {
+                    XCTAssertGreaterThanOrEqual(child.frame.minX, -1)
+                    XCTAssertLessThanOrEqual(child.frame.maxX, fee.frame.width + 1)
+                    if rtl { XCTAssertEqual(child.frame.minX, 0, accuracy: 1) }
+                    else { XCTAssertEqual(child.frame.maxX, fee.frame.width, accuracy: 1) }
+                  }
+                }
+                XCTAssertEqual(
+                  NativeListActivityDetailsView.measure(data, width: width, fonts: NativeListFontFamilies()),
+                  ceil(details.frame.height) + 16, accuracy: 1)
+              }
+            }
+          }
+          XCTAssertGreaterThan(details.frame.height, previousHeight)
+          previousHeight = details.frame.height
+        }
+      }
+    }
+  }
+
   func testAutomaticHeightMatchesRenderedStacks() throws {
     let amount: [String: Any] = ["key": "send", "text": "-0.5 ETH", "secondaryText": "$1,000.00"]
     let cases: [(String, [String: Any])] = [

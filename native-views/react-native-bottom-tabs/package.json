@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-bottom-tabs",
-  "version": "6.7.0-20",
+  "version": "6.7.0-21",
   "description": "Native bottom tabs (tab bar + scene container) for React Native on iOS and Android",
   "source": "./src/index.tsx",
   "main": "./lib/module/index.js",
@@ -71,7 +71,7 @@
     "typescript": "^5.9.2"
   },
   "peerDependencies": {
-    "@onekeyfe/react-native-image": "6.7.0-20",
+    "@onekeyfe/react-native-image": "6.7.0-21",
     "react": "*",
     "react-native": "*"
   },
