@@ -100,6 +100,83 @@ const snapshot = (
 });
 
 describe.each([true, false])(
+  'account avatar image URIs in development=%s',
+  (development) => {
+    const environment = globalThis as typeof globalThis & { __DEV__: boolean };
+    let original: boolean;
+    beforeEach(() => {
+      original = environment.__DEV__;
+      environment.__DEV__ = development;
+    });
+    afterEach(() => {
+      environment.__DEV__ = original;
+    });
+
+    const account = (uri: string): IdentityRow => ({
+      ...row('account'),
+      leading: {
+        kind: 'account',
+        image: { uri, width: 32, height: 32 },
+        fallbackIcon: { name: 'CrossedSmallSolid' },
+      },
+    });
+
+    it.each([
+      'onekey-avatar://blockie/v1/testaccount0',
+      `onekey-avatar://blockie/v1/${encodeURIComponent('account/with spaces')}`,
+      'onekey-avatar://other/v1/account',
+      'onekey-avatar://blockie/v2/account',
+      'onekey-avatar://blockie/v1/',
+      'onekey-avatar://blockie/v1/account/extra',
+      'onekey-avatar://blockie/v1/account?query',
+      'onekey-avatar://blockie/v1/account#fragment',
+      'onekey-avatar://files/folder/avatar.png?size=32#preview',
+      'ONEKEY-AVATAR://files/avatar.png',
+      'onekey-avatar:folder/avatar.png',
+    ])('preserves %s in snapshots and row patches', (uri) => {
+      const value = account(uri);
+      expect(validateSnapshot(snapshot([value])).rows[0]).toMatchObject({
+        leading: value.leading,
+      });
+      expect(
+        validatePatches([
+          {
+            type: 'identity',
+            key: value.key,
+            changes: { leading: value.leading },
+          },
+        ])[0]!.changes
+      ).toMatchObject({ leading: value.leading });
+    });
+
+    it.each([
+      // eslint-disable-next-line no-script-url -- Exercise executable URI rejection.
+      'javascript:alert(1)',
+      'onekey-avatar-other://files/avatar.png',
+      'ftp://example.com/avatar.png',
+    ])('rejects %s in snapshots and row patches', (uri) => {
+      const value = account(uri);
+      const validateRow = () => validateSnapshot(snapshot([value])).rows[0];
+      const validatePatch = () =>
+        validatePatches([
+          {
+            type: 'identity',
+            key: value.key,
+            changes: { leading: value.leading },
+          },
+        ])[0]!.changes;
+      if (development) {
+        expect(validateRow).toThrow('unsupported image URI');
+        expect(validatePatch).toThrow('unsupported image URI');
+      } else {
+        expect(validateRow()).not.toHaveProperty('leading.image');
+        expect(validatePatch()).not.toHaveProperty('leading.image');
+      }
+    });
+  }
+);
+
+describe.each([true, false])(
   'identity title image protocol in development=%s',
   (development) => {
     const environment = globalThis as typeof globalThis & { __DEV__: boolean };
@@ -3164,6 +3241,186 @@ describe('Web Market table presentation contract', () => {
         ] as unknown as readonly RowModel[])
       )
     ).toThrow();
+  });
+});
+
+describe('native Market metric columns', () => {
+  const price = { key: 'price', text: '$64,230.00', alignment: 'end' as const };
+  const change = {
+    key: 'change',
+    text: '+2.40%',
+    tone: 'positive' as const,
+    alignment: 'end' as const,
+  };
+  const volume = {
+    key: 'volume',
+    text: '$1.23B',
+    secondaryText: '24h',
+    alignment: 'end' as const,
+  };
+
+  it('keeps ordinary Market rows compact and accepts two or three text metrics', () => {
+    expect(serializeSnapshot(snapshot([marketRow()]))).not.toContain('metrics');
+    for (const metrics of [
+      [price, change],
+      [price, change, volume],
+    ]) {
+      const row = marketRow();
+      const next = validateSnapshot(snapshot([{ ...row, metrics }]));
+      expect((next.rows[0] as MarketRow).metrics).toEqual(metrics);
+      expect((next.rows[0] as MarketRow).badges).toEqual(row.badges);
+      expect((next.rows[0] as MarketRow).leadingAction).toEqual(
+        row.leadingAction
+      );
+    }
+  });
+
+  it('rejects invalid count, duplicate keys, and unsupported decoration', () => {
+    const invalid = [
+      [price],
+      [price, change, volume, volume],
+      [price, { ...change, key: 'price' }],
+      [{ ...price, key: '' }, change],
+      [{ ...price, weight: 4 }, change],
+      [{ ...price, titleIcon: { name: 'SearchOutline' } }, change],
+    ];
+    for (const metrics of invalid) {
+      expect(() =>
+        validateSnapshot(snapshot([{ ...marketRow(), metrics } as MarketRow]))
+      ).toThrow();
+      expect(() =>
+        validatePatches([
+          {
+            type: 'market',
+            key: 'market-btc',
+            changes: { metrics },
+          } as RowPatch,
+        ])
+      ).toThrow();
+    }
+  });
+
+  it('patches two to three metrics and uses a full snapshot to return to compact', () => {
+    const initial = snapshot([{ ...marketRow(), metrics: [price, change] }]);
+    const patched = applyRowPatches(initial, [
+      {
+        type: 'market',
+        key: 'market-btc',
+        changes: { metrics: [price, change, volume], price: '$64,231.00' },
+      },
+    ]);
+    expect((patched.rows[0] as MarketRow).metrics).toEqual([
+      price,
+      change,
+      volume,
+    ]);
+    expect((patched.rows[0] as MarketRow).price).toBe('$64,231.00');
+    expect(
+      validateSnapshot(snapshot([marketRow()])).rows[0]
+    ).not.toHaveProperty('metrics');
+  });
+
+  it('rejects malformed metric shape and null removal in development and production', () => {
+    const environment = globalThis as typeof globalThis & { __DEV__: boolean };
+    const previous = environment.__DEV__;
+    const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      for (const development of [true, false]) {
+        environment.__DEV__ = development;
+        for (const metrics of [
+          null,
+          [price],
+          [price, { ...change, key: 'price' }],
+          [price, { key: 'change' }],
+          [price, { ...change, textSegments: 'bad' }],
+          [price, { ...change, textSegments: [null] }],
+        ]) {
+          expect(() =>
+            validateSnapshot(
+              snapshot([{ ...marketRow(), metrics } as MarketRow])
+            )
+          ).toThrow();
+          const validate = () =>
+            validatePatches([
+              {
+                type: 'market',
+                key: 'market-btc',
+                changes: { metrics },
+              } as RowPatch,
+            ]);
+          if (development) expect(validate).toThrow();
+          else expect(validate()).toEqual([]);
+        }
+      }
+    } finally {
+      environment.__DEV__ = previous;
+      warning.mockRestore();
+    }
+  });
+
+  it('keeps MetricCard values intact in production while trimming only Market decorations', () => {
+    const environment = globalThis as typeof globalThis & { __DEV__: boolean };
+    const previous = environment.__DEV__;
+    environment.__DEV__ = false;
+    try {
+      const card: MetricCardRow = {
+        type: 'metricCard',
+        key: 'activity',
+        variant: 'activity',
+        title: 'ACTIVITY',
+        value: '',
+        metrics: [
+          {
+            key: 'volume',
+            label: 'Volume',
+            value: '$5K',
+            visual: { kind: 'icon', name: 'ChartTrendingUpOutline' },
+          },
+          { key: 'fees', label: 'Fees', value: '$2' },
+        ],
+      };
+      const accepted = validateSnapshot(snapshot([card]));
+      expect((accepted.rows[0] as MetricCardRow).metrics).toEqual(card.metrics);
+      const nextMetrics: MetricCardRow['metrics'] = [
+        {
+          key: 'volume',
+          label: 'Volume',
+          value: '$6K',
+          visual: { kind: 'icon', name: 'ChartTrendingUpOutline' },
+        },
+        { key: 'fees', label: 'Fees', value: '$3' },
+      ];
+      const patched = applyRowPatches(accepted, [
+        {
+          type: 'metricCard',
+          key: 'activity',
+          changes: { metrics: nextMetrics },
+        },
+      ]);
+      expect((patched.rows[0] as MetricCardRow).metrics).toEqual(nextMetrics);
+
+      const withIcon = [
+        { ...price, titleIcon: { name: 'SearchOutline' } },
+        change,
+      ];
+      const market = validateSnapshot(
+        snapshot([{ ...marketRow(), metrics: withIcon } as MarketRow])
+      );
+      expect((market.rows[0] as MarketRow).metrics?.[0]).toEqual(price);
+      const marketPatch = validatePatches([
+        {
+          type: 'market',
+          key: 'market-btc',
+          changes: { metrics: withIcon },
+        } as RowPatch,
+      ]);
+      expect(
+        (marketPatch[0] as Extract<RowPatch, { type: 'market' }>).changes
+          .metrics?.[0]
+      ).toEqual(price);
+    } finally {
+      environment.__DEV__ = previous;
+    }
   });
 });
 

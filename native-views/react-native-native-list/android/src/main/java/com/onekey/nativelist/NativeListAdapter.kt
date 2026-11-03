@@ -240,9 +240,10 @@ internal class NativeListAdapter(
 
       private fun isMarketQuoteUpdate(oldItem: NativeListItem, newItem: NativeListItem): Boolean {
         if (oldItem.type != "market" || newItem.type != "market") return false
+        if (!hasSameMarketMetricStructure(oldItem, newItem)) return false
         fun stableContent(item: NativeListItem): String {
           val value = JSONObject(item.json.toString())
-          listOf("revision", "price", "priceSegments", "change", "accessibilityLabel")
+          listOf("revision", "price", "priceSegments", "change", "accessibilityLabel", "metrics")
             .forEach(value::remove)
           return value.toString()
         }
@@ -256,3 +257,18 @@ internal const val SELECTION_PAYLOAD = "selection"
 // OneKey patch: internal payload, never exposed through the serialized row contract.
 internal const val SELECTION_ECHO_PAYLOAD = "selectionEcho"
 internal const val MARKET_QUOTE_PAYLOAD = "marketQuote"
+
+internal fun hasSameMarketMetricStructure(before: NativeListItem, after: NativeListItem): Boolean {
+  val old = before.json.optJSONArray("metrics")
+  val next = after.json.optJSONArray("metrics")
+  val oldCount = old?.length() ?: 0
+  if (oldCount != (next?.length() ?: 0)) return false
+  for (index in 0 until oldCount) {
+    val previous = old?.optJSONObject(index) ?: return false
+    val current = next?.optJSONObject(index) ?: return false
+    if (previous.optString("key") != current.optString("key") ||
+      previous.optInt("weight", 1) != current.optInt("weight", 1) ||
+      previous.optString("alignment", "end") != current.optString("alignment", "end")) return false
+  }
+  return true
+}
