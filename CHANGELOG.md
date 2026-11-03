@@ -45,6 +45,14 @@ All notable changes to this project will be documented in this file.
 - Stop tracking `nitrogen/generated` for `react-native-image` and `react-native-native-list`. Every other Nitro package already ignores `nitrogen/` and regenerates it from the spec at release time; these two were missing a package `.gitignore`, so 117 generated files rode along in every diff that touched a prop. `react-native-native-list` now runs `yarn nitrogen` in its `release` script like the other view packages, and local builds need `yarn nitrogen` in the package before the first native build.
 - No version bump here; these changes ship with the next release. Note that 3.0.157 was published from this branch before the review fixes landed and should not be used.
 
+## [6.7.0-22] - 2026-11-03
+
+### Bug Fixes
+- **pager-view (Web)**: Measure a collapsible pager page's owner synchronously when it is attached, instead of on the next animation frame. The page metrics start at width 0, so consumers that pin their content to the reported width painted one frame at 0 width; on desktop the aggregate token details modal flashed its fiat hero wrapped one character per line before the measurement landed (OK-66299). Resize and scroll re-measurements stay coalesced per frame.
+
+### Chores
+- Bump all 44 publishable packages to 6.7.0-22.
+
 ## [6.7.0-21] - 2026-11-03
 
 ### Bug Fixes
