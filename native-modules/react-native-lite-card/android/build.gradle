@@ -39,6 +39,13 @@ android {
   defaultConfig {
     minSdkVersion getExtOrIntegerDefault("minSdkVersion")
     targetSdkVersion getExtOrIntegerDefault("targetSdkVersion")
+
+    externalNativeBuild {
+      cmake {
+        arguments "-DBUILD_TESTING=OFF"
+        targets "keys", "gpchannelNDK"
+      }
+    }
   }
 
   buildFeatures {

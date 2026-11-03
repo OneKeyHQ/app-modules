@@ -97,7 +97,7 @@ class Command(
         )
     }
 
-    private fun parseResponse(response: String): String {
+    private fun parseResponse(response: String): String? {
         return if (useSafeChannel || (useSafeChannelWhenOpen && hasOpenSafeChannel)) {
             nativeGPCParseSafeAPDUResponse(response)
         } else {
@@ -109,9 +109,13 @@ class Command(
         beforeConnecting(connection)
         // buildApdu && parseResponse Use in pairs
         val apdu = buildApdu()
+        if (apdu.isEmpty()) {
+            return SendResponse("0xFFFF", 0xFF.toByte(), 0xFF.toByte(), parseSuccess = false)
+        }
         val result = Connection.send(connection.isoDep, apdu)
         val resultObject = CardResponse.objectFromData(parseResponse(result.rawResponse))
         result.result = resultObject?.response ?: ""
+        result.parseSuccess = resultObject != null && resultObject.wRet == 0x9000
         return result
     }
 }

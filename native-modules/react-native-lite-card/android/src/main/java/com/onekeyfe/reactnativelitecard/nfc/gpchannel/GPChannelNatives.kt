@@ -11,20 +11,20 @@ object GPChannelNatives {
     external fun nativeGetErrorCode(): Int
     external fun nativeGPCInitialize(json: String?): Int
     external fun nativeGPCFinalize(): Int
-    external fun nativeGPCBuildMutualAuthData(): String
+    external fun nativeGPCBuildMutualAuthData(): String?
     external fun nativeGPCOpenSecureChannel(response: String?): Int
     external fun nativeGPCBuildAPDU(
         cla: Long, ins: Long, p1: Long, p2: Long, data: String = ""
-    ): String
+    ): String?
 
     external fun nativeGPCBuildSafeAPDU(
         cla: Long, ins: Long, p1: Long, p2: Long, data: String = ""
-    ): String
+    ): String?
 
-    external fun nativeGPCParseSafeAPDUResponse(response: String?): String
-    external fun nativeGPCParseAPDUResponse(response: String?): String
-    external fun nativeGPCTLVDecode(apdu: String?): String
-    external fun nativeGPCParseCertificate(cert: String?): String
+    external fun nativeGPCParseSafeAPDUResponse(response: String?): String?
+    external fun nativeGPCParseAPDUResponse(response: String?): String?
+    external fun nativeGPCTLVDecode(apdu: String?): String?
+    external fun nativeGPCParseCertificate(cert: String?): String?
 
     init {
         System.loadLibrary("gpchannelNDK")
