@@ -43,7 +43,8 @@
     "prepare": "rm -rf lib && bob build",
     "typecheck": "tsc -b",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
-    "release": "yarn prepare && npm whoami && npm publish --access public"
+    "release": "yarn prepare && npm whoami && npm publish --access public",
+    "test": "jest"
   },
   "keywords": [
     "react-native",
@@ -110,5 +111,16 @@
       }
     }
   },
-  "react-native": "./lib/module/index.native.js"
+  "react-native": "./lib/module/index.native.js",
+  "jest": {
+    "preset": "react-native",
+    "modulePathIgnorePatterns": [
+      "<rootDir>/example/node_modules",
+      "<rootDir>/lib/"
+    ],
+    "watchman": false,
+    "testMatch": [
+      "<rootDir>/src/**/__tests__/*.test.ts?(x)"
+    ]
+  }
 }
