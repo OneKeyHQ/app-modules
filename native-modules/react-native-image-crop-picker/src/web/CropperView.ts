@@ -718,6 +718,8 @@ export function presentCropper<T>(
       window.addEventListener('resize', layout);
     }
     layout();
-    stage.focus({ preventScroll: true });
+    // The panel takes focus so keys work at once without drawing the crop
+    // area's focus ring; Tab still reaches the crop area.
+    panel.focus({ preventScroll: true });
   });
 }
