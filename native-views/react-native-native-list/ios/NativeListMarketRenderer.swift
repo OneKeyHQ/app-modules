@@ -187,22 +187,30 @@ final class NativeListMarketCell: NativeListRendererCell {
     style.filter { ["lines", "truncate", "verticalAlignment", "offsetY"].contains($0.key) }
   }
   override func accessibilityText(_ item: NativeListItem) -> String {
-    item.data.string(
-      "accessibilityLabel",
-      default: [
-        item.data.string("title"), item.data.string("subtitle"), item.data.string("price"),
-        item.data.dictionary("change")?.string("text") ?? "",
-      ].filter { !$0.isEmpty }.joined(separator: ", "))
+    if let label = item.data["accessibilityLabel"] as? String { return label }
+    var parts = [item.data.string("title"), item.data.string("subtitle")]
+    let metrics = item.data.dictionaries("metrics")
+    if metrics.count == 2 || metrics.count == 3 {
+      for index in metrics.indices {
+        for label in [metricPrimaryLabels[index], metricSecondaryLabels[index]] where !label.isHidden {
+          if let text = label.text { parts.append(text) }
+        }
+      }
+    } else {
+      parts.append(item.data.string("price"))
+      parts.append(item.data.dictionary("change")?.string("text") ?? "")
+    }
+    return parts.filter { !$0.isEmpty }.joined(separator: ", ")
   }
   override func updateMarketQuote(_ item: NativeListItem, theme: [String: Any]?) {
     guard retainBoundItem(item) else { return }
     let metrics = item.data.dictionaries("metrics")
     if metrics.count == 2 || metrics.count == 3 {
       updateMetricLabels(metrics, theme: theme)
-      updateQuoteAccessibility(item)
     } else {
       bindQuote(item, theme: theme)
     }
+    accessibilityLabel = accessibilityText(item)
   }
   override func recycleContent() {
     visual.recycle()
@@ -719,21 +727,8 @@ final class NativeListMarketCell: NativeListRendererCell {
       trailingStack.axis = .horizontal
       trailingStack.alignment = .center
       trailingStack.spacing = CGFloat(style?.double("trailingGap", default: 8) ?? 8)
-    }
-    if metrics.count == 2 || metrics.count == 3 {
-      updateQuoteAccessibility(item)
-    } else {
       bindQuote(item, theme: theme)
     }
-  }
-  private func updateQuoteAccessibility(_ item: NativeListItem) {
-    let changeData = item.data.dictionary("change") ?? [:]
-    accessibilityLabel = item.data.string(
-      "accessibilityLabel",
-      default: [
-        item.data.string("title"), item.data.string("subtitle"), item.data.string("price"),
-        changeData.string("text"),
-      ].filter { !$0.isEmpty }.joined(separator: ", "))
   }
   private func bindQuote(_ item: NativeListItem, theme: [String: Any]?) {
     NSLayoutConstraint.deactivate(accessorySizeConstraints)
@@ -802,6 +797,5 @@ final class NativeListMarketCell: NativeListRendererCell {
     if let changeStyle = style?.dictionary("change"), !textLayoutStyle(changeStyle).isEmpty {
       NativeListTextStyles.applyStyledButton(change, textLayoutStyle(changeStyle), fonts: fonts)
     }
-    updateQuoteAccessibility(item)
   }
 }

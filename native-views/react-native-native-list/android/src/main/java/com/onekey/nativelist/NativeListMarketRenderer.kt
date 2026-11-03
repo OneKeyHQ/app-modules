@@ -199,18 +199,27 @@ internal class NativeListMarketRowView(context: ThemedReactContext, fonts: Nativ
     emitAction(key, view, source, slot, target)
   }
 
-  override fun accessibilityText(item: NativeListItem) =
-    item.json.optString(
-      "accessibilityLabel",
+  override fun accessibilityText(item: NativeListItem): String {
+    if (item.json.has("accessibilityLabel") && !item.json.isNull("accessibilityLabel")) {
+      return item.json.optString("accessibilityLabel")
+    }
+    val metrics = item.json.optJSONArray("metrics")?.takeIf { it.length() in 2..3 }
+    val values = if (metrics != null) {
+      (0 until metrics.length()).flatMap { index ->
+        listOf(metricPrimaryViews[index], metricSecondaryViews[index])
+          .filter { it.visibility == VISIBLE }
+          .map { it.text.toString() }
+      }
+    } else {
       listOf(
-          item.json.optString("title"),
-          item.json.optString("subtitle"),
-          item.json.optString("price"),
-          item.json.optJSONObject("change")?.optString("text") ?: "",
-        )
-        .filter(String::isNotEmpty)
-        .joinToString(", "),
-    )
+        item.json.optString("price"),
+        item.json.optJSONObject("change")?.optString("text") ?: "",
+      )
+    }
+    return (listOf(item.json.optString("title"), item.json.optString("subtitle")) + values)
+      .filter(String::isNotEmpty)
+      .joinToString(", ")
+  }
 
   override fun bindContent(
     item: NativeListItem,
@@ -272,10 +281,11 @@ internal class NativeListMarketRowView(context: ThemedReactContext, fonts: Nativ
 
   override fun bindMarketQuote(item: NativeListItem, theme: JSONObject?) {
     if (retainBoundItem(item)) {
-      bindQuote(item, theme)
       item.json.optJSONArray("metrics")?.takeIf { it.length() in 2..3 }?.let {
         updateMetricLabels(it, theme)
       }
+      bindQuote(item, theme)
+      contentDescription = accessibilityText(item)
     }
   }
 
@@ -927,18 +937,6 @@ internal class NativeListMarketRowView(context: ThemedReactContext, fonts: Nativ
         )
       }
     }
-    contentDescription =
-      item.json.optString(
-        "accessibilityLabel",
-        listOf(
-            item.json.optString("title"),
-            item.json.optString("subtitle"),
-            item.json.optString("price"),
-            changeData.optString("text"),
-          )
-          .filter(String::isNotEmpty)
-          .joinToString(", "),
-      )
   }
 
   override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {

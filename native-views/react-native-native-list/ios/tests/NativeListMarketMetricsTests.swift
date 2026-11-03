@@ -4,7 +4,9 @@ import XCTest
 
 @MainActor
 final class NativeListMarketMetricsTests: XCTestCase {
-  private func item(_ metrics: [[String: Any]]? = nil, price: String = "$42") throws -> NativeListItem {
+  private func item(
+    _ metrics: [[String: Any]]? = nil, price: String = "$42", accessibilityLabel: String? = nil
+  ) throws -> NativeListItem {
     var data: [String: Any] = [
       "key": "market-eth", "type": "market", "variant": "token", "height": 72,
       "leading": ["kind": "token", "fallbackIcon": ["name": "CryptoCoinOutline"]],
@@ -17,6 +19,7 @@ final class NativeListMarketMetricsTests: XCTestCase {
       "style": ["horizontalPadding": 20, "leadingGap": 14, "trailingGap": 8],
     ]
     if let metrics { data["metrics"] = metrics }
+    data["accessibilityLabel"] = accessibilityLabel
     return try NativeListItem(data: data)
   }
 
@@ -53,6 +56,29 @@ final class NativeListMarketMetricsTests: XCTestCase {
     bind(try item(two))
     XCTAssertEqual(cell.root.arrangedSubviews.count, 5)
     XCTAssertEqual(metricLabel.text, "+2%")
+  }
+
+  func testAccessibilityLabelFollowsVisibleMetricsAndExplicitOverride() throws {
+    let cell = NativeListMarketCell(frame: .zero)
+    let bind: (NativeListItem) -> Void = { item in
+      cell.bind(item: item, theme: nil, layout: "linear", selected: false,
+        checkboxState: { _, _, fallback in fallback }, fonts: NativeListFontFamilies())
+    }
+    var metrics: [[String: Any]] = [
+      ["key": "volume", "text": "$5M", "secondaryText": "24h"],
+      ["key": "cap", "text": "$8M"],
+    ]
+    bind(try item(metrics))
+    XCTAssertEqual(cell.accessibilityLabel, "ETH, Volume, $5M, 24h, $8M")
+
+    metrics[0]["textSegments"] = [["text": "$"], ["text": "6M"]]
+    cell.updateMarketQuote(try item(metrics), theme: nil)
+    XCTAssertEqual(cell.accessibilityLabel, "ETH, Volume, $6M, 24h, $8M")
+    cell.updateMarketQuote(try item(metrics, accessibilityLabel: "Market summary"), theme: nil)
+    XCTAssertEqual(cell.accessibilityLabel, "Market summary")
+
+    bind(try item())
+    XCTAssertEqual(cell.accessibilityLabel, "ETH, Volume, $42, +2%")
   }
 
   func testQuoteUpdatesKeepMetricViewsAndActionTargetsStable() throws {

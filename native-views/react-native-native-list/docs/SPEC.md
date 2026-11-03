@@ -1691,6 +1691,9 @@ iOS and Android display the existing leading action, visual, title, subtitle,
 and Market badges, then the metric columns in place of the compact price and
 change block. The metrics are authoritative for this native presentation; the
 SDK does not infer their values from the fallback fields or product data.
+The default native accessibility label includes the title and subtitle followed
+by the displayed metric text, primary then secondary, in column order. It
+updates with each quote. An explicit row accessibility label takes precedence.
 The metrics use their own text tones and alignment, with both lines aligned
 the same way; omitted alignment defaults to `end`. Existing change block
 width, height, and corner radius do not
