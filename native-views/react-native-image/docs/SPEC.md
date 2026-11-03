@@ -351,7 +351,8 @@ inputs are `#RGB`, `#RGBA`, `#RRGGBB`, `#RRGGBBAA`, `rgb(r,g,b)` and
 0–1. Native alpha is quantized to the nearest 8-bit channel (including tiny alpha
 rounding to zero). Native percentages, named colors and theme tokens are not
 accepted; invalid native colors clear the drawing rather than reusing a stale
-one. Web colors follow browser CSS semantics, including named colors, variables
+one, and development builds log a `[OneKeyIcon] Unsupported color` warning
+naming the icon so a blank icon is diagnosable. Web colors follow browser CSS semantics, including named colors, variables
 and inheritance; caller style takes precedence over the color prop and the inner
 SVG inherits currentColor.
 Native implementations receive a normalized RGBA value. The later application
@@ -370,11 +371,18 @@ Native prop, layout and attachment updates occur on the UI thread. A change of
 name, color, pixel size or display scale advances a generation and clears the
 previous drawing. Detach/recycle invalidates that generation; only a completion
 matching the current attached generation may bind an image. Reattachment starts
-the current identity again. Decoding runs off the UI thread with at most two
+the current identity again. Before queuing, the view probes the decoded-raster
+LRU synchronously on the UI thread; a hit binds in the same frame (no blank frame
+on remount or recycle). The probe never reads assets or loads the manifest, so
+a cold process still takes the asynchronous path. Decoding runs off the UI thread with at most two
 concurrent tasks per process. Each view owns at most one pending identity;
 replacement or detach removes/replaces that queued identity instead of appending
 obsolete closures. Obsolete queued work is discarded before decoding and
 obsolete running results are discarded on completion.
+
+The host must package `OneKeyIcons.bundle` (iOS) or `assets/icons` (Android);
+when its manifest is missing or invalid the native side logs one warning
+(`[OneKeyIcon]` / tag `OneKeyIcon`) and every named icon stays blank.
 
 The native decoded-raster LRU is limited to 128 entries and 8 MiB of pixel cost.
 Its key includes canonical name, source digest, normalized RGBA, requested pixel

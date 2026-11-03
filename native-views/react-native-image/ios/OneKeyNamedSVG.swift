@@ -119,7 +119,37 @@ public final class OneKeyNamedSVG {
        let data = try? Data(contentsOf: file) {
       metadata = (try? JSONSerialization.jsonObject(with: data)) as? [String: [String: Any]]
     }
-    if metadata == nil { metadata = [:] }
+    if metadata == nil {
+      // Hosts own the resources; a missing bundle means every named icon stays blank.
+      NSLog("[OneKeyIcon] OneKeyIcons.bundle/manifest.json is missing or invalid; named icons will not render")
+      metadata = [:]
+    }
+  }
+
+  private static func renderKey(name: String, digest: String, width: Int, height: Int,
+                                scale: CGFloat, mode: RecolorMode, color: String,
+                                channels: [CGFloat]) -> (identity: String, key: String, maskAlpha: CGFloat) {
+    let identity = "\(name)|\(digest)|\(width)|\(height)|\(scale)"
+    let maskAlpha: CGFloat = mode == .multiple ? channels[3] : 1
+    let key = "\(identity)|\(mode.rawValue)|\(mode == .raster ? color : mode == .multiple ? String(Double(maskAlpha)) : "")"
+    return (identity, key, maskAlpha)
+  }
+
+  /// Main-thread fast path: returns an already-decoded result without disk I/O or
+  /// manifest loading, so remounted and recycled views paint in the same frame.
+  public func cachedRender(name: String, color: String, width: Int, height: Int,
+                           scale: CGFloat) -> RenderResult? {
+    guard let channels = Self.channels(color), metadataLock.try() else { return nil }
+    let entry = metadata?[name]
+    metadataLock.unlock()
+    guard let digest = entry?["digest"] as? String else { return nil }
+    let mode = (entry?["recolorMode"] as? String).flatMap(RecolorMode.init(rawValue:)) ?? .raster
+    let key = Self.renderKey(name: name, digest: digest, width: width, height: height, scale: scale,
+                             mode: mode, color: color, channels: channels).key
+    lock.lock(); defer { lock.unlock() }
+    guard let hit = cache[key] else { return nil }
+    recency.removeAll { $0 == key }; recency.append(key)
+    return hit
   }
 
   public func iconMetadata(forName name: String) -> IconMetadata? {
@@ -200,15 +230,15 @@ public final class OneKeyNamedSVG {
     guard let digest = entry?["digest"] as? String,
           let url = bundle?.url(forResource: request.name, withExtension: "svg") else { return nil }
     let mode = (entry?["recolorMode"] as? String).flatMap(RecolorMode.init(rawValue:)) ?? .raster
-    let sourceIdentity = "\(request.name)|\(digest)|\(request.width)|\(request.height)|\(request.scale)"
-    let maskAlpha: CGFloat = mode == .multiple ? channels[3] : 1
+    let (sourceIdentity, key, maskAlpha) = Self.renderKey(
+      name: request.name, digest: digest, width: request.width, height: request.height,
+      scale: request.scale, mode: mode, color: request.color, channels: channels)
     let paintColor: String
     switch mode {
     case .fixed, .single: paintColor = "rgba(0,0,0,1)"
     case .multiple: paintColor = "rgba(0,0,0,\(maskAlpha))"
     case .raster: paintColor = request.color
     }
-    let key = "\(sourceIdentity)|\(mode.rawValue)|\(mode == .raster ? request.color : mode == .multiple ? String(Double(maskAlpha)) : "")"
     lock.lock()
     if let image = cache[key] {
       recency.removeAll { $0 == key }; recency.append(key)

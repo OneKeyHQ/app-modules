@@ -65,6 +65,12 @@ final class HybridOneKeyIcon: HybridOneKeyIconSpec, RecyclableView {
       }
       // Keep only a successful same-source/geometry raster while new color decodes.
     } else { clearImage() }
+    if let hit = OneKeyNamedSVG.shared.cachedRender(name: name, color: color,
+      width: Int(width), height: Int(height), scale: scale) {
+      displayedGeometry = geometry
+      apply(hit, color: color)
+      return
+    }
     OneKeyNamedSVG.shared.requestRender(owner: owner, name: name, color: color,
       width: Int(width), height: Int(height), scale: scale) { [weak self] result in
       guard let self, self.generation == revision, self.host.window != nil else { return }

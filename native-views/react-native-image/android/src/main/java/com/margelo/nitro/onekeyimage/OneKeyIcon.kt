@@ -63,6 +63,12 @@ class HybridOneKeyIcon(context: ThemedReactContext) : HybridOneKeyIconSpec(), Re
     if (displayedGeometry == geometry && ready != null && host.drawable != null) {
       if (ready.canTint(color)) { applyTint(ready, color); return }
     } else clearImage()
+    OneKeyNamedSVG.cachedRender(name, color, host.width, host.height, scale)?.let { hit ->
+      displayed = hit; displayedGeometry = geometry
+      applyTint(hit, color)
+      host.setImageBitmap(hit.bitmap)
+      return
+    }
     val weakHost = WeakReference(host)
     val weakSelf = WeakReference(this)
     OneKeyNamedSVG.requestRender(owner, host.context.applicationContext.assets, name, color,

@@ -9,6 +9,7 @@ import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import org.json.JSONObject
 import java.util.concurrent.Executors
 import kotlin.math.roundToInt
@@ -59,26 +60,68 @@ object OneKeyNamedSVG {
   private val main = Handler(Looper.getMainLooper())
   private val colorPattern = Regex("rgba\\(\\d{1,3},\\d{1,3},\\d{1,3},(?:0(?:\\.\\d+)?|1(?:\\.0+)?)\\)")
 
+  private var manifestMissingLogged = false
+
   fun cancel(owner: Any) { synchronized(lock) { pending.remove(owner) } }
+
+  /** Caller holds manifestLock. Hosts own the resources, so a miss is logged once. */
+  private fun loadManifestLocked(assets: AssetManager): JSONObject? {
+    manifest?.let { return it }
+    return try {
+      assets.open("icons/manifest.json").bufferedReader().use { JSONObject(it.readText()) }
+        .also { manifest = it }
+    } catch (error: Exception) {
+      if (!manifestMissingLogged) {
+        manifestMissingLogged = true
+        Log.w("OneKeyIcon", "assets/icons/manifest.json is missing or invalid; named icons will not render", error)
+      }
+      null
+    }
+  }
+
+  private fun modeOf(metadata: JSONObject): RecolorMode = try {
+    RecolorMode.valueOf(metadata.optString("recolorMode", "raster").uppercase())
+  } catch (_: IllegalArgumentException) {
+    RecolorMode.RASTER
+  }
+
+  private data class RenderKey(val identity: String, val key: String, val maskAlpha: Int)
+
+  private fun renderKey(name: String, digest: String, width: Int, height: Int, scale: Float,
+    mode: RecolorMode, requestColor: String, color: Int): RenderKey {
+    val identity = "$name|$digest|$width|$height|$scale"
+    val maskAlpha = if (mode == RecolorMode.MULTIPLE) Color.alpha(color) else 255
+    val colorKey = when(mode) {
+      RecolorMode.RASTER -> requestColor
+      RecolorMode.MULTIPLE -> maskAlpha.toString()
+      else -> ""
+    }
+    return RenderKey(identity, "$identity|$mode|$colorKey", maskAlpha)
+  }
+
+  /**
+   * Main-thread fast path: returns an already-decoded result without asset I/O or
+   * manifest loading, so remounted and recycled views paint in the same frame.
+   */
+  fun cachedRender(name: String, color: String, width: Int, height: Int, scale: Float): RenderResult? {
+    val value = parseColor(color) ?: return null
+    val metadata = synchronized(manifestLock) { manifest?.optJSONObject(name) } ?: return null
+    val digest = metadata.optString("digest").takeIf { it.isNotEmpty() } ?: return null
+    val key = renderKey(name, digest, width, height, scale, modeOf(metadata), color, value).key
+    return synchronized(lock) { cache[key] }
+  }
 
   fun iconMetadata(assets: AssetManager, name: String): IconMetadata? {
     val trimmed = name.trim()
     if (trimmed.isEmpty()) return null
     val metadata = try {
       synchronized(manifestLock) {
-        if (manifest == null) {
-          manifest = assets.open("icons/manifest.json").bufferedReader().use { JSONObject(it.readText()) }
-        }
-        manifest!!.optJSONObject(trimmed)
+        loadManifestLocked(assets)?.optJSONObject(trimmed)
       }
     } catch (_: Exception) {
       null
     } ?: return null
-    val mode = try {
-      RecolorMode.valueOf(metadata.optString("recolorMode", "raster").uppercase())
-    } catch (_: IllegalArgumentException) {
-      RecolorMode.RASTER
-    }
+    val mode = modeOf(metadata)
     val viewBox = metadata.optJSONArray("viewBox")
     val vbWidth = if (viewBox != null && viewBox.length() >= 4) viewBox.optDouble(2, 24.0).toFloat() else 24f
     val vbHeight = if (viewBox != null && viewBox.length() >= 4) viewBox.optDouble(3, 24.0).toFloat() else 24f
@@ -130,7 +173,7 @@ object OneKeyNamedSVG {
           if (request.finalColor) result.copy(bitmap = result.finalBitmap(request.color), mode = RecolorMode.RASTER)
           else result
         }
-      } catch (_: Exception) { null }
+      } catch (_: Throwable) { null } // OOM must not strand activeWorkers.
       main.post { request.complete(bitmap) }
     }
   }
@@ -141,24 +184,16 @@ object OneKeyNamedSVG {
       request.scale <= 0) return null
     val color = parseColor(request.color) ?: return null
     val metadata = synchronized(manifestLock) {
-      if (manifest == null) manifest = request.assets.open("icons/manifest.json").bufferedReader().use { JSONObject(it.readText()) }
-      manifest!!.optJSONObject(request.name)
+      loadManifestLocked(request.assets)?.optJSONObject(request.name)
     } ?: return null
-    val mode = try { RecolorMode.valueOf(metadata.optString("recolorMode", "raster").uppercase()) }
-      catch (_: IllegalArgumentException) { RecolorMode.RASTER }
-    val sourceIdentity = "${request.name}|${metadata.getString("digest")}|${request.width}|${request.height}|${request.scale}"
-    val maskAlpha = if (mode == RecolorMode.MULTIPLE) Color.alpha(color) else 255
+    val mode = modeOf(metadata)
+    val (sourceIdentity, key, maskAlpha) = renderKey(request.name, metadata.getString("digest"),
+      request.width, request.height, request.scale, mode, request.color, color)
     val paintColor = when(mode) {
       RecolorMode.FIXED, RecolorMode.SINGLE -> Color.BLACK
       RecolorMode.MULTIPLE -> Color.argb(maskAlpha, 0, 0, 0)
       RecolorMode.RASTER -> color
     }
-    val colorKey = when(mode) {
-      RecolorMode.RASTER -> request.color
-      RecolorMode.MULTIPLE -> maskAlpha.toString()
-      else -> ""
-    }
-    val key = "$sourceIdentity|$mode|$colorKey"
     synchronized(lock) { cache[key]?.let { return it } }
     // AndroidSVG rgba quantizes with 256; SVG hex alpha preserves the exact CSS 8-bit channel.
     val svgColor = listOf(Color.red(paintColor), Color.green(paintColor), Color.blue(paintColor), Color.alpha(paintColor))

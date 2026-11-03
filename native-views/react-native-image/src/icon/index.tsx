@@ -21,6 +21,14 @@ export function OneKeyIcon({
   ...viewProps
 }: OneKeyIconProps) {
   const resolvedColor = normalizeIconColor(color);
+  if (__DEV__ && !resolvedColor) {
+    // Only hex, rgb() and rgba() are supported; anything else renders blank.
+    console.warn(
+      `[OneKeyIcon] Unsupported color ${JSON.stringify(
+        color
+      )} for "${name}"; expected #hex, rgb() or rgba().`
+    );
+  }
   return createElement(NativeIcon, {
     ...viewProps,
     iconName: resolvedColor && isIconName(name) ? name : '',
