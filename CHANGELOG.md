@@ -45,6 +45,14 @@ All notable changes to this project will be documented in this file.
 - Stop tracking `nitrogen/generated` for `react-native-image` and `react-native-native-list`. Every other Nitro package already ignores `nitrogen/` and regenerates it from the spec at release time; these two were missing a package `.gitignore`, so 117 generated files rode along in every diff that touched a prop. `react-native-native-list` now runs `yarn nitrogen` in its `release` script like the other view packages, and local builds need `yarn nitrogen` in the package before the first native build.
 - No version bump here; these changes ship with the next release. Note that 3.0.157 was published from this branch before the review fixes landed and should not be used.
 
+## [6.7.0-21] - 2026-11-03
+
+### Bug Fixes
+- **native-list (Android)**: Render the network badge of a rich (`amounts`) Activity row in full (OK-66275). The OK-66071 fix covered only the legacy branch; the app's history rows always carry `amounts`, and that branch forced the host's clipping back on and rendered the leading visual inside the details view's columns at Android's default `clipChildren`, so the Home history rows still showed the badge (and the swap pair's badge) cut flat at the bottom-right of the 40dp box. The details view now stops clipping itself and its columns whenever its bound visual reports an overhanging badge, and the host derives its clipping from that visual on both branches (`nativeListActivityHostClips`, JVM test `NativeListActivityHostClipPolicyTest`); a view reused from a badge row still clips again when it is rebound to a row without one. Example row-style page rows `activity-network-badge-rich` / `activity-token-pair-rich` are the rendering check; iOS and Web never clipped.
+
+### Chores
+- Bump all 44 publishable packages to 6.7.0-21.
+
 ## [6.7.0-20] - 2026-10-30
 
 ### Bug Fixes

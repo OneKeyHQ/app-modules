@@ -18,6 +18,9 @@ internal class NativeListActivityDetailsView(private val reactContext: ThemedRea
   private val main = LinearLayout(context).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
   private val identityColumn = LinearLayout(context).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
   private val visual = NativeListLeadingVisual(reactContext, fonts)
+  /** Whether the bound leading visual lays a badge past its frame; see [setClipping]. */
+  var leadingOverhangs = false
+    private set
   private val identity = LinearLayout(context).apply { orientation = VERTICAL }
   private val titleLine = LinearLayout(context).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
   private val title = NativeListTextView(context)
@@ -49,6 +52,18 @@ internal class NativeListActivityDetailsView(private val reactContext: ThemedRea
     addView(main, LayoutParams(-1, -2))
     addView(actions, LayoutParams(-1, -2))
   }
+  /**
+   * Android clips a child to its own bounds while its parent clips children, so
+   * every view between the leading visual and the row host stops clipping when
+   * the visual's network badge overhangs its box (SPEC "Leading badge overhang",
+   * OK-66275); the host row applies the same policy to itself.
+   */
+  private fun setClipping(clips: Boolean) {
+    for (group in listOf(identityColumn, main, this)) {
+      group.clipChildren = clips
+      group.clipToPadding = clips
+    }
+  }
   private fun dp(value: Int) = if (sourceScale) (value * resources.displayMetrics.density).roundToInt() else NativeListScale.dp(resources, value)
   private fun px(value: Double) = (value * resources.displayMetrics.density).roundToInt()
   private fun color(tone: String, theme: JSONObject?): Int {
@@ -79,6 +94,8 @@ internal class NativeListActivityDetailsView(private val reactContext: ThemedRea
     visual.visibility = if (hideLeading) GONE else VISIBLE
     if (hideLeading) visual.recycle()
     else visual.bind(data.optJSONObject("leading") ?: JSONObject(), image, item.key, theme, false, sourceScale, data.optJSONObject("secondaryLeading"))
+    leadingOverhangs = !hideLeading && visual.requestsUnclippedHost
+    setClipping(nativeListActivityHostClips(leadingOverhangs))
     amounts.layoutParams = if (table) LayoutParams(0, -2, 1f).apply { marginStart = gap } else LayoutParams(-2, -2).apply { marginStart = gap }
     text(title, data.optString("title"), style.optJSONObject("title"), 16f, color("primary", theme), 24, "medium")
     text(description, data.optString("description"), style.optJSONObject("description"), 14f, color("secondary", theme), 20, lines = 2)
@@ -153,7 +170,11 @@ internal class NativeListActivityDetailsView(private val reactContext: ThemedRea
     }
     label.text = styled
   }
-  fun recycle() { visual.recycle(); visual.visibility = VISIBLE; amountViews.forEach { it.recycle() }; description.setOnClickListener(null); actions.removeAllViews() }
+  fun recycle() {
+    visual.recycle(); visual.visibility = VISIBLE; amountViews.forEach { it.recycle() }; description.setOnClickListener(null); actions.removeAllViews()
+    leadingOverhangs = false
+    setClipping(true)
+  }
   fun dispose() { recycle(); visual.dispose(); amountViews.forEach { it.dispose() } }
 
   private inner class AmountView : LinearLayout(context) {
