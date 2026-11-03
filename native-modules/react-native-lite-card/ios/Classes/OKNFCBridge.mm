@@ -8,7 +8,7 @@
 
 #if !TARGET_OS_SIMULATOR
 
-#import <GPChannelSDKCore/GPChannelSDKCore.h>
+#import "GPChannelSDK.h"
 #import "OKNFCLiteDefine.h"
 #import "NFCConfig.h"
 
