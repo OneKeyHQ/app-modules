@@ -553,6 +553,14 @@ existing placeholders, and positive title-image dimensions are clamped to a
 square of 1...40 logical units. Image headers are string dictionaries, never
 interpreted as geometry. Unsafe object graphs are rejected before normalization.
 
+Shared image URI validation accepts the entire `onekey-avatar:` scheme,
+case-insensitively, in snapshots and row patches on iOS, Android and Web. It does
+not restrict the host, version, path, query string or fragment, and preserves the
+URI without decoding. Existing image URI schemes retain their acceptance rules.
+Unsupported image URIs fail development assertions and are sanitized out in
+production. This is validation acceptance only; avatar decoding and loading
+remain owned by the platform image loader or Web avatar worker.
+
 A complete snapshot remains atomic after decoration sanitization: invalid
 schema, duplicate/missing identities, required business fields or wallet-group
 parent/children relationships reject the snapshot. No row is silently removed.
