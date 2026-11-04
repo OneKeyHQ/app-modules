@@ -277,6 +277,7 @@ final class NativeOverlaySheetController: UIViewController,
 
   override func viewDidAppear(_ animated: Bool) {
     super.viewDidAppear(animated)
+    NativeOverlayDiagnostic.log("stage=did_appear controllerID=\(NativeOverlayDiagnostic.id(self)) presenterID=\(NativeOverlayDiagnostic.id(presentingViewController))")
     stopSuppressingPresentationShadow()
   }
 
@@ -287,6 +288,7 @@ final class NativeOverlaySheetController: UIViewController,
 
   override func viewDidDisappear(_ animated: Bool) {
     super.viewDidDisappear(animated)
+    NativeOverlayDiagnostic.log("stage=did_disappear controllerID=\(NativeOverlayDiagnostic.id(self)) presenterID=\(NativeOverlayDiagnostic.id(presentingViewController)) hostRequested=\(dismissRequestedByHost)")
     if let backdropTap {
       dimmingView?.removeGestureRecognizer(backdropTap)
     }
@@ -319,6 +321,7 @@ final class NativeOverlaySheetController: UIViewController,
   }
 
   func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+    NativeOverlayDiagnostic.log("stage=interactive_dismiss controllerID=\(NativeOverlayDiagnostic.id(self)) reason=pan")
     dismissRequestedByHost = true
     host?.sheetDidDismissInteractively(self)
   }

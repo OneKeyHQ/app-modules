@@ -1,6 +1,7 @@
 package com.onekeyfe.reactnativelitecard.onekeyLite.nfc
 
 import android.nfc.TagLostException
+import com.margelo.nitro.nativelogger.OneKeyLog
 import android.nfc.tech.IsoDep
 import org.haobtc.onekey.card.gpchannel.GPChannelNatives
 import org.haobtc.onekey.card.gpchannel.GPChannelNatives.nativeGPCFinalize
@@ -49,9 +50,11 @@ class Connection(val isoDep: IsoDep, private val mCommandGenerator: CommandGener
 
                 return SendResponse(byteArr2HexStr(response), sw1, sw2, byteArr2HexStr(resp))
             } catch (e: TagLostException) {
+                OneKeyLog.info("LiteCard", "stage=transport_failure type=tag_lost")
                 // throw NFCExceptions.InterruptException()
                 return SendResponse("0xFFFF", 0xFF.toByte(), 0xFF.toByte())
             } catch (e: IOException) {
+                OneKeyLog.info("LiteCard", "stage=transport_failure type=io")
                 // e.printStackTrace()
                 return SendResponse("0xFFFF", 0xFF.toByte(), 0xFF.toByte())
             }
@@ -84,7 +87,7 @@ class Connection(val isoDep: IsoDep, private val mCommandGenerator: CommandGener
         )
         val res = command.send(this)
         printLog(
-            TAG, "<--- selectPrimarySafety end: ${res.getCode()} ${res.data} area:${mCommandArea}"
+            TAG, "<--- selectPrimarySafety end: ${res.getCode()} area:${mCommandArea}"
         )
 
         if (res.isSuccess() && !res.isEmptyData()) {
@@ -104,7 +107,7 @@ class Connection(val isoDep: IsoDep, private val mCommandGenerator: CommandGener
         )
         val res = command.send(this)
 
-        printLog(TAG, "<--- selectApplet end: ${res.getCode()} ${res.data} area:${mCommandArea}")
+        printLog(TAG, "<--- selectApplet end: ${res.getCode()} area:${mCommandArea}")
 
         if (res.isSuccess()) {
             mCommandArea = CommandArea.BackupApplet
@@ -121,7 +124,7 @@ class Connection(val isoDep: IsoDep, private val mCommandGenerator: CommandGener
         val rawCert = send(isoDep, apdu)
         printLog(
             TAG,
-            "<--- getDeviceCertificate end: ${rawCert.getCode()} ${rawCert.data} area:${mCommandArea}"
+            "<--- getDeviceCertificate end: ${rawCert.getCode()} area:${mCommandArea}"
         )
         if (!rawCert.isSuccess() || rawCert.isEmptyData()) {
             return null
@@ -172,7 +175,7 @@ class Connection(val isoDep: IsoDep, private val mCommandGenerator: CommandGener
         val securityRes = command.send(this)
         printLog(
             TAG,
-            "2. <--- Perform security operation end: ${securityRes.getCode()} ${securityRes.data}"
+            "2. <--- Perform security operation end: ${securityRes.getCode()}"
         )
         if (!securityRes.isSuccess()) {
             return false
@@ -220,7 +223,7 @@ class Connection(val isoDep: IsoDep, private val mCommandGenerator: CommandGener
             mCardType, CommandType.GET_BACKUP_STATUS, hasOpenSafeChannel
         )
         val res = command.send(this)
-        printLog(TAG, "<--- getBackupStatus end: ${res.getCode()} ${res.data} area:${mCommandArea}")
+        printLog(TAG, "<--- getBackupStatus end: ${res.getCode()} area:${mCommandArea}")
 
         if (!res.isSuccess()) {
             return false
@@ -235,7 +238,7 @@ class Connection(val isoDep: IsoDep, private val mCommandGenerator: CommandGener
             mCardType, CommandType.GET_PIN_STATUS, hasOpenSafeChannel, "DFFF028105"
         )
         val res = command.send(this)
-        printLog(TAG, "<--- getPinStatus end: ${res.getCode()} ${res.data} area:${mCommandArea}")
+        printLog(TAG, "<--- getPinStatus end: ${res.getCode()} area:${mCommandArea}")
 
         if (!res.isSuccess()) {
             return false
@@ -253,7 +256,7 @@ class Connection(val isoDep: IsoDep, private val mCommandGenerator: CommandGener
         )
         val res = command.send(this)
 
-        printLog(TAG, "<--- getSerialNumber end: ${res.getCode()} ${res.data} area:${mCommandArea}")
+        printLog(TAG, "<--- getSerialNumber end: ${res.getCode()} area:${mCommandArea}")
         if (!res.isSuccess()) {
             return NfcConstant.NOT_MATCH_DEVICE
         }
@@ -270,7 +273,7 @@ class Connection(val isoDep: IsoDep, private val mCommandGenerator: CommandGener
         )
         val res = command.send(this)
 
-        printLog(TAG, "<--- getRetryNum end: ${res.getCode()} ${res.data} area:${mCommandArea}")
+        printLog(TAG, "<--- getRetryNum end: ${res.getCode()} area:${mCommandArea}")
 
         if (res.isEmptyData() || !res.isSuccess()) {
             return NfcConstant.GET_RETRY_NUM_INTERRUPT_STATUS
@@ -291,7 +294,7 @@ class Connection(val isoDep: IsoDep, private val mCommandGenerator: CommandGener
                 }
             }
         } catch (e: NFCExceptions) {
-            printLog(TAG, " init_channel NFCExceptions-->$e")
+            printLog(TAG, "stage=init_channel_failure type=nfc")
         }
 
         loadPinStatus()
@@ -398,7 +401,9 @@ class Connection(val isoDep: IsoDep, private val mCommandGenerator: CommandGener
         val command = mCommandGenerator.generalCommand(
             mCardType, CommandType.BACKUP_DATA, hasOpenSafeChannel, mnemonic
         )
+        OneKeyLog.info("LiteCard", "operation=setMnemonic stage=backup_command_begin wallTimeMs=${System.currentTimeMillis()}")
         val res = command.send(this)
+        OneKeyLog.info("LiteCard", "operation=setMnemonic stage=backup_command_result sw1=${res.sw1.toInt() and 0xFF} sw2=${res.sw2.toInt() and 0xFF} parseSuccess=${res.parseSuccess} success=${res.isSuccess()}")
         printLog(TAG, "<--- backupData end: ${res.getCode()} area:${mCommandArea}")
 
         if (!res.isSuccess()) {
@@ -442,7 +447,7 @@ class Connection(val isoDep: IsoDep, private val mCommandGenerator: CommandGener
         )
         val res = command.send(this)
 
-        printLog(TAG, "<--- resetCard end: ${res.getCode()} ${res.data} area:${mCommandArea}")
+        printLog(TAG, "<--- resetCard end: ${res.getCode()} area:${mCommandArea}")
 
         return if (!res.isSuccess()) {
             NfcConstant.RESET_INTERRUPT_STATUS

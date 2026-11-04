@@ -111,18 +111,21 @@ object OneKeyLiteCard {
     ): Boolean {
         if (cardState == null) throw NFCExceptions.ConnectionFailException()
 
-        printLog(TAG, "--> setMnemonic: isNewCard:${cardState?.isNewCard}, hasBackup:${cardState?.hasBackup}")
+        OneKeyLog.info("LiteCard", "operation=setMnemonic stage=card_state isNewCard=${cardState.isNewCard} hasBackup=${cardState.hasBackup} overwrite=$overwrite wallTimeMs=${System.currentTimeMillis()}")
 
         if (!overwrite) {
             // 不是覆写要验证是否已经已经存有备份
             if (!cardState.isNewCard || cardState.hasBackup) {
+                OneKeyLog.info("LiteCard", "operation=setMnemonic stage=already_initialized")
                 throw NFCExceptions.InitializedException()
             }
         }
 
         if (overwrite && mCardConnection?.getCardType() == AppleCardType.V2) {
             // Verify the password before clearing the card
+            OneKeyLog.info("LiteCard", "operation=setMnemonic stage=overwrite_verify_begin")
             val verifyPin = verifyPinBackupRequest(isoDep, pwd)
+            OneKeyLog.info("LiteCard", "operation=setMnemonic stage=overwrite_verify_result success=${verifyPin == NfcConstant.VERIFY_SUCCESS}")
             if (verifyPin != NfcConstant.VERIFY_SUCCESS) {
                 handlerVerifyPinError(cardState, verifyPin)
             }
@@ -133,12 +136,17 @@ object OneKeyLiteCard {
 
         if (cardState.isNewCard) {
             // 如果是新卡设置密码
-            if (!setupNewPinRequest(isoDep, pwd)) {
+            OneKeyLog.info("LiteCard", "operation=setMnemonic stage=set_pin_begin")
+            val setupSuccess = setupNewPinRequest(isoDep, pwd)
+            OneKeyLog.info("LiteCard", "operation=setMnemonic stage=set_pin_result success=$setupSuccess")
+            if (!setupSuccess) {
                 throw NFCExceptions.InitPasswordException()
             }
         }
 
+        OneKeyLog.info("LiteCard", "operation=setMnemonic stage=verify_pin_begin")
         val verifyPin = verifyPinBackupRequest(isoDep, pwd)
+        OneKeyLog.info("LiteCard", "operation=setMnemonic stage=verify_pin_result success=${verifyPin == NfcConstant.VERIFY_SUCCESS}")
         if (verifyPin != NfcConstant.VERIFY_SUCCESS) {
             if (overwrite) {
                 handlerVerifyPinError(cardState, verifyPin)
@@ -148,7 +156,10 @@ object OneKeyLiteCard {
         }
 
         if (mnemonic.isNullOrEmpty()) throw NFCExceptions.ExecFailureException()
-        return mCardConnection?.backupData(mnemonic) == true
+        OneKeyLog.info("LiteCard", "operation=setMnemonic stage=backup_begin")
+        val backupSuccess = mCardConnection?.backupData(mnemonic) == true
+        OneKeyLog.info("LiteCard", "operation=setMnemonic stage=backup_result success=$backupSuccess")
+        return backupSuccess
     }
 
     @Throws(NFCExceptions::class)
