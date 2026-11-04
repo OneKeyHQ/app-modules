@@ -123,6 +123,13 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (void)log:(NSString *)format, ... NS_FORMAT_FUNCTION(1, 2);
 
++ (void)logDebug:(NSString *)message;
++ (void)logInfo:(NSString *)message;
++ (void)logWarn:(NSString *)message;
++ (void)logError:(NSString *)message;
++ (NSArray<NSString *> *)recentLogs;
++ (void)clearRecentLogs;
+
 @end
 
 @interface JCOREPersistence : JCOREConfiguration

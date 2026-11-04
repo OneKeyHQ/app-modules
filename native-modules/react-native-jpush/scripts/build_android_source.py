@@ -118,7 +118,7 @@ def main() -> int:
     java_sources = [
         p
         for p in sorted(JAVA_SOURCE_DIR.rglob("*.java"))
-        if "cn/jiguang/plugins/" not in p.as_posix()
+        if "cn/jiguang/plugins/" not in p.as_posix() or p.name == "JLogger.java"
     ]
     if not java_sources:
         raise RuntimeError(f"No Java sources found in {JAVA_SOURCE_DIR}")

@@ -2,12 +2,13 @@ package cn.jpush.android.helper;
 
 import android.util.Log;
 import cn.jiguang.core.JCoreStorage;
+import cn.jiguang.plugins.push.common.JLogger;
 
 public class Logger {
     private static final String PREFIX = "[JPush]";
 
     private static void log(int priority, boolean force, String tag, String msg, Throwable tr) {
-        if (!force && !JCoreStorage.isDebugMode()) {
+        if (!force && !JCoreStorage.isDebugMode() && !JLogger.isLoggerEnable()) {
             return;
         }
         String fullTag = PREFIX + (tag != null ? tag : "");
@@ -15,7 +16,16 @@ public class Logger {
         if (tr != null) {
             body = body + '\n' + Log.getStackTraceString(tr);
         }
-        Log.println(priority, fullTag, body);
+        String combined = fullTag + " " + body;
+        if (priority >= Log.ERROR) {
+            JLogger.e(combined);
+        } else if (priority == Log.WARN) {
+            JLogger.w(combined);
+        } else if (priority == Log.INFO) {
+            JLogger.i(combined);
+        } else {
+            JLogger.d(combined);
+        }
     }
 
     public static void v(String tag, String msg) {

@@ -1,5 +1,6 @@
 #import "JCOREConfiguration.h"
 #import "JCORECrypto.h"
+#import <objc/message.h>
 #if __has_include(<UIKit/UIKit.h>)
 #import <UIKit/UIKit.h>
 #endif
@@ -114,6 +115,8 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
         _httpsSisUrls = @[ @"https://tsis.jpush.cn", @"https://tsis-ipv6.jpush.cn" ];
         _defaultConnectHost = @"im64.jpush.cn";
         _defaultConnectPorts = @[ @7000, @7002, @7003, @7004, @7005, @7006, @7007, @7008, @7009 ];
+        _debugEnabled = YES;
+        _logOff = NO;
 
         NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
         NSNumber *savedAuth = [defaults objectForKey:kJCoreKeyAuth];
@@ -633,6 +636,74 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
     return rid;
 }
 
++ (NSMutableArray<NSString *> *)recentLogsStorage {
+    static NSMutableArray<NSString *> *storage = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        storage = [NSMutableArray array];
+    });
+    return storage;
+}
+
++ (void)dispatchLogWithLevel:(NSString *)level selectorName:(NSString *)selectorName message:(NSString *)message {
+    if (message == nil) {
+        return;
+    }
+    JCOREConfiguration *config = [self shared];
+    if (config.logOff) {
+        return;
+    }
+    NSString *entry = [NSString stringWithFormat:@"[%@] %@", level, message];
+    NSMutableArray<NSString *> *storage = [self recentLogsStorage];
+    @synchronized (storage) {
+        if (storage.count >= 200) {
+            [storage removeObjectAtIndex:0];
+        }
+        [storage addObject:entry];
+    }
+
+    Class oneKeyLogClass = NSClassFromString(@"ReactNativeNativeLogger.OneKeyLog") ?: NSClassFromString(@"OneKeyLog");
+    SEL selector = NSSelectorFromString(selectorName);
+    if (oneKeyLogClass != Nil && [oneKeyLogClass respondsToSelector:selector]) {
+        void (*logFunc)(id, SEL, NSString *, NSString *) = (void (*)(id, SEL, NSString *, NSString *))objc_msgSend;
+        logFunc(oneKeyLogClass, selector, @"RN-JPush", message);
+        return;
+    }
+    if (config.debugEnabled) {
+        NSLog(@"[RN-JPush] %@", entry);
+    }
+}
+
++ (void)logDebug:(NSString *)message {
+    [self dispatchLogWithLevel:@"DEBUG" selectorName:@"debug::" message:message];
+}
+
++ (void)logInfo:(NSString *)message {
+    [self dispatchLogWithLevel:@"INFO" selectorName:@"info::" message:message];
+}
+
++ (void)logWarn:(NSString *)message {
+    [self dispatchLogWithLevel:@"WARN" selectorName:@"warn::" message:message];
+}
+
++ (void)logError:(NSString *)message {
+    [self dispatchLogWithLevel:@"ERROR" selectorName:@"error::" message:message];
+}
+
++ (NSArray<NSString *> *)recentLogs {
+    NSMutableArray<NSString *> *storage = [self recentLogsStorage];
+    @synchronized (storage) {
+        return [storage copy];
+    }
+}
+
++ (void)clearRecentLogs {
+    NSMutableArray<NSString *> *storage = [self recentLogsStorage];
+    @synchronized (storage) {
+        [storage removeAllObjects];
+    }
+}
+
 - (void)log:(NSString *)format, ... {
     if (self.logOff || !self.debugEnabled || format == nil) {
         return;
@@ -641,7 +712,7 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
     va_start(args, format);
     NSString *message = [[NSString alloc] initWithFormat:format arguments:args];
     va_end(args);
-    NSLog(@"[JIGUANG] %@", message);
+    [JCOREConfiguration logDebug:message];
 }
 
 @end

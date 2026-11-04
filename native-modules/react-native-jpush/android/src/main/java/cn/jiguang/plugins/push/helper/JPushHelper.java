@@ -84,7 +84,7 @@ public class JPushHelper {
             writableMap.putString("data", notificationCustomButton.f);
             return writableMap;
          } catch (Throwable throwable) {
-            JLogger.w("convertNotificationCustomButtonToMap error:" + throwable.getMessage());
+            JLogger.w("convertNotificationCustomButtonToMap error");
             return writableMap;
         }
     }
@@ -142,7 +142,7 @@ public class JPushHelper {
             }
             writableMap.putMap(JConstants.EXTRAS, extrasMap);
         } catch (Throwable throwable) {
-            JLogger.w("convertExtras error:" + throwable.getMessage());
+            JLogger.w("convertExtras error");
         }
     }
 

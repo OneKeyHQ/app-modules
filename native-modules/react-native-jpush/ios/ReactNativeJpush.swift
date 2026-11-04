@@ -2,8 +2,10 @@ import Foundation
 import UIKit
 import UserNotifications
 import NitroModules
+import ReactNativeNativeLogger
 
 class ReactNativeJpush: HybridReactNativeJpushSpec {
+  private static let logTag = "RN-JPush"
   private var localLogEnabled: Bool = false
 
   func setDebugMode(enable: Bool) throws {
@@ -12,9 +14,11 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
     } else {
       JPUSHService.setLogOFF()
     }
+    OneKeyLog.info(Self.logTag, "setDebugMode enable=\(enable)")
   }
 
   func initPush() throws {
+    OneKeyLog.info(Self.logTag, "initPush")
     let config = JCOREConfiguration.shared()
     if let appKey = config.appKey, !appKey.isEmpty {
       JPUSHService.setup(
@@ -28,11 +32,13 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
   }
 
   func setupWithConfig(appKey: String, channel: String, production: Bool) throws {
+    let resolvedChannel = channel.isEmpty ? "dev" : channel
+    OneKeyLog.info(Self.logTag, "setupWithConfig channel=\(resolvedChannel) production=\(production)")
     if !appKey.isEmpty {
       JPUSHService.setup(
         withOption: nil,
         appKey: appKey,
-        channel: channel.isEmpty ? "dev" : channel,
+        channel: resolvedChannel,
         apsForProduction: production
       )
     }
@@ -44,10 +50,12 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
   }
 
   func stopPush() throws {
+    OneKeyLog.info(Self.logTag, "stopPush")
     JPUSHService.turnOFFPush()
   }
 
   func resumePush() throws {
+    OneKeyLog.info(Self.logTag, "resumePush")
     JPUSHService.turnOnPush()
   }
 
@@ -75,6 +83,7 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
     let seq = Int(sequence)
     let tagSet = Set(tags)
     JPUSHService.addTags(tagSet, completion: { resCode, iTags, resSeq in
+      OneKeyLog.info(Self.logTag, "onTagOperatorResult seq=\(resSeq) code=\(resCode)")
       let tagArray = (iTags as? Set<String>).map { Array($0) } ?? tags
       RCTJPushModule.emitEvent(
         withName: "TagAliasEvent",
@@ -91,6 +100,7 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
     let seq = Int(sequence)
     let tagSet = Set(tags)
     JPUSHService.setTags(tagSet, completion: { resCode, iTags, resSeq in
+      OneKeyLog.info(Self.logTag, "onTagOperatorResult seq=\(resSeq) code=\(resCode)")
       let tagArray = (iTags as? Set<String>).map { Array($0) } ?? tags
       RCTJPushModule.emitEvent(
         withName: "TagAliasEvent",
@@ -107,6 +117,7 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
     let seq = Int(sequence)
     let tagSet = Set(tags)
     JPUSHService.deleteTags(tagSet, completion: { resCode, iTags, resSeq in
+      OneKeyLog.info(Self.logTag, "onTagOperatorResult seq=\(resSeq) code=\(resCode)")
       let tagArray = (iTags as? Set<String>).map { Array($0) } ?? []
       RCTJPushModule.emitEvent(
         withName: "TagAliasEvent",
@@ -122,6 +133,7 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
   func cleanTags(sequence: Double) throws {
     let seq = Int(sequence)
     JPUSHService.cleanTags({ resCode, _, resSeq in
+      OneKeyLog.info(Self.logTag, "onTagOperatorResult seq=\(resSeq) code=\(resCode)")
       RCTJPushModule.emitEvent(
         withName: "TagAliasEvent",
         payload: [
@@ -135,6 +147,7 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
   func getAllTags(sequence: Double) throws {
     let seq = Int(sequence)
     JPUSHService.getAllTags({ resCode, iTags, resSeq in
+      OneKeyLog.info(Self.logTag, "onTagOperatorResult seq=\(resSeq) code=\(resCode)")
       let tagArray = (iTags as? Set<String>).map { Array($0) } ?? []
       RCTJPushModule.emitEvent(
         withName: "TagAliasEvent",
@@ -150,6 +163,7 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
   func checkTagBindState(sequence: Double, tag: String) throws {
     let seq = Int(sequence)
     JPUSHService.validTag(tag, completion: { resCode, _, resSeq, isBind in
+      OneKeyLog.info(Self.logTag, "onCheckTagOperatorResult seq=\(resSeq) code=\(resCode) tagEnable=\(isBind)")
       RCTJPushModule.emitEvent(
         withName: "TagAliasEvent",
         payload: [
@@ -165,6 +179,7 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
   func setAlias(sequence: Double, alias: String) throws {
     let seq = Int(sequence)
     JPUSHService.setAlias(alias, completion: { resCode, iAlias, resSeq in
+      OneKeyLog.info(Self.logTag, "onAliasOperatorResult seq=\(resSeq) code=\(resCode)")
       RCTJPushModule.emitEvent(
         withName: "TagAliasEvent",
         payload: [
@@ -179,6 +194,7 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
   func deleteAlias(sequence: Double) throws {
     let seq = Int(sequence)
     JPUSHService.deleteAlias({ resCode, _, resSeq in
+      OneKeyLog.info(Self.logTag, "onAliasOperatorResult seq=\(resSeq) code=\(resCode)")
       RCTJPushModule.emitEvent(
         withName: "TagAliasEvent",
         payload: [
@@ -192,6 +208,7 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
   func getAlias(sequence: Double) throws {
     let seq = Int(sequence)
     JPUSHService.getAlias({ resCode, iAlias, resSeq in
+      OneKeyLog.info(Self.logTag, "onAliasOperatorResult seq=\(resSeq) code=\(resCode)")
       RCTJPushModule.emitEvent(
         withName: "TagAliasEvent",
         payload: [
@@ -210,6 +227,7 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
       return
     }
     JPUSHService.setProperties(dict, completion: { resCode, props, resSeq in
+      OneKeyLog.info(Self.logTag, "onPropertyOperatorResult seq=\(resSeq) code=\(resCode)")
       RCTJPushModule.emitEvent(
         withName: "TagAliasEvent",
         payload: [
@@ -225,6 +243,7 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
     let seq = Int(sequence)
     let keySet = Set(keys)
     JPUSHService.deleteProperties(keySet, completion: { resCode, props, resSeq in
+      OneKeyLog.info(Self.logTag, "onPropertyOperatorResult seq=\(resSeq) code=\(resCode)")
       RCTJPushModule.emitEvent(
         withName: "TagAliasEvent",
         payload: [
@@ -239,6 +258,7 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
   func cleanProperties(sequence: Double) throws {
     let seq = Int(sequence)
     JPUSHService.cleanProperties({ resCode, props, resSeq in
+      OneKeyLog.info(Self.logTag, "onPropertyOperatorResult seq=\(resSeq) code=\(resCode)")
       RCTJPushModule.emitEvent(
         withName: "TagAliasEvent",
         payload: [
@@ -267,6 +287,7 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
     let seq = Int(sequence)
     JPUSHService.setMobileNumber(mobileNumber) { error in
       let code = (error as NSError?)?.code ?? 0
+      OneKeyLog.info(Self.logTag, "onMobileNumberOperatorResult seq=\(seq) code=\(code)")
       RCTJPushModule.emitEvent(
         withName: "MobileNumberEvent",
         payload: [

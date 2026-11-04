@@ -677,7 +677,7 @@ static void testEndToEndMockServerHandshake(void) {
         dispatch_semaphore_signal(ctrlSem);
     }];
 
-    [JGCOREAPI printLog:NO];
+    [JGCOREAPI printLog:YES];
     // Non-production demo test AppKey used solely for automated native tests.
     [JPUSHService setupWithOption:@{}
                            appKey:@"1f2027d3cfb1b51dac664c42"
@@ -1030,6 +1030,14 @@ static void testFailoverFastLoginReRegisterAndHttpReport(void) {
                                                                                 aesKey16:badgeKey16];
     ASSERT_TRUE([decryptedBadge[@"badge"] integerValue] == 7 && [decryptedBadge[@"uid"] unsignedLongLongValue] == newAssignedUid,
                 "Badge report x-jg-sign verification & AES-128-CBC decryption failed: %@", decryptedBadge);
+
+    // 3. Verify default logging and non-sensitive log redaction on iOS
+    [JCOREConfiguration clearRecentLogs];
+    [JCOREConfiguration logInfo:@"onNotifyMessage type=notificationArrived notificationType=remote msgId=msg_99001"];
+    [JCOREConfiguration logInfo:[NSString stringWithFormat:@"TCP register success uid=%llu registrationId=%@", newAssignedUid, newRegId]];
+    NSString *joinedIosLogs = [[JCOREConfiguration recentLogs] componentsJoinedByString:@"\n"];
+    ASSERT_TRUE([joinedIosLogs containsString:@"notificationType=remote"] && [joinedIosLogs containsString:newRegId],
+                "Expected non-sensitive notificationType and registrationId in iOS logs: %@", joinedIosLogs);
 
     printf("[PASS] Suite 5: Multi-IP failover (fail_ips), Fast-Login, statusCode=108 re-register, auto-reconnect, & HTTP reports (/v3/report + setBadge:) verified\n");
 }

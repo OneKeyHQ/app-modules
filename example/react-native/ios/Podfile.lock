@@ -2769,6 +2769,7 @@ PODS:
     - ReactCodegen
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
+    - ReactNativeNativeLogger
     - Yoga
   - ReactNativeJpush/Tests (6.7.0-22):
     - hermes-engine
@@ -2794,6 +2795,7 @@ PODS:
     - ReactCodegen
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
+    - ReactNativeNativeLogger
     - Yoga
   - ReactNativeLiteCard (6.7.0-22):
     - hermes-engine
@@ -3786,7 +3788,7 @@ SPEC CHECKSUMS:
   ReactNativeDeviceUtils: a0af3c4d3b10d0bdbcbc34836eadd219097fec14
   ReactNativeGetRandomValues: edca055e6d3acdc68a9c54da49b3c71fccc82b4b
   ReactNativeImageCropPicker: df2abcb43d4badf2ceee066adc2b25f00161e53d
-  ReactNativeJpush: 5e8a16e76d64f1d77f262d22cea05c6b448839cf
+  ReactNativeJpush: 110545c005b9513bb5fe2875442f13d7adcbeaa7
   ReactNativeLiteCard: e86b5b3212f4a9216c730ee6cd039d0e85c63b22
   ReactNativeNativeLogger: 5eb512fe9707737525cccd489471ed95b6970911
   ReactNativePerfMemory: 74acaf56d9f1157cf01c09789539e541f40381fc

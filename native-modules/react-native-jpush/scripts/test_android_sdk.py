@@ -1041,9 +1041,14 @@ import cn.jiguang.net.DefaultHostVerifier;
 import cn.jiguang.plugins.core.JCoreModule;
 import cn.jiguang.plugins.push.JPushModule;
 import cn.jiguang.plugins.push.common.JConstants;
+import cn.jiguang.plugins.push.common.JLogger;
 import cn.jiguang.plugins.push.receiver.JPushModuleReceiver;
 import cn.jpush.android.api.CmdMessage;
+import cn.jpush.android.api.CustomMessage;
 import cn.jpush.android.api.JPushInterface;
+import cn.jpush.android.api.JPushMessage;
+import cn.jpush.android.api.NotificationCustomButton;
+import cn.jpush.android.api.NotificationMessage;
 import cn.jpush.android.local.ActionHelper;
 import cn.jpush.android.service.DataProvider;
 import cn.jpush.android.service.DataShare;
@@ -2394,6 +2399,50 @@ public final class SdkEndToEndTestRunner {
             DataShare.setTestCallerUids(-1, -1);
         }
         check(rejectedCrossUid, "DataShare must throw SecurityException when callingUid != myUid");
+
+        // 4. Verify default logging is enabled and never logs sensitive notification content or PII
+        check(JLogger.isLoggerEnable(), "JLogger must be enabled by default");
+        JLogger.clearRecentLogs();
+        JPushModuleReceiver receiver = new JPushModuleReceiver();
+
+        NotificationMessage secretNotify = new NotificationMessage();
+        secretNotify.msgId = "msg_99001";
+        secretNotify.notificationId = 8801;
+        secretNotify.notificationType = 0;
+        secretNotify.notificationTitle = "SECRET_WALLET_TITLE";
+        secretNotify.notificationContent = "SECRET_TRANSFER_AMOUNT_100_BTC";
+        secretNotify.notificationExtras = "{\"txHash\":\"0xdeadbeef_secret\"}";
+        receiver.onNotifyMessageArrived(context, secretNotify);
+        receiver.onNotifyMessageOpened(context, secretNotify);
+        receiver.onNotifyMessageDismiss(context, secretNotify);
+
+        CustomMessage secretCustom = new CustomMessage();
+        secretCustom.messageId = "custom_99002";
+        secretCustom.platform = (byte) 0;
+        secretCustom.title = "SECRET_CUSTOM_TITLE";
+        secretCustom.message = "SECRET_CUSTOM_BODY";
+        secretCustom.extra = "{\"privateNote\":\"do_not_log\"}";
+        receiver.onMessage(context, secretCustom);
+
+        JPushMessage secretOp = new JPushMessage();
+        secretOp.setSequence(77);
+        secretOp.setErrorCode(0);
+        secretOp.setAlias("SECRET_USER_ALIAS");
+        secretOp.setMobileNumber("13899998888");
+        secretOp.setTags(new java.util.HashSet<String>(Arrays.asList("SECRET_VIP_TAG")));
+        receiver.onAliasOperatorResult(context, secretOp);
+        receiver.onTagOperatorResult(context, secretOp);
+        receiver.onMobileNumberOperatorResult(context, secretOp);
+        receiver.onRegister(context, "1a0018970a900100200");
+
+        String joinedLogs = String.join("\n", JLogger.getRecentLogs());
+        check(joinedLogs.contains("notificationArrived") && joinedLogs.contains("notificationType=0"), "Must log notification type");
+        check(joinedLogs.contains("msg_99001") && joinedLogs.contains("1a0018970a900100200"), "Must allow msgId and registrationId");
+        check(!joinedLogs.contains("SECRET_WALLET_TITLE"), "Must never log notificationTitle");
+        check(!joinedLogs.contains("SECRET_TRANSFER_AMOUNT_100_BTC"), "Must never log notificationContent");
+        check(!joinedLogs.contains("0xdeadbeef_secret"), "Must never log notificationExtras");
+        check(!joinedLogs.contains("SECRET_CUSTOM_TITLE") && !joinedLogs.contains("SECRET_CUSTOM_BODY") && !joinedLogs.contains("do_not_log"), "Must never log custom message content");
+        check(!joinedLogs.contains("SECRET_USER_ALIAS") && !joinedLogs.contains("13899998888") && !joinedLogs.contains("SECRET_VIP_TAG"), "Must never log alias, mobileNumber, or tags");
     }
 
     public static void main(String[] args) throws Exception {

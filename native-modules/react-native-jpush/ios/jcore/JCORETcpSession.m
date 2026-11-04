@@ -444,6 +444,8 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
                                      password:parsed.password ?: @""
                                registrationID:parsed.registrationID
                                      deviceID:parsed.deviceID];
+            [JCOREConfiguration logInfo:[NSString stringWithFormat:@"TCP register success uid=%llu registrationId=%@",
+                                         parsed.uid, parsed.registrationID]];
             [strongSelf postNotificationOnMain:kJPFNetworkDidRegisterNotification
                                       userInfo:@{
                                           @"registrationID": parsed.registrationID,
@@ -452,6 +454,7 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
             [strongSelf sendLoginRequestLocked];
         } else {
             uint16_t errCode = parsed != nil ? parsed.statusCode : 1011;
+            [JCOREConfiguration logWarn:[NSString stringWithFormat:@"TCP register failed code=%u", errCode]];
             [strongSelf postNotificationOnMain:kJPFNetworkFailedRegisterNotification
                                       userInfo:@{@"code": @(errCode)}];
         }
@@ -500,6 +503,10 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
         }
         strongSelf->_loggedIn = YES;
         strongSelf->_reconnectAttempt = 0;
+        [JCOREConfiguration logInfo:[NSString stringWithFormat:@"TCP login success uid=%llu sid=%u registrationId=%@",
+                                     config.uid,
+                                     strongSelf->_sessionId,
+                                     config.registrationID ?: [config fallbackRegistrationID]]];
         [strongSelf startHeartbeatLocked];
         [strongSelf reportDeviceTokenLocked];
         [strongSelf reportVoipTokenLocked];
@@ -594,6 +601,8 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
     if (frame.command == JCOREWireCommandPushMessage) {
         JCOREPushEnvelope *envelope = [JCOREWireProtocol parsePushEnvelope:frame];
         if (envelope != nil) {
+            [JCOREConfiguration logInfo:[NSString stringWithFormat:@"TCP push message received msgType=%u msgId=%llu",
+                                         envelope.messageType, envelope.messageId]];
             [self sendReceiptLockedForMessageType:envelope.messageType
                                         messageId:envelope.messageId
                                         requestId:frame.requestId];

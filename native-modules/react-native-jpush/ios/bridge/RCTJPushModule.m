@@ -1,4 +1,9 @@
 #import "RCTJPushModule.h"
+#if __has_include("JCOREConfiguration.h")
+#import "JCOREConfiguration.h"
+#else
+#import "../jcore/JCOREConfiguration.h"
+#endif
 #import <UIKit/UIKit.h>
 
 #if __has_include(<React/RCTBridge.h>)
@@ -385,11 +390,15 @@ RCT_EXPORT_METHOD(setBackgroundEnable:(BOOL)enable) {
 }
 
 - (void)jPushInAppMessageDidShow:(JPushInAppMessage *)inAppMessage {
+    [JCOREConfiguration logInfo:[NSString stringWithFormat:@"onInAppMessageShow type=%@ msgId=%@",
+                                 INAPP_MESSAGE_SHOW, inAppMessage.mesageId ?: @""]];
     NSDictionary *responseData = [self convertInappMsg:inAppMessage isShow:YES];
     [RCTJPushModule emitEventWithName:INAPP_MESSAGE_EVENT payload:responseData];
 }
 
 - (void)jPushInAppMessageDidClick:(JPushInAppMessage *)inAppMessage {
+    [JCOREConfiguration logInfo:[NSString stringWithFormat:@"onInAppMessageClick type=%@ msgId=%@",
+                                 INAPP_MESSAGE_CLICK, inAppMessage.mesageId ?: @""]];
     NSDictionary *responseData = [self convertInappMsg:inAppMessage isShow:NO];
     [RCTJPushModule emitEventWithName:INAPP_MESSAGE_EVENT payload:responseData];
 }
@@ -522,11 +531,16 @@ RCT_EXPORT_METHOD(setGeofeneceMaxCount:(NSDictionary *)params) {
 
 - (void)sendConnectEvent:(NSNotification *)data {
     NSDictionary *responseData = [self convertConnect:data];
+    [JCOREConfiguration logInfo:[NSString stringWithFormat:@"onConnected state=%@",
+                                 [responseData[CONNECT_ENABLE] boolValue] ? @"true" : @"false"]];
     [RCTJPushModule emitEventWithName:CONNECT_EVENT payload:responseData];
 }
 
 - (void)sendApnsNotificationEvent:(NSNotification *)data {
     NSDictionary *responseData = [self convertApnsMessage:data];
+    [JCOREConfiguration logInfo:[NSString stringWithFormat:@"onNotifyMessage type=%@ notificationType=remote msgId=%@",
+                                 responseData[NOTIFICATION_EVENT_TYPE] ?: @"",
+                                 responseData[MESSAGE_ID] ?: @""]];
     [RCTJPushModule emitEventWithName:NOTIFICATION_EVENT payload:responseData];
     if ([RCTJPushEventQueue sharedInstance]._notificationQueue.count > 0) {
         [[RCTJPushEventQueue sharedInstance]._notificationQueue removeAllObjects];
@@ -535,6 +549,9 @@ RCT_EXPORT_METHOD(setGeofeneceMaxCount:(NSDictionary *)params) {
 
 - (void)sendApnsNotificationEventByDictionary:(NSDictionary *)data {
     NSDictionary *responseData = [self convertApnsMessage:data];
+    [JCOREConfiguration logInfo:[NSString stringWithFormat:@"onNotifyMessage type=%@ notificationType=remote msgId=%@",
+                                 responseData[NOTIFICATION_EVENT_TYPE] ?: @"",
+                                 responseData[MESSAGE_ID] ?: @""]];
     [RCTJPushModule emitEventWithName:NOTIFICATION_EVENT payload:responseData];
     if ([RCTJPushEventQueue sharedInstance]._notificationQueue.count > 0) {
         [[RCTJPushEventQueue sharedInstance]._notificationQueue removeAllObjects];
@@ -543,6 +560,9 @@ RCT_EXPORT_METHOD(setGeofeneceMaxCount:(NSDictionary *)params) {
 
 - (void)sendLocalNotificationEventByDictionary:(NSDictionary *)data {
     NSDictionary *responseData = [self convertLocalMessage:data];
+    [JCOREConfiguration logInfo:[NSString stringWithFormat:@"onLocalNotification type=%@ notificationType=local msgId=%@",
+                                 responseData[NOTIFICATION_EVENT_TYPE] ?: @"",
+                                 responseData[MESSAGE_ID] ?: @""]];
     [RCTJPushModule emitEventWithName:LOCAL_NOTIFICATION_EVENT payload:responseData];
     if ([RCTJPushEventQueue sharedInstance]._localNotificationQueue.count > 0) {
         [[RCTJPushEventQueue sharedInstance]._localNotificationQueue removeAllObjects];
@@ -551,19 +571,28 @@ RCT_EXPORT_METHOD(setGeofeneceMaxCount:(NSDictionary *)params) {
 
 - (void)sendCustomNotificationEvent:(NSNotification *)data {
     NSDictionary *responseData = [self convertCustomMessage:data];
+    [JCOREConfiguration logInfo:[NSString stringWithFormat:@"onMessage type=customMessage msgId=%@",
+                                 responseData[MESSAGE_ID] ?: @""]];
     [RCTJPushModule emitEventWithName:CUSTOM_MESSAGE_EVENT payload:responseData];
 }
 
 - (void)sendLocalNotificationEvent:(NSNotification *)data {
     NSDictionary *responseData = [self convertLocalMessage:data];
+    [JCOREConfiguration logInfo:[NSString stringWithFormat:@"onLocalNotification type=%@ notificationType=local msgId=%@",
+                                 responseData[NOTIFICATION_EVENT_TYPE] ?: @"",
+                                 responseData[MESSAGE_ID] ?: @""]];
     [RCTJPushModule emitEventWithName:LOCAL_NOTIFICATION_EVENT payload:responseData];
 }
 
 - (void)sendTagAliasEvent:(NSDictionary *)data {
+    [JCOREConfiguration logInfo:[NSString stringWithFormat:@"onTagAliasOperatorResult seq=%@ code=%@",
+                                 data[SEQUENCE] ?: @0, data[CODE] ?: @0]];
     [RCTJPushModule emitEventWithName:TAG_ALIAS_EVENT payload:data];
 }
 
 - (void)sendMobileNumberEvent:(NSDictionary *)data {
+    [JCOREConfiguration logInfo:[NSString stringWithFormat:@"onMobileNumberOperatorResult seq=%@ code=%@",
+                                 data[SEQUENCE] ?: @0, data[CODE] ?: @0]];
     [RCTJPushModule emitEventWithName:MOBILE_NUMBER_EVENT payload:data];
 }
 

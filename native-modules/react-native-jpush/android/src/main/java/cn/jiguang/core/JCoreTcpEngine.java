@@ -2,6 +2,7 @@ package cn.jiguang.core;
 
 import android.content.Context;
 import android.os.Bundle;
+import cn.jiguang.plugins.push.common.JLogger;
 import cn.jpush.android.api.JPushInterface;
 import cn.jpush.android.local.ActionHelper;
 import java.io.ByteArrayOutputStream;
@@ -569,6 +570,14 @@ public final class JCoreTcpEngine {
 
             this.loggedIn = true;
             this.reconnectAttempt = 0;
+            JLogger.i(
+                "TCP login success uid="
+                    + uid
+                    + " sid="
+                    + this.sessionId
+                    + " registrationId="
+                    + JCoreStorage.getRegistrationId(context)
+            );
             JCoreStorage.setConnected(context, true);
             ActionHelper.getInstance().dispatchConnectedEvent(context, true);
 
@@ -623,6 +632,7 @@ public final class JCoreTcpEngine {
             regResp.deviceId
         );
         JCoreStorage.setServerRegistered(context, true);
+        JLogger.i("TCP register success uid=" + regResp.uid + " registrationId=" + regResp.registrationId);
         ActionHelper.getInstance().dispatchRegisterEvent(context, regResp.registrationId);
         return true;
     }
@@ -764,6 +774,12 @@ public final class JCoreTcpEngine {
         if (frame.command == JCoreWireCodec.CMD_PUSH_MESSAGE) {
             JCoreWireCodec.PushEnvelope envelope = JCoreWireCodec.parsePushMessage(frame);
             if (envelope != null) {
+                JLogger.i(
+                    "TCP push message received msgType="
+                        + envelope.messageType
+                        + " msgId="
+                        + envelope.messageId
+                );
                 long ackRid = frame.requestId != 0L ? frame.requestId : JCoreStorage.nextRid();
                 long uid = frame.uid != 0L ? frame.uid : JCoreStorage.getUid(context);
                 byte[] ackBody = JCoreWireCodec.buildMessageAckPayload(envelope.messageType, envelope.messageId);

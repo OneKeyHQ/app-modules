@@ -8,6 +8,7 @@ import android.os.Build
 import com.facebook.proguard.annotations.DoNotStrip
 import com.facebook.react.bridge.ReactApplicationContext
 import com.margelo.nitro.NitroModules
+import com.margelo.nitro.nativelogger.OneKeyLog
 import cn.jiguang.api.JCoreInterface
 import cn.jiguang.api.utils.JCollectionAuth
 import cn.jiguang.core.JCoreStorage
@@ -51,10 +52,12 @@ class ReactNativeJpush : HybridReactNativeJpushSpec() {
   override fun setDebugMode(enable: Boolean) {
     JPushInterface.setDebugMode(enable)
     JLogger.setLoggerEnable(enable)
+    OneKeyLog.info(JLogger.TAG, "setDebugMode enable=$enable")
   }
 
   override fun initPush() {
     val ctx = getReactContext() ?: return
+    OneKeyLog.info(JLogger.TAG, "initPush")
     JPushInterface.init(ctx)
     flushQueuedNotificationBundle()
     JPushInterface.setNotificationCallBackEnable(ctx, true)
@@ -62,6 +65,7 @@ class ReactNativeJpush : HybridReactNativeJpushSpec() {
 
   override fun setupWithConfig(appKey: String, channel: String, production: Boolean) {
     val ctx = getReactContext() ?: return
+    OneKeyLog.info(JLogger.TAG, "setupWithConfig channel=$channel production=$production")
     if (appKey.isNotEmpty()) {
       JCoreStorage.setAppKey(ctx, appKey)
     }
@@ -79,11 +83,13 @@ class ReactNativeJpush : HybridReactNativeJpushSpec() {
 
   override fun stopPush() {
     val ctx = getReactContext() ?: return
+    OneKeyLog.info(JLogger.TAG, "stopPush")
     JPushInterface.stopPush(ctx)
   }
 
   override fun resumePush() {
     val ctx = getReactContext() ?: return
+    OneKeyLog.info(JLogger.TAG, "resumePush")
     JPushInterface.resumePush(ctx)
   }
 
