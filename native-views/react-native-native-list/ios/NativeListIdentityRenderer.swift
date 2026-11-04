@@ -722,6 +722,9 @@ final class NativeListIdentityCell: NativeListRendererCell {
       titleLeadingIconView.accessibilityLabel = label.isEmpty ? nil : label
       titleLeadingIconView.isAccessibilityElement = !label.isEmpty
       titleRowStack.setCustomSpacing(6, after: titleLeadingIconView)
+      // As beside `titleIcon`: a plain title left at `.required` collapses the
+      // glyph's 999 width constraint instead of truncating.
+      titleLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
     }
     let titleSuffixes = item.data.dictionaries("titleSuffixes")
     if !titleSuffixes.isEmpty {
