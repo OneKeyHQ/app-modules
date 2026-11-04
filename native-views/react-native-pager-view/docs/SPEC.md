@@ -41,6 +41,31 @@ UIKit's Hard style, owner or interactions. During temporary horizontal owner
 transitions the layer holds its last opacity until geometry is valid again;
 disabling the local overlay, changing style or recycling removes it.
 
+For this iOS 27 local smooth Hard direct-pager case, an animated page command
+uses `UIScrollView`'s native content-offset animation; UIKit determines its
+duration. Both page commands and horizontal user drags transfer the source's
+existing top and pinned sticky scroll-edge interactions, markers, hosts and
+saved original style to the transition owner before the source page detaches.
+The interactions remain bound to the source list on their
+original hosts; the borrowed pinned sticky host stays inside the source list
+while the shared controls move. Incoming pages use temporary interactions; a
+drag prepares both adjacent pages so either direction can remain visible.
+Participating pages retain their scroll-edge sampling area during the animation;
+fixed controls still reserve their existing hit-test area. Completion or
+cancellation releases temporary ownership, restores each list's prior style
+and pinned host, and reattaches the settled page's normal owner before a queued
+page command starts. A drag that returns to its source page follows the same
+cleanup path. A new drag invalidates an older pending settlement before it can
+release the new transition's owners.
+If the direct pager viewport width changes while a native animated page command is pending, stop the old-coordinate animation before resizing its viewport. After the normal layout completes, settle the captured logical destination at its new physical offset through the original generation/transition-guarded completion path. This restores scrolling, releases temporary edge ownership and drains queued commands. Any width change, including a fractional-point change, is significant. Zero width completes the logical destination without retaining a disabled pending animation; a later positive-width idle layout realigns the current page. Height-only layout and horizontal user drags retain their existing paths. Late animation-end callbacks must not complete a newer command before its own current target has been reached.
+
+Other pager modes retain their prior command and observer ordering. Recycling,
+window detachment, slot replacement and disabling the style also release the
+temporary resources. Conformance requires preserving the source interaction
+and marker identities and prior style until settlement, releasing borrowed
+resources on completion and cancellation, and rendered blur continuity in both
+directions over long scrollable pages.
+
 For an iOS 26 pager whose fixed header is rendered by a sibling in the same
 React surface, `externalTopOverlayTag` may identify that header's native view.
 The pager weakly observes its geometry in the same window, retaining its own
@@ -110,6 +135,21 @@ implemented in the public wrappers and native hosts. Focused JS tests cover
 style forwarding, overlay retention and disabling; UIKit tests cover native
 style switching and restoring the previous style. Rendered iOS acceptance must
 be reported separately from type, codegen and build checks.
+
+### iOS 27 external-overlay interactive ownership
+
+Status: Implemented in iOS source; runtime acceptance is reported separately.
+
+For a direct native pager using smooth headers and a Hard top edge, an interactive horizontal drag may preserve scroll-edge ownership when the external overlay is resolved in the same window with a positive effective height. A registered outer pager must own the active page and must not be transitioning; an external overlay without an outer pager remains eligible.
+
+Before detaching the source observer, transfer the source's existing top/sticky interactions, markers, original edge style and borrowed pinned host into the transition owner. Do not move or take ownership of the actual external React overlay. Interactive preparation is bounded to the source and its valid immediate neighbours.
+
+Each newly prepared external incoming page owns separate transparent, noninteractive top/sticky interaction hosts inside that page. Their horizontal origin follows the page's scroll viewport rather than the fixed external overlay; their vertical positions and heights match the existing top/sticky geometry. Hosts and markers follow page-width changes. They add no replacement material or background. The source retains its existing host identities. Local-overlay ownership and external programmatic page commands keep their existing paths; this extension is selected only by interactive drag preparation.
+
+Completion or release back to the source releases temporary interactions and markers, restores the captured original styles, removes only the owned temporary hosts, and reattaches normal ownership to the settled page. Existing cancellation, window removal, slot/recycle and external invalidation paths must release these resources as well. External identity/tag/effective-height changes and outer-owner inactivity or transition invalidate temporary ownership before references are updated. Never remove a borrowed pinned host, shared proxy, shared sticky view or actual external overlay as though it were an owned temporary host.
+
+Rendering conformance requires real underlying content on both pages to remain blurred throughout the drag and release, with no premature whiteout, sharp penetration or frozen texture. Object registration and lifecycle tests do not establish visual conformance.
+
 
 ## Smooth shared-header and per-page body memory
 
