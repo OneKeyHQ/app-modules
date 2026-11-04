@@ -583,12 +583,34 @@ using namespace facebook::react;
     XCTAssertEqualObjects([pager valueForKey:@"currentIndex"], @0);
   }
   __block RNCNativeScrollerComponentView *replacement;
+  __block BOOL replacementFixtureActive = YES;
   int64_t replacementDelay = finalRetryPending ? 150 : 50;
-  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, replacementDelay * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+  dispatch_block_t insertReplacement = dispatch_block_create((dispatch_block_flags_t)0, ^{
+    if (!replacementFixtureActive) return;
     replacement = [self addScrollerToPager:pager atIndex:0];
     [replacementHost addSubview:replacement];
   });
-  [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.3]];
+  // LIFO teardown invalidates this callback before the pager clears its pages.
+  [self addTeardownBlock:^{
+    replacementFixtureActive = NO;
+    dispatch_block_cancel(insertReplacement);
+  }];
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, replacementDelay * NSEC_PER_MSEC),
+                 dispatch_get_main_queue(), insertReplacement);
+  NSPredicate *hasReplacementOwners = [NSPredicate predicateWithBlock:
+    ^BOOL(__unused id object, __unused NSDictionary *bindings) {
+      return replacement != nil &&
+        [pager valueForKey:@"observedScrollView"] == replacement.scrollView &&
+        [pager valueForKey:@"sharedHeaderScrollView"] == replacement.scrollView;
+    }];
+  XCTNSPredicateExpectation *replacementReady =
+    [[XCTNSPredicateExpectation alloc] initWithPredicate:hasReplacementOwners object:nil];
+  XCTWaiterResult result = [XCTWaiter waitForExpectations:@[replacementReady] timeout:5];
+  replacementFixtureActive = NO;
+  dispatch_block_cancel(insertReplacement);
+  XCTAssertEqual(result, XCTWaiterResultCompleted);
+  XCTAssertNotNil(replacement);
+  if (result != XCTWaiterResultCompleted || replacement == nil) return;
   XCTAssertEqual([pager valueForKey:@"observedScrollView"], replacement.scrollView);
   XCTAssertEqual([pager valueForKey:@"sharedHeaderScrollView"], replacement.scrollView);
   XCTAssertEqualWithAccuracy(replacement.scrollView.contentOffset.y + replacement.scrollView.contentInset.top,

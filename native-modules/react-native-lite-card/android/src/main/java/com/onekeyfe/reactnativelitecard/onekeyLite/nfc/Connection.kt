@@ -117,16 +117,21 @@ class Connection(val isoDep: IsoDep, private val mCommandGenerator: CommandGener
         printLog(TAG, "---> getDeviceCertificate begin")
         // #1.NFC:GET CERT.SD.ECKA 获取智能卡证书
         val apdu = buildGPCAPDU(APDUParam(0x80, 0xCA, 0xBF, 0x21, "A60483021518"))
+        if (apdu.isEmpty()) return null
         val rawCert = send(isoDep, apdu)
         printLog(
             TAG,
             "<--- getDeviceCertificate end: ${rawCert.getCode()} ${rawCert.data} area:${mCommandArea}"
         )
+        if (!rawCert.isSuccess() || rawCert.isEmptyData()) {
+            return null
+        }
 
-        val cert = GPChannelNatives.nativeGPCTLVDecode(rawCert.data)
-        val certificate = CardResponse.objectFromData(cert).response
+        val cert = GPChannelNatives.nativeGPCTLVDecode(rawCert.data) ?: return null
+        val certificate = CardResponse.objectFromData(cert)?.response
+        if (certificate.isNullOrEmpty()) return null
 
-        val certInfo = GPChannelNatives.nativeGPCParseCertificate(certificate)
+        val certInfo = GPChannelNatives.nativeGPCParseCertificate(certificate) ?: return null
         return ParsedCertInfo.objectFromData(certInfo)
     }
 
@@ -140,12 +145,18 @@ class Connection(val isoDep: IsoDep, private val mCommandGenerator: CommandGener
 
         printLog(TAG, "0. ---> getDeviceCertificate begin")
         val certInfo = getDeviceCertificate() ?: return false
+        if (certInfo.subjectID.isNullOrEmpty() || certInfo.sn.isNullOrEmpty()) {
+            return false
+        }
+        if (mCardSerialNumber != NfcConstant.NOT_MATCH_DEVICE && certInfo.sn != mCardSerialNumber) {
+            return false
+        }
         printLog(TAG, "0. <--- getDeviceCertificate end")
 
         printLog(TAG, "1. ---> nativeGPCInitialize begin")
         val param = SecureChanelParam.objectFromData(
         	KeysNativeProvider().getLiteSecureChannelInitParams(Utils.getApp())
-        )
+        ) ?: return false
         param.cardGroupID = certInfo.subjectID
         printLog(TAG, "nativeGPCInitialize read param done")
         val initializeStatus = GPChannelNatives.nativeGPCInitialize(param.toString())
@@ -169,6 +180,9 @@ class Connection(val isoDep: IsoDep, private val mCommandGenerator: CommandGener
 
         printLog(TAG, "3. ---> mutual authenticate begin")
         val authData = GPChannelNatives.nativeGPCBuildMutualAuthData()
+        if (authData.isNullOrEmpty()) {
+            return false
+        }
         printLog(TAG, "mutual authenticate data")
         val authCommand = mCommandGenerator.generalCommand(
             mCardType, CommandType.VERIFY_AUTH_DATA, hasOpenSafeChannel, authData
@@ -328,7 +342,7 @@ class Connection(val isoDep: IsoDep, private val mCommandGenerator: CommandGener
 
         printLog(TAG, "<--- changePin end: ${res.getCode()} area:${mCommandArea}")
 
-        return if (res.isConnectFailure()) {
+        return if (res.isConnectFailure() || (!res.parseSuccess && res.sw1 == 0x90.toByte() && res.sw2 == 0x00.toByte())) {
             NfcConstant.INTERRUPT_STATUS
         } else if (res.isSuccess()) {
             printLog(TAG, "--- verify success")
@@ -358,7 +372,7 @@ class Connection(val isoDep: IsoDep, private val mCommandGenerator: CommandGener
         val res = command.send(this)
         printLog(TAG, "<--- startVerifyPin end: ${res.getCode()} area:${mCommandArea}")
 
-        return if (res.isConnectFailure()) {
+        return if (res.isConnectFailure() || (!res.parseSuccess && res.sw1 == 0x90.toByte() && res.sw2 == 0x00.toByte())) {
             NfcConstant.INTERRUPT_STATUS
         } else if (res.isSuccess()) {
             printLog(TAG, "--- verify success")
@@ -430,7 +444,7 @@ class Connection(val isoDep: IsoDep, private val mCommandGenerator: CommandGener
 
         printLog(TAG, "<--- resetCard end: ${res.getCode()} ${res.data} area:${mCommandArea}")
 
-        return if (res.isConnectFailure()) {
+        return if (!res.isSuccess()) {
             NfcConstant.RESET_INTERRUPT_STATUS
         } else {
             NfcConstant.RESET_PIN_SUCCESS

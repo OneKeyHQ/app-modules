@@ -374,7 +374,7 @@ final class NativeListMetricCardCell: NativeListRendererCell {
 }
 
 private final class NativeListMetricVisual: UIView {
-  private let icon = UIImageView()
+  private let icon = NativeListIconImageView()
   private let image = NativeListImageSlot()
   init() {
     super.init(frame: .zero)
@@ -389,6 +389,8 @@ private final class NativeListMetricVisual: UIView {
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
   func bind(_ visual: [String: Any], key: String, placeholder: String) {
+    let iconUpdate = NativeListIconUpdate(self)
+    defer { iconUpdate.finish() }
     backgroundColor = UIColor(
       nativeListHex: visual.string("backgroundColor", default: "#0000000F"), fallback: .lightGray)
     layer.cornerRadius = visual.string("shape") == "square" ? 0 : 8
@@ -397,7 +399,7 @@ private final class NativeListMetricVisual: UIView {
     image.view.isHidden = true
     if kind == "icon" {
       image.recycle()
-      icon.image = nativeListIcon(named: visual.string("name"))
+      icon.bindIcon(visual.string("name"))
       icon.tintColor = UIColor(
         nativeListHex: visual.string("tintColor", default: "#00000072"), fallback: .darkGray)
     } else if let source = kind == "stackedImages"

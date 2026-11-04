@@ -1,3 +1,4 @@
+import { createNamedIcon } from '@onekeyfe/react-native-image/icon/dom';
 import type {
   MarketRow,
   WebMarketTableCell,
@@ -14,6 +15,7 @@ type CellViews = {
   signature: string;
   visual?: HTMLElement;
   visualKey?: string;
+  visualImageKey?: string;
   title?: HTMLElement;
   resting?: HTMLElement;
   hover?: HTMLElement;
@@ -26,10 +28,6 @@ const views = new WeakMap<HTMLElement, Views>();
 const columnSignatures = new WeakMap<readonly WebMarketTableColumn[], string>();
 let sparklineId = 0;
 const svgNamespace = 'http://www.w3.org/2000/svg';
-const outlineStar =
-  'm15.455 7.243 7.729 1.123-5.592 5.45 1.32 7.698L12 17.879l-6.911 3.635 1.32-7.698-5.592-5.45 7.728-1.123L12 .24zM9.872 9.071l-4.759.69 3.444 3.358-.814 4.738L12 15.62l.465.245 3.791 1.993-.813-4.739 3.443-3.357-4.758-.69L12 4.758z';
-const solidStar =
-  'm15.405 7.313 7.84 1.034-5.735 5.443 1.44 7.774L12 17.793l-6.948 3.771 1.44-7.774L.756 8.347l7.839-1.034L12 .178z';
 function columnsSignature(columns: readonly WebMarketTableColumn[]) {
   let signature = columnSignatures.get(columns);
   if (signature === undefined) {
@@ -176,19 +174,13 @@ function action(
     flexShrink: '0',
   });
 }
-function icon(document: Document, d: string, size: number): SVGSVGElement {
-  const svg = document.createElementNS(svgNamespace, 'svg');
-  svg.setAttribute('viewBox', '0 0 24 24');
+function icon(document: Document, name: string, size: number): SVGSVGElement {
+  const svg = createNamedIcon(document, name);
   svg.setAttribute('width', String(size));
   svg.setAttribute('height', String(size));
-  svg.setAttribute('aria-hidden', 'true');
-  svg.setAttribute('fill', 'currentColor');
-  const path = document.createElementNS(svgNamespace, 'path');
-  path.setAttribute('d', d);
-  path.setAttribute('fill-rule', 'evenodd');
-  svg.appendChild(path);
   return svg;
 }
+
 function drawSparkline(
   element: HTMLElement,
   cell: Extract<WebMarketTableCell, { kind: 'sparkline' }>
@@ -287,11 +279,42 @@ function updateCell(
   if (cell.kind === 'asset') {
     const visualKey = JSON.stringify(cell.leading);
     if (view.visualKey !== visualKey) {
-      if (view.visual) {
-        primitives.dispose(view.visual);
-        view.visual.remove();
+      const visualImageKey = JSON.stringify(
+        cell.leading?.kind === 'token'
+          ? { ...cell.leading, overlays: undefined }
+          : cell.leading
+      );
+      if (
+        view.visual &&
+        cell.leading?.kind === 'token' &&
+        view.visualImageKey === visualImageKey
+      ) {
+        // Keep the main frame: its load/error callbacks own its visibility.
+        for (const overlay of view.visual.querySelectorAll<HTMLElement>(
+          ':scope > .ok-native-list-visual-overlay'
+        )) {
+          primitives.dispose(overlay);
+          overlay.remove();
+        }
+        const overlayVisual = primitives.visual({
+          kind: 'token',
+          overlays: cell.leading.overlays,
+        });
+        if (overlayVisual) {
+          for (const overlay of overlayVisual.querySelectorAll<HTMLElement>(
+            ':scope > .ok-native-list-visual-overlay'
+          ))
+            view.visual.appendChild(overlay);
+          primitives.dispose(overlayVisual);
+        }
+      } else {
+        if (view.visual) {
+          primitives.dispose(view.visual);
+          view.visual.remove();
+        }
+        view.visual = primitives.visual(cell.leading);
       }
-      view.visual = primitives.visual(cell.leading);
+      view.visualImageKey = visualImageKey;
       view.visualKey = visualKey;
       if (view.visual)
         Object.assign(view.visual.style, {
@@ -453,11 +476,7 @@ function updateCell(
         );
         if (badge.actionKey) node.dataset.nativeListHoverAction = 'true';
         node.textContent = '';
-        const svg = icon(
-          document,
-          'M9.483 11.458v3.5h-1v-3.5z M10.467 2.698a2.03 2.03 0 0 1 3.065 0l1.358 1.564a.03.03 0 0 0 .028.01l2.046-.325a2.03 2.03 0 0 1 2.347 1.971l.037 2.07q0 .016.014.026l1.776 1.066a2.03 2.03 0 0 1 .532 3.019l-1.304 1.609a.03.03 0 0 0-.005.03l.675 1.956a2.03 2.03 0 0 1-1.533 2.656l-2.033.394a.03.03 0 0 0-.023.019l-.741 1.933a2.03 2.03 0 0 1-2.88 1.05l-1.811-1.006a.03.03 0 0 0-.03 0l-1.811 1.005a2.03 2.03 0 0 1-2.88-1.049l-.742-1.933a.03.03 0 0 0-.023-.019l-2.033-.394a2.03 2.03 0 0 1-1.532-2.656l.675-1.957a.03.03 0 0 0-.005-.029l-1.304-1.61a2.03 2.03 0 0 1 .532-3.018l1.776-1.066a.03.03 0 0 0 .014-.026l.035-2.07a2.03 2.03 0 0 1 2.349-1.97l2.045.324a.03.03 0 0 0 .028-.01zm1.516 3.76a.5.5 0 0 0-.447.276l-1.861 3.724H8.483a1 1 0 0 0-1 1v3.5a1 1 0 0 0 1 1h6.692a2 2 0 0 0 1.981-1.73l.341-2.5a2 2 0 0 0-1.982-2.27h-1.939l.197-1.269a1.5 1.5 0 0 0-1.481-1.731z',
-          14
-        );
+        const svg = icon(document, 'BadgeRecognizedSolid', 14);
         node.appendChild(svg);
       }
       title.appendChild(node);
@@ -578,13 +597,7 @@ function updateCell(
           );
           button.style.padding = '0';
           button.style.color = 'var(--nl-icon-subdued)';
-          button.appendChild(
-            icon(
-              document,
-              'M21 17h-4v4H3V7h4V3h14zM5 19h10V9H5zM9 7h8v8h2V5H9z',
-              14
-            )
-          );
+          button.appendChild(icon(document, 'Copy3Outline', 14));
           hoverFrame.appendChild(button);
         }
         track.appendChild(hoverFrame);
@@ -613,12 +626,19 @@ function updateCell(
       : 'var(--nl-icon-subdued)';
     let svg = button.querySelector('svg');
     if (!svg) {
-      svg = icon(document, cell.active ? solidStar : outlineStar, 16);
+      svg = icon(document, cell.active ? 'StarSolid' : 'StarOutline', 16);
       button.appendChild(svg);
     }
-    svg
-      .querySelector('path')
-      ?.setAttribute('d', cell.active ? solidStar : outlineStar);
+    const name = cell.active ? 'StarSolid' : 'StarOutline';
+    if (
+      !svg
+        .querySelector('use')
+        ?.getAttribute('href')
+        ?.endsWith(`#onekey-${name}`)
+    ) {
+      const replacement = icon(document, name, 16);
+      svg.replaceWith(replacement);
+    }
     if (!button.parentElement) element.appendChild(button);
   } else if (cell.kind === 'sparkline') drawSparkline(element, cell);
   else {

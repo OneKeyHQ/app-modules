@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-lite-card",
-  "version": "6.7.0-21",
+  "version": "6.7.0-22",
   "description": "OneKey Lite NFC card operations and connection events for React Native",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -18,7 +18,7 @@
     "keys",
     "android",
     "ios",
-    "framework",
+    "sdk",
     "cpp",
     "*.podspec",
     "react-native.config.js",

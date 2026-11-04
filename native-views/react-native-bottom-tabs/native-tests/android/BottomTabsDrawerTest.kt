@@ -1,5 +1,6 @@
 package com.onekey.bottomtabs
 
+import coil3.asDrawable
 import android.content.Intent
 import android.content.Context
 import android.graphics.Color
@@ -412,6 +413,71 @@ class BottomTabsDrawerTest : InstrumentationTestCase() {
     }
     send(if (cancel) MotionEvent.ACTION_CANCEL else MotionEvent.ACTION_UP, x1, y1, 450)
   }
+  fun testSharedSvgDecoderUsesRealCoilAndTabIconPipeline() {
+    val loader = coil3.ImageLoader.Builder(activity).components { add(SharedSvgDecoder.Factory()) }.build()
+    val options = coil3.request.Options(activity)
+    fun recognizes(offset: Int, mime: String?): Boolean {
+      val bytes = "<" + " ".repeat(offset - 1) + "<svg></svg>"
+      val source = coil3.decode.ImageSource(okio.Buffer().writeUtf8(bytes), okio.FileSystem.SYSTEM)
+      return source.use { SharedSvgDecoder.Factory().create(coil3.fetch.SourceFetchResult(it,mime,coil3.decode.DataSource.DISK),options,loader) != null }
+    }
+    assertTrue(recognizes(1019,null)); assertFalse(recognizes(1020,null)); assertTrue(recognizes(1020,"image/svg+xml"))
+    val files = mutableListOf<java.io.File>()
+    val names = listOf("AppleBrand","BotIllus","CheckboxCheckedCustom","OnekeyPrimeLightColored","CoinsIllus","ArrowTopRightIllus")
+    for (name in names) {
+      val file = java.io.File(activity.cacheDir,"integration-$name.svg")
+      instrumentation.targetContext.assets.open("icons/$name.svg").use { input -> file.outputStream().use { input.copyTo(it) } }
+      files.add(file)
+      val result = kotlinx.coroutines.runBlocking {
+        loader.execute(coil3.request.ImageRequest.Builder(activity).data(file).size(64,64)
+          .scale(coil3.size.Scale.FILL).precision(coil3.size.Precision.EXACT).build())
+      }
+      assertTrue("Real Coil SVG success: $name",result is coil3.request.SuccessResult)
+      val image = (result as coil3.request.SuccessResult).image
+      assertTrue(image.width >= 64 && image.height >= 64)
+      val drawable = image.asDrawable(activity.resources)
+      val bitmap=android.graphics.Bitmap.createBitmap(image.width,image.height,android.graphics.Bitmap.Config.ARGB_8888)
+      drawable.setBounds(0,0,image.width,image.height);drawable.draw(android.graphics.Canvas(bitmap))
+      val pixels=IntArray(image.width*image.height);bitmap.getPixels(pixels,0,image.width,0,0,image.width,image.height)
+      assertTrue("Painted SVG $name",pixels.any { Color.alpha(it)>0 })
+      val directory=java.io.File(instrumentation.context.getExternalFilesDir(null),"shared-svg");directory.mkdirs()
+      java.io.File(directory,"$name.png").outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it) }
+      if(name=="AppleBrand") { assertEquals(64,image.width);assertEquals(80,image.height) }
+    }
+    val png=java.io.File(activity.cacheDir,"integration-ordinary.png")
+    val bitmap=android.graphics.Bitmap.createBitmap(16,16,android.graphics.Bitmap.Config.ARGB_8888);bitmap.eraseColor(Color.GREEN)
+    png.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it) }; files.add(png)
+    val ordinary=kotlinx.coroutines.runBlocking { loader.execute(coil3.request.ImageRequest.Builder(activity).data(png).size(64,64).build()) }
+    assertTrue(ordinary is coil3.request.SuccessResult)
+    lateinit var tabs: BottomTabsView
+    lateinit var navigation: ExtendedBottomNavigationView
+    onMain {
+      ReactChoreographer.initialize(object : ChoreographerProvider {
+        override fun getChoreographer() = object : ChoreographerProvider.Choreographer {
+          private val delegate = Choreographer.getInstance()
+          override fun postFrameCallback(callback: Choreographer.FrameCallback) = delegate.postFrameCallback(callback)
+          override fun removeFrameCallback(callback: Choreographer.FrameCallback) = delegate.removeFrameCallback(callback)
+        }
+      })
+      tabs=BottomTabsView(activity)
+      activity.setContentView(tabs)
+      tabs.updateItems(mutableListOf(TabInfo("svg","SVG"),TabInfo("png","PNG")))
+      tabs.setIcons(com.facebook.react.bridge.Arguments.createArray().apply {
+        for (file in listOf(files[0],png)) pushMap(com.facebook.react.bridge.Arguments.createMap().apply { putString("uri",file.toURI().toString()) })
+      })
+      val field=BottomTabsView::class.java.getDeclaredField("bottomNavigation").apply { isAccessible=true }
+      navigation=field.get(tabs) as ExtendedBottomNavigationView
+    }
+    var ready=false
+    repeat(100) {
+      onMain { ready=navigation.menu.findItem(0).icon != null && navigation.menu.findItem(1).icon != null }
+      if(!ready)SystemClock.sleep(50)
+    }
+    assertTrue("Production tabs received SVG and ordinary PNG",ready)
+    onMain { assertEquals(2,navigation.menu.size());tabs.removeAllViews() }
+    loader.shutdown()
+  }
+
   private fun onMain(action: () -> Unit) {
     var failure: Throwable? = null
     instrumentation.runOnMainSync { try { action() } catch (error: Throwable) { failure = error } }

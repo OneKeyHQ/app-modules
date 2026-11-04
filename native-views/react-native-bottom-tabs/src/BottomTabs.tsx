@@ -20,6 +20,8 @@ import useLatestCallback from "use-latest-callback";
 import type {
   AppleIcon,
   BaseRoute,
+  BottomTabIconSource,
+  NamedIcon,
   NavigationState,
   TabBarPlacement,
   TabRole,
@@ -31,8 +33,87 @@ import {
   type RNBottomTabsAccessoryViewProps,
 } from "./BottomAccessoryView";
 
-const isAppleSymbol = (icon: any): icon is { sfSymbol: string } =>
-  icon?.sfSymbol;
+const isAppleSymbol = (
+  icon: BottomTabIconSource | undefined | null
+): icon is AppleIcon =>
+  Boolean(
+    typeof icon === "object" &&
+      icon !== null &&
+      "sfSymbol" in icon &&
+      typeof icon.sfSymbol === "string"
+  );
+
+const ONEKEY_ICON_URI_PREFIX = "onekey-icon://";
+
+type ResolvedTabIconSource = {
+  uri: string;
+  width: number;
+  height: number;
+  scale: number;
+};
+
+export const resolveTabIconSource = (
+  icon: BottomTabIconSource | undefined | null
+): ResolvedTabIconSource => {
+  if (!icon || isAppleSymbol(icon)) {
+    return { uri: "", width: 0, height: 0, scale: 1 };
+  }
+  if (typeof icon === "string") {
+    const trimmed = icon.trim();
+    if (!trimmed) {
+      return { uri: "", width: 0, height: 0, scale: 1 };
+    }
+    if (
+      trimmed.startsWith(ONEKEY_ICON_URI_PREFIX) ||
+      /^[A-Z][A-Za-z0-9]*$/.test(trimmed)
+    ) {
+      const uri = trimmed.startsWith(ONEKEY_ICON_URI_PREFIX)
+        ? trimmed
+        : `${ONEKEY_ICON_URI_PREFIX}${trimmed}`;
+      return { uri, width: 24, height: 24, scale: 1 };
+    }
+    icon = { uri: trimmed };
+  }
+  if (
+    typeof icon === "object" &&
+    !Array.isArray(icon) &&
+    "iconName" in icon &&
+    typeof icon.iconName === "string"
+  ) {
+    const trimmed = icon.iconName.trim();
+    if (!trimmed) {
+      return { uri: "", width: 0, height: 0, scale: 1 };
+    }
+    return {
+      uri: `${ONEKEY_ICON_URI_PREFIX}${trimmed}`,
+      width: 24,
+      height: 24,
+      scale: 1,
+    };
+  }
+  if (
+    typeof icon === "object" &&
+    !Array.isArray(icon) &&
+    "uri" in icon &&
+    typeof icon.uri === "string" &&
+    icon.uri.startsWith(ONEKEY_ICON_URI_PREFIX)
+  ) {
+    return {
+      uri: icon.uri,
+      width: typeof icon.width === "number" && icon.width > 0 ? icon.width : 24,
+      height:
+        typeof icon.height === "number" && icon.height > 0 ? icon.height : 24,
+      scale: typeof icon.scale === "number" && icon.scale > 0 ? icon.scale : 1,
+    };
+  }
+  const resolved = Image.resolveAssetSource(icon as ImageSourcePropType);
+  return {
+    uri: resolved?.uri ?? "",
+    width: resolved?.width ?? 0,
+    height: resolved?.height ?? 0,
+    scale: resolved?.scale ?? 1,
+  };
+};
 
 interface Props<Route extends BaseRoute> {
   /*
@@ -139,10 +220,13 @@ interface Props<Route extends BaseRoute> {
   /**
    * Get icon for the tab.
    */
-  getIcon?: (props: {
+  getIcon?: ({
+    route,
+    focused,
+  }: {
     route: Route;
     focused: boolean;
-  }) => ImageSourcePropType | AppleIcon | undefined | null;
+  }) => BottomTabIconSource | undefined | null;
 
   /**
    * Get hidden for the tab.
@@ -237,7 +321,7 @@ interface Props<Route extends BaseRoute> {
    * Icon of a round button shown above a vertical tab bar. The button only
    * appears while the tab bar is vertical and visible. iOS only.
    */
-  sideAccessoryIcon?: ImageSourcePropType;
+  sideAccessoryIcon?: ImageSourcePropType | NamedIcon | string;
   /**
    * Accessibility label of the side accessory button.
    */
@@ -247,6 +331,19 @@ interface Props<Route extends BaseRoute> {
    */
   onSideAccessoryPress?: () => void;
 }
+
+const defaultGetIcon = ({
+  route,
+  focused,
+}: {
+  route: BaseRoute;
+  focused: boolean;
+}) =>
+  route.unfocusedIcon
+    ? focused
+      ? route.focusedIcon
+      : route.unfocusedIcon
+    : route.focusedIcon;
 
 const ANDROID_MAX_TABS = 100;
 
@@ -269,12 +366,7 @@ const BottomTabs = <Route extends BaseRoute>({
   getBadgeTextColor = ({ route }: { route: Route }) => route.badgeTextColor,
   getLazy = ({ route }: { route: Route }) => route.lazy,
   getLabelText = ({ route }: { route: Route }) => route.title,
-  getIcon = ({ route, focused }: { route: Route; focused: boolean }) =>
-    route.unfocusedIcon
-      ? focused
-        ? route.focusedIcon
-        : route.unfocusedIcon
-      : route.focusedIcon,
+  getIcon = defaultGetIcon,
   getHidden = ({ route }: { route: Route }) => route.hidden,
   getActiveTintColor = ({ route }: { route: Route }) => route.activeTintColor,
   getTestID = ({ route }: { route: Route }) => route.testID,
@@ -414,40 +506,14 @@ const BottomTabs = <Route extends BaseRoute>({
   );
 
   const resolvedIconAssets = React.useMemo(
-    () =>
-      icons.map((icon) => {
-        if (icon && !isAppleSymbol(icon)) {
-          // @ts-ignore - resolveAssetSource accepts ImageSourcePropType
-          const resolved = Image.resolveAssetSource(icon);
-          return {
-            uri: resolved?.uri ?? "",
-            width: resolved?.width ?? 0,
-            height: resolved?.height ?? 0,
-            scale: resolved?.scale ?? 1,
-          };
-        }
-        return { uri: "", width: 0, height: 0, scale: 1 };
-      }),
+    () => icons.map((icon) => resolveTabIconSource(icon)),
     [icons]
   );
 
   // Focused (solid) assets passed to iOS as selectedImage. iOS only — Android
   // ignores selectedIcons and keeps swapping via the focusedKey array above.
   const resolvedSelectedIconAssets = React.useMemo(
-    () =>
-      focusedIcons.map((icon) => {
-        if (icon && !isAppleSymbol(icon)) {
-          // @ts-ignore - resolveAssetSource accepts ImageSourcePropType
-          const resolved = Image.resolveAssetSource(icon);
-          return {
-            uri: resolved?.uri ?? "",
-            width: resolved?.width ?? 0,
-            height: resolved?.height ?? 0,
-            scale: resolved?.scale ?? 1,
-          };
-        }
-        return { uri: "", width: 0, height: 0, scale: 1 };
-      }),
+    () => focusedIcons.map((icon) => resolveTabIconSource(icon)),
     [focusedIcons]
   );
 
@@ -513,17 +579,9 @@ const BottomTabs = <Route extends BaseRoute>({
     if (!isIOS || !sideAccessoryIcon) {
       return undefined;
     }
-    // @ts-ignore - resolveAssetSource accepts ImageSourcePropType
-    const resolved = Image.resolveAssetSource(sideAccessoryIcon);
-    return resolved?.uri
-      ? {
-          uri: resolved.uri,
-          width: resolved.width ?? 0,
-          height: resolved.height ?? 0,
-          scale: resolved.scale ?? 1,
-        }
-      : undefined;
-  }, [sideAccessoryIcon]);
+    const resolved = resolveTabIconSource(sideAccessoryIcon);
+    return resolved.uri ? resolved : undefined;
+  }, [isIOS, sideAccessoryIcon]);
 
   useLayoutEffect(() => {
     if (renderCustomTabBar && customTabBarWrapperRef.current) {

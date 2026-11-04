@@ -53,6 +53,10 @@ target 'example' do
   pod 'ReactNativeImageCropPicker', :path => '../../../node_modules/@onekeyfe/react-native-image-crop-picker', :testspecs => ['Tests']
   pod 'ReactNativeJpush', :path => '../../../node_modules/@onekeyfe/react-native-jpush', :testspecs => ['Tests']
 
+  script_phase :name => 'Bundle SDK icon fixtures',
+    :execution_position => :after_compile,
+    :script => 'sh "${PODS_ROOT}/../../icon-fixtures/copy-ios-icons.sh" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/OneKeyIcons.bundle"'
+
   # Copy optional offline TradingView chart material into the app bundle as
   # `tradingview-assets/`, preserving the
   # directory tree so react-native-chart-webview's WKURLSchemeHandler can serve it.
@@ -70,6 +74,18 @@ fi
 SH
 
   post_install do |installer|
+    fixture_targets = %w[OneKeyImage-Unit-Tests react-native-native-list-Unit-Tests]
+    fixture_targets.each do |name|
+      target = installer.pods_project.targets.find { |candidate| candidate.name == name }
+      raise "Missing SDK icon fixture test target: #{name}" unless target
+      phase = target.shell_script_build_phases.find { |candidate| candidate.name == 'Bundle SDK icon fixtures' } ||
+        target.new_shell_script_build_phase('Bundle SDK icon fixtures')
+      phase.shell_script = 'sh "${PODS_ROOT}/../../icon-fixtures/copy-ios-icons.sh" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/OneKeyIcons.bundle"'
+      phase.input_paths = ['${PODS_ROOT}/../../icon-fixtures/copy-ios-icons.sh', '${PODS_ROOT}/../../icon-fixtures/native/icons/manifest.json']
+      phase.output_paths = ['${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/OneKeyIcons.bundle/manifest.json']
+      phase.always_out_of_date = '1'
+    end
+
     react_native_post_install(
       installer,
       config[:reactNativePath],

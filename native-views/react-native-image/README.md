@@ -95,3 +95,15 @@ pod 'SDWebImage', '5.21.7', :modular_headers => true
 pod 'SDWebImageWebPCoder', '0.14.6', :modular_headers => true
 pod 'SDWebImageSVGCoder', '1.7.0', :modular_headers => true
 ```
+
+## Named icon resource ownership
+
+The host owns canonical SVG artwork and build output. Native builds supply a
+`OneKeyIcons.bundle` on iOS and `assets/icons` on Android, including the manifest.
+Web builds alias `#onekey-icon-assets` to a generated module exporting
+`iconResourceHref(name: string): string | undefined`; the default SDK provider
+is empty. `OneKeyIcon` props are unchanged. See [the resource contract](docs/SPEC.md#16-host-owned-icon-resources--implemented-sdk-fixture-runtime-verified).
+
+The SDK example carries 63 independent test samples. `icons:check` and
+`icons:test` are repository maintenance commands that require the example
+fixtures; npm consumers do not receive those samples or the complete catalog.

@@ -82,6 +82,7 @@ android {
     compileSdk rootProject.ext.compileSdkVersion
 
     namespace "com.example"
+    sourceSets.main.assets.srcDir("../../icon-fixtures/native")
 
     // Offline TradingView chart bundle is copied into a namespaced assets
     // subdir (assets/tradingview-assets/) by the copyChartWebviewAssets task

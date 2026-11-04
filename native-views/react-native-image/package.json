@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-image",
-  "version": "6.7.0-21",
+  "version": "6.7.0-22",
   "description": "High-performance native image view for OneKey",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -10,7 +10,27 @@
       "types": "./lib/typescript/src/index.d.ts",
       "default": "./lib/module/index.js"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./icon": {
+      "browser": {
+        "source": "./src/icon/index.web.tsx",
+        "types": "./lib/typescript/src/icon/index.d.ts",
+        "default": "./lib/module/icon/index.web.js"
+      },
+      "react-native": {
+        "source": "./src/icon/index.tsx",
+        "types": "./lib/typescript/src/icon/index.d.ts",
+        "default": "./lib/module/icon/index.js"
+      },
+      "types": "./lib/typescript/src/icon/index.d.ts",
+      "source": "./src/icon/index.tsx",
+      "default": "./lib/module/icon/index.js"
+    },
+    "./icon/dom": {
+      "source": "./src/icon/dom.ts",
+      "types": "./lib/typescript/src/icon/dom.d.ts",
+      "default": "./lib/module/icon/dom.js"
+    }
   },
   "files": [
     "src",
@@ -30,16 +50,19 @@
     "!android/local.properties",
     "!**/__tests__",
     "!**/.*",
-    "!**/*.map"
+    "!**/*.map",
+    "scripts"
   ],
   "scripts": {
     "clean": "del-cli android/build lib",
-    "prepare": "rm -rf lib && bob build && cp -r nitrogen lib/nitrogen",
+    "prepare": "rm -rf lib && bob build && cp -r nitrogen lib/nitrogen && node scripts/configure-icon-imports.mjs",
     "nitrogen": "nitrogen",
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
     "test": "jest",
-    "release": "yarn nitrogen && yarn prepare && npm whoami && npm publish --access public"
+    "release": "yarn nitrogen && yarn prepare && npm whoami && npm publish --access public",
+    "icons:check": "node scripts/icon-fixtures.test.mjs",
+    "icons:test": "node scripts/icon-fixtures.test.mjs"
   },
   "keywords": [
     "react-native",
@@ -85,7 +108,7 @@
     "typescript": "^5.9.2"
   },
   "peerDependencies": {
-    "@onekeyfe/react-native-skeleton": "6.7.0-21",
+    "@onekeyfe/react-native-skeleton": "6.7.0-22",
     "react": "*",
     "react-native": "*",
     "react-native-nitro-modules": "0.37.0"
@@ -127,6 +150,16 @@
     "preset": "@react-native/jest-preset",
     "modulePathIgnorePatterns": [
       "<rootDir>/lib/"
-    ]
+    ],
+    "moduleNameMapper": {
+      "^#onekey-icon-assets$": "<rootDir>/../react-native-image/src/icon/assetUrls.ts"
+    }
+  },
+  "imports": {
+    "#onekey-icon-assets": {
+      "types": "./src/icon/assetUrls.ts",
+      "source": "./src/icon/assetUrls.ts",
+      "default": "./lib/module/icon/assetUrls.js"
+    }
   }
 }

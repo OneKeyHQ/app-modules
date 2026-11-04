@@ -109,7 +109,7 @@ final class NativeListIdentityCell: NativeListRendererCell {
   private let mainStack = UIStackView()
   private let titleRowStack = UIStackView()
   private let titleLabel = NativeListTextLabel()
-  private let titleIconView = UIImageView()
+  private let titleIconView = NativeListIconImageView()
   private var titleImageSlot: NativeListImageSlot?
   private var titleImageConstraints: [NSLayoutConstraint] = []
   // Absorbs the title row's slack so the title keeps its intrinsic width and the
@@ -120,7 +120,7 @@ final class NativeListIdentityCell: NativeListRendererCell {
   private let tertiaryLabel = NativeListTextLabel()
   private let badgeLabel = NativeListInsetLabel()
   private let trailingStack = NativeListAccessoryStack(frame: .zero)
-  private let leadingActionButton = UIButton(type: .system)
+  private let leadingActionButton = NativeListIconButton(type: .system)
   private var leadingWidth: NSLayoutConstraint!
   private var leadingHeight: NSLayoutConstraint!
   private var leftInset: CGFloat = 12
@@ -208,6 +208,9 @@ final class NativeListIdentityCell: NativeListRendererCell {
     _ item: NativeListItem, theme: [String: Any]?, layout: String,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
   ) {
+    let iconUpdate = NativeListIconUpdate(self)
+    defer { iconUpdate.finish() }
+
     selectorTypographyRestorers.reversed().forEach { $0() }
     selectorTypographyRestorers = []
     currentItem = item
@@ -298,7 +301,7 @@ final class NativeListIdentityCell: NativeListRendererCell {
     bindIdentity(item, theme: theme, selected: item.data.bool("selected"), checkboxState)
     let style = item.data.dictionary("style") ?? [:]
     if let titleIcon = item.data.dictionary("titleIcon") {
-      titleIconView.image = nativeListIcon(named: titleIcon.string("name"))
+      titleIconView.bindIcon(titleIcon.string("name"))
       titleIconView.tintColor = UIColor(
         nativeListHex: titleIcon.string("tintColor",
           default: theme?["iconSubdued"] as? String ?? "#8D8D8D"),
@@ -407,6 +410,7 @@ final class NativeListIdentityCell: NativeListRendererCell {
     }
     settleTitleRowFillerSpacing()
     applySelectorTypography(item)
+
   }
 
   /// The filler is the title row's last arranged view; the stack's default
@@ -422,6 +426,9 @@ final class NativeListIdentityCell: NativeListRendererCell {
     _ item: NativeListItem,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
   ) {
+    let iconUpdate = NativeListIconUpdate(self)
+    defer { iconUpdate.finish() }
+
     currentItem = item
     trailingStack.updateSelection(item, checkboxState: checkboxState)
     if item.data.string("presentation") == "walletSidebar" {
@@ -439,6 +446,7 @@ final class NativeListIdentityCell: NativeListRendererCell {
         NativeListTextStyles.applyStyledText(titleLabel, style, fonts: fonts)
       }
     }
+
   }
   override func layoutSubviews() {
     super.layoutSubviews()
@@ -610,13 +618,7 @@ final class NativeListIdentityCell: NativeListRendererCell {
         fallback: .darkGray
       )
       leadingActionButton.tintColor = tintColor
-      if let image = nativeListIcon(named: leadingAction.string("name")) {
-        leadingActionButton.setImage(image, for: .normal)
-        leadingActionButton.setImage(
-          image.withTintColor(tintColor, renderingMode: .alwaysOriginal),
-          for: .disabled
-        )
-      }
+      leadingActionButton.bindIcon(leadingAction.string("name"))
       leadingActionButton.isEnabled = !leadingAction.bool("disabled")
       leadingActionButton.alpha = leadingActionButton.isEnabled ? 1 : 0.4
       leadingActionKey = leadingAction.string("actionKey")

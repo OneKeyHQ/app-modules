@@ -12,7 +12,7 @@ final class NativeListDataRowCell: NativeListRendererCell {
   }
 
   private let visual = NativeListLeadingVisual()
-  private let favorite = UIImageView()
+  private let favorite = NativeListIconImageView()
   private let accessories = NativeListAccessoryStack()
   private let trailingAccessories = NativeListAccessoryStack()
   private let columns = UIStackView()
@@ -51,6 +51,9 @@ final class NativeListDataRowCell: NativeListRendererCell {
     _ item: NativeListItem, theme: [String: Any]?, layout: String,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
   ) {
+    let iconUpdate = NativeListIconUpdate(self)
+    defer { iconUpdate.finish() }
+
     let data = item.data
     let style = data.dictionary("style") ?? [:]
     let image = style.dictionary("image") ?? [:]
@@ -64,8 +67,7 @@ final class NativeListDataRowCell: NativeListRendererCell {
     let vp = CGFloat(style.double("verticalPadding", default: layout == "table" ? 10 : 8))
     contentInsets = UIEdgeInsets(top: vp, left: hp, bottom: vp, right: hp)
     favorite.isHidden = !data.bool("favorite") && !data.bool("favoriteActive")
-    favorite.image = nativeListIcon(
-      named: data.bool("favoriteActive") ? "StarSolid" : "StarOutline")
+    favorite.bindIcon(data.bool("favoriteActive") ? "StarSolid" : "StarOutline")
     favorite.tintColor = nativeListColor(
       theme, data.bool("favoriteActive") ? "icon" : "iconSubdued",
       data.bool("favoriteActive") ? "#646464" : "#8D8D8D")
@@ -166,13 +168,18 @@ final class NativeListDataRowCell: NativeListRendererCell {
       NSLayoutConstraint.activate(columnWidthConstraints)
       columnWeights = normalizedWeights
     }
+
   }
   override func bindSelectionContent(
     _ item: NativeListItem,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
   ) {
+    let iconUpdate = NativeListIconUpdate(self)
+    defer { iconUpdate.finish() }
+
     accessories.updateSelection(item, checkboxState: checkboxState)
     trailingAccessories.updateSelection(item, checkboxState: checkboxState)
+
   }
   override func recycleContent() {
     visual.recycle()
@@ -185,8 +192,8 @@ final class NativeListDataRowCell: NativeListRendererCell {
 private final class NativeListTableColumnView: UIStackView {
   private let primaryLine = UIStackView()
   private let primaryLabel = NativeListTextLabel()
-  private let titleIconView = UIImageView()
-  private let secondaryTitleIconView = UIImageView()
+  private let titleIconView = NativeListIconImageView()
+  private let secondaryTitleIconView = NativeListIconImageView()
   private let badgesStack = UIStackView()
   private let secondaryLine = UIStackView()
   private let secondaryLeadingLabel = NativeListTextLabel()
@@ -280,7 +287,7 @@ private final class NativeListTableColumnView: UIStackView {
     for (index, descriptor) in descriptors.enumerated() {
       guard let descriptor else { continue }
       let icon = index == 0 ? titleIconView : secondaryTitleIconView
-      icon.image = nativeListIcon(named: descriptor.string("name"))
+      icon.bindIcon(descriptor.string("name"))
       icon.tintColor = UIColor(
         nativeListHex: descriptor.string("tintColor",
           default: theme?["iconSubdued"] as? String ?? "#8D8D8D"),
@@ -303,6 +310,8 @@ private final class NativeListTableColumnView: UIStackView {
     theme: [String: Any]?,
     fonts: NativeListFontFamilies
   ) {
+    let iconUpdate = NativeListIconUpdate(self)
+    defer { iconUpdate.finish() }
     reset()
     let textAlignment: NSTextAlignment
     switch column.string("alignment") {

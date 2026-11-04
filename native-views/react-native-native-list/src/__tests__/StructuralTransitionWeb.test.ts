@@ -2,6 +2,10 @@ import type { NativeListSnapshot, RowModel } from '../models';
 import * as validation from '../validation';
 import { NativeListWebEngine } from '../web/NativeListWebEngine';
 
+jest.mock('@onekeyfe/react-native-image/icon/dom', () =>
+  jest.requireActual('../../../react-native-image/src/icon/dom')
+);
+
 jest.mock('../web/NativeListWebAvatarCache', () => ({
   acquireNativeListAvatar: jest.fn(),
   canonicalNativeListAvatarUri: jest.fn(),

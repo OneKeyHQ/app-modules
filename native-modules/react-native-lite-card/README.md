@@ -5,6 +5,13 @@ wraps native callbacks in promises for card inspection, PIN changes, mnemonic
 backup/retrieval and reset. It also exposes native NFC connection UI events.
 The application owns the user flow and handling sensitive card data.
 
+## Native SDK source recovery
+
+The restored GPChannel source is in [sdk/](sdk/README.md). CocoaPods compiles it
+on iOS, and Android's CMake build produces the JNI library from the same source.
+No precompiled GPChannel framework or JNI library is included. See
+[docs/SPEC.md](docs/SPEC.md) for the native ownership and recovery contract.
+
 ## Installation
 
 ```sh
@@ -63,4 +70,5 @@ Keep mnemonic and PIN values out of diagnostic messages and event logs.
 
 ## License
 
-MIT.
+The React Native wrapper is MIT licensed. Vendored SDK sources retain their
+upstream notices and are not relicensed by the wrapper.

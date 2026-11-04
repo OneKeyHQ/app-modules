@@ -1,5 +1,53 @@
 # Native Tab View behavioral contract
 
+## Shared image SVG decoder — Implemented
+
+BottomTabs depends on the matching image SDK peer/native module and delegates
+SVG byte decoding to its native facade. No new third-party dependency or SVG
+renderer is introduced. JavaScript props, source resolution and existing tab
+behavior remain unchanged. There is no independent Web SVG reader to migrate.
+
+iOS keeps the existing SvgDecoder RCTImageDataDecoder registration (which is
+available to the React image loader beyond tabs), source detection, failure
+delivery and its no-op cancellation block; only data-to-image implementation
+moves out of the local CoreSVG fork. Existing URI loaders, selected/unselected
+and side-accessory paths, SF Symbols, resize/tint and source ordering remain.
+Raw decoding may retain intrinsic/vector dimensions where the old decoder
+ignored target dimensions; it does not use named-icon workers or wait for a
+main-thread callback.
+
+Android retains Coil fetching, cache and ordinary image decoders. Its SVG factory
+uses image's parse/render facility with the existing requested dimensions,
+Scale.FILL and Precision.EXACT semantics. The independent coil-svg dependency is
+removed once that route is replaced; no URI loading is moved to Glide. Decoder
+execution remains in Coil's existing worker/cancellation/error lifecycle, with
+no additional pool, cache or main-queue hop. Mutable drawable bounds are owned
+per request, while shared raster data remains immutable.
+
+Focused SDK fixtures cover raw SVG and ordinary images through actual RCTImageLoader
+and Coil/BottomTabs consumers, source sizing/non-square art and iOS SF Symbols.
+The current iOS 18.6 fixture does not accept iOS 27.1 side placement; complete
+App styling, platform navigation and signed release acceptance remain separate. Existing source callback races are
+not silently repaired as part of decoding unification. Builds and runtime
+evidence are reported separately. This implementation does not change global image
+loader registration or default-device configuration.
+
+## Tab icon source resolution
+
+String names matching `[A-Z][A-Za-z0-9]*` and explicit `{ iconName }` sources
+resolve to `onekey-icon://` resources. An already prefixed string keeps that
+scheme. Ordinary URI strings (including HTTP(S), file, data and other schemes,
+absolute/relative paths and protocol-relative URLs) use the existing React Native
+image-source path with `{ uri }`; they MUST NOT receive the named-icon prefix.
+Whitespace-only strings resolve to an empty source. Numeric assets, URI objects
+and SF Symbols retain their existing resolution. The shared resolver is used for
+focused/unfocused icons and the iOS side-accessory icon.
+
+The default `getIcon` resolver has a stable identity. With the same routes array
+and resolver, iOS retains both normal and selected icon-source arrays across tab
+selection and unrelated renders. Replacing the routes array or supplying a new
+resolver recomputes both arrays. Android keeps its focus-dependent icon choice.
+
 ## Native left drawer
 
 Status: implemented in module source. Package TypeScript, iOS/Android Fabric

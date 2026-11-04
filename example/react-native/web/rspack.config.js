@@ -52,6 +52,7 @@ module.exports = {
   },
   resolve: {
     alias: {
+      '#onekey-icon-assets$': path.resolve(__dirname, '../icon-fixtures/web/assetUrls.ts'),
       '@onekeyfe/react-native-native-list$': path.resolve(
         __dirname,
         '../../../native-views/react-native-native-list/src',

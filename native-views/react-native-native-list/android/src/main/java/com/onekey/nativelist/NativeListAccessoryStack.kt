@@ -122,6 +122,9 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
     horizontal: Boolean = false,
   ) {
+    val iconUpdate = NativeListIconUpdate(this)
+    try {
+
     selectorUsesSourceScale = sourceScale
     reset()
     tag = item
@@ -179,6 +182,8 @@ internal class NativeListAccessoryStack(context: android.content.Context, val fo
     }
     visibility =
       if ((0 until childCount).any { getChildAt(it).visibility != GONE }) VISIBLE else GONE
+
+    } finally { iconUpdate.finish() }
   }
 
   fun updateSelection(

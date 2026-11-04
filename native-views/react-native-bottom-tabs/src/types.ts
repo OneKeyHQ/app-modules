@@ -5,6 +5,14 @@ export type IconSource = string | ImageSourcePropType;
 
 export type AppleIcon = { sfSymbol: SFSymbol };
 
+export type NamedIcon = { iconName: string };
+
+export type BottomTabIconSource =
+  | ImageSourcePropType
+  | AppleIcon
+  | NamedIcon
+  | string;
+
 export type TabRole = 'search';
 
 // 'leading' and 'trailing' mean a vertical tab bar on that edge.
@@ -17,8 +25,8 @@ export type BaseRoute = {
   badgeBackgroundColor?: string;
   badgeTextColor?: string;
   lazy?: boolean;
-  focusedIcon?: ImageSourcePropType | AppleIcon;
-  unfocusedIcon?: ImageSourcePropType | AppleIcon;
+  focusedIcon?: BottomTabIconSource;
+  unfocusedIcon?: BottomTabIconSource;
   activeTintColor?: string;
   hidden?: boolean;
   testID?: string;
