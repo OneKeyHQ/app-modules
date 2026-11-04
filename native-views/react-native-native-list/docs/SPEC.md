@@ -264,7 +264,8 @@ titleSegments?: readonly {
 
 `identity.titleLeadingIcon` is an optional `{ name, tintColor?,
 accessibilityLabel? }`: a 16-point glyph before the title text or its runs,
-with a 6-point gap, vertically centered on the title line. The name comes from
+with a 6-point gap, vertically centered on the title line. It keeps its 16
+points: a long title, or its shrinking run, truncates first. The name comes from
 the same closed icon set as `titleIcon`; an unmapped name leaves an empty
 16-point slot. `tintColor` is a hex `#RRGGBB` or `#RRGGBBAA` color and defaults
 to the theme's `iconSubdued`. Without `accessibilityLabel` the glyph is hidden
@@ -278,7 +279,7 @@ previous runs and glyph, so a row without them never shows another row's.
 
 | Platform | Title runs | Leading icon |
 | --- | --- | --- |
-| iOS | `NativeListTitleSegmentsLabel` draws the runs at the widths that `NativeListTitleSegmentLayout.swift` allocates for its bounds; it fills the title row in place of the row's filler. | `UIImageView`, first in the title row stack. |
+| iOS | `NativeListTitleSegmentsLabel` draws the runs at the widths that `NativeListTitleSegmentLayout.swift` allocates for its bounds; it fills the title row in place of the row's filler. | `NativeListIconImageView`, first in the title row stack. A plain title beside it drops below required horizontal compression resistance, as beside `titleIcon`, so the title truncates before the glyph narrows. |
 | Android | `NativeListTitleSegmentsView`, a `TextView` whose text is rebuilt for each measured width from `NativeListTitleSegmentLayout.kt` and which measures to the width it is offered. `PackedTitleLineLayout.titleChild` names the flexible title view, so a view may precede it. | `OneKeyIconView`, first in the title line. |
 | Web | A flex line that fills the title line: the shrinking run is `flex: 0 1 auto; min-width: 0`, the others `flex: 0 0 auto` with a `max-width` percentage for a cap. | An icon element before the title text. |
 
@@ -287,7 +288,9 @@ Conformance: `src/validation.ts` (`assertTitleSegments`,
 `src/web/templates/IdentityRowRenderer.ts` with `IdentityTitleRunsWeb.test.ts`
 (run styles, flex behavior, accessibility, rebind);
 `ios/NativeListTitleSegmentLayout.swift` with the SwiftPM
-`NativeListTitleSegmentLayoutTests`; `NativeListTitleSegmentLayout.kt` with the
+`NativeListTitleSegmentLayoutTests`; the iOS leading glyph beside a long plain
+title with the XCTest `NativeListIdentityTitleIconLayoutTests`;
+`NativeListTitleSegmentLayout.kt` with the
 JVM `NativeListTitleSegmentLayoutTest`. iOS, Android and Web runtime acceptance is pending: recipient rows
 with long wallet and account names in both truncation directions, narrow rows,
 dark mode, dynamic type and configured fonts, and recycling between rows with

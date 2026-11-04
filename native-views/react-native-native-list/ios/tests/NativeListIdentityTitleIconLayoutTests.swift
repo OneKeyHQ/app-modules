@@ -78,4 +78,36 @@ final class NativeListIdentityTitleIconLayoutTests: XCTestCase {
     XCTAssertGreaterThan(badgeFrame.minX, iconFrame.maxX)
     XCTAssertLessThanOrEqual(badgeFrame.maxX, cell.bounds.width)
   }
+
+  // An address book row: a plain title after the 16pt `titleLeadingIcon`. A
+  // long name truncates after the glyph instead of squeezing it to nothing.
+  func testLongPlainTitleTruncatesAfterTheLeadingIcon() throws {
+    let cell = NativeListIdentityCell(frame: CGRect(x: 0, y: 0, width: 320, height: 60))
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 200))
+    window.addSubview(cell)
+    let leadingIcon = try child(cell, "titleLeadingIconView", as: UIImageView.self)
+    let titleLabel = try child(cell, "titleLabel", as: UILabel.self)
+    let item = try NativeListItem(data: [
+      "key": "book", "type": "identity",
+      "title": "A very long address book name that cannot possibly fit on one line",
+      "height": 60,
+      "leading": ["kind": "token", "fallbackIcon": ["name": "CryptoCoinOutline"]],
+      "titleLeadingIcon": ["name": "BookOpenOutline"],
+      "subtitle": "0x1234...abcd",
+    ])
+    cell.bind(item: item, theme: nil, layout: "linear", selected: false,
+      checkboxState: { _, _, fallback in fallback }, fonts: NativeListFontFamilies())
+    cell.layoutIfNeeded()
+
+    let iconFrame = leadingIcon.convert(leadingIcon.bounds, to: cell)
+    let labelFrame = titleLabel.convert(titleLabel.bounds, to: cell)
+    XCTAssertFalse(leadingIcon.isHidden)
+    XCTAssertEqual(leadingIcon.bounds.width, 16, accuracy: 0.5,
+      "the leading glyph keeps its 16pt width")
+    XCTAssertEqual(labelFrame.minX, iconFrame.maxX + 6, accuracy: 1,
+      "the title follows the glyph with the 6pt gap")
+    XCTAssertLessThan(titleLabel.bounds.width, titleLabel.intrinsicContentSize.width,
+      "the title truncates instead of the glyph")
+    XCTAssertLessThanOrEqual(labelFrame.maxX, cell.bounds.width)
+  }
 }
