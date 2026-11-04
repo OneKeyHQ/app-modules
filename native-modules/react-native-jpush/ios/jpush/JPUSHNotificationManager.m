@@ -264,6 +264,45 @@
     }];
 }
 
+- (void)getAuthorizationStatus:(void (^)(JPAuthorizationStatus status))completion {
+    UNUserNotificationCenter *center = [self safeNotificationCenter];
+    if (center == nil) {
+        if (completion != nil) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                completion(JPAuthorizationNotDetermined);
+            });
+        }
+        return;
+    }
+    [center getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings * _Nonnull settings) {
+        JPAuthorizationStatus status = JPAuthorizationNotDetermined;
+        switch (settings.authorizationStatus) {
+            case UNAuthorizationStatusDenied:
+                status = JPAuthorizationStatusDenied;
+                break;
+            case UNAuthorizationStatusAuthorized:
+                status = JPAuthorizationStatusAuthorized;
+                break;
+            case UNAuthorizationStatusProvisional:
+                status = JPAuthorizationStatusProvisional;
+                break;
+#if defined(__IPHONE_14_0) && __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_14_0
+            case UNAuthorizationStatusEphemeral:
+                status = JPAuthorizationStatusAuthorized;
+                break;
+#endif
+            default:
+                status = JPAuthorizationNotDetermined;
+                break;
+        }
+        if (completion != nil) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                completion(status);
+            });
+        }
+    }];
+}
+
 - (void)openNotificationSettings:(void (^)(BOOL success))completion {
     dispatch_async(dispatch_get_main_queue(), ^{
 #if __has_include(<UIKit/UIKit.h>)

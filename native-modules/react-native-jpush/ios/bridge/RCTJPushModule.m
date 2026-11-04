@@ -539,7 +539,7 @@ RCT_EXPORT_METHOD(getRegisterId:(RCTResponseSenderBlock)callback) {
 }
 
 RCT_EXPORT_METHOD(isNotificationEnabled:(RCTResponseSenderBlock)callback) {
-    [JPUSHService requestNotificationAuthorization:^(JPAuthorizationStatus status) {
+    [[JPUSHNotificationManager shared] getAuthorizationStatus:^(JPAuthorizationStatus status) {
         BOOL enabled = (status > JPAuthorizationStatusDenied);
         if (callback) {
             callback(@[@(enabled)]);

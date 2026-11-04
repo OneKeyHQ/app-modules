@@ -26,6 +26,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)findNotification:(JPushNotificationIdentifier *)identifier;
 
 - (void)requestAuthorization:(nullable void (^)(JPAuthorizationStatus status))completion;
+- (void)getAuthorizationStatus:(nullable void (^)(JPAuthorizationStatus status))completion;
 - (void)openNotificationSettings:(nullable void (^)(BOOL success))completion;
 
 @end

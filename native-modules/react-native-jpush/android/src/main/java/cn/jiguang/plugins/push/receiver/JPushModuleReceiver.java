@@ -38,24 +38,25 @@ public class JPushModuleReceiver extends JPushMessageReceiver {
 
   @Override
   public void onNotifyMessageArrived(Context context, NotificationMessage notificationMessage) {
-    if (notificationMessage != null) {
-      String eventType =
-          notificationMessage.notificationType == 1 ? "localNotification" : JConstants.NOTIFICATION_ARRIVED;
-      JLogger.i(
-          "onNotifyMessageArrived type="
-              + eventType
-              + " notificationType="
-              + notificationMessage.notificationType
-              + " msgId="
-              + safeId(notificationMessage.msgId)
-              + " notificationId="
-              + notificationMessage.notificationId
-      );
+    if (notificationMessage == null) {
+      return;
     }
+    String eventType =
+        notificationMessage.notificationType == 1 ? "localNotification" : JConstants.NOTIFICATION_ARRIVED;
+    JLogger.i(
+        "onNotifyMessageArrived type="
+            + eventType
+            + " notificationType="
+            + notificationMessage.notificationType
+            + " msgId="
+            + safeId(notificationMessage.msgId)
+            + " notificationId="
+            + notificationMessage.notificationId
+    );
     WritableMap writableMap = JPushHelper.convertNotificationToMap(JConstants.NOTIFICATION_ARRIVED, notificationMessage);
-    if(notificationMessage.notificationType!=1){
+    if (notificationMessage.notificationType != 1) {
       JPushHelper.sendEvent(JConstants.NOTIFICATION_EVENT, writableMap);
-    }else {
+    } else {
       JPushHelper.sendEvent(JConstants.LOCAL_NOTIFICATION_EVENT, writableMap);
     }
   }
@@ -86,12 +87,14 @@ public class JPushModuleReceiver extends JPushMessageReceiver {
               + notificationMessage.notificationId
       );
     }
-    if (JPushModule.reactContext != null) {
-      if (!JPushModule.isAppForeground) JPushHelper.launchApp(context);
-      WritableMap writableMap = JPushHelper.convertNotificationToMap(JConstants.NOTIFICATION_OPENED, notificationMessage);
-      JPushHelper.sendEvent(JConstants.NOTIFICATION_EVENT, writableMap);
+    if (!JPushModule.isAppForeground) {
+      JPushHelper.launchApp(context);
+    }
+    WritableMap writableMap = JPushHelper.convertNotificationToMap(JConstants.NOTIFICATION_OPENED, notificationMessage);
+    if (notificationMessage != null && notificationMessage.notificationType == 1) {
+      JPushHelper.sendEvent(JConstants.LOCAL_NOTIFICATION_EVENT, writableMap);
     } else {
-      super.onNotifyMessageOpened(context, notificationMessage);
+      JPushHelper.sendEvent(JConstants.NOTIFICATION_EVENT, writableMap);
     }
   }
   @Override
@@ -106,13 +109,11 @@ public class JPushModuleReceiver extends JPushMessageReceiver {
               + safeId(notificationMessage.msgId)
       );
     }
-    if (JPushModule.reactContext != null) {
-      if (!JPushModule.isAppForeground) JPushHelper.launchApp(context);
-      WritableMap writableMap = JPushHelper.convertInAppMessageToMap(JConstants.IN_APP_MESSAGE_SHOW, notificationMessage);
-      JPushHelper.sendEvent(JConstants.INAPP_MESSAGE_EVENT, writableMap);
-    } else {
-      super.onInAppMessageShow(context, notificationMessage);
+    if (!JPushModule.isAppForeground) {
+      JPushHelper.launchApp(context);
     }
+    WritableMap writableMap = JPushHelper.convertInAppMessageToMap(JConstants.IN_APP_MESSAGE_SHOW, notificationMessage);
+    JPushHelper.sendEvent(JConstants.INAPP_MESSAGE_EVENT, writableMap);
   }
   @Override
   public void onInAppMessageClick(Context context, NotificationMessage notificationMessage) {
@@ -126,13 +127,11 @@ public class JPushModuleReceiver extends JPushMessageReceiver {
               + safeId(notificationMessage.msgId)
       );
     }
-    if (JPushModule.reactContext != null) {
-      if (!JPushModule.isAppForeground) JPushHelper.launchApp(context);
-      WritableMap writableMap = JPushHelper.convertInAppMessageToMap(JConstants.IN_APP_MESSAGE_CLICK, notificationMessage);
-      JPushHelper.sendEvent(JConstants.INAPP_MESSAGE_EVENT, writableMap);
-    } else {
-      super.onInAppMessageClick(context, notificationMessage);
+    if (!JPushModule.isAppForeground) {
+      JPushHelper.launchApp(context);
     }
+    WritableMap writableMap = JPushHelper.convertInAppMessageToMap(JConstants.IN_APP_MESSAGE_CLICK, notificationMessage);
+    JPushHelper.sendEvent(JConstants.INAPP_MESSAGE_EVENT, writableMap);
   }
 
   @Override
@@ -150,7 +149,11 @@ public class JPushModuleReceiver extends JPushMessageReceiver {
       );
     }
     WritableMap writableMap = JPushHelper.convertNotificationToMap(JConstants.NOTIFICATION_DISMISSED, notificationMessage);
-    JPushHelper.sendEvent(JConstants.NOTIFICATION_EVENT, writableMap);
+    if (notificationMessage != null && notificationMessage.notificationType == 1) {
+      JPushHelper.sendEvent(JConstants.LOCAL_NOTIFICATION_EVENT, writableMap);
+    } else {
+      JPushHelper.sendEvent(JConstants.NOTIFICATION_EVENT, writableMap);
+    }
   }
 
   @Override
@@ -184,13 +187,14 @@ public class JPushModuleReceiver extends JPushMessageReceiver {
 
   @Override
   public void onCommandResult(Context context, CmdMessage message) {
-    if (message != null) {
-      JLogger.i("onCommandResult cmd=" + message.cmd + " errorCode=" + message.errorCode);
+    if (message == null) {
+      return;
     }
+    JLogger.i("onCommandResult cmd=" + message.cmd + " errorCode=" + message.errorCode);
     WritableMap writableMap = Arguments.createMap();
     writableMap.putInt(JConstants.COMMAND, message.cmd);
-    writableMap.putString(JConstants.COMMAND_EXTRA, message.extra.toString());
-    writableMap.putString(JConstants.COMMAND_MESSAGE, message.msg);
+    writableMap.putString(JConstants.COMMAND_EXTRA, message.extra != null ? message.extra.toString() : "");
+    writableMap.putString(JConstants.COMMAND_MESSAGE, message.msg != null ? message.msg : "");
     writableMap.putInt(JConstants.COMMAND_RESULT, message.errorCode);
     JPushHelper.sendEvent(JConstants.COMMAND_EVENT, writableMap);
   }
@@ -241,14 +245,15 @@ public class JPushModuleReceiver extends JPushMessageReceiver {
 
   @Override
   public void onMobileNumberOperatorResult(Context context, JPushMessage jPushMessage) {
-    if (jPushMessage != null) {
-      JLogger.i(
-          "onMobileNumberOperatorResult seq="
-              + jPushMessage.getSequence()
-              + " code="
-              + jPushMessage.getErrorCode()
-      );
+    if (jPushMessage == null) {
+      return;
     }
+    JLogger.i(
+        "onMobileNumberOperatorResult seq="
+            + jPushMessage.getSequence()
+            + " code="
+            + jPushMessage.getErrorCode()
+    );
     WritableMap writableMap = Arguments.createMap();
     writableMap.putInt(JConstants.CODE, jPushMessage.getErrorCode());
     writableMap.putInt(JConstants.SEQUENCE, jPushMessage.getSequence());

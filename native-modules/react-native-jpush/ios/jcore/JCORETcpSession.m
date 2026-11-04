@@ -254,14 +254,7 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
         NSString *ipPort = [NSString stringWithFormat:@"%@:%u", failedEndpoint.host, failedEndpoint.port];
         [[JCOREConfiguration shared] addFailedIp:ipPort];
     }
-    [self cancelConnectTimeoutTimerLocked];
-    if (_connection != nil) {
-        nw_connection_cancel(_connection);
-        _connection = nil;
-    }
-    [_receiveBuffer setLength:0];
-    _connected = NO;
-    _loggedIn = NO;
+    [self tearDownConnectionLocked];
 
     _currentEndpointIndex++;
     if (_currentEndpointIndex < _candidateEndpoints.count) {
@@ -319,9 +312,17 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
                 strongSelf->_connected = NO;
                 strongSelf->_loggedIn = NO;
                 [strongSelf stopHeartbeatLocked];
-                [strongSelf postNotificationOnMain:kJPFNetworkDidCloseNotification userInfo:nil];
-                if (!strongSelf->_userDisconnected && ![JCOREConfiguration shared].pushStopped) {
-                    [strongSelf scheduleReconnectLocked];
+                if (strongSelf->_inFlightRequests.count > 0) {
+                    NSError *closeErr = [NSError errorWithDomain:@"cn.jiguang.jpush"
+                                                            code:6002
+                                                        userInfo:@{NSLocalizedDescriptionKey: @"Connection closed"}];
+                    [strongSelf failAllInFlightRequestsLockedWithError:closeErr];
+                }
+                if (strongSelf->_connection == connection) {
+                    [strongSelf postNotificationOnMain:kJPFNetworkDidCloseNotification userInfo:nil];
+                    if (!strongSelf->_userDisconnected && ![JCOREConfiguration shared].pushStopped && !strongSelf->_connecting) {
+                        [strongSelf scheduleReconnectLocked];
+                    }
                 }
             }
         } else if (state == nw_connection_state_cancelled) {
@@ -329,7 +330,13 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
             strongSelf->_connected = NO;
             strongSelf->_loggedIn = NO;
             [strongSelf stopHeartbeatLocked];
-            if (wasConnected) {
+            if (strongSelf->_inFlightRequests.count > 0) {
+                NSError *closeErr = [NSError errorWithDomain:@"cn.jiguang.jpush"
+                                                        code:6002
+                                                    userInfo:@{NSLocalizedDescriptionKey: @"Connection closed"}];
+                [strongSelf failAllInFlightRequestsLockedWithError:closeErr];
+            }
+            if (wasConnected && strongSelf->_connection == connection) {
                 [strongSelf postNotificationOnMain:kJPFNetworkDidCloseNotification userInfo:nil];
             }
         }
@@ -429,13 +436,14 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
     NSData *regBody = [JCOREWireProtocol buildRegisterPayloadWithAppKey:config.appKey ?: @""
                                                                 channel:config.channel
                                                            bundleIdHash:bundleId];
+    nw_connection_t activeConnection = _connection;
     __weak typeof(self) weakSelf = self;
     [self sendRawCommandLocked:JCOREWireCommandRegister
                        version:30
                       bodyData:regBody
                     completion:^(JCOREWireFrame *responseFrame, NSError *error) {
         __strong typeof(weakSelf) strongSelf = weakSelf;
-        if (!strongSelf) {
+        if (!strongSelf || strongSelf->_connection != activeConnection) {
             return;
         }
         JCORERegisterResponse *parsed = [JCOREWireProtocol parseRegisterResponse:responseFrame];
@@ -457,6 +465,10 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
             [JCOREConfiguration logWarn:[NSString stringWithFormat:@"TCP register failed code=%u", errCode]];
             [strongSelf postNotificationOnMain:kJPFNetworkFailedRegisterNotification
                                       userInfo:@{@"code": @(errCode)}];
+            JCORESisEndpoint *currentEndpoint = (strongSelf->_currentEndpointIndex < strongSelf->_candidateEndpoints.count)
+                ? strongSelf->_candidateEndpoints[strongSelf->_currentEndpointIndex]
+                : nil;
+            [strongSelf advanceToNextCandidateAfterFailureOfEndpoint:currentEndpoint];
         }
     }];
 }
@@ -465,16 +477,21 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
     JCOREConfiguration *config = [JCOREConfiguration shared];
     NSData *loginBody = [JCOREWireProtocol buildLoginPayloadWithPassword:config.password ?: @""
                                                                   appKey:config.appKey ?: @""];
+    nw_connection_t activeConnection = _connection;
     __weak typeof(self) weakSelf = self;
     [self sendRawCommandLocked:JCOREWireCommandLogin
                        version:27
                       bodyData:loginBody
                     completion:^(JCOREWireFrame *responseFrame, NSError *error) {
         __strong typeof(weakSelf) strongSelf = weakSelf;
-        if (!strongSelf) {
+        if (!strongSelf || strongSelf->_connection != activeConnection) {
             return;
         }
+        JCORESisEndpoint *currentEndpoint = (strongSelf->_currentEndpointIndex < strongSelf->_candidateEndpoints.count)
+            ? strongSelf->_candidateEndpoints[strongSelf->_currentEndpointIndex]
+            : nil;
         if (error != nil || responseFrame == nil) {
+            [strongSelf advanceToNextCandidateAfterFailureOfEndpoint:currentEndpoint];
             return;
         }
         JCORELoginResponse *login = [JCOREWireProtocol parseLoginResponse:responseFrame];
@@ -493,6 +510,7 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
         if (login != nil && login.statusCode != 0) {
             [strongSelf postNotificationOnMain:kJPFServiceErrorNotification
                                       userInfo:@{@"code": @(login.statusCode)}];
+            [strongSelf advanceToNextCandidateAfterFailureOfEndpoint:currentEndpoint];
             return;
         }
 
@@ -503,6 +521,7 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
         }
         strongSelf->_loggedIn = YES;
         strongSelf->_reconnectAttempt = 0;
+        [config clearFailedIps];
         [JCOREConfiguration logInfo:[NSString stringWithFormat:@"TCP login success uid=%llu sid=%u registrationId=%@",
                                      config.uid,
                                      strongSelf->_sessionId,
@@ -587,9 +606,15 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
             strongSelf->_connected = NO;
             strongSelf->_loggedIn = NO;
             [strongSelf stopHeartbeatLocked];
-            if (wasConnected) {
+            if (strongSelf->_inFlightRequests.count > 0) {
+                NSError *closeErr = [NSError errorWithDomain:@"cn.jiguang.jpush"
+                                                        code:6002
+                                                    userInfo:@{NSLocalizedDescriptionKey: @"Connection closed"}];
+                [strongSelf failAllInFlightRequestsLockedWithError:closeErr];
+            }
+            if (wasConnected && strongSelf->_connection == connection) {
                 [strongSelf postNotificationOnMain:kJPFNetworkDidCloseNotification userInfo:nil];
-                if (!strongSelf->_userDisconnected && ![JCOREConfiguration shared].pushStopped) {
+                if (!strongSelf->_userDisconnected && ![JCOREConfiguration shared].pushStopped && !strongSelf->_connecting) {
                     [strongSelf scheduleReconnectLocked];
                 }
             }
@@ -910,6 +935,12 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
     [_receiveBuffer setLength:0];
     _connected = NO;
     _loggedIn = NO;
+    if (_inFlightRequests.count > 0) {
+        NSError *err = [NSError errorWithDomain:@"cn.jiguang.jpush"
+                                           code:6002
+                                       userInfo:@{NSLocalizedDescriptionKey: @"Connection closed"}];
+        [self failAllInFlightRequestsLockedWithError:err];
+    }
 }
 
 - (void)disconnect {

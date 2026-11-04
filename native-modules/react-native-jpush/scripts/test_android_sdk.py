@@ -2098,6 +2098,8 @@ public final class SdkEndToEndTestRunner {
         final ServerSocket retryServer = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"));
         final int retryPort = retryServer.getLocalPort();
         final AtomicInteger thirdTokenAttempts = new AtomicInteger(0);
+        final AtomicInteger pushCtrlReceived = new AtomicInteger(0);
+        final CountDownLatch pushCtrlLatch = new CountDownLatch(1);
         Thread retryServerThread = new Thread(new Runnable() {
             @Override
             public void run() {
@@ -2156,6 +2158,9 @@ public final class SdkEndToEndTestRunner {
                             }
                         } else if (frame.command == JCoreWireCodec.CMD_MOBILE_NUMBER) {
                             // Intentionally do not respond so client triggers 6002 timeout
+                        } else if (frame.command == JCoreWireCodec.CMD_PUSH_CTRL) {
+                            pushCtrlReceived.incrementAndGet();
+                            pushCtrlLatch.countDown();
                         }
                     }
                 } catch (Throwable ignored) {
@@ -2220,6 +2225,12 @@ public final class SdkEndToEndTestRunner {
         );
         check(timeoutLatch.await(2000L, TimeUnit.MILLISECONDS), "Unanswered request must time out");
         check(timeoutCode.get() == JPushInterface.ErrorCode.TIMEOUT, "Timed-out request must return ErrorCode.TIMEOUT (6002)");
+        JPushInterface.stopPush(context);
+        check(
+            pushCtrlLatch.await(2000L, TimeUnit.MILLISECONDS) && pushCtrlReceived.get() == 1,
+            "JPushInterface.stopPush must transmit CMD_PUSH_CTRL before closing the socket"
+        );
+        JCoreStorage.setPushStopped(context, false);
         JCoreTcpEngine.getInstance().setDefaultRequestTimeoutMs(5000L);
         JCoreTcpEngine.getInstance().closeSocket();
     }
@@ -2446,6 +2457,57 @@ public final class SdkEndToEndTestRunner {
         check(!joinedLogs.contains("0xdeadbeef_secret"), "Must never log notificationExtras");
         check(!joinedLogs.contains("SECRET_CUSTOM_TITLE") && !joinedLogs.contains("SECRET_CUSTOM_BODY") && !joinedLogs.contains("do_not_log"), "Must never log custom message content");
         check(!joinedLogs.contains("SECRET_USER_ALIAS") && !joinedLogs.contains("13899998888") && !joinedLogs.contains("SECRET_VIP_TAG"), "Must never log alias, mobileNumber, or tags");
+
+        // 5. Verify cold-start JPushModuleReceiver.onNotifyMessageOpened queues into PENDING_NITRO_EVENTS when JPushModule.reactContext == null
+        ReactApplicationContext savedReactContext = JPushModule.reactContext;
+        JPushModule.reactContext = null;
+        final List<String> coldStartOpenedEvents = new java.util.ArrayList<String>();
+        try {
+            int drainId = cn.jiguang.plugins.push.helper.JPushHelper.registerNitroListener(
+                new cn.jiguang.plugins.push.helper.JPushHelper.NitroEventListener() {
+                    @Override
+                    public void onEvent(String eventName, String payloadJson) {
+                    }
+                }
+            );
+            cn.jiguang.plugins.push.helper.JPushHelper.unregisterNitroListener(drainId);
+
+            NotificationMessage coldStartOpenMsg = new NotificationMessage();
+            coldStartOpenMsg.msgId = "msg_cold_open_001";
+            coldStartOpenMsg.notificationId = 8809;
+            coldStartOpenMsg.notificationType = 0;
+            coldStartOpenMsg.notificationTitle = "Cold Start Title";
+            coldStartOpenMsg.notificationContent = "Cold Start Body";
+            receiver.onNotifyMessageOpened(context, coldStartOpenMsg);
+
+            NotificationMessage coldStartLocalOpenMsg = new NotificationMessage();
+            coldStartLocalOpenMsg.msgId = "msg_cold_local_002";
+            coldStartLocalOpenMsg.notificationId = 8810;
+            coldStartLocalOpenMsg.notificationType = 1;
+            coldStartLocalOpenMsg.notificationTitle = "Local Cold Title";
+            coldStartLocalOpenMsg.notificationContent = "Local Cold Body";
+            receiver.onNotifyMessageOpened(context, coldStartLocalOpenMsg);
+
+            int coldNitroId = cn.jiguang.plugins.push.helper.JPushHelper.registerNitroListener(
+                new cn.jiguang.plugins.push.helper.JPushHelper.NitroEventListener() {
+                    @Override
+                    public void onEvent(String eventName, String payloadJson) {
+                        coldStartOpenedEvents.add(eventName + ":" + payloadJson);
+                    }
+                }
+            );
+            cn.jiguang.plugins.push.helper.JPushHelper.unregisterNitroListener(coldNitroId);
+        } finally {
+            JPushModule.reactContext = savedReactContext;
+        }
+        check(
+            coldStartOpenedEvents.size() == 2
+                && coldStartOpenedEvents.get(0).startsWith("NotificationEvent:")
+                && coldStartOpenedEvents.get(0).contains("notificationOpened")
+                && coldStartOpenedEvents.get(1).startsWith("LocalNotificationEvent:")
+                && coldStartOpenedEvents.get(1).contains("notificationOpened"),
+            "JPushModuleReceiver.onNotifyMessageOpened must queue NotificationEvent and LocalNotificationEvent into PENDING_NITRO_EVENTS when JPushModule.reactContext == null"
+        );
     }
 
     public static void main(String[] args) throws Exception {

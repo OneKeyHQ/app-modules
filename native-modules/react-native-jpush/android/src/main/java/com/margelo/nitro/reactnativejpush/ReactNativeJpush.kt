@@ -212,6 +212,9 @@ class ReactNativeJpush : HybridReactNativeJpushSpec() {
     JPushInterface.setPowerSaveMode(ctx, enable)
   }
 
+  private fun resolveNotificationId(messageID: String): Long =
+    messageID.toLongOrNull() ?: messageID.hashCode().toLong()
+
   override fun addLocalNotification(
     messageID: String,
     title: String,
@@ -220,7 +223,7 @@ class ReactNativeJpush : HybridReactNativeJpushSpec() {
     extrasJson: String
   ) {
     val ctx = getReactContext() ?: return
-    val id = messageID.toLongOrNull() ?: 0L
+    val id = resolveNotificationId(messageID)
     val notification = JPushLocalNotification()
     notification.notificationId = id
     notification.title = title.ifEmpty { ctx.packageName }
@@ -237,7 +240,8 @@ class ReactNativeJpush : HybridReactNativeJpushSpec() {
 
   override fun removeLocalNotification(messageID: String) {
     val ctx = getReactContext() ?: return
-    val id = messageID.toLongOrNull() ?: return
+    if (messageID.isEmpty()) return
+    val id = resolveNotificationId(messageID)
     JPushInterface.removeLocalNotification(ctx, id)
   }
 

@@ -341,8 +341,7 @@ public class JPushModule extends ReactContextBaseJavaModule {
         if (readableMap.hasKey(JConstants.PROPERTIES)) {
             int sequence = readableMap.getInt(JConstants.SEQUENCE);
             ReadableMap readMap = readableMap.getMap(JConstants.PROPERTIES);
-            ReadableNativeMap map= (ReadableNativeMap) readMap;
-            HashMap properties=map.toHashMap();
+            HashMap<String, Object> properties = readMap != null ? readMap.toHashMap() : new HashMap<String, Object>();
             JPushInterface.setProperties(reactContext,sequence,properties);
         } else {
             JLogger.w("there are no " + JConstants.PROPERTIES);
@@ -357,8 +356,7 @@ public class JPushModule extends ReactContextBaseJavaModule {
         if (readableMap.hasKey(JConstants.PROPERTIES)) {
             int sequence = readableMap.getInt(JConstants.SEQUENCE);
             ReadableMap readMap = readableMap.getMap(JConstants.PROPERTIES);
-            ReadableNativeMap map= (ReadableNativeMap) readMap;
-            HashMap properties=map.toHashMap();
+            HashMap<String, Object> properties = readMap != null ? readMap.toHashMap() : new HashMap<String, Object>();
             JPushInterface.deleteProperties(reactContext,sequence,properties);
         } else {
             JLogger.w("there are no " + JConstants.PROPERTIES);
@@ -547,7 +545,7 @@ public class JPushModule extends ReactContextBaseJavaModule {
             JLogger.w(JConstants.PARAMS_ILLEGAL);
             return;
         }
-        int id = Integer.valueOf(notificationID);
+        long id = parseNotificationId(notificationID);
         String notificationTitle = readableMap.hasKey(JConstants.TITLE) ? readableMap.getString(JConstants.TITLE) : reactContext.getPackageName();
         String notificationContent = readableMap.hasKey(JConstants.CONTENT) ? readableMap.getString(JConstants.CONTENT) : reactContext.getPackageName();
         String broadcastTime = readableMap.hasKey(JConstants.BROADCAST_TIME) ? readableMap.getString(JConstants.BROADCAST_TIME) : "0";
@@ -608,6 +606,14 @@ public class JPushModule extends ReactContextBaseJavaModule {
         JPushInterface.addLocalNotification(reactContext, notification);
     }
 
+    private static long parseNotificationId(String notificationID) {
+        try {
+            return Long.parseLong(notificationID);
+        } catch (NumberFormatException ignored) {
+            return (long) notificationID.hashCode();
+        }
+    }
+
     @ReactMethod
     public void removeLocalNotification(ReadableMap readableMap) {
         if (readableMap == null) {
@@ -620,7 +626,7 @@ public class JPushModule extends ReactContextBaseJavaModule {
                 JLogger.w(JConstants.PARAMS_ILLEGAL);
                 return;
             }
-            int id = Integer.valueOf(notificationID);
+            long id = parseNotificationId(notificationID);
             JPushInterface.removeLocalNotification(reactContext, id);
         } else {
             JLogger.w("there are no " + JConstants.MESSAGE_ID);

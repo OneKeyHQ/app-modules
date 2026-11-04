@@ -828,7 +828,7 @@ static void testEndToEndMockServerHandshake(void) {
 }
 
 static void testFailoverFastLoginReRegisterAndHttpReport(void) {
-    // 1. Reserve a dead port (bind then immediately close) and a live server port
+    // 1. Reserve a dead port (bind then immediately close), a handshake-error port, and a live server port
     int deadFd = socket(AF_INET, SOCK_STREAM, 0);
     struct sockaddr_in deadAddr;
     memset(&deadAddr, 0, sizeof(deadAddr));
@@ -841,8 +841,21 @@ static void testFailoverFastLoginReRegisterAndHttpReport(void) {
     uint16_t deadPort = ntohs(deadAddr.sin_port);
     close(deadFd);
 
-    int liveFd = socket(AF_INET, SOCK_STREAM, 0);
+    int errFd = socket(AF_INET, SOCK_STREAM, 0);
     int reuse = 1;
+    setsockopt(errFd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    struct sockaddr_in errAddr;
+    memset(&errAddr, 0, sizeof(errAddr));
+    errAddr.sin_family = AF_INET;
+    errAddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    errAddr.sin_port = 0;
+    ASSERT_TRUE(bind(errFd, (struct sockaddr *)&errAddr, sizeof(errAddr)) == 0, "err bind() failed");
+    ASSERT_TRUE(listen(errFd, 2) == 0, "err listen() failed");
+    socklen_t errLen = sizeof(errAddr);
+    getsockname(errFd, (struct sockaddr *)&errAddr, &errLen);
+    uint16_t errPort = ntohs(errAddr.sin_port);
+
+    int liveFd = socket(AF_INET, SOCK_STREAM, 0);
     setsockopt(liveFd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
     struct sockaddr_in liveAddr;
     memset(&liveAddr, 0, sizeof(liveAddr));
@@ -855,17 +868,26 @@ static void testFailoverFastLoginReRegisterAndHttpReport(void) {
     getsockname(liveFd, (struct sockaddr *)&liveAddr, &liveLen);
     uint16_t livePort = ntohs(liveAddr.sin_port);
 
+    NSString *expectedDeadIpPort = [NSString stringWithFormat:@"127.0.0.1:%u", deadPort];
+    NSString *expectedErrIpPort = [NSString stringWithFormat:@"127.0.0.1:%u", errPort];
+
     // Client already has stored registration from Suite 4 (uid=900100200).
-    // On connection #1:
-    //   - Client fast-logs-in (first frame is Login cmd=1, NOT Register cmd=0!)
-    //   - Server replies with Login statusCode=108 (invalid uid), triggering automatic re-Register(cmd=0) -> Login(cmd=1)
-    //   - Server then closes connection #1 to trigger auto-reconnect with exponential backoff
-    // On connection #2 (auto-reconnect):
-    //   - Client fast-logs-in with the new uid (900100201) and succeeds!
+    // Candidate 0 (deadPort): TCP connect fails -> advances to Candidate 1
+    // Candidate 1 (errPort): TCP connect succeeds, Fast-Login returns statusCode=1005 -> advances to Candidate 2
+    // Candidate 2 (livePort):
+    //   - On connection #1:
+    //     - Client fast-logs-in (first frame is Login cmd=1, NOT Register cmd=0!)
+    //     - Server replies with Login statusCode=108 (invalid uid), triggering automatic re-Register(cmd=0) -> Login(cmd=1)
+    //     - Upon Login(cmd=1) success, failedIps is cleared!
+    //     - Server then closes connection #1 to trigger auto-reconnect with exponential backoff
+    //   - On connection #2 (auto-reconnect):
+    //     - Client fast-logs-in with the new uid (900100201) and succeeds!
     const uint64_t newAssignedUid = 900100201ULL;
     NSString *const newPassword = @"mock_srv_pwd_re108";
     NSString *const newRegId = @"1a0018970a900100201";
 
+    __block BOOL errCandidateAdvanced = NO;
+    __block BOOL sawFailedIpsBeforeLogin = NO;
     __block BOOL firstFrameWasFastLogin = NO;
     __block BOOL reRegisteredAfter108 = NO;
     __block BOOL autoReconnectedAndLoggedIn = NO;
@@ -874,10 +896,34 @@ static void testFailoverFastLoginReRegisterAndHttpReport(void) {
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
         struct sockaddr_in cAddr;
         socklen_t cLen = sizeof(cAddr);
+        int cErrFd = accept(errFd, (struct sockaddr *)&cAddr, &cLen);
+        ASSERT_TRUE(cErrFd >= 0, "accept on errFd failed");
+        struct timeval tv = {.tv_sec = 10, .tv_usec = 0};
+        setsockopt(cErrFd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+        JCOREWireFrame *errLoginFrame = readSingleClientFrameOnServer(cErrFd);
+        ASSERT_TRUE(errLoginFrame != nil && errLoginFrame.command == JCOREWireCommandLogin,
+                    "Expected Fast-Login (cmd=1) on errPort candidate");
+        NSData *err1005Body = [JCOREWireProtocol buildLoginResponsePayloadWithStatusCode:1005
+                                                                               sessionId:0
+                                                                           serverVersion:600
+                                                                            errorMessage:@"server busy"
+                                                                         serverTimestamp:1700000199
+                                                                                     idc:0];
+        NSData *err1005Frame = [JCOREWireProtocol encodeServerFrameWithCommand:JCOREWireCommandLogin
+                                                                       version:27
+                                                                     requestId:errLoginFrame.requestId
+                                                                           uid:errLoginFrame.uid
+                                                                     algorithm:1
+                                                                    statusCode:1005
+                                                                      bodyData:err1005Body];
+        ASSERT_TRUE(writeExactBytes(cErrFd, err1005Frame.bytes, err1005Frame.length), "Failed writing 1005 response");
+        errCandidateAdvanced = YES;
+        close(cErrFd);
+        close(errFd);
+
         int cFd1 = accept(liveFd, (struct sockaddr *)&cAddr, &cLen);
         ASSERT_TRUE(cFd1 >= 0, "accept #1 failed");
-
-        struct timeval tv = {.tv_sec = 10, .tv_usec = 0};
         setsockopt(cFd1, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
         // Connection #1: Expect Fast-Login (cmd=1) first!
@@ -885,6 +931,9 @@ static void testFailoverFastLoginReRegisterAndHttpReport(void) {
         ASSERT_TRUE(fastLoginFrame != nil && fastLoginFrame.command == JCOREWireCommandLogin,
                     "Expected Fast-Login (cmd=1) on registered device, got cmd=%u", fastLoginFrame.command);
         firstFrameWasFastLogin = YES;
+        NSSet<NSString *> *failedBeforeLogin = [NSSet setWithArray:[JCOREConfiguration shared].failedIps];
+        sawFailedIpsBeforeLogin = [failedBeforeLogin containsObject:expectedDeadIpPort] &&
+                                  [failedBeforeLogin containsObject:expectedErrIpPort];
 
         // Return statusCode = 108 to force re-registration
         NSData *err108Body = [JCOREWireProtocol buildLoginResponsePayloadWithStatusCode:108
@@ -971,7 +1020,8 @@ static void testFailoverFastLoginReRegisterAndHttpReport(void) {
     [config updateWithSisDictionary:@{
         @"ssl_ips": @[],
         @"ips": @[
-            [NSString stringWithFormat:@"127.0.0.1:%u", deadPort],
+            expectedDeadIpPort,
+            expectedErrIpPort,
             [NSString stringWithFormat:@"127.0.0.1:%u", livePort],
         ],
     }];
@@ -1003,9 +1053,11 @@ static void testFailoverFastLoginReRegisterAndHttpReport(void) {
     [[NSNotificationCenter defaultCenter] removeObserver:loginObs];
     [[JCORETcpSession shared] disconnect];
 
-    NSString *expectedDeadIpPort = [NSString stringWithFormat:@"127.0.0.1:%u", deadPort];
-    ASSERT_TRUE([config.failedIps containsObject:expectedDeadIpPort],
-                "Failed endpoint %@ was not recorded in failedIps: %@", expectedDeadIpPort, config.failedIps);
+    ASSERT_TRUE(errCandidateAdvanced && sawFailedIpsBeforeLogin,
+                "Failed endpoints (%@, %@) must be recorded in failedIps before login succeeds",
+                expectedDeadIpPort, expectedErrIpPort);
+    ASSERT_TRUE(config.failedIps.count == 0,
+                "failedIps must be cleared upon successful CMD_LOGIN, got: %@", config.failedIps);
     ASSERT_TRUE(firstFrameWasFastLogin && reRegisteredAfter108 && autoReconnectedAndLoggedIn,
                 "Failover / Fast-Login / 108 Re-Register / Auto-Reconnect state flags incomplete");
 

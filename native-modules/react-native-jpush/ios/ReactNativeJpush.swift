@@ -82,11 +82,18 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
   }
 
   func isNotificationEnabled() throws -> Bool {
+    guard let bundleId = Bundle.main.bundleIdentifier, !bundleId.isEmpty else {
+      return false
+    }
     let semaphore = DispatchSemaphore(value: 0)
     var enabled = false
     UNUserNotificationCenter.current().getNotificationSettings { settings in
-      enabled = settings.authorizationStatus == .authorized ||
-                settings.authorizationStatus == .provisional
+      let status = settings.authorizationStatus
+      if #available(iOS 14.0, *) {
+        enabled = status == .authorized || status == .provisional || status == .ephemeral
+      } else {
+        enabled = status == .authorized || status == .provisional
+      }
       semaphore.signal()
     }
     _ = semaphore.wait(timeout: .now() + .milliseconds(500))
@@ -490,7 +497,9 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
   }
 
   func readNewLogs() throws -> String {
-    return ""
+    let logs = JCOREConfiguration.recentLogs().joined(separator: "\n")
+    JCOREConfiguration.clearRecentLogs()
+    return logs
   }
 
   func addEventListener(

@@ -714,6 +714,19 @@ public class ActionHelper {
     public void setPushStatusWithCallBack(Context context, int protoType, int action) {
         boolean stopped = (action == 0);
         byte[] wireBody = JCoreWireCodec.buildPushControlPayload(stopped);
+        if (!stopped && shouldQueueOrWaitForServerAck()) {
+            JCoreTcpEngine.getInstance().enqueueOrSendRequest(
+                context,
+                JCoreWireCodec.CMD_PUSH_CTRL,
+                JCoreWireCodec.VER_PUSH_CTRL,
+                JCoreStorage.nextRid(),
+                wireBody,
+                JCoreTcpEngine.getInstance().getDefaultRequestTimeoutMs(),
+                0,
+                null
+            );
+            return;
+        }
         JCoreTcpEngine.getInstance().sendFrameRaw(
             JCoreWireCodec.CMD_PUSH_CTRL,
             JCoreWireCodec.VER_PUSH_CTRL,

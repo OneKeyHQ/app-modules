@@ -761,8 +761,12 @@ callbackSelector:(SEL)cbSelector
 
 + (void)turnOFFPush {
     [JCOREConfiguration shared].pushStopped = YES;
-    NSData *body = [JCOREWireProtocol buildPushControlPayloadWithStopped:YES];
-    [[JCORETcpSession shared] sendCommand:JCOREWireCommandPushCtrl version:1 bodyData:body completion:nil];
+    if ([[JCORETcpSession shared] isConnected] && [[JCORETcpSession shared] isLoggedIn]) {
+        NSData *body = [JCOREWireProtocol buildPushControlPayloadWithStopped:YES];
+        [[JCORETcpSession shared] sendCommand:JCOREWireCommandPushCtrl version:1 bodyData:body completion:nil];
+    } else {
+        [[JCORETcpSession shared] disconnect];
+    }
 }
 
 @end
