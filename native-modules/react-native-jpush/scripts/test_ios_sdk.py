@@ -1354,16 +1354,12 @@ static void testRctJPushModuleMultiRuntimeAndBridgelessEvents(void) {
         }];
     }];
     ASSERT_TRUE(nitroListenerId > 0, "Expected positive nitroListenerId");
-    ASSERT_TRUE([RCTJPushEventQueue sharedInstance]._notificationQueue.count == 1,
-                "registerNitroEventListener must NOT prematurely drain _notificationQueue before flushQueuedNotifications");
-    ASSERT_TRUE(nitroEvents.count == 1 && [nitroEvents.firstObject[@"name"] isEqualToString:@"TagAliasEvent"] &&
+    ASSERT_TRUE([RCTJPushEventQueue sharedInstance]._notificationQueue.count == 0,
+                "_notificationQueue must be drained when registerNitroEventListener is called");
+    ASSERT_TRUE(nitroEvents.count == 2 && [nitroEvents.firstObject[@"name"] isEqualToString:@"TagAliasEvent"] &&
                 [nitroEvents.firstObject[@"json"] containsString:@"pure_nitro_alias"],
                 "Expected cold-start TagAliasEvent flushed from sPendingNitroEvents even when eagerModule was active, got %@", nitroEvents);
-
-    [RCTJPushModule flushQueuedNotifications];
-    ASSERT_TRUE([RCTJPushEventQueue sharedInstance]._notificationQueue.count == 0,
-                "_notificationQueue must be drained after flushQueuedNotifications in pure Nitro mode");
-    ASSERT_TRUE(nitroEvents.count == 2 && [nitroEvents[1][@"name"] isEqualToString:@"NotificationEvent"] &&
+    ASSERT_TRUE([nitroEvents[1][@"name"] isEqualToString:@"NotificationEvent"] &&
                 [nitroEvents[1][@"json"] containsString:@"nitro_apns_cold_02"],
                 "Expected queued APNs NotificationEvent delivered to Nitro listener, got %@", nitroEvents);
 
@@ -1375,6 +1371,64 @@ static void testRctJPushModuleMultiRuntimeAndBridgelessEvents(void) {
 
     [RCTJPushModule unregisterNitroEventListener:nitroListenerId];
     [RCTJPushModule clearActiveModules];
+
+    // 6b. Verify cold-start J_APNS_NOTIFICATION_ARRIVED_EVENT and J_LOCAL_NOTIFICATION_ARRIVED_EVENT
+    //     preserve notificationEventType == "notificationArrived" without leaking _j_InternalNotificationName
+    [[RCTJPushEventQueue sharedInstance]._notificationQueue removeAllObjects];
+    [[RCTJPushEventQueue sharedInstance]._localNotificationQueue removeAllObjects];
+    [RCTJPushModule ensureSharedNativeObservers];
+    [[NSNotificationCenter defaultCenter] postNotificationName:J_APNS_NOTIFICATION_ARRIVED_EVENT
+                                                        object:@{
+                                                            @"_j_msgid": @"apns_arrived_cold_601",
+                                                            @"aps": @{@"alert": @{@"title": @"ArrivedApns", @"body": @"Body"}},
+                                                            @"customKey": @"customVal",
+                                                        }];
+    [[NSNotificationCenter defaultCenter] postNotificationName:J_LOCAL_NOTIFICATION_ARRIVED_EVENT
+                                                        object:@{
+                                                            @"messageID": @"local_arrived_cold_602",
+                                                            @"title": @"ArrivedLocal",
+                                                            @"content": @"LocalBody",
+                                                            @"extras": @{@"k": @"v"},
+                                                        }];
+    ASSERT_TRUE([RCTJPushEventQueue sharedInstance]._notificationQueue.count == 1,
+                "Expected 1 queued APNs arrived notification");
+    ASSERT_TRUE([RCTJPushEventQueue sharedInstance]._localNotificationQueue.count == 1,
+                "Expected 1 queued local arrived notification");
+    NSMutableArray<NSDictionary *> *arrivedColdEvents = [NSMutableArray array];
+    NSInteger arrivedListenerId = [RCTJPushModule registerNitroEventListener:^(NSString *eventName, NSString *payloadJson) {
+        [arrivedColdEvents addObject:@{@"name": eventName ?: @"", @"json": payloadJson ?: @""}];
+    }];
+    ASSERT_TRUE(arrivedColdEvents.count == 2, "Expected 2 flushed arrived events, got %@", arrivedColdEvents);
+    ASSERT_TRUE([arrivedColdEvents[0][@"name"] isEqualToString:@"NotificationEvent"] &&
+                [arrivedColdEvents[0][@"json"] containsString:@"apns_arrived_cold_601"] &&
+                [arrivedColdEvents[0][@"json"] containsString:@"notificationArrived"] &&
+                ![arrivedColdEvents[0][@"json"] containsString:@"_j_InternalNotificationName"],
+                "Cold-start APNs arrived event must preserve notificationArrived without leaking internal key, got %@", arrivedColdEvents[0]);
+    ASSERT_TRUE([arrivedColdEvents[1][@"name"] isEqualToString:@"LocalNotificationEvent"] &&
+                [arrivedColdEvents[1][@"json"] containsString:@"local_arrived_cold_602"] &&
+                [arrivedColdEvents[1][@"json"] containsString:@"notificationArrived"] &&
+                ![arrivedColdEvents[1][@"json"] containsString:@"_j_InternalNotificationName"],
+                "Cold-start local arrived event must preserve notificationArrived without leaking internal key, got %@", arrivedColdEvents[1]);
+    [RCTJPushModule unregisterNitroEventListener:arrivedListenerId];
+    [RCTJPushModule clearActiveModules];
+
+    // 6c. Verify JCOREConfiguration.setLocalLogEnabled buffers logs even when logOff == YES and clears when disabled
+    [JCOREConfiguration clearRecentLogs];
+    [JCOREConfiguration shared].logOff = YES;
+    [JCOREConfiguration setLocalLogEnabled:YES];
+    [JCOREConfiguration logInfo:@"local_log_while_off_01"];
+    ASSERT_TRUE([JCOREConfiguration recentLogs].count == 1 &&
+                [[JCOREConfiguration recentLogs].firstObject containsString:@"local_log_while_off_01"],
+                "setLocalLogEnabled(YES) must buffer logs into recentLogs even when logOff == YES");
+    [JCOREConfiguration setLocalLogEnabled:NO];
+    ASSERT_TRUE([JCOREConfiguration recentLogs].count == 0,
+                "setLocalLogEnabled(NO) must clear recentLogs");
+    [JCOREConfiguration logInfo:@"local_log_disabled_02"];
+    ASSERT_TRUE([JCOREConfiguration recentLogs].count == 0,
+                "setLocalLogEnabled(NO) must prevent buffering into recentLogs");
+    [JCOREConfiguration setLocalLogEnabled:YES];
+    [JCOREConfiguration shared].logOff = NO;
+    [JCOREConfiguration clearRecentLogs];
 
     // 7. Verify [JPUSHService setupWithOption:@{UIApplicationLaunchOptionsRemoteNotificationKey: ...}]
     //    registers RCTJPushModule native observers at cold start and queues the launch notification into RCTJPushEventQueue

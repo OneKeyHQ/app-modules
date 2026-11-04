@@ -152,7 +152,7 @@ RCT_EXPORT_MODULE(JPushModule);
         listenerId = sNextNitroListenerId++;
         sNitroListeners[@(listenerId)] = [listener copy];
     }
-    [self flushPendingBridgeEvents];
+    [self flushQueuedNotifications];
     return listenerId;
 }
 
@@ -671,6 +671,7 @@ RCT_EXPORT_METHOD(deleteProperties:(NSDictionary *)params) {
         [JPUSHService deleteProperties:set completion:^(NSInteger iResCode, NSDictionary *props, NSInteger seq) {
             NSDictionary *data = @{CODE: @(iResCode), SEQUENCE: @(seq), PROS: props ?: @{}};
             [self sendTagAliasEvent:data];
+            [self sendPropertiesEvent:data];
         } seq:sequence];
     }
 }
@@ -680,6 +681,7 @@ RCT_EXPORT_METHOD(cleanProperties:(NSDictionary *)params) {
     [JPUSHService cleanProperties:^(NSInteger iResCode, NSDictionary *props, NSInteger seq) {
         NSDictionary *data = @{CODE: @(iResCode), SEQUENCE: @(seq), PROS: props ?: @{}};
         [self sendTagAliasEvent:data];
+        [self sendPropertiesEvent:data];
     } seq:sequence];
 }
 
@@ -925,7 +927,9 @@ RCT_EXPORT_METHOD(setGeofeneceMaxCount:(NSDictionary *)params) {
             if ([RCTJPushEventQueue sharedInstance]._notificationQueue == nil) {
                 [RCTJPushEventQueue sharedInstance]._notificationQueue = [NSMutableArray array];
             }
-            [[RCTJPushEventQueue sharedInstance]._notificationQueue addObject:objectData];
+            NSMutableDictionary *queuedItem = [NSMutableDictionary dictionaryWithDictionary:objectData];
+            queuedItem[@"_j_InternalNotificationName"] = data.name ?: J_APNS_NOTIFICATION_OPENED_EVENT;
+            [[RCTJPushEventQueue sharedInstance]._notificationQueue addObject:[queuedItem copy]];
         }
         return;
     }
@@ -977,7 +981,9 @@ RCT_EXPORT_METHOD(setGeofeneceMaxCount:(NSDictionary *)params) {
             if ([RCTJPushEventQueue sharedInstance]._localNotificationQueue == nil) {
                 [RCTJPushEventQueue sharedInstance]._localNotificationQueue = [NSMutableArray array];
             }
-            [[RCTJPushEventQueue sharedInstance]._localNotificationQueue addObject:objectData];
+            NSMutableDictionary *queuedItem = [NSMutableDictionary dictionaryWithDictionary:objectData];
+            queuedItem[@"_j_InternalNotificationName"] = data.name ?: J_LOCAL_NOTIFICATION_OPENED_EVENT;
+            [[RCTJPushEventQueue sharedInstance]._localNotificationQueue addObject:[queuedItem copy]];
         }
         return;
     }
@@ -1018,8 +1024,12 @@ RCT_EXPORT_METHOD(setGeofeneceMaxCount:(NSDictionary *)params) {
             objectData = [(NSNotification *)data object];
         }
     } else if ([data isKindOfClass:[NSDictionary class]]) {
-        notificationName = J_APNS_NOTIFICATION_OPENED_EVENT;
-        objectData = data;
+        NSDictionary *dictData = (NSDictionary *)data;
+        NSString *internalName = [dictData[@"_j_InternalNotificationName"] isKindOfClass:[NSString class]]
+            ? dictData[@"_j_InternalNotificationName"]
+            : nil;
+        notificationName = internalName.length > 0 ? internalName : J_APNS_NOTIFICATION_OPENED_EVENT;
+        objectData = dictData;
     }
     NSString *notificationEventType = [notificationName isEqualToString:J_APNS_NOTIFICATION_OPENED_EVENT]
         ? NOTIFICATION_OPENED
@@ -1040,6 +1050,7 @@ RCT_EXPORT_METHOD(setGeofeneceMaxCount:(NSDictionary *)params) {
     [copyData removeObjectForKey:@"_j_business"];
     [copyData removeObjectForKey:@"_j_uid"];
     [copyData removeObjectForKey:@"_j_msgid"];
+    [copyData removeObjectForKey:@"_j_InternalNotificationName"];
     [copyData removeObjectForKey:@"aps"];
 
     NSMutableDictionary *extrasData = [NSMutableDictionary dictionary];
@@ -1080,8 +1091,14 @@ RCT_EXPORT_METHOD(setGeofeneceMaxCount:(NSDictionary *)params) {
             objectData = [(NSNotification *)data object];
         }
     } else if ([data isKindOfClass:[NSDictionary class]]) {
-        notificationName = J_LOCAL_NOTIFICATION_OPENED_EVENT;
-        objectData = data;
+        NSDictionary *dictData = (NSDictionary *)data;
+        NSString *internalName = [dictData[@"_j_InternalNotificationName"] isKindOfClass:[NSString class]]
+            ? dictData[@"_j_InternalNotificationName"]
+            : nil;
+        notificationName = internalName.length > 0 ? internalName : J_LOCAL_NOTIFICATION_OPENED_EVENT;
+        NSMutableDictionary *cleanData = [NSMutableDictionary dictionaryWithDictionary:dictData];
+        [cleanData removeObjectForKey:@"_j_InternalNotificationName"];
+        objectData = [cleanData copy];
     }
     NSString *notificationEventType = [notificationName isEqualToString:J_LOCAL_NOTIFICATION_OPENED_EVENT]
         ? NOTIFICATION_OPENED

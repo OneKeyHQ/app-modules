@@ -86,11 +86,15 @@ public class JPushModule extends ReactContextBaseJavaModule {
     public void init() {
         JPushInterface.init(reactContext);
         if (JPushBroadcastReceiver.NOTIFICATION_BUNDLE != null) {
+            Bundle bundle = JPushBroadcastReceiver.NOTIFICATION_BUNDLE;
             java.util.Map<String, Object> map = JPushHelper.convertNotificationBundleToMapObject(
                 JConstants.NOTIFICATION_OPENED,
-                JPushBroadcastReceiver.NOTIFICATION_BUNDLE
+                bundle
             );
-            JPushHelper.sendEventMap(JConstants.NOTIFICATION_EVENT, map);
+            String eventName = bundle.getInt(JPushInterface.EXTRA_NOTI_TYPE, 0) == 1
+                ? JConstants.LOCAL_NOTIFICATION_EVENT
+                : JConstants.NOTIFICATION_EVENT;
+            JPushHelper.sendEventMap(eventName, map);
             JPushBroadcastReceiver.NOTIFICATION_BUNDLE = null;
         }
         JPushInterface.setNotificationCallBackEnable(reactContext,true);

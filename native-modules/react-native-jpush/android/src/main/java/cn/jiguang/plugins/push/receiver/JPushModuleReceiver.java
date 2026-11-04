@@ -75,6 +75,7 @@ public class JPushModuleReceiver extends JPushMessageReceiver {
   }
   @Override
   public void onNotifyMessageOpened(Context context, NotificationMessage notificationMessage) {
+    JPushBroadcastReceiver.NOTIFICATION_BUNDLE = null;
     if (notificationMessage != null) {
       JLogger.i(
           "onNotifyMessageOpened type="

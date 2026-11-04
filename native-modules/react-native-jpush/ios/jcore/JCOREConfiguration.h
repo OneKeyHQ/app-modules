@@ -37,6 +37,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, assign) BOOL pushStopped;
 @property (nonatomic, assign) BOOL debugEnabled;
 @property (nonatomic, assign) BOOL logOff;
+@property (nonatomic, assign) BOOL localLogEnabled;
+@property (nonatomic, assign) BOOL forceLocalLogWhenLogOff;
 @property (nonatomic, assign) BOOL preferIPv6;
 @property (nonatomic, assign) NSTimeInterval heartbeatInterval;
 
@@ -127,6 +129,7 @@ NS_ASSUME_NONNULL_BEGIN
 + (void)logInfo:(NSString *)message;
 + (void)logWarn:(NSString *)message;
 + (void)logError:(NSString *)message;
++ (void)setLocalLogEnabled:(BOOL)enabled;
 + (NSArray<NSString *> *)recentLogs;
 + (void)clearRecentLogs;
 

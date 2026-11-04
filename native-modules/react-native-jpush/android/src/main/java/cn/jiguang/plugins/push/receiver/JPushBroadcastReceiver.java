@@ -15,14 +15,19 @@ public class JPushBroadcastReceiver extends BroadcastReceiver {
 
   @Override
   public void onReceive(Context context, Intent data) {
-    if (context == null || data == null) {
+    if (data == null) {
+      return;
+    }
+    if (data.getBooleanExtra("jpush_already_dispatched", false)) {
       return;
     }
     if (JPushInterface.ACTION_NOTIFICATION_OPENED.equals(data.getAction())) {
       JLogger.d("JPushBroadcastReceiver ACTION_NOTIFICATION_OPENED");
       try {
         NOTIFICATION_BUNDLE = data.getExtras();
-        JPushHelper.launchApp(context);
+        if (context != null) {
+          JPushHelper.launchApp(context);
+        }
       } catch (Throwable throwable) {
         JLogger.e("JPushBroadcastReceiver ACTION_NOTIFICATION_OPENED error:" + throwable.getMessage());
       }

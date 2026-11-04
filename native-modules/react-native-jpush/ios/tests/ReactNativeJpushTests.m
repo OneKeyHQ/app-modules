@@ -6,6 +6,7 @@
 #import "../jcore/JCORESisResolver.h"
 #import "../jcore/JCOREWireProtocol.h"
 #import "../jpush/JPUSHNotificationManager.h"
+#import "../bridge/RCTJPushEventQueue.h"
 #import "../bridge/RCTJPushModule.h"
 
 /**
@@ -81,6 +82,67 @@ static NSString *const kDemoTestPackageName = @"com.devstudio.msgbench";
     XCTAssertEqualObjects([JPUSHService registrationID], @"");
     XCTAssertEqual([JCOREConfiguration shared].uid, 0ULL);
     XCTAssertEqualObjects([JCOREConfiguration shared].password ?: @"", @"");
+}
+
+- (void)testColdStartNotificationArrivedQueuePreservesEventTypeOnNitroFlush {
+    [RCTJPushModule clearActiveModules];
+    [[RCTJPushEventQueue sharedInstance]._notificationQueue removeAllObjects];
+    [[RCTJPushEventQueue sharedInstance]._localNotificationQueue removeAllObjects];
+    [RCTJPushModule ensureSharedNativeObservers];
+
+    [[NSNotificationCenter defaultCenter] postNotificationName:J_APNS_NOTIFICATION_ARRIVED_EVENT
+                                                        object:@{
+                                                            @"_j_msgid": @"apns_arrived_cold_601",
+                                                            @"aps": @{@"alert": @{@"title": @"ArrivedApns", @"body": @"Body"}},
+                                                            @"customKey": @"customVal",
+                                                        }];
+    [[NSNotificationCenter defaultCenter] postNotificationName:J_LOCAL_NOTIFICATION_ARRIVED_EVENT
+                                                        object:@{
+                                                            @"messageID": @"local_arrived_cold_602",
+                                                            @"title": @"ArrivedLocal",
+                                                            @"content": @"LocalBody",
+                                                            @"extras": @{@"k": @"v"},
+                                                        }];
+    XCTAssertEqual([RCTJPushEventQueue sharedInstance]._notificationQueue.count, 1u);
+    XCTAssertEqual([RCTJPushEventQueue sharedInstance]._localNotificationQueue.count, 1u);
+
+    NSMutableArray<NSDictionary *> *received = [NSMutableArray array];
+    NSInteger listenerId = [RCTJPushModule registerNitroEventListener:^(NSString *eventName, NSString *payloadJson) {
+        [received addObject:@{@"name": eventName ?: @"", @"json": payloadJson ?: @""}];
+    }];
+    XCTAssertEqual([RCTJPushEventQueue sharedInstance]._notificationQueue.count, 0u);
+    XCTAssertEqual([RCTJPushEventQueue sharedInstance]._localNotificationQueue.count, 0u);
+    XCTAssertEqual(received.count, 2u);
+    XCTAssertEqualObjects(received[0][@"name"], @"NotificationEvent");
+    XCTAssertTrue([received[0][@"json"] containsString:@"apns_arrived_cold_601"]);
+    XCTAssertTrue([received[0][@"json"] containsString:@"notificationArrived"]);
+    XCTAssertFalse([received[0][@"json"] containsString:@"_j_InternalNotificationName"]);
+    XCTAssertEqualObjects(received[1][@"name"], @"LocalNotificationEvent");
+    XCTAssertTrue([received[1][@"json"] containsString:@"local_arrived_cold_602"]);
+    XCTAssertTrue([received[1][@"json"] containsString:@"notificationArrived"]);
+    XCTAssertFalse([received[1][@"json"] containsString:@"_j_InternalNotificationName"]);
+
+    [RCTJPushModule unregisterNitroEventListener:listenerId];
+    [RCTJPushModule clearActiveModules];
+}
+
+- (void)testLocalLogEnabledBuffersWhenLogOffAndClearsWhenDisabled {
+    [JCOREConfiguration clearRecentLogs];
+    [JCOREConfiguration shared].logOff = YES;
+    [JCOREConfiguration setLocalLogEnabled:YES];
+    [JCOREConfiguration logInfo:@"local_log_while_off_01"];
+    NSArray<NSString *> *logs = [JCOREConfiguration recentLogs];
+    XCTAssertEqual(logs.count, 1u);
+    XCTAssertTrue([logs.firstObject containsString:@"local_log_while_off_01"]);
+
+    [JCOREConfiguration setLocalLogEnabled:NO];
+    XCTAssertEqual([JCOREConfiguration recentLogs].count, 0u);
+    [JCOREConfiguration logInfo:@"local_log_disabled_02"];
+    XCTAssertEqual([JCOREConfiguration recentLogs].count, 0u);
+
+    [JCOREConfiguration setLocalLogEnabled:YES];
+    [JCOREConfiguration shared].logOff = NO;
+    [JCOREConfiguration clearRecentLogs];
 }
 
 @end

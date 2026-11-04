@@ -183,6 +183,8 @@ public class ActionHelper {
                 message.notificationExtras != null ? message.notificationExtras : ""
             );
             openIntent.putExtra(JPushInterface.EXTRA_NOTIFICATION_ID, message.notificationId);
+            openIntent.putExtra(JPushInterface.EXTRA_NOTI_TYPE, message.notificationType);
+            openIntent.putExtra("jpush_already_dispatched", true);
             app.sendBroadcast(openIntent);
         } catch (Throwable ignored) {
         }
@@ -546,6 +548,15 @@ public class ActionHelper {
 
         Intent intent = buildBaseReceiverIntent(context, "alias_op", sequence, 0);
         intent.putExtra(KEY_ALIAS, effectiveAlias);
+        if (intent.getStringExtra(KEY_EVENT_TYPE) == null) {
+            JPushMessage msg = new JPushMessage();
+            msg.setSequence(sequence);
+            msg.setErrorCode(0);
+            msg.setAlias(effectiveAlias);
+            for (JPushMessageReceiver receiver : registeredReceivers) {
+                receiver.onAliasOperatorResult(context, msg);
+            }
+        }
         sendToReceiver(context, intent);
     }
 
@@ -718,7 +729,7 @@ public class ActionHelper {
         final int sequence,
         final Map<String, Object> properties,
         int protoType,
-        int action
+        final int action
     ) {
         Map<String, Object> stored = JCoreStorage.getProperties(context);
         final Map<String, Object> previousProps = new HashMap<String, Object>(stored);
@@ -734,6 +745,7 @@ public class ActionHelper {
             stored.clear();
             JCoreStorage.saveProperties(context, stored);
         }
+        final Map<String, Object> finalStored = new HashMap<String, Object>(stored);
 
         byte[] wireBody = JCoreWireCodec.buildPropertyOperationPayload(action, sequence, properties);
         if (shouldQueueOrWaitForServerAck()) {
@@ -753,8 +765,10 @@ public class ActionHelper {
                         }
                         Intent intent = buildBaseReceiverIntent(context, "property_op", sequence, statusCode);
                         HashMap<String, Object> serializableProps = new HashMap<String, Object>();
-                        if (properties != null) {
+                        if ((action == 1 || action == 2) && properties != null) {
                             serializableProps.putAll(properties);
+                        } else {
+                            serializableProps.putAll(statusCode == 0 ? finalStored : previousProps);
                         }
                         intent.putExtra(KEY_PROPS_MAP, serializableProps);
                         if (intent.getStringExtra(KEY_EVENT_TYPE) == null) {
@@ -784,10 +798,21 @@ public class ActionHelper {
 
         Intent intent = buildBaseReceiverIntent(context, "property_op", sequence, 0);
         HashMap<String, Object> serializableProps = new HashMap<String, Object>();
-        if (properties != null) {
+        if ((action == 1 || action == 2) && properties != null) {
             serializableProps.putAll(properties);
+        } else {
+            serializableProps.putAll(finalStored);
         }
         intent.putExtra(KEY_PROPS_MAP, serializableProps);
+        if (intent.getStringExtra(KEY_EVENT_TYPE) == null) {
+            JPushMessage msg = new JPushMessage();
+            msg.setSequence(sequence);
+            msg.setErrorCode(0);
+            msg.setPros(serializableProps);
+            for (JPushMessageReceiver receiver : registeredReceivers) {
+                receiver.onPropertyOperatorResult(context, msg);
+            }
+        }
         sendToReceiver(context, intent);
     }
 
@@ -839,6 +864,15 @@ public class ActionHelper {
 
         Intent intent = buildBaseReceiverIntent(context, "mobile_number_op", sequence, 0);
         intent.putExtra(KEY_MOBILE_NUMBER, mobileNumber != null ? mobileNumber : "");
+        if (intent.getStringExtra(KEY_EVENT_TYPE) == null) {
+            JPushMessage msg = new JPushMessage();
+            msg.setSequence(sequence);
+            msg.setErrorCode(0);
+            msg.setMobileNumber(mobileNumber != null ? mobileNumber : "");
+            for (JPushMessageReceiver receiver : registeredReceivers) {
+                receiver.onMobileNumberOperatorResult(context, msg);
+            }
+        }
         sendToReceiver(context, intent);
     }
 

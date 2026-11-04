@@ -97,13 +97,17 @@ public class MultiSpHelper {
     }
 
     private static SharedPreferences getSp(Context context) {
-        if (context == null) {
+        Context resolved = JCoreStorage.getAppContext(context);
+        if (resolved == null) {
             return null;
         }
         if (sharedPref == null) {
-            Context appContext = context.getApplicationContext();
-            Context target = appContext != null ? appContext : context;
-            sharedPref = target.getSharedPreferences(SP_FILE, Context.MODE_PRIVATE);
+            try {
+                Context appContext = resolved.getApplicationContext();
+                Context target = appContext != null ? appContext : resolved;
+                sharedPref = target.getSharedPreferences(SP_FILE, Context.MODE_PRIVATE);
+            } catch (Throwable ignored) {
+            }
         }
         return sharedPref;
     }

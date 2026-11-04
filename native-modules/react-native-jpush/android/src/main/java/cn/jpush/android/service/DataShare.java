@@ -24,7 +24,7 @@ public class DataShare extends IDataShare.Stub {
         sTestMyUid = myUid;
     }
 
-    private static void enforceSameAppCaller() {
+    public static void enforceSameAppCaller() {
         if (sTestCallingUid >= 0 && sTestMyUid >= 0) {
             if (sTestCallingUid != sTestMyUid) {
                 throw new SecurityException("Unauthorized Binder caller UID: " + sTestCallingUid);

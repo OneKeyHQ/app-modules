@@ -77,22 +77,18 @@ public class JPushInterface {
     }
 
     public static void init(Context context) {
-        if (context == null) {
-            return;
-        }
-        JPushConstants.init(context);
-        ActionHelper.getInstance().init(context);
-        JCoreManager.init(context);
+        Context app = JCoreStorage.getAppContext(context);
+        JPushConstants.init(app);
+        ActionHelper.getInstance().init(app);
+        JCoreManager.init(app);
     }
 
     public static void init(Context context, JPushConfig config) {
-        if (context == null) {
-            return;
-        }
+        Context app = JCoreStorage.getAppContext(context);
         if (config != null && config.getjAppKey() != null && !config.getjAppKey().isEmpty()) {
-            JCoreStorage.setAppKey(context, config.getjAppKey());
+            JCoreStorage.setAppKey(app, config.getjAppKey());
         }
-        init(context);
+        init(app);
     }
 
     public static void setDebugMode(boolean enable) {

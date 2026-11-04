@@ -25,6 +25,7 @@ public class DataProvider extends ContentProvider {
         String[] selectionArgs,
         String sortOrder
     ) {
+        DataShare.enforceSameAppCaller();
         String key = selection;
         String defaultVal = "";
         if ((key == null || key.isEmpty()) && uri != null) {
@@ -55,6 +56,7 @@ public class DataProvider extends ContentProvider {
 
     @Override
     public String getType(Uri uri) {
+        DataShare.enforceSameAppCaller();
         if (uri != null) {
             try {
                 String key = uri.getQueryParameter("key");
@@ -69,6 +71,7 @@ public class DataProvider extends ContentProvider {
 
     @Override
     public Uri insert(Uri uri, ContentValues values) {
+        DataShare.enforceSameAppCaller();
         if (values != null) {
             try {
                 if (values.containsKey("key") && values.containsKey("value")) {
@@ -103,6 +106,7 @@ public class DataProvider extends ContentProvider {
 
     @Override
     public int delete(Uri uri, String selection, String[] selectionArgs) {
+        DataShare.enforceSameAppCaller();
         String key = selection;
         if ((key == null || key.isEmpty()) && uri != null) {
             try {
@@ -119,12 +123,14 @@ public class DataProvider extends ContentProvider {
 
     @Override
     public int update(Uri uri, ContentValues values, String selection, String[] selectionArgs) {
+        DataShare.enforceSameAppCaller();
         insert(uri, values);
         return 1;
     }
 
     @Override
     public Bundle call(String method, String arg, Bundle extras) {
+        DataShare.enforceSameAppCaller();
         return JCoreInternalHelper.getInstance().directHandle(getContext(), method, arg, extras);
     }
 }

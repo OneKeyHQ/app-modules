@@ -117,6 +117,8 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
         _defaultConnectPorts = @[ @7000, @7002, @7003, @7004, @7005, @7006, @7007, @7008, @7009 ];
         _debugEnabled = YES;
         _logOff = NO;
+        _localLogEnabled = YES;
+        _forceLocalLogWhenLogOff = NO;
 
         NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
         NSNumber *savedAuth = [defaults objectForKey:kJCoreKeyAuth];
@@ -614,21 +616,32 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
     return storage;
 }
 
++ (void)setLocalLogEnabled:(BOOL)enabled {
+    JCOREConfiguration *config = [self shared];
+    config.localLogEnabled = enabled;
+    config.forceLocalLogWhenLogOff = enabled;
+    if (!enabled) {
+        [self clearRecentLogs];
+    }
+}
+
 + (void)dispatchLogWithLevel:(NSString *)level selectorName:(NSString *)selectorName message:(NSString *)message {
     if (message == nil) {
         return;
     }
     JCOREConfiguration *config = [self shared];
+    NSString *entry = [NSString stringWithFormat:@"[%@] %@", level, message];
+    if (config.localLogEnabled && (!config.logOff || config.forceLocalLogWhenLogOff)) {
+        NSMutableArray<NSString *> *storage = [self recentLogsStorage];
+        @synchronized (storage) {
+            if (storage.count >= 200) {
+                [storage removeObjectAtIndex:0];
+            }
+            [storage addObject:entry];
+        }
+    }
     if (config.logOff) {
         return;
-    }
-    NSString *entry = [NSString stringWithFormat:@"[%@] %@", level, message];
-    NSMutableArray<NSString *> *storage = [self recentLogsStorage];
-    @synchronized (storage) {
-        if (storage.count >= 200) {
-            [storage removeObjectAtIndex:0];
-        }
-        [storage addObject:entry];
     }
 
     Class oneKeyLogClass = NSClassFromString(@"ReactNativeNativeLogger.OneKeyLog") ?: NSClassFromString(@"OneKeyLog");

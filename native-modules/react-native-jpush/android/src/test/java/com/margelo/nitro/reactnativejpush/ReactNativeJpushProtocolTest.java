@@ -670,8 +670,75 @@ public class ReactNativeJpushProtocolTest {
         JPushHelper.unregisterNitroListener(opListenerId);
         JPushHelper.clearNitroListeners();
         JCoreTcpEngine.getInstance().setRequireServerAckForOperations(false);
+        JCoreTcpEngine.getInstance().setCustomEndpoint("", 0);
         JCoreTcpEngine.getInstance().stop(null);
         JCoreStorage.clearRegistration(null);
+
+        // 2h. Verify JPushInterface.setProperties / deleteProperties / cleanProperties emit TagAliasEvent with pros
+        //     via JPushModuleReceiver.onPropertyOperatorResult, and JPushBroadcastReceiver ignores intents with
+        //     "jpush_already_dispatched" == true while JPushModuleReceiver.onNotifyMessageOpened clears stale NOTIFICATION_BUNDLE.
+        final List<String> propEvents = new java.util.ArrayList<String>();
+        int propListenerId = JPushHelper.registerNitroListener(new JPushHelper.NitroEventListener() {
+            @Override
+            public void onEvent(String eventName, String payloadJson) {
+                propEvents.add(eventName + ":" + payloadJson);
+            }
+        });
+        ActionHelper.getInstance().registerReceiver(receiver);
+        Map<String, Object> setPropsInput = new LinkedHashMap<String, Object>();
+        setPropsInput.put("region", "apac");
+        setPropsInput.put("plan", "enterprise");
+        JPushInterface.setProperties(null, 401, setPropsInput);
+        assertEquals("apac", JCoreStorage.getProperties(null).get("region"));
+        assertEquals("enterprise", JCoreStorage.getProperties(null).get("plan"));
+
+        Map<String, Object> delPropsInput = new LinkedHashMap<String, Object>();
+        delPropsInput.put("region", "");
+        JPushInterface.deleteProperties(null, 402, delPropsInput);
+        assertTrue(!JCoreStorage.getProperties(null).containsKey("region"));
+        assertEquals("enterprise", JCoreStorage.getProperties(null).get("plan"));
+
+        JPushInterface.cleanProperties(null, 403);
+        assertTrue(JCoreStorage.getProperties(null).isEmpty());
+
+        assertEquals(3L, (long) propEvents.size());
+        assertTrue(propEvents.get(0).startsWith("TagAliasEvent:") && propEvents.get(0).contains("401") && propEvents.get(0).contains("enterprise"));
+        assertTrue(propEvents.get(1).startsWith("TagAliasEvent:") && propEvents.get(1).contains("402") && propEvents.get(1).contains("region"));
+        assertTrue(propEvents.get(2).startsWith("TagAliasEvent:") && propEvents.get(2).contains("403"));
+        JPushHelper.unregisterNitroListener(propListenerId);
+        JPushHelper.clearNitroListeners();
+
+        android.os.Bundle staleBundle = new android.os.Bundle();
+        cn.jiguang.plugins.push.receiver.JPushBroadcastReceiver.NOTIFICATION_BUNDLE = staleBundle;
+        NotificationMessage openedMsg = new NotificationMessage();
+        openedMsg.msgId = "nm_open_404";
+        openedMsg.notificationTitle = "OpenTitle";
+        openedMsg.notificationContent = "OpenBody";
+        receiver.onNotifyMessageOpened(null, openedMsg);
+        assertEquals(null, cn.jiguang.plugins.push.receiver.JPushBroadcastReceiver.NOTIFICATION_BUNDLE);
+
+        cn.jiguang.plugins.push.receiver.JPushBroadcastReceiver broadcastReceiver =
+            new cn.jiguang.plugins.push.receiver.JPushBroadcastReceiver();
+        android.content.Intent alreadyDispatchedIntent = new android.content.Intent(JPushInterface.ACTION_NOTIFICATION_OPENED) {
+            @Override
+            public String getAction() {
+                return JPushInterface.ACTION_NOTIFICATION_OPENED;
+            }
+            @Override
+            public boolean getBooleanExtra(String name, boolean defaultValue) {
+                if ("jpush_already_dispatched".equals(name)) {
+                    return true;
+                }
+                return defaultValue;
+            }
+            @Override
+            public android.os.Bundle getExtras() {
+                return new android.os.Bundle();
+            }
+        };
+        broadcastReceiver.onReceive(null, alreadyDispatchedIntent);
+        assertEquals(null, cn.jiguang.plugins.push.receiver.JPushBroadcastReceiver.NOTIFICATION_BUNDLE);
+        JPushHelper.clearNitroListeners();
 
         // 3. Verify AndroidManifest.xml has android:exported="false" on all 5 internal activities
         File manifestFile = new File("src/main/AndroidManifest.xml");
