@@ -7,7 +7,6 @@ import {
   TextInput,
   View,
   type GestureResponderEvent,
-  type NativeMethods,
   type RefreshControlProps,
   type ScrollView,
   type ScrollViewProps,
@@ -58,7 +57,7 @@ export interface NativeScrollerProps
 type HostRef = React.ElementRef<typeof NativeScrollerHost>;
 
 export interface NativeScrollerRef
-  extends NativeMethods,
+  extends Pick<HostRef, "measure" | "measureInWindow" | "measureLayout" | "setNativeProps" | "focus" | "blur">,
     Pick<
       React.ElementRef<typeof ScrollView>,
       "scrollTo" | "scrollToEnd" | "flashScrollIndicators"
@@ -130,11 +129,11 @@ export const NativeScroller = React.forwardRef<
   const momentum = React.useRef(false);
   const grantedDuringMomentum = React.useRef(false);
   const persistTaps =
-    keyboardShouldPersistTaps === true
+    (keyboardShouldPersistTaps as ScrollViewProps["keyboardShouldPersistTaps"] | boolean) === true
       ? "always"
-      : keyboardShouldPersistTaps === false
+      : (keyboardShouldPersistTaps as ScrollViewProps["keyboardShouldPersistTaps"] | boolean) === false
       ? "never"
-      : keyboardShouldPersistTaps;
+      : keyboardShouldPersistTaps as Exclude<ScrollViewProps["keyboardShouldPersistTaps"], boolean>;
   const contentStyle = StyleSheet.flatten(contentContainerStyle);
   const refresh = refreshControl?.props;
   const rate =
@@ -155,7 +154,7 @@ export const NativeScroller = React.forwardRef<
 
   React.useImperativeHandle(
     forwardedRef,
-    () => ({
+    (): NativeScrollerRef => ({
       scrollTo(options, x, animated) {
         const host = hostRef.current;
         if (!host) return;

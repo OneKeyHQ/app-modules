@@ -2,6 +2,7 @@ package com.reactnativepagerview
 
 import android.content.Context
 import android.graphics.Color
+import android.graphics.Bitmap
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
@@ -209,6 +210,8 @@ private class CollapsiblePagerHorizontalItemsView(
 
   fun setControlledSelectedKey(value: String?) { controlledSelectedKey = value; updatePresentation() }
 
+  fun usesTextVariant(): Boolean = textVariant
+
   fun setActiveFontFamily(value: String?) { activeFontFamily = value; requestLayout() }
 
   fun setProgress(value: Float, source: Int? = null, destination: Int? = null, fraction: Float = 0f) {
@@ -377,9 +380,7 @@ private class CollapsiblePagerHorizontalItemsView(
       scrollTargetCenterX = interpolatedIndicatorX + interpolatedIndicatorWidth / 2f
       selectedIndex = if (controlledSelectedKey != null) items.indexOfFirst { it.key == controlledSelectedKey } else clamped.roundToInt()
       buttons.forEachIndexed { index, button ->
-        val emphasis = if (controlledSelectedKey != null && mappedFraction <= 0.001f) {
-          if (index == selectedIndex) 1f else 0f
-        } else if (mappedSource != null && mappedDestination != null) {
+        val emphasis = if (mappedSource != null && mappedDestination != null) {
           (if (index == mappedSource) 1f - mappedFraction else 0f) + (if (index == mappedDestination) mappedFraction else 0f)
         } else 1f - min(1f, kotlin.math.abs(clamped - index))
         button.setTextColor(ColorUtils.blendARGB(inactiveTextColor, activeTextColor, emphasis))
@@ -418,9 +419,28 @@ internal class CollapsiblePagerNativeTabBarView(context: Context) : FrameLayout(
   private var selectedKey = ""
   private var iconOwner: Any = Any()
   private var iconIdentity = ""
+  private var loadedIconIdentity = ""
+  private var iconRequestPending = false
+  private var readyToolbarImage: Bitmap? = null
+  private var readyToolbarIdentity = ""
+  private var failedIconIdentity = ""
   private var toolbarTouchKey: String? = null
   private var toolbarTouchStarted = false
+  private var toolbarKeyboardKey: String? = null
   private var lastNativeProgress = 0f
+  private var hasNativeProgress = false
+  private var toolbarReservedWidth = 0.0
+  private var toolbarPagerBusy = true
+  private var toolbarPageIndex = -1
+  private var committedToolbarKey: String? = null
+  private var committedToolbarEntry: JSONObject? = null
+  private var desiredToolbarKey: String? = null
+  private var desiredToolbarEntry: JSONObject? = null
+  private var loadedToolbarImage: Bitmap? = null
+  private var toolbarPresenceAnimating = false
+  private var toolbarPresenceInterrupted = false
+  private var toolbarVisible = false
+  private var toolbarAnimationGeneration = 0
   private var toolbarSize = 38.0
   private var toolbarIconSize = 24.0
   private var toolbarContentWidth = 24.0
@@ -430,73 +450,234 @@ internal class CollapsiblePagerNativeTabBarView(context: Context) : FrameLayout(
   private fun dp(value: Number) = (value.toDouble() * resources.displayMetrics.density).roundToInt()
 
   fun updateConfigJSON(value: String?) {
-    toolbarTouchKey = null
-    toolbar.isPressed = false
-    toolbar.isHovered = false
     config = runCatching { JSONObject(value ?: "{}") }.getOrDefault(JSONObject())
     row.setActiveFontFamily(config.optString("activeFontFamily").takeIf(String::isNotEmpty))
     selectedKey = if (config.optBoolean("controlled")) config.optString("selectedKey") else items.getOrNull(lastNativeProgress.roundToInt())?.key ?: ""
     row.setControlledSelectedKey(if (config.optBoolean("controlled")) selectedKey else null)
-    val index = items.indexOfFirst { it.key == selectedKey }
-    if (index >= 0) row.setProgress(index.toFloat())
+    if (hasNativeProgress) setProgress(lastNativeProgress)
+    else {
+      val index = items.indexOfFirst { it.key == selectedKey }
+      if (index >= 0) row.setProgress(index.toFloat())
+    }
     updateToolbar()
   }
 
-  private fun updateToolbar() {
-    val item = config.optJSONObject("toolbar")?.optJSONObject(selectedKey)
-    val style = item ?: JSONObject()
-    val hasToolbar = item != null && item.optString("iconName").isNotEmpty()
-    toolbar.visibility = if (hasToolbar) VISIBLE else GONE
-    if (!hasToolbar) {
+  private fun ownsSettledToolbar(): Boolean = config.optBoolean("controlled") && config.optJSONObject("toolbar") != null
+
+  internal fun usesSettledToolbarOwner(): Boolean = ownsSettledToolbar()
+
+  internal fun needsToolbarPagerSettlement(pageIndex: Int): Boolean =
+    ownsSettledToolbar() && (toolbarPagerBusy || toolbarPageIndex != pageIndex)
+
+  private fun toolbarCanCommit(): Boolean {
+    if (!isAttachedToWindow) return false
+    if (!ownsSettledToolbar()) return true
+    if (toolbarPagerBusy || toolbarPageIndex < 0) return false
+    return controlledPageIndices() == null || config.optJSONArray("pageKeys")?.optString(toolbarPageIndex) == selectedKey
+  }
+
+  fun updateToolbarPagerState(pageIndex: Int, busy: Boolean) {
+    if (toolbarPagerBusy == busy && (busy || toolbarPageIndex == pageIndex)) return
+    if (!busy) toolbarPageIndex = pageIndex
+    toolbarPagerBusy = busy
+    updateToolbar()
+  }
+
+  private fun cancelToolbarPending() {
+    if (iconRequestPending || readyToolbarImage != null) {
       OneKeyNamedSVG.cancel(iconOwner)
-      iconIdentity = ""
-      toolbar.setImageDrawable(null)
-      requestLayout()
+      iconOwner = Any()
+    }
+    iconRequestPending = false
+    readyToolbarImage = null
+    readyToolbarIdentity = ""
+  }
+
+  private fun setToolbarInteractive(enabled: Boolean) {
+    if (!enabled) {
+      toolbarKeyboardKey = null
+      if (toolbarTouchStarted) toolbarTouchKey = null
+      toolbar.isPressed = false
+      toolbar.isHovered = false
+      toolbar.clearFocus()
+    }
+    toolbar.isEnabled = enabled
+    toolbar.isClickable = enabled
+    toolbar.isFocusable = enabled
+    toolbar.importantForAccessibility = if (enabled) View.IMPORTANT_FOR_ACCESSIBILITY_AUTO else View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+  }
+
+  private fun suspendToolbar() {
+    setToolbarInteractive(false)
+    cancelToolbarPending()
+    desiredToolbarKey = null
+    desiredToolbarEntry = null
+    if (toolbarPresenceAnimating) {
+      toolbarAnimationGeneration++
+      toolbar.animate().cancel()
+      toolbarPresenceAnimating = false
+      toolbarPresenceInterrupted = true
+    }
+  }
+
+  private fun setToolbarVisible(visible: Boolean) {
+    if (toolbarVisible == visible && !toolbarPresenceInterrupted) return
+    toolbarVisible = visible
+    toolbarPresenceInterrupted = false
+    val generation = ++toolbarAnimationGeneration
+    toolbar.animate().cancel()
+    if (visible) toolbar.visibility = VISIBLE
+    if (!isAttachedToWindow) {
+      toolbar.alpha = if (visible) 1f else 0f
+      toolbar.visibility = if (visible) VISIBLE else INVISIBLE
+      toolbarPresenceAnimating = false
       return
     }
-    val descriptor = item ?: return
+    toolbarPresenceAnimating = true
+    toolbar.animate().alpha(if (visible) 1f else 0f).setDuration(100).withEndAction {
+      if (toolbarAnimationGeneration == generation) {
+        toolbarPresenceAnimating = false
+        if (!visible) toolbar.visibility = INVISIBLE
+      }
+    }.start()
+  }
+
+  private fun hideToolbar(failed: Boolean) {
+    setToolbarInteractive(false)
+    committedToolbarKey = null
+    committedToolbarEntry = null
+    toolbar.contentDescription = null
+    toolbar.setTag(com.facebook.react.R.id.react_test_id, null)
+    if (failed) toolbar.setImageDrawable(null)
+    setToolbarVisible(false)
+  }
+
+  private fun commitToolbar(key: String, descriptor: JSONObject, image: Bitmap, identity: String) {
+    if (!toolbarCanCommit() || key != selectedKey) return
+    if (committedToolbarKey != key && toolbarTouchStarted) toolbarTouchKey = null
     toolbarSize = descriptor.optDouble("size", 38.0).coerceIn(1.0, 128.0)
-    toolbarIconSize = descriptor.optDouble("iconSize", 24.0).coerceIn(1.0, toolbarSize)
-    toolbarContentWidth = descriptor.optDouble("contentWidth", 24.0).coerceIn(0.0, toolbarSize)
+    toolbarIconSize = descriptor.optDouble("iconSize", min(24.0, toolbarSize)).coerceIn(1.0, toolbarSize)
+    toolbarContentWidth = descriptor.optDouble("contentWidth", min(24.0, toolbarSize)).coerceIn(0.0, toolbarSize)
     toolbarTrailingInset = descriptor.optDouble("trailingInset", 20.0).coerceIn(0.0, 128.0)
     val inset = max(0, (dp(toolbarSize) - dp(toolbarIconSize)) / 2)
     toolbar.setPadding(inset, inset, inset, inset)
-    fun color(name: String, fallback: Int) = (style.opt(name) as? Number)?.toInt() ?: fallback
-    val baseColor = if (descriptor.optBoolean("selected")) color("selectedBackgroundColor", Color.TRANSPARENT) else Color.TRANSPARENT
+    fun color(name: String, fallback: Int) = (descriptor.opt(name) as? Number)?.toInt() ?: fallback
+    val base = if (descriptor.optBoolean("selected")) color("selectedBackgroundColor", Color.TRANSPARENT) else Color.TRANSPARENT
     fun fill(value: Int) = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(value) }
     toolbar.background = StateListDrawable().apply {
-      addState(intArrayOf(android.R.attr.state_enabled, android.R.attr.state_pressed), fill(color("pressedBackgroundColor", baseColor)))
-      addState(intArrayOf(android.R.attr.state_enabled, android.R.attr.state_hovered), fill(color("hoverBackgroundColor", baseColor)))
-      addState(intArrayOf(), fill(baseColor))
+      addState(intArrayOf(android.R.attr.state_enabled, android.R.attr.state_pressed), fill(color("pressedBackgroundColor", base)))
+      addState(intArrayOf(android.R.attr.state_enabled, android.R.attr.state_hovered), fill(color("hoverBackgroundColor", base)))
+      addState(intArrayOf(), fill(base))
     }
+    toolbar.setImageBitmap(image)
     toolbar.contentDescription = descriptor.optString("accessibilityLabel")
     toolbar.setTag(com.facebook.react.R.id.react_test_id, descriptor.optString("testID"))
+    committedToolbarKey = key
+    committedToolbarEntry = descriptor
+    loadedToolbarImage = image
+    loadedIconIdentity = identity
+    iconIdentity = identity
+    iconRequestPending = false
+    readyToolbarImage = null
+    readyToolbarIdentity = ""
+    setToolbarVisible(true)
+    setToolbarInteractive(true)
+    requestLayout()
+  }
+
+  private fun applyReadyToolbarImage() {
+    val image = readyToolbarImage ?: return
+    val key = desiredToolbarKey ?: return
+    val entry = desiredToolbarEntry ?: return
+    if (readyToolbarIdentity != iconIdentity || !toolbarCanCommit() || key != selectedKey) return
+    commitToolbar(key, entry, image, iconIdentity)
+  }
+
+  private fun updateToolbar() {
+    val entries = config.optJSONObject("toolbar")
+    toolbarReservedWidth = if (entries == null) 0.0 else 44.0
+    if (entries != null && entries.length() > 0) {
+      toolbarReservedWidth = 0.0
+      entries.keys().forEach { key ->
+        val entry = entries.optJSONObject(key) ?: JSONObject()
+        val size = entry.optDouble("size", 38.0).coerceIn(1.0, 128.0)
+        toolbarReservedWidth = max(toolbarReservedWidth, entry.optDouble("contentWidth", min(24.0, size)).coerceIn(0.0, size) + entry.optDouble("trailingInset", 20.0).coerceIn(0.0, 128.0))
+      }
+    }
+    if (!toolbarCanCommit()) { suspendToolbar(); requestLayout(); return }
+    val entry = entries?.optJSONObject(selectedKey)
+    if (entry == null || entry.optString("iconName").isEmpty()) {
+      cancelToolbarPending()
+      desiredToolbarKey = null
+      desiredToolbarEntry = null
+      hideToolbar(false)
+      requestLayout()
+      return
+    }
+    val descriptor = JSONObject(entry.toString())
+    desiredToolbarKey = selectedKey
+    desiredToolbarEntry = descriptor
+    val size = descriptor.optDouble("size", 38.0).coerceIn(1.0, 128.0)
+    val iconSize = descriptor.optDouble("iconSize", min(24.0, size)).coerceIn(1.0, size)
     val name = descriptor.optString("iconName")
-    val tint = style.optString("iconColor", "#000000")
-    val identity = "$selectedKey|$name|$tint|${resources.displayMetrics.density}|$toolbarIconSize"
-    if (identity != iconIdentity && isAttachedToWindow) {
-      OneKeyNamedSVG.cancel(iconOwner)
-      iconOwner = Any()
-      iconIdentity = identity
-      toolbar.setImageDrawable(null)
-      toolbar.isEnabled = false
-      OneKeyNamedSVG.request(iconOwner, context.applicationContext.assets, name, tint,
-        dp(toolbarIconSize), dp(toolbarIconSize), resources.displayMetrics.density) { bitmap ->
-        if (iconIdentity == identity && isAttachedToWindow) { toolbar.setImageBitmap(bitmap); toolbar.isEnabled = bitmap != null }
+    val tint = descriptor.optString("iconColor", "#000000")
+    val identity = "$name|$tint|${resources.displayMetrics.density}|$iconSize"
+    val loaded = loadedToolbarImage
+    if (identity == loadedIconIdentity && loaded != null) {
+      cancelToolbarPending()
+      commitToolbar(selectedKey, descriptor, loaded, identity)
+      return
+    }
+    if (identity == iconIdentity && iconRequestPending) { applyReadyToolbarImage(); return }
+    cancelToolbarPending()
+    setToolbarInteractive(false)
+    iconIdentity = identity
+    if (identity == failedIconIdentity) { hideToolbar(true); return }
+    iconOwner = Any()
+    val owner = iconOwner
+    iconRequestPending = true
+    OneKeyNamedSVG.request(owner, context.applicationContext.assets, name, tint,
+      dp(iconSize), dp(iconSize), resources.displayMetrics.density) { bitmap ->
+      if (iconOwner === owner && iconIdentity == identity && isAttachedToWindow) {
+        if (bitmap == null) {
+          iconRequestPending = false
+          failedIconIdentity = identity
+          hideToolbar(true)
+        } else {
+          readyToolbarImage = bitmap
+          readyToolbarIdentity = identity
+          applyReadyToolbarImage()
+        }
       }
     }
     requestLayout()
   }
 
-  override fun onAttachedToWindow() { super.onAttachedToWindow(); updateToolbar() }
+  private fun performToolbarPress(fromPointer: Boolean): Boolean {
+    val key = if (fromPointer) toolbarTouchKey.takeIf { toolbarTouchStarted } else committedToolbarKey
+    if (fromPointer) { toolbarTouchStarted = false; toolbarTouchKey = null }
+    if (key == null || key != committedToolbarKey || key != selectedKey || committedToolbarEntry == null ||
+      !toolbarCanCommit() || !toolbar.isEnabled || toolbar.visibility != VISIBLE) return false
+    val location = IntArray(2)
+    toolbar.getLocationInWindow(location)
+    val density = resources.displayMetrics.density.toDouble()
+    onToolbarPress?.invoke(key, doubleArrayOf(location[0] / density, location[1] / density, toolbar.width / density, toolbar.height / density))
+    return true
+  }
+
+  override fun onAttachedToWindow() {
+    super.onAttachedToWindow()
+    toolbarPagerBusy = true
+    updateToolbar()
+  }
+
   override fun onDetachedFromWindow() {
+    suspendToolbar()
+    toolbarPagerBusy = true
+    toolbarPageIndex = -1
     toolbarTouchStarted = false
     toolbarTouchKey = null
-    toolbar.isPressed = false
-    toolbar.isHovered = false
-    OneKeyNamedSVG.cancel(iconOwner)
-    iconIdentity = ""
-    toolbar.setImageDrawable(null)
+    failedIconIdentity = ""
     super.onDetachedFromWindow()
   }
 
@@ -513,26 +694,38 @@ internal class CollapsiblePagerNativeTabBarView(context: Context) : FrameLayout(
     toolbar.setPadding(dp(6), dp(6), dp(6), dp(6))
     toolbar.isClickable = true
     toolbar.isFocusable = true
-    toolbar.visibility = GONE
+    toolbar.visibility = INVISIBLE
+    toolbar.alpha = 0f
+    toolbar.isEnabled = false
+    toolbar.isClickable = false
+    toolbar.isFocusable = false
+    toolbar.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
     toolbar.setOnTouchListener { _, event ->
       when (event.actionMasked) {
-        MotionEvent.ACTION_DOWN -> { toolbarTouchStarted = true; toolbarTouchKey = selectedKey }
-        MotionEvent.ACTION_CANCEL -> { toolbarTouchStarted = false; toolbarTouchKey = null }
+        MotionEvent.ACTION_DOWN -> { toolbarTouchStarted = true; toolbarTouchKey = committedToolbarKey.takeIf { toolbar.isEnabled && toolbarCanCommit() } }
+        MotionEvent.ACTION_CANCEL -> { toolbarTouchKey = null }
       }
       false
     }
-    toolbar.setOnClickListener {
-      val key = if (toolbarTouchStarted) toolbarTouchKey else selectedKey
-      toolbarTouchStarted = false
-      toolbarTouchKey = null
-      if (key == null || key != selectedKey || !isAttachedToWindow || !toolbar.isEnabled || toolbar.visibility != VISIBLE) return@setOnClickListener
-      if (config.optJSONObject("toolbar")?.optJSONObject(key) != null) {
-        val location = IntArray(2)
-        toolbar.getLocationInWindow(location)
-        val density = resources.displayMetrics.density.toDouble()
-        onToolbarPress?.invoke(key, doubleArrayOf(location[0] / density, location[1] / density,
-          toolbar.width / density, toolbar.height / density))
+    toolbar.setOnClickListener { performToolbarPress(true) }
+    toolbar.accessibilityDelegate = object : View.AccessibilityDelegate() {
+      override fun performAccessibilityAction(host: View, action: Int, args: android.os.Bundle?): Boolean {
+        if (action == android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK) return performToolbarPress(false)
+        return super.performAccessibilityAction(host, action, args)
       }
+    }
+    toolbar.setOnKeyListener { _, keyCode, event ->
+      if (keyCode != android.view.KeyEvent.KEYCODE_ENTER && keyCode != android.view.KeyEvent.KEYCODE_DPAD_CENTER && keyCode != android.view.KeyEvent.KEYCODE_SPACE) false
+      else if (event.action == android.view.KeyEvent.ACTION_DOWN) {
+        if (event.repeatCount == 0) toolbarKeyboardKey = committedToolbarKey.takeIf { toolbar.isEnabled && toolbarCanCommit() }
+        toolbar.isPressed = toolbarKeyboardKey != null
+        toolbarKeyboardKey != null
+      } else if (event.action == android.view.KeyEvent.ACTION_UP) {
+        val valid = toolbarKeyboardKey != null && toolbarKeyboardKey == committedToolbarKey
+        toolbarKeyboardKey = null
+        toolbar.isPressed = false
+        valid && performToolbarPress(false)
+      } else false
     }
     visibility = GONE
   }
@@ -575,25 +768,42 @@ internal class CollapsiblePagerNativeTabBarView(context: Context) : FrameLayout(
     activeTextColor: Int,
     inactiveTextColor: Int,
     indicatorColor: Int,
-  ) = row.updateColors(
-    backgroundColor,
-    activeTextColor,
-    inactiveTextColor,
-    Color.TRANSPARENT,
-    indicatorColor,
-  )
+  ) {
+    val text = row.usesTextVariant()
+    setBackgroundColor(if (text) backgroundColor else Color.TRANSPARENT)
+    row.updateColors(
+      if (text) Color.TRANSPARENT else backgroundColor,
+      activeTextColor,
+      inactiveTextColor,
+      Color.TRANSPARENT,
+      indicatorColor,
+    )
+  }
+
+  private fun controlledPageIndices(): List<Int>? {
+    val pageKeys = config.optJSONArray("pageKeys") ?: return null
+    val names = List(pageKeys.length()) { pageKeys.optString(it) }
+    val indices = names.map { name -> items.indexOfFirst { it.key == name } }
+    if (names.isEmpty() || selectedKey !in names || names.toSet().size != names.size ||
+      indices.any { it < 0 } || items.map { it.key }.toSet().size != items.size) return null
+    return indices
+  }
+
+  fun usesControlledTextProgress(): Boolean {
+    return row.usesTextVariant() && config.optBoolean("controlled") && controlledPageIndices() != null
+  }
 
   fun setProgress(progress: Float) {
     lastNativeProgress = progress
+    hasNativeProgress = true
     var mapped = progress
     var source: Int? = null
     var destination: Int? = null
     var fraction = 0f
     if (config.optBoolean("controlled")) {
       val pageKeys = config.optJSONArray("pageKeys") ?: return
-      val names = List(pageKeys.length()) { pageKeys.optString(it) }
-      val indices = names.map { name -> items.indexOfFirst { it.key == name } }
-      if (names.isEmpty() || names.toSet().size != names.size || indices.any { it < 0 } || items.map { it.key }.toSet().size != items.size) {
+      val indices = controlledPageIndices()
+      if (indices == null) {
         val fallback = items.indexOfFirst { it.key == config.optString("selectedKey") }
         if (fallback >= 0) { row.setProgress(fallback.toFloat()); selectedKey = items[fallback].key; updateToolbar() }
         return
@@ -619,7 +829,7 @@ internal class CollapsiblePagerNativeTabBarView(context: Context) : FrameLayout(
   override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
     val width = MeasureSpec.getSize(widthMeasureSpec)
     val height = MeasureSpec.getSize(heightMeasureSpec)
-    val reserved = if (toolbar.visibility == VISIBLE) dp(toolbarContentWidth + toolbarTrailingInset) else 0
+    val reserved = dp(toolbarReservedWidth)
     row.measure(MeasureSpec.makeMeasureSpec(max(0, width - reserved), MeasureSpec.EXACTLY), heightMeasureSpec)
     toolbar.measure(MeasureSpec.makeMeasureSpec(dp(toolbarSize), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(dp(toolbarSize), MeasureSpec.EXACTLY))
     setMeasuredDimension(width, height)
@@ -628,7 +838,7 @@ internal class CollapsiblePagerNativeTabBarView(context: Context) : FrameLayout(
   override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
     val width = right - left
     val height = bottom - top
-    val reserved = if (toolbar.visibility == VISIBLE) dp(toolbarContentWidth + toolbarTrailingInset) else 0
+    val reserved = dp(toolbarReservedWidth)
     val rtl = layoutDirection == View.LAYOUT_DIRECTION_RTL
     row.layout(if (rtl) reserved else 0, 0, if (rtl) width else width - reserved, height)
     val inset = dp(toolbarTrailingInset) - (dp(toolbarSize) - dp(toolbarContentWidth)) / 2

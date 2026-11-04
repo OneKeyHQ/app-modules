@@ -7,20 +7,15 @@ import {
   type ViewProps,
 } from "react-native";
 
-import type {
-  DirectEventHandler,
-  Double,
-  Int32,
-  WithDefault,
-} from "react-native/Libraries/Types/CodegenTypes";
+import type { CodegenTypes } from "react-native";
 
 export type OnPageScrollEventData = Readonly<{
-  position: Double;
-  offset: Double;
+  position: CodegenTypes.Double;
+  offset: CodegenTypes.Double;
 }>;
 
 export type OnPageSelectedEventData = Readonly<{
-  position: Double;
+  position: CodegenTypes.Double;
 }>;
 
 export type OnPageScrollStateChangedEventData = Readonly<{
@@ -28,11 +23,11 @@ export type OnPageScrollStateChangedEventData = Readonly<{
 }>;
 
 export type OnCollapsibleStateChangedEventData = Readonly<{
-  position: Int32;
-  headerOffset: Double;
-  nativePageCount: Int32;
-  attachedPageCount: Int32;
-  observedScrollableCount: Int32;
+  position: CodegenTypes.Int32;
+  headerOffset: CodegenTypes.Double;
+  nativePageCount: CodegenTypes.Int32;
+  attachedPageCount: CodegenTypes.Int32;
+  observedScrollableCount: CodegenTypes.Int32;
   retainedPages: string;
   reason: string;
   pageKey: string;
@@ -40,12 +35,12 @@ export type OnCollapsibleStateChangedEventData = Readonly<{
 }>;
 
 export type OnNativeTabPressEventData = Readonly<{
-  position: Int32;
+  position: CodegenTypes.Int32;
   key: string;
 }>;
 export type OnNativeToolbarPressEventData = Readonly<{
   key: string;
-  anchorRect: Readonly<{ x: Double; y: Double; width: Double; height: Double }>;
+  anchorRect: Readonly<{ x: CodegenTypes.Double; y: CodegenTypes.Double; width: CodegenTypes.Double; height: CodegenTypes.Double }>;
 }>;
 export type OnScrollEdgeCapabilityEventData = Readonly<{ available: boolean }>;
 
@@ -54,47 +49,47 @@ export type OnScrollEdgeCapabilityEventData = Readonly<{ available: boolean }>;
  * CollapsiblePagerView instead of mounting this host component directly.
  */
 export interface NativeProps extends ViewProps {
-  scrollEnabled?: WithDefault<boolean, true>;
-  layoutDirection?: WithDefault<"ltr" | "rtl", "ltr">;
-  initialPage?: Int32;
-  offscreenPageLimit?: Int32;
+  scrollEnabled?: CodegenTypes.WithDefault<boolean, true>;
+  layoutDirection?: CodegenTypes.WithDefault<"ltr" | "rtl", "ltr">;
+  initialPage?: CodegenTypes.Int32;
+  offscreenPageLimit?: CodegenTypes.Int32;
   // OneKey patch: Preserve nested pager gesture coordination for collapsible pages.
-  nestedScrollEnabled?: WithDefault<boolean, false>;
-  nativeSmoothHeaderScrollEnabled?: WithDefault<boolean, false>;
-  headerHeight?: Int32;
-  stickyHeaderHeight?: Int32;
-  topScrollEdgeEffect?: WithDefault<"none" | "hard" | "soft", "none">;
+  nestedScrollEnabled?: CodegenTypes.WithDefault<boolean, false>;
+  nativeSmoothHeaderScrollEnabled?: CodegenTypes.WithDefault<boolean, false>;
+  headerHeight?: CodegenTypes.Int32;
+  stickyHeaderHeight?: CodegenTypes.Int32;
+  topScrollEdgeEffect?: CodegenTypes.WithDefault<"none" | "hard" | "soft", "none">;
   topOverlayColorScheme?: string;
-  topOverlayHeight?: WithDefault<Double, 0>;
-  externalTopOverlayTag?: WithDefault<Int32, 0>;
+  topOverlayHeight?: CodegenTypes.WithDefault<CodegenTypes.Double, 0>;
+  externalTopOverlayTag?: CodegenTypes.WithDefault<CodegenTypes.Int32, 0>;
   pageKeys?: string;
   retainedPages?: string;
   nativeTabBarConfig?: string;
   nativeTabBarItems?: string;
-  nativeTabBarHeight?: Double;
+  nativeTabBarHeight?: CodegenTypes.Double;
   nativeTabBarVariant?: string;
-  nativeTabBarTrailingReservedWidth?: WithDefault<Double, 0>;
-  nativeTabBarContentPaddingHorizontal?: Double;
-  nativeTabBarContentPaddingVertical?: Double;
-  nativeTabBarItemSpacing?: Double;
-  nativeTabBarFontSize?: Double;
+  nativeTabBarTrailingReservedWidth?: CodegenTypes.WithDefault<CodegenTypes.Double, 0>;
+  nativeTabBarContentPaddingHorizontal?: CodegenTypes.Double;
+  nativeTabBarContentPaddingVertical?: CodegenTypes.Double;
+  nativeTabBarItemSpacing?: CodegenTypes.Double;
+  nativeTabBarFontSize?: CodegenTypes.Double;
   nativeTabBarFontFamily?: string;
   nativeTabBarBackgroundColor?: ColorValue;
   nativeTabBarActiveTextColor?: ColorValue;
   nativeTabBarInactiveTextColor?: ColorValue;
   nativeTabBarIndicatorColor?: ColorValue;
-  nativeTabBarIndicatorHeight?: Double;
-  nativeTabBarIndicatorBottom?: Double;
+  nativeTabBarIndicatorHeight?: CodegenTypes.Double;
+  nativeTabBarIndicatorBottom?: CodegenTypes.Double;
   nativeSubHeaderConfig?: string;
   nativeSubHeaderSelectedBackgroundColor?: ColorValue;
-  onPageScroll?: DirectEventHandler<OnPageScrollEventData>;
-  onPageSelected?: DirectEventHandler<OnPageSelectedEventData>;
-  onPageScrollStateChanged?: DirectEventHandler<OnPageScrollStateChangedEventData>;
-  onCollapsibleStateChanged?: DirectEventHandler<OnCollapsibleStateChangedEventData>;
-  onNativeToolbarPress?: DirectEventHandler<OnNativeToolbarPressEventData>;
-  onNativeTabPress?: DirectEventHandler<OnNativeTabPressEventData>;
-  onNativeSubHeaderPress?: DirectEventHandler<OnNativeTabPressEventData>;
-  onScrollEdgeCapability?: DirectEventHandler<OnScrollEdgeCapabilityEventData>;
+  onPageScroll?: CodegenTypes.DirectEventHandler<OnPageScrollEventData>;
+  onPageSelected?: CodegenTypes.DirectEventHandler<OnPageSelectedEventData>;
+  onPageScrollStateChanged?: CodegenTypes.DirectEventHandler<OnPageScrollStateChangedEventData>;
+  onCollapsibleStateChanged?: CodegenTypes.DirectEventHandler<OnCollapsibleStateChangedEventData>;
+  onNativeToolbarPress?: CodegenTypes.DirectEventHandler<OnNativeToolbarPressEventData>;
+  onNativeTabPress?: CodegenTypes.DirectEventHandler<OnNativeTabPressEventData>;
+  onNativeSubHeaderPress?: CodegenTypes.DirectEventHandler<OnNativeTabPressEventData>;
+  onScrollEdgeCapability?: CodegenTypes.DirectEventHandler<OnScrollEdgeCapabilityEventData>;
 }
 
 type CollapsiblePagerViewNativeType = HostComponent<NativeProps>;
@@ -102,24 +97,24 @@ type CollapsiblePagerViewNativeType = HostComponent<NativeProps>;
 export interface NativeCommands {
   scrollHeaderToOffset: (
     viewRef: React.ElementRef<CollapsiblePagerViewNativeType>,
-    offset: Double
+    offset: CodegenTypes.Double
   ) => void;
   scrollHeaderBy: (
     viewRef: React.ElementRef<CollapsiblePagerViewNativeType>,
-    delta: Double
+    delta: CodegenTypes.Double
   ) => void;
   scrollToTop: (
     viewRef: React.ElementRef<CollapsiblePagerViewNativeType>,
-    target: Int32,
+    target: CodegenTypes.Int32,
     animated: boolean
   ) => void;
   setPage: (
     viewRef: React.ElementRef<CollapsiblePagerViewNativeType>,
-    selectedPage: Int32
+    selectedPage: CodegenTypes.Int32
   ) => void;
   setPageWithoutAnimation: (
     viewRef: React.ElementRef<CollapsiblePagerViewNativeType>,
-    selectedPage: Int32
+    selectedPage: CodegenTypes.Int32
   ) => void;
   setScrollEnabledImperatively: (
     viewRef: React.ElementRef<CollapsiblePagerViewNativeType>,

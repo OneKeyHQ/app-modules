@@ -2190,3 +2190,12 @@ catalog without an App checkout, including raw source digests and viewBox sizes.
 It emits metadata only. Production consumers must supply the complete host icon
 bundle/assets and Web provider; SDK-only fixture tests prove their closed sample
 coverage, while the App's independent generator verifies all 1,909 resources.
+
+## Public host-ref types
+
+`webSectionIndexContainerRef` derives its host instance from
+`React.ElementRef<typeof View>` with the existing nullable `RefObject` shape.
+It accepts the actual React Native View ref on RN 0.86.2 and 0.88.0 without a
+private type import or consumer declaration patch. Normal declaration builds and
+positive/negative typed ref assignments verify the boundary. This is type-only:
+emitted JavaScript, native schemas, props and runtime behavior are unchanged.

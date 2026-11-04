@@ -1,9 +1,9 @@
 import type { ScrollEdgeEffect } from "./ScrollEdgeEffect";
 import React from "react";
 import { createNamedIcon } from "@onekeyfe/react-native-image/icon/dom";
-import type { CollapsiblePagerNativeTabBarConfig, CollapsiblePagerToolbarPress, CollapsiblePagerViewOnNativeTabPressEvent } from "./CollapsiblePagerView";
+import type { CollapsiblePagerNativeTabBarConfig, CollapsiblePagerToolbarItem, CollapsiblePagerToolbarPress, CollapsiblePagerViewOnNativeTabPressEvent } from "./CollapsiblePagerView";
 export type { CollapsiblePagerNativeTabBarConfig, CollapsiblePagerNativeTabBarItem, CollapsiblePagerNativeTabBarStyle, CollapsiblePagerToolbarItem, CollapsiblePagerToolbarPress } from "./CollapsiblePagerView";
-import { I18nManager, Platform, StyleSheet, View } from "react-native";
+import { I18nManager, Platform, processColor, StyleSheet, View } from "react-native";
 import type * as ReactNative from "react-native";
 
 import { WebCollapsiblePagerPage } from "./WebCollapsiblePagerPage";
@@ -195,6 +195,10 @@ export class CollapsiblePagerView extends React.PureComponent<
 
   private root: HTMLElement | null = null;
   private track: HTMLElement | null = null;
+  private tabProgress: number | null = null;
+  private tabProgressFrame: number | null = null;
+  private tabProgressGeneration = 0;
+  private tabButtons = new Map<string, HTMLButtonElement>();
   private headerSlot: HTMLElement | null = null;
   private stickySlot: HTMLElement | null = null;
   private cssTimelineSupported = false;
@@ -243,6 +247,7 @@ export class CollapsiblePagerView extends React.PureComponent<
     key: string;
   }> | null = null;
   private transitionTimer: ReturnType<typeof setTimeout> | null = null;
+  private transitionGeneration = 0;
   private pageScrollState: OnPageScrollStateChangedEventData["pageScrollState"] =
     "idle";
   private configuredScrollElement: ConfiguredScrollElement | null = null;
@@ -297,6 +302,9 @@ export class CollapsiblePagerView extends React.PureComponent<
     this.scheduleScrollConfiguration();
     this.syncFallbackHeader();
     this.notifyMountedPagesChanged();
+    this.syncToolbar();
+    this.tabProgress = this.state.selectedPage;
+    this.syncTabColors();
     this.emitDiagnostics("mounted");
   }
 
@@ -366,6 +374,10 @@ export class CollapsiblePagerView extends React.PureComponent<
     this.scheduleScrollConfiguration();
     this.syncFallbackHeader();
     this.notifyMountedPagesChanged();
+    this.syncToolbar();
+    if (previousProps.isActive === false && this.props.isActive !== false) this.readTabProgress();
+    if (this.props.isActive === false || !this.tabColorWeights()) this.cancelTabProgressFrame();
+    this.syncTabColors();
   }
 
   componentWillUnmount() {
@@ -373,6 +385,7 @@ export class CollapsiblePagerView extends React.PureComponent<
     const routeTarget = this.captureRouteTarget(this.props);
     if (routeTarget) this.setRouteTarget(routeTarget);
     this.disposed = true;
+    this.setToolbarSlot(null);
     this.selectionRestoreToken += 1;
     this.cancelPendingTopFrame();
     this.savePageOffset(this.state.selectedPage);
@@ -418,6 +431,7 @@ export class CollapsiblePagerView extends React.PureComponent<
 
   private observeChrome() {
     this.chromeObserver = new ResizeObserver(this.scheduleChromeMeasurement);
+    if (this.root) this.chromeObserver.observe(this.root);
     if (this.headerContent) this.chromeObserver.observe(this.headerContent);
     if (this.stickyContent) this.chromeObserver.observe(this.stickyContent);
     this.scheduleChromeMeasurement();
@@ -446,6 +460,8 @@ export class CollapsiblePagerView extends React.PureComponent<
       this.measuredStickyHeight = nextSticky;
       this.headerMeasured = Boolean(header?.isConnected);
       this.stickyMeasured = Boolean(sticky?.isConnected);
+      this.syncToolbar();
+      this.syncTabColors();
       if (headerChanged || stickyChanged) {
         this.forceUpdate();
         this.scheduleScrollConfiguration();
@@ -748,21 +764,32 @@ export class CollapsiblePagerView extends React.PureComponent<
   }
 
   private finishPageTransition = () => {
+    this.transitionGeneration += 1;
     if (this.transitionTimer !== null) {
       clearTimeout(this.transitionTimer);
       this.transitionTimer = null;
     }
+    this.readTabProgress();
+    this.cancelTabProgressFrame();
+    this.syncTabColors();
     this.emitPageScrollState("idle");
+    this.syncToolbar();
   };
 
   private beginPageTransition() {
+    this.suspendToolbar();
     if (this.transitionTimer !== null) clearTimeout(this.transitionTimer);
+    const generation = ++this.transitionGeneration;
     this.emitPageScrollState("settling");
-    this.transitionTimer = setTimeout(this.finishPageTransition, 320);
+    this.transitionTimer = setTimeout(() => {
+      if (generation === this.transitionGeneration) this.finishPageTransition();
+    }, 320);
   }
 
   private onTrackTransitionEnd = (event: TransitionEvent) => {
     if (event.target === this.track && event.propertyName === "transform") {
+      this.readTabProgress();
+      if (this.tabColorWeights() && this.tabProgress !== null && Math.abs(this.tabProgress - this.state.selectedPage) > 0.001) return;
       this.finishPageTransition();
     }
   };
@@ -770,10 +797,99 @@ export class CollapsiblePagerView extends React.PureComponent<
   private setTrack = (node: unknown) => {
     const track = webElement(node);
     if (track === this.track) return;
+    this.cancelTabProgressFrame();
     this.track?.removeEventListener("transitionend", this.onTrackTransitionEnd);
     this.track = track;
     this.track?.addEventListener("transitionend", this.onTrackTransitionEnd);
   };
+
+  private cancelTabProgressFrame() {
+    this.tabProgressGeneration += 1;
+    if (this.tabProgressFrame !== null) cancelAnimationFrame(this.tabProgressFrame);
+    this.tabProgressFrame = null;
+  }
+
+  private readTabProgress() {
+    const track = this.track;
+    const width = this.root?.getBoundingClientRect().width ?? 0;
+    if (!track?.isConnected || width <= 0) return null;
+    const transform = track.ownerDocument.defaultView?.getComputedStyle(track).transform;
+    const matrix = transform?.match(/^matrix(3d)?\(([^)]+)\)$/);
+    const offset = matrix ? Number(matrix[2].split(",")[matrix[1] ? 12 : 4]) : transform === "none" ? 0 : NaN;
+    if (!Number.isFinite(offset)) return null;
+    this.tabProgress = Math.min(Math.max(0, -offset / width), Math.max(0, this.pages().length - 1));
+    return this.tabProgress;
+  }
+
+  private startTabProgressFrames() {
+    this.cancelTabProgressFrame();
+    if (!this.tabColorWeights() || typeof requestAnimationFrame !== "function") return;
+    const track = this.track;
+    const root = this.root;
+    const width = root?.getBoundingClientRect().width ?? 0;
+    if (!track?.isConnected || !root?.isConnected || width <= 0 || this.props.isActive === false) return;
+    const generation = this.tabProgressGeneration;
+    const selection = this.selectionRestoreToken;
+    const keys = JSON.stringify(this.pages().map(pageKey));
+    const owner = this.pageScrollElement(this.state.selectedPage);
+    const sample = () => {
+      if (generation !== this.tabProgressGeneration || this.disposed) return;
+      this.tabProgressFrame = null;
+      if (this.track !== track || this.root !== root || !track.isConnected || !root.isConnected ||
+          this.props.isActive === false || selection !== this.selectionRestoreToken ||
+          keys !== JSON.stringify(this.pages().map(pageKey)) || owner !== this.pageScrollElement(this.state.selectedPage) ||
+          width !== root.getBoundingClientRect().width || !this.tabColorWeights()) {
+        this.cancelTabProgressFrame();
+        this.readTabProgress();
+        this.syncTabColors();
+        if (this.transitionTimer !== null) this.startTabProgressFrames();
+        return;
+      }
+      this.readTabProgress();
+      this.syncTabColors();
+      if (this.transitionTimer !== null) this.tabProgressFrame = requestAnimationFrame(sample);
+    };
+    sample();
+  }
+
+  private tabColorWeights() {
+    const config = this.props.nativeTabBar;
+    if (!config?.controlled || config.style?.variant !== "text" || this.tabProgress === null) return null;
+    const keys: string[] = [];
+    React.Children.forEach(this.props.children, child => {
+      if (child !== null && child !== undefined && typeof child !== "boolean") keys.push(pageKey(child, keys.length));
+    });
+    const itemKeys = config.items.map(item => item.key);
+    if (!keys.length || !keys.includes(config.selectedKey ?? "") || new Set(keys).size !== keys.length ||
+        new Set(itemKeys).size !== itemKeys.length || keys.some(key => !itemKeys.includes(key))) return null;
+    const progress = Math.min(Math.max(0, this.tabProgress), keys.length - 1);
+    const source = Math.floor(progress);
+    const destination = Math.min(source + 1, keys.length - 1);
+    const fraction = progress - source;
+    return new Map(keys.map((key, index) => [key, index === source ? 1 - fraction : index === destination ? fraction : 0]));
+  }
+
+  private tabColor(selected: boolean, weight: number | undefined) {
+    const style = this.props.nativeTabBar?.style;
+    const active = style?.activeTextColor ?? "#000000";
+    const inactive = style?.inactiveTextColor ?? "#666666";
+    if (weight === undefined) return String(selected ? active : inactive);
+    if (weight <= 0) return String(inactive);
+    if (weight >= 1) return String(active);
+    const first = processColor(inactive);
+    const last = processColor(active);
+    if (typeof first !== "number" || typeof last !== "number") return String(selected ? active : inactive);
+    const channel = (shift: number) => ((first >>> shift) & 255) * (1 - weight) + ((last >>> shift) & 255) * weight;
+    return `rgba(${Math.round(channel(16))}, ${Math.round(channel(8))}, ${Math.round(channel(0))}, ${(channel(24) / 255).toFixed(4)})`;
+  }
+
+  private syncTabColors() {
+    const weights = this.tabColorWeights();
+    const config = this.props.nativeTabBar;
+    if (!config) return;
+    const selectedKey = config.controlled ? config.selectedKey : config.items[this.state.selectedPage]?.key;
+    for (const [key, button] of this.tabButtons) button.style.color = this.tabColor(key === selectedKey, weights ? weights.get(key) ?? 0 : undefined);
+  }
 
   private pageScrollElement(index: number) {
     const pageHost = this.pageHosts.get(index);
@@ -797,7 +913,10 @@ export class CollapsiblePagerView extends React.PureComponent<
     this.root?.removeEventListener("touchend", this.onOverlayTouchEnd);
     this.root?.removeEventListener("touchcancel", this.onOverlayTouchEnd);
     this.overlayTouch = null;
+    if (this.root) this.chromeObserver?.unobserve(this.root);
     this.root = root;
+    if (root) this.chromeObserver?.observe(root);
+    else this.suspendToolbar();
     root?.addEventListener(
       "ok-collapsible-pager-scroll-key-changed",
       this.onScrollOwnerIdentityChanged
@@ -1198,10 +1317,14 @@ export class CollapsiblePagerView extends React.PureComponent<
     this.savePageOffset(this.state.selectedPage);
 
     if (animated) this.beginPageTransition();
-    else this.finishPageTransition();
+    else {
+      this.finishPageTransition();
+      this.tabProgress = position;
+    }
     this.setState(
       { selectedPage: position, animateTransition: animated },
       () => {
+        if (animated) this.startTabProgressFrames();
         this.scheduleScrollConfiguration();
         const restore = () => {
           if (
@@ -1301,6 +1424,7 @@ export class CollapsiblePagerView extends React.PureComponent<
       this.cancelPendingTopFrame();
       this.horizontalTouch = true;
       this.emitPageScrollState("dragging");
+      this.suspendToolbar();
     }
   };
 
@@ -1345,18 +1469,259 @@ export class CollapsiblePagerView extends React.PureComponent<
     if (wasHorizontal) this.finishPageTransition();
   };
 
+  private toolbarSlot: HTMLDivElement | null = null;
+  private toolbarButton: HTMLButtonElement | null = null;
+  private toolbarOwnerKey: string | undefined;
+  private toolbarOwnerEntry: CollapsiblePagerToolbarItem | undefined;
+  private toolbarIconIdentity = "";
+  private toolbarLoadedIcon: SVGSVGElement | null = null;
+  private toolbarPendingIdentity = "";
+  private toolbarReadyIcon: SVGSVGElement | null = null;
+  private toolbarFailedIdentity = "";
+  private toolbarAnimation: Animation | null = null;
+  private toolbarPresence = false;
+  private toolbarPresenceInterrupted = false;
+  private toolbarImage: HTMLImageElement | null = null;
+  private toolbarGeneration = 0;
+  private toolbarTouchKey: string | null | undefined;
+
+  private ownsSettledToolbar() {
+    return this.props.nativeTabBar?.controlled === true && this.props.nativeTabBar.toolbar !== undefined;
+  }
+
+  private toolbarCanCommit() {
+    if (!this.ownsSettledToolbar()) return true;
+    if (this.disposed || this.props.isActive === false || this.horizontalTouch ||
+        this.transitionTimer !== null || this.pageScrollState !== "idle" || !this.root?.isConnected) return false;
+    const actual = this.readTabProgress();
+    if (actual === null || Math.abs(actual - this.state.selectedPage) > 0.001) return false;
+    const config = this.props.nativeTabBar!;
+    const keys: string[] = [];
+    React.Children.forEach(this.props.children, child => {
+      if (child !== null && child !== undefined && typeof child !== "boolean") keys.push(pageKey(child, keys.length));
+    });
+    const itemKeys = config.items.map(item => item.key);
+    const valid = keys.length > 0 && new Set(keys).size === keys.length &&
+      new Set(itemKeys).size === itemKeys.length && keys.every(key => itemKeys.includes(key));
+    return !valid || !keys.includes(config.selectedKey ?? "") || keys[this.state.selectedPage] === config.selectedKey;
+  }
+
+  private cancelToolbarPending() {
+    if (this.toolbarPendingIdentity || this.toolbarImage || this.toolbarReadyIcon) this.toolbarGeneration += 1;
+    if (this.toolbarImage) this.toolbarImage.onload = this.toolbarImage.onerror = null;
+    this.toolbarImage = null;
+    this.toolbarPendingIdentity = "";
+    this.toolbarReadyIcon = null;
+  }
+
+  private setToolbarInteractive(enabled: boolean) {
+    const button = this.toolbarButton;
+    if (!button) return;
+    if (!enabled) {
+      if (button.ownerDocument.activeElement === button) button.blur();
+      if (this.toolbarTouchKey !== undefined) this.toolbarTouchKey = null;
+    }
+    button.disabled = !enabled;
+    button.style.pointerEvents = enabled ? "auto" : "none";
+    button.tabIndex = enabled ? 0 : -1;
+    button.setAttribute("aria-hidden", String(!enabled));
+  }
+
+  private suspendToolbar() {
+    if (!this.ownsSettledToolbar()) return;
+    this.setToolbarInteractive(false);
+    this.cancelToolbarPending();
+    if (this.toolbarAnimation && this.toolbarButton) {
+      const opacity = this.toolbarButton.ownerDocument.defaultView?.getComputedStyle(this.toolbarButton).opacity;
+      this.toolbarAnimation.cancel();
+      this.toolbarAnimation = null;
+      this.toolbarButton.style.opacity = opacity || this.toolbarButton.style.opacity;
+      this.toolbarPresenceInterrupted = true;
+    }
+  }
+
+  private setToolbarSlot = (slot: HTMLDivElement | null) => {
+    if (this.toolbarSlot === slot) return;
+    this.toolbarAnimation?.cancel();
+    this.toolbarAnimation = null;
+    this.cancelToolbarPending();
+    this.toolbarGeneration += 1;
+    this.toolbarButton?.remove();
+    this.toolbarButton = null;
+    this.toolbarOwnerKey = undefined;
+    this.toolbarOwnerEntry = undefined;
+    this.toolbarIconIdentity = "";
+    this.toolbarLoadedIcon = null;
+    this.toolbarFailedIdentity = "";
+    this.toolbarPresence = false;
+    this.toolbarPresenceInterrupted = false;
+    this.toolbarTouchKey = null;
+    this.toolbarSlot = slot;
+    if (slot) this.syncToolbar();
+  };
+
+  private animateToolbar(visible: boolean) {
+    const button = this.toolbarButton;
+    if (!button || (this.toolbarPresence === visible && !this.toolbarPresenceInterrupted)) return;
+    this.toolbarPresenceInterrupted = false;
+    this.toolbarPresence = visible;
+    const current = button.ownerDocument.defaultView?.getComputedStyle(button).opacity ?? button.style.opacity;
+    this.toolbarAnimation?.cancel();
+    this.toolbarAnimation = null;
+    button.style.opacity = visible ? "1" : "0";
+    const finish = () => {
+      button.hidden = !visible;
+      if (!visible && !this.toolbarOwnerKey && this.toolbarButton === button) {
+        button.remove();
+        this.toolbarButton = null;
+      }
+    };
+    if (typeof button.animate !== "function") { finish(); return; }
+    button.hidden = false;
+    const animation = button.animate([{ opacity: current || "0" }, { opacity: visible ? "1" : "0" }], { duration: 100, fill: "forwards" });
+    this.toolbarAnimation = animation;
+    animation.onfinish = () => {
+      if (this.toolbarAnimation !== animation || this.toolbarButton !== button || this.toolbarPresence !== visible) return;
+      animation.cancel();
+      this.toolbarAnimation = null;
+      finish();
+    };
+  }
+
+  private hideToolbar(failed: boolean) {
+    this.setToolbarInteractive(false);
+    this.toolbarOwnerKey = undefined;
+    this.toolbarOwnerEntry = undefined;
+    this.toolbarButton?.removeAttribute("data-testid");
+    this.toolbarButton?.removeAttribute("aria-label");
+    if (failed) this.toolbarButton?.replaceChildren();
+    this.animateToolbar(false);
+  }
+
+  private commitToolbar(key: string, entry: CollapsiblePagerToolbarItem, icon: SVGSVGElement, identity: string) {
+    const button = this.toolbarButton;
+    if (!button || !this.toolbarCanCommit()) return;
+    if (this.toolbarOwnerKey !== key && this.toolbarTouchKey !== undefined) this.toolbarTouchKey = null;
+    const size = Math.min(128, Math.max(1, entry.size ?? 38));
+    const iconSize = Math.min(size, Math.max(1, entry.iconSize ?? 24));
+    const contentWidth = Math.min(size, Math.max(0, entry.contentWidth ?? 24));
+    const trailingInset = Math.min(128, Math.max(0, entry.trailingInset ?? 20));
+    if (button.firstChild !== icon) button.replaceChildren(icon);
+    Object.assign(button.style, { position: "absolute", width: `${size}px`, height: `${size}px`, borderRadius: "50%", top: "50%", transform: "translateY(-50%)",
+      insetInlineEnd: `${trailingInset - (size - contentWidth) / 2}px`, padding: `${(size - iconSize) / 2}px`, color: entry.iconColor ?? "#000000" });
+    button.style.setProperty("--pager-toolbar-base", entry.selected ? entry.selectedBackgroundColor ?? "transparent" : "transparent");
+    button.style.setProperty("--pager-toolbar-hover", entry.hoverBackgroundColor ?? "transparent");
+    button.style.setProperty("--pager-toolbar-pressed", entry.pressedBackgroundColor ?? "transparent");
+    button.setAttribute("aria-label", entry.accessibilityLabel ?? "");
+    if (entry.testID) button.setAttribute("data-testid", entry.testID); else button.removeAttribute("data-testid");
+    this.toolbarOwnerKey = key;
+    this.toolbarOwnerEntry = { ...entry };
+    this.toolbarIconIdentity = identity;
+    this.toolbarLoadedIcon = icon;
+    this.toolbarPendingIdentity = "";
+    this.toolbarReadyIcon = null;
+    this.toolbarImage = null;
+    this.animateToolbar(true);
+    this.setToolbarInteractive(true);
+  }
+
+  private syncToolbar() {
+    const slot = this.toolbarSlot;
+    if (!slot) return;
+    if (!this.toolbarCanCommit()) { this.suspendToolbar(); return; }
+    const config = this.props.nativeTabBar;
+    const key = config?.controlled ? config.selectedKey : config?.items[this.state.selectedPage]?.key;
+    const entry = key ? config?.toolbar?.[key] : undefined;
+    if (!entry?.iconName || !key) {
+      this.cancelToolbarPending();
+      this.hideToolbar(false);
+      return;
+    }
+    let button = this.toolbarButton;
+    if (!button) {
+      button = slot.ownerDocument.createElement("button");
+      button.type = "button";
+      button.className = "ok-pager-toolbar";
+      button.style.opacity = "0";
+      button.hidden = true;
+      button.disabled = true;
+      button.addEventListener("pointerdown", () => { this.toolbarTouchKey = button!.disabled ? null : this.toolbarOwnerKey ?? null; });
+      button.addEventListener("pointercancel", () => { this.toolbarTouchKey = null; });
+      button.onclick = event => {
+        if (this.toolbarButton !== event.currentTarget) return;
+        const pointer = event.detail !== 0;
+        const touched = this.toolbarTouchKey;
+        if (pointer) this.toolbarTouchKey = undefined;
+        const current = this.props.nativeTabBar;
+        const semantic = current?.controlled ? current.selectedKey : current?.items[this.state.selectedPage]?.key;
+        const owner = this.toolbarOwnerKey;
+        if (button!.disabled || !this.toolbarCanCommit() || !owner || owner !== semantic ||
+            !this.toolbarOwnerEntry || (pointer && touched !== owner)) return;
+        const rect = button!.getBoundingClientRect();
+        this.props.onNativeToolbarPress?.({ nativeEvent: { key: owner,
+          anchorRect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } } } as ReactNative.NativeSyntheticEvent<CollapsiblePagerToolbarPress>);
+      };
+      slot.appendChild(button);
+      this.toolbarButton = button;
+      this.toolbarPresence = false;
+    }
+    const size = Math.min(128, Math.max(1, entry.size ?? 38));
+    const iconSize = Math.min(size, Math.max(1, entry.iconSize ?? 24));
+    const identity = `${entry.iconName}|${entry.iconColor ?? "#000000"}|${iconSize}`;
+    if (identity === this.toolbarIconIdentity && this.toolbarLoadedIcon) {
+      this.cancelToolbarPending();
+      this.commitToolbar(key, entry, this.toolbarLoadedIcon, identity);
+      return;
+    }
+    if (identity === this.toolbarPendingIdentity) {
+      if (this.toolbarReadyIcon) this.commitToolbar(key, entry, this.toolbarReadyIcon, identity);
+      return;
+    }
+    this.cancelToolbarPending();
+    this.setToolbarInteractive(false);
+    this.toolbarPendingIdentity = identity;
+    if (identity === this.toolbarFailedIdentity) { this.hideToolbar(true); return; }
+    const generation = ++this.toolbarGeneration;
+    const icon = createNamedIcon(button.ownerDocument, entry.iconName);
+    icon.setAttribute("width", String(iconSize)); icon.setAttribute("height", String(iconSize));
+    const use = icon.querySelector("use");
+    const fail = () => {
+      if (this.toolbarGeneration !== generation || this.toolbarPendingIdentity !== identity) return;
+      this.toolbarImage = null;
+      this.toolbarFailedIdentity = identity;
+      this.hideToolbar(true);
+    };
+    if (!use) { fail(); return; }
+    const ready = () => {
+      if (this.disposed || this.toolbarGeneration !== generation || this.toolbarPendingIdentity !== identity) return;
+      this.toolbarImage = null;
+      this.toolbarReadyIcon = icon;
+      this.syncToolbar();
+    };
+    const href = use.getAttribute("href") ?? use.getAttribute("xlink:href") ?? "";
+    const view = button.ownerDocument.defaultView;
+    if (view?.Image && href.split("#")[0]) {
+      const image = new view.Image();
+      this.toolbarImage = image;
+      image.onload = ready;
+      image.onerror = fail;
+      image.src = href.split("#")[0];
+    } else ready();
+  }
+
   private renderNativeTabBar() {
     const config = this.props.nativeTabBar;
     if (!config?.items.length || (config.style?.variant !== "text" && config.controlled !== true && config.toolbar === undefined)) return null;
     const style = config.style;
     const variant = style?.variant ?? "underline";
     const selectedKey = config.controlled ? config.selectedKey : config.items[this.state.selectedPage]?.key;
-    const toolbar = selectedKey ? config.toolbar?.[selectedKey] : undefined;
-    const size = Math.min(128, Math.max(1, toolbar?.size ?? 38));
-    const iconSize = Math.min(size, Math.max(1, toolbar?.iconSize ?? 24));
-    const contentWidth = Math.min(size, Math.max(0, toolbar?.contentWidth ?? 24));
-    const trailingInset = Math.min(128, Math.max(0, toolbar?.trailingInset ?? 20));
+    const toolbarEntries = config.toolbar === undefined ? undefined : Object.values(config.toolbar);
+    const reservedWidth = toolbarEntries === undefined ? 0 : toolbarEntries.length === 0 ? 44 : Math.max(...toolbarEntries.map(entry => {
+      const size = Math.min(128, Math.max(1, entry.size ?? 38));
+      return Math.min(size, Math.max(0, entry.contentWidth ?? 24)) + Math.min(128, Math.max(0, entry.trailingInset ?? 20));
+    }));
     const segmented = variant === "segmented";
+    const colorWeights = this.tabColorWeights();
     return React.createElement("div", {
       className: "ok-pager-tab-bar",
       dir: this.props.layoutDirection === "rtl" || ((this.props.layoutDirection ?? "locale") === "locale" && I18nManager.isRTL) ? "rtl" : "ltr",
@@ -1370,12 +1735,13 @@ export class CollapsiblePagerView extends React.PureComponent<
           const selected = item.key === selectedKey;
           return React.createElement("button", {
             key: item.key, role: "tab", type: "button", className: "ok-pager-tab", "aria-selected": selected,
+            ref: (button: HTMLButtonElement | null) => { if (button) this.tabButtons.set(item.key, button); else this.tabButtons.delete(item.key); },
             "aria-label": item.accessibilityLabel ?? item.title, "data-testid": item.testID,
             style: { padding: variant === "text" ? "6px 10px" : "6px 8px", minWidth: 44, height: (style?.height ?? 44) - 2 * (style?.contentPaddingVertical ?? 0),
               fontSize: style?.fontSize ?? (variant === "text" ? 18 : 16),
               fontWeight: variant === "text" && selected ? 600 : 500,
               fontFamily: selected ? style?.activeFontFamily ?? style?.fontFamily : style?.fontFamily,
-              color: String(selected ? style?.activeTextColor ?? "#000000" : style?.inactiveTextColor ?? "#666666"),
+              color: this.tabColor(selected, colorWeights ? colorWeights.get(item.key) ?? 0 : undefined),
               flex: segmented ? 1 : undefined, borderRadius: segmented ? 999 : 0,
               backgroundColor: segmented && selected ? String(style?.indicatorColor ?? "transparent") : "transparent",
               borderBottom: variant === "underline" && selected ? `${style?.indicatorHeight ?? 2}px solid ${String(style?.indicatorColor ?? "#000000")}` : undefined },
@@ -1388,28 +1754,7 @@ export class CollapsiblePagerView extends React.PureComponent<
             },
           }, item.title);
         })),
-      toolbar && selectedKey ? React.createElement("div", { style: { flexShrink: 0, width: contentWidth + trailingInset, height: "100%", position: "relative" } },
-        React.createElement("button", {
-          key: `${selectedKey}:${toolbar.iconName}`, type: "button", className: "ok-pager-toolbar",
-          "aria-label": toolbar.accessibilityLabel, "data-testid": toolbar.testID,
-          style: { position: "absolute", width: size, height: size, borderRadius: "50%", top: "50%", transform: "translateY(-50%)",
-            insetInlineStart: -(size - contentWidth) / 2, padding: (size - iconSize) / 2, color: toolbar.iconColor ?? "#000000",
-            "--pager-toolbar-base": toolbar.selected ? toolbar.selectedBackgroundColor ?? "transparent" : "transparent",
-            "--pager-toolbar-hover": toolbar.hoverBackgroundColor ?? "transparent",
-            "--pager-toolbar-pressed": toolbar.pressedBackgroundColor ?? "transparent" } as React.CSSProperties,
-          ref: (button: HTMLButtonElement | null) => {
-            if (!button) return;
-            const icon = createNamedIcon(button.ownerDocument, toolbar.iconName);
-            icon.setAttribute("width", String(iconSize)); icon.setAttribute("height", String(iconSize));
-            button.replaceChildren(icon);
-            button.disabled = !icon.querySelector("use");
-          },
-          onClick: (event: React.MouseEvent<HTMLButtonElement>) => {
-            const rect = event.currentTarget.getBoundingClientRect();
-            this.props.onNativeToolbarPress?.({ nativeEvent: { key: selectedKey,
-              anchorRect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } } } as ReactNative.NativeSyntheticEvent<CollapsiblePagerToolbarPress>);
-          },
-        })) : null);
+      config.toolbar !== undefined ? React.createElement("div", { ref: this.setToolbarSlot, className: "ok-pager-toolbar-slot", style: { flexShrink: 0, width: reservedWidth, height: "100%", position: "relative" } }) : null);
   }
 
   render() {

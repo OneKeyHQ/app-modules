@@ -20,6 +20,7 @@ jest.mock('react-native', () => {
   return {
     Platform: { OS: 'web' },
     I18nManager: { isRTL: false },
+    processColor: jest.requireActual('react-native').processColor,
     StyleSheet: { create: (styles: unknown) => styles },
     View: react.forwardRef(function MockView(
       { children, style: _style, testID, ...props }: React.PropsWithChildren<{
@@ -28,7 +29,13 @@ jest.mock('react-native', () => {
       }>,
       ref: React.Ref<HTMLDivElement>,
     ) {
-      return <div {...props} data-testid={testID} ref={ref}>{children}</div>;
+      const merged = Object.assign({}, ...(Array.isArray(_style) ? _style : [_style]).filter(value => value && typeof value === 'object')) as {
+        transitionProperty?: string; width?: string; transform?: Array<{ translateX?: string }>;
+      };
+      const trackStyle = merged.transitionProperty === 'transform' ? {
+        transform: `matrix(1, 0, 0, 1, ${Number.parseFloat(merged.transform?.[0]?.translateX ?? '0') / 100 * Number.parseFloat(merged.width ?? '100') / 100 * 390}, 0)`,
+      } : undefined;
+      return <div {...props} style={trackStyle} data-testid={testID} ref={ref}>{children}</div>;
     }),
   };
 });
@@ -36,6 +43,9 @@ jest.mock('react-native', () => {
 const { JSDOM } = require('jsdom') as {
   JSDOM: new (html: string, options: { url: string }) => { window: Window & typeof globalThis };
 };
+
+let completeArtwork = true;
+let artworkRequests: Array<{ onload: (() => void) | null; onerror: (() => void) | null }> = [];
 
 let snapshots: Array<{ key: string; state: WebCollapsiblePagerPageState }> = [];
 function latestSnapshot(key = 'A') { return [...snapshots].reverse().find((item) => item.key === key)?.state; }
@@ -72,6 +82,16 @@ async function flushFrames() {
 
 beforeEach(() => {
   const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', { url: 'http://localhost/' });
+  completeArtwork = true;
+  artworkRequests = [];
+  Object.defineProperty(dom.window, 'Image', { configurable: true, value: class {
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    set src(_value: string) {
+      artworkRequests.push(this);
+      if (completeArtwork) queueMicrotask(() => this.onload?.());
+    }
+  } });
   Object.defineProperty(dom.window.Element.prototype, 'scrollTo', {
     configurable: true,
     value(this: HTMLElement, options: ScrollToOptions) {
@@ -841,6 +861,9 @@ describe.each([375, 1920])('nested NativeList scroll ownership at %ipx', (width)
 
 
 describe('home native text toolbar DOM contract', () => {
+  beforeEach(() => {
+    jest.spyOn(window.HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => ({ width: 390, height: 844, x: 0, y: 0, top: 0, left: 0, bottom: 844, right: 390, toJSON() {} }));
+  });
   const items = [{ key: 'tokens', title: 'Tokens' }, { key: 'activity', title: 'Activity' },
     { key: 'extra', title: 'Extra' }];
   const toolbar = { tokens: { iconName: 'Copy3Outline', testID: 'token-toolbar',
@@ -912,8 +935,9 @@ describe('home native text toolbar DOM contract', () => {
     expect(onToolbar).not.toHaveBeenCalled();
   });
 
-  it('replaces toolbar identity and selected background when the controlled key changes', async () => {
-    await act(async () => root.render(renderBar('tokens')));
+  it('reuses the toolbar button and updates artwork and background when the controlled key changes', async () => {
+    const pager = React.createRef<CollapsiblePagerView>();
+    await act(async () => root.render(renderBar('tokens', jest.fn(), jest.fn(), toolbar, pager)));
     const previous = container.querySelector<HTMLButtonElement>('.ok-pager-toolbar')!;
     expect(previous.style.getPropertyValue('--pager-toolbar-base')).toBe('#cccccc');
     expect(previous.style.getPropertyValue('--pager-toolbar-hover')).toBe('#eeeeee');
@@ -921,13 +945,14 @@ describe('home native text toolbar DOM contract', () => {
     const styles = container.querySelector('style')!.textContent!;
     expect(styles).toContain('.ok-pager-toolbar:hover');
     expect(styles).toContain('.ok-pager-toolbar:active');
-    await act(async () => root.render(renderBar('extra')));
+    await act(async () => root.render(renderBar('extra', jest.fn(), jest.fn(), toolbar, pager)));
     const current = container.querySelector<HTMLButtonElement>('.ok-pager-toolbar')!;
-    expect(current).not.toBe(previous);
-    expect(previous.isConnected).toBe(false);
+    expect(current).toBe(previous);
+    expect(previous.isConnected).toBe(true);
     expect(current.style.getPropertyValue('--pager-toolbar-base')).toBe('transparent');
     expect(current.querySelector('use')!.getAttribute('href')).toContain('StarOutline.svg#onekey-StarOutline');
-    await act(async () => root.render(renderBar('activity')));
+    await act(async () => root.render(renderBar('activity', jest.fn(), jest.fn(), toolbar, pager)));
+    await act(async () => pager.current!.setPageWithoutAnimation(1));
     expect(current.isConnected).toBe(false);
     expect(container.querySelector('.ok-pager-toolbar')).toBeNull();
   });
@@ -945,6 +970,268 @@ describe('home native text toolbar DOM contract', () => {
       expect(container.querySelector('.ok-pager-tab-bar')).toBeNull();
       expect(container.querySelector('.ok-pager-toolbar')).toBeNull();
     }
+  });
+
+  it('keeps a fixed slot for empty/absent entries and uses the largest entry dimensions', async () => {
+    const configured = { ...toolbar, tokens: { ...toolbar.tokens, contentWidth: 30, trailingInset: 25 } };
+    await act(async () => root.render(renderBar('tokens', jest.fn(), jest.fn(), configured)));
+    const slot = container.querySelector<HTMLElement>('.ok-pager-toolbar-slot')!;
+    expect(slot.style.width).toBe('55px');
+    await act(async () => root.render(renderBar('extra', jest.fn(), jest.fn(), configured)));
+    expect(container.querySelector('.ok-pager-toolbar-slot')).toBe(slot);
+    expect(slot.style.width).toBe('55px');
+    await act(async () => root.render(renderBar('none', jest.fn(), jest.fn(), configured)));
+    expect(slot.style.width).toBe('55px');
+    expect(slot.querySelector('button')).toBeNull();
+    await act(async () => root.render(renderBar('none', jest.fn(), jest.fn(), {} as typeof toolbar)));
+    expect(slot.style.width).toBe('44px');
+    await act(async () => root.render(<CollapsiblePagerView nativeTabBar={{ controlled: true, selectedKey: 'tokens', items, style: { variant: 'text' } }} header={<div />} stickyHeader={<div />}>{makePage('tokens')}</CollapsiblePagerView>));
+    expect(container.querySelector('.ok-pager-toolbar-slot')).toBeNull();
+  });
+
+  it('reuses identical artwork across keys and rejects a stale pointer click', async () => {
+    const configured = { ...toolbar, extra: { ...toolbar.extra, iconName: toolbar.tokens.iconName } };
+    const onToolbar = jest.fn();
+    await act(async () => root.render(renderBar('tokens', jest.fn(), onToolbar, configured)));
+    const button = container.querySelector<HTMLButtonElement>('.ok-pager-toolbar')!;
+    const icon = button.querySelector('svg');
+    const requests = artworkRequests.length;
+    button.dispatchEvent(new window.Event('pointerdown', { bubbles: true }));
+    await act(async () => root.render(renderBar('extra', jest.fn(), onToolbar, configured)));
+    expect(container.querySelector('.ok-pager-toolbar')).toBe(button);
+    expect(button.querySelector('svg')).toBe(icon);
+    expect(artworkRequests).toHaveLength(requests);
+    button.dispatchEvent(new window.MouseEvent('click', { bubbles: true, detail: 1 }));
+    expect(onToolbar).not.toHaveBeenCalled();
+    button.dispatchEvent(new window.MouseEvent('click', { bubbles: true, detail: 0 }));
+    expect(onToolbar.mock.calls[0][0].nativeEvent.key).toBe('extra');
+  });
+
+  it('does not restart pending artwork and invalidates B when cached A returns', async () => {
+    await act(async () => root.render(renderBar('tokens')));
+    const button = container.querySelector<HTMLButtonElement>('.ok-pager-toolbar')!;
+    const initial = button.querySelector('svg');
+    completeArtwork = false;
+    await act(async () => root.render(renderBar('extra')));
+    const pending = artworkRequests[artworkRequests.length - 1];
+    const stale = pending.onload;
+    const requests = artworkRequests.length;
+    await act(async () => root.render(renderBar('extra')));
+    expect(artworkRequests).toHaveLength(requests);
+    await act(async () => root.render(renderBar('tokens')));
+    expect(button.disabled).toBe(false);
+    await act(async () => stale?.());
+    expect(button.querySelector('svg')).toBe(initial);
+    expect(button.disabled).toBe(false);
+  });
+
+  it('hides loaded artwork when returning to a failed identity without retrying it', async () => {
+    completeArtwork = false;
+    const onToolbar = jest.fn();
+    await act(async () => root.render(renderBar('tokens', jest.fn(), onToolbar)));
+    await act(async () => artworkRequests[0].onerror?.());
+    completeArtwork = true;
+    await act(async () => root.render(renderBar('extra', jest.fn(), onToolbar)));
+    const button = container.querySelector<HTMLButtonElement>('.ok-pager-toolbar')!;
+    expect(button.disabled).toBe(false);
+    expect(button.querySelector('use')!.getAttribute('href')).toContain('StarOutline.svg');
+    const requests = artworkRequests.length;
+    await act(async () => root.render(renderBar('tokens', jest.fn(), onToolbar)));
+    expect(button.disabled).toBe(true);
+    expect(button.hidden).toBe(true);
+    expect(button.getAttribute('aria-hidden')).toBe('true');
+    button.click();
+    expect(onToolbar).not.toHaveBeenCalled();
+    await act(async () => root.render(renderBar('tokens', jest.fn(), onToolbar)));
+    expect(artworkRequests).toHaveLength(requests);
+  });
+
+  it('cancels a pending replacement when returning to a failed identity', async () => {
+    completeArtwork = false;
+    await act(async () => root.render(renderBar('tokens')));
+    await act(async () => artworkRequests[0].onerror?.());
+    await act(async () => root.render(renderBar('extra')));
+    const pending = artworkRequests[artworkRequests.length - 1];
+    const stale = pending.onload;
+    const requests = artworkRequests.length;
+    await act(async () => root.render(renderBar('tokens')));
+    expect(pending.onload).toBeNull();
+    expect(pending.onerror).toBeNull();
+    await act(async () => stale?.());
+    const button = container.querySelector<HTMLButtonElement>('.ok-pager-toolbar')!;
+    expect(button.disabled).toBe(true);
+    expect(button.hidden).toBe(true);
+    expect(button.querySelector('use')).toBeNull();
+    await act(async () => root.render(renderBar('tokens')));
+    expect(artworkRequests).toHaveLength(requests);
+  });
+
+  function presenceAnimations() {
+    const calls: Array<{ frames: Keyframe[]; duration: number; animation: { cancel: jest.Mock; onfinish: (() => void) | null } }> = [];
+    Object.defineProperty(window.HTMLElement.prototype, 'animate', { configurable: true, value(frames: Keyframe[], options: KeyframeAnimationOptions) {
+      const animation = { cancel: jest.fn(), onfinish: null as (() => void) | null };
+      calls.push({ frames, duration: Number(options.duration), animation }); return animation;
+    } }); return calls;
+  }
+  const adjacentToolbar = { ...toolbar, activity: { ...toolbar.extra, accessibilityLabel: 'Activity tools', testID: 'activity-toolbar', selected: false } };
+  function finishTrack(track: HTMLElement) {
+    const event = new window.Event('transitionend');
+    Object.defineProperty(event, 'propertyName', { value: 'transform' }); track.dispatchEvent(event);
+  }
+  it('retains old metadata through motion and atomically replaces different artwork after settle and readiness', async () => {
+    const animations = presenceAnimations(); const pager = React.createRef<CollapsiblePagerView>(); const onToolbar = jest.fn();
+    const render = (key: string) => renderBar(key, jest.fn(), onToolbar, adjacentToolbar, pager);
+    await act(async () => root.render(render('tokens'))); animations[0].animation.onfinish?.();
+    const presentation = colorPresentation(); const button = container.querySelector<HTMLButtonElement>('.ok-pager-toolbar')!;
+    const artwork = button.firstChild; const requests = artworkRequests.length; completeArtwork = false;
+    button.dispatchEvent(new window.Event('pointerdown', { bubbles: true }));
+    await act(async () => root.render(render('activity')));
+    expect(button.disabled).toBe(true); expect(button.getAttribute('aria-hidden')).toBe('true');
+    expect(button.getAttribute('aria-label')).toBe('Token settings');
+    expect(button.style.getPropertyValue('--pager-toolbar-base')).toBe('#cccccc');
+    expect(button.firstChild).toBe(artwork); expect(artworkRequests).toHaveLength(requests);
+    await act(async () => pager.current!.setPage(1)); presentation.setOffset(-195); await flushFrames();
+    expect(button.firstChild).toBe(artwork); expect(button.getAttribute('aria-label')).toBe('Token settings');
+    expect(artworkRequests).toHaveLength(requests); presentation.setOffset(-390);
+    await act(async () => finishTrack(presentation.track));
+    expect(button.firstChild).toBe(artwork); expect(button.disabled).toBe(true);
+    expect(button.getAttribute('aria-label')).toBe('Token settings'); expect(artworkRequests).toHaveLength(requests + 1);
+    await act(async () => artworkRequests[requests].onload?.());
+    expect(container.querySelector('.ok-pager-toolbar')).toBe(button); expect(button.firstChild).not.toBe(artwork);
+    expect(button.getAttribute('aria-label')).toBe('Activity tools');
+    expect(button.style.getPropertyValue('--pager-toolbar-base')).toBe('transparent');
+    expect(button.disabled).toBe(false); expect(animations).toHaveLength(1);
+    button.dispatchEvent(new window.MouseEvent('click', { bubbles: true, detail: 1 })); expect(onToolbar).not.toHaveBeenCalled();
+    button.click(); expect(onToolbar.mock.calls[0][0].nativeEvent.key).toBe('activity');
+  });
+  it('transfers a shared SVG owner and LP state only at settle without replaying old pointer input', async () => {
+    const animations = presenceAnimations(); const pager = React.createRef<CollapsiblePagerView>(); const onToolbar = jest.fn();
+    const map = { ...adjacentToolbar, activity: { ...adjacentToolbar.activity, iconName: toolbar.tokens.iconName } };
+    const render = (key: string) => renderBar(key, jest.fn(), onToolbar, map, pager);
+    await act(async () => root.render(render('tokens'))); animations[0].animation.onfinish?.();
+    const presentation = colorPresentation(); const button = container.querySelector<HTMLButtonElement>('.ok-pager-toolbar')!;
+    const icon = button.firstChild; const requests = artworkRequests.length;
+    button.focus(); button.dispatchEvent(new window.Event('pointerdown', { bubbles: true }));
+    await act(async () => root.render(render('activity')));
+    expect(document.activeElement).not.toBe(button); expect(button.getAttribute('aria-label')).toBe('Token settings');
+    expect(button.style.getPropertyValue('--pager-toolbar-base')).toBe('#cccccc');
+    await act(async () => pager.current!.setPage(1)); presentation.setOffset(-390);
+    await act(async () => finishTrack(presentation.track));
+    expect(button.firstChild).toBe(icon); expect(artworkRequests).toHaveLength(requests); expect(animations).toHaveLength(1);
+    expect(button.getAttribute('aria-label')).toBe('Activity tools'); expect(button.style.getPropertyValue('--pager-toolbar-base')).toBe('transparent');
+    button.click(); expect(onToolbar.mock.calls[0][0].nativeEvent.key).toBe('activity');
+    button.dispatchEvent(new window.MouseEvent('click', { bubbles: true, detail: 1 })); expect(onToolbar).toHaveBeenCalledTimes(1);
+    button.dispatchEvent(new window.Event('pointerdown', { bubbles: true }));
+    button.dispatchEvent(new window.MouseEvent('click', { bubbles: true, detail: 1 })); expect(onToolbar).toHaveBeenCalledTimes(2);
+  });
+  it('uses cancellable 100ms presence fades while keeping the full map slot', async () => {
+    const animations = presenceAnimations(); const pager = React.createRef<CollapsiblePagerView>();
+    const render = (key: string) => renderBar(key, jest.fn(), jest.fn(), toolbar, pager);
+    await act(async () => root.render(render('tokens'))); animations[0].animation.onfinish?.();
+    const button = container.querySelector<HTMLButtonElement>('.ok-pager-toolbar')!;
+    await act(async () => root.render(render('activity'))); await act(async () => pager.current!.setPageWithoutAnimation(1));
+    expect(button.disabled).toBe(true); expect(button.getAttribute('aria-hidden')).toBe('true');
+    expect(animations[1].duration).toBe(100); expect(animations[1].frames[1].opacity).toBe('0');
+    expect(container.querySelector<HTMLElement>('.ok-pager-toolbar-slot')!.style.width).toBe('44px');
+    const staleHide = animations[1].animation.onfinish;
+    const originalStyle = window.getComputedStyle.bind(window);
+    jest.spyOn(window, 'getComputedStyle').mockImplementation(element => element === button ? { opacity: '0.4' } as CSSStyleDeclaration : originalStyle(element));
+    await act(async () => root.render(render('tokens'))); await act(async () => pager.current!.setPageWithoutAnimation(0));
+    expect(animations[2].frames[1].opacity).toBe('1'); expect(animations.every(item => item.duration === 100)).toBe(true);
+    expect(animations[2].frames[0].opacity).toBe('0.4');
+    staleHide?.(); expect(container.querySelector('.ok-pager-toolbar')).toBe(button); expect(button.disabled).toBe(false);
+  });
+
+  it('keeps a timeout-before-physical-end disabled and restores no-animation ownership after an interrupted transition', async () => {
+    jest.useFakeTimers({ doNotFake: ['queueMicrotask', 'requestAnimationFrame', 'cancelAnimationFrame'] });
+    try {
+      const pager = React.createRef<CollapsiblePagerView>(); const onToolbar = jest.fn();
+      const render = (key: string) => renderBar(key, jest.fn(), onToolbar, adjacentToolbar, pager);
+      await act(async () => root.render(render('tokens')));
+      const presentation = colorPresentation(); const button = container.querySelector<HTMLButtonElement>('.ok-pager-toolbar')!;
+      await act(async () => root.render(render('activity'))); await act(async () => pager.current!.setPage(1));
+      presentation.setOffset(-195); await act(async () => jest.advanceTimersByTime(400));
+      expect(button.disabled).toBe(true); expect(button.getAttribute('aria-label')).toBe('Token settings');
+      presentation.setOffset(-390); await act(async () => finishTrack(presentation.track));
+      expect(button.disabled).toBe(false); expect(button.getAttribute('aria-label')).toBe('Activity tools');
+      await act(async () => root.render(render('tokens'))); presentation.setOffset(-195);
+      await act(async () => pager.current!.setPage(0)); expect(button.disabled).toBe(true);
+      presentation.setOffset(0); await act(async () => pager.current!.setPageWithoutAnimation(1));
+      await act(async () => pager.current!.setPageWithoutAnimation(0)); await act(async () => jest.advanceTimersByTime(400));
+      expect(button.disabled).toBe(false); expect(button.getAttribute('aria-label')).toBe('Token settings');
+      button.click(); expect(onToolbar.mock.calls[0][0].nativeEvent.key).toBe('tokens');
+    } finally { jest.useRealTimers(); }
+  });
+
+  function colorPresentation() {
+    const viewport = container.firstElementChild as HTMLElement;
+    const owner = container.querySelector<HTMLElement>('[data-collapsible-pager-scroll-key="tokens"]')!;
+    const track = owner.parentElement!.parentElement!.parentElement!;
+    let width = 390;
+    let offset = 0;
+    viewport.getBoundingClientRect = () => ({ width } as DOMRect);
+    const original = window.getComputedStyle.bind(window);
+    jest.spyOn(window, 'getComputedStyle').mockImplementation((element) => element === track
+      ? { transform: `matrix(1, 0, 0, 1, ${offset}, 0)` } as CSSStyleDeclaration : original(element));
+    return { track, setOffset(value: number) { offset = value; }, setWidth(value: number) { width = value; } };
+  }
+
+  function renderColors(pager: React.RefObject<CollapsiblePagerView | null>, selectedKey: string, isActive = true) {
+    return <CollapsiblePagerView ref={pager} header={<div />} stickyHeader={<div />}
+      headerHeight={0} stickyHeaderHeight={44} isActive={isActive}
+      nativeTabBar={{ controlled: true, selectedKey, items, style: { variant: 'text' } }}>
+      {makePage('tokens')}{makePage('activity')}
+    </CollapsiblePagerView>;
+  }
+
+  it('keeps actual page emphasis through config echoes and samples CSS presentation during reversal', async () => {
+    const pager = React.createRef<CollapsiblePagerView>();
+    await act(async () => root.render(renderColors(pager, 'tokens')));
+    const presentation = colorPresentation();
+    const tabs = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+    await act(async () => root.render(renderColors(pager, 'activity')));
+    expect(tabs.map(tab => tab.style.color)).toEqual(['rgb(0, 0, 0)', 'rgb(102, 102, 102)', 'rgb(102, 102, 102)']);
+    expect(tabs.map(tab => tab.getAttribute('aria-selected'))).toEqual(['false', 'true', 'false']);
+    await act(async () => pager.current!.setPage(1));
+    presentation.setOffset(-195);
+    await flushFrames();
+    expect(tabs.slice(0, 2).map(tab => tab.style.color)).toEqual(['rgb(51, 51, 51)', 'rgb(51, 51, 51)']);
+    await act(async () => root.render(renderColors(pager, 'activity')));
+    expect(tabs[0].style.color).toBe('rgb(51, 51, 51)');
+    await act(async () => root.render(renderColors(pager, 'tokens')));
+    await act(async () => pager.current!.setPage(0));
+    presentation.setOffset(-97.5);
+    await flushFrames();
+    expect(tabs.slice(0, 2).map(tab => tab.style.color)).toEqual(['rgb(26, 26, 26)', 'rgb(77, 77, 77)']);
+    const staleEnd = new window.Event('transitionend');
+    Object.defineProperty(staleEnd, 'propertyName', { value: 'transform' });
+    presentation.track.dispatchEvent(staleEnd);
+    presentation.setOffset(0);
+    await flushFrames();
+    expect(tabs[0].style.color).toBe('rgb(0, 0, 0)');
+    expect(tabs[1].style.color).toBe('rgb(102, 102, 102)');
+  });
+
+  it('resamples resize and route restoration and preserves the non-page fallback', async () => {
+    const pager = React.createRef<CollapsiblePagerView>();
+    await act(async () => root.render(renderColors(pager, 'tokens')));
+    const presentation = colorPresentation();
+    const tabs = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+    await act(async () => root.render(renderColors(pager, 'activity')));
+    await act(async () => pager.current!.setPage(1));
+    presentation.setOffset(-390);
+    presentation.setWidth(780);
+    await flushFrames();
+    expect(tabs[0].style.color).toBe('rgb(51, 51, 51)');
+    presentation.setWidth(0);
+    await act(async () => root.render(renderColors(pager, 'activity', false)));
+    await flushFrames();
+    presentation.setWidth(390);
+    await act(async () => root.render(renderColors(pager, 'activity')));
+    expect(tabs[1].style.color).toBe('rgb(0, 0, 0)');
+    await act(async () => root.render(renderColors(pager, 'extra')));
+    await flushFrames();
+    expect(tabs.map(tab => tab.style.color)).toEqual(['rgb(102, 102, 102)', 'rgb(102, 102, 102)', 'rgb(0, 0, 0)']);
   });
 
 });

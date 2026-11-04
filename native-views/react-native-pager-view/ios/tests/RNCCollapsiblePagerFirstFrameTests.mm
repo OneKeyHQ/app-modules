@@ -36,6 +36,13 @@ using namespace facebook::react;
 - (void)scrollToEnd:(BOOL)animated;
 @end
 
+@interface RNCCollapsiblePagerNativeTabBarView : UIView
+- (void)updateItemsJSON:(NSString *)json;
+- (void)updateConfigJSON:(NSString *)json;
+- (void)updateToolbarPagerIndex:(NSInteger)index busy:(BOOL)busy;
+- (BOOL)toolbarCanCommit;
+@end
+
 @interface RNCCollapsiblePagerFirstFrameTests : XCTestCase
 @end
 
@@ -901,6 +908,60 @@ using namespace facebook::react;
   UIViewController *page = [outer valueForKey:@"pageControllers"][0];
   [page.view addSubview:inner];
   XCTAssertEqual([outer verticalScrollViewForPageAtIndex:0], scroller.scrollView);
+}
+
+- (void)testControlledToolbarRetainsSnapshotAndRestoresLegacyHitAndAccessibility
+{
+  RNCCollapsiblePagerNativeTabBarView *bar = [NSClassFromString(@"RNCCollapsiblePagerNativeTabBarView") new];
+  bar.frame = CGRectMake(0, 0, 320, 44);
+  UIWindow *window = [[UIWindow alloc] initWithFrame:CGRectMake(0, 0, 320, 600)];
+  UIViewController *root = [UIViewController new];
+  window.rootViewController = root;
+  [root.view addSubview:bar];
+  window.hidden = NO;
+  [self addTeardownBlock:^{ [bar removeFromSuperview]; window.hidden = YES; window.rootViewController = nil; }];
+  [bar updateItemsJSON:@"[{\"key\":\"a\",\"title\":\"A\"},{\"key\":\"b\",\"title\":\"B\"}]"];
+  UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(1, 1)];
+  UIImage *image = [renderer imageWithActions:^(UIGraphicsImageRendererContext *context) {
+    [UIColor.blackColor setFill]; UIRectFill(CGRectMake(0, 0, 1, 1));
+  }];
+  NSString *identity = [NSString stringWithFormat:@"SliderHorOutline|#000000|%g|24", window.screen.scale];
+  [bar setValue:image forKey:@"loadedToolbarImage"];
+  [bar setValue:identity forKey:@"loadedIconIdentity"];
+  NSString *owned = @"{\"controlled\":true,\"selectedKey\":\"a\",\"pageKeys\":[\"a\",\"b\"],\"toolbar\":{\"a\":{\"iconName\":\"SliderHorOutline\",\"accessibilityLabel\":\"A action\"}}}";
+  [bar updateConfigJSON:owned];
+  [bar updateToolbarPagerIndex:0 busy:NO];
+  UIButton *button = [bar valueForKey:@"toolbarButton"];
+  XCTAssertTrue(button.enabled);
+  XCTAssertTrue(button.isAccessibilityElement);
+  XCTAssertFalse(button.adjustsImageWhenDisabled);
+  [bar updateToolbarPagerIndex:-1 busy:YES];
+  XCTAssertFalse(button.enabled);
+  XCTAssertFalse(button.isAccessibilityElement);
+  XCTAssertEqual([button imageForState:UIControlStateNormal], image);
+  XCTAssertEqualObjects(button.accessibilityLabel, @"A action");
+  XCTAssertFalse([bar toolbarCanCommit]);
+  [bar updateConfigJSON:@"{\"controlled\":false,\"toolbar\":{\"a\":{\"iconName\":\"SliderHorOutline\",\"accessibilityLabel\":\"A action\"}}}"];
+  XCTAssertTrue(button.enabled);
+  XCTAssertTrue(button.userInteractionEnabled);
+  XCTAssertTrue(button.isAccessibilityElement);
+  XCTAssertFalse(button.accessibilityElementsHidden);
+  XCTAssertTrue(button.adjustsImageWhenDisabled);
+  [bar updateConfigJSON:owned];
+  [bar updateToolbarPagerIndex:0 busy:NO];
+  [bar updateConfigJSON:[owned stringByReplacingOccurrencesOfString:@"\"selectedKey\":\"a\"" withString:@"\"selectedKey\":\"b\""]];
+  XCTAssertFalse(button.enabled);
+  XCTAssertEqualObjects(button.accessibilityLabel, @"A action");
+  XCTAssertFalse([bar toolbarCanCommit]);
+  [bar updateToolbarPagerIndex:1 busy:NO];
+  XCTAssertTrue([bar toolbarCanCommit]);
+  XCTAssertFalse(button.enabled); // B has no action; the fixed slot remains.
+  [bar removeFromSuperview];
+  [root.view addSubview:bar];
+  XCTAssertFalse([bar toolbarCanCommit]);
+  [bar updateToolbarPagerIndex:1 busy:NO];
+  XCTAssertTrue([bar toolbarCanCommit]);
+  XCTAssertFalse(button.enabled);
 }
 
 @end

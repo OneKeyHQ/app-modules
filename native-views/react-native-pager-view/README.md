@@ -87,6 +87,18 @@ non-adjacent presses jump directly to the target without passing intermediate
 pages. Set `nativeTabPressAnimationEnabled={true}` to always animate, or `false`
 to always jump. Swipe gestures and imperative page commands are unchanged.
 
+The `text` variant supports `controlled`, stable `selectedKey` and one per-key
+`toolbar` map. Controlled presses report intent; the caller keeps page commands,
+menus and routing. Label colors follow actual page movement while selected font
+weight follows business selection. Toolbar artwork, label, action key and selected
+background transfer together only when the final physical page and selection
+agree. Motion keeps the old artwork with hit/AX disabled; two present icons replace
+in place, and only presence changes fade for about 100 ms. Omitting `toolbar`
+reserves zero width; `{}` reserves 44 logical units, and nonempty maps use their
+largest `contentWidth + trailingInset`. Missing/failed content keeps that slot
+without an active control. See [the contract](docs/SPEC.md#text-tabs-controlled-selection-and-per-tab-toolbar)
+for ownership, cancellation, progress, fallback and current acceptance limits.
+
 > **Behavior change:** earlier versions animated every native tab press when
 > `nativeTabPressAnimationEnabled` was omitted. Pass
 > `nativeTabPressAnimationEnabled={true}` to keep that behavior.
@@ -142,3 +154,7 @@ position emit a momentum begin/end pair; a no-op emits no new pair. A new comman
 new touch, content-root replacement or detach ends the previous active sequence.
 The focused JS tests verify wrapper routing, not native scrolling,
 Yoga rendering, keyboard interaction or refresh placement on a device.
+
+The codegen type boundary uses React Native's public `CodegenTypes` namespace.
+RN 0.86.2/0.88.0 declaration and parser checks preserve emitted JS, native schemas
+and the existing NativeScroller method set; no private type import patch is needed.

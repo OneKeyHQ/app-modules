@@ -6,6 +6,8 @@ import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
 import android.test.InstrumentationTestCase
 import android.view.MotionEvent
 import android.view.View
@@ -303,4 +305,137 @@ class CollapsiblePagerTabReservationTest : InstrumentationTestCase() {
       instrumentation.waitForIdleSync()
     }
   }
+  fun testControlledPagerSettlesWhenOnlyParentLayoutRequestRemains() {
+    val context = instrumentation.targetContext
+    val activity = instrumentation.startActivitySync(
+      Intent(context, CollapsiblePagerHitTestActivity::class.java)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+    ) as CollapsiblePagerHitTestActivity
+    lateinit var host: CollapsiblePagerHost
+    lateinit var tab: CollapsiblePagerNativeTabBarView
+    val drain = CollapsiblePagerHost::class.java.getDeclaredMethod("layoutPagerIfRequested").apply { isAccessible = true }
+    try {
+      instrumentation.runOnMainSync {
+        val density = context.resources.displayMetrics.density
+        val width = (320 * density).roundToInt()
+        val height = (500 * density).roundToInt()
+        host = CollapsiblePagerHost(context)
+        host.pendingInitialPage = 1
+        activity.setContentView(host)
+        repeat(4) { host.addReactChild(View(context), it) }
+        host.applyPendingInitialPage()
+        host.nativeTabBarVariant = "text"
+        host.applyNativeHeaderStyle()
+        host.updateNativeTabBarItems("""[{"key":"a","title":"A"},{"key":"b","title":"B"}]""")
+        host.updateNativeTabBarConfig("""{"controlled":true,"selectedKey":"b","pageKeys":["a","b"],"toolbar":{}}""")
+        host.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+          View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY))
+        host.layout(0, 0, width, height)
+        tab = (0 until host.childCount).map(host::getChildAt)
+          .filterIsInstance<CollapsiblePagerNativeTabBarView>().single()
+        host.pager.setCurrentItem(1, false)
+        val recycler = host.pager.getChildAt(0) as RecyclerView
+        host.pager.requestLayout()
+        recycler.requestLayout()
+        recycler.measure(View.MeasureSpec.makeMeasureSpec(recycler.width, View.MeasureSpec.EXACTLY),
+          View.MeasureSpec.makeMeasureSpec(recycler.height, View.MeasureSpec.EXACTLY))
+        recycler.layout(recycler.left, recycler.top, recycler.right, recycler.bottom)
+        assertFalse(recycler.isLayoutRequested)
+        assertTrue(host.pager.isLayoutRequested)
+        assertTrue(tab.needsToolbarPagerSettlement(1))
+        drain.invoke(host)
+        assertFalse(host.pager.isLayoutRequested)
+      }
+      instrumentation.waitForIdleSync()
+      instrumentation.runOnMainSync {
+        assertFalse(tab.needsToolbarPagerSettlement(1))
+        val posted = CollapsiblePagerHost::class.java.getDeclaredField("toolbarSettlePostedGeneration").apply { isAccessible = true }
+        repeat(50) { drain.invoke(host) }
+        assertNull(posted.get(host))
+        assertFalse(host.pager.isLayoutRequested)
+      }
+      instrumentation.runOnMainSync {
+        val parent = host.parent as ViewGroup
+        val index = parent.indexOfChild(host)
+        parent.removeView(host)
+        parent.addView(host, index)
+        assertTrue(host.isAttachedToWindow)
+        assertTrue(host.isShown)
+        assertTrue(host.width > 0 && host.height > 0)
+        assertFalse(host.isLaidOut)
+        assertEquals(1, host.pager.currentItem)
+        drain.invoke(host)
+        assertTrue(host.isLaidOut)
+      }
+      instrumentation.waitForIdleSync()
+      instrumentation.runOnMainSync {
+        assertEquals(1, host.pager.currentItem)
+        assertFalse(tab.needsToolbarPagerSettlement(1))
+      }
+    } finally {
+      instrumentation.runOnMainSync { activity.finish() }
+      instrumentation.waitForIdleSync()
+    }
+  }
+
+  fun testTextToolbarBackgroundCoversSlotWithSingleTranslucentLayer() {
+    val context = instrumentation.targetContext
+    val activity = instrumentation.startActivitySync(
+      Intent(context, CollapsiblePagerHitTestActivity::class.java)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+    ) as CollapsiblePagerHitTestActivity
+    try {
+      instrumentation.runOnMainSync {
+        val density = context.resources.displayMetrics.density
+        fun dp(value: Int) = (value * density).roundToInt()
+        val width = dp(320)
+        val height = dp(44)
+        val tab = CollapsiblePagerNativeTabBarView(context)
+        tab.layoutDirection = View.LAYOUT_DIRECTION_LTR
+        activity.setContentView(tab)
+        tab.updateItemsJSON("""[{"key":"a","title":"A"}]""")
+        fun configure(variant: String, background: Int, entry: Boolean) {
+          tab.updateStyle(44.0, variant, 20.0, 0.0, 8.0, 18.0, null, 2.0, 0.0)
+          val toolbar = if (entry) """{"a":{"iconName":"SliderHorOutline"}}""" else "{}"
+          tab.updateConfigJSON("""{"controlled":true,"selectedKey":"a","pageKeys":["a"],"toolbar":$toolbar}""")
+          tab.updateToolbarPagerState(0, false)
+          tab.updateColors(background, Color.BLACK, Color.GRAY, Color.BLACK)
+          tab.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY))
+          tab.layout(0, 0, width, height)
+        }
+        for (background in listOf(0xff204060.toInt(), 0x80204060.toInt(), Color.TRANSPARENT)) {
+          for (entry in listOf(false, true)) {
+            configure("text", background, entry)
+            val row = tab.getChildAt(0) as HorizontalScrollView
+            assertEquals(width - dp(44), row.width)
+            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            tab.draw(Canvas(bitmap))
+            assertEquals(Color.alpha(background), Color.alpha(bitmap.getPixel(1, height - 1)))
+            assertEquals(Color.alpha(background), Color.alpha(bitmap.getPixel(width - 1, height - 1)))
+            assertEquals(Color.TRANSPARENT, (row.background as ColorDrawable).color)
+            assertEquals(Color.TRANSPARENT, ((row.getChildAt(0) as ViewGroup).background as ColorDrawable).color)
+            bitmap.recycle()
+          }
+        }
+        for (variant in listOf("underline", "text", "segmented", "text")) {
+          val background = 0xff204060.toInt()
+          configure(variant, background, false)
+          val row = tab.getChildAt(0) as HorizontalScrollView
+          assertEquals(if (variant == "text") background else Color.TRANSPARENT,
+            (tab.background as ColorDrawable).color)
+          if (variant == "underline") assertEquals(background, (row.background as ColorDrawable).color)
+          if (variant == "segmented") {
+            val content = row.getChildAt(0) as ViewGroup
+            val track = content.getChildAt(0)
+            assertEquals(background, (track.background as GradientDrawable).color?.defaultColor)
+          }
+        }
+      }
+    } finally {
+      instrumentation.runOnMainSync { activity.finish() }
+      instrumentation.waitForIdleSync()
+    }
+  }
+
 }
