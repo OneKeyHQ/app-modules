@@ -134,6 +134,21 @@ style forwarding, overlay retention and disabling; UIKit tests cover native
 style switching and restoring the previous style. Rendered iOS acceptance must
 be reported separately from type, codegen and build checks.
 
+### iOS 27 external-overlay interactive ownership
+
+Status: Implemented in iOS source; runtime acceptance is reported separately.
+
+For a direct native pager using smooth headers and a Hard top edge, an interactive horizontal drag may preserve scroll-edge ownership when the external overlay is resolved in the same window with a positive effective height. A registered outer pager must own the active page and must not be transitioning; an external overlay without an outer pager remains eligible.
+
+Before detaching the source observer, transfer the source's existing top/sticky interactions, markers, original edge style and borrowed pinned host into the transition owner. Do not move or take ownership of the actual external React overlay. Interactive preparation is bounded to the source and its valid immediate neighbours.
+
+Each newly prepared external incoming page owns separate transparent, noninteractive top/sticky interaction hosts inside that page. Their horizontal origin follows the page's scroll viewport rather than the fixed external overlay; their vertical positions and heights match the existing top/sticky geometry. Hosts and markers follow page-width changes. They add no replacement material or background. The source retains its existing host identities. Local-overlay ownership and external programmatic page commands keep their existing paths; this extension is selected only by interactive drag preparation.
+
+Completion or release back to the source releases temporary interactions and markers, restores the captured original styles, removes only the owned temporary hosts, and reattaches normal ownership to the settled page. Existing cancellation, window removal, slot/recycle and external invalidation paths must release these resources as well. External identity/tag/effective-height changes and outer-owner inactivity or transition invalidate temporary ownership before references are updated. Never remove a borrowed pinned host, shared proxy, shared sticky view or actual external overlay as though it were an owned temporary host.
+
+Rendering conformance requires real underlying content on both pages to remain blurred throughout the drag and release, with no premature whiteout, sharp penetration or frozen texture. Object registration and lifecycle tests do not establish visual conformance.
+
+
 ## Smooth shared-header and per-page body memory
 
 With nativeSmoothHeaderScrollEnabled, the header collapse C is shared across all

@@ -12,7 +12,10 @@ using namespace facebook::react;
 - (void)updateTopScrollEdgeForScrollView:(UIScrollView *)scrollView;
 - (void)updateScrollEdgeContentMasks;
 - (void)layoutSharedHeaders;
-- (void)adoptCurrentScrollEdgeForProgrammaticTransition;
+- (void)adoptCurrentScrollEdgeForProgrammaticTransition:(BOOL)allowExternalOverlay;
+- (BOOL)resolveExternalTopOverlay;
+- (void)beginProgrammaticScrollEdgesToIndex:(NSInteger)index allowExternalOverlay:(BOOL)allowExternalOverlay;
+- (void)outerPagerDidUpdateOverlayOwner:(BOOL)active transitioning:(BOOL)transitioning;
 - (void)restorePinnedStickyHeader;
 - (void)finishProgrammaticScrollEdges;
 - (void)clearProgrammaticScrollEdges;
@@ -478,6 +481,349 @@ using namespace facebook::react;
   return horizontal;
 }
 
+- (UIScrollView *)prepareExternalDirectDragWithSource:(UIScrollView **)sourceOut
+                                           overlay:(UIView **)overlayOut
+{
+  UIScrollView *source = nil;
+  UIScrollView *horizontal = [self prepareDirectDragWithSource:&source];
+  [self.pager updateTopScrollEdgeForScrollView:nil];
+  UIView *local = [self.pager valueForKey:@"topOverlayView"];
+  [local removeFromSuperview];
+  [self.pager setValue:nil forKey:@"topOverlayView"];
+  [self.pager setValue:@0 forKey:@"topOverlayHeight"];
+  UIView *overlay = [[UIView alloc] initWithFrame:CGRectMake(0, 100, 320, 50)];
+  overlay.tag = 8675309;
+  [self.root addSubview:overlay];
+  auto props = std::make_shared<RNCCollapsiblePagerViewProps>();
+  props->nativeSmoothHeaderScrollEnabled = true;
+  props->topScrollEdgeEffect = RNCCollapsiblePagerViewTopScrollEdgeEffect::Hard;
+  props->externalTopOverlayTag = overlay.tag;
+  [self.pager updateProps:props oldProps:nullptr];
+  [self.pager resolveExternalTopOverlay];
+  XCTAssertEqual([self.pager valueForKey:@"externalTopOverlayView"], overlay);
+  XCTAssertEqualWithAccuracy([[self.pager valueForKey:@"externalTopOverlayHeight"] doubleValue], 50, 0.001);
+  XCTAssertEqual(overlay.window, self.pager.window);
+  XCTAssertFalse([overlay isDescendantOfView:self.pager]);
+  UIView *proxy = [self.pager valueForKey:@"topOverlayHostView"];
+  XCTAssertEqual(proxy.window, self.pager.window);
+  XCTAssertFalse(proxy.hidden);
+  XCTAssertFalse(proxy.userInteractionEnabled);
+  [self.pager updateTopScrollEdgeForScrollView:source];
+  XCTAssertEqual([[self.pager valueForKey:@"pageControllers"] count], 3);
+  XCTAssertEqual([[self.pager valueForKey:@"currentIndex"] integerValue], 1);
+  XCTAssertEqualWithAccuracy(horizontal.contentOffset.x, 320, 0.001);
+  XCTAssertTrue([[self.pager valueForKey:@"hasAppliedInitialPage"] boolValue]);
+  XCTAssertTrue([[self.pager valueForKey:@"directNativePagerEnabled"] boolValue]);
+  XCTAssertEqualWithAccuracy([[self.pager valueForKey:@"headerOffset"] doubleValue], 100, 0.001);
+  XCTAssertTrue([[self.pager valueForKey:@"stickyHeaderIsPinned"] boolValue]);
+  XCTAssertNotNil([self.pager valueForKey:@"stickyEdgeInteraction"]);
+  if (sourceOut != nil) *sourceOut = source;
+  if (overlayOut != nil) *overlayOut = overlay;
+  return horizontal;
+}
+
+- (void)testExternalDirectDragPreservesProxyIdentityAndSettles
+{
+  if (@available(iOS 27.0, *)) {
+    UIScrollView *source = nil;
+    UIView *overlay = nil;
+    UIScrollView *horizontal = [self prepareExternalDirectDragWithSource:&source overlay:&overlay];
+    UIView *proxy = [self.pager valueForKey:@"topOverlayHostView"];
+    UIView *pinned = [self.pager valueForKey:@"pinnedStickyHostView"];
+    UIScrollEdgeElementContainerInteraction *top = [self.pager valueForKey:@"topEdgeInteraction"];
+    UIScrollEdgeElementContainerInteraction *sticky = [self.pager valueForKey:@"stickyEdgeInteraction"];
+    UIView *marker = [self.pager valueForKey:@"topEdgeMarker"];
+    UIView *stickyMarker = [self.pager valueForKey:@"stickyEdgeMarker"];
+    NSArray<UIViewController *> *pages = [self.pager valueForKey:@"pageControllers"];
+    UIScrollView *target = (UIScrollView *)pages[2].view.subviews.firstObject;
+    XCTAssertNotNil(top);
+    XCTAssertNotNil(sticky);
+    XCTAssertTrue([proxy.interactions containsObject:top]);
+    XCTAssertEqual(overlay.interactions.count, 0);
+    [self.pager adoptCurrentScrollEdgeForProgrammaticTransition:NO];
+    [self.pager beginProgrammaticScrollEdgesToIndex:2 allowExternalOverlay:NO];
+    XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 0);
+    XCTAssertEqual([self.pager valueForKey:@"topEdgeInteraction"], top);
+
+    [self.pager scrollViewWillBeginDragging:horizontal];
+    NSArray *owners = [self.pager valueForKey:@"programmaticScrollEdgeOwners"];
+    XCTAssertEqual(owners.count, 3);
+    id sourceOwner = owners.firstObject;
+    XCTAssertEqual([sourceOwner valueForKey:@"topInteraction"], top);
+    XCTAssertEqual([sourceOwner valueForKey:@"stickyInteraction"], sticky);
+    XCTAssertEqual([sourceOwner valueForKey:@"topMarker"], marker);
+    XCTAssertEqual([sourceOwner valueForKey:@"topHost"], proxy);
+    XCTAssertEqual([sourceOwner valueForKey:@"originalStyle"], UIScrollEdgeEffectStyle.softStyle);
+    XCTAssertTrue([[sourceOwner valueForKey:@"borrowsPinnedStickyHost"] boolValue]);
+    XCTAssertFalse([[sourceOwner valueForKey:@"ownsTransitionHosts"] boolValue]);
+    XCTAssertEqual(top.scrollView, source);
+    XCTAssertEqual(sticky.scrollView, source);
+    XCTAssertEqual(marker.superview, proxy);
+    XCTAssertEqual(pinned.superview, source);
+    XCTAssertFalse([self.pager resolveExternalTopOverlay]);
+    [self.pager updateTopScrollEdgeForScrollView:source];
+    XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 3);
+    XCTAssertEqual(overlay.superview, self.root);
+    XCTAssertEqual(overlay.interactions.count, 0);
+
+    NSMutableArray *incomingOwners = [NSMutableArray new];
+    NSMutableArray<UIView *> *ownedHosts = [NSMutableArray new];
+    NSMutableArray<UIView *> *ownedMarkers = [NSMutableArray new];
+    NSMutableArray<UIScrollEdgeElementContainerInteraction *> *ownedEdges = [NSMutableArray new];
+    for (id owner in owners) {
+      if (owner == sourceOwner) continue;
+      [incomingOwners addObject:owner];
+      XCTAssertTrue([[owner valueForKey:@"ownsTransitionHosts"] boolValue]);
+      UIView *page = [owner valueForKey:@"page"];
+      UIScrollView *list = [owner valueForKey:@"scrollView"];
+      UIView *ownedTop = [owner valueForKey:@"ownedTopHost"];
+      UIView *ownedSticky = [owner valueForKey:@"ownedStickyHost"];
+      XCTAssertNotNil(ownedTop);
+      XCTAssertNotNil(ownedSticky);
+      XCTAssertEqual([owner valueForKey:@"topHost"], ownedTop);
+      XCTAssertEqual([owner valueForKey:@"stickyHost"], ownedSticky);
+      XCTAssertNotEqual(ownedTop, ownedSticky);
+      for (NSString *edgeName in @[@"top", @"sticky"]) {
+        UIView *host = [owner valueForKey:[edgeName stringByAppendingString:@"Host"]];
+        UIView *edgeMarker = [owner valueForKey:[edgeName stringByAppendingString:@"Marker"]];
+        UIScrollEdgeElementContainerInteraction *edge =
+          [owner valueForKey:[edgeName stringByAppendingString:@"Interaction"]];
+        XCTAssertFalse([ownedHosts containsObject:host]);
+        [ownedHosts addObject:host];
+        [ownedMarkers addObject:edgeMarker];
+        [ownedEdges addObject:edge];
+        XCTAssertEqual(host.superview, page);
+        XCTAssertNotEqual(host, proxy);
+        XCTAssertNotEqual(host, self.sticky);
+        XCTAssertNotEqual(host, overlay);
+        XCTAssertFalse(host.userInteractionEnabled);
+        XCTAssertTrue(host.accessibilityElementsHidden);
+        if (host.backgroundColor != nil) {
+          XCTAssertEqualWithAccuracy(CGColorGetAlpha(host.backgroundColor.CGColor), 0, 0.001);
+        }
+        XCTAssertEqual(edge.view, host);
+        XCTAssertEqual(edge.scrollView, list);
+        XCTAssertEqual(edgeMarker.superview, host);
+        XCTAssertEqualWithAccuracy(host.frame.origin.x,
+          CGRectGetMinX([list convertRect:list.bounds toView:page]), 0.001);
+      }
+      CGRect pageFrame = page.frame;
+      CGRect listFrame = list.frame;
+      CGRect topFrame = ownedTop.frame;
+      CGRect stickyFrame = ownedSticky.frame;
+      page.frame = CGRectMake(pageFrame.origin.x, pageFrame.origin.y, 400, pageFrame.size.height);
+      list.frame = CGRectMake(listFrame.origin.x, listFrame.origin.y, 400, listFrame.size.height);
+      XCTAssertEqualWithAccuracy(ownedTop.frame.size.width, 400, 0.001);
+      XCTAssertEqualWithAccuracy(ownedSticky.frame.size.width, 400, 0.001);
+      XCTAssertEqualWithAccuracy(((UIView *)[owner valueForKey:@"topMarker"]).frame.size.width, 400, 0.001);
+      XCTAssertEqualWithAccuracy(((UIView *)[owner valueForKey:@"stickyMarker"]).frame.size.width, 400, 0.001);
+      XCTAssertEqualWithAccuracy(ownedTop.frame.origin.y, topFrame.origin.y, 0.001);
+      XCTAssertEqualWithAccuracy(ownedSticky.frame.origin.y, stickyFrame.origin.y, 0.001);
+      XCTAssertEqualWithAccuracy(ownedTop.frame.size.height, topFrame.size.height, 0.001);
+      XCTAssertEqualWithAccuracy(ownedSticky.frame.size.height, stickyFrame.size.height, 0.001);
+      page.frame = pageFrame;
+      list.frame = listFrame;
+    }
+    XCTAssertEqual(incomingOwners.count, 2);
+    XCTAssertEqual(ownedHosts.count, 4);
+    horizontal.contentOffset = CGPointMake(480, 0);
+    for (id owner in incomingOwners) {
+      UIScrollView *list = [owner valueForKey:@"scrollView"];
+      CGRect viewport = [list convertRect:list.bounds toView:nil];
+      UIView *ownedTop = [owner valueForKey:@"ownedTopHost"];
+      UIView *ownedSticky = [owner valueForKey:@"ownedStickyHost"];
+      CGRect topWindow = [ownedTop convertRect:ownedTop.bounds toView:nil];
+      CGRect stickyWindow = [ownedSticky convertRect:ownedSticky.bounds toView:nil];
+      XCTAssertNotEqualWithAccuracy(viewport.origin.x, 0, 0.001);
+      XCTAssertEqualWithAccuracy(topWindow.origin.x, viewport.origin.x, 0.001);
+      XCTAssertEqualWithAccuracy(stickyWindow.origin.x, viewport.origin.x, 0.001);
+      XCTAssertEqualWithAccuracy(topWindow.origin.y, viewport.origin.y, 0.001);
+      XCTAssertEqualWithAccuracy(stickyWindow.origin.y, viewport.origin.y + 50, 0.001);
+    }
+
+    horizontal.contentOffset = CGPointMake(640, 0);
+    [self.pager scrollViewDidEndDragging:horizontal willDecelerate:NO];
+    XCTestExpectation *settled = [self expectationWithDescription:@"external drag settles"];
+    dispatch_async(dispatch_get_main_queue(), ^{ [settled fulfill]; });
+    [self waitForExpectations:@[settled] timeout:2];
+    XCTAssertEqual([[self.pager valueForKey:@"currentIndex"] integerValue], 2);
+    XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 0);
+    for (id owner in incomingOwners) {
+      XCTAssertNil([owner valueForKey:@"ownedTopHost"]);
+      XCTAssertNil([owner valueForKey:@"ownedStickyHost"]);
+    }
+    for (UIView *host in ownedHosts) {
+      XCTAssertNil(host.superview);
+      XCTAssertEqual(host.interactions.count, 0);
+    }
+    for (UIView *edgeMarker in ownedMarkers) XCTAssertNil(edgeMarker.superview);
+    for (UIScrollEdgeElementContainerInteraction *edge in ownedEdges) XCTAssertNil(edge.scrollView);
+    XCTAssertEqual(proxy.superview, [self.pager valueForKey:@"containerView"]);
+    XCTAssertNotNil(self.sticky.superview);
+    XCTAssertNil(top.scrollView);
+    XCTAssertNil(sticky.scrollView);
+    XCTAssertNil(marker.superview);
+    XCTAssertEqual(source.topEdgeEffect.style, UIScrollEdgeEffectStyle.softStyle);
+    UIScrollEdgeElementContainerInteraction *normal = [self.pager valueForKey:@"topEdgeInteraction"];
+    XCTAssertNotNil(normal);
+    XCTAssertEqual(normal.scrollView, target);
+    XCTAssertEqual([self.pager valueForKey:@"topEdgeScrollView"], target);
+    XCTAssertEqual([self.pager valueForKey:@"originalTopEdgeStyle"], UIScrollEdgeEffectStyle.softStyle);
+    XCTAssertEqual(target.topEdgeEffect.style, UIScrollEdgeEffectStyle.hardStyle);
+    UIScrollView *otherNeighbor = (UIScrollView *)pages[0].view.subviews.firstObject;
+    XCTAssertEqual(otherNeighbor.topEdgeEffect.style, UIScrollEdgeEffectStyle.softStyle);
+    XCTAssertNil(stickyMarker.superview);
+    XCTAssertEqual([self.pager valueForKey:@"topEdgeInteractionHost"], proxy);
+    XCTAssertEqual(overlay.superview, self.root);
+    XCTAssertEqual(overlay.interactions.count, 0);
+  } else {
+    XCTSkip(@"External direct Hard drag handoff requires iOS 27 or newer");
+  }
+}
+
+- (void)testExternalOverlayGeometryChangeReleasesBorrowedEdges
+{
+  if (@available(iOS 27.0, *)) {
+    UIScrollView *source = nil;
+    UIView *overlay = nil;
+    UIScrollView *horizontal = [self prepareExternalDirectDragWithSource:&source overlay:&overlay];
+    UIScrollEdgeElementContainerInteraction *top = [self.pager valueForKey:@"topEdgeInteraction"];
+    UIView *pinned = [self.pager valueForKey:@"pinnedStickyHostView"];
+    [self.pager scrollViewWillBeginDragging:horizontal];
+    XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 3);
+    id incoming = [[self.pager valueForKey:@"programmaticScrollEdgeOwners"] lastObject];
+    UIView *ownedTop = [incoming valueForKey:@"ownedTopHost"];
+    UIView *ownedSticky = [incoming valueForKey:@"ownedStickyHost"];
+    UIView *ownedMarker = [incoming valueForKey:@"topMarker"];
+    UIScrollEdgeElementContainerInteraction *ownedEdge = [incoming valueForKey:@"topInteraction"];
+    UIView *proxy = [self.pager valueForKey:@"topOverlayHostView"];
+    UIView *stickyParent = self.sticky.superview;
+    XCTAssertNotNil(ownedTop);
+    XCTAssertNotNil(ownedSticky);
+    overlay.frame = CGRectMake(0, 100, 320, 60);
+    XCTAssertTrue([self.pager resolveExternalTopOverlay]);
+    XCTAssertEqualWithAccuracy([[self.pager valueForKey:@"externalTopOverlayHeight"] doubleValue], 60, 0.001);
+    XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 0);
+    XCTAssertNil(top.scrollView);
+    XCTAssertNil(ownedTop.superview);
+    XCTAssertNil(ownedSticky.superview);
+    XCTAssertEqual(ownedTop.interactions.count, 0);
+    XCTAssertEqual(ownedSticky.interactions.count, 0);
+    XCTAssertNil(ownedMarker.superview);
+    XCTAssertNil(ownedEdge.scrollView);
+    XCTAssertNil([incoming valueForKey:@"ownedTopHost"]);
+    XCTAssertNil([incoming valueForKey:@"ownedStickyHost"]);
+    XCTAssertEqual(proxy.superview, [self.pager valueForKey:@"containerView"]);
+    XCTAssertEqual(self.sticky.superview, stickyParent);
+    XCTAssertEqual(overlay.superview, self.root);
+    XCTAssertEqual(source.topEdgeEffect.style, UIScrollEdgeEffectStyle.softStyle);
+    XCTAssertEqual(pinned.superview, [self.pager valueForKey:@"containerView"]);
+    XCTAssertTrue(pinned.hidden);
+  } else {
+    XCTSkip(@"External direct Hard drag handoff requires iOS 27 or newer");
+  }
+}
+
+- (void)testExternalOverlayReplacementReleasesBorrowedEdges
+{
+  if (@available(iOS 27.0, *)) {
+    UIScrollView *source = nil;
+    UIView *overlay = nil;
+    UIScrollView *horizontal = [self prepareExternalDirectDragWithSource:&source overlay:&overlay];
+    UIScrollEdgeElementContainerInteraction *top = [self.pager valueForKey:@"topEdgeInteraction"];
+    XCTAssertNotNil(top);
+    [self.pager scrollViewWillBeginDragging:horizontal];
+    XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 3);
+    UIView *replacement = [[UIView alloc] initWithFrame:overlay.frame];
+    replacement.tag = overlay.tag;
+    [overlay removeFromSuperview];
+    [self.root addSubview:replacement];
+    XCTAssertTrue([self.pager resolveExternalTopOverlay]);
+    XCTAssertEqual([self.pager valueForKey:@"externalTopOverlayView"], replacement);
+    XCTAssertEqualWithAccuracy([[self.pager valueForKey:@"externalTopOverlayHeight"] doubleValue], 50, 0.001);
+    XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 0);
+    XCTAssertNil(top.scrollView);
+    XCTAssertEqual(source.topEdgeEffect.style, UIScrollEdgeEffectStyle.softStyle);
+    XCTAssertEqual(replacement.interactions.count, 0);
+    XCTAssertEqual(replacement.superview, self.root);
+  } else {
+    XCTSkip(@"External direct Hard drag handoff requires iOS 27 or newer");
+  }
+}
+
+- (void)testExternalOverlayTagChangeReleasesBorrowedEdges
+{
+  if (@available(iOS 27.0, *)) {
+    UIScrollView *source = nil;
+    UIScrollView *horizontal = [self prepareExternalDirectDragWithSource:&source overlay:nil];
+    UIScrollEdgeElementContainerInteraction *top = [self.pager valueForKey:@"topEdgeInteraction"];
+    XCTAssertNotNil(top);
+    [self.pager scrollViewWillBeginDragging:horizontal];
+    XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 3);
+    auto props = std::make_shared<RNCCollapsiblePagerViewProps>();
+    props->nativeSmoothHeaderScrollEnabled = true;
+    props->topScrollEdgeEffect = RNCCollapsiblePagerViewTopScrollEdgeEffect::Hard;
+    props->externalTopOverlayTag = 0;
+    [self.pager updateProps:props oldProps:nullptr];
+    XCTAssertEqual([[self.pager valueForKey:@"externalTopOverlayTag"] integerValue], 0);
+    XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 0);
+    XCTAssertNil(top.scrollView);
+    XCTAssertEqual(source.topEdgeEffect.style, UIScrollEdgeEffectStyle.softStyle);
+  } else {
+    XCTSkip(@"External direct Hard drag handoff requires iOS 27 or newer");
+  }
+}
+
+- (void)testExternalOuterInactivityReleasesBorrowedEdges
+{
+  if (@available(iOS 27.0, *)) {
+    UIScrollView *source = nil;
+    UIScrollView *horizontal = [self prepareExternalDirectDragWithSource:&source overlay:nil];
+    RNCPagerViewComponentView *outer = [RNCPagerViewComponentView new];
+    [self.pager setValue:outer forKey:@"externalOuterPager"];
+    [self.pager setValue:@YES forKey:@"externalOuterPageActive"];
+    [self.pager setValue:@NO forKey:@"externalOuterTransitioning"];
+    UIScrollEdgeElementContainerInteraction *top = [self.pager valueForKey:@"topEdgeInteraction"];
+    XCTAssertNotNil(top);
+    [self.pager scrollViewWillBeginDragging:horizontal];
+    XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 3);
+    [self.pager outerPagerDidUpdateOverlayOwner:NO transitioning:NO];
+    XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 0);
+    XCTAssertNil(top.scrollView);
+    XCTAssertNil([self.pager valueForKey:@"topEdgeInteraction"]);
+    XCTAssertEqual(source.topEdgeEffect.style, UIScrollEdgeEffectStyle.softStyle);
+    [self.pager beginProgrammaticScrollEdgesToIndex:2 allowExternalOverlay:YES];
+    XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 0);
+  } else {
+    XCTSkip(@"External direct Hard drag handoff requires iOS 27 or newer");
+  }
+}
+
+- (void)testExternalOuterTransitionReleasesBorrowedEdges
+{
+  if (@available(iOS 27.0, *)) {
+    UIScrollView *source = nil;
+    UIScrollView *horizontal = [self prepareExternalDirectDragWithSource:&source overlay:nil];
+    RNCPagerViewComponentView *outer = [RNCPagerViewComponentView new];
+    [self.pager setValue:outer forKey:@"externalOuterPager"];
+    [self.pager setValue:@YES forKey:@"externalOuterPageActive"];
+    [self.pager setValue:@NO forKey:@"externalOuterTransitioning"];
+    UIScrollEdgeElementContainerInteraction *top = [self.pager valueForKey:@"topEdgeInteraction"];
+    XCTAssertNotNil(top);
+    [self.pager scrollViewWillBeginDragging:horizontal];
+    XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 3);
+    [self.pager outerPagerDidUpdateOverlayOwner:YES transitioning:YES];
+    XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 0);
+    XCTAssertNil(top.scrollView);
+    XCTAssertNil([self.pager valueForKey:@"topEdgeInteraction"]);
+    XCTAssertEqual(source.topEdgeEffect.style, UIScrollEdgeEffectStyle.softStyle);
+    [self.pager beginProgrammaticScrollEdgesToIndex:2 allowExternalOverlay:YES];
+    XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 0);
+  } else {
+    XCTSkip(@"External direct Hard drag handoff requires iOS 27 or newer");
+  }
+}
+
 - (void)testDirectDragAdoptsSourceBeforeDetachAndOwnsBothNeighbours
 {
   if (@available(iOS 27.0, *)) {
@@ -585,7 +931,7 @@ using namespace facebook::react;
     XCTAssertNotNil(sticky);
     XCTAssertEqual([self.pager valueForKey:@"originalTopEdgeStyle"], UIScrollEdgeEffectStyle.softStyle);
 
-    [self.pager adoptCurrentScrollEdgeForProgrammaticTransition];
+    [self.pager adoptCurrentScrollEdgeForProgrammaticTransition:NO];
     id owner = [[self.pager valueForKey:@"programmaticScrollEdgeOwners"] firstObject];
     XCTAssertNotNil(owner);
     XCTAssertEqual([owner valueForKey:@"topInteraction"], top);
@@ -632,7 +978,7 @@ using namespace facebook::react;
     UIScrollEdgeElementContainerInteraction *sticky = [self.pager valueForKey:@"stickyEdgeInteraction"];
     UIView *topMarker = [self.pager valueForKey:@"topEdgeMarker"];
     UIView *stickyMarker = [self.pager valueForKey:@"stickyEdgeMarker"];
-    [self.pager adoptCurrentScrollEdgeForProgrammaticTransition];
+    [self.pager adoptCurrentScrollEdgeForProgrammaticTransition:NO];
     [self.pager restorePinnedStickyHeader];
     [self.pager clearProgrammaticScrollEdges];
     XCTAssertFalse([topHost.interactions containsObject:top]);
