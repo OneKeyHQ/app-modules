@@ -4,6 +4,8 @@ import static org.junit.Assert.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import android.app.ActivityManager;
+import android.app.KeyguardManager;
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.content.Context;
@@ -13,6 +15,7 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.ResolveInfo;
 import android.os.Bundle;
 import android.os.Looper;
+import android.os.Process;
 import cn.jiguang.core.JCoreCrypto;
 import cn.jiguang.core.JCoreStorage;
 import cn.jiguang.core.JCoreTcpEngine;
@@ -34,6 +37,7 @@ import com.google.firebase.messaging.RemoteMessage;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import org.junit.After;
 import org.junit.Before;
@@ -72,6 +76,7 @@ public class FcmAdapterTest {
         JLogger.clearRecentLogs();
         notifications = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         notifications.cancelAll();
+        setProcessImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND);
         ActionHelper.getInstance().clearRegisteredReceivers();
         ActionHelper.getInstance().registerReceiver(new JPushMessageReceiver() {
             @Override public void onNotifyMessageArrived(Context c, NotificationMessage message) { arrived.add(message); }
@@ -347,7 +352,7 @@ public class FcmAdapterTest {
     }
 
     @Test
-    public void stoppedUnauthorizedAndSuppressedNotificationsAreIgnored() {
+    public void stoppedAndUnauthorizedNotificationsAreIgnored() {
         String body = "{\"msg_id\":\"blocked\",\"n_content\":\"synthetic\"}";
         JCoreStorage.setPushStopped(context, true);
         service.onMessageReceived(new RemoteMessage(metadata(body)));
@@ -355,9 +360,49 @@ public class FcmAdapterTest {
         JCoreStorage.setCollectionAuth(context, false);
         service.onMessageReceived(new RemoteMessage(metadata(body)));
         JCoreStorage.setCollectionAuth(context, true);
-        service.onMessageReceived(new RemoteMessage(metadata("{\"msg_id\":\"hidden\",\"n_content\":\"synthetic\",\"n_foreground\":\"0\"}")));
         assertTrue(arrived.isEmpty());
         assertEquals(0, Shadows.shadowOf(notifications).getAllNotifications().size());
+    }
+
+    @Test
+    public void foregroundDisplayDisabledSuppressesNotificationAndArrival() {
+        service.onMessageReceived(foregroundSuppressedMessage());
+        assertTrue(arrived.isEmpty());
+        assertEquals(0, Shadows.shadowOf(notifications).getAllNotifications().size());
+    }
+
+    @Test
+    public void backgroundDataOnlyMessageStillDisplaysAndDispatchesArrival() {
+        setProcessImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE);
+        RemoteMessage message = foregroundSuppressedMessage();
+        assertNull(message.getNotification());
+        service.onMessageReceived(message);
+        assertEquals(1, arrived.size());
+        assertEquals("foreground_suppressed", arrived.get(0).msgId);
+        assertEquals(1, Shadows.shadowOf(notifications).getAllNotifications().size());
+    }
+
+    @Test
+    public void foregroundDisplayDecisionUsesCurrentProcessStateForEachMessage() {
+        service.onMessageReceived(foregroundSuppressedMessage());
+        assertTrue(arrived.isEmpty());
+        setProcessImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE);
+        service.onMessageReceived(foregroundSuppressedMessage());
+        assertEquals(1, arrived.size());
+        notifications.cancelAll();
+        setProcessImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND);
+        service.onMessageReceived(foregroundSuppressedMessage());
+        assertEquals(1, arrived.size());
+        assertEquals(0, Shadows.shadowOf(notifications).getAllNotifications().size());
+    }
+
+    @Test
+    public void lockedScreenDoesNotSuppressDataOnlyNotification() {
+        KeyguardManager keyguard = (KeyguardManager) context.getSystemService(Context.KEYGUARD_SERVICE);
+        Shadows.shadowOf(keyguard).setKeyguardLocked(true);
+        service.onMessageReceived(foregroundSuppressedMessage());
+        assertEquals(1, arrived.size());
+        assertEquals(1, Shadows.shadowOf(notifications).getAllNotifications().size());
     }
 
     @Test
@@ -385,6 +430,18 @@ public class FcmAdapterTest {
         Bundle payload = new Bundle();
         payload.putString("JMessageExtra", json);
         return payload;
+    }
+
+    private static RemoteMessage foregroundSuppressedMessage() {
+        return new RemoteMessage(metadata("{\"msg_id\":\"foreground_suppressed\",\"n_content\":\"synthetic\",\"n_foreground\":\"0\"}"));
+    }
+
+    private void setProcessImportance(int importance) {
+        ActivityManager.RunningAppProcessInfo process = new ActivityManager.RunningAppProcessInfo();
+        process.pid = Process.myPid();
+        process.importance = importance;
+        ActivityManager manager = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+        Shadows.shadowOf(manager).setProcesses(Collections.singletonList(process));
     }
 
     private static String compress(String json) {

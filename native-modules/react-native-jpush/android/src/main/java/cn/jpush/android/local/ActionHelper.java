@@ -1,6 +1,8 @@
 package cn.jpush.android.local;
 
 import android.app.Activity;
+import android.app.ActivityManager;
+import android.app.KeyguardManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -154,7 +156,7 @@ public class ActionHelper {
                     custom.platform = 8;
                     dispatchCustomMessageEvent(context, custom);
                 } else {
-                    if ("0".equals(message.displayForeground)) {
+                    if ("0".equals(message.displayForeground) && isApplicationForeground(context)) {
                         return;
                     }
                     postSystemNotification(context, message);
@@ -170,6 +172,16 @@ public class ActionHelper {
             dispatchNotificationEvent(context, "notify_opened", message);
             broadcastNotificationOpened(context, message);
         }
+    }
+
+    private boolean isApplicationForeground(Context context) {
+        KeyguardManager keyguard = (KeyguardManager) context.getSystemService(Context.KEYGUARD_SERVICE);
+        if (keyguard != null && keyguard.isKeyguardLocked()) {
+            return false;
+        }
+        ActivityManager.RunningAppProcessInfo process = new ActivityManager.RunningAppProcessInfo();
+        ActivityManager.getMyMemoryState(process);
+        return process.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND;
     }
 
     public void doSingleAction(Context context, String action, Object data) {
