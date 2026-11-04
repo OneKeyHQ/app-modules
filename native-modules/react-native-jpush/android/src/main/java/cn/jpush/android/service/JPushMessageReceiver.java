@@ -10,6 +10,7 @@ import cn.jpush.android.api.JPushMessage;
 import cn.jpush.android.api.NotificationCustomButton;
 import cn.jpush.android.api.NotificationMessage;
 import cn.jpush.android.local.ActionHelper;
+import cn.jiguang.core.JCoreStorage;
 
 public abstract class JPushMessageReceiver extends BroadcastReceiver {
     @Override
@@ -74,7 +75,7 @@ public abstract class JPushMessageReceiver extends BroadcastReceiver {
     }
 
     public boolean isNeedShowNotification(Context context, NotificationMessage notificationMessage, String processName) {
-        return true;
+        return !JCoreStorage.isPushStopped(context) && JCoreStorage.isCollectionAuth(context);
     }
 
     public void onInAppMessageShow(Context context, NotificationMessage notificationMessage) {

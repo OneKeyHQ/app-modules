@@ -22,3 +22,19 @@ yarn workspace @onekeyfe/react-native-jpush test
 # Native iOS & Android E2E protocol verification (uses non-production demo key 1f2027d3cfb1b51dac664c42)
 python3 native-modules/react-native-jpush/scripts/verify_clean_sdk.py
 ```
+
+## Android Google / FCM source transport
+
+The optional Android source library in `android/fcm` replaces the opaque Jiguang FCM plugin. It delegates the Google transport to the official Firebase Messaging SDK and forwards tokens and messages into this package's JCore/JPush pipeline. Link it alongside the project's autolinked JPush module (the alias below matches app-monorepo):
+
+```groovy
+// settings.gradle, after React Native autolinking
+include ':onekey-jpush-fcm'
+project(':onekey-jpush-fcm').projectDir = new File(project(':jpush-react-native').projectDir, 'fcm')
+
+// app/build.gradle: replace cn.jiguang.sdk.plugin:fcm
+// Keep this dependency scoped to the Google distribution.
+googleImplementation project(':onekey-jpush-fcm')
+```
+
+The host retains its existing `google-services.json` and Google Services Gradle plugin. Firebase auto-init stays disabled; JPush initialization requests the token after authorization. Cloud acceptance requires the matching Firebase credentials configured in the Jiguang sender. For Firebase-managed background notification payloads, use `cn.jpush.android.intent.NOTIFICATION_OPENED` as the click action so the private JPush activity receives `JMessageExtra`.

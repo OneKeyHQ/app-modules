@@ -1,0 +1,16 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <meta-data android:name="firebase_messaging_auto_init_enabled" android:value="false" />
+    <service android:name="com.onekey.jpush.fcm.FcmMessagingService" android:exported="false">
+      <intent-filter>
+        <action android:name="com.google.firebase.MESSAGING_EVENT" />
+      </intent-filter>
+    </service>
+    <activity android:name="cn.jpush.android.service.JNotifyActivity" android:exported="false">
+      <intent-filter>
+        <action android:name="cn.jpush.android.intent.NOTIFICATION_OPENED" />
+        <category android:name="android.intent.category.DEFAULT" />
+      </intent-filter>
+    </activity>
+  </application>
+</manifest>

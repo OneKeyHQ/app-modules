@@ -81,6 +81,7 @@ public class JPushInterface {
         JPushConstants.init(app);
         ActionHelper.getInstance().init(app);
         JCoreManager.init(app);
+        JThirdPlatFormInterface.initializeFcm(app);
     }
 
     public static void init(Context context, JPushConfig config) {
@@ -104,6 +105,7 @@ public class JPushInterface {
     public static void resumePush(Context context) {
         JCoreStorage.setPushStopped(context, false);
         JCoreManager.init(context);
+        JThirdPlatFormInterface.initializeFcm(context);
         ActionHelper.getInstance().setPushStatusWithCallBack(context, 4, 1);
     }
 

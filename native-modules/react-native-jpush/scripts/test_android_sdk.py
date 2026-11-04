@@ -462,6 +462,15 @@ public final class Bundle implements Serializable {
         map.put(key, value);
     }
 
+    public void putByte(String key, byte value) {
+        map.put(key, value);
+    }
+
+    public Byte getByte(String key, byte defaultValue) {
+        Object value = map.get(key);
+        return value instanceof Byte ? ((Byte) value).byteValue() : defaultValue;
+    }
+
     public int getInt(String key, int defaultValue) {
         Object v = map.get(key);
         return v instanceof Number ? ((Number) v).intValue() : defaultValue;
@@ -709,6 +718,10 @@ public class Intent {
 
     public Bundle getExtras() {
         return extras;
+    }
+
+    public boolean hasExtra(String name) {
+        return extras.containsKey(name);
     }
 
     public Intent putExtra(String name, String value) {
@@ -992,6 +1005,10 @@ public class JSONObject {
 
     public Object opt(String key) {
         return map.get(key);
+    }
+
+    public boolean has(String key) {
+        return map.containsKey(key);
     }
 
     public int optInt(String key, int fallback) {
@@ -1697,7 +1714,13 @@ public final class SdkEndToEndTestRunner {
 
         // Enqueue Alias (cmd=29) and ThirdToken (cmd=27) BEFORE calling init() to verify pre-login request queue flush!
         JPushInterface.setAlias(reactContext, 91, "queued_before_login");
-        JPushInterface.setThirdToken(reactContext, "fcm_prelogin_token_777", (byte) 8, false);
+        Bundle fcmToken = new Bundle();
+        fcmToken.putString("token", "fcm_prelogin_token_777");
+        fcmToken.putByte("platform", (byte) 8);
+        cn.jpush.android.api.JThirdPlatFormInterface.doAction(
+            reactContext, cn.jpush.android.api.JThirdPlatFormInterface.ACTION_REGISTER_TOKEN, fcmToken
+        );
+        check("".equals(JCoreStorage.getThirdToken(reactContext, (byte) 8)), "FCM token must not be persisted before server acknowledgement");
         check(JCoreTcpEngine.getInstance().getPreLoginQueueSize() >= 2, "Pre-login requests must be queued before login");
 
         jpushModule.init();
@@ -1945,6 +1968,71 @@ public final class SdkEndToEndTestRunner {
         check(sawLocalNotification, "JPushModuleReceiver must emit LocalNotificationEvent for local notification");
 
         JCoreTcpEngine.getInstance().closeSocket();
+    }
+
+    private static void testFcmCallbacksAndPayloadBounds() throws Exception {
+        Context context = new Context();
+        JCoreStorage.setPushStopped(context, false);
+        JCoreStorage.setCollectionAuth(context, true);
+        String payload = "{\"_jmsgid_\":\"fcm_arrival_1\",\"n_title\":\"Synthetic title\",\"n_content\":\"Synthetic body\",\"n_extras\":{\"route\":\"test\"}}";
+        String zipped = "{\"jg_c\":\"" + JCoreCrypto.base64Encode(JCoreCrypto.gzipCompress(payload.getBytes(StandardCharsets.UTF_8))) + "\"}";
+        NotificationMessage parsed = cn.jpush.android.api.JThirdPlatFormInterface.parseMessage(context, zipped);
+        check("fcm_arrival_1".equals(parsed.msgId) && parsed.platform == 8, "Compressed FCM envelope must retain identity and platform");
+        check(parsed.notificationExtras.contains("route"), "FCM extras must survive decoding");
+        StringBuilder oversized = new StringBuilder();
+        for (int i = 0; i < 70000; i++) oversized.append('a');
+        String oversizedZip = "{\"jg_c\":\"" + JCoreCrypto.base64Encode(JCoreCrypto.gzipCompress(oversized.toString().getBytes(StandardCharsets.UTF_8))) + "\"}";
+        check(cn.jpush.android.api.JThirdPlatFormInterface.decodeMessageJson(oversizedZip) == null, "FCM inflated payload must be bounded");
+
+        ActionHelper helper = ActionHelper.getInstance();
+        helper.clearRegisteredReceivers();
+        final AtomicInteger arrivals = new AtomicInteger();
+        final AtomicInteger opens = new AtomicInteger();
+        final AtomicInteger customs = new AtomicInteger();
+        final AtomicReference<NotificationMessage> delivered = new AtomicReference<NotificationMessage>();
+        helper.registerReceiver(new JPushMessageReceiver() {
+            @Override public void onNotifyMessageArrived(Context c, NotificationMessage message) {
+                arrivals.incrementAndGet(); delivered.set(message);
+            }
+            @Override public void onNotifyMessageOpened(Context c, NotificationMessage message) {
+                opens.incrementAndGet();
+            }
+            @Override public void onMessage(Context c, CustomMessage message) {
+                check("fcm_custom_1".equals(message.messageId) && message.platform == 8, "FCM custom message must retain identity and platform");
+                check("Synthetic data".equals(message.message), "FCM custom body must reach the callback");
+                customs.incrementAndGet();
+            }
+        });
+        Bundle notification = new Bundle();
+        notification.putString("data", zipped);
+        notification.putInt("noti_id", 321);
+        cn.jpush.android.api.JThirdPlatFormInterface.doAction(context, cn.jpush.android.api.JThirdPlatFormInterface.ACTION_NOTIFICATION_ARRIVED, notification);
+        check(arrivals.get() == 1 && delivered.get().notificationId == 321, "Vendor-displayed FCM arrival must dispatch exactly once");
+        android.content.Intent tap = new android.content.Intent(JPushInterface.ACTION_NOTIFICATION_OPENED);
+        tap.putExtra("JMessageExtra", zipped);
+        helper.handleNotificationIntent(context, tap);
+        check(opens.get() == 1, "FCM PendingIntent extras must reach the opened callback");
+        helper.handleNotificationIntent(context, new android.content.Intent("unrelated").putExtra("JMessageExtra", zipped));
+        check(opens.get() == 1, "Unrelated intents must not produce opened callbacks");
+        Bundle received = new Bundle();
+        received.putString("JMessageExtra", zipped);
+        cn.jpush.android.api.JThirdPlatFormInterface.sendActionByJCore(context, received, cn.jpush.android.api.JThirdPlatFormInterface.ACTION_PLUGIN_PALTFORM_ON_MESSAGING);
+        check(arrivals.get() == 2 && "fcm_arrival_1".equals(delivered.get().msgId), "Source FCM receive entry must dispatch one arrival");
+        received.putString("JMessageExtra", "{\"msg_id\":\"fcm_custom_1\",\"message\":\"Synthetic data\"}");
+        cn.jpush.android.api.JThirdPlatFormInterface.sendActionByJCore(context, received, cn.jpush.android.api.JThirdPlatFormInterface.ACTION_PLUGIN_PALTFORM_ON_MESSAGING);
+        check(customs.get() == 1 && arrivals.get() == 2, "FCM custom data must not become a notification");
+        JCoreStorage.setPushStopped(context, true);
+        cn.jpush.android.api.JThirdPlatFormInterface.doAction(context, cn.jpush.android.api.JThirdPlatFormInterface.ACTION_NOTIFICATION_ARRIVED, notification);
+        check(arrivals.get() == 2, "Stopped push must suppress FCM callbacks");
+        check("0".equals(cn.jpush.android.api.JThirdPlatFormInterface.parseMessage(context, payload).displayForeground), "Stopped push must suppress vendor-controlled display");
+        JCoreStorage.setPushStopped(context, false);
+        JCoreStorage.setCollectionAuth(context, false);
+        cn.jpush.android.api.JThirdPlatFormInterface.doAction(context, cn.jpush.android.api.JThirdPlatFormInterface.ACTION_NOTIFICATION_ARRIVED, notification);
+        check(arrivals.get() == 2, "Unauthorized collection must suppress FCM callbacks");
+        JCoreStorage.setCollectionAuth(context, true);
+        helper.clearRegisteredReceivers();
+
+
     }
 
     private static void testHttpReportChannelAndMultiProcessIpc() throws Exception {
@@ -2551,6 +2639,7 @@ public final class SdkEndToEndTestRunner {
         testUdpSis10ByteAndAsymmetricTcpWireCodec();
         testTcpEngineEndToEndAndProductionResilience();
         testHttpReportChannelAndMultiProcessIpc();
+        testFcmCallbacksAndPayloadBounds();
         testDefaultHostVerifier();
         testAutoReconnectScheduleAndBinderSecurity();
         System.out.println("ALL_ANDROID_SDK_TESTS_PASSED");
