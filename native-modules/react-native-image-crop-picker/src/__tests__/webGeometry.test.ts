@@ -124,6 +124,27 @@ describe('crop state', () => {
     const after = cropRectOf(rescale(state, box, bigger, image), image, bigger);
     expect(after).toEqual(before);
   });
+
+  it.each([0, 90, 180, 270] as const)(
+    'keeps a high-zoom crop inside a small image at rotation %i',
+    (rotation) => {
+      const smallImage = { width: 1, height: 2 };
+      const state = { ...INITIAL_STATE, rotation, zoom: MAX_ZOOM };
+      const size = rotation % 180 === 0 ? smallImage : { width: 2, height: 1 };
+      for (const dx of [-10_000, 10_000]) {
+        for (const dy of [-10_000, 10_000]) {
+          const moved = pan(state, dx, dy, smallImage, box);
+          const rect = cropRectOf(moved, smallImage, box);
+          expect(rect.width).toBe(1);
+          expect(rect.height).toBe(1);
+          expect(rect.x).toBeGreaterThanOrEqual(0);
+          expect(rect.y).toBeGreaterThanOrEqual(0);
+          expect(rect.x + rect.width).toBeLessThanOrEqual(size.width);
+          expect(rect.y + rect.height).toBeLessThanOrEqual(size.height);
+        }
+      }
+    }
+  );
 });
 
 describe('outputSizeOf', () => {
@@ -137,6 +158,7 @@ describe('outputSizeOf', () => {
     );
     const crop = cropRectOf(state, smallImage, box);
 
+    expect(crop).toEqual({ x: 1, y: 1, width: 1, height: 1 });
     expect(outputSizeOf(crop, {})).toEqual({ width: 1, height: 1 });
     expect(outputSizeOf(crop, { maxWidth: 100, maxHeight: 100 })).toEqual({
       width: 1,

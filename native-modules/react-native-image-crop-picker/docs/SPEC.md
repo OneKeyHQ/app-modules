@@ -69,6 +69,8 @@ its leading bytes (JPEG, PNG, GIF, WebP, HEIC/HEIF, AVIF, BMP, TIFF, ICO);
 4096 px processed long side, exact target size and 0.8 default quality match
 iOS. Web output dimensions are at least one pixel per side, including when a
 zoomed crop covers less than one source pixel or resizing rounds a side to zero.
+The web `cropRect` also reports at least one source pixel per side, with its
+origin clamped so the rounded rectangle stays inside the rotated image.
 `freeStyleCropEnabled` is not implemented on the web.
 
 The picker requires no photo read or write authorization and declares neither.

@@ -207,11 +207,21 @@ export function rescale(
 export function cropRectOf(state: CropState, image: Size, box: Size): Rect {
   const scale = scaleOf(state, image, box);
   const size = rotatedSize(image, state.rotation);
+  const width = Math.max(Math.round(box.width / scale), 1);
+  const height = Math.max(Math.round(box.height / scale), 1);
   return {
-    x: Math.round(size.width / 2 + (-box.width / 2 - state.offsetX) / scale),
-    y: Math.round(size.height / 2 + (-box.height / 2 - state.offsetY) / scale),
-    width: Math.round(box.width / scale),
-    height: Math.round(box.height / scale),
+    x: clamp(
+      Math.round(size.width / 2 + (-box.width / 2 - state.offsetX) / scale),
+      0,
+      size.width - width
+    ),
+    y: clamp(
+      Math.round(size.height / 2 + (-box.height / 2 - state.offsetY) / scale),
+      0,
+      size.height - height
+    ),
+    width,
+    height,
   };
 }
 
