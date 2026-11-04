@@ -12,7 +12,6 @@ from pathlib import Path
 import socket
 import ssl
 import subprocess
-import tempfile
 import threading
 
 
@@ -262,7 +261,6 @@ def main():
     parser.add_argument("--runtime")
     parser.add_argument("--device-type")
     parser.add_argument("--output-dir", type=Path, default=OUT)
-    parser.add_argument("--prepared-dependency", action="store_true")
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--prepare-ci-device", action="store_true")
     modes.add_argument("--ci-prepared-device", action="store_true")
@@ -297,15 +295,10 @@ def main():
     for name in ("Client", "PinnedTransport", "Validation", "Core", "Log"):
         relative = f"ios/SniConnect{name}.swift"
         assert digest(sdk_root / relative) == digest(PACKAGE / relative), "Packaged Swift source differs"
-    dependency = original_emas if args.prepared_dependency else Path(tempfile.mkdtemp(prefix="packaged-dependency-", dir=OUT)) / "EMASCurl"
-    helper = sdk_root / "ios/apply_emascurl_no_replay.rb"
-    if not args.prepared_dependency:
-        run("cp", "-cR", original_emas, dependency)
-        run("ruby", helper, "--pod-root", dependency, "--version", "1.5.5")
-    run("ruby", helper, "--pod-root", dependency, "--version", "1.5.5", "--verify-only")
-    print(json.dumps({"packagedHelper": str(helper), "helperSha256": digest(helper),
-                      "originalProtocolSha256": original_hash,
-                      "patchedProtocolSha256": digest(dependency / "EMASCurl/EMASCurlProtocol.m")}), flush=True)
+    assert original_hash == "56969066a34ec9ed8e3cc7510a69ed3f209bac8a8b16713e8c3300185f367258", "Expected unmodified EMASCurl 1.5.5"
+    dependency = original_emas
+    print(json.dumps({"emascurlVersion": "1.5.5", "unmodifiedDependency": True,
+                      "originalProtocolSha256": original_hash}), flush=True)
     cert, key = OUT / "fixture.pem", OUT / "fixture.key"
     ca, ca_key = OUT / "ca.pem", OUT / "ca.key"
     config = OUT / "openssl.cnf"
@@ -396,17 +389,26 @@ def main():
                 valid = valid and all(r["method"] == method and r["host"] == "sni-replay.local" for r in server.complete)
                 reused = bool(server.complete) and server.complete[0]["connection"] == server.warm_connection
                 valid = valid and (not warm or (result.get("warmStatus") == 200 and reused))
-                valid = valid and len(server.complete) == 1
-                valid = valid and len([event for event in server.events if event["event"] == "headers"]) == 1
+                recovered = name in ("empty-post", "warm-get", "warm-delete", "warm-head", "warm-options")
+                expected_count = 2 if recovered else 1
+                valid = valid and len(server.complete) == expected_count
+                valid = valid and len([event for event in server.events if event["event"] == "headers"]) == expected_count
                 if mode.isdigit():
                     valid = valid and result.get("status") == int(mode)
                     valid = valid and result.get("data") == "response"
                     valid = valid and result.get("headers", {}).get("retry-after") == "0"
+                elif recovered:
+                    valid = valid and result.get("status") == 200 and result.get("data") == ("" if method == "HEAD" else "response")
                 else:
-                    valid = valid and "requestError" in result
-                    valid = valid and result.get("requestErrorCode") != "SNI_CANCELLED"
+                    expected_error = {
+                        "warm-post": "SNI_UNKNOWN_ERROR", "closed-listener": "SNI_UNKNOWN_ERROR",
+                        "file-post": "SNI_UNKNOWN_ERROR", "warm-put": "SNI_UNKNOWN_ERROR",
+                        "fresh-post": "SNI_NETWORK_UNREACHABLE", "warm-patch": "SNI_NETWORK_UNREACHABLE",
+                    }[name]
+                    valid = valid and "requestError" in result and result.get("requestErrorCode") == expected_error
                 record = {"case": name, "pass": bool(valid), "native": result, "complete": server.complete,
-                          "headers": server.events, "acceptedConnections": server.connections, "reusedWarmSocket": reused}
+                          "headers": server.events, "acceptedConnections": server.connections, "reusedWarmSocket": reused,
+                          "expectedCompleteRequests": expected_count}
                 results.append(record)
                 print(json.dumps(record), flush=True)
             except subprocess.TimeoutExpired as error:
@@ -437,6 +439,7 @@ def main():
                    "preflightPassed": preflight_passed, "preflightSeconds": preflight_seconds,
                    "casesSeconds": round(time.monotonic() - cases_started, 3) if cases_started else 0,
                    "sdkRoot": str(sdk_root), "sourceSha256": hashes, "protocolSha256": digest(original_protocol),
+                   "emascurlVersion": "1.5.5", "unmodifiedDependency": True,
                    "durationSeconds": round(time.monotonic() - started, 3)}
         (OUT / "summary.json").write_text(json.dumps(summary, indent=2))
         print(json.dumps(summary), flush=True)

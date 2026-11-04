@@ -1,6 +1,5 @@
 package com.sniconnect
 
-import java.io.ByteArrayOutputStream
 import java.io.Closeable
 import java.io.EOFException
 import java.io.IOException
@@ -17,7 +16,6 @@ import java.util.Collections
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.zip.GZIPOutputStream
 import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLServerSocket
@@ -35,6 +33,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -45,22 +44,25 @@ import org.junit.Test
  */
 class SniPinnedTransportReplayTest {
   @Test
-  fun pooledPostMustNotReplayAfterServerConsumesBodyAndDropsResponse() {
+  fun pooledPostCanReplayAfterServerConsumesBodyAndDropsResponse() {
     runScenario(Mode.DROP_RESPONSE, warm = true).use { result ->
-      assertEquals(result.trace, 1, result.server.postCount.get())
-      assertEquals(result.trace, 1, result.events.bodyEnds.get())
-      assertEquals(result.trace, 0, result.events.connectStarts.get())
+      assertEquals(result.trace, 2, result.server.postCount.get())
+      assertEquals(result.trace, 2, result.events.bodyEnds.get())
+      assertEquals(result.trace, 1, result.events.connectStarts.get())
+      assertEquals(result.trace, 2, result.events.entries.count { it == "requestHeadersEnd" })
+      assertEquals(result.trace, 200, result.status)
+      assertNull(result.trace, result.failure)
     }
   }
 
   @Test
-  fun consumedPostMustNotReconnectAfterResponseLoss() {
+  fun consumedPostCanFailConnectingAfterItsFirstAttemptWasProcessed() {
     runScenario(Mode.CLOSE_LISTENER, warm = true).use { result ->
       assertEquals(result.trace, 1, result.server.postCount.get())
       assertEquals(result.trace, 1, result.events.bodyEnds.get())
-      assertEquals(result.trace, 0, result.events.connectStarts.get())
+      assertEquals(result.trace, 1, result.events.connectStarts.get())
       assertNotNull(result.trace, result.failure)
-      assertFalse(result.trace, result.failure is ConnectException)
+      assertTrue(result.trace, result.failure is ConnectException)
     }
   }
 
@@ -81,138 +83,102 @@ class SniPinnedTransportReplayTest {
   }
 
   @Test
-  fun pooledGetMustNotReplayWhenTheResponseIsLost() = assertSingleLoss("GET")
+  fun pooledGetCanRecoverWhenTheResponseIsLost() = assertDefaultRecovery("GET")
 
   @Test
-  fun pooledHeadMustNotReplayWhenTheResponseIsLost() = assertSingleLoss("HEAD")
+  fun pooledHeadCanRecoverWhenTheResponseIsLost() = assertDefaultRecovery("HEAD")
 
   @Test
-  fun pooledOptionsMustNotReplayWhenTheResponseIsLost() = assertSingleLoss("OPTIONS")
+  fun pooledOptionsCanRecoverWhenTheResponseIsLost() = assertDefaultRecovery("OPTIONS")
 
   @Test
-  fun pooledDeleteMustNotReplayWhenTheResponseIsLost() = assertSingleLoss("DELETE")
+  fun pooledDeleteCanRecoverWhenTheResponseIsLost() = assertDefaultRecovery("DELETE")
 
   @Test
-  fun pooledPutMustNotReplayWhenTheResponseIsLost() = assertSingleLoss("PUT")
+  fun pooledPutCanRecoverWhenTheResponseIsLost() = assertDefaultRecovery("PUT")
 
   @Test
-  fun pooledPatchMustNotReplayWhenTheResponseIsLost() = assertSingleLoss("PATCH")
+  fun pooledPatchCanRecoverWhenTheResponseIsLost() = assertDefaultRecovery("PATCH")
 
-  private fun assertSingleLoss(method: String) {
+  private fun assertDefaultRecovery(method: String) {
     runScenario(Mode.DROP_RESPONSE, warm = true, method = method).use { result ->
-      assertEquals(result.trace, 1, result.server.targetCount.get())
-      assertEquals(result.trace, 1, result.events.entries.count { it == "requestHeadersEnd" })
-      assertNotNull(result.trace, result.failure)
-    }
-  }
-
-  @Test
-  fun getMustNotReplayAfterRetryable503() = assertSingleStatus("GET", Mode.RETRYABLE_503, 503)
-
-  @Test
-  fun getMustNotReplayAfterRetryable408() = assertSingleStatus("GET", Mode.RETRYABLE_408, 408)
-
-  @Test
-  fun disablingConnectionRetryMustAlsoPreventGet503FollowUp() =
-    assertSingleStatus("GET", Mode.RETRYABLE_503, 503, retry = false)
-
-  private fun assertSingleStatus(method: String, mode: Mode, status: Int, retry: Boolean? = null) {
-    runScenario(mode, warm = true, method = method, retry = retry).use { result ->
-      assertEquals(result.trace, 1, result.server.targetCount.get())
-      assertEquals(result.trace, status, result.status)
-      assertEquals(result.trace, "ok", result.responseBody)
-      assertEquals(result.trace, "0", result.retryAfter)
-    }
-  }
-
-  @Test
-  fun retryable503PreservesDuplicateHeadersAndNetworkMetadata() {
-    runScenario(Mode.RETRYABLE_503_DUPLICATE, warm = true, method = "GET").use { result ->
-      assertEquals(result.trace, 1, result.server.targetCount.get())
-      assertEquals(result.trace, 503, result.status)
-      assertEquals(result.trace, "ok", result.responseBody)
-      val expected = listOf(
-        "Content-Length" to "2", "Retry-After" to "7",
-        "rEtRy-AfTeR" to "0", "X-Fixture" to "preserved",
-      )
-      assertEquals(result.trace, expected, result.responses.single().first.headers.toList())
-      assertEquals(result.trace, expected, result.responses.single().first.networkResponse!!.headers.toList())
-    }
-  }
-
-  @Test
-  fun retryable503PreservesTransparentGzipDecoding() {
-    runScenario(Mode.RETRYABLE_503_GZIP, warm = true, method = "GET").use { result ->
-      assertEquals(result.trace, 1, result.server.targetCount.get())
-      assertEquals(result.trace, 503, result.status)
-      assertEquals(result.trace, "ok", result.responseBody)
-      val response = result.responses.single().first
-      assertEquals(
-        result.trace,
-        listOf("Retry-After" to "0", "X-Fixture" to "preserved"),
-        response.headers.toList(),
-      )
-      assertEquals(result.trace, "gzip", response.networkResponse!!.header("Content-Encoding"))
-      assertEquals(result.trace, "0", response.networkResponse!!.header("Retry-After"))
-      assertNotNull(result.trace, response.networkResponse!!.header("Content-Length"))
-    }
-  }
-
-  @Test
-  fun concurrentRequestsDoNotShareRetryAfterState() {
-    runScenario(Mode.RETRYABLE_503, warm = true, method = "GET", concurrentCalls = 2).use { result ->
       assertEquals(result.trace, 2, result.server.targetCount.get())
-      assertEquals(result.trace, listOf(200, 503), result.responses.map { it.first.code }.sorted())
-      result.responses.forEach { (response, body) ->
-        assertEquals(result.trace, "ok", body)
-        val expected = if (response.code == 503) "0" else null
-        assertEquals(result.trace, expected, response.header("Retry-After"))
-        assertEquals(result.trace, expected, response.networkResponse!!.header("Retry-After"))
-      }
+      assertEquals(result.trace, 2, result.events.entries.count { it == "requestHeadersEnd" })
+      assertNull(result.trace, result.failure)
+      assertEquals(result.trace, 200, result.status)
+      assertEquals(result.trace, if (method == "HEAD") "" else "ok", result.responseBody)
     }
   }
 
   @Test
-  fun postMustNotReplayAfterRetryable503() {
+  fun getCanFollowRetryable503() = assertDefaultStatus("GET", Mode.RETRYABLE_503)
+
+  @Test
+  fun getCanFollowRetryable408() = assertDefaultStatus("GET", Mode.RETRYABLE_408)
+
+  @Test
+  fun disablingConnectionRetryDoesNotDisableGet503FollowUp() =
+    assertDefaultStatus("GET", Mode.RETRYABLE_503, retry = false)
+
+  private fun assertDefaultStatus(method: String, mode: Mode, retry: Boolean? = null) {
+    runScenario(mode, warm = true, method = method, retry = retry).use { result ->
+      assertEquals(result.trace, 2, result.server.targetCount.get())
+      assertEquals(result.trace, 200, result.status)
+      assertEquals(result.trace, 2, result.events.entries.count { it == "requestHeadersEnd" })
+      assertNull(result.trace, result.failure)
+      assertEquals(result.trace, "ok", result.responseBody)
+      assertNull(result.trace, result.retryAfter)
+    }
+  }
+
+  @Test
+  fun postCanFollowRetryable503() {
     runScenario(Mode.RETRYABLE_503, warm = true).use { result ->
-      assertEquals(result.trace, 1, result.server.postCount.get())
-      assertEquals(result.trace, 503, result.status)
+      assertEquals(result.trace, 2, result.server.postCount.get())
+      assertEquals(result.trace, 2, result.events.entries.count { it == "requestHeadersEnd" })
+      assertEquals(result.trace, 200, result.status)
     }
   }
 
   @Test
-  fun disablingConnectionRetryMustAlsoPreventPost503FollowUp() {
+  fun disablingConnectionRetryDoesNotDisablePost503FollowUp() {
     runScenario(Mode.RETRYABLE_503, warm = true, retry = false).use { result ->
-      assertEquals(result.trace, 1, result.server.postCount.get())
-      assertEquals(result.trace, 503, result.status)
+      assertEquals(result.trace, 2, result.server.postCount.get())
+      assertEquals(result.trace, 2, result.events.entries.count { it == "requestHeadersEnd" })
+      assertEquals(result.trace, 200, result.status)
     }
   }
 
   @Test
-  fun postMustNotReplayAfterRetryable408() {
+  fun postCanFollowRetryable408() {
     runScenario(Mode.RETRYABLE_408, warm = true).use { result ->
-      assertEquals(result.trace, 1, result.server.postCount.get())
-      assertEquals(result.trace, 408, result.status)
+      assertEquals(result.trace, 2, result.server.postCount.get())
+      assertEquals(result.trace, 2, result.events.entries.count { it == "requestHeadersEnd" })
+      assertEquals(result.trace, 200, result.status)
     }
   }
 
   @Test
-  fun streamedFilePostMustNotReplayAfterResponseLoss() {
+  fun streamedFilePostCanReplayAfterResponseLoss() {
     runScenario(Mode.DROP_RESPONSE, warm = true, fileBody = true).use { result ->
-      assertEquals(result.trace, 1, result.server.postCount.get())
-      assertEquals(result.trace, 1, result.events.bodyEnds.get())
-      assertEquals(result.trace, 0, result.events.connectStarts.get())
-      assertNotNull(result.trace, result.failure)
+      assertEquals(result.trace, 2, result.server.postCount.get())
+      assertEquals(result.trace, 2, result.events.entries.count { it == "requestHeadersEnd" })
+      assertEquals(result.trace, 2, result.events.bodyEnds.get())
+      assertEquals(result.trace, 1, result.events.connectStarts.get())
+      assertNull(result.trace, result.failure)
+      assertEquals(result.trace, 200, result.status)
     }
   }
 
   @Test
-  fun emptyPostMustNotReplayAfterResponseLoss() {
+  fun emptyPostCanReplayAfterResponseLoss() {
     runScenario(Mode.DROP_RESPONSE, warm = true, payload = "").use { result ->
-      assertEquals(result.trace, 1, result.server.postCount.get())
-      assertEquals(result.trace, 1, result.events.bodyEnds.get())
-      assertEquals(result.trace, 0, result.events.connectStarts.get())
-      assertNotNull(result.trace, result.failure)
+      assertEquals(result.trace, 2, result.server.postCount.get())
+      assertEquals(result.trace, 2, result.events.entries.count { it == "requestHeadersEnd" })
+      assertEquals(result.trace, 2, result.events.bodyEnds.get())
+      assertEquals(result.trace, 1, result.events.connectStarts.get())
+      assertNull(result.trace, result.failure)
+      assertEquals(result.trace, 200, result.status)
     }
   }
 
@@ -223,7 +189,6 @@ class SniPinnedTransportReplayTest {
     method: String = "POST",
     fileBody: Boolean = false,
     payload: String = "demo",
-    concurrentCalls: Int = 1,
   ): Result {
     val server = LocalTlsServer(
       mode, if (method in setOf("POST", "PUT", "PATCH")) payload else "",
@@ -265,7 +230,7 @@ class SniPinnedTransportReplayTest {
           } else null)
         }
         .build()
-      val calls = (1..concurrentCalls).map {
+      val calls = listOf(
         thread(name = "sni-fixture-call", isDaemon = true) {
           try {
             client.newCall(request).execute().use { response ->
@@ -275,10 +240,10 @@ class SniPinnedTransportReplayTest {
             result.failure = error
           }
         }
-      }
+      )
       calls.forEach { it.join(6000) }
       assertFalse("all fixture calls must finish", calls.any { it.isAlive })
-      if (concurrentCalls == 1 && result.responses.isNotEmpty()) {
+      if (result.responses.isNotEmpty()) {
         val (response, body) = result.responses.single()
         result.status = response.code
         result.responseBody = body
@@ -302,7 +267,6 @@ class SniPinnedTransportReplayTest {
 
   private enum class Mode {
     DROP_RESPONSE, CLOSE_LISTENER, RETRYABLE_503, RETRYABLE_408,
-    RETRYABLE_503_DUPLICATE, RETRYABLE_503_GZIP,
   }
 
   private class RequestEvents : EventListener() {
@@ -481,7 +445,7 @@ class SniPinnedTransportReplayTest {
           when (mode) {
             Mode.DROP_RESPONSE -> return
             Mode.CLOSE_LISTENER -> { listener.close(); return }
-            Mode.RETRYABLE_503, Mode.RETRYABLE_503_DUPLICATE, Mode.RETRYABLE_503_GZIP -> {
+            Mode.RETRYABLE_503 -> {
               respond(socket, 503, method, retryAfter = true)
               continue
             }
@@ -493,16 +457,9 @@ class SniPinnedTransportReplayTest {
     }
 
     private fun respond(socket: SSLSocket, status: Int, method: String, retryAfter: Boolean = false) {
-      val gzip = status == 503 && mode == Mode.RETRYABLE_503_GZIP
-      val bytes = if (gzip) {
-        ByteArrayOutputStream().also { output ->
-          GZIPOutputStream(output).use { it.write("ok".toByteArray(StandardCharsets.US_ASCII)) }
-        }.toByteArray()
-      } else "ok".toByteArray(StandardCharsets.US_ASCII)
+      val bytes = "ok".toByteArray(StandardCharsets.US_ASCII)
       val response = "HTTP/1.1 $status Test\r\nContent-Length: ${bytes.size}\r\n" +
-        (if (gzip) "Content-Encoding: gzip\r\n" else "") +
-        (if (retryAfter && mode == Mode.RETRYABLE_503_DUPLICATE) "Retry-After: 7\r\nrEtRy-AfTeR: 0\r\n" else if (retryAfter) "Retry-After: 0\r\n" else "") +
-        (if (status == 503) "X-Fixture: preserved\r\n" else "") + "\r\n"
+        (if (retryAfter) "Retry-After: 0\r\n" else "") + "\r\n"
       socket.outputStream.write(response.toByteArray(StandardCharsets.US_ASCII))
       if (method != "HEAD") socket.outputStream.write(bytes)
       socket.outputStream.flush()

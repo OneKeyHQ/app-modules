@@ -28,8 +28,8 @@ is non-conformant and MUST NOT advertise SNI support in production.
 
 ## 1. Purpose & scope
 
-The SNI connect module performs one HTTPS request to a caller-selected public IP
-address while preserving the caller-selected hostname for:
+The SNI connect module performs one logical HTTPS operation to a caller-selected
+public IP address while preserving the caller-selected hostname for:
 
 - the request URL authority,
 - the `Host` header,
@@ -44,9 +44,14 @@ pinned destination resolution, TLS validation, redirect boundaries, timeout
 behavior, cancellation, response shape, client/session/socket caching, cleanup,
 and platform equivalence.
 
-**Out of scope:** choosing the best IP, resolving DNS in JS, retries, cookie
+**Out of scope:** choosing the best IP, resolving DNS in JS, business-level retries, cookie
 management, certificate pinning, application-level authentication, response
 body streaming, and binary response transport.
+
+A logical operation may include internal connection recovery or HTTP follow-ups
+by the platform library. These defaults are not a cross-platform request-count
+equivalence promise. The SDK adds no retry loop; see the pinned-library
+[recovery characterization](docs/SPEC.md#transport-recovery-boundary).
 
 General-purpose proxying is out of scope. SNI requests MUST bypass system,
 session, PAC, and environment proxy configuration so the socket endpoint remains

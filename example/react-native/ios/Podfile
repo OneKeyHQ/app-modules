@@ -73,14 +73,6 @@ fi
 SH
 
   post_install do |installer|
-    require_relative '../../../native-modules/react-native-sni-connect/ios/apply_emascurl_no_replay'
-    emascurl_target = installer.pod_targets.find { |target| target.pod_name == 'EMASCurl' }
-    raise 'EMASCurl dependency is missing' unless emascurl_target
-    OneKeyEmascurlNoReplay.apply!(
-      pod_root: installer.sandbox.root.join('EMASCurl').to_s,
-      version: emascurl_target.root_spec.version.to_s
-    )
-
     fixture_targets = %w[OneKeyImage-Unit-Tests react-native-native-list-Unit-Tests]
     fixture_targets.each do |name|
       target = installer.pods_project.targets.find { |candidate| candidate.name == name }
