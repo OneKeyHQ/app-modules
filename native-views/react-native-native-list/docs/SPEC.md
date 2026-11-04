@@ -765,6 +765,26 @@ Existing geometry/typography differences are recorded in
 them. iOS uses UICollectionView, Android RecyclerView, and Web a windowed DOM
 engine. See [DESIGN.md](DESIGN.md) for their current ownership boundaries.
 
+### iOS account-selector trailing width (OK-65638)
+
+Status: implemented. Manual consuming-app verification on an iOS Simulator
+reported normal balance rendering after a local native rebuild. Automated
+XCTest execution and broader device acceptance are tracked separately.
+
+For an `identity` row with `presentation: 'accountSelector'`, an empty trailing
+collection or a spinner-only accessory MUST leave the remaining horizontal
+space available to the title and subtitle column. A short title MUST NOT cause
+the balance subtitle to collapse while unused row width remains. The existing
+gap before the trailing column and the shortened address's compression priority
+remain unchanged; content may still truncate when the row is actually too narrow.
+Visible controls keep their intrinsic width without introducing required-width
+conflicts. Rebinding between empty, spinner and single-icon states MUST release
+the previous row's width constraint.
+
+`NativeListAccountSelectorLayoutTests` covers balance/address geometry and
+control widths on production UIKit cells, including rebinds. Android and Web
+keep their existing layout and public interfaces.
+
 ### Android section-index attachment
 
 When `sectionIndex.centeredInWindow` is enabled, the Android index rail moves

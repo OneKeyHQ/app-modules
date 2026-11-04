@@ -809,6 +809,13 @@ final class NativeListIdentityCell: NativeListRendererCell {
       let width = trailingStack.widthAnchor.constraint(equalTo: accessory.widthAnchor)
       width.isActive = true
       selectorConstraints.append(width)
+    } else if item.data.string("presentation") == "accountSelector" {
+      // Keep flexible space in the text column when there is no accessory button.
+      // Stay below visible controls' compression resistance and the hidden checkbox's width.
+      let width = trailingStack.widthAnchor.constraint(equalToConstant: 0)
+      width.priority = UILayoutPriority(749)
+      width.isActive = true
+      selectorConstraints.append(width)
     }
   }
   private func dataTextColor(_ tone: String, theme: [String: Any]?) -> UIColor {
