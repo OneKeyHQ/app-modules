@@ -20,6 +20,16 @@ pub fn set_request_handler(handler: Option<js_sys::Function>) {
     network::set_request_handler(handler);
 }
 
+/// Sets when mainnet fees drop to the ZIP 2009 rate, for every later quote, build and
+/// balance: `"null"` disables the switch and a height delays it; absent or malformed
+/// keeps the default. It never advances the switch.
+#[wasm_bindgen(js_name = setZip2009MainnetHeight)]
+pub fn set_zip2009_mainnet_height(json: Option<String>) {
+    onekey_zcash_send_policy::set_zip2009_switch(
+        onekey_zcash_send_policy::Zip2009Switch::from_host_json(json.as_deref()),
+    );
+}
+
 /// Installs the storage layer. Must be awaited once before any other call. Idempotent.
 #[wasm_bindgen(js_name = init)]
 pub async fn init() -> Result<(), JsValue> {
@@ -497,8 +507,8 @@ async fn barrier_after_irreversible(params: serde_json::Value) -> Result<(), cra
 /// stores it unless the node definitively rejected it.
 ///
 /// Returns `{ txid, broadcast: "accepted" | "rejected" | "unknown", error? }`.
-/// - `rejected`: the node definitively judged it consensus-invalid or expired; it can never be
-///   mined. It is not stored and its notes are spendable again at once (if an earlier submit
+/// - `rejected`: the node reported it expired and the local chain has passed its expiry; it can
+///   never be mined. It is not stored and its notes are spendable again at once (if an earlier submit
 ///   stored it, it is marked rejected and its notes return at its expiry height).
 /// - `unknown`: delivery to the node is uncertain. The transaction is stored and stays pending
 ///   until mined or expired; the host does not resubmit it and must not treat it as failed.
@@ -549,7 +559,7 @@ pub fn pending_broadcast_txids(account_uuid: String) -> Result<String, JsValue> 
 /// Resends a stored pending transaction. Irreversible. For an explicit user request only:
 /// sync does not call it, and an unmined send otherwise stays pending until mined or expired.
 ///
-/// Throws `BROADCAST_REJECTED` when the node definitively rejects it (do not retry);
+/// Throws `BROADCAST_REJECTED` when the node reports it expired and the local chain agrees (do not retry);
 /// `BROADCAST_OUTCOME_UNKNOWN` when the node errored without proving it can never be mined;
 /// `NETWORK_ERROR` on transport failure. In the latter two cases the transaction stays pending
 /// until mined or expired.
@@ -559,7 +569,9 @@ pub async fn broadcast_transaction(txid: String) -> Result<(), JsValue> {
         let r = match tx_state::assert_not_rejected(&mut db, &txid)
             .and_then(|_| send::raw_transaction(&db, &txid))
         {
-            Ok(raw) => network::broadcast(&mut client, raw).await,
+            Ok(raw) => network::broadcast(&mut client, raw)
+                .await
+                .map_err(|e| send::confirm_stored_rejection(&db, &txid, e)),
             Err(e) => Err(e),
         };
         let r = match r {

@@ -395,6 +395,9 @@ pub async fn step(
         .map_err(|e| db_err("getUnifiedFullViewingKeys", e))?;
     let active_scanning_ufvks = select_active_scanning_ufvks(&params, wallet_ufvks, active_ufvks)?;
     let active_account_count = active_scanning_ufvks.len();
+    // Accounts left out of this step are paused: their history stops setting the floor.
+    let active_ids: Vec<_> = active_scanning_ufvks.iter().map(|(id, _)| *id).collect();
+    crate::scan_floor::pause_inactive_accounts(db, &active_ids)?;
     let scanning_keys = ScanningKeys::from_account_ufvks(active_scanning_ufvks);
     let cache = MemoryBlockCache::new();
 
@@ -405,9 +408,11 @@ pub async fn step(
     let mut scanned_priority: Option<String> = None;
 
     while batches_done < max_batches {
-        let suggested = db
-            .suggest_scan_ranges()
-            .map_err(|e| db_err("suggestScanRanges", e))?;
+        let suggested = crate::scan_floor::above_floor(
+            db,
+            db.suggest_scan_ranges()
+                .map_err(|e| db_err("suggestScanRanges", e))?,
+        )?;
 
         // Special-priority and empty passes need no window/shard queries.
         let window = if preferred
@@ -534,9 +539,11 @@ pub async fn step(
         Ok(0)
     };
 
-    let remaining = db
-        .suggest_scan_ranges()
-        .map_err(|e| db_err("suggestScanRanges", e))?;
+    let remaining = crate::scan_floor::above_floor(
+        db,
+        db.suggest_scan_ranges()
+            .map_err(|e| db_err("suggestScanRanges", e))?,
+    )?;
     let remaining_blocks: u64 = remaining.iter().map(|r| r.len() as u64).sum();
 
     Ok(json!({
@@ -872,11 +879,14 @@ fn scan_heights(db: &Db) -> Result<(Option<u32>, Option<u32>)> {
     Ok((Some(u32::from(chain_tip)), Some(fully_scanned)))
 }
 
-/// Read-only: the ranges the wallet currently suggests scanning. No network requests.
+/// Read-only: the ranges the wallet currently suggests scanning, above the scan floor (the
+/// host reads `totalBlocks` as remaining work). No network requests.
 pub fn peek(db: &Db) -> Result<String> {
-    let ranges = db
-        .suggest_scan_ranges()
-        .map_err(|e| db_err("suggestScanRanges", e))?;
+    let ranges = crate::scan_floor::above_floor(
+        db,
+        db.suggest_scan_ranges()
+            .map_err(|e| db_err("suggestScanRanges", e))?,
+    )?;
 
     let items: Vec<_> = ranges
         .iter()
@@ -1138,6 +1148,24 @@ mod tests {
         let mut trailing = raw;
         trailing.push(0);
         assert!(parse_enhancement(&trailing, BranchId::Nu6_2, expected).is_err());
+    }
+
+    #[test]
+    fn enhancement_parses_an_nu7_transaction() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../zcash-keys-runtime/tests/fixtures/previous-transactions.json"
+        ))
+        .unwrap();
+        let mut raw = hex::decode(fixture["transactions"][1]["rawTx"].as_str().unwrap()).unwrap();
+        // v6 header: version, version group id, then the consensus branch id.
+        raw[8..12].copy_from_slice(&u32::from(BranchId::Nu7).to_le_bytes());
+        let nu7 = Network::MainNetwork
+            .activation_height(NetworkUpgrade::Nu7)
+            .unwrap();
+        let branch = BranchId::for_height(&Network::MainNetwork, nu7);
+        let expected = Transaction::read(&raw[..], branch).unwrap().txid();
+        let tx = parse_enhancement(&raw, branch, expected).unwrap();
+        assert_eq!(tx.consensus_branch_id(), BranchId::Nu7);
     }
 
     fn test_ufvk(network: &Network, seed_byte: u8) -> UnifiedFullViewingKey {

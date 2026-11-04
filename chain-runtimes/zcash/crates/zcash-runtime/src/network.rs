@@ -252,35 +252,21 @@ fn broadcast_outcome_ambiguous(message: &str) -> bool {
     .any(|needle| message.contains(needle))
 }
 
-/// Only replies proving these bytes can never be mined count as a rejection.
+/// Only an expiry reply can count as a rejection, and the submit path confirms it
+/// against the local chain before releasing any input.
 ///
-/// A rejection lets the user resend with other notes, and both could be mined if
-/// the original propagated. So this is an allowlist (consensus-invalid or expired);
-/// transient or policy replies stay an unknown outcome.
+/// A rejection lets the user resend with other notes, and both could be mined if the
+/// original propagated. Every other consensus reason describes contents this runtime
+/// built and verified before sending, so a node claiming one is faulty or lying:
+/// those, like transient or policy replies, stay an unknown outcome.
 fn broadcast_definitely_invalid(message: &str) -> bool {
     if broadcast_outcome_ambiguous(message) {
         return false;
     }
-    let message = message.to_lowercase();
-    // These reasons reject immutable transaction contents. A broad `bad-txns-`
-    // prefix also includes chain-dependent anchors, nullifiers and relay policy.
-    const DEFINITIVE_REASONS: &[&str] = &[
-        "tx-overwinter-expired",
-        "bad-txns-vin-empty",
-        "bad-txns-vout-empty",
-        "bad-txns-oversize",
-        "bad-txns-vout-negative",
-        "bad-txns-vout-toolarge",
-        "bad-txns-txouttotal-toolarge",
-        "bad-txns-txintotal-toolarge",
-        "bad-txns-inputs-duplicate",
-        "bad-txns-in-belowout",
-        "bad-txns-fee-outofrange",
-        "bad-txns-orchard-verification-failed",
-    ];
     message
+        .to_lowercase()
         .split(|character: char| !character.is_ascii_alphanumeric() && character != '-')
-        .any(|reason| DEFINITIVE_REASONS.contains(&reason))
+        .any(|reason| reason == "tx-overwinter-expired")
 }
 
 fn broadcast_already_known(message: &str) -> bool {
@@ -373,15 +359,18 @@ mod tests {
     }
 
     #[test]
-    fn only_consensus_invalid_or_expired_replies_count_as_a_rejection() {
-        for message in [
-            "tx-overwinter-expired",
-            "bad-txns-orchard-verification-failed",
-            "16: bad-txns-vout-negative",
-        ] {
+    fn only_an_expiry_reply_counts_as_a_rejection() {
+        for message in ["tx-overwinter-expired", "18: TX-OVERWINTER-EXPIRED"] {
             assert!(broadcast_definitely_invalid(message), "{message}");
         }
         for message in [
+            // Contents this runtime built and verified; a node claiming them is wrong.
+            "bad-txns-orchard-verification-failed",
+            "16: bad-txns-vout-negative",
+            "bad-txns-vin-empty",
+            "bad-txns-oversize",
+            "bad-txns-in-belowout",
+            "bad-txns-fee-outofrange",
             "bad-txns-inputs-spent",
             "bad-txns-inputs-missingorspent",
             "bad-txns-shielded-requirements-not-met",

@@ -1655,7 +1655,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "onekey-zcash-keys"
-version = "0.1.0-alpha.12"
+version = "0.1.0-alpha.15"
 dependencies = [
  "bip0039",
  "bip32",
@@ -1688,7 +1688,7 @@ dependencies = [
 
 [[package]]
 name = "onekey-zcash-runtime"
-version = "0.1.0-alpha.12"
+version = "0.1.0-alpha.15"
 dependencies = [
  "blake2b_simd",
  "console_error_panic_hook",
@@ -1738,9 +1738,10 @@ dependencies = [
 
 [[package]]
 name = "onekey-zcash-send-policy"
-version = "0.1.0-alpha.12"
+version = "0.1.0-alpha.15"
 dependencies = [
  "serde",
+ "serde_json",
  "zcash_primitives",
  "zcash_protocol",
 ]
@@ -3526,8 +3527,6 @@ dependencies = [
 [[package]]
 name = "zcash_protocol"
 version = "0.10.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "314329b91ec4bbb517441840e47d0b2029bf0b946f086980c96c889c2d92dc5d"
 dependencies = [
  "corez",
  "document-features",

@@ -355,6 +355,14 @@ pub fn prune_orphaned_rows(ext: &ExtensionTransaction<'_>) -> Result<()> {
         [],
     )
     .map_err(|error| db_err("pruneSubmissions", error))?;
+    ext.execute(
+        &format!(
+            "DELETE FROM {} WHERE account_uuid NOT IN (SELECT uuid FROM accounts)",
+            crate::scan_floor::TABLE
+        ),
+        [],
+    )
+    .map_err(|error| db_err("prunePausedAccounts", error))?;
     Ok(())
 }
 
