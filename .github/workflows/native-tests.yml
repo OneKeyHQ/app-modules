@@ -344,15 +344,15 @@ jobs:
             ~/Library/Caches/CocoaPods/Pods
             ~/Library/Caches/ReactNative/*.tar.gz
           key: ${{ steps.pod-cache.outputs.cache-primary-key }}
-      - name: Compile native overlay pod and run nine pod XCTest suites on iOS Simulator
+      - name: Compile native overlay pod and run ten pod XCTest suites on iOS Simulator
         shell: bash
         timeout-minutes: 20
         run: |
           set -euo pipefail
           mkdir -p artifacts/ios
           workspace=example/react-native/ios/example.xcworkspace
-          schemes=(react-native-pager-view-Unit-Tests OneKeyTextInput-Unit-Tests OneKeyImage-Unit-Tests react-native-native-list-Unit-Tests PerpDepthBar-Unit-Tests ReactNativeBundleCrypto-Unit-Tests ReactNativeImageCropPicker-Unit-Tests ReactNativeCaptureProtection-Unit-Tests ReactNativePhotoLibrary-Unit-Tests)
-          # Plan and build NativeOverlay plus shared pod dependencies once for all nine bundles.
+          schemes=(react-native-pager-view-Unit-Tests OneKeyTextInput-Unit-Tests OneKeyImage-Unit-Tests react-native-native-list-Unit-Tests PerpDepthBar-Unit-Tests ReactNativeBundleCrypto-Unit-Tests ReactNativeImageCropPicker-Unit-Tests ReactNativeCaptureProtection-Unit-Tests ReactNativePhotoLibrary-Unit-Tests ReactNativeJpush-Unit-Tests)
+          # Plan and build NativeOverlay plus shared pod dependencies once for all ten bundles.
           BUNDLE_GEMFILE="$PWD/example/react-native/Gemfile" bundle exec ruby - "${schemes[@]}" <<'RUBY'
           require 'xcodeproj'
 

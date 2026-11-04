@@ -48,6 +48,7 @@ import { RangeDownloaderTestPage } from './pages/RangeDownloaderTestPage';
 import { BundleCryptoTestPage } from './pages/BundleCryptoTestPage';
 import { ZipArchiveTestPage } from './pages/ZipArchiveTestPage';
 import { ImageCropPickerTestPage } from './pages/ImageCropPickerTestPage';
+import { JPushTestPage } from './pages/JPushTestPage';
 import { OtaPipelineTestPage } from './pages/OtaPipelineTestPage';
 import { ApkOtaPipelineTestPage } from './pages/ApkOtaPipelineTestPage';
 import { ChartWebViewTestPage } from './pages/ChartWebViewTestPage';
@@ -108,6 +109,7 @@ export type RootStackParamList = {
   BundleCrypto: undefined;
   ZipArchive: undefined;
   ImageCropPicker: undefined;
+  JPush: undefined;
   ScrollGuard: undefined;
   SegmentSlider: undefined;
   Skeleton: undefined;
@@ -221,6 +223,12 @@ const modules: {
     description:
       'Permission-free photo picker with cropping for avatars and wallpapers',
     icon: '🖼️',
+  },
+  {
+    screen: 'JPush',
+    name: 'JPush / JCore SDK',
+    description: 'Clean-room JPush & JCore Nitro + Legacy Push SDK',
+    icon: '🔔',
   },
   {
     screen: 'CloudKit',
@@ -618,6 +626,11 @@ export function AppNavigator() {
         name="ImageCropPicker"
         component={ImageCropPickerTestPage}
         options={{ title: 'Image Crop Picker' }}
+      />
+      <Stack.Screen
+        name="JPush"
+        component={JPushTestPage}
+        options={{ title: 'JPush / JCore SDK' }}
       />
       <Stack.Screen
         name="OtaPipeline"

@@ -22,11 +22,14 @@ Pod::Spec.new do |s|
     "cpp/**/*.{hpp,cpp}",
   ]
 
+  s.exclude_files = "ios/tests/**/*"
+
   s.public_header_files = [
     "ios/include/*.h",
     "ios/jcore/*.h",
     "ios/jpush/*.h",
-    "ios/bridge/*.h",
+    "ios/bridge/RCTJPushEventQueue.h",
+    "ios/bridge/RCTJPushModule.h",
   ]
 
   s.frameworks = [
@@ -48,7 +51,6 @@ Pod::Spec.new do |s|
     "HEADER_SEARCH_PATHS" => "\"$(PODS_TARGET_SRCROOT)/ios/include\" \"$(PODS_TARGET_SRCROOT)/ios/jcore\" \"$(PODS_TARGET_SRCROOT)/ios/jpush\" \"$(PODS_TARGET_SRCROOT)/ios/bridge\""
   }
 
-  s.dependency 'React-Core'
   s.dependency 'React-jsi'
   s.dependency 'React-callinvoker'
   s.dependency 'ReactNativeNativeLogger'

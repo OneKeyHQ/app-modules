@@ -13,9 +13,6 @@ import {
   processColor,
 } from "react-native";
 import { BottomTabBarHeightContext } from "./utils/BottomTabBarHeightContext";
-
-// eslint-disable-next-line @react-native/no-deep-imports
-import type { ImageSource } from "react-native/Libraries/Image/ImageSource";
 import NativeBottomTabs, {
   type BottomTabsItems,
 } from "./BottomTabsNativeComponent";
@@ -145,7 +142,7 @@ interface Props<Route extends BaseRoute> {
   getIcon?: (props: {
     route: Route;
     focused: boolean;
-  }) => ImageSource | AppleIcon | undefined | null;
+  }) => ImageSourcePropType | AppleIcon | undefined | null;
 
   /**
    * Get hidden for the tab.
@@ -303,7 +300,9 @@ const BottomTabs = <Route extends BaseRoute>({
 }: Props<Route>) => {
   // @ts-ignore
   const focusedKey = navigationState.routes[navigationState.index].key;
-  const customTabBarWrapperRef = useRef<View>(null) as React.RefObject<any>;
+  const customTabBarWrapperRef = useRef<React.ComponentRef<typeof View>>(
+    null
+  ) as React.RefObject<any>;
   const nativeBottomTabsRef =
     useRef<React.ElementRef<typeof NativeBottomTabs>>(null);
   const [nativeTabBarHeight, setNativeTabBarHeight] = React.useState(0);

@@ -1,6 +1,12 @@
 #import "RCTJPushModule.h"
 #import <UIKit/UIKit.h>
 
+#if __has_include(<React/RCTBridge.h>)
+#import <React/RCTBridge.h>
+#elif __has_include("RCTBridge.h")
+#import "RCTBridge.h"
+#endif
+
 #define CODE           @"code"
 #define BADGE          @"badge"
 #define SEQUENCE       @"sequence"
@@ -49,9 +55,22 @@ static __weak RCTJPushModule *sSharedJPushModule = nil;
 - (void)invokeModule:(NSString *)moduleName method:(NSString *)methodName withArgs:(NSArray *)args;
 @end
 
+@interface RCTJPushModule () <RCTBridgeModule>
+@end
+
 @implementation RCTJPushModule
 
+@synthesize bridge = _bridge;
+
 RCT_EXPORT_MODULE(JPushModule);
+
+RCT_EXPORT_METHOD(addListener:(NSString *)eventName) {
+    (void)eventName;
+}
+
+RCT_EXPORT_METHOD(removeListeners:(double)count) {
+    (void)count;
+}
 
 + (BOOL)requiresMainQueueSetup {
     return YES;

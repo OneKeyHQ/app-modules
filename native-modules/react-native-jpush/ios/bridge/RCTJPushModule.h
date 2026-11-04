@@ -1,13 +1,5 @@
 #import <Foundation/Foundation.h>
 
-#if __has_include(<React/RCTBridge.h>)
-#import <React/RCTEventEmitter.h>
-#import <React/RCTBridge.h>
-#elif __has_include("RCTBridge.h")
-#import "RCTEventEmitter.h"
-#import "RCTBridge.h"
-#endif
-
 #if __has_include("JPUSHService.h")
 #import "JPUSHService.h"
 #elif __has_include("../include/JPUSHService.h")
@@ -23,7 +15,7 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-@interface RCTJPushModule : RCTEventEmitter <RCTBridgeModule>
+@interface RCTJPushModule : NSObject
 
 + (nullable instancetype)sharedModule;
 + (void)emitEventWithName:(NSString *)eventName payload:(NSDictionary *)payload;
