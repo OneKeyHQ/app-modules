@@ -3462,6 +3462,19 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 - (void)layoutSubviews
 {
   [super layoutSubviews];
+  void (^resizedPagerCompletion)(BOOL) = nil;
+  NSInteger resizedPagerDestination = -1;
+  NSUInteger resizedPagerGeneration = 0;
+  NSUInteger resizedPagerTransition = 0;
+  if (_directNativePagerEnabled && _pendingNativePagerScrollCompletion != nil &&
+      CGRectGetWidth(_pagerScrollView.bounds) != CGRectGetWidth(self.bounds)) {
+    resizedPagerCompletion = [_pendingNativePagerScrollCompletion copy];
+    resizedPagerDestination = _destinationIndex;
+    resizedPagerGeneration = _pendingNativePagerScrollGeneration;
+    resizedPagerTransition = _pendingNativePagerScrollTransition;
+    // Clear the old target before frame changes can deliver an animation end.
+    [self cancelPendingNativePagerScroll];
+  }
   [self syncScrollEdgeAppearance];
   _containerView.frame = self.bounds;
   [self registerExternalOuterPager];
@@ -3534,6 +3547,15 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   [self updateHeaderSettledStateForceBusy:NO];
   [self logHomeVisualGeometry:@"layout" scrollView:_observedScrollView];
   [self scheduleCoalescedScrollReconcile];
+  if (resizedPagerCompletion != nil && _directNativePagerEnabled &&
+      !_isBeingRecycled && !_isPagerDragging && _generation == resizedPagerGeneration &&
+      _transitionId == resizedPagerTransition && resizedPagerDestination >= 0 &&
+      resizedPagerDestination < _pageControllers.count) {
+    [_pagerScrollView setContentOffset:CGPointMake(
+      [self directPagerOffsetForIndex:resizedPagerDestination], 0
+    ) animated:NO];
+    resizedPagerCompletion(YES);
+  }
 }
 
 - (void)prepareForRecycle

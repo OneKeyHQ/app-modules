@@ -57,6 +57,8 @@ and pinned host, and reattaches the settled page's normal owner before a queued
 page command starts. A drag that returns to its source page follows the same
 cleanup path. A new drag invalidates an older pending settlement before it can
 release the new transition's owners.
+If the direct pager viewport width changes while a native animated page command is pending, stop the old-coordinate animation before resizing its viewport. After the normal layout completes, settle the captured logical destination at its new physical offset through the original generation/transition-guarded completion path. This restores scrolling, releases temporary edge ownership and drains queued commands. Any width change, including a fractional-point change, is significant. Zero width completes the logical destination without retaining a disabled pending animation; a later positive-width idle layout realigns the current page. Height-only layout and horizontal user drags retain their existing paths. Late animation-end callbacks must not complete a newer command before its own current target has been reached.
+
 Other pager modes retain their prior command and observer ordering. Recycling,
 window detachment, slot replacement and disabling the style also release the
 temporary resources. Conformance requires preserving the source interaction

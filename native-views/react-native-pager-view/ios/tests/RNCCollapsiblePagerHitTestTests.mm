@@ -22,6 +22,9 @@ using namespace facebook::react;
 - (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView;
 - (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate;
 - (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView;
+- (void)goTo:(NSInteger)index animated:(BOOL)animated;
+- (void)scrollViewDidEndScrollingAnimation:(UIScrollView *)scrollView;
+- (void)emitPageSelected:(NSInteger)position;
 @end
 
 @interface UIView (NativeTabReservationTesting)
@@ -41,6 +44,19 @@ using namespace facebook::react;
               indicatorBottom:(CGFloat)indicatorBottom;
 - (void)setProgress:(CGFloat)progress;
 - (void)setLeftToRight:(BOOL)leftToRight;
+@end
+
+@interface RNCCollapsiblePagerResizeSelectionSpy : RNCCollapsiblePagerViewComponentView
+@property (nonatomic, strong) NSMutableArray<NSNumber *> *selectedIndexes;
+@end
+
+@implementation RNCCollapsiblePagerResizeSelectionSpy
+- (void)emitPageSelected:(NSInteger)position
+{
+  if (_selectedIndexes == nil) _selectedIndexes = [NSMutableArray new];
+  [_selectedIndexes addObject:@(position)];
+  [super emitPageSelected:position];
+}
 @end
 
 @interface RNCCollapsiblePagerHitTestTests : XCTestCase
@@ -520,6 +536,143 @@ using namespace facebook::react;
   if (sourceOut != nil) *sourceOut = source;
   if (overlayOut != nil) *overlayOut = overlay;
   return horizontal;
+}
+
+- (UIScrollView *)prepareNativeResizeCommandPager
+{
+  [self.pager removeFromSuperview];
+  self.pager = [RNCCollapsiblePagerResizeSelectionSpy new];
+  [self setPointerEvents:PointerEventsMode::Auto];
+  self.pager.frame = CGRectMake(0, 100, 320, 500);
+  [self.root addSubview:self.pager];
+  UIScrollView *horizontal = [self prepareDirectDragWithSource:NULL];
+  XCTAssertEqual([[self.pager valueForKey:@"currentIndex"] integerValue], 1);
+  XCTAssertEqualWithAccuracy(CGRectGetWidth(horizontal.bounds), 320, 0.001);
+  XCTAssertEqualWithAccuracy(horizontal.contentOffset.x, 320, 0.001);
+  XCTAssertTrue(horizontal.scrollEnabled);
+  return horizontal;
+}
+
+- (void)waitForNativeResizeCommandsToSettle
+{
+  NSPredicate *settled = [NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) {
+    return ![[self.pager valueForKey:@"transitioning"] boolValue] &&
+      [self.pager valueForKey:@"pendingNativePagerScrollCompletion"] == nil &&
+      [[self.pager valueForKey:@"pendingGoToIndex"] integerValue] == -1;
+  }];
+  XCTNSPredicateExpectation *expectation = [[XCTNSPredicateExpectation alloc]
+    initWithPredicate:settled object:self.pager];
+  [self waitForExpectations:@[expectation] timeout:3];
+}
+
+- (void)testNativeAnimatedCommandResizeRebasesAndDrainsQueueIgnoringLateEnd
+{
+  if (@available(iOS 27.0, *)) {
+    UIScrollView *horizontal = [self prepareNativeResizeCommandPager];
+    RNCCollapsiblePagerResizeSelectionSpy *spy = (id)self.pager;
+    [self.pager goTo:2 animated:YES];
+    id originalPending = [self.pager valueForKey:@"pendingNativePagerScrollCompletion"];
+    XCTAssertNotNil(originalPending);
+    XCTAssertFalse(horizontal.scrollEnabled);
+    XCTAssertEqualWithAccuracy([[self.pager valueForKey:@"pendingNativePagerScrollTarget"] doubleValue], 640, 0.001);
+    self.pager.frame = CGRectMake(0, 100, 320, 480);
+    [self.pager layoutSubviews];
+    XCTAssertEqual([self.pager valueForKey:@"pendingNativePagerScrollCompletion"], originalPending);
+    XCTAssertEqual(spy.selectedIndexes.count, 0);
+    [self.pager goTo:0 animated:YES];
+    XCTAssertEqual([[self.pager valueForKey:@"pendingGoToIndex"] integerValue], 0);
+    self.pager.frame = CGRectMake(0, 100, 320.4, 480);
+    [self.pager layoutSubviews];
+    XCTAssertNil([self.pager valueForKey:@"pendingNativePagerScrollCompletion"]);
+    XCTAssertEqualWithAccuracy(horizontal.contentOffset.x, 640.8, 1.0 / horizontal.window.screen.scale);
+    XCTAssertGreaterThan(horizontal.contentOffset.x, 640.5);
+    XCTAssertEqual([[self.pager valueForKey:@"currentIndex"] integerValue], 2);
+    XCTAssertTrue(horizontal.scrollEnabled);
+    XCTAssertEqualObjects(spy.selectedIndexes, (@[@2]));
+    [self.pager scrollViewDidEndScrollingAnimation:horizontal];
+    XCTAssertEqualObjects(spy.selectedIndexes, (@[@2]));
+    XCTestExpectation *queued = [self expectationWithDescription:@"queued native command starts"];
+    dispatch_async(dispatch_get_main_queue(), ^{
+      id pending = [self.pager valueForKey:@"pendingNativePagerScrollCompletion"];
+      XCTAssertNotNil(pending);
+      XCTAssertNotEqual(pending, originalPending);
+      XCTAssertEqualWithAccuracy([[self.pager valueForKey:@"pendingNativePagerScrollTarget"] doubleValue], 0, 0.001);
+      XCTAssertGreaterThan(fabs(horizontal.contentOffset.x), 0.5);
+      [self.pager scrollViewDidEndScrollingAnimation:horizontal];
+      XCTAssertEqual([self.pager valueForKey:@"pendingNativePagerScrollCompletion"], pending);
+      XCTAssertEqualObjects(spy.selectedIndexes, (@[@2]));
+      [queued fulfill];
+    });
+    [self waitForExpectations:@[queued] timeout:2];
+    // This hostless fixture does not drive the natural scroll animation.
+    // Exercise the controlled UIKit end boundary after checking stale-end rejection.
+    XCTAssertNotNil([self.pager valueForKey:@"pendingNativePagerScrollCompletion"]);
+    [horizontal setContentOffset:CGPointZero animated:NO];
+    [self.pager scrollViewDidEndScrollingAnimation:horizontal];
+    [self waitForNativeResizeCommandsToSettle];
+    XCTAssertEqualWithAccuracy(horizontal.contentOffset.x, 0, 0.001);
+    XCTAssertEqual([[self.pager valueForKey:@"currentIndex"] integerValue], 0);
+    XCTAssertTrue(horizontal.scrollEnabled);
+    XCTAssertEqualObjects(spy.selectedIndexes, (@[@2, @0]));
+    XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 0);
+  } else {
+    XCTSkip(@"Native local Hard animation requires iOS 27 or newer");
+  }
+}
+
+- (void)testNativeAnimatedCommandResizeRebasesNonzeroRTLTarget
+{
+  if (@available(iOS 27.0, *)) {
+    UIScrollView *horizontal = [self prepareNativeResizeCommandPager];
+    RNCCollapsiblePagerResizeSelectionSpy *spy = (id)self.pager;
+    [self.pager setValue:@"rtl" forKey:@"layoutDirection"];
+    [self.pager goTo:0 animated:YES];
+    XCTAssertNotNil([self.pager valueForKey:@"pendingNativePagerScrollCompletion"]);
+    XCTAssertEqualWithAccuracy([[self.pager valueForKey:@"pendingNativePagerScrollTarget"] doubleValue], 640, 0.001);
+    self.pager.frame = CGRectMake(0, 100, 400, 500);
+    [self.pager layoutSubviews];
+    XCTAssertNil([self.pager valueForKey:@"pendingNativePagerScrollCompletion"]);
+    XCTAssertEqualWithAccuracy(horizontal.contentOffset.x, 800, 0.001);
+    XCTAssertEqual([[self.pager valueForKey:@"currentIndex"] integerValue], 0);
+    [self.pager scrollViewDidEndScrollingAnimation:horizontal];
+    [self waitForNativeResizeCommandsToSettle];
+    XCTAssertEqualObjects(spy.selectedIndexes, (@[@0]));
+    XCTAssertTrue(horizontal.scrollEnabled);
+    XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 0);
+  } else {
+    XCTSkip(@"Native local Hard animation requires iOS 27 or newer");
+  }
+}
+
+- (void)testNativeAnimatedCommandZeroWidthCompletesQueueAndRealignsOnRestore
+{
+  if (@available(iOS 27.0, *)) {
+    UIScrollView *horizontal = [self prepareNativeResizeCommandPager];
+    RNCCollapsiblePagerResizeSelectionSpy *spy = (id)self.pager;
+    [self.pager goTo:0 animated:YES];
+    XCTAssertNotNil([self.pager valueForKey:@"pendingNativePagerScrollCompletion"]);
+    [self.pager goTo:2 animated:YES];
+    self.pager.frame = CGRectMake(0, 100, 0, 500);
+    [self.pager layoutSubviews];
+    XCTAssertNil([self.pager valueForKey:@"pendingNativePagerScrollCompletion"]);
+    XCTAssertEqual([[self.pager valueForKey:@"currentIndex"] integerValue], 0);
+    XCTAssertTrue(horizontal.scrollEnabled);
+    [self.pager scrollViewDidEndScrollingAnimation:horizontal];
+    [self waitForNativeResizeCommandsToSettle];
+    XCTAssertEqual([[self.pager valueForKey:@"currentIndex"] integerValue], 2);
+    XCTAssertTrue(horizontal.scrollEnabled);
+    XCTAssertEqualObjects(spy.selectedIndexes, (@[@0, @2]));
+    self.pager.frame = CGRectMake(0, 100, 400, 500);
+    [self.pager layoutSubviews];
+    XCTAssertEqualWithAccuracy(horizontal.contentOffset.x, 800, 0.001);
+    [self.pager scrollViewDidEndScrollingAnimation:horizontal];
+    XCTAssertEqualObjects(spy.selectedIndexes, (@[@0, @2]));
+    XCTAssertNil([self.pager valueForKey:@"pendingNativePagerScrollCompletion"]);
+    XCTAssertFalse([[self.pager valueForKey:@"transitioning"] boolValue]);
+    XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 0);
+  } else {
+    XCTSkip(@"Native local Hard animation requires iOS 27 or newer");
+  }
 }
 
 - (void)testExternalDirectDragPreservesProxyIdentityAndSettles
