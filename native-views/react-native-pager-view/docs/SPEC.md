@@ -1132,17 +1132,26 @@ budgets, Web runtime/type exports, and package source/module/declaration entries
 ## Text tabs, controlled selection and per-tab toolbar
 
 Status: Implemented and incrementally synchronized from the validated consumer
-prototype onto the current SDK main baseline. Web and iOS Home runtime checks
-were completed on 2026-11-04; Android compilation and launch passed, while
-Android Home interaction acceptance remains pending.
+prototype onto the current SDK main baseline. As of 2026-11-05, Home core runtime
+checks have passed on Web, iOS and Android.
 
 Validation scope: Web exercised real content switching, toolbar menus and selected
 feedback, drag cancellation, keyboard activation, sticky headers, localized narrow
 labels, dark mode and the unchanged wide layout. iOS exercised real page contents,
 medium/semibold labels and descenders, named SVG controls, 38-point button frames,
 press/drag cancellation, filter menus, LP selected-background restoration and sticky
-navigation. VoiceOver/TalkBack speech and native hover were not exercised. An iOS
-Spot accessibility-tree snapshot failure also occurs with the original Home JS tab
+navigation. Android exercised real page contents, toolbar controls, native press
+and drag cancellation, LP selected-background restoration and sticky scrolling.
+
+Rich-data Home checks on all three targets expanded the token list from 6 to 50
+items, loaded 785 NFT items, and reached 150 unique History entries through two
+successive page appends. History checks included the companion consumer
+content-generation update. Native append recordings showed no return to the
+initial list top, and 10-fps samples showed no whole-column icon clearing.
+Pixel-exact anchor stability and zero individual-image flicker were not measured.
+
+VoiceOver/TalkBack speech and native hover were not exercised. An iOS Spot
+accessibility-tree snapshot failure also occurs with the original Home JS tab
 bar in the same binary; History snapshots succeed. This comparison does not
 establish a full native baseline or resolve the separate accessibility issue.
 
