@@ -484,6 +484,7 @@ static void testEndToEndMockServerHandshake(void) {
     __block NSString *serverMobileNumber = nil;
     __block BOOL serverSawLiveActivityStart = NO;
     __block BOOL serverSawLiveActivityUpdate = NO;
+    __block BOOL serverSawPushCtrlResume = NO;
     __block uint64_t serverAckMsgId = 0;
     __block uint8_t serverAckMsgType = 0;
     __block uint64_t serverCtrlAckReqId = 0;
@@ -542,8 +543,8 @@ static void testEndToEndMockServerHandshake(void) {
                                                                         bodyData:loginRespBody];
         ASSERT_TRUE(writeExactBytes(clientFd, loginRespFrame.bytes, loginRespFrame.length), "Failed writing Login response");
 
-        // 3. Process 8 client commands: DeviceToken(13), VoIP(33), Tag(28), Alias(29), Properties(38), MobileNumber(26), LiveActivity x2 (39)
-        for (int i = 0; i < 8; i++) {
+        // 3. Process 9 client commands: DeviceToken(13), VoIP(33), Tag(28), Alias(29), Properties(38), MobileNumber(26), LiveActivity x2 (39), PushCtrl(18)
+        for (int i = 0; i < 9; i++) {
             JCOREWireFrame *req = readSingleClientFrameOnServer(clientFd);
             ASSERT_TRUE(req != nil, "Failed reading client command #%d", i);
             ASSERT_TRUE(req.sessionId == assignedSessionId, "Expected sessionId=0x%x in client header, got 0x%x", assignedSessionId, req.sessionId);
@@ -647,6 +648,12 @@ static void testEndToEndMockServerHandshake(void) {
                                                                    statusCode:0
                                                                      bodyData:laResp];
                 ASSERT_TRUE(writeExactBytes(clientFd, ack.bytes, ack.length), "Failed writing LiveActivity ack");
+            } else if (req.command == JCOREWireCommandPushCtrl) {
+                ASSERT_TRUE(req.version == 1, "PushCtrl version must be 1");
+                NSDictionary *pushCtrlJson = [JCOREWireProtocol parseJsonBodyFromFrame:req];
+                ASSERT_TRUE([pushCtrlJson[@"type"] isEqualToString:@"notif_state"] && [pushCtrlJson[@"enabled"] boolValue] == YES,
+                            "PushCtrl turnONPush body must have type=notif_state and enabled=YES, got %@", pushCtrlJson);
+                serverSawPushCtrlResume = YES;
             } else {
                 ASSERT_TRUE(NO, "Unexpected command from client: %u", req.command);
             }
@@ -746,6 +753,7 @@ static void testEndToEndMockServerHandshake(void) {
                            appKey:@"1f2027d3cfb1b51dac664c42"
                           channel:@"App Store"
                  apsForProduction:NO];
+    [JPUSHService turnONPush];
 
     uint8_t rawToken[32];
     for (int i = 0; i < 32; i++) {
@@ -866,6 +874,8 @@ static void testEndToEndMockServerHandshake(void) {
                 "Server received unexpected mobile number: %@", serverMobileNumber);
     ASSERT_TRUE(serverSawLiveActivityStart && serverSawLiveActivityUpdate,
                 "Server did not receive both LiveActivity start (flag=0) and update (flag=1)");
+    ASSERT_TRUE(serverSawPushCtrlResume,
+                "Server did not receive queued PushCtrl(stopped=NO) from turnONPush after login");
     ASSERT_TRUE([receivedMessagePayload[@"title"] isEqualToString:@"OneKey Alert"] &&
                 [receivedMessagePayload[@"_j_msgid"] unsignedLongLongValue] == expectedMsgId,
                 "PushMessage payload mismatch: %@", receivedMessagePayload);
@@ -1364,6 +1374,36 @@ static void testRctJPushModuleMultiRuntimeAndBridgelessEvents(void) {
                 "Expected NSNotificationCenter J_CUSTOM_NOTIFICATION_EVENT delivered in pure Nitro mode without RCTBridge");
 
     [RCTJPushModule unregisterNitroEventListener:nitroListenerId];
+    [RCTJPushModule clearActiveModules];
+
+    // 7. Verify [JPUSHService setupWithOption:@{UIApplicationLaunchOptionsRemoteNotificationKey: ...}]
+    //    registers RCTJPushModule native observers at cold start and queues the launch notification into RCTJPushEventQueue
+    [[RCTJPushEventQueue sharedInstance]._notificationQueue removeAllObjects];
+    [JPUSHService setupWithOption:@{
+        @"UIApplicationLaunchOptionsRemoteNotificationKey": @{
+            @"_j_msgid": @"launch_apns_cold_99",
+            @"aps": @{@"alert": @{@"title": @"LaunchTitle", @"body": @"LaunchBody"}},
+        },
+    }
+                           appKey:@"1f2027d3cfb1b51dac664c42"
+                          channel:@"App Store"
+                 apsForProduction:NO];
+    [[JCORETcpSession shared] disconnect];
+    ASSERT_TRUE([RCTJPushEventQueue sharedInstance]._notificationQueue.count == 1,
+                "setupWithOption with UIApplicationLaunchOptionsRemoteNotificationKey must queue cold-start notification in RCTJPushEventQueue");
+    NSMutableArray<NSDictionary *> *launchNitroEvents = [NSMutableArray array];
+    NSInteger launchListenerId = [RCTJPushModule registerNitroEventListener:^(NSString *eventName, NSString *payloadJson) {
+        [launchNitroEvents addObject:@{@"name": eventName ?: @"", @"json": payloadJson ?: @""}];
+    }];
+    [RCTJPushModule flushQueuedNotifications];
+    ASSERT_TRUE([RCTJPushEventQueue sharedInstance]._notificationQueue.count == 0,
+                "_notificationQueue must be empty after flushQueuedNotifications");
+    ASSERT_TRUE(launchNitroEvents.count >= 1 &&
+                [launchNitroEvents.lastObject[@"name"] isEqualToString:@"NotificationEvent"] &&
+                [launchNitroEvents.lastObject[@"json"] containsString:@"launch_apns_cold_99"] &&
+                [launchNitroEvents.lastObject[@"json"] containsString:@"notificationOpened"],
+                "Cold-start launch remote notification must be delivered as notificationOpened NotificationEvent, got %@", launchNitroEvents);
+    [RCTJPushModule unregisterNitroEventListener:launchListenerId];
     [RCTJPushModule clearActiveModules];
     printf("[PASS] Suite 6: Pure Nitro Event Hub, RCTJPushModule DeviceEventEmitter (_hasListeners==NO), RN 0.88 Bridgeless (callableJSModules), Dual-Runtime (main + bg), & Delegate preservation verified\n");
 }

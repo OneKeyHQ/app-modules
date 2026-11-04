@@ -51,12 +51,30 @@ static NSString *JPushHexFromData(NSData *data) {
                    isProduction:isProduction
           advertisingIdentifier:advertisingId];
 
+    Class rctModuleClass = NSClassFromString(@"RCTJPushModule");
+    SEL ensureSelector = NSSelectorFromString(@"ensureSharedNativeObservers");
+    if (rctModuleClass != Nil && [rctModuleClass respondsToSelector:ensureSelector]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        [rctModuleClass performSelector:ensureSelector];
+#pragma clang diagnostic pop
+    }
+
+    NSDictionary *remoteNotification = nil;
 #if __has_include(<UIKit/UIKit.h>)
-    NSDictionary *remoteNotification = launchingOption[UIApplicationLaunchOptionsRemoteNotificationKey];
-    if ([remoteNotification isKindOfClass:[NSDictionary class]]) {
-        [self handleRemoteNotification:remoteNotification];
+    if ([launchingOption isKindOfClass:[NSDictionary class]]) {
+        remoteNotification = launchingOption[UIApplicationLaunchOptionsRemoteNotificationKey];
     }
 #endif
+    if (remoteNotification == nil && [launchingOption isKindOfClass:[NSDictionary class]]) {
+        remoteNotification = launchingOption[@"UIApplicationLaunchOptionsRemoteNotificationKey"];
+    }
+    if ([remoteNotification isKindOfClass:[NSDictionary class]]) {
+        [self handleRemoteNotification:remoteNotification];
+        [[NSNotificationCenter defaultCenter] postNotificationName:@"J_APNS_NOTIFICATION_OPENED_EVENT"
+                                                            object:remoteNotification
+                                                          userInfo:remoteNotification];
+    }
 
     [[JCORETcpSession shared] startIfNeeded];
 }
@@ -752,11 +770,15 @@ callbackSelector:(SEL)cbSelector
     (void)isEnable;
 }
 
-+ (void)turnOnPush {
++ (void)turnONPush {
     [JCOREConfiguration shared].pushStopped = NO;
-    NSData *body = [JCOREWireProtocol buildPushControlPayloadWithStopped:NO];
     [[JCORETcpSession shared] startIfNeeded];
+    NSData *body = [JCOREWireProtocol buildPushControlPayloadWithStopped:NO];
     [[JCORETcpSession shared] sendCommand:JCOREWireCommandPushCtrl version:1 bodyData:body completion:nil];
+}
+
++ (void)turnOnPush {
+    [self turnONPush];
 }
 
 + (void)turnOFFPush {

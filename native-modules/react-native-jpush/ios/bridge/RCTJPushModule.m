@@ -10,6 +10,7 @@
 #import "../jpush/JPUSHNotificationManager.h"
 #endif
 #import <UIKit/UIKit.h>
+#import <UserNotifications/UserNotifications.h>
 
 #if __has_include(<React/RCTBridge.h>)
 #import <React/RCTBridge.h>
@@ -72,7 +73,7 @@ static RCTJPushModule *sNotificationObserverHelper = nil;
 - (void)sendEventWithName:(NSString *)eventName body:(id)body;
 @end
 
-@interface RCTJPushModule () <RCTBridgeModule> {
+@interface RCTJPushModule () <RCTBridgeModule, JPUSHRegisterDelegate, JPUSHInAppMessageDelegate> {
     BOOL _hasListeners;
 }
 @property (nonatomic, weak, nullable) RCTBridge *bridge;
@@ -498,10 +499,14 @@ RCT_EXPORT_METHOD(setDebugMode:(BOOL)enable) {
 }
 
 - (void)setupOrRefreshJPushNativeState {
+    [RCTJPushModule ensureSharedNativeObservers];
     if ([JPUSHNotificationManager shared].registerDelegate == nil) {
         JPUSHRegisterEntity *entity = [[JPUSHRegisterEntity alloc] init];
         entity.types = 0;
         [JPUSHService registerForRemoteNotificationConfig:entity delegate:(id<JPUSHRegisterDelegate>)self];
+    }
+    if ([JPUSHNotificationManager shared].inAppMessageDelegate == nil) {
+        [JPUSHService setInAppMessageDelegate:(id<JPUSHInAppMessageDelegate>)self];
     }
 }
 
@@ -719,6 +724,59 @@ RCT_EXPORT_METHOD(setBackgroundEnable:(BOOL)enable) {
     [JPUSHService setBackgroundEnable:enable];
 }
 
+- (void)jpushNotificationCenter:(UNUserNotificationCenter *)center
+        willPresentNotification:(UNNotification *)notification
+          withCompletionHandler:(void (^)(NSInteger))completionHandler {
+    (void)center;
+    NSDictionary *userInfo = notification.request.content.userInfo ?: @{};
+    if ([notification.request.trigger isKindOfClass:[UNPushNotificationTrigger class]]) {
+        [JPUSHService handleRemoteNotification:userInfo];
+        [[NSNotificationCenter defaultCenter] postNotificationName:J_APNS_NOTIFICATION_ARRIVED_EVENT
+                                                            object:userInfo
+                                                          userInfo:userInfo];
+    } else {
+        [[NSNotificationCenter defaultCenter] postNotificationName:J_LOCAL_NOTIFICATION_ARRIVED_EVENT
+                                                            object:userInfo
+                                                          userInfo:userInfo];
+    }
+    if (completionHandler != nil) {
+        completionHandler(UNNotificationPresentationOptionBadge |
+                          UNNotificationPresentationOptionSound |
+                          UNNotificationPresentationOptionAlert);
+    }
+}
+
+- (void)jpushNotificationCenter:(UNUserNotificationCenter *)center
+ didReceiveNotificationResponse:(UNNotificationResponse *)response
+          withCompletionHandler:(void (^)(void))completionHandler {
+    (void)center;
+    NSDictionary *userInfo = response.notification.request.content.userInfo ?: @{};
+    if ([response.notification.request.trigger isKindOfClass:[UNPushNotificationTrigger class]]) {
+        [JPUSHService handleRemoteNotification:userInfo];
+        [[NSNotificationCenter defaultCenter] postNotificationName:J_APNS_NOTIFICATION_OPENED_EVENT
+                                                            object:userInfo
+                                                          userInfo:userInfo];
+    } else {
+        [[NSNotificationCenter defaultCenter] postNotificationName:J_LOCAL_NOTIFICATION_OPENED_EVENT
+                                                            object:userInfo
+                                                          userInfo:userInfo];
+    }
+    if (completionHandler != nil) {
+        completionHandler();
+    }
+}
+
+- (void)jpushNotificationCenter:(UNUserNotificationCenter *)center
+    openSettingsForNotification:(UNNotification *)notification {
+    (void)center;
+    (void)notification;
+}
+
+- (void)jpushNotificationAuthorization:(JPAuthorizationStatus)status withInfo:(NSDictionary *)info {
+    (void)status;
+    (void)info;
+}
+
 - (void)jPushInAppMessageDidShow:(JPushInAppMessage *)inAppMessage {
     [JCOREConfiguration logInfo:[NSString stringWithFormat:@"onInAppMessageShow type=%@ msgId=%@",
                                  INAPP_MESSAGE_SHOW, inAppMessage.mesageId ?: @""]];
@@ -795,21 +853,14 @@ RCT_EXPORT_METHOD(addNotification:(NSDictionary *)params) {
             CONTENT: notificationContent
         };
     }
-    NSString *broadcastTime = params[BROADCASTTIME];
+    id broadcastTimeObj = params[BROADCASTTIME];
+    double rawSec = [broadcastTimeObj respondsToSelector:@selector(doubleValue)] ? [broadcastTimeObj doubleValue] : 0.0;
     JPushNotificationTrigger *trigger = [[JPushNotificationTrigger alloc] init];
-    NSDate *fireDate = [NSDate dateWithTimeIntervalSinceNow:1.0];
-    if ([broadcastTime isKindOfClass:[NSString class]] && broadcastTime.length > 0 && [broadcastTime doubleValue] > 0) {
-        fireDate = [NSDate dateWithTimeIntervalSince1970:[broadcastTime doubleValue] / 1000.0];
+    NSTimeInterval interval = 1.0;
+    if (rawSec > 0.0) {
+        interval = (rawSec > 1000000000000.0) ? (rawSec / 1000.0 - [[NSDate date] timeIntervalSince1970]) : rawSec;
     }
-    NSCalendar *calendar = [NSCalendar currentCalendar];
-    NSCalendarUnit unitFlags = NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay |
-                               NSCalendarUnitHour | NSCalendarUnitMinute | NSCalendarUnitSecond;
-    NSDateComponents *components = [calendar components:unitFlags fromDate:fireDate];
-    if (@available(iOS 10.0, *)) {
-        trigger.dateComponents = components;
-    } else {
-        return;
-    }
+    trigger.timeInterval = MAX(1.0, interval);
     JPushNotificationRequest *request = [[JPushNotificationRequest alloc] init];
     request.requestIdentifier = messageID;
     request.content = content;
@@ -866,6 +917,18 @@ RCT_EXPORT_METHOD(setGeofeneceMaxCount:(NSDictionary *)params) {
 }
 
 - (void)sendApnsNotificationEvent:(NSNotification *)data {
+    if (![RCTJPushModule hasReadyEventConsumer]) {
+        NSDictionary *objectData = [data.object isKindOfClass:[NSDictionary class]]
+            ? data.object
+            : ([data.userInfo isKindOfClass:[NSDictionary class]] ? data.userInfo : nil);
+        if (objectData != nil) {
+            if ([RCTJPushEventQueue sharedInstance]._notificationQueue == nil) {
+                [RCTJPushEventQueue sharedInstance]._notificationQueue = [NSMutableArray array];
+            }
+            [[RCTJPushEventQueue sharedInstance]._notificationQueue addObject:objectData];
+        }
+        return;
+    }
     NSDictionary *responseData = [self convertApnsMessage:data];
     [JCOREConfiguration logInfo:[NSString stringWithFormat:@"onNotifyMessage type=%@ notificationType=remote msgId=%@",
                                  responseData[NOTIFICATION_EVENT_TYPE] ?: @"",
@@ -906,11 +969,26 @@ RCT_EXPORT_METHOD(setGeofeneceMaxCount:(NSDictionary *)params) {
 }
 
 - (void)sendLocalNotificationEvent:(NSNotification *)data {
+    if (![RCTJPushModule hasReadyEventConsumer]) {
+        NSDictionary *objectData = [data.object isKindOfClass:[NSDictionary class]]
+            ? data.object
+            : ([data.userInfo isKindOfClass:[NSDictionary class]] ? data.userInfo : nil);
+        if (objectData != nil) {
+            if ([RCTJPushEventQueue sharedInstance]._localNotificationQueue == nil) {
+                [RCTJPushEventQueue sharedInstance]._localNotificationQueue = [NSMutableArray array];
+            }
+            [[RCTJPushEventQueue sharedInstance]._localNotificationQueue addObject:objectData];
+        }
+        return;
+    }
     NSDictionary *responseData = [self convertLocalMessage:data];
     [JCOREConfiguration logInfo:[NSString stringWithFormat:@"onLocalNotification type=%@ notificationType=local msgId=%@",
                                  responseData[NOTIFICATION_EVENT_TYPE] ?: @"",
                                  responseData[MESSAGE_ID] ?: @""]];
     [RCTJPushModule emitEventWithName:LOCAL_NOTIFICATION_EVENT payload:responseData];
+    if ([RCTJPushEventQueue sharedInstance]._localNotificationQueue.count > 0) {
+        [[RCTJPushEventQueue sharedInstance]._localNotificationQueue removeAllObjects];
+    }
 }
 
 - (void)sendTagAliasEvent:(NSDictionary *)data {

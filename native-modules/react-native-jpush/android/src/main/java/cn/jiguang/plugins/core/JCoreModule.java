@@ -22,6 +22,7 @@ import java.util.HashSet;
 import java.util.Set;
 import cn.jiguang.api.utils.JCollectionAuth;
 import cn.jiguang.api.JCoreInterface;
+import cn.jiguang.plugins.push.JPushModule;
 
 public class JCoreModule extends ReactContextBaseJavaModule {
 
@@ -31,6 +32,7 @@ public class JCoreModule extends ReactContextBaseJavaModule {
     public JCoreModule(ReactApplicationContext reactApplicationContext) {
         super(reactApplicationContext);
         reactContext = reactApplicationContext;
+        JPushModule.registerReactContext(reactApplicationContext);
     }
 
     @Override

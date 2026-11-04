@@ -32,7 +32,14 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 public class ActionHelper {
@@ -57,6 +64,17 @@ public class ActionHelper {
     private static volatile ActionHelper instance;
     private final List<JPushMessageReceiver> registeredReceivers = new CopyOnWriteArrayList<JPushMessageReceiver>();
     private final LinkedList<Integer> activeNotificationIds = new LinkedList<Integer>();
+    private final ConcurrentHashMap<Integer, ScheduledFuture<?>> pendingLocalNotifications =
+        new ConcurrentHashMap<Integer, ScheduledFuture<?>>();
+    private final ScheduledExecutorService localNotificationScheduler =
+        Executors.newSingleThreadScheduledExecutor(new ThreadFactory() {
+            @Override
+            public Thread newThread(Runnable r) {
+                Thread t = new Thread(r, "jpush-local-notify");
+                t.setDaemon(true);
+                return t;
+            }
+        });
 
     private ActionHelper() {
     }
@@ -175,10 +193,20 @@ public class ActionHelper {
     }
 
     public synchronized void removeActiveNotificationId(int notificationId) {
+        ScheduledFuture<?> pending = pendingLocalNotifications.remove(Integer.valueOf(notificationId));
+        if (pending != null) {
+            pending.cancel(false);
+        }
         activeNotificationIds.remove(Integer.valueOf(notificationId));
     }
 
     public synchronized void clearActiveNotificationIds() {
+        for (ScheduledFuture<?> pending : pendingLocalNotifications.values()) {
+            if (pending != null) {
+                pending.cancel(false);
+            }
+        }
+        pendingLocalNotifications.clear();
         activeNotificationIds.clear();
     }
 
@@ -212,10 +240,10 @@ public class ActionHelper {
     }
 
     public void postSystemNotification(Context context, NotificationMessage message) {
-        Context app = JCoreStorage.getAppContext(context);
-        if (app == null || message == null) {
+        if (message == null) {
             return;
         }
+        Context app = JCoreStorage.getAppContext(context);
         Calendar now = Calendar.getInstance();
         int dayOfWeekZeroBased = now.get(Calendar.DAY_OF_WEEK) - Calendar.SUNDAY;
         int hourOfDay = now.get(Calendar.HOUR_OF_DAY);
@@ -228,6 +256,9 @@ public class ActionHelper {
             ? message.notificationId
             : (message.msgId != null ? Math.abs(message.msgId.hashCode()) : 1);
         recordNotificationPosted(app, notifyId);
+        if (app == null) {
+            return;
+        }
         try {
             NotificationManager nm = (NotificationManager) app.getSystemService(Context.NOTIFICATION_SERVICE);
             if (nm == null) {
@@ -447,8 +478,9 @@ public class ActionHelper {
         final int sequence,
         String alias,
         int protoType,
-        int action
+        final int action
     ) {
+        final String previousAlias = JCoreStorage.getAlias(context);
         String resolvedAlias = alias != null ? alias : "";
         if (action == 2) {
             JCoreStorage.saveAlias(context, resolvedAlias);
@@ -456,7 +488,7 @@ public class ActionHelper {
             JCoreStorage.saveAlias(context, "");
             resolvedAlias = "";
         } else if (action == 5) {
-            resolvedAlias = JCoreStorage.getAlias(context);
+            resolvedAlias = previousAlias;
         }
         final String effectiveAlias = resolvedAlias;
 
@@ -473,8 +505,29 @@ public class ActionHelper {
                 new JCoreTcpEngine.RequestCallback() {
                     @Override
                     public void onResult(JCoreWireCodec.DecodedFrame responseFrame, int statusCode) {
+                        if (statusCode != 0 && (action == 2 || action == 3)) {
+                            JCoreStorage.saveAlias(context, previousAlias);
+                        }
+                        String resultAlias = effectiveAlias;
+                        if (statusCode == 0 && responseFrame != null && responseFrame.body != null && responseFrame.body.length > 0) {
+                            String respJson = JCoreWireCodec.parseJsonCommandBody(responseFrame.body);
+                            if (action == 5 && respJson.contains("\"alias\"")) {
+                                String srvAlias = JCoreWireCodec.extractJsonString(respJson, "alias");
+                                JCoreStorage.saveAlias(context, srvAlias);
+                                resultAlias = srvAlias;
+                            }
+                        }
                         Intent intent = buildBaseReceiverIntent(context, "alias_op", sequence, statusCode);
-                        intent.putExtra(KEY_ALIAS, effectiveAlias);
+                        intent.putExtra(KEY_ALIAS, resultAlias);
+                        if (intent.getStringExtra(KEY_EVENT_TYPE) == null) {
+                            JPushMessage msg = new JPushMessage();
+                            msg.setSequence(sequence);
+                            msg.setErrorCode(statusCode);
+                            msg.setAlias(resultAlias);
+                            for (JPushMessageReceiver receiver : registeredReceivers) {
+                                receiver.onAliasOperatorResult(context, msg);
+                            }
+                        }
                         sendToReceiver(context, intent);
                     }
                 }
@@ -505,6 +558,7 @@ public class ActionHelper {
     ) {
         final Set<String> validInput = JPushInterface.filterValidTags(tags);
         Set<String> stored = JCoreStorage.getTags(context);
+        final Set<String> previousTags = new HashSet<String>(stored);
 
         if (action == 1) { // add
             stored.addAll(validInput);
@@ -534,7 +588,10 @@ public class ActionHelper {
                 new JCoreTcpEngine.RequestCallback() {
                     @Override
                     public void onResult(JCoreWireCodec.DecodedFrame responseFrame, int statusCode) {
-                        dispatchTagResultIntent(context, sequence, action, statusCode, validInput, finalStored);
+                        if (statusCode != 0 && action >= 1 && action <= 4) {
+                            JCoreStorage.saveTags(context, previousTags);
+                        }
+                        dispatchTagResultIntent(context, sequence, action, statusCode, validInput, finalStored, responseFrame);
                     }
                 }
             );
@@ -549,7 +606,54 @@ public class ActionHelper {
             JCoreStorage.getUid(context),
             wireBody
         );
-        dispatchTagResultIntent(context, sequence, action, 0, validInput, finalStored);
+        dispatchTagResultIntent(context, sequence, action, 0, validInput, finalStored, null);
+    }
+
+    private static boolean parseJsonBindFlag(String respJson, boolean defaultBind) {
+        try {
+            JSONObject obj = new JSONObject(respJson);
+            Object raw = obj.opt("bind");
+            if (raw == null) {
+                raw = obj.opt("is_bind");
+            }
+            if (raw instanceof Boolean) {
+                return ((Boolean) raw).booleanValue();
+            }
+            if (raw instanceof Number) {
+                return ((Number) raw).intValue() != 0;
+            }
+            if (raw instanceof String) {
+                String s = ((String) raw).trim();
+                if ("true".equalsIgnoreCase(s) || "1".equals(s)) {
+                    return true;
+                }
+                if ("false".equalsIgnoreCase(s) || "0".equals(s)) {
+                    return false;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return defaultBind;
+    }
+
+    private static Set<String> parseJsonTagsSet(String respJson) {
+        Set<String> serverTags = new HashSet<String>();
+        try {
+            JSONObject obj = new JSONObject(respJson);
+            JSONArray arr = obj.optJSONArray("tags");
+            if (arr != null) {
+                for (int i = 0; i < arr.length(); i++) {
+                    String item = arr.optString(i, null);
+                    if (item != null && !item.isEmpty()) {
+                        serverTags.add(item);
+                    }
+                }
+                return serverTags;
+            }
+        } catch (Throwable ignored) {
+        }
+        serverTags.addAll(JCoreWireCodec.extractJsonStringArray(respJson, "tags"));
+        return serverTags;
     }
 
     private void dispatchTagResultIntent(
@@ -558,21 +662,54 @@ public class ActionHelper {
         int action,
         int statusCode,
         Set<String> validInput,
-        Set<String> stored
+        Set<String> stored,
+        JCoreWireCodec.DecodedFrame responseFrame
     ) {
+        String respJson = (statusCode == 0 && responseFrame != null && responseFrame.body != null && responseFrame.body.length > 0)
+            ? JCoreWireCodec.parseJsonCommandBody(responseFrame.body)
+            : "";
         if (action == 6) { // checkTagBindState
             String checkTag = validInput.isEmpty() ? "" : validInput.iterator().next();
             boolean isBind = !checkTag.isEmpty() && stored.contains(checkTag);
+            if (statusCode == 0 && !respJson.isEmpty()
+                && (respJson.contains("\"bind\"") || respJson.contains("\"is_bind\""))) {
+                isBind = parseJsonBindFlag(respJson, isBind);
+            }
             Intent checkIntent = buildBaseReceiverIntent(context, "check_tag_op", sequence, statusCode);
             checkIntent.putExtra(KEY_CHECK_TAG, checkTag);
             checkIntent.putExtra(KEY_TAG_BIND_STATE, isBind);
+            if (checkIntent.getStringExtra(KEY_EVENT_TYPE) == null) {
+                JPushMessage msg = new JPushMessage();
+                msg.setSequence(sequence);
+                msg.setErrorCode(statusCode);
+                msg.setCheckTag(checkTag);
+                msg.setTagCheckStateResult(isBind);
+                msg.setTagCheckOperator(true);
+                for (JPushMessageReceiver receiver : registeredReceivers) {
+                    receiver.onCheckTagOperatorResult(context, msg);
+                }
+            }
             sendToReceiver(context, checkIntent);
             return;
         }
 
         Set<String> resultTags = (action == 5) ? stored : validInput;
+        if (action == 5 && statusCode == 0 && !respJson.isEmpty() && respJson.contains("\"tags\"")) {
+            Set<String> serverTags = parseJsonTagsSet(respJson);
+            JCoreStorage.saveTags(context, serverTags);
+            resultTags = serverTags;
+        }
         Intent intent = buildBaseReceiverIntent(context, "tag_op", sequence, statusCode);
         intent.putStringArrayListExtra(KEY_TAGS, new ArrayList<String>(resultTags));
+        if (intent.getStringExtra(KEY_EVENT_TYPE) == null) {
+            JPushMessage msg = new JPushMessage();
+            msg.setSequence(sequence);
+            msg.setErrorCode(statusCode);
+            msg.setTags(new HashSet<String>(resultTags));
+            for (JPushMessageReceiver receiver : registeredReceivers) {
+                receiver.onTagOperatorResult(context, msg);
+            }
+        }
         sendToReceiver(context, intent);
     }
 
@@ -584,6 +721,7 @@ public class ActionHelper {
         int action
     ) {
         Map<String, Object> stored = JCoreStorage.getProperties(context);
+        final Map<String, Object> previousProps = new HashMap<String, Object>(stored);
         if (action == 1 && properties != null) {
             stored.putAll(properties);
             JCoreStorage.saveProperties(context, stored);
@@ -610,12 +748,24 @@ public class ActionHelper {
                 new JCoreTcpEngine.RequestCallback() {
                     @Override
                     public void onResult(JCoreWireCodec.DecodedFrame responseFrame, int statusCode) {
+                        if (statusCode != 0) {
+                            JCoreStorage.saveProperties(context, previousProps);
+                        }
                         Intent intent = buildBaseReceiverIntent(context, "property_op", sequence, statusCode);
                         HashMap<String, Object> serializableProps = new HashMap<String, Object>();
                         if (properties != null) {
                             serializableProps.putAll(properties);
                         }
                         intent.putExtra(KEY_PROPS_MAP, serializableProps);
+                        if (intent.getStringExtra(KEY_EVENT_TYPE) == null) {
+                            JPushMessage msg = new JPushMessage();
+                            msg.setSequence(sequence);
+                            msg.setErrorCode(statusCode);
+                            msg.setPros(serializableProps);
+                            for (JPushMessageReceiver receiver : registeredReceivers) {
+                                receiver.onPropertyOperatorResult(context, msg);
+                            }
+                        }
                         sendToReceiver(context, intent);
                     }
                 }
@@ -642,6 +792,7 @@ public class ActionHelper {
     }
 
     public void setMobileNumberWithCallBack(final Context context, final int sequence, final String mobileNumber) {
+        final String previousMobile = JCoreStorage.getMobileNumber(context);
         JCoreStorage.saveMobileNumber(context, mobileNumber);
         byte[] wireBody = JCoreWireCodec.buildMobileNumberPayload(sequence, mobileNumber);
         if (shouldQueueOrWaitForServerAck()) {
@@ -656,8 +807,20 @@ public class ActionHelper {
                 new JCoreTcpEngine.RequestCallback() {
                     @Override
                     public void onResult(JCoreWireCodec.DecodedFrame responseFrame, int statusCode) {
+                        if (statusCode != 0) {
+                            JCoreStorage.saveMobileNumber(context, previousMobile);
+                        }
                         Intent intent = buildBaseReceiverIntent(context, "mobile_number_op", sequence, statusCode);
                         intent.putExtra(KEY_MOBILE_NUMBER, mobileNumber != null ? mobileNumber : "");
+                        if (intent.getStringExtra(KEY_EVENT_TYPE) == null) {
+                            JPushMessage msg = new JPushMessage();
+                            msg.setSequence(sequence);
+                            msg.setErrorCode(statusCode);
+                            msg.setMobileNumber(mobileNumber != null ? mobileNumber : "");
+                            for (JPushMessageReceiver receiver : registeredReceivers) {
+                                receiver.onMobileNumberOperatorResult(context, msg);
+                            }
+                        }
                         sendToReceiver(context, intent);
                     }
                 }
@@ -749,10 +912,38 @@ public class ActionHelper {
         sendToReceiver(context, intent);
     }
 
-    public void dispatchLocalNotification(Context context, JPushLocalNotification localNotification) {
+    public void dispatchLocalNotification(final Context context, final JPushLocalNotification localNotification) {
         if (localNotification == null) {
             return;
         }
+        final int notifyId = (int) localNotification.getNotificationId();
+        long broadcastTime = localNotification.getBroadcastTime();
+        long now = System.currentTimeMillis();
+        long delayMs = 0L;
+        if (broadcastTime > 1000000000000L) {
+            delayMs = broadcastTime - now;
+        } else if (broadcastTime > 0L) {
+            delayMs = broadcastTime;
+        }
+        ScheduledFuture<?> previous = pendingLocalNotifications.remove(Integer.valueOf(notifyId));
+        if (previous != null) {
+            previous.cancel(false);
+        }
+        if (delayMs > 0L) {
+            ScheduledFuture<?> future = localNotificationScheduler.schedule(new Runnable() {
+                @Override
+                public void run() {
+                    pendingLocalNotifications.remove(Integer.valueOf(notifyId));
+                    deliverLocalNotificationNow(context, localNotification);
+                }
+            }, delayMs, TimeUnit.MILLISECONDS);
+            pendingLocalNotifications.put(Integer.valueOf(notifyId), future);
+            return;
+        }
+        deliverLocalNotificationNow(context, localNotification);
+    }
+
+    private void deliverLocalNotificationNow(Context context, JPushLocalNotification localNotification) {
         NotificationMessage message = new NotificationMessage();
         message.notificationId = (int) localNotification.getNotificationId();
         message.msgId = String.valueOf(localNotification.getNotificationId());

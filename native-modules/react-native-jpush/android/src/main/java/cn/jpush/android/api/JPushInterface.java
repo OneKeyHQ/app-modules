@@ -261,7 +261,7 @@ public class JPushInterface {
     }
 
     public static void addLocalNotification(Context context, JPushLocalNotification notification) {
-        if (context == null || notification == null) {
+        if (notification == null) {
             return;
         }
         ActionHelper.getInstance().dispatchLocalNotification(context, notification);

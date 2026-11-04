@@ -40,7 +40,9 @@
     if (center == nil) {
         return;
     }
-    center.delegate = self;
+    if (types != 0 || center.delegate == nil) {
+        center.delegate = self;
+    }
     if (categories.count > 0) {
         [center setNotificationCategories:categories];
     }

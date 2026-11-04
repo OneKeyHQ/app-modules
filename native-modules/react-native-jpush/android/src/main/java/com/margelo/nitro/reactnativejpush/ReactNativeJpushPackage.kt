@@ -10,7 +10,7 @@ import cn.jiguang.plugins.push.JPushModule
 
 class ReactNativeJpushPackage : BaseReactPackage() {
   override fun getModule(name: String, reactContext: ReactApplicationContext): NativeModule? {
-    JPushModule.reactContext = reactContext
+    JPushModule.registerReactContext(reactContext)
     JCoreModule.reactContext = reactContext
     return when (name) {
       "JPushModule" -> JPushModule(reactContext)

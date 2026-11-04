@@ -19,6 +19,9 @@ import cn.jpush.android.api.CustomMessage;
 import cn.jpush.android.api.JPushInterface;
 import cn.jpush.android.api.JPushMessage;
 import cn.jpush.android.api.NotificationMessage;
+import cn.jpush.android.data.JPushLocalNotification;
+import cn.jpush.android.local.ActionHelper;
+import cn.jpush.android.ups.JPushUPSManager;
 import java.io.File;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -444,6 +447,231 @@ public class ReactNativeJpushProtocolTest {
         assertEquals(0L, JCoreStorage.getUid(null));
         assertEquals("", JCoreStorage.getRegistrationId(null));
         assertEquals(false, JCoreStorage.isConnected(null));
+
+        // 2e. Verify JPushUPSManager.registerToken resolves appKey when appId is empty
+        JPushUPSManager.registerToken(null, "", "ups_appkey_fallback_01", "ups_secret", null);
+        assertEquals("ups_appkey_fallback_01", JCoreStorage.getAppKey(null));
+
+        // 2f. Verify delayed addLocalNotification scheduling and removeLocalNotification cancellation
+        ActionHelper.getInstance().clearActiveNotificationIds();
+        JPushLocalNotification cancelledLn = new JPushLocalNotification();
+        cancelledLn.setNotificationId(77001L);
+        cancelledLn.setTitle("CancelledTitle");
+        cancelledLn.setContent("CancelledContent");
+        cancelledLn.setBroadcastTime(300L);
+        JPushInterface.addLocalNotification(null, cancelledLn);
+        assertTrue(!ActionHelper.getInstance().getActiveNotificationIds().contains(Integer.valueOf(77001)));
+        JPushInterface.removeLocalNotification(null, 77001L);
+
+        JPushLocalNotification firedLn = new JPushLocalNotification();
+        firedLn.setNotificationId(77002L);
+        firedLn.setTitle("FiredTitle");
+        firedLn.setContent("FiredContent");
+        firedLn.setBroadcastTime(70L);
+        JPushInterface.addLocalNotification(null, firedLn);
+        assertTrue(!ActionHelper.getInstance().getActiveNotificationIds().contains(Integer.valueOf(77002)));
+        Thread.sleep(360L);
+        assertTrue(!ActionHelper.getInstance().getActiveNotificationIds().contains(Integer.valueOf(77001)));
+        assertTrue(ActionHelper.getInstance().getActiveNotificationIds().contains(Integer.valueOf(77002)));
+        ActionHelper.getInstance().clearActiveNotificationIds();
+
+        // 2g. Verify ActionHelper server response parsing (getAlias, getAllTags, checkTagBindState)
+        //     and rollback on non-zero statusCode for Tag/Alias/Property/MobileNumber
+        final ServerSocket opServer = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"));
+        final int opPort = opServer.getLocalPort();
+        final long opUid = 660033L;
+        Thread opServerThread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                Socket client = null;
+                try {
+                    opServer.setSoTimeout(5000);
+                    client = opServer.accept();
+                    client.setSoTimeout(5000);
+                    InputStream in = client.getInputStream();
+                    OutputStream out = client.getOutputStream();
+
+                    JCoreWireCodec.DecodedFrame loginFrame = JCoreWireCodec.readClientFrameFromStream(in, opUid);
+                    if (loginFrame != null && loginFrame.command == JCoreWireCodec.CMD_LOGIN) {
+                        byte[] loginResp = JCoreWireCodec.buildLoginResponsePayload(6601, 520, "", 1700001000);
+                        out.write(JCoreWireCodec.encodeResponseFrame(
+                            JCoreWireCodec.CMD_LOGIN,
+                            JCoreWireCodec.VER_LOGIN,
+                            loginFrame.requestId,
+                            6601,
+                            opUid,
+                            0,
+                            loginResp
+                        ));
+                        out.flush();
+                    }
+
+                    while (!client.isClosed()) {
+                        JCoreWireCodec.DecodedFrame req = JCoreWireCodec.readClientFrameFromStream(in, opUid);
+                        if (req == null) {
+                            break;
+                        }
+                        if (req.command == JCoreWireCodec.CMD_HEARTBEAT) {
+                            out.write(JCoreWireCodec.encodeResponseFrame(
+                                JCoreWireCodec.CMD_HEARTBEAT,
+                                JCoreWireCodec.VER_HEARTBEAT,
+                                req.requestId,
+                                6601,
+                                opUid,
+                                0,
+                                new byte[0]
+                            ));
+                            out.flush();
+                        } else if (req.command == JCoreWireCodec.CMD_ALIAS_OP) {
+                            if (req.requestId == 301L) {
+                                byte[] body = JCoreWireCodec.buildJsonCommandPayload("{\"alias\":\"srv_alias_301\"}");
+                                out.write(JCoreWireCodec.encodeResponseFrame(
+                                    JCoreWireCodec.CMD_ALIAS_OP,
+                                    JCoreWireCodec.VER_ALIAS_OP,
+                                    req.requestId,
+                                    6601,
+                                    opUid,
+                                    0,
+                                    body
+                                ));
+                            } else {
+                                out.write(JCoreWireCodec.encodeResponseFrame(
+                                    JCoreWireCodec.CMD_ALIAS_OP,
+                                    JCoreWireCodec.VER_ALIAS_OP,
+                                    req.requestId,
+                                    6601,
+                                    opUid,
+                                    6002,
+                                    new byte[0]
+                                ));
+                            }
+                            out.flush();
+                        } else if (req.command == JCoreWireCodec.CMD_TAG_OP) {
+                            if (req.requestId == 303L) {
+                                byte[] body = JCoreWireCodec.buildJsonCommandPayload("{\"tags\":[\"srv_t1\",\"srv_t2\"]}");
+                                out.write(JCoreWireCodec.encodeResponseFrame(
+                                    JCoreWireCodec.CMD_TAG_OP,
+                                    JCoreWireCodec.VER_TAG_OP,
+                                    req.requestId,
+                                    6601,
+                                    opUid,
+                                    0,
+                                    body
+                                ));
+                            } else if (req.requestId == 305L) {
+                                byte[] body = JCoreWireCodec.buildJsonCommandPayload("{\"bind\":true}");
+                                out.write(JCoreWireCodec.encodeResponseFrame(
+                                    JCoreWireCodec.CMD_TAG_OP,
+                                    JCoreWireCodec.VER_TAG_OP,
+                                    req.requestId,
+                                    6601,
+                                    opUid,
+                                    0,
+                                    body
+                                ));
+                            } else {
+                                out.write(JCoreWireCodec.encodeResponseFrame(
+                                    JCoreWireCodec.CMD_TAG_OP,
+                                    JCoreWireCodec.VER_TAG_OP,
+                                    req.requestId,
+                                    6601,
+                                    opUid,
+                                    6002,
+                                    new byte[0]
+                                ));
+                            }
+                            out.flush();
+                        } else if (req.command == JCoreWireCodec.CMD_PROPERTY_OP) {
+                            out.write(JCoreWireCodec.encodeResponseFrame(
+                                JCoreWireCodec.CMD_PROPERTY_OP,
+                                JCoreWireCodec.VER_PROPERTY_OP,
+                                req.requestId,
+                                6601,
+                                opUid,
+                                6002,
+                                new byte[0]
+                            ));
+                            out.flush();
+                        } else if (req.command == JCoreWireCodec.CMD_MOBILE_NUMBER) {
+                            out.write(JCoreWireCodec.encodeResponseFrame(
+                                JCoreWireCodec.CMD_MOBILE_NUMBER,
+                                JCoreWireCodec.VER_MOBILE_NUMBER,
+                                req.requestId,
+                                6601,
+                                opUid,
+                                6002,
+                                new byte[0]
+                            ));
+                            out.flush();
+                            break;
+                        }
+                    }
+                } catch (Throwable ignored) {
+                } finally {
+                    try {
+                        if (client != null) client.close();
+                    } catch (Throwable ignored) {}
+                    try {
+                        opServer.close();
+                    } catch (Throwable ignored) {}
+                }
+            }
+        }, "test-op-rollback-server");
+        opServerThread.setDaemon(true);
+        opServerThread.start();
+
+        ActionHelper.getInstance().registerReceiver(receiver);
+        final List<String> opEvents = new java.util.ArrayList<String>();
+        final CountDownLatch opDoneLatch = new CountDownLatch(7);
+        int opListenerId = JPushHelper.registerNitroListener(new JPushHelper.NitroEventListener() {
+            @Override
+            public void onEvent(String eventName, String payloadJson) {
+                if ("TagAliasEvent".equals(eventName) || "MobileNumberEvent".equals(eventName)) {
+                    opEvents.add(eventName + ":" + payloadJson);
+                    opDoneLatch.countDown();
+                }
+            }
+        });
+
+        JCoreStorage.updateRegistration(null, opUid, "op_pwd", "reg_op_660033", "dev_op_01");
+        JCoreStorage.setServerRegistered(null, true);
+        JCoreStorage.saveAlias(null, "old_local_alias");
+        JCoreStorage.saveTags(null, new java.util.HashSet<String>(Arrays.asList("old_local_tag")));
+        JCoreStorage.saveProperties(null, Collections.<String, Object>singletonMap("tier", "gold"));
+        JCoreStorage.saveMobileNumber(null, "13800000001");
+
+        JCoreTcpEngine.getInstance().setRequireServerAckForOperations(true);
+        JCoreTcpEngine.getInstance().setCustomEndpoint("127.0.0.1", opPort);
+        JCoreTcpEngine.getInstance().triggerReconnectNow(null);
+        assertTrue(JCoreTcpEngine.getInstance().awaitHandshake(3000L));
+
+        JPushInterface.getAlias(null, 301);
+        JPushInterface.setAlias(null, 302, "rejected_alias_302");
+        JPushInterface.getAllTags(null, 303);
+        JPushInterface.setTags(null, 304, new java.util.HashSet<String>(Arrays.asList("rejected_tag_304")));
+        JPushInterface.checkTagBindState(null, 305, "unbound_local_tag");
+        JPushInterface.setProperties(null, 306, Collections.<String, Object>singletonMap("tier", "rejected_tier"));
+        JPushInterface.setMobileNumber(null, 307, "13999999999");
+
+        assertTrue(opDoneLatch.await(4000L, TimeUnit.MILLISECONDS));
+        assertEquals("srv_alias_301", JCoreStorage.getAlias(null));
+        assertTrue(JCoreStorage.getTags(null).contains("srv_t1") && JCoreStorage.getTags(null).contains("srv_t2"));
+        assertTrue(!JCoreStorage.getTags(null).contains("rejected_tag_304"));
+        assertEquals("gold", JCoreStorage.getProperties(null).get("tier"));
+        assertEquals("13800000001", JCoreStorage.getMobileNumber(null));
+        boolean sawServerBindTrue = false;
+        for (String ev : opEvents) {
+            if (ev.contains("unbound_local_tag") && ev.contains("true")) {
+                sawServerBindTrue = true;
+            }
+        }
+        assertTrue(sawServerBindTrue);
+
+        JPushHelper.unregisterNitroListener(opListenerId);
+        JPushHelper.clearNitroListeners();
+        JCoreTcpEngine.getInstance().setRequireServerAckForOperations(false);
+        JCoreTcpEngine.getInstance().stop(null);
+        JCoreStorage.clearRegistration(null);
 
         // 3. Verify AndroidManifest.xml has android:exported="false" on all 5 internal activities
         File manifestFile = new File("src/main/AndroidManifest.xml");

@@ -353,12 +353,11 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
     notifContent.userInfo = userInfo
 
     let trigger = JPushNotificationTrigger()
-    var fireDate = Date(timeIntervalSinceNow: 1.0)
-    if let ms = Double(broadcastTime), ms > 0 {
-      fireDate = Date(timeIntervalSince1970: ms / 1000.0)
+    var interval: TimeInterval = 1.0
+    if let rawSec = Double(broadcastTime), rawSec > 0 {
+      interval = rawSec > 1_000_000_000_000.0 ? (rawSec / 1000.0 - Date().timeIntervalSince1970) : rawSec
     }
-    let comps = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: fireDate)
-    trigger.dateComponents = comps
+    trigger.timeInterval = max(1.0, interval)
 
     let request = JPushNotificationRequest()
     request.requestIdentifier = messageID

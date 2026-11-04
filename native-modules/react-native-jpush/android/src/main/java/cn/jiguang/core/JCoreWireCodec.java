@@ -1498,12 +1498,20 @@ public final class JCoreWireCodec {
                 return new String(body, 4, len, StandardCharsets.UTF_8);
             }
         }
+        // Check for uint16 statusCode + raw JSON object string
+        if (body.length >= 3 && body[2] == '{') {
+            return new String(body, 2, body.length - 2, StandardCharsets.UTF_8).trim();
+        }
         ByteBuffer buf = ByteBuffer.wrap(body);
         String str = readString(buf);
         if (!str.isEmpty()) {
             return str;
         }
         return new String(body, StandardCharsets.UTF_8);
+    }
+
+    public static String parseJsonCommandBody(byte[] body) {
+        return parseJsonCommandPayload(body);
     }
 
     public static OperationPayload parseOperationPayload(int command, byte[] body) {

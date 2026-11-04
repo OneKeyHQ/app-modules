@@ -331,6 +331,7 @@ typedef void (^JPUSHLiveActivityTokenCompletion)(NSInteger iResCode, NSString *_
 + (void)setDataInsightsEnable:(BOOL)isEnable;
 
 + (void)turnOnPush;
++ (void)turnONPush;
 + (void)turnOFFPush;
 
 + (void)setTags:(nullable NSSet *)tags

@@ -7,7 +7,8 @@ import cn.jpush.android.api.JPushInterface;
 
 public class JPushUPSManager {
     public static void registerToken(Context context, String appId, String appKey, String appSecret, UPSRegisterCallBack callback) {
-        JCoreManager.register(context, appId);
+        String effectiveKey = (appKey != null && !appKey.isEmpty()) ? appKey : appId;
+        JCoreManager.register(context, effectiveKey);
         if (callback != null) {
             callback.onResult(new TokenResult(JCoreStorage.getRegistrationId(context), 0, "ups.register"));
         }
