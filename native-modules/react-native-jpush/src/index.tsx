@@ -172,6 +172,115 @@ const listeners = new Map<
   EmitterSubscription | { remove: () => void }
 >();
 
+let sharedNitroListenerId: number | null = null;
+const nitroSubscribersByEvent = new Map<string, Set<Callback<any>>>();
+const pendingNitroEventsByEvent = new Map<string, any[]>();
+
+function dispatchOrBufferNitroEvent(
+  eventName: string,
+  payloadJson: string
+): void {
+  let parsed: any = {};
+  try {
+    parsed = payloadJson ? JSON.parse(payloadJson) : {};
+  } catch {
+    parsed = {};
+  }
+  const subs = nitroSubscribersByEvent.get(eventName);
+  if (subs && subs.size > 0) {
+    subs.forEach((cb) => {
+      cb(parsed);
+    });
+    return;
+  }
+  let queue = pendingNitroEventsByEvent.get(eventName);
+  if (!queue) {
+    queue = [];
+    pendingNitroEventsByEvent.set(eventName, queue);
+  }
+  if (queue.length >= 32) {
+    queue.shift();
+  }
+  queue.push(parsed);
+}
+
+function ensureSharedNitroListener(nitro: ReactNativeJpush): void {
+  if (sharedNitroListenerId !== null) {
+    return;
+  }
+  sharedNitroListenerId = nitro.addEventListener(
+    (eventName: string, payloadJson: string) => {
+      dispatchOrBufferNitroEvent(eventName, payloadJson);
+    }
+  );
+}
+
+function cleanupSharedNitroListenerIfIdle(nitro: ReactNativeJpush): void {
+  for (const subs of nitroSubscribersByEvent.values()) {
+    if (subs.size > 0) {
+      return;
+    }
+  }
+  if (sharedNitroListenerId !== null) {
+    nitro.removeEventListener(sharedNitroListenerId);
+    sharedNitroListenerId = null;
+  }
+}
+
+function registerEventListener<T>(
+  targetEventName: string,
+  callback: Callback<T>
+): void {
+  if (typeof callback !== 'function') {
+    return;
+  }
+  const existing = listeners.get(callback);
+  if (existing) {
+    existing.remove();
+    listeners.delete(callback);
+  }
+  const nitro = getNitroModule();
+  if (nitro && typeof nitro.addEventListener === 'function') {
+    let subs = nitroSubscribersByEvent.get(targetEventName);
+    if (!subs) {
+      subs = new Set();
+      nitroSubscribersByEvent.set(targetEventName, subs);
+    }
+    subs.add(callback);
+    ensureSharedNitroListener(nitro);
+
+    if (
+      targetEventName === NotificationEvent ||
+      targetEventName === LocalNotificationEvent
+    ) {
+      nitro.loadJS?.();
+    }
+
+    const pending = pendingNitroEventsByEvent.get(targetEventName);
+    if (pending && pending.length > 0) {
+      const drained = pending.splice(0, pending.length);
+      for (const item of drained) {
+        callback(item as T);
+      }
+    }
+
+    listeners.set(callback, {
+      remove: () => {
+        subs?.delete(callback);
+        cleanupSharedNitroListenerIfIdle(nitro);
+      },
+    });
+    return;
+  }
+  ensureNativeEventBridgeInitialized();
+  listeners.set(
+    callback,
+    DeviceEventEmitter.addListener(targetEventName, (result) => {
+      callback(result);
+    })
+  );
+}
+
 export class JCore {
   static setAuth(auth: boolean): void {
     const nitro = getNitroModule();
@@ -256,7 +365,6 @@ export default class JPush {
   }
 
   static init(params?: JPushInitParams): void {
-    ensureNativeEventBridgeInitialized();
     const appKey = params?.appKey ?? '';
     const channel = params?.channel ?? 'dev';
     const production = Boolean(params?.production ?? false);
@@ -273,6 +381,7 @@ export default class JPush {
       }
       return;
     }
+    ensureNativeEventBridgeInitialized();
     const legacy = getLegacyJPushModule();
     if (!legacy) {
       return;
@@ -673,132 +782,51 @@ export default class JPush {
   }
 
   static addConnectEventListener(callback: Callback<JPushConnectEvent>): void {
-    if (typeof callback !== 'function') {
-      return;
-    }
-    ensureNativeEventBridgeInitialized();
-    listeners.set(
-      callback,
-      DeviceEventEmitter.addListener(ConnectEvent, (result) => {
-        callback(result);
-      })
-    );
+    registerEventListener(ConnectEvent, callback);
   }
 
   static addCommandEventListener(callback: Callback<JPushCommandEvent>): void {
-    if (typeof callback !== 'function') {
-      return;
-    }
-    ensureNativeEventBridgeInitialized();
-    listeners.set(
-      callback,
-      DeviceEventEmitter.addListener(CommandEvent, (result) => {
-        callback(result);
-      })
-    );
+    registerEventListener(CommandEvent, callback);
   }
 
   static addNotificationListener(
     callback: Callback<JPushNotificationEvent>
   ): void {
-    if (typeof callback !== 'function') {
-      return;
-    }
-    ensureNativeEventBridgeInitialized();
-    listeners.set(
-      callback,
-      DeviceEventEmitter.addListener(NotificationEvent, (result) => {
-        callback(result);
-      })
-    );
+    registerEventListener(NotificationEvent, callback);
   }
 
   static addLocalNotificationListener(
     callback: Callback<JPushLocalNotificationEvent>
   ): void {
-    if (typeof callback !== 'function') {
-      return;
-    }
-    ensureNativeEventBridgeInitialized();
-    listeners.set(
-      callback,
-      DeviceEventEmitter.addListener(LocalNotificationEvent, (result) => {
-        callback(result);
-      })
-    );
+    registerEventListener(LocalNotificationEvent, callback);
   }
 
   static addCustomMessageListener(
     callback: Callback<JPushCustomMessageEvent>
   ): void {
-    if (typeof callback !== 'function') {
-      return;
-    }
-    ensureNativeEventBridgeInitialized();
-    listeners.set(
-      callback,
-      DeviceEventEmitter.addListener(CustomMessageEvent, (result) => {
-        callback(result);
-      })
-    );
+    registerEventListener(CustomMessageEvent, callback);
   }
 
   static addNotifyButtonClickListener(
     callback: Callback<JPushNotifyButtonClickEvent>
   ): void {
-    if (typeof callback !== 'function') {
-      return;
-    }
-    ensureNativeEventBridgeInitialized();
-    listeners.set(
-      callback,
-      DeviceEventEmitter.addListener(NotifyButtonClickEvent, (result) => {
-        callback(result);
-      })
-    );
+    registerEventListener(NotifyButtonClickEvent, callback);
   }
 
   static addInappMessageListener(
     callback: Callback<JPushInappMessageEvent>
   ): void {
-    if (typeof callback !== 'function') {
-      return;
-    }
-    ensureNativeEventBridgeInitialized();
-    listeners.set(
-      callback,
-      DeviceEventEmitter.addListener(InappMessageEvent, (result) => {
-        callback(result);
-      })
-    );
+    registerEventListener(InappMessageEvent, callback);
   }
 
   static addTagAliasListener(callback: Callback<JPushTagAliasEvent>): void {
-    if (typeof callback !== 'function') {
-      return;
-    }
-    ensureNativeEventBridgeInitialized();
-    listeners.set(
-      callback,
-      DeviceEventEmitter.addListener(TagAliasEvent, (result) => {
-        callback(result);
-      })
-    );
+    registerEventListener(TagAliasEvent, callback);
   }
 
   static addMobileNumberListener(
     callback: Callback<JPushMobileNumberEvent>
   ): void {
-    if (typeof callback !== 'function') {
-      return;
-    }
-    ensureNativeEventBridgeInitialized();
-    listeners.set(
-      callback,
-      DeviceEventEmitter.addListener(MobileNumberEvent, (message) => {
-        callback(message);
-      })
-    );
+    registerEventListener(MobileNumberEvent, callback);
   }
 
   static removeListener(callback: (...args: any[]) => void): void {

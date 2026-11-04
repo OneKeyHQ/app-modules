@@ -30,8 +30,13 @@ class ReactNativeJpush : HybridReactNativeJpushSpec() {
   }
 
   private fun getReactContext(): ReactApplicationContext? {
-    val ctx = NitroModules.applicationContext ?: JPushModule.reactContext ?: JCoreModule.reactContext
+    val nitroCtx = NitroModules.applicationContext
+    if (nitroCtx != null) {
+      JPushModule.registerReactContext(nitroCtx)
+    }
+    val ctx = JPushModule.reactContext ?: nitroCtx ?: JCoreModule.reactContext
     if (ctx != null) {
+      JPushModule.registerReactContext(ctx)
       if (JPushModule.reactContext == null) {
         JPushModule.reactContext = ctx
       }
@@ -413,5 +418,18 @@ class ReactNativeJpush : HybridReactNativeJpushSpec() {
   override fun readNewLogs(): String {
     val ctx = getReactContext() ?: return ""
     return JCoreInterface.readNewLogs(ctx) ?: ""
+  }
+
+  override fun addEventListener(
+    callback: (eventName: String, payloadJson: String) -> Unit
+  ): Double {
+    val id = JPushHelper.registerNitroListener { eventName, payloadJson ->
+      callback(eventName, payloadJson)
+    }
+    return id.toDouble()
+  }
+
+  override fun removeEventListener(id: Double) {
+    JPushHelper.unregisterNitroListener(id.toInt())
   }
 }

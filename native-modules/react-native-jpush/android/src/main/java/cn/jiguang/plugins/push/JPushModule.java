@@ -22,9 +22,11 @@ import com.facebook.react.bridge.WritableMap;
 
 import org.json.JSONObject;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArraySet;
 import java.lang.*;
 
 import cn.jiguang.plugins.push.common.JConstants;
@@ -39,12 +41,34 @@ import cn.jpush.android.data.JPushLocalNotification;
 public class JPushModule extends ReactContextBaseJavaModule {
 
     public static ReactApplicationContext reactContext;
+    private static final Set<ReactApplicationContext> ACTIVE_CONTEXTS =
+        new CopyOnWriteArraySet<ReactApplicationContext>();
 
     public static boolean isAppForeground = false;
+
+    public static void registerReactContext(ReactApplicationContext ctx) {
+        if (ctx != null) {
+            ACTIVE_CONTEXTS.add(ctx);
+            if (reactContext == null) {
+                reactContext = ctx;
+            }
+            JPushHelper.flushPendingEvents();
+        }
+    }
+
+    public static Set<ReactApplicationContext> getActiveReactContexts() {
+        return Collections.unmodifiableSet(ACTIVE_CONTEXTS);
+    }
+
+    public static void clearActiveReactContexts() {
+        ACTIVE_CONTEXTS.clear();
+        reactContext = null;
+    }
 
     public JPushModule(ReactApplicationContext reactApplicationContext) {
         super(reactApplicationContext);
         reactContext = reactApplicationContext;
+        registerReactContext(reactApplicationContext);
     }
 
     @Override

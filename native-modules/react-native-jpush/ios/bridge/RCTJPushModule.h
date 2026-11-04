@@ -15,11 +15,22 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+typedef void (^RCTJPushNitroEventListener)(NSString *eventName, NSString *payloadJson);
+
 @interface RCTJPushModule : NSObject
 
 + (nullable instancetype)sharedModule;
++ (NSArray<RCTJPushModule *> *)allActiveModules;
++ (void)clearActiveModules;
++ (void)ensureSharedNativeObservers;
++ (void)setupOrRefreshJPushNativeState;
++ (NSInteger)registerNitroEventListener:(RCTJPushNitroEventListener)listener;
++ (void)unregisterNitroEventListener:(NSInteger)listenerId;
 + (void)emitEventWithName:(NSString *)eventName payload:(NSDictionary *)payload;
++ (void)flushPendingBridgeEvents;
 + (void)flushQueuedNotifications;
+- (BOOL)emitToDeviceEventEmitter:(NSString *)eventName payload:(NSDictionary *)payload;
+- (void)setupOrRefreshJPushNativeState;
 
 @end
 

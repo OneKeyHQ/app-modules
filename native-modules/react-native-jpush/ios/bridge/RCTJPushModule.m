@@ -4,6 +4,11 @@
 #else
 #import "../jcore/JCOREConfiguration.h"
 #endif
+#if __has_include("JPUSHNotificationManager.h")
+#import "JPUSHNotificationManager.h"
+#elif __has_include("../jpush/JPUSHNotificationManager.h")
+#import "../jpush/JPUSHNotificationManager.h"
+#endif
 #import <UIKit/UIKit.h>
 
 #if __has_include(<React/RCTBridge.h>)
@@ -53,14 +58,24 @@
 #define MOBILE_NUMBER_EVENT       @"MobileNumberEvent"
 
 static __weak RCTJPushModule *sSharedJPushModule = nil;
+static NSHashTable<RCTJPushModule *> *sActiveModules = nil;
+static NSMutableArray<NSDictionary *> *sPendingEvents = nil;
+static NSMutableArray<NSDictionary *> *sPendingNitroEvents = nil;
+static NSMutableDictionary<NSNumber *, RCTJPushNitroEventListener> *sNitroListeners = nil;
+static NSInteger sNextNitroListenerId = 1;
+static RCTJPushModule *sNotificationObserverHelper = nil;
 
 @interface NSObject (RCTJPushBridgelessCompat)
 - (instancetype)initWithDisabledObservation;
 - (nullable id)callableJSModules;
 - (void)invokeModule:(NSString *)moduleName method:(NSString *)methodName withArgs:(NSArray *)args;
+- (void)sendEventWithName:(NSString *)eventName body:(id)body;
 @end
 
-@interface RCTJPushModule () <RCTBridgeModule>
+@interface RCTJPushModule () <RCTBridgeModule> {
+    BOOL _hasListeners;
+}
+@property (nonatomic, weak, nullable) RCTBridge *bridge;
 @end
 
 @implementation RCTJPushModule
@@ -69,8 +84,141 @@ static __weak RCTJPushModule *sSharedJPushModule = nil;
 
 RCT_EXPORT_MODULE(JPushModule);
 
++ (void)registerActiveModule:(RCTJPushModule *)module {
+    if (module == nil) {
+        return;
+    }
+    @synchronized (RCTJPushModule.class) {
+        if (sActiveModules == nil) {
+            sActiveModules = [NSHashTable weakObjectsHashTable];
+        }
+        [sActiveModules addObject:module];
+        sSharedJPushModule = module;
+    }
+}
+
++ (NSArray<RCTJPushModule *> *)allActiveModules {
+    @synchronized (RCTJPushModule.class) {
+        NSMutableArray<RCTJPushModule *> *list = [NSMutableArray array];
+        if (sActiveModules != nil) {
+            for (RCTJPushModule *mod in sActiveModules) {
+                if (mod != nil && ![list containsObject:mod]) {
+                    [list addObject:mod];
+                }
+            }
+        }
+        RCTJPushModule *shared = sSharedJPushModule;
+        if (shared != nil && ![list containsObject:shared]) {
+            [list addObject:shared];
+        }
+        return [list copy];
+    }
+}
+
++ (void)clearActiveModules {
+    @synchronized (RCTJPushModule.class) {
+        [sActiveModules removeAllObjects];
+        [sNitroListeners removeAllObjects];
+        [sPendingEvents removeAllObjects];
+        [sPendingNitroEvents removeAllObjects];
+        sSharedJPushModule = nil;
+    }
+}
+
++ (void)ensureSharedNativeObservers {
+    @synchronized (RCTJPushModule.class) {
+        if (sNotificationObserverHelper == nil) {
+            sNotificationObserverHelper = [[RCTJPushModule alloc] initAsSharedObserver];
+        }
+    }
+}
+
++ (void)setupOrRefreshJPushNativeState {
+    [self ensureSharedNativeObservers];
+    [sNotificationObserverHelper setupOrRefreshJPushNativeState];
+}
+
++ (NSInteger)registerNitroEventListener:(RCTJPushNitroEventListener)listener {
+    if (listener == nil) {
+        return 0;
+    }
+    [self ensureSharedNativeObservers];
+    NSInteger listenerId = 0;
+    @synchronized (RCTJPushModule.class) {
+        if (sNitroListeners == nil) {
+            sNitroListeners = [NSMutableDictionary dictionary];
+        }
+        listenerId = sNextNitroListenerId++;
+        sNitroListeners[@(listenerId)] = [listener copy];
+    }
+    [self flushPendingBridgeEvents];
+    return listenerId;
+}
+
++ (void)unregisterNitroEventListener:(NSInteger)listenerId {
+    if (listenerId <= 0) {
+        return;
+    }
+    @synchronized (RCTJPushModule.class) {
+        [sNitroListeners removeObjectForKey:@(listenerId)];
+    }
+}
+
++ (NSString *)dictionaryToJsonString:(NSDictionary *)dict {
+    if (![dict isKindOfClass:[NSDictionary class]] || dict.count == 0) {
+        return @"{}";
+    }
+    @try {
+        if ([NSJSONSerialization isValidJSONObject:dict]) {
+            NSData *data = [NSJSONSerialization dataWithJSONObject:dict options:0 error:nil];
+            if (data.length > 0) {
+                NSString *json = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+                if (json.length > 0) {
+                    return json;
+                }
+            }
+        }
+    } @catch (NSException *exception) {
+    }
+    return @"{}";
+}
+
++ (BOOL)hasReadyEventConsumer {
+    @synchronized (RCTJPushModule.class) {
+        if (sNitroListeners.count > 0) {
+            return YES;
+        }
+    }
+    NSArray<RCTJPushModule *> *modules = [self allActiveModules];
+    for (RCTJPushModule *mod in modules) {
+        if ([mod canEmitEventsNow]) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
+- (void)setBridge:(RCTBridge *)bridge {
+    _bridge = bridge;
+    [RCTJPushModule registerActiveModule:self];
+    if (bridge != nil) {
+        [RCTJPushModule flushPendingBridgeEvents];
+    }
+}
+
+- (void)startObserving {
+    _hasListeners = YES;
+    [RCTJPushModule registerActiveModule:self];
+    [RCTJPushModule flushQueuedNotifications];
+}
+
+- (void)stopObserving {
+    _hasListeners = NO;
+}
+
 RCT_EXPORT_METHOD(addListener:(NSString *)eventName) {
     (void)eventName;
+    [self startObserving];
 }
 
 RCT_EXPORT_METHOD(removeListeners:(double)count) {
@@ -85,86 +233,254 @@ RCT_EXPORT_METHOD(removeListeners:(double)count) {
     return sSharedJPushModule;
 }
 
-+ (void)emitEventWithName:(NSString *)eventName payload:(NSDictionary *)payload {
-    RCTJPushModule *module = sSharedJPushModule;
-    if (module == nil || eventName.length == 0 || payload == nil) {
-        return;
+- (BOOL)canEmitEventsNow {
+    if (self.bridge != nil) {
+        return YES;
     }
-    if ([module respondsToSelector:@selector(callableJSModules)]) {
-        id callableModules = [module callableJSModules];
+    if ([self respondsToSelector:@selector(callableJSModules)]) {
+        id callableModules = [self callableJSModules];
+        if (callableModules != nil && [callableModules respondsToSelector:@selector(invokeModule:method:withArgs:)]) {
+            return YES;
+        }
+    }
+    if (_hasListeners && [self respondsToSelector:@selector(sendEventWithName:body:)]) {
+        return YES;
+    }
+    return NO;
+}
+
+- (BOOL)emitToDeviceEventEmitter:(NSString *)eventName payload:(NSDictionary *)payload {
+    if (eventName.length == 0) {
+        return NO;
+    }
+    NSDictionary *safePayload = payload ?: @{};
+    if (self.bridge != nil) {
+        [self.bridge enqueueJSCall:@"RCTDeviceEventEmitter"
+                            method:@"emit"
+                              args:@[eventName, safePayload]
+                        completion:NULL];
+        return YES;
+    }
+    if ([self respondsToSelector:@selector(callableJSModules)]) {
+        id callableModules = [self callableJSModules];
         if (callableModules != nil && [callableModules respondsToSelector:@selector(invokeModule:method:withArgs:)]) {
             [callableModules invokeModule:@"RCTDeviceEventEmitter"
                                    method:@"emit"
-                                 withArgs:@[eventName, payload]];
-            return;
+                                 withArgs:@[eventName, safePayload]];
+            return YES;
         }
     }
-    if (module.bridge != nil) {
-        [module.bridge enqueueJSCall:@"RCTDeviceEventEmitter"
-                              method:@"emit"
-                                args:@[eventName, payload]
-                          completion:NULL];
+    if (_hasListeners && [self respondsToSelector:@selector(sendEventWithName:body:)]) {
+        [self sendEventWithName:eventName body:safePayload];
+        return YES;
+    }
+    return NO;
+}
+
++ (void)emitEventWithName:(NSString *)eventName payload:(NSDictionary *)payload {
+    if (eventName.length == 0) {
+        return;
+    }
+    [self ensureSharedNativeObservers];
+    NSDictionary *safePayload = payload ?: @{};
+    NSArray<RCTJPushModule *> *modules = [self allActiveModules];
+    BOOL emittedToLegacy = NO;
+    for (RCTJPushModule *module in modules) {
+        if ([module emitToDeviceEventEmitter:eventName payload:safePayload]) {
+            emittedToLegacy = YES;
+        }
+    }
+    if (!emittedToLegacy) {
+        @synchronized (RCTJPushModule.class) {
+            if (sPendingEvents == nil) {
+                sPendingEvents = [NSMutableArray array];
+            }
+            if (sPendingEvents.count >= 64) {
+                [sPendingEvents removeObjectAtIndex:0];
+            }
+            [sPendingEvents addObject:@{
+                @"name": eventName,
+                @"payload": safePayload,
+            }];
+        }
+    }
+
+    NSString *payloadJson = [self dictionaryToJsonString:safePayload];
+    NSArray<RCTJPushNitroEventListener> *nitroListeners = nil;
+    @synchronized (RCTJPushModule.class) {
+        if (sNitroListeners.count > 0) {
+            nitroListeners = [sNitroListeners.allValues copy];
+        } else {
+            if (sPendingNitroEvents == nil) {
+                sPendingNitroEvents = [NSMutableArray array];
+            }
+            if (sPendingNitroEvents.count >= 64) {
+                [sPendingNitroEvents removeObjectAtIndex:0];
+            }
+            [sPendingNitroEvents addObject:@{
+                @"name": eventName,
+                @"json": payloadJson,
+            }];
+        }
+    }
+    for (RCTJPushNitroEventListener listener in nitroListeners) {
+        listener(eventName, payloadJson);
+    }
+}
+
++ (void)flushPendingNitroEvents {
+    NSArray<RCTJPushNitroEventListener> *nitroListeners = nil;
+    NSArray<NSDictionary *> *pendingNitroSnapshot = nil;
+    @synchronized (RCTJPushModule.class) {
+        if (sNitroListeners.count > 0 && sPendingNitroEvents.count > 0) {
+            nitroListeners = [sNitroListeners.allValues copy];
+            pendingNitroSnapshot = [sPendingNitroEvents copy];
+            [sPendingNitroEvents removeAllObjects];
+        }
+    }
+    for (NSDictionary *item in pendingNitroSnapshot) {
+        NSString *name = item[@"name"];
+        NSString *json = item[@"json"] ?: @"{}";
+        if (name.length > 0) {
+            for (RCTJPushNitroEventListener listener in nitroListeners) {
+                listener(name, json);
+            }
+        }
+    }
+}
+
++ (void)flushPendingBridgeEvents {
+    [self ensureSharedNativeObservers];
+    [self flushPendingNitroEvents];
+
+    NSArray<RCTJPushModule *> *modules = [self allActiveModules];
+    BOOL hasReadyLegacy = NO;
+    for (RCTJPushModule *mod in modules) {
+        if ([mod canEmitEventsNow]) {
+            hasReadyLegacy = YES;
+            break;
+        }
+    }
+    if (!hasReadyLegacy) {
+        return;
+    }
+
+    NSArray<NSDictionary *> *pendingSnapshot = nil;
+    @synchronized (RCTJPushModule.class) {
+        if (sPendingEvents.count > 0) {
+            pendingSnapshot = [sPendingEvents copy];
+            [sPendingEvents removeAllObjects];
+        }
+    }
+    for (NSDictionary *item in pendingSnapshot) {
+        NSString *name = item[@"name"];
+        NSDictionary *payload = item[@"payload"] ?: @{};
+        if (name.length > 0) {
+            for (RCTJPushModule *module in modules) {
+                [module emitToDeviceEventEmitter:name payload:payload];
+            }
+        }
     }
 }
 
 + (void)flushQueuedNotifications {
-    RCTJPushModule *module = sSharedJPushModule;
-    if (module == nil) {
-        return;
-    }
+    [self ensureSharedNativeObservers];
+    [self flushPendingBridgeEvents];
+
+    RCTJPushModule *converter = sNotificationObserverHelper ?: [self allActiveModules].firstObject;
     NSMutableArray *notificationList = [RCTJPushEventQueue sharedInstance]._notificationQueue;
     if (notificationList.count > 0) {
-        [module sendApnsNotificationEventByDictionary:notificationList[0]];
+        NSArray *queuedApns = [notificationList copy];
+        [notificationList removeAllObjects];
+        for (id obj in queuedApns) {
+            if ([obj isKindOfClass:[NSDictionary class]]) {
+                [converter sendApnsNotificationEventByDictionary:(NSDictionary *)obj];
+            }
+        }
     }
     NSMutableArray *localNotificationList = [RCTJPushEventQueue sharedInstance]._localNotificationQueue;
     if (localNotificationList.count > 0) {
-        [module sendLocalNotificationEventByDictionary:localNotificationList[0]];
+        NSArray *queuedLocal = [localNotificationList copy];
+        [localNotificationList removeAllObjects];
+        for (id obj in queuedLocal) {
+            if ([obj isKindOfClass:[NSDictionary class]]) {
+                [converter sendLocalNotificationEventByDictionary:(NSDictionary *)obj];
+            }
+        }
     }
 }
 
-- (instancetype)init {
+- (void)registerNotificationCenterObservers {
+    NSNotificationCenter *defaultCenter = [NSNotificationCenter defaultCenter];
+    [defaultCenter removeObserver:self];
+
+    [defaultCenter addObserver:self
+                      selector:@selector(sendApnsNotificationEvent:)
+                          name:J_APNS_NOTIFICATION_ARRIVED_EVENT
+                        object:nil];
+    [defaultCenter addObserver:self
+                      selector:@selector(sendApnsNotificationEvent:)
+                          name:J_APNS_NOTIFICATION_OPENED_EVENT
+                        object:nil];
+    [defaultCenter addObserver:self
+                      selector:@selector(sendLocalNotificationEvent:)
+                          name:J_LOCAL_NOTIFICATION_ARRIVED_EVENT
+                        object:nil];
+    [defaultCenter addObserver:self
+                      selector:@selector(sendLocalNotificationEvent:)
+                          name:J_LOCAL_NOTIFICATION_OPENED_EVENT
+                        object:nil];
+    [defaultCenter addObserver:self
+                      selector:@selector(sendCustomNotificationEvent:)
+                          name:J_CUSTOM_NOTIFICATION_EVENT
+                        object:nil];
+    [defaultCenter addObserver:self
+                      selector:@selector(sendConnectEvent:)
+                          name:kJPFNetworkDidCloseNotification
+                        object:nil];
+    [defaultCenter addObserver:self
+                      selector:@selector(sendConnectEvent:)
+                          name:kJPFNetworkFailedRegisterNotification
+                        object:nil];
+    [defaultCenter addObserver:self
+                      selector:@selector(sendConnectEvent:)
+                          name:kJPFNetworkDidLoginNotification
+                        object:nil];
+}
+
+- (instancetype)initAsSharedObserver {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wobjc-designated-initializers"
     if ([self respondsToSelector:@selector(initWithDisabledObservation)]) {
         self = [super initWithDisabledObservation];
     } else {
         self = [super init];
     }
+#pragma clang diagnostic pop
     if (self) {
-        sSharedJPushModule = self;
-        NSNotificationCenter *defaultCenter = [NSNotificationCenter defaultCenter];
-        [defaultCenter removeObserver:self];
+        _hasListeners = NO;
+        [self registerNotificationCenterObservers];
+    }
+    return self;
+}
 
-        [defaultCenter addObserver:self
-                          selector:@selector(sendApnsNotificationEvent:)
-                              name:J_APNS_NOTIFICATION_ARRIVED_EVENT
-                            object:nil];
-        [defaultCenter addObserver:self
-                          selector:@selector(sendApnsNotificationEvent:)
-                              name:J_APNS_NOTIFICATION_OPENED_EVENT
-                            object:nil];
-        [defaultCenter addObserver:self
-                          selector:@selector(sendLocalNotificationEvent:)
-                              name:J_LOCAL_NOTIFICATION_ARRIVED_EVENT
-                            object:nil];
-        [defaultCenter addObserver:self
-                          selector:@selector(sendLocalNotificationEvent:)
-                              name:J_LOCAL_NOTIFICATION_OPENED_EVENT
-                            object:nil];
-        [defaultCenter addObserver:self
-                          selector:@selector(sendCustomNotificationEvent:)
-                              name:J_CUSTOM_NOTIFICATION_EVENT
-                            object:nil];
-        [defaultCenter addObserver:self
-                          selector:@selector(sendConnectEvent:)
-                              name:kJPFNetworkDidCloseNotification
-                            object:nil];
-        [defaultCenter addObserver:self
-                          selector:@selector(sendConnectEvent:)
-                              name:kJPFNetworkFailedRegisterNotification
-                            object:nil];
-        [defaultCenter addObserver:self
-                          selector:@selector(sendConnectEvent:)
-                              name:kJPFNetworkDidLoginNotification
-                            object:nil];
+- (instancetype)init {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wobjc-designated-initializers"
+    if ([self respondsToSelector:@selector(initWithDisabledObservation)]) {
+        self = [super initWithDisabledObservation];
+    } else {
+        self = [super init];
+    }
+#pragma clang diagnostic pop
+    if (self) {
+        _hasListeners = NO;
+        [RCTJPushModule registerActiveModule:self];
+        [RCTJPushModule ensureSharedNativeObservers];
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [RCTJPushModule flushPendingBridgeEvents];
+        });
     }
     return self;
 }
@@ -181,7 +497,21 @@ RCT_EXPORT_METHOD(setDebugMode:(BOOL)enable) {
     }
 }
 
+- (void)setupOrRefreshJPushNativeState {
+    if ([JPUSHNotificationManager shared].registerDelegate == nil) {
+        JPUSHRegisterEntity *entity = [[JPUSHRegisterEntity alloc] init];
+        entity.types = 0;
+        [JPUSHService registerForRemoteNotificationConfig:entity delegate:(id<JPUSHRegisterDelegate>)self];
+    }
+}
+
+RCT_EXPORT_METHOD(initPush) {
+    [self setupOrRefreshJPushNativeState];
+    [RCTJPushModule flushQueuedNotifications];
+}
+
 RCT_EXPORT_METHOD(setupWithConfig:(NSDictionary *)params) {
+    [self setupOrRefreshJPushNativeState];
     if (params[@"appKey"] && params[@"channel"] && params[@"production"] != nil) {
         NSMutableDictionary *launchOptions = self.bridge.launchOptions
             ? [NSMutableDictionary dictionaryWithDictionary:self.bridge.launchOptions]
@@ -467,15 +797,14 @@ RCT_EXPORT_METHOD(addNotification:(NSDictionary *)params) {
     }
     NSString *broadcastTime = params[BROADCASTTIME];
     JPushNotificationTrigger *trigger = [[JPushNotificationTrigger alloc] init];
-    NSDate *now = [NSDate date];
-    if ([broadcastTime isKindOfClass:[NSString class]] && broadcastTime.length > 0) {
-        now = [NSDate dateWithTimeIntervalSince1970:[broadcastTime doubleValue] / 1000.0];
+    NSDate *fireDate = [NSDate dateWithTimeIntervalSinceNow:1.0];
+    if ([broadcastTime isKindOfClass:[NSString class]] && broadcastTime.length > 0 && [broadcastTime doubleValue] > 0) {
+        fireDate = [NSDate dateWithTimeIntervalSince1970:[broadcastTime doubleValue] / 1000.0];
     }
     NSCalendar *calendar = [NSCalendar currentCalendar];
     NSCalendarUnit unitFlags = NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay |
                                NSCalendarUnitHour | NSCalendarUnitMinute | NSCalendarUnitSecond;
-    NSDateComponents *components = [calendar components:unitFlags fromDate:now];
-    components.second = components.second + 1;
+    NSDateComponents *components = [calendar components:unitFlags fromDate:fireDate];
     if (@available(iOS 10.0, *)) {
         trigger.dateComponents = components;
     } else {

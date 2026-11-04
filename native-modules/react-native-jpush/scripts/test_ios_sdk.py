@@ -82,6 +82,11 @@ typedef void (^RCTResponseSenderBlock)(NSArray *response);
 @interface RCTEventEmitter : NSObject <RCTBridgeModule>
 @property (nonatomic, weak, nullable) RCTBridge *bridge;
 - (NSArray<NSString *> *_Nullable)supportedEvents;
+- (void)sendEventWithName:(NSString *_Nullable)name body:(id _Nullable)body;
+- (void)startObserving;
+- (void)stopObserving;
+- (void)addListener:(NSString *_Nullable)eventName;
+- (void)removeListeners:(double)count;
 @end
 """,
     "React/RCTRootView.h": """
@@ -111,6 +116,10 @@ E2E_RUNNER_OBJC = r"""
 #import "JCORESisResolver.h"
 #import "JCOREWireProtocol.h"
 #import "JCORETcpSession.h"
+#import "JPUSHNotificationManager.h"
+#import "RCTJPushEventQueue.h"
+#import "RCTJPushModule.h"
+#import <React/RCTBridge.h>
 
 #define ASSERT_TRUE(cond, msg, ...) do { \
     if (!(cond)) { \
@@ -642,6 +651,10 @@ static void testEndToEndMockServerHandshake(void) {
 
     // Reset client state & point SIS override to our loopback mock server
     [[JCOREConfiguration shared] resetRegistration];
+    ASSERT_TRUE([[JPUSHService registrationID] isEqualToString:@""],
+                "Expected empty registrationID before TCP Register (cmd=0), got %@", [JPUSHService registrationID]);
+    ASSERT_TRUE([JCOREConfiguration shared].uid == 0,
+                "Expected uid == 0 before TCP Register (cmd=0), got %llu", [JCOREConfiguration shared].uid);
     [[JCORESisResolver shared] setCustomConnectHost:@"127.0.0.1" port:serverPort useSSL:NO];
 
     __block BOOL sawConnecting = NO;
@@ -1042,6 +1055,217 @@ static void testFailoverFastLoginReRegisterAndHttpReport(void) {
     printf("[PASS] Suite 5: Multi-IP failover (fail_ips), Fast-Login, statusCode=108 re-register, auto-reconnect, & HTTP reports (/v3/report + setBadge:) verified\n");
 }
 
+@implementation RCTBridge
+- (NSDictionary *)launchOptions {
+    return nil;
+}
+- (void)enqueueJSCall:(NSString *)module method:(NSString *)method args:(NSArray *)args completion:(dispatch_block_t)completion {
+    if (completion) {
+        completion();
+    }
+}
+@end
+
+@interface MockRCTBridge : RCTBridge
+@property (nonatomic, strong) NSMutableArray<NSDictionary *> *emittedEvents;
+@end
+
+@implementation MockRCTBridge
+- (instancetype)init {
+    self = [super init];
+    if (self) {
+        _emittedEvents = [NSMutableArray array];
+    }
+    return self;
+}
+- (NSDictionary *)launchOptions {
+    return @{};
+}
+- (void)enqueueJSCall:(NSString *)module method:(NSString *)method args:(NSArray *)args completion:(dispatch_block_t)completion {
+    if ([module isEqualToString:@"RCTDeviceEventEmitter"] && [method isEqualToString:@"emit"] && args.count >= 2) {
+        [_emittedEvents addObject:@{
+            @"name": args[0] ?: @"",
+            @"payload": args[1] ?: @{},
+        }];
+    }
+    if (completion) {
+        completion();
+    }
+}
+@end
+
+@interface MockCallableJSModules : NSObject
+@property (nonatomic, strong) NSMutableArray<NSDictionary *> *emittedEvents;
+- (void)invokeModule:(NSString *)moduleName method:(NSString *)methodName withArgs:(NSArray *)args;
+@end
+
+@implementation MockCallableJSModules
+- (instancetype)init {
+    self = [super init];
+    if (self) {
+        _emittedEvents = [NSMutableArray array];
+    }
+    return self;
+}
+- (void)invokeModule:(NSString *)moduleName method:(NSString *)methodName withArgs:(NSArray *)args {
+    if ([moduleName isEqualToString:@"RCTDeviceEventEmitter"] && [methodName isEqualToString:@"emit"] && args.count >= 2) {
+        [_emittedEvents addObject:@{
+            @"name": args[0] ?: @"",
+            @"payload": args[1] ?: @{},
+        }];
+    }
+}
+@end
+
+@interface BridgelessRCTJPushModule : RCTJPushModule
+@property (nonatomic, strong) MockCallableJSModules *mockCallableModules;
+@end
+
+@implementation BridgelessRCTJPushModule
+- (id)callableJSModules {
+    return _mockCallableModules;
+}
+@end
+
+@interface DummyRegisterDelegate : NSObject <JPUSHRegisterDelegate>
+@end
+@implementation DummyRegisterDelegate
+- (void)jpushNotificationCenter:(UNUserNotificationCenter *)center willPresentNotification:(UNNotification *)notification withCompletionHandler:(void (^)(NSInteger))completionHandler {}
+- (void)jpushNotificationCenter:(UNUserNotificationCenter *)center didReceiveNotificationResponse:(UNNotificationResponse *)response withCompletionHandler:(void (^)(void))completionHandler {}
+- (void)jpushNotificationCenter:(UNUserNotificationCenter *)center openSettingsForNotification:(UNNotification *)notification {}
+- (void)jpushNotificationAuthorization:(JPAuthorizationStatus)status withInfo:(NSDictionary *)info {}
+@end
+
+static void testRctJPushModuleMultiRuntimeAndBridgelessEvents(void) {
+    [[JCORETcpSession shared] disconnect];
+    [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
+    [RCTJPushModule clearActiveModules];
+    [[RCTJPushEventQueue sharedInstance]._notificationQueue removeAllObjects];
+    [[RCTJPushEventQueue sharedInstance]._localNotificationQueue removeAllObjects];
+
+    // 1. Emit before any module has a bridge/callableJSModules attached -> must buffer into sPendingEvents
+    [RCTJPushModule emitEventWithName:@"TagAliasEvent" payload:@{@"code": @0, @"sequence": @77, @"alias": @"cold_start_alias"}];
+
+    // Queue a cold-start APNs notification in RCTJPushEventQueue
+    [[RCTJPushEventQueue sharedInstance]._notificationQueue addObject:@{
+        @"_j_msgid": @"apns_cold_01",
+        @"aps": @{@"alert": @{@"title": @"ColdTitle", @"body": @"ColdBody"}},
+    }];
+
+    // 2. Instantiate main runtime module (with RCTBridge) and bg runtime module (Bridgeless with callableJSModules, bridge == nil)
+    //    WITHOUT calling startObserving (_hasListeners == NO on both!).
+    RCTJPushModule *mainModule = [[RCTJPushModule alloc] init];
+    BridgelessRCTJPushModule *bgModule = [[BridgelessRCTJPushModule alloc] init];
+    MockCallableJSModules *bgCallable = [[MockCallableJSModules alloc] init];
+    bgModule.mockCallableModules = bgCallable;
+
+    MockRCTBridge *mainBridge = [[MockRCTBridge alloc] init];
+    [mainModule setValue:mainBridge forKey:@"bridge"];
+
+    // Verify init and setBridge: ONLY flush sPendingEvents (flushPendingBridgeEvents) and do NOT prematurely drain _notificationQueue!
+    [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.02]];
+    ASSERT_TRUE([RCTJPushEventQueue sharedInstance]._notificationQueue.count == 1,
+                "init / setBridge: must NOT prematurely drain _notificationQueue before flushQueuedNotifications / initPush / setupWithConfig:");
+    ASSERT_TRUE(mainBridge.emittedEvents.count == 1 && [mainBridge.emittedEvents.firstObject[@"name"] isEqualToString:@"TagAliasEvent"],
+                "Expected only sPendingEvents (TagAliasEvent) to be flushed on setBridge:, got %lu",
+                (unsigned long)mainBridge.emittedEvents.count);
+    ASSERT_TRUE(bgCallable.emittedEvents.count == 1 && [bgCallable.emittedEvents.firstObject[@"name"] isEqualToString:@"TagAliasEvent"],
+                "Expected only sPendingEvents (TagAliasEvent) to be flushed on bgCallable during setBridge:, got %lu",
+                (unsigned long)bgCallable.emittedEvents.count);
+
+    // Now explicitly flushQueuedNotifications (as called by setupWithConfig: / initPush / loadJS / startObserving)
+    [RCTJPushModule flushQueuedNotifications];
+    ASSERT_TRUE([RCTJPushEventQueue sharedInstance]._notificationQueue.count == 0,
+                "_notificationQueue must be drained after flushQueuedNotifications");
+
+    // Both mainModule and bgModule must have received the buffered TagAliasEvent AND the flushed APNs NotificationEvent!
+    ASSERT_TRUE(mainBridge.emittedEvents.count == 2,
+                "Expected 2 flushed events on mainBridge when _hasListeners==NO, got %lu",
+                (unsigned long)mainBridge.emittedEvents.count);
+    ASSERT_TRUE(bgCallable.emittedEvents.count == 2,
+                "Expected 2 flushed events on bgCallable (bridgeless) when _hasListeners==NO, got %lu",
+                (unsigned long)bgCallable.emittedEvents.count);
+
+    // 3. Emit a live event via +emitEventWithName:payload: -> both main and bg must receive it
+    [RCTJPushModule emitEventWithName:@"CustomMessageEvent" payload:@{@"messageID": @"live_msg_02", @"content": @"hello_dual_runtime"}];
+    ASSERT_TRUE(mainBridge.emittedEvents.count == 3 && [mainBridge.emittedEvents.lastObject[@"name"] isEqualToString:@"CustomMessageEvent"],
+                "mainBridge did not receive live CustomMessageEvent");
+    ASSERT_TRUE(bgCallable.emittedEvents.count == 3 && [bgCallable.emittedEvents.lastObject[@"name"] isEqualToString:@"CustomMessageEvent"],
+                "bgCallable did not receive live CustomMessageEvent");
+
+    // 4. Verify setupOrRefreshJPushNativeState does NOT overwrite an existing AppDelegate registerDelegate
+    DummyRegisterDelegate *appDelegateStub = [[DummyRegisterDelegate alloc] init];
+    [JPUSHNotificationManager shared].registerDelegate = appDelegateStub;
+    [mainModule setupOrRefreshJPushNativeState];
+    ASSERT_TRUE([JPUSHNotificationManager shared].registerDelegate == appDelegateStub,
+                "setupOrRefreshJPushNativeState must preserve existing registerDelegate");
+    [JPUSHNotificationManager shared].registerDelegate = nil;
+
+    // 5. Verify JCORESisResolver.defaultFallbackEndpoints uses plain TCP (useSSL == NO) on ports 7000-7003
+    NSArray<JCORESisEndpoint *> *fallbackEps = [[JCORESisResolver shared] defaultFallbackEndpoints];
+    NSUInteger expectedPortCount = [JCOREConfiguration shared].defaultConnectPorts.count;
+    ASSERT_TRUE(fallbackEps.count >= expectedPortCount && expectedPortCount > 0, "Expected default fallback endpoints");
+    NSUInteger verifiedPlainPorts = 0;
+    for (JCORESisEndpoint *ep in fallbackEps) {
+        if ([ep.host isEqualToString:[JCOREConfiguration shared].defaultConnectHost] && ep.port >= 7000 && ep.port <= 7009) {
+            ASSERT_TRUE(ep.useSSL == NO, "Expected useSSL == NO on Jiguang TCP port %u", ep.port);
+            verifiedPlainPorts++;
+        }
+    }
+    ASSERT_TRUE(verifiedPlainPorts == expectedPortCount, "Expected %lu plain TCP fallback ports, got %lu",
+                (unsigned long)expectedPortCount, (unsigned long)verifiedPlainPorts);
+
+    // 6. Verify Nitro event hub (including when an eager RCTJPushModule with bridge already exists at cold start!):
+    //    - Cold-start sPendingNitroEvents flush on registerNitroEventListener even when mainModule already emitted to RCTDeviceEventEmitter
+    //    - Cold-start _notificationQueue flush on flushQueuedNotifications
+    //    - NSNotificationCenter observer delivery via ensureSharedNativeObservers
+    [RCTJPushModule clearActiveModules];
+    [[RCTJPushEventQueue sharedInstance]._notificationQueue removeAllObjects];
+    [[RCTJPushEventQueue sharedInstance]._localNotificationQueue removeAllObjects];
+
+    RCTJPushModule *eagerModule = [[RCTJPushModule alloc] init];
+    MockRCTBridge *eagerBridge = [[MockRCTBridge alloc] init];
+    [eagerModule setValue:eagerBridge forKey:@"bridge"];
+
+    // Emit while eagerModule is active (requiresMainQueueSetup=YES), BEFORE any Nitro listener registers!
+    [RCTJPushModule emitEventWithName:@"TagAliasEvent" payload:@{@"code": @0, @"sequence": @88, @"alias": @"pure_nitro_alias"}];
+    [[RCTJPushEventQueue sharedInstance]._notificationQueue addObject:@{
+        @"_j_msgid": @"nitro_apns_cold_02",
+        @"aps": @{@"alert": @{@"title": @"NitroTitle", @"body": @"NitroBody"}},
+    }];
+
+    NSMutableArray<NSDictionary *> *nitroEvents = [NSMutableArray array];
+    NSInteger nitroListenerId = [RCTJPushModule registerNitroEventListener:^(NSString *eventName, NSString *payloadJson) {
+        [nitroEvents addObject:@{
+            @"name": eventName ?: @"",
+            @"json": payloadJson ?: @"",
+        }];
+    }];
+    ASSERT_TRUE(nitroListenerId > 0, "Expected positive nitroListenerId");
+    ASSERT_TRUE([RCTJPushEventQueue sharedInstance]._notificationQueue.count == 1,
+                "registerNitroEventListener must NOT prematurely drain _notificationQueue before flushQueuedNotifications");
+    ASSERT_TRUE(nitroEvents.count == 1 && [nitroEvents.firstObject[@"name"] isEqualToString:@"TagAliasEvent"] &&
+                [nitroEvents.firstObject[@"json"] containsString:@"pure_nitro_alias"],
+                "Expected cold-start TagAliasEvent flushed from sPendingNitroEvents even when eagerModule was active, got %@", nitroEvents);
+
+    [RCTJPushModule flushQueuedNotifications];
+    ASSERT_TRUE([RCTJPushEventQueue sharedInstance]._notificationQueue.count == 0,
+                "_notificationQueue must be drained after flushQueuedNotifications in pure Nitro mode");
+    ASSERT_TRUE(nitroEvents.count == 2 && [nitroEvents[1][@"name"] isEqualToString:@"NotificationEvent"] &&
+                [nitroEvents[1][@"json"] containsString:@"nitro_apns_cold_02"],
+                "Expected queued APNs NotificationEvent delivered to Nitro listener, got %@", nitroEvents);
+
+    [[NSNotificationCenter defaultCenter] postNotificationName:J_CUSTOM_NOTIFICATION_EVENT
+                                                        object:@{@"_j_msgid": @"nitro_custom_03", @"title": @"T", @"content": @"C"}];
+    ASSERT_TRUE(nitroEvents.count == 3 && [nitroEvents[2][@"name"] isEqualToString:@"CustomMessageEvent"] &&
+                [nitroEvents[2][@"json"] containsString:@"nitro_custom_03"],
+                "Expected NSNotificationCenter J_CUSTOM_NOTIFICATION_EVENT delivered in pure Nitro mode without RCTBridge");
+
+    [RCTJPushModule unregisterNitroEventListener:nitroListenerId];
+    [RCTJPushModule clearActiveModules];
+    printf("[PASS] Suite 6: Pure Nitro Event Hub, RCTJPushModule DeviceEventEmitter (_hasListeners==NO), RN 0.88 Bridgeless (callableJSModules), Dual-Runtime (main + bg), & Delegate preservation verified\n");
+}
+
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
         testCryptoPrimitives();
@@ -1049,6 +1273,7 @@ int main(int argc, const char * argv[]) {
         testWireProtocolFraming();
         testEndToEndMockServerHandshake();
         testFailoverFastLoginReRegisterAndHttpReport();
+        testRctJPushModuleMultiRuntimeAndBridgelessEvents();
     }
     return 0;
 }
@@ -1158,6 +1383,12 @@ def verify_macabi_e2e_runtime(macabi_dir: Path, temp_root: Path) -> None:
     runner_bin = temp_root / "ios_e2e_test_runner"
     runner_src.write_text(E2E_RUNNER_OBJC, encoding="utf-8")
 
+    rn_stubs_dir = temp_root / "rn_ios_stubs"
+    for rel_path, content in REACT_IOS_STUBS.items():
+        header_path = rn_stubs_dir / rel_path
+        header_path.parent.mkdir(parents=True, exist_ok=True)
+        header_path.write_text(content.strip() + "\n", encoding="utf-8")
+
     mac_sdk = sdk_path("macosx")
     compile_cmd = [
         "xcrun",
@@ -1182,7 +1413,13 @@ def verify_macabi_e2e_runtime(macabi_dir: Path, temp_root: Path) -> None:
         str(JCORE_DIR),
         "-I",
         str(JPUSH_DIR),
+        "-I",
+        str(BRIDGE_DIR),
+        "-I",
+        str(rn_stubs_dir),
         str(runner_src),
+        str(BRIDGE_DIR / "RCTJPushEventQueue.m"),
+        str(BRIDGE_DIR / "RCTJPushModule.m"),
         str(jpush_a),
         str(jcore_a),
         "-framework",

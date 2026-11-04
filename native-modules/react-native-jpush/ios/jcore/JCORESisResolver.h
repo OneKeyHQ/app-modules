@@ -42,6 +42,7 @@ NS_ASSUME_NONNULL_BEGIN
                                            aesKey:(NSString *)aesKey;
 
 - (NSArray<JCORESisEndpoint *> *)parseSisResponseDictionary:(NSDictionary *)dict;
+- (NSArray<JCORESisEndpoint *> *)defaultFallbackEndpoints;
 
 - (void)resolveUdpSisWithHost:(NSString *)host
                          port:(uint16_t)port

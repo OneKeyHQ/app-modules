@@ -330,11 +330,8 @@ public final class JCoreStorage {
     }
 
     public static synchronized void ensureRegistration(Context context) {
-        long uid = getLongPref(context, KEY_UID, 0L);
-        String regId = getStringPref(context, KEY_REG_ID, "");
-        String password = getStringPref(context, KEY_PASSWORD, "");
         String deviceId = getStringPref(context, KEY_DEVICE_ID, "");
-        if (uid > 0L && !isEmpty(regId) && !isEmpty(deviceId)) {
+        if (!isEmpty(deviceId)) {
             return;
         }
 
@@ -350,26 +347,7 @@ public final class JCoreStorage {
             seed = UUID.randomUUID().toString();
         }
         String hash = JCoreCrypto.md5Hex(getAppKey(context) + ":" + seed);
-        if (isEmpty(deviceId)) {
-            deviceId = hash.substring(0, Math.min(24, hash.length()));
-        }
-        if (uid <= 0L) {
-            long parsed = 0L;
-            for (int i = 0; i < Math.min(12, hash.length()); i++) {
-                int digit = Character.digit(hash.charAt(i), 16);
-                parsed = (parsed << 4) | (digit & 0x0F);
-            }
-            uid = Math.max(10000001L, parsed & 0x7FFFFFFFFFFFFFFFL);
-        }
-        if (isEmpty(password)) {
-            password = hash.substring(0, Math.min(16, hash.length()));
-        }
-        if (isEmpty(regId)) {
-            regId = "1a0018970a" + hash.substring(0, Math.min(10, hash.length()));
-        }
-        putLongPref(context, KEY_UID, uid);
-        putStringPref(context, KEY_PASSWORD, password);
-        putStringPref(context, KEY_REG_ID, regId);
+        deviceId = hash.substring(0, Math.min(24, hash.length()));
         putStringPref(context, KEY_DEVICE_ID, deviceId);
     }
 
@@ -400,6 +378,9 @@ public final class JCoreStorage {
 
     public static synchronized void clearRegistration(Context context) {
         putBooleanPref(context, KEY_SERVER_REGISTERED, false);
+        putLongPref(context, KEY_UID, 0L);
+        putStringPref(context, KEY_PASSWORD, "");
+        putStringPref(context, KEY_REG_ID, "");
     }
 
     public static boolean isServerRegistered(Context context) {
@@ -411,17 +392,14 @@ public final class JCoreStorage {
     }
 
     public static long getUid(Context context) {
-        ensureRegistration(context);
         return getLongPref(context, KEY_UID, 0L);
     }
 
     public static String getPassword(Context context) {
-        ensureRegistration(context);
         return getStringPref(context, KEY_PASSWORD, "");
     }
 
     public static String getRegistrationId(Context context) {
-        ensureRegistration(context);
         return getStringPref(context, KEY_REG_ID, "");
     }
 
@@ -439,7 +417,7 @@ public final class JCoreStorage {
     }
 
     public static boolean isConnected(Context context) {
-        return getBooleanPref(context, KEY_CONNECTED, true);
+        return getBooleanPref(context, KEY_CONNECTED, false);
     }
 
     public static void setConnected(Context context, boolean connected) {

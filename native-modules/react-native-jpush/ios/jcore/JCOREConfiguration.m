@@ -537,44 +537,13 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
 - (NSString *)fallbackRegistrationID {
     __block NSString *result = nil;
     dispatch_sync(_stateQueue, ^{
-        if (self->_registrationID.length > 0) {
-            result = self->_registrationID;
-            return;
-        }
-        NSString *seed = [self deviceSeedLocked];
-        NSString *hash = [JCORECrypto md5Hex:[NSString stringWithFormat:@"%@:%@", self->_appKey ?: @"jpush", seed]];
-        result = [@"1a0018970a" stringByAppendingString:[hash substringToIndex:MIN((NSUInteger)10, hash.length)]];
+        result = self->_registrationID;
     });
-    return result ?: @"";
+    return result.length > 0 ? result : @"";
 }
 
 - (void)ensureLocalRegistrationFallbackIfNeeded {
-    dispatch_sync(_stateQueue, ^{
-        if (self->_registrationID.length > 0 && self->_uid > 0) {
-            return;
-        }
-        NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-        NSString *seed = [self deviceSeedLocked];
-        NSString *hash = [JCORECrypto md5Hex:[NSString stringWithFormat:@"%@:%@", self->_appKey ?: @"jpush", seed]];
-        if (self->_uid == 0) {
-            uint64_t derivedUid = 0;
-            for (NSUInteger i = 0; i < MIN((NSUInteger)12, hash.length); i++) {
-                unichar c = [hash characterAtIndex:i];
-                uint8_t nibble = (c >= '0' && c <= '9') ? (c - '0') : (10 + (tolower(c) - 'a'));
-                derivedUid = (derivedUid << 4) | (nibble & 0x0F);
-            }
-            self->_uid = (derivedUid & 0x7FFFFFFFFFFFFFFFULL) ?: 10000001ULL;
-            [defaults setInteger:(NSInteger)self->_uid forKey:kJCoreKeyUid];
-        }
-        if (self->_password.length == 0) {
-            self->_password = [hash substringToIndex:MIN((NSUInteger)16, hash.length)];
-            [defaults setObject:self->_password forKey:kJCoreKeyPassword];
-        }
-        if (self->_registrationID.length == 0) {
-            self->_registrationID = [@"1a0018970a" stringByAppendingString:[hash substringToIndex:MIN((NSUInteger)10, hash.length)]];
-            [defaults setObject:self->_registrationID forKey:kJCoreKeyRegistrationId];
-        }
-    });
+    // Registration ID, UID, and password must only be populated by server Register (cmd=0) or explicit persistence.
 }
 
 - (NSSet<NSString *> *)storedTags {

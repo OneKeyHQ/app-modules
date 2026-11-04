@@ -5,6 +5,8 @@
 #import "../jcore/JCORECrypto.h"
 #import "../jcore/JCORESisResolver.h"
 #import "../jcore/JCOREWireProtocol.h"
+#import "../jpush/JPUSHNotificationManager.h"
+#import "../bridge/RCTJPushModule.h"
 
 /**
  * Non-production demo test AppKey and sandbox bundle/package identifier used solely for automated native tests.
@@ -72,6 +74,13 @@ static NSString *const kDemoTestPackageName = @"com.devstudio.msgbench";
     XCTAssertEqual(decoded.firstObject.command, JCOREWireCommandRegister);
     XCTAssertEqual(decoded.firstObject.version, 30);
     XCTAssertEqualObjects(decoded.firstObject.bodyData, regBody);
+}
+
+- (void)testEmptyRegistrationIDBeforeServerRegistration {
+    [[JCOREConfiguration shared] resetRegistration];
+    XCTAssertEqualObjects([JPUSHService registrationID], @"");
+    XCTAssertEqual([JCOREConfiguration shared].uid, 0ULL);
+    XCTAssertEqualObjects([JCOREConfiguration shared].password ?: @"", @"");
 }
 
 @end

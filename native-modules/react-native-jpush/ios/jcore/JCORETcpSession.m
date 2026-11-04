@@ -506,14 +506,14 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
         [JCOREConfiguration logInfo:[NSString stringWithFormat:@"TCP login success uid=%llu sid=%u registrationId=%@",
                                      config.uid,
                                      strongSelf->_sessionId,
-                                     config.registrationID ?: [config fallbackRegistrationID]]];
+                                     config.registrationID ?: @""]];
         [strongSelf startHeartbeatLocked];
         [strongSelf reportDeviceTokenLocked];
         [strongSelf reportVoipTokenLocked];
         [strongSelf flushQueuedRequestsLocked];
         [strongSelf postNotificationOnMain:kJPFNetworkDidLoginNotification
                                   userInfo:@{
-                                      @"registrationID": config.registrationID ?: [config fallbackRegistrationID],
+                                      @"registrationID": config.registrationID ?: @"",
                                       @"sessionId": @(strongSelf->_sessionId),
                                       @"serverVersion": @(strongSelf->_serverVersion),
                                       @"serverTimestamp": @(strongSelf->_serverTimestamp),

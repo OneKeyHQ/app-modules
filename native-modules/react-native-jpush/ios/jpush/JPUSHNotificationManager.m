@@ -70,11 +70,17 @@
         }
     }
 
+    if (options == UNAuthorizationOptionNone) {
+        return;
+    }
+
     __weak typeof(self) weakSelf = self;
     [center requestAuthorizationWithOptions:options completionHandler:^(BOOL granted, NSError * _Nullable error) {
         dispatch_async(dispatch_get_main_queue(), ^{
 #if __has_include(<UIKit/UIKit.h>)
-            [[UIApplication sharedApplication] registerForRemoteNotifications];
+            if (granted) {
+                [[UIApplication sharedApplication] registerForRemoteNotifications];
+            }
 #endif
             __strong typeof(weakSelf) strongSelf = weakSelf;
             if ([strongSelf.registerDelegate respondsToSelector:@selector(jpushNotificationAuthorization:withInfo:)]) {
@@ -241,29 +247,20 @@
         }
         return;
     }
-    [center getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings * _Nonnull settings) {
-        JPAuthorizationStatus status = JPAuthorizationNotDetermined;
-        switch (settings.authorizationStatus) {
-            case UNAuthorizationStatusDenied:
-                status = JPAuthorizationStatusDenied;
-                break;
-            case UNAuthorizationStatusAuthorized:
-                status = JPAuthorizationStatusAuthorized;
-                break;
-            case UNAuthorizationStatusProvisional:
-            case UNAuthorizationStatusEphemeral:
-                status = JPAuthorizationStatusProvisional;
-                break;
-            case UNAuthorizationStatusNotDetermined:
-            default:
-                status = JPAuthorizationNotDetermined;
-                break;
-        }
-        if (completion != nil) {
-            dispatch_async(dispatch_get_main_queue(), ^{
+    UNAuthorizationOptions options = (UNAuthorizationOptionBadge | UNAuthorizationOptionSound | UNAuthorizationOptionAlert);
+    [center requestAuthorizationWithOptions:options completionHandler:^(BOOL granted, NSError * _Nullable error) {
+        (void)error;
+        JPAuthorizationStatus status = granted ? JPAuthorizationStatusAuthorized : JPAuthorizationStatusDenied;
+        dispatch_async(dispatch_get_main_queue(), ^{
+#if __has_include(<UIKit/UIKit.h>)
+            if (granted) {
+                [[UIApplication sharedApplication] registerForRemoteNotifications];
+            }
+#endif
+            if (completion != nil) {
                 completion(status);
-            });
-        }
+            }
+        });
     }];
 }
 

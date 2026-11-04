@@ -1,3 +1,9 @@
+let nextNitroListenerId = 1;
+const mockNitroListeners = new Map<
+  number,
+  (eventName: string, payloadJson: string) => void
+>();
+
 const mockHybridObject = {
   setDebugMode: jest.fn(),
   initPush: jest.fn(),
@@ -50,6 +56,16 @@ const mockHybridObject = {
   enableAutoWakeup: jest.fn(),
   enableSDKLocalLog: jest.fn(),
   readNewLogs: jest.fn(() => '[JCore] test log line'),
+  addEventListener: jest.fn(
+    (cb: (eventName: string, payloadJson: string) => void) => {
+      const id = nextNitroListenerId++;
+      mockNitroListeners.set(id, cb);
+      return id;
+    }
+  ),
+  removeEventListener: jest.fn((id: number) => {
+    mockNitroListeners.delete(id);
+  }),
 };
 
 const mockListeners = new Map<string, Set<(payload: any) => void>>();
@@ -83,6 +99,7 @@ jest.mock('react-native', () => ({
   },
 }));
 
+import { DeviceEventEmitter } from 'react-native';
 import JPush, {
   DEMO_TEST_APP_KEY,
   DEMO_TEST_PACKAGE_NAME,
@@ -92,10 +109,16 @@ import JPush, {
   TagAliasEvent,
 } from '../index';
 
+function emitMockNitroEvent(eventName: string, payload: Record<string, any>) {
+  const json = JSON.stringify(payload);
+  mockNitroListeners.forEach((cb) => cb(eventName, json));
+}
+
 describe('@onekeyfe/react-native-jpush JS & Nitro API contract', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockListeners.clear();
+    mockNitroListeners.clear();
   });
 
   it('exports DEMO_TEST_APP_KEY and DEMO_TEST_PACKAGE_NAME (non-production sandbox fixtures)', () => {
@@ -199,7 +222,7 @@ describe('@onekeyfe/react-native-jpush JS & Nitro API contract', () => {
     });
   });
 
-  it('registers and removes DeviceEventEmitter listeners cleanly', () => {
+  it('registers and removes pure Nitro event listeners without DeviceEventEmitter', () => {
     const onConnect = jest.fn();
     const onNotification = jest.fn();
     const onTagAlias = jest.fn();
@@ -208,20 +231,22 @@ describe('@onekeyfe/react-native-jpush JS & Nitro API contract', () => {
     JPush.addNotificationListener(onNotification);
     JPush.addTagAliasListener(onTagAlias);
 
-    mockListeners.get(ConnectEvent)?.forEach((fn) =>
-      fn({ connectEnable: true })
-    );
-    mockListeners.get(NotificationEvent)?.forEach((fn) =>
-      fn({
-        messageID: '1001',
-        title: 'OneKey',
-        content: 'Price Alert',
-        notificationEventType: 'notificationArrived',
-      })
-    );
-    mockListeners.get(TagAliasEvent)?.forEach((fn) =>
-      fn({ code: 0, sequence: 1, tags: ['btc'] })
-    );
+    expect(mockHybridObject.addEventListener).toHaveBeenCalledTimes(1);
+    expect(mockHybridObject.loadJS).toHaveBeenCalledTimes(1);
+    expect(DeviceEventEmitter.addListener).not.toHaveBeenCalled();
+
+    emitMockNitroEvent(ConnectEvent, { connectEnable: true });
+    emitMockNitroEvent(NotificationEvent, {
+      messageID: '1001',
+      title: 'OneKey',
+      content: 'Price Alert',
+      notificationEventType: 'notificationArrived',
+    });
+    emitMockNitroEvent(TagAliasEvent, {
+      code: 0,
+      sequence: 1,
+      tags: ['btc'],
+    });
 
     expect(onConnect).toHaveBeenCalledWith({ connectEnable: true });
     expect(onNotification).toHaveBeenCalledWith(
@@ -237,9 +262,53 @@ describe('@onekeyfe/react-native-jpush JS & Nitro API contract', () => {
     });
 
     JPush.removeListener(onConnect);
-    mockListeners.get(ConnectEvent)?.forEach((fn) =>
-      fn({ connectEnable: false })
-    );
+    emitMockNitroEvent(ConnectEvent, { connectEnable: false });
     expect(onConnect).toHaveBeenCalledTimes(1);
+
+    JPush.removeListener(onNotification);
+    JPush.removeListener(onTagAlias);
+    expect(mockHybridObject.removeEventListener).toHaveBeenCalledTimes(1);
+  });
+
+  it('buffers cold-start NotificationEvent flushed during addConnectEventListener until addNotificationListener registers', () => {
+    const onConnect = jest.fn();
+    const onNotification = jest.fn();
+
+    mockHybridObject.addEventListener.mockImplementationOnce(
+      (cb: (eventName: string, payloadJson: string) => void) => {
+        const id = nextNitroListenerId++;
+        mockNitroListeners.set(id, cb);
+        // Simulate native flushing a cold-start NotificationEvent when the first Nitro listener (addConnectEventListener) attaches
+        cb(
+          NotificationEvent,
+          JSON.stringify({
+            messageID: 'cold_apns_999',
+            title: 'Cold Launch',
+            content: 'Opened from notification',
+            notificationEventType: 'notificationOpened',
+          })
+        );
+        return id;
+      }
+    );
+
+    JPush.init({
+      appKey: DEMO_TEST_APP_KEY,
+      channel: 'dev',
+      production: false,
+    });
+    JPush.addConnectEventListener(onConnect);
+    expect(onNotification).not.toHaveBeenCalled();
+
+    JPush.addNotificationListener(onNotification);
+    expect(onNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messageID: 'cold_apns_999',
+        notificationEventType: 'notificationOpened',
+      })
+    );
+
+    JPush.removeListener(onConnect);
+    JPush.removeListener(onNotification);
   });
 });

@@ -6,21 +6,35 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import cn.jiguang.core.JCoreCrypto;
+import cn.jiguang.core.JCoreStorage;
+import cn.jiguang.core.JCoreTcpEngine;
 import cn.jiguang.core.JCoreWireCodec;
+import cn.jiguang.plugins.push.JPushModule;
+import cn.jiguang.plugins.push.helper.JPushHelper;
+import cn.jpush.android.api.JPushInterface;
+import com.facebook.react.bridge.Arguments;
+import com.facebook.react.bridge.ReactApplicationContext;
+import com.facebook.react.bridge.WritableMap;
+import java.io.File;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.Test;
 
 public class ReactNativeJpushProtocolTest {
@@ -285,5 +299,316 @@ public class ReactNativeJpushProtocolTest {
             } catch (Throwable ignored) {
             }
         }
+    }
+
+    @Test
+    public void testEmptyRegistrationBeforeHandshakeMultiRuntimeEventsAndManifestExportedFalse() throws Exception {
+        // 1. Fresh context before TCP Register (cmd=0) must return "" for getRegistrationID (no fake 1a0018970a...)
+        ReactApplicationContext freshCtx = new ReactApplicationContext();
+        JCoreStorage.clearRegistration(freshCtx);
+        assertEquals("", JPushInterface.getRegistrationID(freshCtx));
+        assertEquals(0L, JCoreStorage.getUid(freshCtx));
+        assertEquals("", JCoreStorage.getPassword(freshCtx));
+
+        // 2. Multi-runtime event delivery & pure Nitro event hub without ReactApplicationContext
+        JPushModule.clearActiveReactContexts();
+        JPushHelper.clearNitroListeners();
+
+        // 2a. Cold-start event when legacy JPushModule is ALREADY registered (eager PackageList init)
+        //     BEFORE any Nitro listener is registered -> must still be buffered in PENDING_NITRO_EVENTS!
+        ReactApplicationContext mainCtx = new ReactApplicationContext();
+        ReactApplicationContext bgCtx = new ReactApplicationContext();
+        new JPushModule(mainCtx);
+        new JPushModule(bgCtx);
+
+        WritableMap coldStartPayload = Arguments.createMap();
+        coldStartPayload.putString("messageID", "nitro_cold_01");
+        coldStartPayload.putString("title", "NitroCold");
+        JPushHelper.sendEvent("NotificationEvent", coldStartPayload);
+
+        final List<String> nitroReceivedNames = new java.util.ArrayList<String>();
+        final List<String> nitroReceivedJsons = new java.util.ArrayList<String>();
+        int nitroListenerId = JPushHelper.registerNitroListener(new JPushHelper.NitroEventListener() {
+            @Override
+            public void onEvent(String eventName, String payloadJson) {
+                nitroReceivedNames.add(eventName);
+                nitroReceivedJsons.add(payloadJson);
+            }
+        });
+        assertTrue(nitroListenerId > 0);
+        assertEquals(1L, (long) nitroReceivedNames.size());
+        assertEquals("NotificationEvent", nitroReceivedNames.get(0));
+        assertTrue(nitroReceivedJsons.get(0).contains("nitro_cold_01"));
+
+        // 2b. Dual runtime + Nitro listener live delivery
+        WritableMap eventPayload = Arguments.createMap();
+        eventPayload.putString("messageID", "multi_rt_msg_1");
+        eventPayload.putString("title", "MultiRuntime");
+        JPushHelper.sendEvent("NotificationEvent", eventPayload);
+
+        assertEquals(2L, (long) mainCtx.emittedEvents.size());
+        assertEquals(2L, (long) bgCtx.emittedEvents.size());
+        assertEquals("NotificationEvent", mainCtx.emittedEvents.get(1).name);
+        assertEquals("NotificationEvent", bgCtx.emittedEvents.get(1).name);
+        assertEquals(2L, (long) nitroReceivedNames.size());
+        assertTrue(nitroReceivedJsons.get(1).contains("multi_rt_msg_1"));
+
+        JPushHelper.unregisterNitroListener(nitroListenerId);
+        JPushHelper.clearNitroListeners();
+
+        // 3. Verify AndroidManifest.xml has android:exported="false" on all 5 internal activities
+        File manifestFile = new File("android/src/main/AndroidManifest.xml");
+        if (!manifestFile.exists()) {
+            manifestFile = new File(
+                System.getProperty("user.dir"),
+                "native-modules/react-native-jpush/android/src/main/AndroidManifest.xml"
+            );
+        }
+        if (manifestFile.exists()) {
+            String xml = new String(Files.readAllBytes(manifestFile.toPath()), StandardCharsets.UTF_8);
+            assertTrue(!xml.contains("android:exported=\"true\""));
+            for (String activityName : new String[] {
+                "cn.jpush.android.ui.PopWinActivity",
+                "cn.jpush.android.ui.PushActivity",
+                "cn.jpush.android.service.JNotifyActivity",
+                "cn.android.service.JTransitActivity",
+                "cn.jpush.android.service.DActivity"
+            }) {
+                int idx = xml.indexOf(activityName);
+                assertTrue(idx > 0);
+                int endTag = xml.indexOf(">", idx);
+                String activityHeader = xml.substring(idx, endTag);
+                assertTrue(activityHeader.contains("android:exported=\"false\""));
+            }
+        }
+
+        // 4. Verify periodic heartbeat timer sends additional CMD_HEARTBEAT frames after initial login
+        final ServerSocket hbServer = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"));
+        final int hbPort = hbServer.getLocalPort();
+        final AtomicInteger heartbeatsReceived = new AtomicInteger(0);
+        final CountDownLatch twoHeartbeatsLatch = new CountDownLatch(1);
+        final long testUid = 880011L;
+
+        Thread hbThread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                Socket client = null;
+                try {
+                    hbServer.setSoTimeout(5000);
+                    client = hbServer.accept();
+                    client.setSoTimeout(5000);
+                    InputStream in = client.getInputStream();
+                    OutputStream out = client.getOutputStream();
+
+                    JCoreWireCodec.DecodedFrame loginFrame = JCoreWireCodec.readClientFrameFromStream(in, testUid);
+                    if (loginFrame != null && loginFrame.command == JCoreWireCodec.CMD_LOGIN) {
+                        byte[] loginResp = JCoreWireCodec.buildLoginResponsePayload(7701, 520, "", 1700000600);
+                        out.write(JCoreWireCodec.encodeResponseFrame(
+                            JCoreWireCodec.CMD_LOGIN,
+                            JCoreWireCodec.VER_LOGIN,
+                            loginFrame.requestId,
+                            7701,
+                            testUid,
+                            0,
+                            loginResp
+                        ));
+                        out.flush();
+                    }
+
+                    while (!client.isClosed()) {
+                        JCoreWireCodec.DecodedFrame frame = JCoreWireCodec.readClientFrameFromStream(in, testUid);
+                        if (frame == null) {
+                            break;
+                        }
+                        if (frame.command == JCoreWireCodec.CMD_HEARTBEAT) {
+                            out.write(JCoreWireCodec.encodeResponseFrame(
+                                JCoreWireCodec.CMD_HEARTBEAT,
+                                JCoreWireCodec.VER_HEARTBEAT,
+                                frame.requestId,
+                                7701,
+                                testUid,
+                                0,
+                                new byte[0]
+                            ));
+                            out.flush();
+                            if (heartbeatsReceived.incrementAndGet() >= 2) {
+                                twoHeartbeatsLatch.countDown();
+                                break;
+                            }
+                        }
+                    }
+                } catch (Throwable ignored) {
+                } finally {
+                    try {
+                        if (client != null) client.close();
+                    } catch (Throwable ignored) {}
+                    try {
+                        hbServer.close();
+                    } catch (Throwable ignored) {}
+                }
+            }
+        }, "test-periodic-heartbeat-server");
+        hbThread.setDaemon(true);
+        hbThread.start();
+
+        JCoreStorage.updateRegistration(freshCtx, testUid, "hb_pwd", "reg_hb_880011", "dev_hb_01");
+        JCoreStorage.setServerRegistered(freshCtx, true);
+        JCoreTcpEngine.getInstance().setHeartbeatIntervalMs(60L);
+        JCoreTcpEngine.getInstance().setCustomEndpoint("127.0.0.1", hbPort);
+        JCoreTcpEngine.getInstance().triggerReconnectNow(freshCtx);
+        assertTrue(JCoreTcpEngine.getInstance().awaitHandshake(3000L));
+        assertTrue(twoHeartbeatsLatch.await(3000L, TimeUnit.MILLISECONDS));
+        assertTrue(heartbeatsReceived.get() >= 2);
+        JCoreTcpEngine.getInstance().setHeartbeatIntervalMs(290000L);
+        JCoreTcpEngine.getInstance().closeSocket();
+        JCoreStorage.clearRegistration(freshCtx);
+
+        // 5. Verify connectAndHandshake automatic SIS resolution when candidateEndpoints is empty, customPort == 0,
+        //    and JCoreStorage has no cached lastGoodIp or sisIps:
+        //    (a) When SIS resolves to an unreachable port, connectAndHandshake must NOT set fake connected=true.
+        //    (b) When SIS resolves to a live TCP server, connectAndHandshake connects without setCustomEndpoint.
+        ServerSocket deadProbe = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"));
+        final int deadTcpPort = deadProbe.getLocalPort();
+        deadProbe.close();
+
+        final ServerSocket sisTcpServer = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"));
+        final int sisTcpPort = sisTcpServer.getLocalPort();
+        final DatagramSocket sisUdpServer = new DatagramSocket(0, InetAddress.getByName("127.0.0.1"));
+        final int sisUdpPort = sisUdpServer.getLocalPort();
+        final AtomicInteger sisQueryCount = new AtomicInteger(0);
+
+        Thread sisUdpThread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    sisUdpServer.setSoTimeout(5000);
+                    for (int i = 0; i < 2; i++) {
+                        byte[] buf = new byte[2048];
+                        DatagramPacket req = new DatagramPacket(buf, buf.length);
+                        sisUdpServer.receive(req);
+                        int queryIdx = sisQueryCount.incrementAndGet();
+                        int targetPort = (queryIdx == 1) ? deadTcpPort : sisTcpPort;
+                        String sisJson = "{\"ips\":[\"127.0.0.1:" + targetPort + "\"]}";
+                        byte[] encoded = JCoreWireCodec.encodeUdpSisPacket(sisJson, 0x234567);
+                        DatagramPacket resp = new DatagramPacket(
+                            encoded,
+                            encoded.length,
+                            req.getAddress(),
+                            req.getPort()
+                        );
+                        sisUdpServer.send(resp);
+                    }
+                } catch (Throwable ignored) {
+                } finally {
+                    sisUdpServer.close();
+                }
+            }
+        }, "test-auto-sis-udp-server");
+        sisUdpThread.setDaemon(true);
+        sisUdpThread.start();
+
+        Thread sisTcpThread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                Socket client = null;
+                try {
+                    sisTcpServer.setSoTimeout(5000);
+                    client = sisTcpServer.accept();
+                    client.setSoTimeout(5000);
+                    InputStream in = client.getInputStream();
+                    OutputStream out = client.getOutputStream();
+
+                    JCoreWireCodec.DecodedFrame regFrame = JCoreWireCodec.readClientFrameFromStream(in, 0L);
+                    if (regFrame != null && regFrame.command == JCoreWireCodec.CMD_REGISTER) {
+                        byte[] regResp = JCoreWireCodec.buildRegisterResponsePayload(
+                            990022L,
+                            "sis_pwd",
+                            "reg_auto_sis_990022",
+                            "dev_auto_sis_01"
+                        );
+                        out.write(JCoreWireCodec.encodeResponseFrame(
+                            JCoreWireCodec.CMD_REGISTER,
+                            JCoreWireCodec.VER_REGISTER,
+                            regFrame.requestId,
+                            regFrame.sessionId,
+                            990022L,
+                            0,
+                            regResp
+                        ));
+                        out.flush();
+                    }
+                    JCoreWireCodec.DecodedFrame loginFrame = JCoreWireCodec.readClientFrameFromStream(in, 990022L);
+                    if (loginFrame != null && loginFrame.command == JCoreWireCodec.CMD_LOGIN) {
+                        byte[] loginResp = JCoreWireCodec.buildLoginResponsePayload(8802, 520, "", 1700000900);
+                        out.write(JCoreWireCodec.encodeResponseFrame(
+                            JCoreWireCodec.CMD_LOGIN,
+                            JCoreWireCodec.VER_LOGIN,
+                            loginFrame.requestId,
+                            8802,
+                            990022L,
+                            0,
+                            loginResp
+                        ));
+                        out.flush();
+                    }
+                    JCoreWireCodec.DecodedFrame hbFrame = JCoreWireCodec.readClientFrameFromStream(in, 990022L);
+                    if (hbFrame != null && hbFrame.command == JCoreWireCodec.CMD_HEARTBEAT) {
+                        out.write(JCoreWireCodec.encodeResponseFrame(
+                            JCoreWireCodec.CMD_HEARTBEAT,
+                            JCoreWireCodec.VER_HEARTBEAT,
+                            hbFrame.requestId,
+                            8802,
+                            990022L,
+                            0,
+                            new byte[0]
+                        ));
+                        out.flush();
+                    }
+                    // Keep socket open until client closes it after assertions
+                    while (!client.isClosed() && in.read() != -1) {
+                        // wait for client close
+                    }
+                } catch (Throwable ignored) {
+                } finally {
+                    try {
+                        if (client != null) client.close();
+                    } catch (Throwable ignored) {}
+                    try {
+                        sisTcpServer.close();
+                    } catch (Throwable ignored) {}
+                }
+            }
+        }, "test-auto-sis-tcp-server");
+        sisTcpThread.setDaemon(true);
+        sisTcpThread.start();
+
+        ReactApplicationContext sisCtx = new ReactApplicationContext();
+        JCoreStorage.clearRegistration(sisCtx);
+        JCoreStorage.saveSisConfig(sisCtx, "{\"ips\":[],\"ssl_ips\":[]}");
+        JCoreStorage.setLastGoodIp(sisCtx, "");
+        JCoreTcpEngine.getInstance().setCustomEndpoint("", 0);
+        JCoreTcpEngine.getInstance().setCandidateEndpoints(Collections.<String>emptyList());
+        JCoreTcpEngine.getInstance().setCustomSisUrl("udp-only");
+        JCoreTcpEngine.getInstance().setDefaultSisUdpEndpoint("127.0.0.1", sisUdpPort);
+        assertEquals(0L, (long) JCoreTcpEngine.getInstance().getCustomPort());
+        assertTrue(JCoreStorage.getSisIps(sisCtx).isEmpty());
+
+        // (a) First SIS query returns deadTcpPort -> connectAndHandshake must NOT set fake connected=true
+        JCoreTcpEngine.getInstance().connectAndHandshake(sisCtx);
+        assertEquals(false, JCoreStorage.isConnected(sisCtx));
+        assertEquals("", JPushInterface.getRegistrationID(sisCtx));
+
+        // (b) Clear cached SIS state; second SIS query returns live sisTcpPort -> connects without setCustomEndpoint
+        JCoreStorage.saveSisConfig(sisCtx, "{\"ips\":[],\"ssl_ips\":[]}");
+        JCoreStorage.setLastGoodIp(sisCtx, "");
+        assertTrue(JCoreStorage.getSisIps(sisCtx).isEmpty());
+        JCoreTcpEngine.getInstance().connectAndHandshake(sisCtx);
+        assertEquals(true, JCoreStorage.isConnected(sisCtx));
+        assertEquals("reg_auto_sis_990022", JPushInterface.getRegistrationID(sisCtx));
+        assertTrue(JCoreStorage.getSisIps(sisCtx).contains("127.0.0.1:" + sisTcpPort));
+
+        JCoreTcpEngine.getInstance().setCustomSisUrl("");
+        JCoreTcpEngine.getInstance().setDefaultSisUdpEndpoint("s.jpush.cn", 19000);
+        JCoreTcpEngine.getInstance().closeSocket();
     }
 }

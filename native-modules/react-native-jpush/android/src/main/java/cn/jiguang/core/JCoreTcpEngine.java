@@ -28,6 +28,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import javax.net.ssl.HttpsURLConnection;
@@ -102,6 +104,17 @@ public final class JCoreTcpEngine {
         }
     });
 
+    private final ScheduledExecutorService heartbeatExecutor = Executors.newSingleThreadScheduledExecutor(
+        new ThreadFactory() {
+            @Override
+            public Thread newThread(Runnable r) {
+                Thread t = new Thread(r, "jcore-clean-heartbeat");
+                t.setDaemon(true);
+                return t;
+            }
+        }
+    );
+
     private final ConcurrentHashMap<Long, ResponseSlot> pendingRequests = new ConcurrentHashMap<Long, ResponseSlot>();
     private final Queue<QueuedRequest> preLoginQueue = new ConcurrentLinkedQueue<QueuedRequest>();
     private final List<String> candidateEndpoints = new CopyOnWriteArrayList<String>();
@@ -113,12 +126,17 @@ public final class JCoreTcpEngine {
     private volatile boolean loggedIn = false;
     private volatile boolean autoReconnectEnabled = true;
     private volatile long reconnectBaseDelayMs = 3000L;
+    private volatile long heartbeatIntervalMs = 290000L;
+    private volatile ScheduledFuture<?> activeHeartbeatFuture;
     private volatile int reconnectAttempt = 0;
     private volatile long connectionGeneration = 0L;
     private volatile int sessionId = 1;
     private volatile String customHost = "";
     private volatile int customPort = 0;
     private volatile String customReportUrl = "";
+    private volatile String customSisUrl = "";
+    private volatile String defaultSisUdpHost = "s.jpush.cn";
+    private volatile int defaultSisUdpPort = 19000;
     private volatile long defaultRequestTimeoutMs = 5000L;
     private volatile boolean requireServerAckForOperations = false;
     private volatile boolean testConnectionEnabled = false;
@@ -153,6 +171,56 @@ public final class JCoreTcpEngine {
 
     public long getReconnectBaseDelayMs() {
         return reconnectBaseDelayMs;
+    }
+
+    public void setHeartbeatIntervalMs(long intervalMs) {
+        if (intervalMs > 0L) {
+            this.heartbeatIntervalMs = intervalMs;
+        }
+    }
+
+    public long getHeartbeatIntervalMs() {
+        return heartbeatIntervalMs;
+    }
+
+    private void cancelHeartbeatTimer() {
+        ScheduledFuture<?> future = this.activeHeartbeatFuture;
+        this.activeHeartbeatFuture = null;
+        if (future != null) {
+            future.cancel(false);
+        }
+    }
+
+    private void startHeartbeatTimer(final Context context, final Socket targetSocket) {
+        cancelHeartbeatTimer();
+        long interval = this.heartbeatIntervalMs > 0L ? this.heartbeatIntervalMs : 290000L;
+        this.activeHeartbeatFuture = heartbeatExecutor.scheduleWithFixedDelay(
+            new Runnable() {
+                @Override
+                public void run() {
+                    if (!loggedIn || activeSocket != targetSocket || targetSocket == null || targetSocket.isClosed()) {
+                        cancelHeartbeatTimer();
+                        return;
+                    }
+                    try {
+                        long currentUid = JCoreStorage.getUid(context);
+                        byte[] hbPayload = JCoreWireCodec.buildHeartbeatPayload(JCoreStorage.isPushStopped(context));
+                        sendFrameRaw(
+                            JCoreWireCodec.CMD_HEARTBEAT,
+                            JCoreWireCodec.VER_HEARTBEAT,
+                            JCoreStorage.nextRid(),
+                            sessionId,
+                            currentUid,
+                            hbPayload
+                        );
+                    } catch (Throwable ignored) {
+                    }
+                }
+            },
+            interval,
+            interval,
+            TimeUnit.MILLISECONDS
+        );
     }
 
     public int getReconnectAttempt() {
@@ -194,6 +262,19 @@ public final class JCoreTcpEngine {
 
     public String getCustomReportUrl() {
         return customReportUrl;
+    }
+
+    public void setCustomSisUrl(String url) {
+        this.customSisUrl = url != null ? url.trim() : "";
+    }
+
+    public String getCustomSisUrl() {
+        return customSisUrl;
+    }
+
+    public void setDefaultSisUdpEndpoint(String host, int port) {
+        this.defaultSisUdpHost = (host != null && !host.trim().isEmpty()) ? host.trim() : "s.jpush.cn";
+        this.defaultSisUdpPort = port > 0 ? port : 19000;
     }
 
     public List<JCoreWireCodec.CtrlCommand> getReceivedCtrlCommands() {
@@ -273,6 +354,7 @@ public final class JCoreTcpEngine {
 
     public synchronized void closeSocket() {
         this.connectionGeneration++;
+        cancelHeartbeatTimer();
         synchronized (socketLock) {
             if (activeSocket != null) {
                 try {
@@ -300,7 +382,6 @@ public final class JCoreTcpEngine {
 
     public void start(final Context context) {
         JCoreStorage.setAppContext(context);
-        JCoreStorage.ensureRegistration(context);
         synchronized (this) {
             if (started) {
                 return;
@@ -411,10 +492,23 @@ public final class JCoreTcpEngine {
     public void connectAndHandshake(final Context context) {
         try {
             List<String> candidates = buildOrderedCandidateList(context);
+            if (candidates.isEmpty() && customPort <= 0 && candidateEndpoints.isEmpty()) {
+                String[] sisResolved = resolveSisEndpoint(context);
+                candidates = buildOrderedCandidateList(context);
+                if (candidates.isEmpty() && sisResolved != null && sisResolved.length == 2) {
+                    String resolvedEp = (sisResolved[0] + ":" + sisResolved[1]).trim();
+                    if (!resolvedEp.isEmpty() && splitHostPort(resolvedEp) != null) {
+                        candidates.add(resolvedEp);
+                    }
+                }
+                String defaultEndpoint = DEFAULT_HOST + ":" + DEFAULT_PORT;
+                if (candidates.isEmpty()) {
+                    candidates.add(defaultEndpoint);
+                }
+            }
             if (candidates.isEmpty()) {
                 if (context != null) {
-                    JCoreStorage.setConnected(context, true);
-                    broadcastConnectAndRegister(context);
+                    JCoreStorage.setConnected(context, false);
                 }
                 return;
             }
@@ -438,9 +532,8 @@ public final class JCoreTcpEngine {
 
             if (!connectedSuccess) {
                 this.reconnectAttempt++;
-                if (context != null && candidates.isEmpty()) {
-                    JCoreStorage.setConnected(context, true);
-                    broadcastConnectAndRegister(context);
+                if (context != null) {
+                    JCoreStorage.setConnected(context, false);
                 }
             }
         } finally {
@@ -570,6 +663,16 @@ public final class JCoreTcpEngine {
 
             this.loggedIn = true;
             this.reconnectAttempt = 0;
+            int idleReadTimeoutMs = (int) Math.min(
+                (long) Integer.MAX_VALUE,
+                Math.max(320000L, this.heartbeatIntervalMs + 30000L)
+            );
+            try {
+                if (!connectedSocket.isClosed()) {
+                    connectedSocket.setSoTimeout(idleReadTimeoutMs);
+                }
+            } catch (Throwable ignored) {
+            }
             JLogger.i(
                 "TCP login success uid="
                     + uid
@@ -591,6 +694,7 @@ public final class JCoreTcpEngine {
                 defaultRequestTimeoutMs
             );
 
+            startHeartbeatTimer(context, connectedSocket);
             flushPreLoginQueue(context);
             return true;
         } catch (Throwable ignored) {
@@ -729,6 +833,7 @@ public final class JCoreTcpEngine {
             }
         } catch (Throwable ignored) {
         } finally {
+            cancelHeartbeatTimer();
             boolean wasLoggedIn = this.loggedIn;
             this.loggedIn = false;
             boolean droppedUnexpectedly = false;
@@ -743,6 +848,9 @@ public final class JCoreTcpEngine {
                     this.activeOutput = null;
                 }
             }
+            if (wasLoggedIn && context != null) {
+                JCoreStorage.setConnected(context, false);
+            }
             for (ResponseSlot slot : pendingRequests.values()) {
                 slot.complete(null);
             }
@@ -750,7 +858,6 @@ public final class JCoreTcpEngine {
             if (wasLoggedIn && autoReconnectEnabled && droppedUnexpectedly && !JCoreStorage.isPushStopped(context)) {
                 final long delayMs = computeReconnectDelayMs(reconnectAttempt++, reconnectBaseDelayMs);
                 final long scheduledGen = this.connectionGeneration;
-                this.handshakeLatch = new CountDownLatch(1);
                 ioExecutor.execute(new Runnable() {
                     @Override
                     public void run() {
@@ -941,71 +1048,85 @@ public final class JCoreTcpEngine {
         if (customHost != null && !customHost.isEmpty() && customPort > 0) {
             return new String[] { customHost, String.valueOf(customPort) };
         }
-        OutputStream out = null;
-        InputStream in = null;
-        try {
-            String aesKey = JCoreCrypto.generateHttpSeedKey();
-            JSONObject body = new JSONObject();
-            body.put("type", 1);
-            body.put("opera", "");
-            body.put("uid", JCoreStorage.getUid(context));
-            body.put("appkey", JCoreStorage.getAppKey(context));
-            body.put("sdkver", "5.1.1");
-            body.put("platform", 0);
+        if (!"udp-only".equalsIgnoreCase(customSisUrl)) {
+            OutputStream out = null;
+            InputStream in = null;
+            try {
+                String aesKey = JCoreCrypto.generateHttpSeedKey();
+                JSONObject body = new JSONObject();
+                body.put("type", 1);
+                body.put("opera", "");
+                body.put("uid", JCoreStorage.getUid(context));
+                body.put("appkey", JCoreStorage.getAppKey(context));
+                body.put("sdkver", "5.1.1");
+                body.put("platform", 0);
 
-            byte[] compressed = JCoreCrypto.gzipCompress(body.toString().getBytes(StandardCharsets.UTF_8));
-            byte[] encrypted = JCoreCrypto.aesCbcEncrypt(compressed, aesKey, SIS_AES_IV, 32);
-            String auth = JCoreCrypto.rsaEncryptBase64(aesKey, SIS_RSA_PUBLIC_KEY);
+                byte[] compressed = JCoreCrypto.gzipCompress(body.toString().getBytes(StandardCharsets.UTF_8));
+                byte[] encrypted = JCoreCrypto.aesCbcEncrypt(compressed, aesKey, SIS_AES_IV, 32);
+                String auth = JCoreCrypto.rsaEncryptBase64(aesKey, SIS_RSA_PUBLIC_KEY);
 
-            URL url = new URL(SIS_URL);
-            HttpsURLConnection conn = (HttpsURLConnection) url.openConnection();
-            conn.setHostnameVerifier(HttpsURLConnection.getDefaultHostnameVerifier());
-            conn.setConnectTimeout(5000);
-            conn.setReadTimeout(5000);
-            conn.setRequestMethod("POST");
-            conn.setDoOutput(true);
-            conn.setRequestProperty("Content-Type", "application/json");
-            conn.setRequestProperty("Authorization", auth);
+                String targetSisUrl = (customSisUrl != null && !customSisUrl.isEmpty()) ? customSisUrl : SIS_URL;
+                URL url = new URL(targetSisUrl);
+                HttpsURLConnection conn = (HttpsURLConnection) url.openConnection();
+                conn.setHostnameVerifier(HttpsURLConnection.getDefaultHostnameVerifier());
+                conn.setConnectTimeout(5000);
+                conn.setReadTimeout(5000);
+                conn.setRequestMethod("POST");
+                conn.setDoOutput(true);
+                conn.setRequestProperty("Content-Type", "application/json");
+                conn.setRequestProperty("Authorization", auth);
 
-            out = conn.getOutputStream();
-            out.write(encrypted);
-            out.flush();
+                out = conn.getOutputStream();
+                out.write(encrypted);
+                out.flush();
 
-            if (conn.getResponseCode() == 200) {
-                in = conn.getInputStream();
-                ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-                byte[] chunk = new byte[2048];
-                int read;
-                while ((read = in.read(chunk)) != -1) {
-                    buffer.write(chunk, 0, read);
-                }
-                byte[] decrypted = JCoreCrypto.aesCbcDecrypt(buffer.toByteArray(), aesKey, SIS_AES_IV, 32);
-                byte[] plain = JCoreCrypto.gzipDecompress(decrypted);
-                String plainStr = new String(plain, StandardCharsets.UTF_8);
-                JCoreStorage.saveSisConfig(context, plainStr);
-                JSONObject json = new JSONObject(plainStr);
-                JSONArray sslIps = json.optJSONArray("ssl_ips");
-                if (sslIps != null && sslIps.length() > 0) {
-                    String first = sslIps.optString(0, "");
-                    String[] hp = splitHostPort(first);
-                    if (hp != null) {
-                        return hp;
+                if (conn.getResponseCode() == 200) {
+                    in = conn.getInputStream();
+                    ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                    byte[] chunk = new byte[2048];
+                    int read;
+                    while ((read = in.read(chunk)) != -1) {
+                        buffer.write(chunk, 0, read);
+                    }
+                    byte[] decrypted = JCoreCrypto.aesCbcDecrypt(buffer.toByteArray(), aesKey, SIS_AES_IV, 32);
+                    byte[] plain = JCoreCrypto.gzipDecompress(decrypted);
+                    String plainStr = new String(plain, StandardCharsets.UTF_8);
+                    JCoreStorage.saveSisConfig(context, plainStr);
+                    Set<String> ips = JCoreWireCodec.extractJsonStringArray(plainStr, "ips");
+                    if (ips.isEmpty()) {
+                        ips = JCoreWireCodec.extractJsonStringArray(plainStr, "ssl_ips");
+                    }
+                    if (!ips.isEmpty()) {
+                        String first = ips.iterator().next();
+                        String[] hp = splitHostPort(first);
+                        if (hp != null) {
+                            return hp;
+                        }
+                    }
+                    JSONObject json = new JSONObject(plainStr);
+                    JSONArray sslIps = json.optJSONArray("ssl_ips");
+                    if (sslIps != null && sslIps.length() > 0) {
+                        String first = sslIps.optString(0, "");
+                        String[] hp = splitHostPort(first);
+                        if (hp != null) {
+                            return hp;
+                        }
                     }
                 }
-            }
-        } catch (Throwable ignored) {
-        } finally {
-            try {
-                if (out != null) {
-                    out.close();
-                }
-                if (in != null) {
-                    in.close();
-                }
             } catch (Throwable ignored) {
+            } finally {
+                try {
+                    if (out != null) {
+                        out.close();
+                    }
+                    if (in != null) {
+                        in.close();
+                    }
+                } catch (Throwable ignored) {
+                }
             }
         }
-        return new String[] { DEFAULT_HOST, String.valueOf(DEFAULT_PORT) };
+        return resolveUdpSisEndpoint(context, defaultSisUdpHost, defaultSisUdpPort);
     }
 
     /**

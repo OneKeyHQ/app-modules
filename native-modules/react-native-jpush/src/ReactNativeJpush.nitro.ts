@@ -85,4 +85,9 @@ export interface ReactNativeJpush
   enableAutoWakeup(enable: boolean): void;
   enableSDKLocalLog(enable: boolean, uploadJgToServer: boolean): void;
   readNewLogs(): string;
+
+  addEventListener(
+    callback: (eventName: string, payloadJson: string) => void
+  ): number;
+  removeEventListener(id: number): void;
 }

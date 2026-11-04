@@ -6,14 +6,26 @@ import android.os.Bundle;
 import android.text.TextUtils;
 
 import com.facebook.react.bridge.Arguments;
+import com.facebook.react.bridge.ReactApplicationContext;
+import com.facebook.react.bridge.ReadableArray;
+import com.facebook.react.bridge.ReadableMap;
 import com.facebook.react.bridge.WritableArray;
 import com.facebook.react.bridge.WritableMap;
 import com.facebook.react.modules.core.DeviceEventManagerModule;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import cn.jiguang.plugins.push.JPushModule;
 import cn.jiguang.plugins.push.common.JConstants;
@@ -25,12 +37,306 @@ import cn.jpush.android.api.NotificationCustomButton;
 
 public class JPushHelper {
 
-    public static void sendEvent(String eventName, WritableMap params) {
-        try {
-            JPushModule.reactContext.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class).emit(eventName, params);
-        }catch (Throwable throwable){
-            JLogger.e("sendEvent error:"+throwable.getMessage());
+    public interface NitroEventListener {
+        void onEvent(String eventName, String payloadJson);
+    }
+
+    private static final class PendingEvent {
+        final String eventName;
+        final WritableMap params;
+
+        PendingEvent(String eventName, WritableMap params) {
+            this.eventName = eventName;
+            this.params = params;
         }
+    }
+
+    private static final class PendingNitroEvent {
+        final String eventName;
+        final String payloadJson;
+
+        PendingNitroEvent(String eventName, String payloadJson) {
+            this.eventName = eventName;
+            this.payloadJson = payloadJson;
+        }
+    }
+
+    private static final AtomicInteger NEXT_NITRO_LISTENER_ID = new AtomicInteger(1);
+    private static final Map<Integer, NitroEventListener> NITRO_LISTENERS =
+        new ConcurrentHashMap<Integer, NitroEventListener>();
+    private static final List<PendingEvent> PENDING_EVENTS =
+        new CopyOnWriteArrayList<PendingEvent>();
+    private static final List<PendingNitroEvent> PENDING_NITRO_EVENTS =
+        new CopyOnWriteArrayList<PendingNitroEvent>();
+
+    public static int registerNitroListener(NitroEventListener listener) {
+        if (listener == null) {
+            return 0;
+        }
+        int id = NEXT_NITRO_LISTENER_ID.getAndIncrement();
+        NITRO_LISTENERS.put(Integer.valueOf(id), listener);
+        flushPendingNitroEvents();
+        return id;
+    }
+
+    public static void unregisterNitroListener(int id) {
+        if (id <= 0) {
+            return;
+        }
+        NITRO_LISTENERS.remove(Integer.valueOf(id));
+    }
+
+    public static void clearNitroListeners() {
+        NITRO_LISTENERS.clear();
+        PENDING_NITRO_EVENTS.clear();
+        PENDING_EVENTS.clear();
+    }
+
+    private static Set<ReactApplicationContext> getTargetContexts() {
+        Set<ReactApplicationContext> targets = new LinkedHashSet<ReactApplicationContext>();
+        Set<ReactApplicationContext> activeContexts = JPushModule.getActiveReactContexts();
+        if (activeContexts != null) {
+            for (ReactApplicationContext ctx : activeContexts) {
+                if (ctx != null) {
+                    targets.add(ctx);
+                }
+            }
+        }
+        if (JPushModule.reactContext != null) {
+            targets.add(JPushModule.reactContext);
+        }
+        return targets;
+    }
+
+    public static void flushPendingNitroEvents() {
+        if (PENDING_NITRO_EVENTS.isEmpty() || NITRO_LISTENERS.isEmpty()) {
+            return;
+        }
+        List<PendingNitroEvent> snapshot = new ArrayList<PendingNitroEvent>(PENDING_NITRO_EVENTS);
+        PENDING_NITRO_EVENTS.clear();
+        for (PendingNitroEvent pending : snapshot) {
+            if (pending == null || TextUtils.isEmpty(pending.eventName)) {
+                continue;
+            }
+            for (NitroEventListener listener : NITRO_LISTENERS.values()) {
+                if (listener != null) {
+                    try {
+                        listener.onEvent(pending.eventName, pending.payloadJson);
+                    } catch (Throwable inner) {
+                        JLogger.e("flushPendingNitroEvents error:" + inner.getMessage());
+                    }
+                }
+            }
+        }
+    }
+
+    public static void flushPendingEvents() {
+        flushPendingNitroEvents();
+        if (PENDING_EVENTS.isEmpty()) {
+            return;
+        }
+        Set<ReactApplicationContext> targets = getTargetContexts();
+        if (targets.isEmpty()) {
+            return;
+        }
+        List<PendingEvent> snapshot = new ArrayList<PendingEvent>(PENDING_EVENTS);
+        PENDING_EVENTS.clear();
+        for (PendingEvent pending : snapshot) {
+            if (pending != null && !TextUtils.isEmpty(pending.eventName)) {
+                int index = 0;
+                int total = targets.size();
+                for (ReactApplicationContext ctx : targets) {
+                    try {
+                        WritableMap payload = (total > 1 && index > 0)
+                            ? cloneWritableMap(pending.params)
+                            : pending.params;
+                        index++;
+                        ctx.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+                            .emit(pending.eventName, payload);
+                    } catch (Throwable inner) {
+                        JLogger.e("flushPendingEvents error:" + inner.getMessage());
+                    }
+                }
+            }
+        }
+    }
+
+    public static void sendEvent(String eventName, WritableMap params) {
+        if (TextUtils.isEmpty(eventName)) {
+            return;
+        }
+        try {
+            String payloadJson = readableMapToJsonObject(params).toString();
+            if (!NITRO_LISTENERS.isEmpty()) {
+                for (NitroEventListener listener : NITRO_LISTENERS.values()) {
+                    if (listener != null) {
+                        try {
+                            listener.onEvent(eventName, payloadJson);
+                        } catch (Throwable inner) {
+                            JLogger.e("sendEvent nitro listener error:" + inner.getMessage());
+                        }
+                    }
+                }
+            } else {
+                if (PENDING_NITRO_EVENTS.size() >= 64) {
+                    PENDING_NITRO_EVENTS.remove(0);
+                }
+                PENDING_NITRO_EVENTS.add(new PendingNitroEvent(eventName, payloadJson));
+            }
+
+            Set<ReactApplicationContext> targets = getTargetContexts();
+            boolean deliveredLegacy = false;
+            int index = 0;
+            int total = targets.size();
+            for (ReactApplicationContext ctx : targets) {
+                try {
+                    WritableMap payload = (total > 1 && index > 0) ? cloneWritableMap(params) : params;
+                    index++;
+                    ctx.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class).emit(eventName, payload);
+                    deliveredLegacy = true;
+                } catch (Throwable inner) {
+                    JLogger.e("sendEvent error:" + inner.getMessage());
+                }
+            }
+
+            if (!deliveredLegacy) {
+                if (PENDING_EVENTS.size() >= 64) {
+                    PENDING_EVENTS.remove(0);
+                }
+                PENDING_EVENTS.add(new PendingEvent(eventName, cloneWritableMap(params)));
+            }
+        } catch (Throwable throwable) {
+            JLogger.e("sendEvent error:" + throwable.getMessage());
+        }
+    }
+
+    public static JSONObject readableMapToJsonObject(ReadableMap source) {
+        JSONObject result = new JSONObject();
+        if (source == null) {
+            return result;
+        }
+        try {
+            HashMap<String, Object> raw = source.toHashMap();
+            if (raw != null) {
+                for (Map.Entry<String, Object> entry : raw.entrySet()) {
+                    String key = entry.getKey();
+                    if (key == null) {
+                        continue;
+                    }
+                    result.put(key, convertValueForJson(entry.getValue()));
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return result;
+    }
+
+    public static JSONArray readableArrayToJsonArray(ReadableArray source) {
+        JSONArray arr = new JSONArray();
+        if (source == null) {
+            return arr;
+        }
+        try {
+            for (int i = 0; i < source.size(); i++) {
+                arr.put(source.getString(i));
+            }
+        } catch (Throwable ignored) {
+        }
+        return arr;
+    }
+
+    private static Object convertValueForJson(Object val) {
+        if (val == null) {
+            return JSONObject.NULL;
+        }
+        if (val instanceof String || val instanceof Boolean || val instanceof Number
+            || val instanceof JSONObject || val instanceof JSONArray) {
+            return val;
+        }
+        if (val instanceof ReadableMap) {
+            return readableMapToJsonObject((ReadableMap) val);
+        }
+        if (val instanceof Map) {
+            JSONObject obj = new JSONObject();
+            for (Map.Entry<?, ?> entry : ((Map<?, ?>) val).entrySet()) {
+                if (entry.getKey() != null) {
+                    try {
+                        obj.put(String.valueOf(entry.getKey()), convertValueForJson(entry.getValue()));
+                    } catch (Throwable ignored) {
+                    }
+                }
+            }
+            return obj;
+        }
+        if (val instanceof ReadableArray) {
+            return readableArrayToJsonArray((ReadableArray) val);
+        }
+        if (val instanceof List) {
+            JSONArray arr = new JSONArray();
+            for (Object item : (List<?>) val) {
+                arr.put(convertValueForJson(item));
+            }
+            return arr;
+        }
+        return String.valueOf(val);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static WritableMap cloneWritableMap(ReadableMap source) {
+        if (source == null) {
+            return null;
+        }
+        try {
+            HashMap<String, Object> raw = source.toHashMap();
+            if (raw == null) {
+                return (source instanceof WritableMap) ? (WritableMap) source : Arguments.createMap();
+            }
+            return mapFromHashMap(raw);
+        } catch (Throwable ignored) {
+            return (source instanceof WritableMap) ? (WritableMap) source : null;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static WritableMap mapFromHashMap(Map<String, Object> raw) {
+        WritableMap copy = Arguments.createMap();
+        for (Map.Entry<String, Object> entry : raw.entrySet()) {
+            String key = entry.getKey();
+            Object val = entry.getValue();
+            if (key == null || val == null) {
+                continue;
+            }
+            if (val instanceof String) {
+                copy.putString(key, (String) val);
+            } else if (val instanceof Boolean) {
+                copy.putBoolean(key, ((Boolean) val).booleanValue());
+            } else if (val instanceof Number) {
+                copy.putInt(key, ((Number) val).intValue());
+            } else if (val instanceof ReadableMap) {
+                copy.putMap(key, cloneWritableMap((ReadableMap) val));
+            } else if (val instanceof Map) {
+                copy.putMap(key, mapFromHashMap((Map<String, Object>) val));
+            } else if (val instanceof ReadableArray) {
+                ReadableArray arr = (ReadableArray) val;
+                WritableArray arrCopy = Arguments.createArray();
+                for (int i = 0; i < arr.size(); i++) {
+                    arrCopy.pushString(arr.getString(i));
+                }
+                copy.putArray(key, arrCopy);
+            } else if (val instanceof List) {
+                List<?> list = (List<?>) val;
+                WritableArray arrCopy = Arguments.createArray();
+                for (Object item : list) {
+                    if (item != null) {
+                        arrCopy.pushString(String.valueOf(item));
+                    }
+                }
+                copy.putArray(key, arrCopy);
+            } else {
+                copy.putString(key, String.valueOf(val));
+            }
+        }
+        return copy;
     }
 
     public static WritableMap convertNotificationToMap(String eventType, NotificationMessage message) {

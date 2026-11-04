@@ -1660,6 +1660,9 @@ public final class SdkEndToEndTestRunner {
         // Configure candidate endpoints [deadEndpoint, liveEndpoint] to verify Multi-IP Waterfall Failover
         JCoreStorage.clearFailedIps(reactContext);
         JCoreStorage.clearRegistration(reactContext);
+        check("".equals(JPushInterface.getRegistrationID(reactContext)), "Registration ID must be empty before server Register (cmd=0)");
+        check(JCoreStorage.getUid(reactContext) == 0L, "UID must be 0 before server Register (cmd=0)");
+        check("".equals(JCoreStorage.getPassword(reactContext)), "Password must be empty before server Register (cmd=0)");
         JCoreStorage.setAppKey(reactContext, "1f2027d3cfb1b51dac664c42");
         JCoreTcpEngine.getInstance().setCandidateEndpoints(Arrays.asList(deadEndpoint, liveEndpoint));
 
@@ -2452,6 +2455,7 @@ public final class SdkEndToEndTestRunner {
         junitSuite.testUdpSis10BytePacketWithDemoTestAppKey();
         junitSuite.testAsymmetric24ByteClientAnd20ByteServerFramesWithDemoTestAppKey();
         junitSuite.testLiveJiguangCloudHandshakeWhenNetworkReachable();
+        junitSuite.testEmptyRegistrationBeforeHandshakeMultiRuntimeEventsAndManifestExportedFalse();
         testCryptoParity();
         testUdpSis10ByteAndAsymmetricTcpWireCodec();
         testTcpEngineEndToEndAndProductionResilience();
@@ -2485,6 +2489,20 @@ def write_java_map(base_dir: Path, files: dict[str, str]) -> list[Path]:
 
 
 def verify_clean_sources_and_jars(jcore_jar: Path, jpush_jar: Path) -> None:
+    manifest_path = ROOT / "android" / "src" / "main" / "AndroidManifest.xml"
+    manifest_text = manifest_path.read_text(encoding="utf-8")
+    if 'android:exported="true"' in manifest_text:
+        raise RuntimeError(f"Found android:exported=\"true\" in {manifest_path}")
+    for activity_cls in (
+        "cn.jpush.android.ui.PopWinActivity",
+        "cn.jpush.android.ui.PushActivity",
+        "cn.jpush.android.service.JNotifyActivity",
+        "cn.android.service.JTransitActivity",
+        "cn.jpush.android.service.DActivity",
+    ):
+        if activity_cls not in manifest_text:
+            raise RuntimeError(f"Missing activity {activity_cls} in {manifest_path}")
+
     for java_file in sorted(JAVA_SOURCE_DIR.rglob("*.java")):
         text = java_file.read_text(encoding="utf-8")
         match = BANNED_PATTERNS.search(text)

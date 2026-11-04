@@ -116,11 +116,26 @@ public class ActionHelper {
         if (context == null || intent == null) {
             return;
         }
-        Serializable msg = intent.getSerializableExtra("multi_notification_msg");
-        if (msg instanceof NotificationMessage) {
-            NotificationMessage notificationMessage = (NotificationMessage) msg;
-            dispatchNotificationEvent(context, "notify_opened", notificationMessage);
-            broadcastNotificationOpened(context, notificationMessage);
+        try {
+            String action = intent.getAction();
+            if (action != null && !action.isEmpty()
+                && !"cn.jpush.android.intent.JNotifyActivity".equals(action)
+                && !JPushInterface.ACTION_NOTIFICATION_OPENED.equals(action)) {
+                return;
+            }
+            String targetPkg = intent.getPackage();
+            String appPkg = context.getPackageName();
+            if (targetPkg != null && !targetPkg.isEmpty() && appPkg != null && !appPkg.isEmpty()
+                && !appPkg.equals(targetPkg)) {
+                return;
+            }
+            Serializable msg = intent.getSerializableExtra("multi_notification_msg");
+            if (msg instanceof NotificationMessage) {
+                NotificationMessage notificationMessage = (NotificationMessage) msg;
+                dispatchNotificationEvent(context, "notify_opened", notificationMessage);
+                broadcastNotificationOpened(context, notificationMessage);
+            }
+        } catch (Throwable ignored) {
         }
     }
 

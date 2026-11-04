@@ -296,7 +296,7 @@ static const char *const kJCoreHttpSisIv = "0102030405060708";
         JCORESisEndpoint *ep = [[JCORESisEndpoint alloc] init];
         ep.host = config.defaultConnectHost;
         ep.port = portNum.unsignedShortValue;
-        ep.useSSL = YES;
+        ep.useSSL = (ep.port == 443);
         [endpoints addObject:ep];
     }
     return endpoints;

@@ -7,6 +7,18 @@ import ReactNativeNativeLogger
 class ReactNativeJpush: HybridReactNativeJpushSpec {
   private static let logTag = "RN-JPush"
   private var localLogEnabled: Bool = false
+  private let listenerLock = NSLock()
+  private var registeredListenerIds = Set<Int>()
+
+  deinit {
+    listenerLock.lock()
+    let ids = registeredListenerIds
+    registeredListenerIds.removeAll()
+    listenerLock.unlock()
+    for id in ids {
+      RCTJPushModule.unregisterNitroEventListener(id)
+    }
+  }
 
   func setDebugMode(enable: Bool) throws {
     if enable {
@@ -19,6 +31,7 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
 
   func initPush() throws {
     OneKeyLog.info(Self.logTag, "initPush")
+    RCTJPushModule.setupOrRefreshJPushNativeState()
     let config = JCOREConfiguration.shared()
     if let appKey = config.appKey, !appKey.isEmpty {
       JPUSHService.setup(
@@ -34,6 +47,7 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
   func setupWithConfig(appKey: String, channel: String, production: Bool) throws {
     let resolvedChannel = channel.isEmpty ? "dev" : channel
     OneKeyLog.info(Self.logTag, "setupWithConfig channel=\(resolvedChannel) production=\(production)")
+    RCTJPushModule.setupOrRefreshJPushNativeState()
     if !appKey.isEmpty {
       JPUSHService.setup(
         withOption: nil,
@@ -332,12 +346,11 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
     notifContent.userInfo = userInfo
 
     let trigger = JPushNotificationTrigger()
-    var fireDate = Date()
+    var fireDate = Date(timeIntervalSinceNow: 1.0)
     if let ms = Double(broadcastTime), ms > 0 {
       fireDate = Date(timeIntervalSince1970: ms / 1000.0)
     }
-    var comps = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: fireDate)
-    comps.second = (comps.second ?? 0) + 1
+    let comps = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: fireDate)
     trigger.dateComponents = comps
 
     let request = JPushNotificationRequest()
@@ -478,5 +491,25 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
 
   func readNewLogs() throws -> String {
     return ""
+  }
+
+  func addEventListener(
+    callback: @escaping (_ eventName: String, _ payloadJson: String) -> Void
+  ) throws -> Double {
+    let listenerId = RCTJPushModule.registerNitroEventListener { eventName, payloadJson in
+      callback(eventName, payloadJson)
+    }
+    listenerLock.lock()
+    registeredListenerIds.insert(listenerId)
+    listenerLock.unlock()
+    return Double(listenerId)
+  }
+
+  func removeEventListener(id: Double) throws {
+    let listenerId = Int(id)
+    listenerLock.lock()
+    registeredListenerIds.remove(listenerId)
+    listenerLock.unlock()
+    RCTJPushModule.unregisterNitroEventListener(listenerId)
   }
 }
