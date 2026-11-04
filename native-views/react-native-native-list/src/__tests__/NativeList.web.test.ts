@@ -6044,6 +6044,138 @@ describe('Web migration layout and table regressions', () => {
     }
   });
 
+  it.each(['loaded', 'failed', 'pending-load', 'pending-error'] as const)(
+    'retains the main table image lifecycle through overlay changes when %s',
+    (state) => {
+      const { document } = new JSDOM('<!doctype html><body></body>').window;
+      const host = document.createElement('div');
+      document.body.appendChild(host);
+      const row = (
+        networkUri?: string,
+        tokenUri: string = image.uri
+      ): Extract<RowModel, { type: 'market' }> => ({
+        type: 'market',
+        key: `token:${networkUri ?? ''}`,
+        variant: 'token',
+        title: 'Token',
+        price: '$1',
+        leading: { kind: 'token', image },
+        change: { text: '+1%', tone: 'positive' },
+        webTable: {
+          columns: [{ key: 'asset', width: 300 }],
+          cells: [
+            {
+              key: 'asset',
+              kind: 'asset',
+              title: { text: 'Token' },
+              leading: {
+                kind: 'token',
+                image: {
+                  ...image,
+                  uri: tokenUri,
+                  loadingStrategy: 'static',
+                  retryTimes: 0,
+                },
+                borderColor: '#777777',
+                fallbackIcon: { name: 'CryptoCoinOutline' },
+                overlays: networkUri
+                  ? [
+                      {
+                        position: 'bottomRight',
+                        offset: 4,
+                        size: 20,
+                        padding: 2,
+                        image: { ...image, uri: networkUri },
+                      },
+                    ]
+                  : undefined,
+              },
+            },
+          ],
+        },
+      });
+      const engine = new NativeListWebEngine(
+        host,
+        snapshot({ kind: 'sectioned' }, [row()]),
+        {},
+        false
+      );
+      try {
+        const visual = host.querySelector<HTMLElement>(
+          '[data-column-key="asset"] .ok-native-list-visual'
+        )!;
+        const bitmap = visual.querySelector<HTMLImageElement>(
+          '.ok-native-list-visual-main'
+        )!;
+        const event = (name: string) => new document.defaultView!.Event(name);
+        if (state === 'loaded') bitmap.dispatchEvent(event('load'));
+        if (state === 'failed') bitmap.dispatchEvent(event('error'));
+        const fallback = visual.querySelector(
+          '.ok-native-list-visual-fallback'
+        );
+        for (const uri of [
+          'https://example.test/network-a.png',
+          'https://example.test/network-b.png',
+          undefined,
+        ]) {
+          engine.applySnapshot(snapshot({ kind: 'sectioned' }, [row(uri)]));
+          expect(
+            host.querySelector(
+              '[data-column-key="asset"] .ok-native-list-visual'
+            )
+          ).toBe(visual);
+          expect(visual.querySelector('.ok-native-list-visual-main')).toBe(
+            state === 'failed' ? null : bitmap
+          );
+          expect(bitmap.style.opacity).toBe(state === 'loaded' ? '1' : '0');
+          expect(visual.querySelector('.ok-native-list-visual-fallback')).toBe(
+            fallback
+          );
+          const overlay = visual.querySelector<HTMLElement>(
+            '.ok-native-list-visual-overlay'
+          );
+          expect(overlay?.querySelector('img')?.getAttribute('src')).toBe(uri);
+          if (uri) {
+            expect(overlay!.style.right).toBe('-5px');
+            expect(overlay!.style.padding).toBe('2px');
+            expect(overlay!.querySelector('img')!.style.borderRadius).toBe(
+              '50%'
+            );
+          }
+        }
+        if (state === 'pending-load') {
+          bitmap.dispatchEvent(event('load'));
+          expect(bitmap.style.opacity).toBe('1');
+          expect(
+            visual.querySelector('.ok-native-list-visual-fallback')
+          ).toBeNull();
+        }
+        if (state === 'pending-error') {
+          bitmap.dispatchEvent(event('error'));
+          expect(
+            visual.querySelector('.ok-native-list-visual-main')
+          ).toBeNull();
+          expect(
+            visual.querySelector('.ok-native-list-visual-fallback')
+          ).not.toBeNull();
+        }
+        const replacementUri = 'https://example.test/other-token.png';
+        engine.applySnapshot(
+          snapshot({ kind: 'sectioned' }, [row(undefined, replacementUri)])
+        );
+        const replacement = host.querySelector<HTMLImageElement>(
+          '[data-column-key="asset"] .ok-native-list-visual-main'
+        )!;
+        expect(replacement).not.toBe(bitmap);
+        expect(replacement.getAttribute('src')).toBe(replacementUri);
+        bitmap.dispatchEvent(event('error'));
+        expect(replacement.isConnected).toBe(true);
+      } finally {
+        engine.destroy();
+      }
+    }
+  );
+
   it('uses the legacy two pixel address-copy gap while keeping Stock hover logos at four', () => {
     const { document } = new JSDOM('<!doctype html><body></body>').window;
     const host = document.createElement('div');
