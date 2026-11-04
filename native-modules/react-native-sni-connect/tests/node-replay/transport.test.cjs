@@ -1,23 +1,24 @@
 const https = require("node:https");
-// eslint-disable-next-line import/no-extraneous-dependencies
-const selfsigned = require("selfsigned");
+const fs = require("node:fs");
+const path = require("node:path");
 jest.mock("electron-log/main", () => ({
   __esModule: true,
   default: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
-}));
+}), { virtual: true });
 jest.mock("electron", () => ({
   session: {
     defaultSession: { resolveProxy: jest.fn().mockResolvedValue("DIRECT") },
   },
-}));
+}), { virtual: true });
 const DesktopApiSniRequest = require("consumer/DesktopApiSniRequest").default;
 const hostname = "sni-replay.test";
-const pems = selfsigned.generate([{ name: "commonName", value: hostname }], {
-  days: 1,
-  keySize: 2048,
-  algorithm: "sha256",
-  extensions: [{ name: "subjectAltName", altNames: [{ type: 2, value: hostname }] }],
-});
+const certificateDirectory = process.env.SNI_REPLAY_CERT_DIR;
+if (!certificateDirectory) throw new Error("Run the suite through node-replay/run.cjs");
+const pems = {
+  private: fs.readFileSync(path.join(certificateDirectory, "fixture.key")),
+  cert: fs.readFileSync(path.join(certificateDirectory, "fixture.pem")),
+  ca: fs.readFileSync(path.join(certificateDirectory, "ca.pem")),
+};
 async function runScenario({ method = "POST", body = "demo", warm = true, reply = "drop" } = {}) {
   const api = new DesktopApiSniRequest({ desktopApi: {} });
   const agent = api.agentState.agent;
@@ -62,7 +63,7 @@ async function runScenario({ method = "POST", body = "demo", warm = true, reply 
     // Change only the fixture route and CA; retain production pooling and strict TLS.
     agent.createConnection = (options, ...args) => {
       connections += 1;
-      return createConnection({ ...options, host: "127.0.0.1", port, ca: pems.cert }, ...args);
+      return createConnection({ ...options, host: "127.0.0.1", port, ca: pems.ca }, ...args);
     };
     const config = {
       ip: "93.184.216.34",

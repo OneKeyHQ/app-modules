@@ -121,3 +121,27 @@ end
   trust/hostname verification, test ports and deadlines; it does not prove the
   Android bridge or production destination admission.
 - Native device/network upload acceptance remains separate from these unit tests.
+
+### Automated replay conformance
+
+- `native-tests` runs the Android TLS suite in the existing `android-unit` job.
+- The existing `device-utils-store` job installs only EMASCurl 1.5.5 in a
+  temporary CocoaPods project, then runs `tests/ios-replay/package_test.py
+  --output-dir <temporary-directory>`. It packs the SDK once, executes all six
+  packaged-helper checks and the real verify-only build phase, and compiles
+  that same package and verified dependency for all 15 native TLS cases.
+  Runtime/device and host architecture are discovered from available simulator
+  inventory; a missing runtime fails rather than skipping. The simulator uses
+  a dedicated device set and is shut down after execution. Downloads may be
+  cached; patched sources, builds and simulator data MUST NOT be cached.
+- The existing `native-overlay-package` job runs all 14 Node consumer cases
+  against App commit `326854b4ba1997e06e713f12b6604f0a0f6fe165`. Only three real
+  TypeScript source files are loaded from that read-only checkout. Existing
+  modules Jest/TypeScript tools and an integrity-locked `ipaddr.js` 2.4.0
+  archive avoid a full App dependency installation. Electron host services are
+  mocked; HTTPS, sockets, destination validation and shared helpers remain real.
+- Each replay runner requires its exact nonzero passing case count and records
+  machine-readable results, source provenance and elapsed time. Node pending,
+  skipped and todo tests fail acceptance. iOS requires exactly one complete
+  request and one target-header event per case, including warmed-pool reuse.
+  These CI hosts do not establish React Native bridge or device acceptance.

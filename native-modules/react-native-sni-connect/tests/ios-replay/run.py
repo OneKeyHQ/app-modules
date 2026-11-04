@@ -5,6 +5,9 @@ import hashlib
 import http.server
 import json
 import os
+import platform
+import signal
+import time
 from pathlib import Path
 import socket
 import ssl
@@ -113,7 +116,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     do_GET = do_POST = do_PUT = do_DELETE = do_HEAD = do_OPTIONS = do_PATCH = handle_request
 
 
-def build(emas, port, sdk_root):
+def build(emas, port, sdk_root, arch):
     ios = sdk_root / "ios"
     sources = [ios / f"SniConnect{name}.swift" for name in ("Client", "PinnedTransport", "Validation", "Core", "Log")]
     hashes = {str(path): digest(path) for path in sources}
@@ -147,11 +150,11 @@ static inline void ReplayStoreConfiguration(NSString *identifier, EMASCurlConfig
     objects = []
     for source in sorted((emas / "EMASCurl").glob("*.m")):
         obj = OUT / (source.stem + ".o")
-        run("xcrun", "clang", "-target", "arm64-apple-ios15.0-simulator", "-isysroot", sdk,
+        run("xcrun", "clang", "-target", f"{arch}-apple-ios15.0-simulator", "-isysroot", sdk,
             "-fobjc-arc", "-fmodules", "-I", include, "-I", curl / "Headers", "-c", source, "-o", obj)
         objects.append(obj)
     binary = OUT / "SniReplay"
-    run("xcrun", "swiftc", "-swift-version", "5", "-parse-as-library", "-target", "arm64-apple-ios15.0-simulator",
+    run("xcrun", "swiftc", "-swift-version", "5", "-parse-as-library", "-target", f"{arch}-apple-ios15.0-simulator",
         "-sdk", sdk, "-I", include, "-Xcc", "-I" + str(curl / "Headers"),
         copied, *sources[1:], HERE / "ReplayMain.swift", *objects, curl / "libcurl.a",
         "-framework", "Foundation", "-framework", "UIKit", "-framework", "CFNetwork",
@@ -161,13 +164,39 @@ static inline void ReplayStoreConfiguration(NSString *identifier, EMASCurlConfig
     return binary, hashes
 
 
+def select_simulator(runtime, device_type):
+    inventory = json.loads(subprocess.check_output(["xcrun", "simctl", "list", "--json"], text=True))
+    runtimes = [item for item in inventory["runtimes"] if item.get("isAvailable") and ".iOS-" in item["identifier"] and int(item["version"].split(".")[0]) >= 15]
+    runtimes.sort(key=lambda item: tuple(int(part) for part in item["version"].split(".")), reverse=True)
+    for candidate in runtimes:
+        if runtime and candidate["identifier"] != runtime:
+            continue
+        for device in inventory["devices"].get(candidate["identifier"], []):
+            identifier = device.get("deviceTypeIdentifier")
+            if device.get("isAvailable") and device["name"].startswith("iPhone") and identifier and (not device_type or identifier == device_type):
+                return candidate["identifier"], identifier
+    raise RuntimeError("No available iOS runtime with an iPhone device; replay tests cannot be skipped")
+
+
+def terminate(_signum, _frame):
+    raise SystemExit(143)
+
+
 def main():
+    global OUT
+    started = time.monotonic()
     parser = argparse.ArgumentParser()
     parser.add_argument("--emascurl-root", type=Path, required=True)
     parser.add_argument("--sdk-root", type=Path, default=PACKAGE)
-    parser.add_argument("--runtime", default="com.apple.CoreSimulator.SimRuntime.iOS-27-0")
-    parser.add_argument("--device-type", default="com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro")
+    parser.add_argument("--runtime")
+    parser.add_argument("--device-type")
+    parser.add_argument("--output-dir", type=Path, default=OUT)
+    parser.add_argument("--prepared-dependency", action="store_true")
     args = parser.parse_args()
+    OUT = args.output_dir.resolve()
+    args.runtime, args.device_type = select_simulator(args.runtime, args.device_type)
+    arch = platform.machine()
+    assert arch in ("arm64", "x86_64"), "Unsupported simulator architecture"
     OUT.mkdir(parents=True, exist_ok=True)
     original_emas = args.emascurl_root.resolve()
     original_protocol = original_emas / "EMASCurl/EMASCurlProtocol.m"
@@ -177,10 +206,11 @@ def main():
         relative = f"ios/SniConnect{name}.swift"
         assert digest(sdk_root / relative) == digest(PACKAGE / relative), "Packaged Swift source differs"
     # Compile the exact dependency patched by the distributed helper, never the live Pods copy.
-    dependency = Path(tempfile.mkdtemp(prefix="packaged-dependency-", dir=OUT)) / "EMASCurl"
-    run("cp", "-cR", original_emas, dependency)
+    dependency = original_emas if args.prepared_dependency else Path(tempfile.mkdtemp(prefix="packaged-dependency-", dir=OUT)) / "EMASCurl"
     helper = sdk_root / "ios/apply_emascurl_no_replay.rb"
-    run("ruby", helper, "--pod-root", dependency, "--version", "1.5.5")
+    if not args.prepared_dependency:
+        run("cp", "-cR", original_emas, dependency)
+        run("ruby", helper, "--pod-root", dependency, "--version", "1.5.5")
     run("ruby", helper, "--pod-root", dependency, "--version", "1.5.5", "--verify-only")
     print(json.dumps({"packagedHelper": str(helper), "helperSha256": digest(helper),
                       "originalProtocolSha256": original_hash,
@@ -204,7 +234,7 @@ def main():
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
-    binary, hashes = build(dependency, port, sdk_root)
+    binary, hashes = build(dependency, port, sdk_root, arch)
     device_set = OUT / "devices"
     device_set.mkdir(exist_ok=True)
     simctl = ["xcrun", "simctl", "--set", str(device_set)]
@@ -215,6 +245,7 @@ def main():
     else:
         udid = subprocess.check_output(simctl + ["create", "SNI replay native tests", args.device_type, args.runtime], text=True).strip()
         device_record.write_text(json.dumps({"udid": udid, "runtime": args.runtime, "type": args.device_type}))
+    signal.signal(signal.SIGTERM, terminate)
     results = []
     file = OUT / "upload.txt"
     file.write_bytes(b"demo")
@@ -253,6 +284,7 @@ def main():
                 reused = bool(server.complete) and server.complete[0]["connection"] == server.warm_connection
                 valid = valid and (not warm or (result.get("warmStatus") == 200 and reused))
                 valid = valid and len(server.complete) == 1
+                valid = valid and len([event for event in server.events if event["event"] == "headers"]) == 1
                 if mode.isdigit():
                     valid = valid and result.get("status") == int(mode)
                     valid = valid and result.get("data") == "response"
@@ -276,7 +308,15 @@ def main():
         assert hashes == {path: digest(Path(path)) for path in hashes}, "Production source changed"
         assert digest(original_protocol) == original_hash, "Original Pods source changed"
         (OUT / "results.json").write_text(json.dumps(results, indent=2))
-    raise SystemExit(0 if results and all(result["pass"] for result in results) else 1)
+        passed = len(results) == len(cases) == 15 and all(result["pass"] for result in results)
+        summary = {"passed": passed, "totalCases": len(results), "passedCases": sum(result["pass"] for result in results),
+                   "failedCases": sum(not result["pass"] for result in results), "skippedCases": 0,
+                   "runtime": args.runtime, "deviceType": args.device_type, "architecture": arch,
+                   "sdkRoot": str(sdk_root), "sourceSha256": hashes, "protocolSha256": digest(original_protocol),
+                   "durationSeconds": round(time.monotonic() - started, 3)}
+        (OUT / "summary.json").write_text(json.dumps(summary, indent=2))
+        print(json.dumps(summary), flush=True)
+    raise SystemExit(0 if passed else 1)
 
 
 if __name__ == "__main__":
