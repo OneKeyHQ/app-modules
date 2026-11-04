@@ -32,6 +32,8 @@
 
 @interface OKNFCManager() <NFCTagReaderSessionDelegate,OKNFCManagerDelegate>
 @property (nonatomic, strong) NFCTagReaderSession *session;
+@property (nonatomic, assign) NSUInteger diagnosticID;
+@property (nonatomic, assign) NSUInteger diagnosticSessionID;
 @property (nonatomic, copy) NSString *pin;
 @property (nonatomic, copy) NSString *neoPin;
 @property (nonatomic, copy) NSString *exportMnemonic;
@@ -48,6 +50,20 @@
 
 @implementation OKNFCManager
 
+- (instancetype)init {
+    self = [super init];
+    if (self) {
+        static NSUInteger nextID = 0;
+        @synchronized (OKNFCManager.class) { _diagnosticID = ++nextID; }
+    }
+    return self;
+}
+
+- (void)logSessionStage:(NSString *)stage details:(NSString *)details {
+    [LCLogger info:[NSString stringWithFormat:@"managerID=%lu sessionID=%lu operation=%ld stage=%@ wallTimeMs=%.0f %@", (unsigned long)self.diagnosticID, (unsigned long)self.diagnosticSessionID, (long)self.sessionType, stage, NSDate.date.timeIntervalSince1970 * 1000, details]];
+}
+
+
 #pragma mark - OKNFCManagerDelegate
 
 - (id<NFCISO7816Tag>)getNFCsessionTag {
@@ -61,6 +77,7 @@
 
 
 - (void)endNFCSessionWithError:(BOOL)isError {
+    [self logSessionStage:@"invalidate_request" details:[NSString stringWithFormat:@"isError=%d", isError]];
     self.sessionEndedByApp = YES;
     self.session.alertMessage = @"";
     if (isError) {
@@ -138,6 +155,8 @@
 }
 
 - (void)beginNewNFCSession {
+    self.diagnosticSessionID += 1;
+    [self logSessionStage:@"begin" details:@""];
     self.sessionEndedByApp = NO;
     self.session = [[NFCTagReaderSession alloc] initWithPollingOption:NFCPollingISO14443 delegate:self queue:dispatch_get_global_queue(2, 0)];
     [self.session beginSession];
@@ -146,26 +165,25 @@
 #pragma mark - NFCTagReaderSessionDelegate
 
 - (void)tagReaderSession:(NFCTagReaderSession *)session didDetectTags:(NSArray<__kindof id<NFCTag>> *)tags {
-    [LCLogger debug:@"tagReaderSession didDetectTags"];
+    [self logSessionStage:@"detect" details:[NSString stringWithFormat:@"tagCount=%lu currentSession=%d", (unsigned long)tags.count, session == self.session]];
 
     id<NFCISO7816Tag> tag = [tags.firstObject asNFCISO7816Tag];
     if (!tag) { return; }
 
     [session connectToTag:tag completionHandler:^(NSError * _Nullable error) {
         if (error) {
-            NSString *errMsg = [NSString stringWithFormat:@"connectToTag error: %@", error.localizedDescription];
-            [LCLogger error:errMsg];
-            //            [kTools debugTipMessage:errMsg];
+            [self logSessionStage:@"connect_failure" details:[NSString stringWithFormat:@"code=%ld coreNFCDomain=%d", (long)error.code, [error.domain isEqualToString:NFCErrorDomain]]];
             [self endNFCSessionWithError:YES];
             [self finishPendingRequestAsCancel:NO sessionError:nil];
             return;
         }
+        [self logSessionStage:@"connect_success" details:@""];
         [self nfcSessionComplete:session];
     }];
 }
 
 - (void)tagReaderSession:(NFCTagReaderSession *)session didInvalidateWithError:(NSError *)error {
-    [LCLogger debug:[NSString stringWithFormat:@"tagReaderSession didInvalidateWithError: %@", error.localizedDescription]];
+    [self logSessionStage:@"invalidated" details:[NSString stringWithFormat:@"code=%ld coreNFCDomain=%d endedByApp=%d currentSession=%d", (long)error.code, [error.domain isEqualToString:NFCErrorDomain], self.sessionEndedByApp, session == self.session]];
     // When the app ended the session, the card operation that ended it reports
     // the real result; treating this as a cancel would race with it.
     if ((error.code == 200 || error.code == 6) && !self.sessionEndedByApp) {
@@ -175,7 +193,7 @@
 }
 
 - (void)tagReaderSessionDidBecomeActive:(NFCTagReaderSession *)session {
-    [LCLogger debug:@"tagReaderSessionDidBecomeActive"];
+    [self logSessionStage:@"active" details:[NSString stringWithFormat:@"currentSession=%d", session == self.session]];
 }
 
 #pragma mark - Tasks
@@ -259,6 +277,7 @@
            complete:(SetMnemonicCallback)complete {
 
     if (pin.length != OKNFC_PIN_LENGTH) {
+        [self logSessionStage:@"input_rejected" details:@"operation=setMnemonic"];
         return;
     }
     self.pin = pin;
@@ -293,6 +312,7 @@
 
 - (void)getMnemonicWithPin:(NSString *)pin complete:(GetMnemonicCallback)complete {
     if (pin.length != OKNFC_PIN_LENGTH) {
+        [self logSessionStage:@"input_rejected" details:@"operation=getMnemonicWithPin"];
         return;
     }
     self.pin = pin;
