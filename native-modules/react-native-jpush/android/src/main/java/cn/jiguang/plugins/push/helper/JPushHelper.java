@@ -3,7 +3,6 @@ package cn.jiguang.plugins.push.helper;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
-import android.text.TextUtils;
 
 import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.ReactApplicationContext;
@@ -108,6 +107,10 @@ public class JPushHelper {
         return targets;
     }
 
+    private static boolean isEmpty(CharSequence s) {
+        return s == null || s.length() == 0;
+    }
+
     public static void flushPendingNitroEvents() {
         if (PENDING_NITRO_EVENTS.isEmpty() || NITRO_LISTENERS.isEmpty()) {
             return;
@@ -115,7 +118,7 @@ public class JPushHelper {
         List<PendingNitroEvent> snapshot = new ArrayList<PendingNitroEvent>(PENDING_NITRO_EVENTS);
         PENDING_NITRO_EVENTS.clear();
         for (PendingNitroEvent pending : snapshot) {
-            if (pending == null || TextUtils.isEmpty(pending.eventName)) {
+            if (pending == null || isEmpty(pending.eventName)) {
                 continue;
             }
             for (NitroEventListener listener : NITRO_LISTENERS.values()) {
@@ -142,7 +145,7 @@ public class JPushHelper {
         List<PendingEvent> snapshot = new ArrayList<PendingEvent>(PENDING_EVENTS);
         PENDING_EVENTS.clear();
         for (PendingEvent pending : snapshot) {
-            if (pending != null && !TextUtils.isEmpty(pending.eventName)) {
+            if (pending != null && !isEmpty(pending.eventName)) {
                 int index = 0;
                 int total = targets.size();
                 for (ReactApplicationContext ctx : targets) {
@@ -161,8 +164,68 @@ public class JPushHelper {
         }
     }
 
+    public static void sendEventMap(String eventName, Map<String, Object> params) {
+        if (isEmpty(eventName)) {
+            return;
+        }
+        try {
+            String payloadJson = mapToJsonString(params);
+            if (!NITRO_LISTENERS.isEmpty()) {
+                for (NitroEventListener listener : NITRO_LISTENERS.values()) {
+                    if (listener != null) {
+                        try {
+                            listener.onEvent(eventName, payloadJson);
+                        } catch (Throwable inner) {
+                            JLogger.e("sendEventMap nitro listener error:" + inner.getMessage());
+                        }
+                    }
+                }
+            } else {
+                if (PENDING_NITRO_EVENTS.size() >= 64) {
+                    PENDING_NITRO_EVENTS.remove(0);
+                }
+                PENDING_NITRO_EVENTS.add(new PendingNitroEvent(eventName, payloadJson));
+            }
+
+            Set<ReactApplicationContext> targets = getTargetContexts();
+            if (!targets.isEmpty()) {
+                try {
+                    WritableMap writable = mapFromHashMap(
+                        params != null ? params : new HashMap<String, Object>()
+                    );
+                    int index = 0;
+                    int total = targets.size();
+                    for (ReactApplicationContext ctx : targets) {
+                        WritableMap payload = (total > 1 && index > 0) ? cloneWritableMap(writable) : writable;
+                        index++;
+                        ctx.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class).emit(eventName, payload);
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+        } catch (Throwable throwable) {
+            JLogger.e("sendEventMap error:" + throwable.getMessage());
+        }
+    }
+
+    private static String mapToJsonString(Map<String, Object> params) {
+        JSONObject obj = new JSONObject();
+        if (params == null || params.isEmpty()) {
+            return obj.toString();
+        }
+        for (Map.Entry<String, Object> entry : params.entrySet()) {
+            if (entry.getKey() != null) {
+                try {
+                    obj.put(entry.getKey(), convertValueForJson(entry.getValue()));
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+        return obj.toString();
+    }
+
     public static void sendEvent(String eventName, WritableMap params) {
-        if (TextUtils.isEmpty(eventName)) {
+        if (isEmpty(eventName)) {
             return;
         }
         try {
@@ -436,7 +499,7 @@ public class JPushHelper {
     }
 
     public static void convertExtras(String extras, WritableMap writableMap) {
-        if (TextUtils.isEmpty(extras) || extras.equals("{}")) return;
+        if (isEmpty(extras) || extras.equals("{}")) return;
         try {
             WritableMap extrasMap = Arguments.createMap();
             JSONObject jsonObject = new JSONObject(extras);

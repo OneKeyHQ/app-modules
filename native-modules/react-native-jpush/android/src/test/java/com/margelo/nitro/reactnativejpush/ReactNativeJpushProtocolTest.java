@@ -12,9 +12,6 @@ import cn.jiguang.core.JCoreWireCodec;
 import cn.jiguang.plugins.push.JPushModule;
 import cn.jiguang.plugins.push.helper.JPushHelper;
 import cn.jpush.android.api.JPushInterface;
-import com.facebook.react.bridge.Arguments;
-import com.facebook.react.bridge.ReactApplicationContext;
-import com.facebook.react.bridge.WritableMap;
 import java.io.File;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -303,83 +300,88 @@ public class ReactNativeJpushProtocolTest {
 
     @Test
     public void testEmptyRegistrationBeforeHandshakeMultiRuntimeEventsAndManifestExportedFalse() throws Exception {
-        // 1. Fresh context before TCP Register (cmd=0) must return "" for getRegistrationID (no fake 1a0018970a...)
-        ReactApplicationContext freshCtx = new ReactApplicationContext();
-        JCoreStorage.clearRegistration(freshCtx);
-        assertEquals("", JPushInterface.getRegistrationID(freshCtx));
-        assertEquals(0L, JCoreStorage.getUid(freshCtx));
-        assertEquals("", JCoreStorage.getPassword(freshCtx));
+        // 1. Fresh state before TCP Register (cmd=0) must return "" for getRegistrationID (no fake 1a0018970a...)
+        JCoreStorage.clearRegistration(null);
+        assertEquals("", JPushInterface.getRegistrationID(null));
+        assertEquals(0L, JCoreStorage.getUid(null));
+        assertEquals("", JCoreStorage.getPassword(null));
 
-        // 2. Multi-runtime event delivery & pure Nitro event hub without ReactApplicationContext
+        // 2. Cold-start queueing and multi-runtime (main + bg) Nitro event fan-out
         JPushModule.clearActiveReactContexts();
         JPushHelper.clearNitroListeners();
 
-        // 2a. Cold-start event when legacy JPushModule is ALREADY registered (eager PackageList init)
-        //     BEFORE any Nitro listener is registered -> must still be buffered in PENDING_NITRO_EVENTS!
-        ReactApplicationContext mainCtx = new ReactApplicationContext();
-        ReactApplicationContext bgCtx = new ReactApplicationContext();
-        new JPushModule(mainCtx);
-        new JPushModule(bgCtx);
+        Map<String, Object> coldStartPayload = new LinkedHashMap<String, Object>();
+        coldStartPayload.put("messageID", "nitro_cold_01");
+        coldStartPayload.put("title", "NitroCold");
+        JPushHelper.sendEventMap("NotificationEvent", coldStartPayload);
 
-        WritableMap coldStartPayload = Arguments.createMap();
-        coldStartPayload.putString("messageID", "nitro_cold_01");
-        coldStartPayload.putString("title", "NitroCold");
-        JPushHelper.sendEvent("NotificationEvent", coldStartPayload);
+        final List<String> mainReceivedNames = new java.util.ArrayList<String>();
+        final List<String> mainReceivedJsons = new java.util.ArrayList<String>();
+        final List<String> bgReceivedNames = new java.util.ArrayList<String>();
+        final List<String> bgReceivedJsons = new java.util.ArrayList<String>();
 
-        final List<String> nitroReceivedNames = new java.util.ArrayList<String>();
-        final List<String> nitroReceivedJsons = new java.util.ArrayList<String>();
-        int nitroListenerId = JPushHelper.registerNitroListener(new JPushHelper.NitroEventListener() {
+        int mainListenerId = JPushHelper.registerNitroListener(new JPushHelper.NitroEventListener() {
             @Override
             public void onEvent(String eventName, String payloadJson) {
-                nitroReceivedNames.add(eventName);
-                nitroReceivedJsons.add(payloadJson);
+                mainReceivedNames.add(eventName);
+                mainReceivedJsons.add(payloadJson);
             }
         });
-        assertTrue(nitroListenerId > 0);
-        assertEquals(1L, (long) nitroReceivedNames.size());
-        assertEquals("NotificationEvent", nitroReceivedNames.get(0));
-        assertTrue(nitroReceivedJsons.get(0).contains("nitro_cold_01"));
+        int bgListenerId = JPushHelper.registerNitroListener(new JPushHelper.NitroEventListener() {
+            @Override
+            public void onEvent(String eventName, String payloadJson) {
+                bgReceivedNames.add(eventName);
+                bgReceivedJsons.add(payloadJson);
+            }
+        });
+        assertTrue(mainListenerId > 0);
+        assertTrue(bgListenerId > 0);
+        assertEquals(1L, (long) mainReceivedNames.size());
+        assertEquals("NotificationEvent", mainReceivedNames.get(0));
+        assertTrue(mainReceivedJsons.get(0).contains("nitro_cold_01"));
 
-        // 2b. Dual runtime + Nitro listener live delivery
-        WritableMap eventPayload = Arguments.createMap();
-        eventPayload.putString("messageID", "multi_rt_msg_1");
-        eventPayload.putString("title", "MultiRuntime");
-        JPushHelper.sendEvent("NotificationEvent", eventPayload);
+        Map<String, Object> eventPayload = new LinkedHashMap<String, Object>();
+        eventPayload.put("messageID", "multi_rt_msg_1");
+        eventPayload.put("title", "MultiRuntime");
+        JPushHelper.sendEventMap("NotificationEvent", eventPayload);
 
-        assertEquals(2L, (long) mainCtx.emittedEvents.size());
-        assertEquals(2L, (long) bgCtx.emittedEvents.size());
-        assertEquals("NotificationEvent", mainCtx.emittedEvents.get(1).name);
-        assertEquals("NotificationEvent", bgCtx.emittedEvents.get(1).name);
-        assertEquals(2L, (long) nitroReceivedNames.size());
-        assertTrue(nitroReceivedJsons.get(1).contains("multi_rt_msg_1"));
+        assertEquals(2L, (long) mainReceivedNames.size());
+        assertEquals(1L, (long) bgReceivedNames.size());
+        assertEquals("NotificationEvent", mainReceivedNames.get(1));
+        assertEquals("NotificationEvent", bgReceivedNames.get(0));
+        assertTrue(mainReceivedJsons.get(1).contains("multi_rt_msg_1"));
+        assertTrue(bgReceivedJsons.get(0).contains("multi_rt_msg_1"));
 
-        JPushHelper.unregisterNitroListener(nitroListenerId);
+        JPushHelper.unregisterNitroListener(mainListenerId);
+        JPushHelper.unregisterNitroListener(bgListenerId);
         JPushHelper.clearNitroListeners();
 
         // 3. Verify AndroidManifest.xml has android:exported="false" on all 5 internal activities
-        File manifestFile = new File("android/src/main/AndroidManifest.xml");
+        File manifestFile = new File("src/main/AndroidManifest.xml");
+        if (!manifestFile.exists()) {
+            manifestFile = new File("android/src/main/AndroidManifest.xml");
+        }
         if (!manifestFile.exists()) {
             manifestFile = new File(
                 System.getProperty("user.dir"),
                 "native-modules/react-native-jpush/android/src/main/AndroidManifest.xml"
             );
         }
-        if (manifestFile.exists()) {
-            String xml = new String(Files.readAllBytes(manifestFile.toPath()), StandardCharsets.UTF_8);
-            assertTrue(!xml.contains("android:exported=\"true\""));
-            for (String activityName : new String[] {
-                "cn.jpush.android.ui.PopWinActivity",
-                "cn.jpush.android.ui.PushActivity",
-                "cn.jpush.android.service.JNotifyActivity",
-                "cn.android.service.JTransitActivity",
-                "cn.jpush.android.service.DActivity"
-            }) {
-                int idx = xml.indexOf(activityName);
-                assertTrue(idx > 0);
-                int endTag = xml.indexOf(">", idx);
-                String activityHeader = xml.substring(idx, endTag);
-                assertTrue(activityHeader.contains("android:exported=\"false\""));
-            }
+        assertTrue(manifestFile.exists());
+        String xml = new String(Files.readAllBytes(manifestFile.toPath()), StandardCharsets.UTF_8);
+        assertTrue(!xml.contains("android:exported=\"true\""));
+        for (String activityName : new String[] {
+            "cn.jpush.android.ui.PopWinActivity",
+            "cn.jpush.android.ui.PushActivity",
+            "cn.jpush.android.service.JNotifyActivity",
+            "cn.android.service.JTransitActivity",
+            "cn.jpush.android.service.DActivity"
+        }) {
+            int idx = xml.indexOf(activityName);
+            assertTrue(idx > 0);
+            int endTag = xml.indexOf(">", idx);
+            String activityHeader = xml.substring(idx, endTag);
+            assertTrue(activityHeader.contains("android:exported=\"false\""));
         }
 
         // 4. Verify periodic heartbeat timer sends additional CMD_HEARTBEAT frames after initial login
@@ -451,17 +453,17 @@ public class ReactNativeJpushProtocolTest {
         hbThread.setDaemon(true);
         hbThread.start();
 
-        JCoreStorage.updateRegistration(freshCtx, testUid, "hb_pwd", "reg_hb_880011", "dev_hb_01");
-        JCoreStorage.setServerRegistered(freshCtx, true);
+        JCoreStorage.updateRegistration(null, testUid, "hb_pwd", "reg_hb_880011", "dev_hb_01");
+        JCoreStorage.setServerRegistered(null, true);
         JCoreTcpEngine.getInstance().setHeartbeatIntervalMs(60L);
         JCoreTcpEngine.getInstance().setCustomEndpoint("127.0.0.1", hbPort);
-        JCoreTcpEngine.getInstance().triggerReconnectNow(freshCtx);
+        JCoreTcpEngine.getInstance().triggerReconnectNow(null);
         assertTrue(JCoreTcpEngine.getInstance().awaitHandshake(3000L));
         assertTrue(twoHeartbeatsLatch.await(3000L, TimeUnit.MILLISECONDS));
         assertTrue(heartbeatsReceived.get() >= 2);
         JCoreTcpEngine.getInstance().setHeartbeatIntervalMs(290000L);
-        JCoreTcpEngine.getInstance().closeSocket();
-        JCoreStorage.clearRegistration(freshCtx);
+        JCoreTcpEngine.getInstance().stop(null);
+        JCoreStorage.clearRegistration(null);
 
         // 5. Verify connectAndHandshake automatic SIS resolution when candidateEndpoints is empty, customPort == 0,
         //    and JCoreStorage has no cached lastGoodIp or sisIps:
@@ -582,33 +584,32 @@ public class ReactNativeJpushProtocolTest {
         sisTcpThread.setDaemon(true);
         sisTcpThread.start();
 
-        ReactApplicationContext sisCtx = new ReactApplicationContext();
-        JCoreStorage.clearRegistration(sisCtx);
-        JCoreStorage.saveSisConfig(sisCtx, "{\"ips\":[],\"ssl_ips\":[]}");
-        JCoreStorage.setLastGoodIp(sisCtx, "");
+        JCoreStorage.clearRegistration(null);
+        JCoreStorage.saveSisConfig(null, "{\"ips\":[],\"ssl_ips\":[]}");
+        JCoreStorage.setLastGoodIp(null, "");
         JCoreTcpEngine.getInstance().setCustomEndpoint("", 0);
         JCoreTcpEngine.getInstance().setCandidateEndpoints(Collections.<String>emptyList());
         JCoreTcpEngine.getInstance().setCustomSisUrl("udp-only");
         JCoreTcpEngine.getInstance().setDefaultSisUdpEndpoint("127.0.0.1", sisUdpPort);
         assertEquals(0L, (long) JCoreTcpEngine.getInstance().getCustomPort());
-        assertTrue(JCoreStorage.getSisIps(sisCtx).isEmpty());
+        assertTrue(JCoreStorage.getSisIps(null).isEmpty());
 
         // (a) First SIS query returns deadTcpPort -> connectAndHandshake must NOT set fake connected=true
-        JCoreTcpEngine.getInstance().connectAndHandshake(sisCtx);
-        assertEquals(false, JCoreStorage.isConnected(sisCtx));
-        assertEquals("", JPushInterface.getRegistrationID(sisCtx));
+        JCoreTcpEngine.getInstance().connectAndHandshake(null);
+        assertEquals(false, JCoreStorage.isConnected(null));
+        assertEquals("", JPushInterface.getRegistrationID(null));
 
         // (b) Clear cached SIS state; second SIS query returns live sisTcpPort -> connects without setCustomEndpoint
-        JCoreStorage.saveSisConfig(sisCtx, "{\"ips\":[],\"ssl_ips\":[]}");
-        JCoreStorage.setLastGoodIp(sisCtx, "");
-        assertTrue(JCoreStorage.getSisIps(sisCtx).isEmpty());
-        JCoreTcpEngine.getInstance().connectAndHandshake(sisCtx);
-        assertEquals(true, JCoreStorage.isConnected(sisCtx));
-        assertEquals("reg_auto_sis_990022", JPushInterface.getRegistrationID(sisCtx));
-        assertTrue(JCoreStorage.getSisIps(sisCtx).contains("127.0.0.1:" + sisTcpPort));
+        JCoreStorage.saveSisConfig(null, "{\"ips\":[],\"ssl_ips\":[]}");
+        JCoreStorage.setLastGoodIp(null, "");
+        assertTrue(JCoreStorage.getSisIps(null).isEmpty());
+        JCoreTcpEngine.getInstance().connectAndHandshake(null);
+        assertEquals(true, JCoreStorage.isConnected(null));
+        assertEquals("reg_auto_sis_990022", JPushInterface.getRegistrationID(null));
+        assertTrue(JCoreStorage.getSisIps(null).contains("127.0.0.1:" + sisTcpPort));
 
         JCoreTcpEngine.getInstance().setCustomSisUrl("");
         JCoreTcpEngine.getInstance().setDefaultSisUdpEndpoint("s.jpush.cn", 19000);
-        JCoreTcpEngine.getInstance().closeSocket();
+        JCoreTcpEngine.getInstance().stop(null);
     }
 }

@@ -375,9 +375,7 @@ public final class JCoreTcpEngine {
     public synchronized void stop(Context context) {
         closeSocket();
         this.started = false;
-        if (context != null) {
-            JCoreStorage.setConnected(context, false);
-        }
+        JCoreStorage.setConnected(context, false);
     }
 
     public void start(final Context context) {
@@ -474,19 +472,31 @@ public final class JCoreTcpEngine {
         if (customHost != null && !customHost.isEmpty() && customPort > 0) {
             ordered.add(customHost + ":" + customPort);
         }
-        if (context != null) {
-            String lastGood = JCoreStorage.getLastGoodIp(context);
-            if (lastGood != null && !lastGood.isEmpty() && ordered.isEmpty()) {
-                ordered.add(lastGood);
-            }
-            for (String s : JCoreStorage.getSisIps(context)) {
-                ordered.add(s);
-            }
-            for (String s : JCoreStorage.getSisSslIps(context)) {
-                ordered.add(s);
+        String lastGood = JCoreStorage.getLastGoodIp(context);
+        if (lastGood != null && !lastGood.isEmpty() && ordered.isEmpty()) {
+            ordered.add(lastGood);
+        }
+        for (String s : JCoreStorage.getSisIps(context)) {
+            ordered.add(s);
+        }
+        for (String s : JCoreStorage.getSisSslIps(context)) {
+            ordered.add(s);
+        }
+        List<String> failedIps = JCoreStorage.getFailedIps(context);
+        if (failedIps == null || failedIps.isEmpty()) {
+            return new ArrayList<String>(ordered);
+        }
+        List<String> healthy = new ArrayList<String>();
+        List<String> failed = new ArrayList<String>();
+        for (String ep : ordered) {
+            if (failedIps.contains(ep)) {
+                failed.add(ep);
+            } else {
+                healthy.add(ep);
             }
         }
-        return new ArrayList<String>(ordered);
+        healthy.addAll(failed);
+        return healthy;
     }
 
     public void connectAndHandshake(final Context context) {
@@ -507,9 +517,7 @@ public final class JCoreTcpEngine {
                 }
             }
             if (candidates.isEmpty()) {
-                if (context != null) {
-                    JCoreStorage.setConnected(context, false);
-                }
+                JCoreStorage.setConnected(context, false);
                 return;
             }
 
@@ -531,9 +539,27 @@ public final class JCoreTcpEngine {
             }
 
             if (!connectedSuccess) {
-                this.reconnectAttempt++;
-                if (context != null) {
-                    JCoreStorage.setConnected(context, false);
+                JCoreStorage.setConnected(context, false);
+                if (this.started && this.autoReconnectEnabled && !JCoreStorage.isPushStopped(context)) {
+                    final long delayMs = computeReconnectDelayMs(reconnectAttempt++, reconnectBaseDelayMs);
+                    final long scheduledGen = this.connectionGeneration;
+                    ioExecutor.execute(new Runnable() {
+                        @Override
+                        public void run() {
+                            try {
+                                Thread.sleep(delayMs);
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                                return;
+                            }
+                            if (!started || scheduledGen != connectionGeneration || loggedIn || JCoreStorage.isPushStopped(context)) {
+                                return;
+                            }
+                            connectAndHandshake(context);
+                        }
+                    });
+                } else {
+                    this.reconnectAttempt++;
                 }
             }
         } finally {
@@ -848,7 +874,7 @@ public final class JCoreTcpEngine {
                     this.activeOutput = null;
                 }
             }
-            if (wasLoggedIn && context != null) {
+            if (wasLoggedIn) {
                 JCoreStorage.setConnected(context, false);
             }
             for (ResponseSlot slot : pendingRequests.values()) {
@@ -867,7 +893,7 @@ public final class JCoreTcpEngine {
                             Thread.currentThread().interrupt();
                             return;
                         }
-                        if (scheduledGen != connectionGeneration || loggedIn || JCoreStorage.isPushStopped(context)) {
+                        if (!started || scheduledGen != connectionGeneration || loggedIn || JCoreStorage.isPushStopped(context)) {
                             return;
                         }
                         connectAndHandshake(context);
