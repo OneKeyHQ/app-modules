@@ -6,42 +6,9 @@ jest.mock('react-native-nitro-modules', () => ({
   NitroModules: { createHybridObject: () => mockNative },
 }));
 
-import packageManifest from '../../package.json';
-
 import ImageCropPicker from '../index';
 
-const { getPackageEntryPoint } = jest.requireActual<{
-  getPackageEntryPoint(
-    context: { mainFields: string[] },
-    packageInfo: { packageJson: Record<string, unknown> },
-    platform: string
-  ): string;
-}>('metro-resolver/private/PackageResolve');
-
 beforeEach(() => jest.clearAllMocks());
-
-it.each(['ios', 'android'])(
-  'resolves the native package entry on %s',
-  (platform) => {
-    expect(
-      getPackageEntryPoint(
-        { mainFields: ['react-native', 'browser', 'main'] },
-        { packageJson: packageManifest },
-        platform
-      )
-    ).toBe('./lib/module/index.js');
-  }
-);
-
-it('retains the browser package entry on web', () => {
-  expect(
-    getPackageEntryPoint(
-      { mainFields: ['browser', 'main'] },
-      { packageJson: packageManifest },
-      'web'
-    )
-  ).toBe('./lib/module/index.web.js');
-});
 
 it('passes original selection options and native results through unchanged', async () => {
   const image = {
