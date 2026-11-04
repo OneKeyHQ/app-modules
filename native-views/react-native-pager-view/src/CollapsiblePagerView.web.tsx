@@ -1,5 +1,8 @@
 import type { ScrollEdgeEffect } from "./ScrollEdgeEffect";
 import React from "react";
+import { createNamedIcon } from "@onekeyfe/react-native-image/icon/dom";
+import type { CollapsiblePagerNativeTabBarConfig, CollapsiblePagerToolbarPress, CollapsiblePagerViewOnNativeTabPressEvent } from "./CollapsiblePagerView";
+export type { CollapsiblePagerNativeTabBarConfig, CollapsiblePagerNativeTabBarItem, CollapsiblePagerNativeTabBarStyle, CollapsiblePagerToolbarItem, CollapsiblePagerToolbarPress } from "./CollapsiblePagerView";
 import { I18nManager, Platform, StyleSheet, View } from "react-native";
 import type * as ReactNative from "react-native";
 
@@ -66,6 +69,10 @@ export interface CollapsiblePagerViewProps
     | "retainedPages"
     | "layoutDirection"
   > {
+  nativeTabBar?: CollapsiblePagerNativeTabBarConfig;
+  nativeTabPressAnimationEnabled?: boolean;
+  onNativeTabPress?: (event: CollapsiblePagerViewOnNativeTabPressEvent) => void;
+  onNativeToolbarPress?: (event: ReactNative.NativeSyntheticEvent<CollapsiblePagerToolbarPress>) => void;
   header: React.ReactNode;
   stickyHeader: React.ReactNode;
   headerHeight?: number;
@@ -1338,9 +1345,80 @@ export class CollapsiblePagerView extends React.PureComponent<
     if (wasHorizontal) this.finishPageTransition();
   };
 
+  private renderNativeTabBar() {
+    const config = this.props.nativeTabBar;
+    if (!config?.items.length || (config.style?.variant !== "text" && config.controlled !== true && config.toolbar === undefined)) return null;
+    const style = config.style;
+    const variant = style?.variant ?? "underline";
+    const selectedKey = config.controlled ? config.selectedKey : config.items[this.state.selectedPage]?.key;
+    const toolbar = selectedKey ? config.toolbar?.[selectedKey] : undefined;
+    const size = Math.min(128, Math.max(1, toolbar?.size ?? 38));
+    const iconSize = Math.min(size, Math.max(1, toolbar?.iconSize ?? 24));
+    const contentWidth = Math.min(size, Math.max(0, toolbar?.contentWidth ?? 24));
+    const trailingInset = Math.min(128, Math.max(0, toolbar?.trailingInset ?? 20));
+    const segmented = variant === "segmented";
+    return React.createElement("div", {
+      className: "ok-pager-tab-bar",
+      dir: this.props.layoutDirection === "rtl" || ((this.props.layoutDirection ?? "locale") === "locale" && I18nManager.isRTL) ? "rtl" : "ltr",
+      style: { display: "flex", alignItems: "center", position: "relative", height: style?.height ?? 44,
+        backgroundColor: String(style?.backgroundColor ?? "transparent"), minWidth: 0 },
+    },
+      React.createElement("style", null, `.ok-pager-tab{box-sizing:border-box;appearance:none;border:0;background:transparent;cursor:default;white-space:nowrap;flex-shrink:0;line-height:normal}.ok-pager-toolbar{box-sizing:border-box;appearance:none;border:1px solid transparent;cursor:default;display:flex;align-items:center;justify-content:center;background:var(--pager-toolbar-base)}.ok-pager-toolbar:hover:enabled{background:var(--pager-toolbar-hover)}.ok-pager-toolbar:active:enabled{background:var(--pager-toolbar-pressed)}`),
+      React.createElement("div", { role: "tablist", style: { display: "flex", overflowX: segmented ? "hidden" : "auto", flex: 1,
+        padding: `${style?.contentPaddingVertical ?? 0}px ${style?.contentPaddingHorizontal ?? 20}px`, gap: style?.itemSpacing ?? 8 } },
+        ...config.items.map((item, position) => {
+          const selected = item.key === selectedKey;
+          return React.createElement("button", {
+            key: item.key, role: "tab", type: "button", className: "ok-pager-tab", "aria-selected": selected,
+            "aria-label": item.accessibilityLabel ?? item.title, "data-testid": item.testID,
+            style: { padding: variant === "text" ? "6px 10px" : "6px 8px", minWidth: 44, height: (style?.height ?? 44) - 2 * (style?.contentPaddingVertical ?? 0),
+              fontSize: style?.fontSize ?? (variant === "text" ? 18 : 16),
+              fontWeight: variant === "text" && selected ? 600 : 500,
+              fontFamily: selected ? style?.activeFontFamily ?? style?.fontFamily : style?.fontFamily,
+              color: String(selected ? style?.activeTextColor ?? "#000000" : style?.inactiveTextColor ?? "#666666"),
+              flex: segmented ? 1 : undefined, borderRadius: segmented ? 999 : 0,
+              backgroundColor: segmented && selected ? String(style?.indicatorColor ?? "transparent") : "transparent",
+              borderBottom: variant === "underline" && selected ? `${style?.indicatorHeight ?? 2}px solid ${String(style?.indicatorColor ?? "#000000")}` : undefined },
+            onClick: () => {
+              if (!config.controlled) {
+                const animated = this.props.nativeTabPressAnimationEnabled ?? Math.abs(position - this.state.selectedPage) <= 1;
+                if (animated) this.setPage(position); else this.setPageWithoutAnimation(position);
+              }
+              this.props.onNativeTabPress?.({ nativeEvent: { position, key: item.key } } as CollapsiblePagerViewOnNativeTabPressEvent);
+            },
+          }, item.title);
+        })),
+      toolbar && selectedKey ? React.createElement("div", { style: { flexShrink: 0, width: contentWidth + trailingInset, height: "100%", position: "relative" } },
+        React.createElement("button", {
+          key: `${selectedKey}:${toolbar.iconName}`, type: "button", className: "ok-pager-toolbar",
+          "aria-label": toolbar.accessibilityLabel, "data-testid": toolbar.testID,
+          style: { position: "absolute", width: size, height: size, borderRadius: "50%", top: "50%", transform: "translateY(-50%)",
+            insetInlineStart: -(size - contentWidth) / 2, padding: (size - iconSize) / 2, color: toolbar.iconColor ?? "#000000",
+            "--pager-toolbar-base": toolbar.selected ? toolbar.selectedBackgroundColor ?? "transparent" : "transparent",
+            "--pager-toolbar-hover": toolbar.hoverBackgroundColor ?? "transparent",
+            "--pager-toolbar-pressed": toolbar.pressedBackgroundColor ?? "transparent" } as React.CSSProperties,
+          ref: (button: HTMLButtonElement | null) => {
+            if (!button) return;
+            const icon = createNamedIcon(button.ownerDocument, toolbar.iconName);
+            icon.setAttribute("width", String(iconSize)); icon.setAttribute("height", String(iconSize));
+            button.replaceChildren(icon);
+            button.disabled = !icon.querySelector("use");
+          },
+          onClick: (event: React.MouseEvent<HTMLButtonElement>) => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            this.props.onNativeToolbarPress?.({ nativeEvent: { key: selectedKey,
+              anchorRect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } } } as ReactNative.NativeSyntheticEvent<CollapsiblePagerToolbarPress>);
+          },
+        })) : null);
+  }
+
   render() {
     const {
       children: _children,
+      nativeTabBar: _nativeTabBar,
+      nativeTabPressAnimationEnabled: _nativeTabPressAnimationEnabled,
+      onNativeTabPress: _onNativeTabPress,
+      onNativeToolbarPress: _onNativeToolbarPress,
       header,
       stickyHeader,
       topOverlay: _topOverlay,
@@ -1436,8 +1514,8 @@ export class CollapsiblePagerView extends React.PureComponent<
             collapseAnimation,
           ]}
         >
-          {this.hasExplicitStickyHeaderHeight ? stickyHeader : (
-            <View ref={this.setStickyContent}>{stickyHeader}</View>
+          {this.hasExplicitStickyHeaderHeight ? <>{this.renderNativeTabBar()}{stickyHeader}</> : (
+            <View ref={this.setStickyContent}>{this.renderNativeTabBar()}{stickyHeader}</View>
           )}
         </View>
         <View

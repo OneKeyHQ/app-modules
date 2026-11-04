@@ -642,3 +642,155 @@ describe('CollapsiblePagerView Web owner bookkeeping', () => {
     expect(queued).not.toHaveBeenCalled();
   });
 });
+
+
+describe('home native text toolbar JS bridge contract', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    jest.spyOn(NativeCollapsiblePagerCommands, 'setPage').mockImplementation(() => {});
+    jest.spyOn(NativeCollapsiblePagerCommands, 'setPageWithoutAnimation').mockImplementation(() => {});
+  });
+  afterEach(() => { jest.restoreAllMocks(); jest.useRealTimers(); });
+
+  it('emits controlled presses for extra tabs without dispatching native page commands', async () => {
+    const pressed = jest.fn();
+    const config = { controlled: true, selectedKey: 'tokens', items: [
+      { key: 'tokens', title: 'Tokens' }, { key: 'activity', title: 'Activity' },
+      { key: 'extra', title: 'Extra' },
+    ] };
+    let renderer!: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(<NativeCollapsiblePagerView {...requiredProps}
+        nativeTabBar={config} onNativeTabPress={pressed}>
+        <View key="tokens" />{false}<View key="activity" />
+      </NativeCollapsiblePagerView>, { createNodeMock: () => ({}) });
+    });
+    const host = renderer.root.find(node => typeof node.props.retainedPages === 'string');
+    for (const [position, key] of [[1, 'activity'], [2, 'extra']] as const) {
+      await ReactTestRenderer.act(() => host.props.onNativeTabPress({ nativeEvent: { position, key } }));
+    }
+    await ReactTestRenderer.act(() => jest.runOnlyPendingTimers());
+    expect(pressed.mock.calls.map(([event]) => event.nativeEvent)).toEqual([
+      { position: 1, key: 'activity' }, { position: 2, key: 'extra' },
+    ]);
+    expect(NativeCollapsiblePagerCommands.setPage).not.toHaveBeenCalled();
+    expect(NativeCollapsiblePagerCommands.setPageWithoutAnimation).not.toHaveBeenCalled();
+    expect(renderer.root.findByType(NativeCollapsiblePagerView).instance.state.selectedPage).toBe(0);
+    expect(JSON.parse(host.props.nativeTabBarConfig)).toMatchObject({
+      controlled: true, selectedKey: 'tokens', pageKeys: ['tokens', 'activity'],
+    });
+    await ReactTestRenderer.act(() => renderer.unmount());
+  });
+
+  it('preserves raw stable page keys through reorder and rejects stale tab identities', async () => {
+    const pressed = jest.fn();
+    const render = (keys: string[]) => <NativeCollapsiblePagerView {...requiredProps}
+      nativeTabBar={{ controlled: true, selectedKey: 'a:b', items: [
+        { key: 'a:b', title: 'A' }, { key: 'b=c', title: 'B' }, { key: 'outside', title: 'Extra' },
+      ] }} onNativeTabPress={pressed}>
+      {keys.map(key => <View key={key} />)}
+    </NativeCollapsiblePagerView>;
+    let renderer!: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(() => { renderer = ReactTestRenderer.create(render(['a:b', 'b=c'])); });
+    const host = () => renderer.root.find(node => typeof node.props.retainedPages === 'string');
+    expect(JSON.parse(host().props.nativeTabBarConfig).pageKeys).toEqual(['a:b', 'b=c']);
+    await ReactTestRenderer.act(() => renderer.update(render(['b=c', 'a:b'])));
+    expect(JSON.parse(host().props.nativeTabBarConfig).pageKeys).toEqual(['b=c', 'a:b']);
+    await ReactTestRenderer.act(() => {
+      host().props.onNativeTabPress({ nativeEvent: { position: 0, key: 'outside' } });
+      host().props.onNativeTabPress({ nativeEvent: { position: 99, key: 'a:b' } });
+    });
+    expect(pressed).not.toHaveBeenCalled();
+    await ReactTestRenderer.act(() => renderer.unmount());
+  });
+
+  it('serializes toolbar names and active font and forwards the anchored event unchanged', async () => {
+    const toolbarPressed = jest.fn();
+    const toolbar = { tokens: { iconName: 'Copy3Outline', selected: true,
+      size: 38, iconSize: 24, contentWidth: 24, trailingInset: 20,
+      hoverBackgroundColor: '#eeeeee', pressedBackgroundColor: '#dddddd',
+      selectedBackgroundColor: '#123456', iconColor: 'rgba(12, 34, 56, 0.5)' } };
+    let renderer!: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(() => { renderer = ReactTestRenderer.create(
+      <NativeCollapsiblePagerView {...requiredProps} nativeTabBar={{ controlled: true,
+        selectedKey: 'tokens', items: [{ key: 'tokens', title: 'Tokens' }],
+        style: { variant: 'text', activeFontFamily: 'Semibold' }, toolbar }}
+        onNativeToolbarPress={toolbarPressed}><View key="tokens" /></NativeCollapsiblePagerView>,
+    ); });
+    const host = renderer.root.find(node => typeof node.props.retainedPages === 'string');
+    const payload = JSON.parse(host.props.nativeTabBarConfig);
+    expect(payload.activeFontFamily).toBe('Semibold');
+    expect(payload.toolbar.tokens).toMatchObject({ iconName: 'Copy3Outline', selected: true,
+      size: 38, iconSize: 24, contentWidth: 24, trailingInset: 20,
+      iconColor: 'rgba(12,34,56,0.501961)' });
+    expect(payload.toolbar.tokens.selectedBackgroundColor >>> 0).toBe(0xff123456);
+    expect(payload.toolbar.tokens.hoverBackgroundColor >>> 0).toBe(0xffeeeeee);
+    expect(payload.toolbar.tokens.pressedBackgroundColor >>> 0).toBe(0xffdddddd);
+    expect(host.props.nativeTabBarVariant).toBe('text');
+    const event = { nativeEvent: { key: 'tokens', anchorRect: { x: 301, y: 201, width: 38, height: 38 } } };
+    host.props.onNativeToolbarPress(event);
+    expect(toolbarPressed).toHaveBeenCalledWith(event);
+    await ReactTestRenderer.act(() => renderer.unmount());
+  });
+
+  it.each(['ios', 'android'] as const)('keeps controlled imperative page commands enabled on %s with extra non-page tabs', async platform => {
+    const previous = Platform.OS;
+    Object.defineProperty(Platform, 'OS', { configurable: true, value: platform });
+    const pressed = jest.fn();
+    let renderer!: ReactTestRenderer.ReactTestRenderer;
+    try {
+      await ReactTestRenderer.act(() => { renderer = ReactTestRenderer.create(
+        <NativeCollapsiblePagerView {...requiredProps} nativeTabBar={{ controlled: true,
+          selectedKey: 'tokens', items: [{ key: 'tokens', title: 'Tokens' },
+            { key: 'activity', title: 'Activity' }, { key: 'extra', title: 'Extra' }] }} onNativeTabPress={pressed}>
+          <View key="tokens" /><View key="activity" />
+        </NativeCollapsiblePagerView>, { createNodeMock: () => ({}) },
+      ); });
+      const host = renderer.root.find(node => typeof node.props.retainedPages === 'string');
+      const pager = renderer.root.findByType(NativeCollapsiblePagerView).instance;
+      await ReactTestRenderer.act(() => {
+        host.props.onNativeTabPress({ nativeEvent: { position: 1, key: 'activity' } });
+        host.props.onNativeTabPress({ nativeEvent: { position: 2, key: 'extra' } });
+        jest.runOnlyPendingTimers();
+      });
+      expect(pressed).toHaveBeenCalledTimes(2);
+      expect(NativeCollapsiblePagerCommands.setPage).not.toHaveBeenCalled();
+      expect(NativeCollapsiblePagerCommands.setPageWithoutAnimation).not.toHaveBeenCalled();
+      await ReactTestRenderer.act(() => pager.setPage(1));
+      expect(NativeCollapsiblePagerCommands.setPage).toHaveBeenCalledTimes(1);
+      expect(NativeCollapsiblePagerCommands.setPage).toHaveBeenCalledWith(expect.anything(), 1);
+      await ReactTestRenderer.act(() => pager.setPageWithoutAnimation(1));
+      expect(NativeCollapsiblePagerCommands.setPageWithoutAnimation).toHaveBeenCalledTimes(1);
+      expect(NativeCollapsiblePagerCommands.setPageWithoutAnimation).toHaveBeenCalledWith(expect.anything(), 1);
+      await ReactTestRenderer.act(() => { pager.setPage(2); pager.setPageWithoutAnimation(2); });
+      expect(NativeCollapsiblePagerCommands.setPage).toHaveBeenCalledTimes(1);
+      expect(NativeCollapsiblePagerCommands.setPageWithoutAnimation).toHaveBeenCalledTimes(1);
+    } finally {
+      if (renderer) await ReactTestRenderer.act(() => renderer.unmount());
+      Object.defineProperty(Platform, 'OS', { configurable: true, value: previous });
+    }
+  });
+
+  it('ignores delayed toolbar events after its entry or icon has been removed', async () => {
+    const pressed = jest.fn();
+    const render = (toolbar: Record<string, { iconName: string }>) => <NativeCollapsiblePagerView
+      {...requiredProps} nativeTabBar={{ controlled: true, selectedKey: 'tokens',
+        items: [{ key: 'tokens', title: 'Tokens' }], toolbar }} onNativeToolbarPress={pressed}>
+      <View key="tokens" />
+    </NativeCollapsiblePagerView>;
+    let renderer!: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(() => { renderer = ReactTestRenderer.create(render({ tokens: { iconName: 'Copy3Outline' } })); });
+    const host = () => renderer.root.find(node => typeof node.props.retainedPages === 'string');
+    const event = { nativeEvent: { key: 'tokens', anchorRect: { x: 10, y: 20, width: 38, height: 38 } } };
+    host().props.onNativeToolbarPress(event);
+    expect(pressed).toHaveBeenCalledTimes(1);
+    await ReactTestRenderer.act(() => renderer.update(render({})));
+    host().props.onNativeToolbarPress(event);
+    expect(pressed).toHaveBeenCalledTimes(1);
+    await ReactTestRenderer.act(() => renderer.update(render({ tokens: { iconName: '' } })));
+    host().props.onNativeToolbarPress(event);
+    expect(pressed).toHaveBeenCalledTimes(1);
+    await ReactTestRenderer.act(() => renderer.unmount());
+  });
+
+});

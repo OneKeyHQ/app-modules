@@ -838,3 +838,113 @@ describe.each([375, 1920])('nested NativeList scroll ownership at %ipx', (width)
     expect(external.querySelector('.ok-native-list-viewport')).not.toBe(external);
   });
 });
+
+
+describe('home native text toolbar DOM contract', () => {
+  const items = [{ key: 'tokens', title: 'Tokens' }, { key: 'activity', title: 'Activity' },
+    { key: 'extra', title: 'Extra' }];
+  const toolbar = { tokens: { iconName: 'Copy3Outline', testID: 'token-toolbar',
+    accessibilityLabel: 'Token settings', selected: true, selectedBackgroundColor: '#cccccc',
+    hoverBackgroundColor: '#eeeeee', pressedBackgroundColor: '#dddddd' },
+    extra: { iconName: 'StarOutline', testID: 'extra-toolbar', accessibilityLabel: 'Extra filter' } };
+  function renderBar(selectedKey: string, onTab = jest.fn(), onToolbar = jest.fn(), customToolbar = toolbar,
+    pager = React.createRef<CollapsiblePagerView>()) {
+    return <CollapsiblePagerView ref={pager} header={<div />} headerHeight={0} stickyHeaderHeight={44}
+      nativeTabBar={{ controlled: true, selectedKey, items, toolbar: customToolbar,
+        style: { variant: 'text', activeFontFamily: 'Semibold', fontFamily: 'Medium' } }}
+      onNativeTabPress={onTab} onNativeToolbarPress={onToolbar}>
+      {makePage('tokens')}{makePage('activity')}
+    </CollapsiblePagerView>;
+  }
+
+  it('emits controlled extra-tab intent while keeping selection and page commands owned by the parent', async () => {
+    const pager = React.createRef<CollapsiblePagerView>();
+    const onTab = jest.fn();
+    await act(async () => root.render(renderBar('tokens', onTab, jest.fn(), toolbar, pager)));
+    const animated = jest.spyOn(pager.current!, 'setPage');
+    const immediate = jest.spyOn(pager.current!, 'setPageWithoutAnimation');
+    const tabs = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+    expect(tabs).toHaveLength(3);
+    await act(async () => tabs[2].click());
+    await flushFrames();
+    expect(onTab).toHaveBeenCalledWith(expect.objectContaining({ nativeEvent: { position: 2, key: 'extra' } }));
+    expect(animated).not.toHaveBeenCalled(); expect(immediate).not.toHaveBeenCalled();
+    expect(tabs.map(tab => tab.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false']);
+    await act(async () => root.render(renderBar('extra', onTab, jest.fn(), toolbar, pager)));
+    expect(tabs.map(tab => tab.getAttribute('aria-selected'))).toEqual(['false', 'false', 'true']);
+    expect(tabs[2].style.fontFamily).toBe('Semibold');
+    expect(tabs[2].style.fontWeight).toBe('600');
+  });
+
+  it('renders no toolbar for a selected key with no toolbar entry', async () => {
+    await act(async () => root.render(renderBar('activity')));
+    expect(container.querySelector('.ok-pager-toolbar')).toBeNull();
+  });
+
+  it('resolves an icon name through the SDK fixture resource table and emits its measured anchor', async () => {
+    const onToolbar = jest.fn();
+    await act(async () => root.render(renderBar('tokens', jest.fn(), onToolbar)));
+    const button = container.querySelector<HTMLButtonElement>('[data-testid="token-toolbar"]')!;
+    expect(button.disabled).toBe(false);
+    expect(button.getAttribute('aria-label')).toBe('Token settings');
+    const href = button.querySelector('svg use')!.getAttribute('href')!;
+    expect(href).toMatch(/icon-fixtures\/web\/assets\/Copy3Outline.svg#onekey-Copy3Outline$/);
+    const fs = require('node:fs') as typeof import('node:fs');
+    const artwork = fs.readFileSync(new URL(href.split('#')[0]), 'utf8');
+    expect(artwork).toContain('id="onekey-Copy3Outline"');
+    expect(artwork).toContain('<path');
+    button.getBoundingClientRect = () => ({ x: 310, y: 175, top: 175, left: 310,
+      right: 348, bottom: 213, width: 38, height: 38, toJSON() {} });
+    await act(async () => button.click());
+    expect(onToolbar).toHaveBeenCalledTimes(1);
+    expect(onToolbar.mock.calls[0][0].nativeEvent).toEqual({ key: 'tokens',
+      anchorRect: { x: 310, y: 175, width: 38, height: 38 } });
+  });
+
+  it('disables an unknown artwork name and emits no toolbar press', async () => {
+    const onToolbar = jest.fn();
+    await act(async () => root.render(renderBar('tokens', jest.fn(), onToolbar,
+      { tokens: { ...toolbar.tokens, iconName: 'NoSuchArtworkForContractTest' } } as typeof toolbar)));
+    const button = container.querySelector<HTMLButtonElement>('.ok-pager-toolbar')!;
+    expect(button.disabled).toBe(true);
+    expect(button.querySelector('svg use')).toBeNull();
+    await act(async () => button.click());
+    expect(onToolbar).not.toHaveBeenCalled();
+  });
+
+  it('replaces toolbar identity and selected background when the controlled key changes', async () => {
+    await act(async () => root.render(renderBar('tokens')));
+    const previous = container.querySelector<HTMLButtonElement>('.ok-pager-toolbar')!;
+    expect(previous.style.getPropertyValue('--pager-toolbar-base')).toBe('#cccccc');
+    expect(previous.style.getPropertyValue('--pager-toolbar-hover')).toBe('#eeeeee');
+    expect(previous.style.getPropertyValue('--pager-toolbar-pressed')).toBe('#dddddd');
+    const styles = container.querySelector('style')!.textContent!;
+    expect(styles).toContain('.ok-pager-toolbar:hover');
+    expect(styles).toContain('.ok-pager-toolbar:active');
+    await act(async () => root.render(renderBar('extra')));
+    const current = container.querySelector<HTMLButtonElement>('.ok-pager-toolbar')!;
+    expect(current).not.toBe(previous);
+    expect(previous.isConnected).toBe(false);
+    expect(current.style.getPropertyValue('--pager-toolbar-base')).toBe('transparent');
+    expect(current.querySelector('use')!.getAttribute('href')).toContain('StarOutline.svg#onekey-StarOutline');
+    await act(async () => root.render(renderBar('activity')));
+    expect(current.isConnected).toBe(false);
+    expect(container.querySelector('.ok-pager-toolbar')).toBeNull();
+  });
+
+  it('keeps a caller-provided legacy sticky tab bar single for underline and segmented configs', async () => {
+    for (const variant of ['underline', 'segmented'] as const) {
+      await act(async () => root.render(
+        <CollapsiblePagerView header={<div />} headerHeight={0} stickyHeaderHeight={44}
+          stickyHeader={<div data-testid="legacy-sticky-tabs">Legacy tabs</div>}
+          nativeTabBar={{ items, style: { variant } }}>
+          {makePage('tokens')}{makePage('activity')}
+        </CollapsiblePagerView>,
+      ));
+      expect(container.querySelectorAll('[data-testid="legacy-sticky-tabs"]')).toHaveLength(1);
+      expect(container.querySelector('.ok-pager-tab-bar')).toBeNull();
+      expect(container.querySelector('.ok-pager-toolbar')).toBeNull();
+    }
+  });
+
+});

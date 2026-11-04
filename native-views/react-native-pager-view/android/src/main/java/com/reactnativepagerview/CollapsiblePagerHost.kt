@@ -115,6 +115,9 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
 
   val pager = ViewPager2(context)
   internal val adapter = CollapsiblePagerAdapter()
+  var onNativeToolbarPress: ((String, DoubleArray) -> Unit)? = null
+  fun updateNativeTabBarConfig(value: String?) = nativeTabBarView.updateConfigJSON(value)
+
   private val nativeTabBarView = CollapsiblePagerNativeTabBarView(context)
   private val nativeSubHeaderView = CollapsiblePagerNativeSubHeaderView(context)
   private val logicalChildren = ArrayList<View>()
@@ -332,6 +335,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
       pager,
       LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
     )
+    nativeTabBarView.onToolbarPress = { key, rect -> onNativeToolbarPress?.invoke(key, rect) }
     nativeTabBarView.onItemPress = { index, key -> onNativeTabPress?.invoke(index, key) }
     nativeSubHeaderView.onItemPress = { index, key -> onNativeSubHeaderPress?.invoke(index, key) }
     super.addView(nativeTabBarView)

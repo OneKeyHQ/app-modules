@@ -70,6 +70,10 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
         }
       }
     })
+    host.onNativeToolbarPress = { key, rect ->
+      dispatch(reactContext, host, NativeHeaderPressEvent(host.id, 0, key,
+        NativeHeaderPressEvent.TOOLBAR_EVENT_NAME, rect))
+    }
     host.onNativeTabPress = { position, key ->
       dispatch(
         reactContext,
@@ -227,6 +231,11 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
     view?.retainedPages = value ?: "[]"
   }
 
+  @ReactProp(name = "nativeTabBarConfig")
+  override fun setNativeTabBarConfig(view: CollapsiblePagerHost?, value: String?) {
+    view?.updateNativeTabBarConfig(value)
+  }
+
   @ReactProp(name = "nativeTabBarItems")
   override fun setNativeTabBarItems(view: CollapsiblePagerHost?, value: String?) {
     view?.updateNativeTabBarItems(value)
@@ -242,7 +251,7 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
   @ReactProp(name = "nativeTabBarVariant")
   override fun setNativeTabBarVariant(view: CollapsiblePagerHost?, value: String?) {
     view ?: return
-    view.nativeTabBarVariant = if (value == "segmented") "segmented" else "underline"
+    view.nativeTabBarVariant = if (value == "segmented" || value == "text") value else "underline"
     view.applyNativeHeaderStyle()
   }
 
@@ -404,6 +413,7 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
         CollapsibleStateChangedEvent.EVENT_NAME,
         MapBuilder.of("registrationName", "onCollapsibleStateChanged"),
       )
+      .put(NativeHeaderPressEvent.TOOLBAR_EVENT_NAME, MapBuilder.of("registrationName", "onNativeToolbarPress"))
       .put(
         NativeHeaderPressEvent.TAB_EVENT_NAME,
         MapBuilder.of("registrationName", "onNativeTabPress"),

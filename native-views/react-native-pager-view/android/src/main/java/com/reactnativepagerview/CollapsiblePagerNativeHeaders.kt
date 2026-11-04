@@ -4,6 +4,9 @@ import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.StateListDrawable
+import android.widget.ImageView
+import com.margelo.nitro.onekeyimage.OneKeyNamedSVG
 import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
@@ -81,6 +84,7 @@ private class CollapsiblePagerHorizontalItemsView(
   private var contentPaddingPx = dp(20.0)
   private var contentPaddingVerticalPx = 0
   private var segmented = false
+  private var textVariant = false
   private var itemSpacingPx = dp(8.0)
   private var fontSize = if (showsProgressIndicator) 16.0 else 14.0
   private var fontFamily: String? = null
@@ -91,6 +95,11 @@ private class CollapsiblePagerHorizontalItemsView(
   private var indicatorHeightPx = dp(2.0)
   private var indicatorBottomPx = 0
   private var progress = 0f
+  private var mappedSource: Int? = null
+  private var mappedDestination: Int? = null
+  private var mappedFraction = 0f
+  private var activeFontFamily: String? = null
+  private var controlledSelectedKey: String? = null
   private var centerSelectionWhenIdle = true
   private var isTouchDragging = false
 
@@ -165,6 +174,7 @@ private class CollapsiblePagerHorizontalItemsView(
     contentPaddingVerticalPx = max(0, dp(contentPaddingVertical))
     val wasSegmented = segmented
     segmented = showsProgressIndicator && variant == "segmented"
+    textVariant = showsProgressIndicator && variant == "text"
     itemSpacingPx = max(0, dp(itemSpacing))
     this.fontSize = max(1.0, fontSize)
     this.fontFamily = fontFamily
@@ -197,7 +207,14 @@ private class CollapsiblePagerHorizontalItemsView(
     updatePresentation()
   }
 
-  fun setProgress(value: Float) {
+  fun setControlledSelectedKey(value: String?) { controlledSelectedKey = value; updatePresentation() }
+
+  fun setActiveFontFamily(value: String?) { activeFontFamily = value; requestLayout() }
+
+  fun setProgress(value: Float, source: Int? = null, destination: Int? = null, fraction: Float = 0f) {
+    mappedSource = source
+    mappedDestination = destination
+    mappedFraction = fraction
     if (!showsProgressIndicator || items.isEmpty()) return
     val next = value.coerceIn(0f, (items.size - 1).toFloat())
     if (kotlin.math.abs(progress - next) >= 0.001f) centerSelectionWhenIdle = true
@@ -205,10 +222,15 @@ private class CollapsiblePagerHorizontalItemsView(
     updatePresentation()
   }
 
+  private fun selectedTypeface(): Typeface = activeFontFamily?.takeIf(String::isNotEmpty)?.let { resolveHeaderTypeface(context, it) }
+    ?: if (android.os.Build.VERSION.SDK_INT >= 28) Typeface.create(Typeface.create("sans-serif", Typeface.NORMAL), 600, false)
+      else Typeface.create("sans-serif", Typeface.BOLD)
+
   private fun applyTypeface() {
     val typeface = resolveHeaderTypeface(context, fontFamily)
     buttons.forEach { button ->
-      button.typeface = typeface
+      button.typeface = if (textVariant && button.isSelected) selectedTypeface() else typeface
+      button.setPadding(dp(if (textVariant) 10.0 else 8.0), 0, dp(if (textVariant) 10.0 else 8.0), 0)
       button.setTextSize(TypedValue.COMPLEX_UNIT_SP, fontSize.toFloat())
     }
   }
@@ -271,7 +293,15 @@ private class CollapsiblePagerHorizontalItemsView(
     track.layoutParams = FrameLayout.LayoutParams(0, 0)
     var x = contentPaddingPx
     buttons.forEachIndexed { index, button ->
-      val textWidth = ceil(button.paint.measureText(button.text.toString()).toDouble()).toInt()
+      var textWidth = ceil(button.paint.measureText(button.text.toString()).toDouble()).toInt()
+      if (textVariant) {
+        val original = button.paint.typeface
+        button.paint.typeface = resolveHeaderTypeface(context, fontFamily)
+        textWidth = ceil(button.paint.measureText(button.text.toString()).toDouble()).toInt()
+        button.paint.typeface = selectedTypeface()
+        textWidth = max(textWidth, ceil(button.paint.measureText(button.text.toString()).toDouble()).toInt())
+        button.paint.typeface = original
+      }
       // Reuse the rounded padding: dp(16) can be one pixel less than two dp(8) insets.
       val horizontalPadding = if (showsProgressIndicator) {
         button.compoundPaddingLeft + button.compoundPaddingRight
@@ -343,14 +373,19 @@ private class CollapsiblePagerHorizontalItemsView(
         indicatorX + indicatorWidth,
         indicatorTop + indicatorHeight,
       )
-      indicator.visibility = if (indicatorHeight > 0) VISIBLE else GONE
+      indicator.visibility = if (!textVariant && indicatorHeight > 0) VISIBLE else GONE
       scrollTargetCenterX = interpolatedIndicatorX + interpolatedIndicatorWidth / 2f
-      selectedIndex = clamped.roundToInt()
+      selectedIndex = if (controlledSelectedKey != null) items.indexOfFirst { it.key == controlledSelectedKey } else clamped.roundToInt()
       buttons.forEachIndexed { index, button ->
-        val emphasis = 1f - min(1f, kotlin.math.abs(clamped - index))
+        val emphasis = if (controlledSelectedKey != null && mappedFraction <= 0.001f) {
+          if (index == selectedIndex) 1f else 0f
+        } else if (mappedSource != null && mappedDestination != null) {
+          (if (index == mappedSource) 1f - mappedFraction else 0f) + (if (index == mappedDestination) mappedFraction else 0f)
+        } else 1f - min(1f, kotlin.math.abs(clamped - index))
         button.setTextColor(ColorUtils.blendARGB(inactiveTextColor, activeTextColor, emphasis))
         button.background = null
         button.isSelected = index == selectedIndex
+        if (textVariant) button.typeface = if (button.isSelected) selectedTypeface() else resolveHeaderTypeface(context, fontFamily)
       }
     } else {
       selectedIndex = items.indexOfFirst { item -> item.key == selectedKey }
@@ -377,6 +412,93 @@ private class CollapsiblePagerHorizontalItemsView(
 internal class CollapsiblePagerNativeTabBarView(context: Context) : FrameLayout(context) {
   private val row = CollapsiblePagerHorizontalItemsView(context, true)
   private var heightPx = 0
+  private val toolbar = ImageView(context)
+  private var config = JSONObject()
+  private var items = emptyList<CollapsiblePagerNativeHeaderItem>()
+  private var selectedKey = ""
+  private var iconOwner: Any = Any()
+  private var iconIdentity = ""
+  private var toolbarTouchKey: String? = null
+  private var toolbarTouchStarted = false
+  private var lastNativeProgress = 0f
+  private var toolbarSize = 38.0
+  private var toolbarIconSize = 24.0
+  private var toolbarContentWidth = 24.0
+  private var toolbarTrailingInset = 20.0
+  var onToolbarPress: ((String, DoubleArray) -> Unit)? = null
+
+  private fun dp(value: Number) = (value.toDouble() * resources.displayMetrics.density).roundToInt()
+
+  fun updateConfigJSON(value: String?) {
+    toolbarTouchKey = null
+    toolbar.isPressed = false
+    toolbar.isHovered = false
+    config = runCatching { JSONObject(value ?: "{}") }.getOrDefault(JSONObject())
+    row.setActiveFontFamily(config.optString("activeFontFamily").takeIf(String::isNotEmpty))
+    selectedKey = if (config.optBoolean("controlled")) config.optString("selectedKey") else items.getOrNull(lastNativeProgress.roundToInt())?.key ?: ""
+    row.setControlledSelectedKey(if (config.optBoolean("controlled")) selectedKey else null)
+    val index = items.indexOfFirst { it.key == selectedKey }
+    if (index >= 0) row.setProgress(index.toFloat())
+    updateToolbar()
+  }
+
+  private fun updateToolbar() {
+    val item = config.optJSONObject("toolbar")?.optJSONObject(selectedKey)
+    val style = item ?: JSONObject()
+    val hasToolbar = item != null && item.optString("iconName").isNotEmpty()
+    toolbar.visibility = if (hasToolbar) VISIBLE else GONE
+    if (!hasToolbar) {
+      OneKeyNamedSVG.cancel(iconOwner)
+      iconIdentity = ""
+      toolbar.setImageDrawable(null)
+      requestLayout()
+      return
+    }
+    val descriptor = item ?: return
+    toolbarSize = descriptor.optDouble("size", 38.0).coerceIn(1.0, 128.0)
+    toolbarIconSize = descriptor.optDouble("iconSize", 24.0).coerceIn(1.0, toolbarSize)
+    toolbarContentWidth = descriptor.optDouble("contentWidth", 24.0).coerceIn(0.0, toolbarSize)
+    toolbarTrailingInset = descriptor.optDouble("trailingInset", 20.0).coerceIn(0.0, 128.0)
+    val inset = max(0, (dp(toolbarSize) - dp(toolbarIconSize)) / 2)
+    toolbar.setPadding(inset, inset, inset, inset)
+    fun color(name: String, fallback: Int) = (style.opt(name) as? Number)?.toInt() ?: fallback
+    val baseColor = if (descriptor.optBoolean("selected")) color("selectedBackgroundColor", Color.TRANSPARENT) else Color.TRANSPARENT
+    fun fill(value: Int) = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(value) }
+    toolbar.background = StateListDrawable().apply {
+      addState(intArrayOf(android.R.attr.state_enabled, android.R.attr.state_pressed), fill(color("pressedBackgroundColor", baseColor)))
+      addState(intArrayOf(android.R.attr.state_enabled, android.R.attr.state_hovered), fill(color("hoverBackgroundColor", baseColor)))
+      addState(intArrayOf(), fill(baseColor))
+    }
+    toolbar.contentDescription = descriptor.optString("accessibilityLabel")
+    toolbar.setTag(com.facebook.react.R.id.react_test_id, descriptor.optString("testID"))
+    val name = descriptor.optString("iconName")
+    val tint = style.optString("iconColor", "#000000")
+    val identity = "$selectedKey|$name|$tint|${resources.displayMetrics.density}|$toolbarIconSize"
+    if (identity != iconIdentity && isAttachedToWindow) {
+      OneKeyNamedSVG.cancel(iconOwner)
+      iconOwner = Any()
+      iconIdentity = identity
+      toolbar.setImageDrawable(null)
+      toolbar.isEnabled = false
+      OneKeyNamedSVG.request(iconOwner, context.applicationContext.assets, name, tint,
+        dp(toolbarIconSize), dp(toolbarIconSize), resources.displayMetrics.density) { bitmap ->
+        if (iconIdentity == identity && isAttachedToWindow) { toolbar.setImageBitmap(bitmap); toolbar.isEnabled = bitmap != null }
+      }
+    }
+    requestLayout()
+  }
+
+  override fun onAttachedToWindow() { super.onAttachedToWindow(); updateToolbar() }
+  override fun onDetachedFromWindow() {
+    toolbarTouchStarted = false
+    toolbarTouchKey = null
+    toolbar.isPressed = false
+    toolbar.isHovered = false
+    OneKeyNamedSVG.cancel(iconOwner)
+    iconIdentity = ""
+    toolbar.setImageDrawable(null)
+    super.onDetachedFromWindow()
+  }
 
   var onItemPress: ((Int, String) -> Unit)?
     get() = row.onItemPress
@@ -386,12 +508,40 @@ internal class CollapsiblePagerNativeTabBarView(context: Context) : FrameLayout(
 
   init {
     addView(row, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+    addView(toolbar)
+    toolbar.scaleType = ImageView.ScaleType.CENTER_INSIDE
+    toolbar.setPadding(dp(6), dp(6), dp(6), dp(6))
+    toolbar.isClickable = true
+    toolbar.isFocusable = true
+    toolbar.visibility = GONE
+    toolbar.setOnTouchListener { _, event ->
+      when (event.actionMasked) {
+        MotionEvent.ACTION_DOWN -> { toolbarTouchStarted = true; toolbarTouchKey = selectedKey }
+        MotionEvent.ACTION_CANCEL -> { toolbarTouchStarted = false; toolbarTouchKey = null }
+      }
+      false
+    }
+    toolbar.setOnClickListener {
+      val key = if (toolbarTouchStarted) toolbarTouchKey else selectedKey
+      toolbarTouchStarted = false
+      toolbarTouchKey = null
+      if (key == null || key != selectedKey || !isAttachedToWindow || !toolbar.isEnabled || toolbar.visibility != VISIBLE) return@setOnClickListener
+      if (config.optJSONObject("toolbar")?.optJSONObject(key) != null) {
+        val location = IntArray(2)
+        toolbar.getLocationInWindow(location)
+        val density = resources.displayMetrics.density.toDouble()
+        onToolbarPress?.invoke(key, doubleArrayOf(location[0] / density, location[1] / density,
+          toolbar.width / density, toolbar.height / density))
+      }
+    }
     visibility = GONE
   }
 
   fun updateItemsJSON(value: String?) {
+    items = parseHeaderItems(value)
     row.updateItemsJSON(value)
     visibility = row.visibility
+    updateConfigJSON(config.toString())
   }
 
   fun updateStyle(
@@ -433,7 +583,58 @@ internal class CollapsiblePagerNativeTabBarView(context: Context) : FrameLayout(
     indicatorColor,
   )
 
-  fun setProgress(progress: Float) = row.setProgress(progress)
+  fun setProgress(progress: Float) {
+    lastNativeProgress = progress
+    var mapped = progress
+    var source: Int? = null
+    var destination: Int? = null
+    var fraction = 0f
+    if (config.optBoolean("controlled")) {
+      val pageKeys = config.optJSONArray("pageKeys") ?: return
+      val names = List(pageKeys.length()) { pageKeys.optString(it) }
+      val indices = names.map { name -> items.indexOfFirst { it.key == name } }
+      if (names.isEmpty() || names.toSet().size != names.size || indices.any { it < 0 } || items.map { it.key }.toSet().size != items.size) {
+        val fallback = items.indexOfFirst { it.key == config.optString("selectedKey") }
+        if (fallback >= 0) { row.setProgress(fallback.toFloat()); selectedKey = items[fallback].key; updateToolbar() }
+        return
+      }
+      val bounded = progress.coerceIn(0f, (pageKeys.length() - 1).toFloat())
+      val lower = floor(bounded).toInt().coerceAtLeast(0)
+      val upper = min(lower + 1, pageKeys.length() - 1)
+      val from = indices[lower]
+      val to = indices[upper]
+      if (from < 0 || to < 0) return
+      fraction = bounded - lower
+      source = from
+      destination = to
+      mapped = from + (to - from) * fraction
+    }
+    row.setProgress(mapped, source, destination, fraction)
+    if (config.optBoolean("controlled")) return
+    val selectedIndex = mapped.roundToInt()
+    val nextKey = items.getOrNull(selectedIndex)?.key ?: return
+    if (nextKey != selectedKey) { toolbarTouchKey = null; toolbar.isPressed = false; selectedKey = nextKey; updateToolbar() }
+  }
+
+  override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+    val width = MeasureSpec.getSize(widthMeasureSpec)
+    val height = MeasureSpec.getSize(heightMeasureSpec)
+    val reserved = if (toolbar.visibility == VISIBLE) dp(toolbarContentWidth + toolbarTrailingInset) else 0
+    row.measure(MeasureSpec.makeMeasureSpec(max(0, width - reserved), MeasureSpec.EXACTLY), heightMeasureSpec)
+    toolbar.measure(MeasureSpec.makeMeasureSpec(dp(toolbarSize), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(dp(toolbarSize), MeasureSpec.EXACTLY))
+    setMeasuredDimension(width, height)
+  }
+
+  override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+    val width = right - left
+    val height = bottom - top
+    val reserved = if (toolbar.visibility == VISIBLE) dp(toolbarContentWidth + toolbarTrailingInset) else 0
+    val rtl = layoutDirection == View.LAYOUT_DIRECTION_RTL
+    row.layout(if (rtl) reserved else 0, 0, if (rtl) width else width - reserved, height)
+    val inset = dp(toolbarTrailingInset) - (dp(toolbarSize) - dp(toolbarContentWidth)) / 2
+    val x = if (rtl) inset else width - inset - dp(toolbarSize)
+    toolbar.layout(x, (height - dp(toolbarSize)) / 2, x + dp(toolbarSize), (height + dp(toolbarSize)) / 2)
+  }
 
   fun preferredHeightPx(): Int = heightPx
 }

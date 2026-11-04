@@ -43,6 +43,10 @@ export type OnNativeTabPressEventData = Readonly<{
   position: Int32;
   key: string;
 }>;
+export type OnNativeToolbarPressEventData = Readonly<{
+  key: string;
+  anchorRect: Readonly<{ x: Double; y: Double; width: Double; height: Double }>;
+}>;
 export type OnScrollEdgeCapabilityEventData = Readonly<{ available: boolean }>;
 
 /**
@@ -65,6 +69,7 @@ export interface NativeProps extends ViewProps {
   externalTopOverlayTag?: WithDefault<Int32, 0>;
   pageKeys?: string;
   retainedPages?: string;
+  nativeTabBarConfig?: string;
   nativeTabBarItems?: string;
   nativeTabBarHeight?: Double;
   nativeTabBarVariant?: string;
@@ -86,6 +91,7 @@ export interface NativeProps extends ViewProps {
   onPageSelected?: DirectEventHandler<OnPageSelectedEventData>;
   onPageScrollStateChanged?: DirectEventHandler<OnPageScrollStateChangedEventData>;
   onCollapsibleStateChanged?: DirectEventHandler<OnCollapsibleStateChangedEventData>;
+  onNativeToolbarPress?: DirectEventHandler<OnNativeToolbarPressEventData>;
   onNativeTabPress?: DirectEventHandler<OnNativeTabPressEventData>;
   onNativeSubHeaderPress?: DirectEventHandler<OnNativeTabPressEventData>;
   onScrollEdgeCapability?: DirectEventHandler<OnScrollEdgeCapabilityEventData>;

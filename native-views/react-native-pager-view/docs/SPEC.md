@@ -555,11 +555,11 @@ input, coalesced-event delivery, and physical-device acceptance.
 
 Status: implemented locally. Focused production-class iOS XCTest and Android
 instrumentation checks pass; consuming App interaction acceptance is separate.
-`nativeTabBar.style.variant` accepts `"underline"` (the default) or
-`"segmented"` on iOS and Android. The optional
+`nativeTabBar.style.variant` retains `"underline"` (the default) and
+`"segmented"` on iOS and Android; the text variant is specified below. The optional
 `nativeTabBar.style.contentPaddingVertical` is a nonnegative logical inset,
 defaulting to zero. Omitting both fields preserves the existing content-width,
-horizontally scrollable underline bar. Web ignores `nativeTabBar` and retains
+horizontally scrollable underline bar. Web ignores legacy `nativeTabBar` configurations and retains
 its caller-rendered sticky header.
 
 In segmented mode, the existing `height` is the entire tab slot. The track
@@ -1128,3 +1128,64 @@ This separates package initialization in the Native UI main runtime; it does not
 add a bridge, share JS heaps with background, or change Native scroll commands.
 Acceptance includes the actual Native dependency graph and unchanged startup
 budgets, Web runtime/type exports, and package source/module/declaration entries.
+
+## Text tabs, controlled selection and per-tab toolbar
+
+Status: Implemented and incrementally synchronized from the validated consumer
+prototype onto the current SDK main baseline. Web and iOS Home runtime checks
+were completed on 2026-11-04; Android compilation and launch passed, while
+Android Home interaction acceptance remains pending.
+
+Validation scope: Web exercised real content switching, toolbar menus and selected
+feedback, drag cancellation, keyboard activation, sticky headers, localized narrow
+labels, dark mode and the unchanged wide layout. iOS exercised real page contents,
+medium/semibold labels and descenders, named SVG controls, 38-point button frames,
+press/drag cancellation, filter menus, LP selected-background restoration and sticky
+navigation. VoiceOver/TalkBack speech and native hover were not exercised. An iOS
+Spot accessibility-tree snapshot failure also occurs with the original Home JS tab
+bar in the same binary; History snapshots succeed. This comparison does not
+establish a full native baseline or resolve the separate accessibility issue.
+
+The existing `nativeTabBar` additionally accepts the `text` style variant. It
+uses scrollable, intrinsic-width labels, no indicator or track, and full-height
+hit areas with sufficient font ascent/descent space. Text labels use 18-point medium by default, with semibold selected text; consumers supply fontSize, fontFamily and activeFontFamily for their bundled brand faces. Width reserves the larger medium/semibold label to avoid clipping during selection. Existing underline and
+segmented defaults remain unchanged.
+
+`nativeTabBar.controlled` defaults to false. When true, a tab press emits its
+stable item key without issuing a pager command. `selectedKey` identifies the
+selected item independently of its visual index. Consumers own business routing
+and call the existing pager commands when appropriate. Native progress maps the original React child keys to matching item keys only when both item keys and page keys are unique and every page is matched. During fractional transitions only the two page endpoints interpolate label colors; extra non-page items are never emphasized accidentally. Semantic selection, selected font and toolbar always follow `selectedKey`, including a non-page item. At integer/settled progress colors also follow `selectedKey`. Invalid mappings fall back to `selectedKey` for the entire bar; dynamic keys recompute the mapping. Automatic mode retains existing index semantics.
+
+`nativeTabBar.toolbar` is one JSON-compatible dictionary indexed by stable tab
+key. Each entry describes one `iconName` from the existing OneKeyImage named-SVG
+pipeline, `selected`, `accessibilityLabel` and `testID`. No entry means no control
+and zero reserved width. Each toolbar entry accepts `iconColor`, `selectedBackgroundColor`, `hoverBackgroundColor` and `pressedBackgroundColor` as resolved CSS strings. `size`, `iconSize`, `contentWidth` and `trailingInset` are logical dimensions supplied by the consumer (defaults 38, 24, 24 and 20). The circular frame includes the icon and border; layout reservation is contentWidth plus trailingInset, preserving the consumer's negative-margin layout. The SDK does not infer application scale rules.
+At the native JSON boundary, finite `size` is clamped to 1..128,
+`iconSize` to 1..size, `contentWidth` to 0..size, and `trailingInset` to
+0..128. Missing, null, nonnumeric or nonfinite dimensions use the defaults
+above (iconSize/contentWidth defaults are additionally capped by size).
+Consumers supply finite dimensions on Web; finite bounds and missing/null
+defaults apply there, while direct NaN/Infinity values are unsupported CSS
+inputs. Colors are normalized at the native wrapper boundary: iconColor uses
+OneKeyImage's rgba representation and native background colors use ARGB.
+This does not add a second toolbar configuration or a JavaScript feedback loop. Default background is transparent;
+selected background remains the base color after hover, press or cancellation.
+iOS UIKit and Android drawable state own feedback without JavaScript roundtrips
+or default Android ripples. No menus or business capability checks live here.
+
+`onNativeToolbarPress` reports the stable `key` of the displayed control and
+`anchorRect` (`x`, `y`, `width`, `height`) in window/viewport logical coordinates.
+It never changes pager selection. Invalid, stale or removed controls emit
+nothing. Icon requests are cancelled on replacement/detach; stale completions
+cannot repaint the next tab's control. While an icon is pending or unavailable the configured button is disabled; no fallback resource is substituted. Missing configuration still removes both the control and its reservation.
+
+Web uses the same existing `CollapsiblePagerView.nativeTabBar` entry point,
+selection semantics and toolbar dictionary. Pointer CSS owns hover/active states;
+viewport geometry comes from the clicked element. For compatibility, legacy configurations containing only underline/segmented items remain ignored by Web as before; the new text variant, controlled=true or an explicitly supplied toolbar opt into Web rendering. The consumer remains the owner
+of menus, filtering, export, analytics and translated labels.
+
+Acceptance: focused wrapper tests must cover automatic compatibility, controlled
+presses, stable keys with extra tabs, empty toolbar and toolbar events. Rendered
+checks must cover long localized labels and p/y/g glyphs, changing tabs while
+pressed, drag cancellation, sticky headers, SVG icons, light/dark colors, no-icon
+zero reservation and native/Web parity. Source/type checks are not runtime proof.
