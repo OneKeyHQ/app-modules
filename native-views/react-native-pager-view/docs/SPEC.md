@@ -41,18 +41,22 @@ UIKit's Hard style, owner or interactions. During temporary horizontal owner
 transitions the layer holds its last opacity until geometry is valid again;
 disabling the local overlay, changing style or recycling removes it.
 
-For this iOS 27 local smooth Hard case, an animated direct page command uses
-`UIScrollView`'s native content-offset animation; UIKit determines its duration.
-Before the source page detaches, the pager transfers its existing top and pinned
-sticky scroll-edge interactions, markers, hosts and saved original style to the
-transition owner. The interactions remain bound to the source list on their
+For this iOS 27 local smooth Hard direct-pager case, an animated page command
+uses `UIScrollView`'s native content-offset animation; UIKit determines its
+duration. Both page commands and horizontal user drags transfer the source's
+existing top and pinned sticky scroll-edge interactions, markers, hosts and
+saved original style to the transition owner before the source page detaches.
+The interactions remain bound to the source list on their
 original hosts; the borrowed pinned sticky host stays inside the source list
-while the shared controls move. Incoming pages use temporary interactions.
+while the shared controls move. Incoming pages use temporary interactions; a
+drag prepares both adjacent pages so either direction can remain visible.
 Participating pages retain their scroll-edge sampling area during the animation;
 fixed controls still reserve their existing hit-test area. Completion or
 cancellation releases temporary ownership, restores each list's prior style
 and pinned host, and reattaches the settled page's normal owner before a queued
-page command starts.
+page command starts. A drag that returns to its source page follows the same
+cleanup path. A new drag invalidates an older pending settlement before it can
+release the new transition's owners.
 Other pager modes retain their prior command and observer ordering. Recycling,
 window detachment, slot replacement and disabling the style also release the
 temporary resources. Conformance requires preserving the source interaction

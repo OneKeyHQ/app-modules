@@ -2323,9 +2323,14 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
         _topEdgeInteraction == nil || _topEdgeInteraction.scrollView != source ||
         _currentIndex < 0 || _currentIndex >= _pageControllers.count) return;
 
-    [self clearProgrammaticScrollEdges];
-    _programmaticScrollEdges = [NSMapTable weakToStrongObjectsMapTable];
-    _programmaticScrollEdgeOwners = [NSMutableArray new];
+    RNCCollapsiblePagerTransitionEdgeOwner *existing =
+      [_programmaticScrollEdges objectForKey:source];
+    if (existing != nil && existing.topInteraction.scrollView == source) return;
+    if (existing != nil) [self releaseProgrammaticScrollEdgeOwner:existing];
+    if (_programmaticScrollEdges == nil) {
+      _programmaticScrollEdges = [NSMapTable weakToStrongObjectsMapTable];
+      _programmaticScrollEdgeOwners = [NSMutableArray new];
+    }
     RNCCollapsiblePagerTransitionEdgeOwner *owner = [RNCCollapsiblePagerTransitionEdgeOwner new];
     owner.scrollView = source;
     owner.page = _pageControllers[_currentIndex].view;
@@ -5482,23 +5487,29 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 - (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView
 {
   if (scrollView == _pagerScrollView) [self cancelPendingNativePagerScroll];
+  ++_transitionId;
   [self updateHeaderSettledStateForceBusy:YES];
   if (_nativeSmoothHeaderScrollEnabled && scrollView == _pagerScrollView) {
     [_contentPressCancellationGesture cancelPressForPan:scrollView.panGestureRecognizer];
   }
+  if (_directNativePagerEnabled) [self adoptCurrentScrollEdgeForProgrammaticTransition];
   [self beginPageStateTransition];
   if (_directNativePagerEnabled) {
     [self preparePageForHorizontalTransitionAtIndex:_currentIndex - 1];
     [self preparePageForHorizontalTransitionAtIndex:_currentIndex + 1];
   }
   // A user drag owns the result even if UIKit later completes the old animation.
-  [self clearProgrammaticScrollEdges];
   _programmaticPageMaskIndexes = nil;
-  ++_transitionId;
   [self liftSharedHeadersForPagerTransition:@"interactive"];
   [self detachScrollObserver];
   _isPagerDragging = YES;
   _transitioning = YES;
+  if (_directNativePagerEnabled) {
+    if (_currentIndex > 0) [self beginProgrammaticScrollEdgesToIndex:_currentIndex - 1];
+    if (_currentIndex + 1 < _pageControllers.count) {
+      [self beginProgrammaticScrollEdgesToIndex:_currentIndex + 1];
+    }
+  }
   if (_nativeSmoothHeaderScrollEnabled) {
     RNCCollapsiblePagerLog([NSString stringWithFormat:
       @"gesture-owner=pager page=%ld",

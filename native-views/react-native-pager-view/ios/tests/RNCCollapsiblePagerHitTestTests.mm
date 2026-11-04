@@ -16,6 +16,9 @@ using namespace facebook::react;
 - (void)restorePinnedStickyHeader;
 - (void)finishProgrammaticScrollEdges;
 - (void)clearProgrammaticScrollEdges;
+- (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView;
+- (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate;
+- (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView;
 @end
 
 @interface UIView (NativeTabReservationTesting)
@@ -438,6 +441,134 @@ using namespace facebook::react;
   [self.pager setValue:@YES forKey:@"stickyHeaderIsPinned"];
   [self.pager updateTopScrollEdgeForScrollView:source];
   return source;
+}
+
+- (UIScrollView *)prepareDirectDragWithSource:(UIScrollView **)sourceOut
+{
+  UIScrollView *source = [self preparePinnedLocalHardSource];
+  UIView *container = [self.pager valueForKey:@"containerView"];
+  UIScrollView *horizontal = [[UIScrollView alloc] initWithFrame:container.bounds];
+  horizontal.contentSize = CGSizeMake(960, CGRectGetHeight(container.bounds));
+  horizontal.pagingEnabled = YES;
+  horizontal.delegate = (id<UIScrollViewDelegate>)self.pager;
+  [container insertSubview:horizontal atIndex:0];
+  NSMutableArray<UIViewController *> *pages = [self.pager valueForKey:@"pageControllers"];
+  UIViewController *sourcePage = pages.firstObject;
+  for (NSInteger index = 0; index < 3; index++) {
+    UIViewController *page = index == 1 ? sourcePage : [UIViewController new];
+    if (index != 1) {
+      page.view = [[UIView alloc] initWithFrame:container.bounds];
+      UIScrollView *list = [[UIScrollView alloc] initWithFrame:page.view.bounds];
+      list.contentSize = CGSizeMake(320, 1200);
+      list.topEdgeEffect.style = UIScrollEdgeEffectStyle.softStyle;
+      [page.view addSubview:list];
+    }
+    page.view.frame = CGRectMake(index * 320, 0, 320, CGRectGetHeight(container.bounds));
+    [horizontal addSubview:page.view];
+    if (index == 0) [pages insertObject:page atIndex:0];
+    if (index == 2) [pages addObject:page];
+  }
+  horizontal.contentOffset = CGPointMake(320, 0);
+  [self.pager setValue:horizontal forKey:@"pagerScrollView"];
+  [self.pager setValue:@1 forKey:@"currentIndex"];
+  [self.pager setValue:@1 forKey:@"destinationIndex"];
+  [self.pager setValue:@"ltr" forKey:@"layoutDirection"];
+  [self.pager setValue:@YES forKey:@"hasAppliedInitialPage"];
+  if (sourceOut != nil) *sourceOut = source;
+  return horizontal;
+}
+
+- (void)testDirectDragAdoptsSourceBeforeDetachAndOwnsBothNeighbours
+{
+  if (@available(iOS 27.0, *)) {
+    UIScrollView *source = nil;
+    UIScrollView *horizontal = [self prepareDirectDragWithSource:&source];
+    UIView *topHost = [self.pager valueForKey:@"topEdgeInteractionHost"];
+    UIView *pinnedHost = [self.pager valueForKey:@"pinnedStickyHostView"];
+    UIScrollEdgeElementContainerInteraction *top = [self.pager valueForKey:@"topEdgeInteraction"];
+    UIScrollEdgeElementContainerInteraction *sticky = [self.pager valueForKey:@"stickyEdgeInteraction"];
+    UIView *topMarker = [self.pager valueForKey:@"topEdgeMarker"];
+    UIView *stickyMarker = [self.pager valueForKey:@"stickyEdgeMarker"];
+    XCTAssertNotNil(top);
+    XCTAssertNotNil(sticky);
+
+    [self.pager scrollViewWillBeginDragging:horizontal];
+
+    NSArray *owners = [self.pager valueForKey:@"programmaticScrollEdgeOwners"];
+    XCTAssertEqual(owners.count, 3);
+    id sourceOwner = [owners firstObject];
+    XCTAssertEqual([sourceOwner valueForKey:@"topInteraction"], top);
+    XCTAssertEqual([sourceOwner valueForKey:@"stickyInteraction"], sticky);
+    XCTAssertEqual([sourceOwner valueForKey:@"topMarker"], topMarker);
+    XCTAssertEqual([sourceOwner valueForKey:@"stickyMarker"], stickyMarker);
+    XCTAssertEqual([sourceOwner valueForKey:@"originalStyle"], UIScrollEdgeEffectStyle.softStyle);
+    XCTAssertTrue([[sourceOwner valueForKey:@"borrowsPinnedStickyHost"] boolValue]);
+    XCTAssertTrue([topHost.interactions containsObject:top]);
+    XCTAssertTrue([pinnedHost.interactions containsObject:sticky]);
+    XCTAssertEqual(top.scrollView, source);
+    XCTAssertEqual(sticky.scrollView, source);
+    XCTAssertEqual(topMarker.superview, topHost);
+    XCTAssertEqual(stickyMarker.superview, pinnedHost);
+    XCTAssertEqual(pinnedHost.superview, source);
+    XCTAssertFalse(pinnedHost.hidden);
+    for (id owner in owners) {
+      XCTAssertNotNil([owner valueForKey:@"topInteraction"]);
+      XCTAssertNotNil([[owner valueForKey:@"topInteraction"] scrollView]);
+    }
+  } else {
+    XCTSkip(@"Direct local Hard drag handoff requires iOS 27 or newer");
+  }
+}
+
+- (void)testDirectDragTakeoverIgnoresOldSettlementAndReleasesOnReturn
+{
+  if (@available(iOS 27.0, *)) {
+    UIScrollView *source = nil;
+    UIScrollView *horizontal = [self prepareDirectDragWithSource:&source];
+    UIScrollEdgeElementContainerInteraction *top = [self.pager valueForKey:@"topEdgeInteraction"];
+    UIView *topHost = [self.pager valueForKey:@"topEdgeInteractionHost"];
+    NSUInteger originalTransition = [[self.pager valueForKey:@"transitionId"] unsignedIntegerValue];
+    XCTAssertEqual([[self.pager valueForKey:@"pageControllers"] count], 3);
+    XCTAssertEqualWithAccuracy(horizontal.contentOffset.x, 320, 0.001);
+    XCTAssertEqual([[self.pager valueForKey:@"currentIndex"] integerValue], 1);
+    [self.pager scrollViewWillBeginDragging:horizontal];
+    [self.pager scrollViewDidEndDragging:horizontal willDecelerate:NO];
+    [self.pager scrollViewWillBeginDragging:horizontal];
+    XCTAssertGreaterThan([[self.pager valueForKey:@"transitionId"] unsignedIntegerValue], originalTransition + 1);
+    XCTAssertTrue([topHost.interactions containsObject:top]);
+    XCTAssertEqual(top.scrollView, source);
+    XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 3);
+
+    XCTestExpectation *oldSettlement = [self expectationWithDescription:@"old settlement skipped"];
+    dispatch_async(dispatch_get_main_queue(), ^{ [oldSettlement fulfill]; });
+    [self waitForExpectations:@[oldSettlement] timeout:2];
+    XCTAssertEqualWithAccuracy(horizontal.contentOffset.x, 320, 0.001);
+    XCTAssertEqual([[self.pager valueForKey:@"currentIndex"] integerValue], 1);
+    XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 3);
+    [self.pager scrollViewDidEndDragging:horizontal willDecelerate:YES];
+    XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 3);
+    [self.pager scrollViewDidEndDecelerating:horizontal];
+    XCTestExpectation *settled = [self expectationWithDescription:@"drag settled"];
+    dispatch_async(dispatch_get_main_queue(), ^{ [settled fulfill]; });
+    [self waitForExpectations:@[settled] timeout:2];
+    XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 0);
+    XCTAssertFalse([topHost.interactions containsObject:top]);
+    XCTAssertNil(top.scrollView);
+    XCTAssertEqual([[self.pager valueForKey:@"currentIndex"] integerValue], 1);
+    XCTAssertEqual([self.pager valueForKey:@"topEdgeScrollView"], source);
+    XCTAssertEqual([self.pager valueForKey:@"originalTopEdgeStyle"], UIScrollEdgeEffectStyle.softStyle);
+    UIScrollEdgeElementContainerInteraction *normal = [self.pager valueForKey:@"topEdgeInteraction"];
+    XCTAssertNotNil(normal);
+    XCTAssertEqual(normal.scrollView, source);
+    XCTAssertEqual(source.topEdgeEffect.style, UIScrollEdgeEffectStyle.hardStyle);
+    NSArray<UIViewController *> *pages = [self.pager valueForKey:@"pageControllers"];
+    for (NSNumber *index in @[@0, @2]) {
+      UIScrollView *neighbor = (UIScrollView *)pages[index.integerValue].view.subviews.firstObject;
+      XCTAssertEqual(neighbor.topEdgeEffect.style, UIScrollEdgeEffectStyle.softStyle);
+    }
+  } else {
+    XCTSkip(@"Direct local Hard drag handoff requires iOS 27 or newer");
+  }
 }
 
 - (void)testAnimatedDirectPageCommandBorrowsRealSourceEdgeUntilCompletion
