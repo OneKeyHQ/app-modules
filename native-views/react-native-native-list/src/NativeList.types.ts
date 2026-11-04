@@ -1,6 +1,6 @@
 import type { ScrollEdgeEffect } from './ScrollEdgeEffect';
 import type { ReactNode, RefObject } from 'react';
-import type { View, ViewProps } from 'react-native';
+import type { ViewInstance, ViewProps } from 'react-native';
 import type {
   ActionAnchorInvalidatedEvent,
   EndReachedEvent,
@@ -161,7 +161,7 @@ export type NativeListProps = Omit<ViewProps, 'children'> &
     /** Web only: visible sticky chrome above the parent's list viewport. */
     webStickyInset?: number;
     /** Web only. Hosts the section index inside this container. */
-    webSectionIndexContainerRef?: RefObject<View | null>;
+    webSectionIndexContainerRef?: RefObject<ViewInstance | null>;
     /** Defaults to `none`. `interactive` behaves as `none` on Android. */
     keyboardDismissMode?: NativeListKeyboardDismissMode;
     /**

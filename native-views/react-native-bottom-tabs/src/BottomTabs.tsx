@@ -392,7 +392,9 @@ const BottomTabs = <Route extends BaseRoute>({
 }: Props<Route>) => {
   // @ts-ignore
   const focusedKey = navigationState.routes[navigationState.index].key;
-  const customTabBarWrapperRef = useRef<View>(null) as React.RefObject<any>;
+  const customTabBarWrapperRef = useRef<React.ComponentRef<typeof View>>(
+    null
+  ) as React.RefObject<any>;
   const nativeBottomTabsRef =
     useRef<React.ElementRef<typeof NativeBottomTabs>>(null);
   const [nativeTabBarHeight, setNativeTabBarHeight] = React.useState(0);

@@ -12,7 +12,7 @@ require Pod::Executable.execute_command('node', ['-p',
     {paths: [process.argv[1]]},
   )', __dir__]).strip
 
-# Match the OneKey app's minimum deployment target for the RN 0.86 upgrade.
+# Match the OneKey app's minimum deployment target for the RN 0.88 upgrade.
 platform :ios, '16.4'
 prepare_react_native_project!
 
@@ -51,6 +51,7 @@ target 'example' do
   pod 'ReactNativeCaptureProtection', :path => '../../../node_modules/@onekeyfe/react-native-capture-protection', :testspecs => ['Tests']
   pod 'ReactNativePhotoLibrary', :path => '../../../node_modules/@onekeyfe/react-native-photo-library', :testspecs => ['Tests']
   pod 'ReactNativeImageCropPicker', :path => '../../../node_modules/@onekeyfe/react-native-image-crop-picker', :testspecs => ['Tests']
+  pod 'ReactNativeJpush', :path => '../../../node_modules/@onekeyfe/react-native-jpush', :testspecs => ['Tests']
 
   script_phase :name => 'Bundle SDK icon fixtures',
     :execution_position => :after_compile,

@@ -1,17 +1,17 @@
-import { codegenNativeComponent, type ViewProps } from "react-native";
-import type {
-  DirectEventHandler,
-  Double,
-  WithDefault,
-} from "react-native/Libraries/Types/CodegenTypes";
+import {
+  codegenNativeComponent,
+  type CodegenTypes,
+  type ViewProps,
+} from "react-native";
+
 
 export interface BottomTabsDrawerNativeProps extends ViewProps {
-  enabled?: WithDefault<boolean, false>;
-  open?: WithDefault<boolean, false>;
-  swipeEnabled?: WithDefault<boolean, false>;
-  hapticFeedbackEnabled?: WithDefault<boolean, false>;
-  bottomBarHeight?: Double;
-  onDrawerOpenChange?: DirectEventHandler<Readonly<{ open: boolean }>>;
+  enabled?: CodegenTypes.WithDefault<boolean, false>;
+  open?: CodegenTypes.WithDefault<boolean, false>;
+  swipeEnabled?: CodegenTypes.WithDefault<boolean, false>;
+  hapticFeedbackEnabled?: CodegenTypes.WithDefault<boolean, false>;
+  bottomBarHeight?: CodegenTypes.Double;
+  onDrawerOpenChange?: CodegenTypes.DirectEventHandler<Readonly<{ open: boolean }>>;
 }
 
 export default codegenNativeComponent<BottomTabsDrawerNativeProps>(

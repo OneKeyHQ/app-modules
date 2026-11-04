@@ -47,6 +47,8 @@ include ':app'
 // This package is not an example app dependency, but its unit tests use the same Gradle host.
 include ':onekeyfe_react-native-network-throttle'
 project(':onekeyfe_react-native-network-throttle').projectDir = file('../../../native-modules/react-native-network-throttle/android')
+include ':onekeyfe_react-native-jpush'
+project(':onekeyfe_react-native-jpush').projectDir = file('../../../native-modules/react-native-jpush/android')
 
 def reactNativeGradlePlugin = new File(
 providers.exec {

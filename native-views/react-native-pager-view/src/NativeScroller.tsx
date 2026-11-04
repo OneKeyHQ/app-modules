@@ -7,7 +7,7 @@ import {
   TextInput,
   View,
   type GestureResponderEvent,
-  type NativeMethods,
+  type HostInstance,
   type RefreshControlProps,
   type ScrollView,
   type ScrollViewProps,
@@ -35,7 +35,6 @@ export interface NativeScrollerProps
       | "alwaysBounceVertical"
       | "contentInset"
       | "keyboardDismissMode"
-      | "keyboardShouldPersistTaps"
       | "scrollEventThrottle"
       | "decelerationRate"
       | "onScroll"
@@ -53,12 +52,24 @@ export interface NativeScrollerProps
   decelerationRate?: ScrollViewProps["decelerationRate"];
   /** Standard RefreshControl props are mapped to the independently owned native controller. */
   refreshControl?: React.ReactElement<RefreshControlProps>;
+  /** Boolean values are deprecated compatibility aliases (`true` -> `always`, `false` -> `never`). */
+  keyboardShouldPersistTaps?:
+    | ScrollViewProps["keyboardShouldPersistTaps"]
+    | boolean;
 }
 
 type HostRef = React.ElementRef<typeof NativeScrollerHost>;
 
 export interface NativeScrollerRef
-  extends NativeMethods,
+  extends Pick<
+      HostInstance,
+      | "measure"
+      | "measureInWindow"
+      | "measureLayout"
+      | "setNativeProps"
+      | "focus"
+      | "blur"
+    >,
     Pick<
       React.ElementRef<typeof ScrollView>,
       "scrollTo" | "scrollToEnd" | "flashScrollIndicators"

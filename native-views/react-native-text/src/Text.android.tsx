@@ -21,7 +21,16 @@ import {
   type HostInstance,
   type TextStyle,
 } from 'react-native';
-import { forwardRef, useContext, useMemo, useState, type Ref } from 'react';
+import {
+  forwardRef,
+  useContext,
+  useMemo,
+  useState,
+  type ForwardRefExoticComponent,
+  type PropsWithoutRef,
+  type Ref,
+  type RefAttributes,
+} from 'react';
 
 import OneKeyTextNativeComponent from './OneKeyTextNativeHost';
 import type { NativeProps } from './OneKeyTextNativeComponent';
@@ -455,7 +464,9 @@ function TextImpl(props: TextProps, forwardedRef: Ref<TextForwardRef>) {
   return nativeText;
 }
 
-export const Text = forwardRef<TextForwardRef, TextProps>(TextImpl);
+export const Text: ForwardRefExoticComponent<
+  PropsWithoutRef<TextProps> & RefAttributes<TextForwardRef>
+> = forwardRef<TextForwardRef, TextProps>(TextImpl);
 Text.displayName = 'Text';
 
 const userSelectToSelectableMap = {

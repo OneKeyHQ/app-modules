@@ -16,8 +16,15 @@ export const NativeScroller = React.forwardRef<
     pagerScrollKey,
     topOverlay: _topOverlay,
     topScrollEdgeEffect: _topScrollEdgeEffect,
+    keyboardShouldPersistTaps,
     ...props
   } = inputProps as NativeScrollerWebProps;
+  const persistTaps =
+    keyboardShouldPersistTaps === true
+      ? "always"
+      : keyboardShouldPersistTaps === false
+      ? "never"
+      : keyboardShouldPersistTaps;
   const scrollRef = React.useRef<React.ElementRef<typeof ScrollView>>(null);
   const setRef = React.useCallback(
     (node: React.ElementRef<typeof ScrollView> | null) => {
@@ -47,7 +54,14 @@ export const NativeScroller = React.forwardRef<
     },
   };
 
-  return <ScrollView {...props} ref={setRef} {...webDataProps} />;
+  return (
+    <ScrollView
+      {...props}
+      keyboardShouldPersistTaps={persistTaps}
+      ref={setRef}
+      {...webDataProps}
+    />
+  );
 });
 
 NativeScroller.displayName = "NativeScroller";

@@ -110,6 +110,12 @@ jobs:
           cmake --build "$RUNNER_TEMP/lite-card-sdk-build" --parallel
           ctest --test-dir "$RUNNER_TEMP/lite-card-sdk-build" --output-on-failure -V | tee "$RUNNER_TEMP/lite-card-sdk-tests.log"
           grep -Fq 'Native security regression tests + 5000 malformed-input cases passed' "$RUNNER_TEMP/lite-card-sdk-tests.log"
+      - name: Run JPush & JCore iOS native E2E regressions
+        working-directory: native-modules/react-native-jpush
+        shell: bash
+        run: |
+          python3 scripts/test_ios_sdk.py | tee "$RUNNER_TEMP/jpush-ios-tests.log"
+          grep -Fq 'ALL_IOS_SDK_TESTS_PASSED' "$RUNNER_TEMP/jpush-ios-tests.log"
       - name: Run four SwiftPM suites and verify execution
         shell: bash
         run: |
@@ -160,12 +166,13 @@ jobs:
           # shellcheck disable=SC2016
           find native-modules native-views -mindepth 2 -maxdepth 2 -name nitro.json -print0 |
             xargs -0 -n1 -P4 bash -c 'yarn --cwd "$(dirname "$0")" nitrogen > /dev/null'
-      - name: Run ten Android unit test suites and build capture protection and photo saving
+      - name: Run eleven Android unit test suites and build capture protection and photo saving
         working-directory: example/react-native/android
         run: |
           ./gradlew --continue --no-daemon --parallel --max-workers=4 --console=plain \
             :onekeyfe_react-native-app-update:testDebugUnitTest \
             :onekeyfe_react-native-bundle-crypto:testDebugUnitTest \
+            :onekeyfe_react-native-jpush:testDebugUnitTest \
             :onekeyfe_react-native-network-throttle:testDebugUnitTest \
             :onekeyfe_react-native-range-downloader:testDebugUnitTest \
             :onekeyfe_react-native-sni-connect:testDebugUnitTest \
@@ -186,6 +193,7 @@ jobs:
           packages = {
               'native-modules/react-native-app-update',
               'native-modules/react-native-bundle-crypto',
+              'native-modules/react-native-jpush',
               'native-modules/react-native-network-throttle',
               'native-modules/react-native-range-downloader',
               'native-modules/react-native-sni-connect',
@@ -336,15 +344,15 @@ jobs:
             ~/Library/Caches/CocoaPods/Pods
             ~/Library/Caches/ReactNative/*.tar.gz
           key: ${{ steps.pod-cache.outputs.cache-primary-key }}
-      - name: Compile native overlay pod and run nine pod XCTest suites on iOS Simulator
+      - name: Compile native overlay pod and run ten pod XCTest suites on iOS Simulator
         shell: bash
         timeout-minutes: 20
         run: |
           set -euo pipefail
           mkdir -p artifacts/ios
           workspace=example/react-native/ios/example.xcworkspace
-          schemes=(react-native-pager-view-Unit-Tests OneKeyTextInput-Unit-Tests OneKeyImage-Unit-Tests react-native-native-list-Unit-Tests PerpDepthBar-Unit-Tests ReactNativeBundleCrypto-Unit-Tests ReactNativeImageCropPicker-Unit-Tests ReactNativeCaptureProtection-Unit-Tests ReactNativePhotoLibrary-Unit-Tests)
-          # Plan and build NativeOverlay plus shared pod dependencies once for all nine bundles.
+          schemes=(react-native-pager-view-Unit-Tests OneKeyTextInput-Unit-Tests OneKeyImage-Unit-Tests react-native-native-list-Unit-Tests PerpDepthBar-Unit-Tests ReactNativeBundleCrypto-Unit-Tests ReactNativeImageCropPicker-Unit-Tests ReactNativeCaptureProtection-Unit-Tests ReactNativePhotoLibrary-Unit-Tests ReactNativeJpush-Unit-Tests)
+          # Plan and build NativeOverlay plus shared pod dependencies once for all ten bundles.
           BUNDLE_GEMFILE="$PWD/example/react-native/Gemfile" bundle exec ruby - "${schemes[@]}" <<'RUBY'
           require 'xcodeproj'
 
@@ -363,6 +371,13 @@ jobs:
             target.build_configurations.each do |config|
               config.build_settings.delete('TEST_HOST')
               config.build_settings.delete('BUNDLE_LOADER')
+              config.build_settings['LD_RUNPATH_SEARCH_PATHS'] = [
+                '$(inherited)',
+                '@executable_path/Frameworks',
+                '@loader_path/Frameworks',
+                '$(PODS_XCFRAMEWORKS_BUILD_DIR)/hermes-engine/Pre-built',
+                '$(PODS_ROOT)/hermes-engine/destroot/Library/Frameworks/universal/hermesvm.xcframework/ios-arm64_x86_64-simulator'
+              ]
             end
             scheme.add_build_target(target, false)
             scheme.add_test_target(target)
