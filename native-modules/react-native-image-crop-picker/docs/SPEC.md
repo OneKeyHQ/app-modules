@@ -48,6 +48,12 @@ JS cache, persistent resource index or migration. No save authorization state is
 
 ## Platform contract
 
+Package entry selection: iOS and Android Metro builds MUST resolve the native
+`lib/module/index.js` entry through the top-level `react-native` field, including
+when package exports are disabled and `browser` precedes `main`. Browser builds
+MUST continue to resolve `lib/module/index.web.js` through `browser`. Native
+bundles MUST NOT select the DOM picker as their package entry.
+
 | Operation | iOS | Android |
 | --- | --- | --- |
 | Pick | PHPicker, no read prompt | PickVisualMedia, ACTION_OPEN_DOCUMENT fallback, no read prompt |
