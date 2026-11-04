@@ -127,6 +127,33 @@ describe('crop state', () => {
 });
 
 describe('outputSizeOf', () => {
+  it('keeps a small image crop at high zoom at least one output pixel per side', () => {
+    const smallImage = { width: 2, height: 2 };
+    const box = { width: 300, height: 300 };
+    const state = constrain(
+      { ...INITIAL_STATE, zoom: MAX_ZOOM },
+      smallImage,
+      box
+    );
+    const crop = cropRectOf(state, smallImage, box);
+
+    expect(outputSizeOf(crop, {})).toEqual({ width: 1, height: 1 });
+    expect(outputSizeOf(crop, { maxWidth: 100, maxHeight: 100 })).toEqual({
+      width: 1,
+      height: 1,
+    });
+  });
+
+  it.each([
+    { width: 16384, height: 1 },
+    { width: 1, height: 16384 },
+  ])('keeps the short side above zero when capping %o', (crop) => {
+    expect(outputSizeOf(crop, {})).toEqual({
+      width: crop.width > crop.height ? MAX_OUTPUT_LONG_SIDE : 1,
+      height: crop.height > crop.width ? MAX_OUTPUT_LONG_SIDE : 1,
+    });
+  });
+
   it('produces the target size exactly, scaling small crops up', () => {
     expect(
       outputSizeOf(

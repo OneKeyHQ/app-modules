@@ -67,7 +67,9 @@ its leading bytes (JPEG, PNG, GIF, WebP, HEIC/HEIF, AVIF, BMP, TIFF, ICO);
 `File.type` is not trusted, and an unrecognized format rejects
 `E_NO_IMAGE_DATA_FOUND`. The 64 MiB input limit,
 4096 px processed long side, exact target size and 0.8 default quality match
-iOS. `freeStyleCropEnabled` is not implemented on the web.
+iOS. Web output dimensions are at least one pixel per side, including when a
+zoomed crop covers less than one source pixel or resizing rounds a side to zero.
+`freeStyleCropEnabled` is not implemented on the web.
 
 The picker requires no photo read or write authorization and declares neither.
 The App may omit NSPhotoLibraryUsageDescription. The separate save module owns

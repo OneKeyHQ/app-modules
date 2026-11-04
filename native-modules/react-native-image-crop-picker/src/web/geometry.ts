@@ -238,7 +238,11 @@ export function outputSizeOf(crop: Size, limits: OutputLimits): Size {
     width = Math.round(crop.width * fit);
     height = Math.round(crop.height * fit);
   }
-  return shrinkToFit({ width, height }, limits.maxWidth, limits.maxHeight);
+  return shrinkToFit(
+    { width: Math.max(width, 1), height: Math.max(height, 1) },
+    limits.maxWidth,
+    limits.maxHeight
+  );
 }
 
 export function shrinkToFit(
