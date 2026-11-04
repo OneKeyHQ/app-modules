@@ -326,6 +326,10 @@ placement and can draw one round accessory button above the vertical bar.
   tab bar controller. It fires once after the bar is created and again on every
   change (rotation, folding, window resizing). Builds without the iOS 27.1 SDK
   and earlier systems always report `bottom`. Android never fires it.
+- **Height on placement change:** every placement event is followed by
+  `onTabBarMeasured` with the bar's current height, because the height reported
+  for the previous placement no longer applies. A vertical bar reports its full
+  column height, so consumers MUST NOT treat that value as bottom space.
 - **Side accessory:** `sideAccessoryIcon` (an image source, loaded with the
   React image loader and drawn as a template tinted with `inactiveTintColor`),
   `sideAccessoryLabel` (accessibility label), and `onSideAccessoryPress`. The

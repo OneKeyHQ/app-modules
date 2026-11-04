@@ -344,6 +344,9 @@ class RCTBottomTabsContainerView: UIView {
     if placement != reportedTabBarPlacement {
       reportedTabBarPlacement = placement
       onTabBarPlacementChange?(["placement": placement])
+      // The bar's frame follows its placement, so the height reported for the
+      // previous placement is stale.
+      onTabBarMeasured?(["height": tabBarHidden ? 0 : Double(tbc.tabBar.frame.size.height)])
     }
 
     guard placement != "bottom",
