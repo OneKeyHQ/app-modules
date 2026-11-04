@@ -114,6 +114,17 @@ public class JPushHelper {
             case 3:
                 writableMap.putString(JConstants.ALIAS, message.getAlias());
                 break;
+            case 4:
+                WritableMap prosMap = Arguments.createMap();
+                if (message.getPros() != null) {
+                    for (java.util.Map.Entry<String, Object> entry : message.getPros().entrySet()) {
+                        if (entry.getKey() != null && entry.getValue() != null) {
+                            prosMap.putString(entry.getKey(), String.valueOf(entry.getValue()));
+                        }
+                    }
+                }
+                writableMap.putMap(JConstants.PROPERTIES, prosMap);
+                break;
         }
         return writableMap;
     }

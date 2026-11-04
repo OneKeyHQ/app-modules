@@ -43,6 +43,12 @@
 
 static __weak RCTJPushModule *sSharedJPushModule = nil;
 
+@interface NSObject (RCTJPushBridgelessCompat)
+- (instancetype)initWithDisabledObservation;
+- (nullable id)callableJSModules;
+- (void)invokeModule:(NSString *)moduleName method:(NSString *)methodName withArgs:(NSArray *)args;
+@end
+
 @implementation RCTJPushModule
 
 RCT_EXPORT_MODULE(JPushModule);
@@ -57,7 +63,19 @@ RCT_EXPORT_MODULE(JPushModule);
 
 + (void)emitEventWithName:(NSString *)eventName payload:(NSDictionary *)payload {
     RCTJPushModule *module = sSharedJPushModule;
-    if (module != nil && module.bridge != nil && eventName.length > 0 && payload != nil) {
+    if (module == nil || eventName.length == 0 || payload == nil) {
+        return;
+    }
+    if ([module respondsToSelector:@selector(callableJSModules)]) {
+        id callableModules = [module callableJSModules];
+        if (callableModules != nil && [callableModules respondsToSelector:@selector(invokeModule:method:withArgs:)]) {
+            [callableModules invokeModule:@"RCTDeviceEventEmitter"
+                                   method:@"emit"
+                                 withArgs:@[eventName, payload]];
+            return;
+        }
+    }
+    if (module.bridge != nil) {
         [module.bridge enqueueJSCall:@"RCTDeviceEventEmitter"
                               method:@"emit"
                                 args:@[eventName, payload]
@@ -81,7 +99,11 @@ RCT_EXPORT_MODULE(JPushModule);
 }
 
 - (instancetype)init {
-    self = [super init];
+    if ([self respondsToSelector:@selector(initWithDisabledObservation)]) {
+        self = [super initWithDisabledObservation];
+    } else {
+        self = [super init];
+    }
     if (self) {
         sSharedJPushModule = self;
         NSNotificationCenter *defaultCenter = [NSNotificationCenter defaultCenter];
@@ -276,6 +298,7 @@ RCT_EXPORT_METHOD(setProperties:(NSDictionary *)params) {
         NSInteger sequence = params[SEQUENCE] ? [params[SEQUENCE] integerValue] : -1;
         [JPUSHService setProperties:properties completion:^(NSInteger iResCode, NSDictionary *props, NSInteger seq) {
             NSDictionary *data = @{CODE: @(iResCode), SEQUENCE: @(seq), PROS: props ?: @{}};
+            [self sendTagAliasEvent:data];
             [self sendPropertiesEvent:data];
         } seq:sequence];
     }
@@ -472,6 +495,7 @@ RCT_EXPORT_METHOD(setGeofeneceMaxCount:(NSDictionary *)params) {
         CUSTOM_MESSAGE_EVENT,
         LOCAL_NOTIFICATION_EVENT,
         TAG_ALIAS_EVENT,
+        PROPERTIES_EVENT,
         MOBILE_NUMBER_EVENT,
         INAPP_MESSAGE_EVENT
     ];
@@ -601,7 +625,7 @@ RCT_EXPORT_METHOD(setGeofeneceMaxCount:(NSDictionary *)params) {
             objectData = [(NSNotification *)data object];
         }
     } else if ([data isKindOfClass:[NSDictionary class]]) {
-        notificationName = J_APNS_NOTIFICATION_OPENED_EVENT;
+        notificationName = J_LOCAL_NOTIFICATION_OPENED_EVENT;
         objectData = data;
     }
     NSString *notificationEventType = [notificationName isEqualToString:J_LOCAL_NOTIFICATION_OPENED_EVENT]

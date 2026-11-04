@@ -85,6 +85,7 @@ jest.mock('react-native', () => ({
 
 import JPush, {
   DEMO_TEST_APP_KEY,
+  DEMO_TEST_PACKAGE_NAME,
   JCore,
   ConnectEvent,
   NotificationEvent,
@@ -97,9 +98,10 @@ describe('@onekeyfe/react-native-jpush JS & Nitro API contract', () => {
     mockListeners.clear();
   });
 
-  it('exports DEMO_TEST_APP_KEY (non-production demo key for automated tests)', () => {
-    // Non-production demo test AppKey registered solely for automated testing.
+  it('exports DEMO_TEST_APP_KEY and DEMO_TEST_PACKAGE_NAME (non-production sandbox fixtures)', () => {
+    // Non-production demo test AppKey and sandbox package name registered solely for automated testing.
     expect(DEMO_TEST_APP_KEY).toBe('1f2027d3cfb1b51dac664c42');
+    expect(DEMO_TEST_PACKAGE_NAME).toBe('com.devstudio.msgbench');
   });
 
   it('initializes JPush with DEMO_TEST_APP_KEY and resolves registrationID via Nitro', () => {

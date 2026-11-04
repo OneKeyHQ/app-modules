@@ -15,8 +15,9 @@ JCORE_RN_JAVA_DIR = PLUGINS_DIR / "core"
 JPUSH_RN_JAVA_DIR = PLUGINS_DIR / "push"
 JCORE_SERVICE_JAVA_DIR = PLUGINS_DIR / "service"
 
-# Non-production demo test AppKey used solely for automated native tests.
+# Non-production demo test AppKey and sandbox package name used solely for automated native tests.
 DEMO_TEST_APP_KEY = "1f2027d3cfb1b51dac664c42"
+DEMO_TEST_PACKAGE_NAME = "com.devstudio.msgbench"
 
 BANNED_PATTERNS = re.compile(
     r"(RecoverType|recoverMethod_|recoverField_|Member\d+|JavascriptInterface|HostJsScope)"
@@ -759,7 +760,7 @@ public class Context {
     }
 
     public String getPackageName() {
-        return "so.onekey.app.wallet";
+        return "com.devstudio.msgbench";
     }
 
     public SharedPreferences getSharedPreferences(String name, int mode) {
@@ -1132,8 +1133,9 @@ public final class SdkEndToEndTestRunner {
         //    2..3: 'U', 'G'
         //    4..7: uint32 ((0x11 << 24) | (seed & 0xffffff))
         //    8..9: uint16 preEncryptLen = compressed.length
-        // Non-production demo test AppKey used solely for automated native tests.
+        // Non-production demo test AppKey and sandbox package name used solely for automated native tests.
         final String demoTestAppKey = "1f2027d3cfb1b51dac664c42";
+        final String demoTestPackageName = "com.devstudio.msgbench";
         String sisReqJson = JCoreWireCodec.buildSisRequestJson(
             1,
             demoTestAppKey,
@@ -1169,8 +1171,8 @@ public final class SdkEndToEndTestRunner {
             // Register (cmd=0, ver=29)
             byte[] regReqBytes = JCoreWireCodec.buildRegisterPayload(
                 demoTestAppKey,
-                "google-play",
-                "so.onekey.app.wallet",
+                "developer-default",
+                demoTestPackageName,
                 "dev_001"
             );
             byte[] regClientFrame = JCoreWireCodec.encodeClientFrame(
@@ -1193,10 +1195,10 @@ public final class SdkEndToEndTestRunner {
             JCoreWireCodec.RegisterRequest parsedRegReq = JCoreWireCodec.parseRegisterRequest(decRegReq.body);
             check(
                 parsedRegReq != null
-                    && (" $$ $$so.onekey.app.wallet$$" + demoTestAppKey).equals(parsedRegReq.key)
+                    && (" $$ $$" + demoTestPackageName + "$$" + demoTestAppKey).equals(parsedRegReq.key)
                     && demoTestAppKey.equals(parsedRegReq.appKey)
-                    && "so.onekey.app.wallet".equals(parsedRegReq.packageName)
-                    && "google-play".equals(parsedRegReq.channel)
+                    && demoTestPackageName.equals(parsedRegReq.packageName)
+                    && "developer-default".equals(parsedRegReq.channel)
                     && "dev_001".equals(parsedRegReq.deviceId)
                     && parsedRegReq.regBusiness == 1,
                 "Register v29 payload fields must match production spec"
@@ -1434,7 +1436,12 @@ public final class SdkEndToEndTestRunner {
                         "Server expected Register (cmd=0, ver=29)"
                     );
                     JCoreWireCodec.RegisterRequest regReq = JCoreWireCodec.parseRegisterRequest(regFrame.body);
-                    check(regReq != null && "onekey_e2e_appkey".equals(regReq.appKey), "Server parsed RegisterRequest appKey");
+                    check(
+                        regReq != null
+                            && "1f2027d3cfb1b51dac664c42".equals(regReq.appKey)
+                            && "com.devstudio.msgbench".equals(regReq.packageName),
+                        "Server parsed RegisterRequest appKey and sandbox packageName"
+                    );
 
                     long assignedUid = 660001L;
                     byte[] regRespBody = JCoreWireCodec.buildRegisterResponsePayload(
@@ -1624,7 +1631,7 @@ public final class SdkEndToEndTestRunner {
         // Configure candidate endpoints [deadEndpoint, liveEndpoint] to verify Multi-IP Waterfall Failover
         JCoreStorage.clearFailedIps(reactContext);
         JCoreStorage.clearRegistration(reactContext);
-        JCoreStorage.setAppKey(reactContext, "onekey_e2e_appkey");
+        JCoreStorage.setAppKey(reactContext, "1f2027d3cfb1b51dac664c42");
         JCoreTcpEngine.getInstance().setCandidateEndpoints(Arrays.asList(deadEndpoint, liveEndpoint));
 
         // Enqueue Alias (cmd=29) and ThirdToken (cmd=27) BEFORE calling init() to verify pre-login request queue flush!
@@ -2245,6 +2252,7 @@ public final class SdkEndToEndTestRunner {
         junitSuite.testCryptoPrimitivesAndSeedDerivation();
         junitSuite.testUdpSis10BytePacketWithDemoTestAppKey();
         junitSuite.testAsymmetric24ByteClientAnd20ByteServerFramesWithDemoTestAppKey();
+        junitSuite.testLiveJiguangCloudHandshakeWhenNetworkReachable();
         testCryptoParity();
         testUdpSis10ByteAndAsymmetricTcpWireCodec();
         testTcpEngineEndToEndAndProductionResilience();

@@ -1,6 +1,11 @@
 #import <Foundation/Foundation.h>
+#if __has_include("JGCOREAPI.h")
+#import "JGCOREAPI.h"
+#import "JGInforCollectionAuth.h"
+#else
 #import "../include/JGCOREAPI.h"
 #import "../include/JGInforCollectionAuth.h"
+#endif
 
 NS_ASSUME_NONNULL_BEGIN
 

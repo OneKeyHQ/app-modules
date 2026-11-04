@@ -211,7 +211,7 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
     }
     JPUSHService.setProperties(dict, completion: { resCode, props, resSeq in
       RCTJPushModule.emitEvent(
-        withName: "PropertiesEvent",
+        withName: "TagAliasEvent",
         payload: [
           "code": resCode,
           "sequence": resSeq,

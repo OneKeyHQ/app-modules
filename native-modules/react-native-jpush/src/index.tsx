@@ -13,6 +13,12 @@ import type { ReactNativeJpush } from './ReactNativeJpush.nitro';
  */
 export const DEMO_TEST_APP_KEY = '1f2027d3cfb1b51dac664c42';
 
+/**
+ * Non-production sandbox package name bound to DEMO_TEST_APP_KEY for automated Android tests.
+ * Intentionally avoids 'onekey' and 'jpush' identifiers to prevent production confusion or vendor filtering.
+ */
+export const DEMO_TEST_PACKAGE_NAME = 'com.devstudio.msgbench';
+
 export type Callback<T> = (result: T) => void;
 
 export type Extra = {
@@ -151,6 +157,12 @@ function getLegacyJPushModule(): Record<string, any> | undefined {
   return (NativeModules as Record<string, any>)?.JPushModule;
 }
 
+function ensureNativeEventBridgeInitialized(): void {
+  // Touch JPushModule so React Native instantiates RCTJPushModule / JPushModule
+  // and wires DeviceEventEmitter before Nitro or background events fire.
+  getLegacyJPushModule();
+}
+
 function getLegacyJCoreModule(): Record<string, any> | undefined {
   return (NativeModules as Record<string, any>)?.JCoreModule;
 }
@@ -244,6 +256,7 @@ export default class JPush {
   }
 
   static init(params?: JPushInitParams): void {
+    ensureNativeEventBridgeInitialized();
     const appKey = params?.appKey ?? '';
     const channel = params?.channel ?? 'dev';
     const production = Boolean(params?.production ?? false);
@@ -663,6 +676,7 @@ export default class JPush {
     if (typeof callback !== 'function') {
       return;
     }
+    ensureNativeEventBridgeInitialized();
     listeners.set(
       callback,
       DeviceEventEmitter.addListener(ConnectEvent, (result) => {
@@ -675,6 +689,7 @@ export default class JPush {
     if (typeof callback !== 'function') {
       return;
     }
+    ensureNativeEventBridgeInitialized();
     listeners.set(
       callback,
       DeviceEventEmitter.addListener(CommandEvent, (result) => {
@@ -689,6 +704,7 @@ export default class JPush {
     if (typeof callback !== 'function') {
       return;
     }
+    ensureNativeEventBridgeInitialized();
     listeners.set(
       callback,
       DeviceEventEmitter.addListener(NotificationEvent, (result) => {
@@ -703,6 +719,7 @@ export default class JPush {
     if (typeof callback !== 'function') {
       return;
     }
+    ensureNativeEventBridgeInitialized();
     listeners.set(
       callback,
       DeviceEventEmitter.addListener(LocalNotificationEvent, (result) => {
@@ -717,6 +734,7 @@ export default class JPush {
     if (typeof callback !== 'function') {
       return;
     }
+    ensureNativeEventBridgeInitialized();
     listeners.set(
       callback,
       DeviceEventEmitter.addListener(CustomMessageEvent, (result) => {
@@ -731,6 +749,7 @@ export default class JPush {
     if (typeof callback !== 'function') {
       return;
     }
+    ensureNativeEventBridgeInitialized();
     listeners.set(
       callback,
       DeviceEventEmitter.addListener(NotifyButtonClickEvent, (result) => {
@@ -745,6 +764,7 @@ export default class JPush {
     if (typeof callback !== 'function') {
       return;
     }
+    ensureNativeEventBridgeInitialized();
     listeners.set(
       callback,
       DeviceEventEmitter.addListener(InappMessageEvent, (result) => {
@@ -757,6 +777,7 @@ export default class JPush {
     if (typeof callback !== 'function') {
       return;
     }
+    ensureNativeEventBridgeInitialized();
     listeners.set(
       callback,
       DeviceEventEmitter.addListener(TagAliasEvent, (result) => {
@@ -771,6 +792,7 @@ export default class JPush {
     if (typeof callback !== 'function') {
       return;
     }
+    ensureNativeEventBridgeInitialized();
     listeners.set(
       callback,
       DeviceEventEmitter.addListener(MobileNumberEvent, (message) => {

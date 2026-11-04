@@ -1,7 +1,11 @@
 #import "JCORETcpSession.h"
 #import "JCOREConfiguration.h"
 #import "JCORESisResolver.h"
+#if __has_include("JPUSHService.h")
+#import "JPUSHService.h"
+#else
 #import "../include/JPUSHService.h"
+#endif
 #import <Network/Network.h>
 #if __has_include(<UIKit/UIKit.h>)
 #import <UIKit/UIKit.h>

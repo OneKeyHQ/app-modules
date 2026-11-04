@@ -1,6 +1,6 @@
 # React Native JPush & JCore Native Contract (`@onekeyfe/react-native-jpush`)
 
-Status: `Implemented` in clean-room Objective-C/Swift (iOS) and Java/Kotlin (Android); `Runtime verified` for host compilation, Nitrogen JSI codegen, Jest JS contract tests, local Mock SIS/TCP/HTTP E2E socket tests, and live Jiguang UDP SIS (`s.jpush.cn:19000`) + TCP `Register` framing (`120.46.76.213:7002`) using non-production demo test key `1f2027d3cfb1b51dac664c42`. Real-device APNs / vendor push delivery acceptance remains a device-level check.
+Status: `Implemented` in clean-room Objective-C/Swift (iOS) and Java/Kotlin (Android); `Runtime verified` for host compilation, Nitrogen JSI codegen, Jest JS contract tests, local Mock SIS/TCP/HTTP E2E socket tests, and live Jiguang UDP SIS (`s.jpush.cn:19000`) + TCP `Register` (`cmd=0`) / `Login` (`cmd=1`) / `Tag` (`cmd=28`) handshake (`120.46.76.213:7001`) using non-production demo test key `1f2027d3cfb1b51dac664c42` and sandbox package name `com.devstudio.msgbench`. Real-device APNs / vendor push delivery acceptance remains a device-level check.
 
 ---
 
@@ -32,8 +32,8 @@ Status: `Implemented` in clean-room Objective-C/Swift (iOS) and Java/Kotlin (And
 - **Native SDK Boundary**:
   - **iOS (`ios/jcore/`, `ios/jpush/`, `ios/bridge/`)**: Owns `JCOREConfiguration`, `JCORECrypto`, `JCOREWireProtocol`, `JCORESisResolver`, `JCORETcpSession`, `JPUSHNotificationManager`, `JPUSHService`, `RCTJPushModule`, `RCTJPushEventQueue`, `RCTJCoreModule`, and `ReactNativeJpush.swift`.
   - **Android (`android/src/main/java/`)**: Owns `cn.jiguang.core.*` (`JCoreStorage`, `JCoreCrypto`, `JCoreWireCodec`, `JCoreTcpEngine`), `cn.jiguang.api.*`, `cn.jiguang.internal.*`, `cn.jiguang.net.*`, `cn.jpush.android.*`, `cn.jiguang.plugins.*`, and `com.margelo.nitro.reactnativejpush.*`.
-- **Demo Test Key Boundary**:
-  - `DEMO_TEST_APP_KEY = "1f2027d3cfb1b51dac664c42"` is a non-production demo test AppKey checked into test/spec constants solely for automated unit and protocol testing. Production apps supply their own AppKey via `JPush.init({ appKey, channel, production })` or `AndroidManifest.xml` `JPUSH_APPKEY`.
+- **Demo Test Key & Sandbox Package Boundary**:
+  - `DEMO_TEST_APP_KEY = "1f2027d3cfb1b51dac664c42"` and `DEMO_TEST_PACKAGE_NAME = "com.devstudio.msgbench"` are non-production sandbox test fixtures checked into test/spec constants solely for automated unit, protocol, and live cloud handshake testing. They intentionally avoid `onekey` and `jpush` identifiers so automated test runs never collide with production apps or trigger vendor keyword filters. Production apps supply their own AppKey via `JPush.init({ appKey, channel, production })` or `AndroidManifest.xml` `JPUSH_APPKEY`.
 
 ---
 

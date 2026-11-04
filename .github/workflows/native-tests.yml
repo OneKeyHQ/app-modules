@@ -102,6 +102,20 @@ jobs:
             -include-runtime -d "$RUNNER_TEMP/picker-error-privacy-tests.jar"
           java -jar "$RUNNER_TEMP/picker-error-privacy-tests.jar" | tee "$RUNNER_TEMP/picker-error-privacy-tests.log"
           grep -Eq '^ImageCropPickerException: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/picker-error-privacy-tests.log"
+      - name: Run Lite Card SDK C++ and JNI native regressions
+        working-directory: native-modules/react-native-lite-card/sdk
+        shell: bash
+        run: |
+          cmake -S . -B "$RUNNER_TEMP/lite-card-sdk-build" -DBUILD_TESTING=ON -DGPCHANNEL_HOST_JNI=ON
+          cmake --build "$RUNNER_TEMP/lite-card-sdk-build" --parallel
+          ctest --test-dir "$RUNNER_TEMP/lite-card-sdk-build" --output-on-failure -V | tee "$RUNNER_TEMP/lite-card-sdk-tests.log"
+          grep -Fq 'Native security regression tests + 5000 malformed-input cases passed' "$RUNNER_TEMP/lite-card-sdk-tests.log"
+      - name: Run JPush & JCore iOS native E2E regressions
+        working-directory: native-modules/react-native-jpush
+        shell: bash
+        run: |
+          python3 scripts/test_ios_sdk.py | tee "$RUNNER_TEMP/jpush-ios-tests.log"
+          grep -Fq 'ALL_IOS_SDK_TESTS_PASSED' "$RUNNER_TEMP/jpush-ios-tests.log"
       - name: Run four SwiftPM suites and verify execution
         shell: bash
         run: |
@@ -152,12 +166,13 @@ jobs:
           # shellcheck disable=SC2016
           find native-modules native-views -mindepth 2 -maxdepth 2 -name nitro.json -print0 |
             xargs -0 -n1 -P4 bash -c 'yarn --cwd "$(dirname "$0")" nitrogen > /dev/null'
-      - name: Run ten Android unit test suites and build capture protection and photo saving
+      - name: Run eleven Android unit test suites and build capture protection and photo saving
         working-directory: example/react-native/android
         run: |
           ./gradlew --continue --no-daemon --parallel --max-workers=4 --console=plain \
             :onekeyfe_react-native-app-update:testDebugUnitTest \
             :onekeyfe_react-native-bundle-crypto:testDebugUnitTest \
+            :onekeyfe_react-native-jpush:testDebugUnitTest \
             :onekeyfe_react-native-network-throttle:testDebugUnitTest \
             :onekeyfe_react-native-range-downloader:testDebugUnitTest \
             :onekeyfe_react-native-sni-connect:testDebugUnitTest \
@@ -178,6 +193,7 @@ jobs:
           packages = {
               'native-modules/react-native-app-update',
               'native-modules/react-native-bundle-crypto',
+              'native-modules/react-native-jpush',
               'native-modules/react-native-network-throttle',
               'native-modules/react-native-range-downloader',
               'native-modules/react-native-sni-connect',

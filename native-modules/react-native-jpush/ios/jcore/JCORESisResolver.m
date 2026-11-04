@@ -309,19 +309,19 @@ static const char *const kJCoreHttpSisIv = "0102030405060708";
     [[JCOREConfiguration shared] updateWithSisDictionary:dict];
 
     NSMutableArray<JCORESisEndpoint *> *results = [NSMutableArray array];
-    NSArray<NSString *> *sslIps = [dict[@"ssl_ips"] isKindOfClass:[NSArray class]] ? dict[@"ssl_ips"] : @[];
-    for (NSString *addr in sslIps) {
+    NSArray<NSString *> *ips = [dict[@"ips"] isKindOfClass:[NSArray class]] ? dict[@"ips"] : @[];
+    for (NSString *addr in ips) {
         if ([addr isKindOfClass:[NSString class]]) {
-            JCORESisEndpoint *ep = [JCORESisEndpoint endpointFromString:addr useSSL:YES];
+            JCORESisEndpoint *ep = [JCORESisEndpoint endpointFromString:addr useSSL:NO];
             if (ep != nil) {
                 [results addObject:ep];
             }
         }
     }
-    NSArray<NSString *> *ips = [dict[@"ips"] isKindOfClass:[NSArray class]] ? dict[@"ips"] : @[];
-    for (NSString *addr in ips) {
+    NSArray<NSString *> *sslIps = [dict[@"ssl_ips"] isKindOfClass:[NSArray class]] ? dict[@"ssl_ips"] : @[];
+    for (NSString *addr in sslIps) {
         if ([addr isKindOfClass:[NSString class]]) {
-            JCORESisEndpoint *ep = [JCORESisEndpoint endpointFromString:addr useSSL:NO];
+            JCORESisEndpoint *ep = [JCORESisEndpoint endpointFromString:addr useSSL:YES];
             if (ep != nil) {
                 [results addObject:ep];
             }

@@ -26,7 +26,7 @@ class ReactNativeJpushPackage : BaseReactPackage() {
         "JPushModule",
         JPushModule::class.java.name,
         true,
-        false,
+        true,
         false,
         false
       )
@@ -34,7 +34,7 @@ class ReactNativeJpushPackage : BaseReactPackage() {
         "JCoreModule",
         JCoreModule::class.java.name,
         true,
-        false,
+        true,
         false,
         false
       )

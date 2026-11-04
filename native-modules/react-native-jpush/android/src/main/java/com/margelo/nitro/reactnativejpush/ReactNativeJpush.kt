@@ -24,6 +24,10 @@ import org.json.JSONObject
 
 @DoNotStrip
 class ReactNativeJpush : HybridReactNativeJpushSpec() {
+  init {
+    getReactContext()
+  }
+
   private fun getReactContext(): ReactApplicationContext? {
     val ctx = NitroModules.applicationContext ?: JPushModule.reactContext ?: JCoreModule.reactContext
     if (ctx != null) {
@@ -145,7 +149,7 @@ class ReactNativeJpush : HybridReactNativeJpushSpec() {
 
   override fun setProperties(sequence: Double, propertiesJson: String) {
     val ctx = getReactContext() ?: return
-    val map = HashMap<String, Object>()
+    val map = HashMap<String, Any>()
     if (propertiesJson.isNotEmpty()) {
       try {
         val json = JSONObject(propertiesJson)
@@ -154,8 +158,7 @@ class ReactNativeJpush : HybridReactNativeJpushSpec() {
           val k = keys.next()
           val v = json.opt(k)
           if (v != null && v != JSONObject.NULL) {
-            @Suppress("UNCHECKED_CAST")
-            map[k] = v as Object
+            map[k] = v
           }
         }
       } catch (_: Throwable) {
@@ -166,10 +169,9 @@ class ReactNativeJpush : HybridReactNativeJpushSpec() {
 
   override fun deleteProperties(sequence: Double, keys: Array<String>) {
     val ctx = getReactContext() ?: return
-    val map = HashMap<String, Object>()
+    val map = HashMap<String, Any>()
     for (k in keys) {
-      @Suppress("UNCHECKED_CAST")
-      map[k] = "" as Object
+      map[k] = ""
     }
     JPushInterface.deleteProperties(ctx, sequence.toInt(), map)
   }

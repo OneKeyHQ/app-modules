@@ -34,6 +34,7 @@ Pod::Spec.new do |s|
     "CFNetwork",
     "CoreFoundation",
     "CoreTelephony",
+    "CoreLocation",
     "SystemConfiguration",
     "CoreGraphics",
     "Foundation",
@@ -43,6 +44,11 @@ Pod::Spec.new do |s|
   ]
   s.libraries = ["z", "resolv"]
 
+  s.pod_target_xcconfig = {
+    "HEADER_SEARCH_PATHS" => "\"$(PODS_TARGET_SRCROOT)/ios/include\" \"$(PODS_TARGET_SRCROOT)/ios/jcore\" \"$(PODS_TARGET_SRCROOT)/ios/jpush\" \"$(PODS_TARGET_SRCROOT)/ios/bridge\""
+  }
+
+  s.dependency 'React-Core'
   s.dependency 'React-jsi'
   s.dependency 'React-callinvoker'
   s.dependency 'ReactNativeNativeLogger'

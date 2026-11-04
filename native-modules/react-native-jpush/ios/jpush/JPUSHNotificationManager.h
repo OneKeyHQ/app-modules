@@ -1,5 +1,9 @@
 #import <Foundation/Foundation.h>
+#if __has_include("JPUSHService.h")
+#import "JPUSHService.h"
+#else
 #import "../include/JPUSHService.h"
+#endif
 
 NS_ASSUME_NONNULL_BEGIN
 

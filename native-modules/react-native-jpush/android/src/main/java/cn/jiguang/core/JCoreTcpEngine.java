@@ -322,8 +322,12 @@ public final class JCoreTcpEngine {
         }
     }
 
-    private boolean isPlainSocketHost(String host) {
+    private boolean isPlainSocketEndpoint(String host, int port) {
         if (testConnectionEnabled) {
+            return true;
+        }
+        if (port != 443) {
+            // Jiguang TCP long-connection ports (7000-7009 / 8000-8009) speak 24B/20B AES/SM4 frames directly over TCP.
             return true;
         }
         if (host == null) {
@@ -368,10 +372,10 @@ public final class JCoreTcpEngine {
             if (lastGood != null && !lastGood.isEmpty() && ordered.isEmpty()) {
                 ordered.add(lastGood);
             }
-            for (String s : JCoreStorage.getSisSslIps(context)) {
+            for (String s : JCoreStorage.getSisIps(context)) {
                 ordered.add(s);
             }
-            for (String s : JCoreStorage.getSisIps(context)) {
+            for (String s : JCoreStorage.getSisSslIps(context)) {
                 ordered.add(s);
             }
         }
@@ -421,7 +425,7 @@ public final class JCoreTcpEngine {
     private boolean tryConnectAndHandshakeEndpoint(final Context context, String host, int port) {
         Socket socket = null;
         try {
-            if (isPlainSocketHost(host)) {
+            if (isPlainSocketEndpoint(host, port)) {
                 socket = new Socket();
                 socket.connect(new InetSocketAddress(host, port), 3000);
                 socket.setSoTimeout(10000);
@@ -855,12 +859,12 @@ public final class JCoreTcpEngine {
             if (!decodedJson.isEmpty()) {
                 JCoreStorage.saveSisConfig(context, decodedJson);
             }
-            Set<String> sslIps = JCoreWireCodec.extractJsonStringArray(decodedJson, "ssl_ips");
-            if (sslIps.isEmpty()) {
-                sslIps = JCoreWireCodec.extractJsonStringArray(decodedJson, "ips");
+            Set<String> ips = JCoreWireCodec.extractJsonStringArray(decodedJson, "ips");
+            if (ips.isEmpty()) {
+                ips = JCoreWireCodec.extractJsonStringArray(decodedJson, "ssl_ips");
             }
-            if (!sslIps.isEmpty()) {
-                String first = sslIps.iterator().next();
+            if (!ips.isEmpty()) {
+                String first = ips.iterator().next();
                 String[] hp = splitHostPort(first);
                 if (hp != null) {
                     return hp;

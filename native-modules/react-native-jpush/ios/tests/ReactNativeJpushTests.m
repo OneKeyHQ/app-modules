@@ -7,10 +7,11 @@
 #import "../jcore/JCOREWireProtocol.h"
 
 /**
- * Non-production demo test AppKey used solely for automated native unit and protocol tests.
+ * Non-production demo test AppKey and sandbox bundle/package identifier used solely for automated native tests.
  * Never used in production environments.
  */
 static NSString *const kDemoTestAppKey = @"1f2027d3cfb1b51dac664c42";
+static NSString *const kDemoTestPackageName = @"com.devstudio.msgbench";
 
 @interface ReactNativeJpushTests : XCTestCase
 @end
@@ -55,7 +56,7 @@ static NSString *const kDemoTestAppKey = @"1f2027d3cfb1b51dac664c42";
 
     NSData *regBody = [JCOREWireProtocol buildRegisterPayloadWithAppKey:kDemoTestAppKey
                                                                 channel:@"dev"
-                                                           bundleIdHash:@"so.onekey.wallet"];
+                                                           bundleIdHash:kDemoTestPackageName];
     NSData *clientFrame = [JCOREWireProtocol encodeClientFrameWithCommand:JCOREWireCommandRegister
                                                                   version:30
                                                                 requestId:1

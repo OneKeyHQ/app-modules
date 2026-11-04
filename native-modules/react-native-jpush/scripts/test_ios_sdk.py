@@ -17,8 +17,9 @@ BRIDGE_DIR = SOURCE_ROOT / "bridge"
 JCORE_RN_IOS_DIR = BRIDGE_DIR
 JPUSH_RN_IOS_DIR = BRIDGE_DIR
 
-# Non-production demo test AppKey used solely for automated native tests.
+# Non-production demo test AppKey and sandbox bundle/package identifier used solely for automated native tests.
 DEMO_TEST_APP_KEY = "1f2027d3cfb1b51dac664c42"
+DEMO_TEST_PACKAGE_NAME = "com.devstudio.msgbench"
 
 FORBIDDEN_SYMBOLS = (
     "UIPasteboard",

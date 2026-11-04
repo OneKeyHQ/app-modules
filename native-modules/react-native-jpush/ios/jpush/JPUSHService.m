@@ -1,7 +1,17 @@
+#if __has_include("JPUSHService.h")
+#import "JPUSHService.h"
+#else
 #import "../include/JPUSHService.h"
+#endif
+#if __has_include("JCOREConfiguration.h")
+#import "JCOREConfiguration.h"
+#import "JCORETcpSession.h"
+#import "JCOREWireProtocol.h"
+#else
 #import "../jcore/JCOREConfiguration.h"
 #import "../jcore/JCORETcpSession.h"
 #import "../jcore/JCOREWireProtocol.h"
+#endif
 #import "JPUSHNotificationManager.h"
 #import <UserNotifications/UserNotifications.h>
 

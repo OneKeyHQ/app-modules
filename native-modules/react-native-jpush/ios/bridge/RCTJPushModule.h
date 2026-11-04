@@ -2,15 +2,17 @@
 
 #if __has_include(<React/RCTBridge.h>)
 #import <React/RCTEventEmitter.h>
-#import <React/RCTRootView.h>
 #import <React/RCTBridge.h>
 #elif __has_include("RCTBridge.h")
 #import "RCTEventEmitter.h"
-#import "RCTRootView.h"
 #import "RCTBridge.h"
 #endif
 
+#if __has_include("JPUSHService.h")
 #import "JPUSHService.h"
+#elif __has_include("../include/JPUSHService.h")
+#import "../include/JPUSHService.h"
+#endif
 #import "RCTJPushEventQueue.h"
 
 #define J_APNS_NOTIFICATION_ARRIVED_EVENT  @"J_APNS_NOTIFICATION_ARRIVED_EVENT"

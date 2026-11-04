@@ -104,6 +104,16 @@ android {
     targetCompatibility JavaVersion.VERSION_1_8
   }
 
+  testOptions {
+    unitTests.all {
+      testLogging {
+        events "passed", "skipped", "failed", "standardOut", "standardError"
+        outputs.upToDateWhen { false }
+        showStandardStreams = true
+      }
+    }
+  }
+
   sourceSets {
     main {
       java.srcDirs += [

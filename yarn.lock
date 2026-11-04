@@ -2960,7 +2960,6 @@ __metadata:
     "@onekeyfe/react-native-get-random-values": "workspace:*"
     "@onekeyfe/react-native-image": "workspace:*"
     "@onekeyfe/react-native-image-crop-picker": "workspace:*"
-    "@onekeyfe/react-native-jpush": "workspace:*"
     "@onekeyfe/react-native-keychain-module": "workspace:*"
     "@onekeyfe/react-native-lite-card": "workspace:*"
     "@onekeyfe/react-native-native-list": "workspace:*"
@@ -3657,7 +3656,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@onekeyfe/react-native-jpush@workspace:*, @onekeyfe/react-native-jpush@workspace:native-modules/react-native-jpush":
+"@onekeyfe/react-native-jpush@workspace:native-modules/react-native-jpush":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-jpush@workspace:native-modules/react-native-jpush"
   dependencies:
