@@ -309,20 +309,10 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
                 [strongSelf advanceToNextCandidateAfterFailureOfEndpoint:endpoint];
             } else {
                 strongSelf->_connecting = NO;
-                strongSelf->_connected = NO;
-                strongSelf->_loggedIn = NO;
-                [strongSelf stopHeartbeatLocked];
-                if (strongSelf->_inFlightRequests.count > 0) {
-                    NSError *closeErr = [NSError errorWithDomain:@"cn.jiguang.jpush"
-                                                            code:6002
-                                                        userInfo:@{NSLocalizedDescriptionKey: @"Connection closed"}];
-                    [strongSelf failAllInFlightRequestsLockedWithError:closeErr];
-                }
-                if (strongSelf->_connection == connection) {
-                    [strongSelf postNotificationOnMain:kJPFNetworkDidCloseNotification userInfo:nil];
-                    if (!strongSelf->_userDisconnected && ![JCOREConfiguration shared].pushStopped && !strongSelf->_connecting) {
-                        [strongSelf scheduleReconnectLocked];
-                    }
+                [strongSelf tearDownConnectionLocked];
+                [strongSelf postNotificationOnMain:kJPFNetworkDidCloseNotification userInfo:nil];
+                if (!strongSelf->_userDisconnected && ![JCOREConfiguration shared].pushStopped && !strongSelf->_connecting) {
+                    [strongSelf scheduleReconnectLocked];
                 }
             }
         } else if (state == nw_connection_state_cancelled) {

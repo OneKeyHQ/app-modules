@@ -63,6 +63,7 @@ public final class JCoreStorage {
     private static final String KEY_SILENCE_END_HOUR = "silence_end_hour";
     private static final String KEY_SILENCE_END_MIN = "silence_end_min";
 
+    private static final int MAX_LOCAL_LOG_CHARS = 32768;
     private static final AtomicInteger REQUEST_ID = new AtomicInteger(100);
     private static final Map<String, Object> MEMORY_FALLBACK = new ConcurrentHashMap<String, Object>();
     private static final StringBuilder LOCAL_LOG_BUFFER = new StringBuilder();
@@ -314,12 +315,25 @@ public final class JCoreStorage {
         }
     }
 
+    public static boolean isLocalLogEnabled(Context context) {
+        return getBooleanPref(context, KEY_LOCAL_LOG_ENABLED, false);
+    }
+
     public static synchronized void appendLocalLog(String line) {
         if (line != null && !line.isEmpty()) {
             if (LOCAL_LOG_BUFFER.length() > 0) {
                 LOCAL_LOG_BUFFER.append('\n');
             }
             LOCAL_LOG_BUFFER.append(line);
+            if (LOCAL_LOG_BUFFER.length() > MAX_LOCAL_LOG_CHARS) {
+                int excess = LOCAL_LOG_BUFFER.length() - MAX_LOCAL_LOG_CHARS;
+                int newlineIdx = LOCAL_LOG_BUFFER.indexOf("\n", excess);
+                if (newlineIdx >= 0 && newlineIdx + 1 < LOCAL_LOG_BUFFER.length()) {
+                    LOCAL_LOG_BUFFER.delete(0, newlineIdx + 1);
+                } else {
+                    LOCAL_LOG_BUFFER.delete(0, excess);
+                }
+            }
         }
     }
 
@@ -445,6 +459,7 @@ public final class JCoreStorage {
         putStringPref(context, KEY_SIS_SSL_IPS, "");
         putStringPref(context, KEY_SIS_UDP_IPS, "");
         putStringPref(context, KEY_LAST_GOOD_IP, "");
+        putStringPref(context, KEY_FAILED_IPS, "");
     }
 
     public static List<String> getSisSslIps(Context context) {

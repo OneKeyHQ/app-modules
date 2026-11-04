@@ -865,6 +865,24 @@ public class JSONArray {
         Object v = values.get(index);
         return v != null ? String.valueOf(v) : fallback;
     }
+
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < values.size(); i++) {
+            if (i > 0) {
+                sb.append(',');
+            }
+            Object val = values.get(i);
+            if (val instanceof Number || val instanceof Boolean || val instanceof JSONObject || val instanceof JSONArray) {
+                sb.append(val);
+            } else {
+                sb.append('"').append(val != null ? String.valueOf(val) : "").append('"');
+            }
+        }
+        sb.append(']');
+        return sb.toString();
+    }
 }
 """,
     "org/json/JSONObject.java": """
@@ -874,6 +892,17 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 public class JSONObject {
+    public static final Object NULL = new Object() {
+        @Override
+        public boolean equals(Object o) {
+            return o == this || o == null;
+        }
+
+        @Override
+        public String toString() {
+            return "null";
+        }
+    };
     private final Map<String, Object> map = new LinkedHashMap<String, Object>();
 
     public JSONObject() {}
@@ -1008,7 +1037,7 @@ public class JSONObject {
             first = false;
             sb.append('"').append(entry.getKey()).append('\"').append(':');
             Object val = entry.getValue();
-            if (val instanceof Number || val instanceof Boolean || val instanceof JSONObject) {
+            if (val instanceof Number || val instanceof Boolean || val instanceof JSONObject || val instanceof JSONArray) {
                 sb.append(val);
             } else {
                 sb.append('"').append(val != null ? String.valueOf(val) : "").append('"');

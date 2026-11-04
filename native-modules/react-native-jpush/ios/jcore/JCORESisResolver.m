@@ -407,6 +407,24 @@ static const char *const kJCoreHttpSisIv = "0102030405060708";
     nw_connection_start(conn);
 }
 
+- (BOOL)hasHealthyCachedSisEndpoint {
+    JCOREConfiguration *config = [JCOREConfiguration shared];
+    NSSet<NSString *> *failedSet = [NSSet setWithArray:(config.failedIps ?: @[])];
+    for (NSString *addr in config.ips) {
+        JCORESisEndpoint *ep = [JCORESisEndpoint endpointFromString:addr useSSL:NO];
+        if (ep != nil && ![failedSet containsObject:ep.addressString]) {
+            return YES;
+        }
+    }
+    for (NSString *addr in config.sslIps) {
+        JCORESisEndpoint *ep = [JCORESisEndpoint endpointFromString:addr useSSL:YES];
+        if (ep != nil && ![failedSet containsObject:ep.addressString]) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
 - (void)resolveEndpointsWithCompletion:(void (^)(NSArray<JCORESisEndpoint *> *endpoints))completion {
     JCOREConfiguration *config = [JCOREConfiguration shared];
     if (config.customConnectAddresses.count > 0) {
@@ -436,14 +454,37 @@ static const char *const kJCoreHttpSisIv = "0102030405060708";
         return;
     }
 
-    if (config.ips.count > 0 || config.sslIps.count > 0) {
+    if ([self hasHealthyCachedSisEndpoint]) {
         completion([self defaultFallbackEndpoints]);
         return;
     }
 
-    NSString *firstHttpsUrl = config.httpsSisUrls.firstObject;
-    if (firstHttpsUrl.length == 0 || config.appKey.length == 0) {
+    if (config.appKey.length == 0) {
         completion([self defaultFallbackEndpoints]);
+        return;
+    }
+
+    void (^fallbackToUdpSis)(void) = ^{
+        NSString *udpHostStr = config.sisIps.firstObject ?: config.sisDefaultIps.firstObject ?: config.sisHostDomains.firstObject;
+        if (udpHostStr.length > 0) {
+            JCORESisEndpoint *udpEp = [JCORESisEndpoint endpointFromString:udpHostStr useSSL:NO];
+            NSString *resolvedHost = udpEp != nil ? udpEp.host : udpHostStr;
+            uint16_t resolvedPort = (udpEp != nil && udpEp.port > 0) ? udpEp.port : 19000;
+            [self resolveUdpSisWithHost:resolvedHost port:resolvedPort timeout:2.5 completion:^(NSArray<JCORESisEndpoint *> *udpEndpoints) {
+                if (udpEndpoints.count > 0) {
+                    completion(udpEndpoints);
+                } else {
+                    completion([self defaultFallbackEndpoints]);
+                }
+            }];
+            return;
+        }
+        completion([self defaultFallbackEndpoints]);
+    };
+
+    NSString *firstHttpsUrl = config.httpsSisUrls.firstObject;
+    if (firstHttpsUrl.length == 0) {
+        fallbackToUdpSis();
         return;
     }
 
@@ -455,7 +496,7 @@ static const char *const kJCoreHttpSisIv = "0102030405060708";
 
     NSURL *url = [NSURL URLWithString:[firstHttpsUrl stringByAppendingString:@"/v3/srv"]];
     if (url == nil || encrypted.length == 0 || authHeader.length == 0) {
-        completion([self defaultFallbackEndpoints]);
+        fallbackToUdpSis();
         return;
     }
 
@@ -476,18 +517,7 @@ static const char *const kJCoreHttpSisIv = "0102030405060708";
                 return;
             }
         }
-        NSString *udpHost = config.sisDefaultIps.firstObject ?: config.sisHostDomains.firstObject;
-        if (udpHost.length > 0) {
-            [self resolveUdpSisWithHost:udpHost port:19000 timeout:2.5 completion:^(NSArray<JCORESisEndpoint *> *udpEndpoints) {
-                if (udpEndpoints.count > 0) {
-                    completion(udpEndpoints);
-                } else {
-                    completion([self defaultFallbackEndpoints]);
-                }
-            }];
-            return;
-        }
-        completion([self defaultFallbackEndpoints]);
+        fallbackToUdpSis();
     }];
     [task resume];
 }

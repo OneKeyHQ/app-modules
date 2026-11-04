@@ -1129,6 +1129,10 @@ static NSString *JCoreReadString(NSData *data, NSUInteger *offset) {
 
 #pragma mark - HTTP Reporter (Part 4.4)
 
+@interface JCOREHttpReporter ()
+@property (nonatomic, strong) NSURLSession *reportSession;
+@end
+
 @implementation JCOREHttpReporter
 
 + (instancetype)shared {
@@ -1138,6 +1142,17 @@ static NSString *JCoreReadString(NSData *data, NSUInteger *offset) {
         instance = [[JCOREHttpReporter alloc] init];
     });
     return instance;
+}
+
+- (instancetype)init {
+    self = [super init];
+    if (self) {
+        NSURLSessionConfiguration *cfg = [NSURLSessionConfiguration ephemeralSessionConfiguration];
+        cfg.timeoutIntervalForRequest = 10.0;
+        cfg.timeoutIntervalForResource = 15.0;
+        _reportSession = [NSURLSession sessionWithConfiguration:cfg];
+    }
+    return self;
 }
 
 + (NSDictionary *)buildReportEnvelopeWithContentItems:(NSArray<NSDictionary *> *)items {
@@ -1379,10 +1394,12 @@ static NSString *JCoreReadString(NSData *data, NSUInteger *offset) {
         }
         return;
     }
-    [[[NSURLSession sharedSession] dataTaskWithRequest:req
-                                     completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+    [[self.reportSession dataTaskWithRequest:req
+                           completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         (void)data;
-        NSInteger status = [(NSHTTPURLResponse *)response statusCode];
+        NSInteger status = [response isKindOfClass:[NSHTTPURLResponse class]]
+            ? [(NSHTTPURLResponse *)response statusCode]
+            : 0;
         BOOL ok = (error == nil && status == 200);
         if (completion) {
             completion(ok, status);
@@ -1420,10 +1437,12 @@ static NSString *JCoreReadString(NSData *data, NSUInteger *offset) {
         }
         return;
     }
-    [[[NSURLSession sharedSession] dataTaskWithRequest:req
-                                     completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+    [[self.reportSession dataTaskWithRequest:req
+                           completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         (void)data;
-        NSInteger status = [(NSHTTPURLResponse *)response statusCode];
+        NSInteger status = [response isKindOfClass:[NSHTTPURLResponse class]]
+            ? [(NSHTTPURLResponse *)response statusCode]
+            : 0;
         BOOL ok = (error == nil && status == 200);
         if (completion) {
             completion(ok, status);

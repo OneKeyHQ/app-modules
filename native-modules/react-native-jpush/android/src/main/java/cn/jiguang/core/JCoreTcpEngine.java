@@ -499,21 +499,41 @@ public final class JCoreTcpEngine {
         return healthy;
     }
 
+    private boolean hasHealthyCandidate(Context context, List<String> candidates) {
+        if (candidates == null || candidates.isEmpty()) {
+            return false;
+        }
+        List<String> failedIps = JCoreStorage.getFailedIps(context);
+        if (failedIps == null || failedIps.isEmpty()) {
+            return true;
+        }
+        for (String ep : candidates) {
+            if (ep != null && !ep.isEmpty() && !failedIps.contains(ep)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public void connectAndHandshake(final Context context) {
         try {
             List<String> candidates = buildOrderedCandidateList(context);
-            if (candidates.isEmpty() && customPort <= 0 && candidateEndpoints.isEmpty()) {
-                String[] sisResolved = resolveSisEndpoint(context);
-                candidates = buildOrderedCandidateList(context);
-                if (candidates.isEmpty() && sisResolved != null && sisResolved.length == 2) {
-                    String resolvedEp = (sisResolved[0] + ":" + sisResolved[1]).trim();
-                    if (!resolvedEp.isEmpty() && splitHostPort(resolvedEp) != null) {
-                        candidates.add(resolvedEp);
+            if (customPort <= 0 && candidateEndpoints.isEmpty()) {
+                if (!hasHealthyCandidate(context, candidates)) {
+                    String[] sisResolved = resolveSisEndpoint(context);
+                    candidates = buildOrderedCandidateList(context);
+                    if (sisResolved != null && sisResolved.length == 2) {
+                        String resolvedEp = (sisResolved[0] + ":" + sisResolved[1]).trim();
+                        if (!resolvedEp.isEmpty() && splitHostPort(resolvedEp) != null && !candidates.contains(resolvedEp)) {
+                            candidates.add(0, resolvedEp);
+                        }
                     }
                 }
-                String defaultEndpoint = DEFAULT_HOST + ":" + DEFAULT_PORT;
-                if (candidates.isEmpty()) {
-                    candidates.add(defaultEndpoint);
+                if (!hasHealthyCandidate(context, candidates)) {
+                    String defaultEndpoint = DEFAULT_HOST + ":" + DEFAULT_PORT;
+                    if (!candidates.contains(defaultEndpoint)) {
+                        candidates.add(defaultEndpoint);
+                    }
                 }
             }
             if (candidates.isEmpty()) {

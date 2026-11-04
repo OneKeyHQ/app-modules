@@ -43,10 +43,20 @@ public class JPushHelper {
     private static final class PendingEvent {
         final String eventName;
         final WritableMap params;
+        final Map<String, Object> mapParams;
 
         PendingEvent(String eventName, WritableMap params) {
             this.eventName = eventName;
             this.params = params;
+            this.mapParams = null;
+        }
+
+        PendingEvent(String eventName, Map<String, Object> mapParams) {
+            this.eventName = eventName;
+            this.params = null;
+            this.mapParams = mapParams != null
+                ? new HashMap<String, Object>(mapParams)
+                : new HashMap<String, Object>();
         }
     }
 
@@ -148,11 +158,18 @@ public class JPushHelper {
             if (pending != null && !isEmpty(pending.eventName)) {
                 int index = 0;
                 int total = targets.size();
+                WritableMap baseWritable = pending.params;
+                if (baseWritable == null && pending.mapParams != null) {
+                    try {
+                        baseWritable = mapFromHashMap(pending.mapParams);
+                    } catch (Throwable ignored) {
+                    }
+                }
                 for (ReactApplicationContext ctx : targets) {
                     try {
                         WritableMap payload = (total > 1 && index > 0)
-                            ? cloneWritableMap(pending.params)
-                            : pending.params;
+                            ? cloneWritableMap(baseWritable)
+                            : baseWritable;
                         index++;
                         ctx.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
                             .emit(pending.eventName, payload);
@@ -188,6 +205,7 @@ public class JPushHelper {
             }
 
             Set<ReactApplicationContext> targets = getTargetContexts();
+            boolean deliveredLegacy = false;
             if (!targets.isEmpty()) {
                 try {
                     WritableMap writable = mapFromHashMap(
@@ -199,9 +217,16 @@ public class JPushHelper {
                         WritableMap payload = (total > 1 && index > 0) ? cloneWritableMap(writable) : writable;
                         index++;
                         ctx.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class).emit(eventName, payload);
+                        deliveredLegacy = true;
                     }
                 } catch (Throwable ignored) {
                 }
+            }
+            if (!deliveredLegacy) {
+                if (PENDING_EVENTS.size() >= 64) {
+                    PENDING_EVENTS.remove(0);
+                }
+                PENDING_EVENTS.add(new PendingEvent(eventName, params));
             }
         } catch (Throwable throwable) {
             JLogger.e("sendEventMap error:" + throwable.getMessage());
@@ -308,9 +333,13 @@ public class JPushHelper {
         return arr;
     }
 
+    private static boolean isJsonNull(Object val) {
+        return val == null || val == JSONObject.NULL || (JSONObject.NULL != null && JSONObject.NULL.equals(val));
+    }
+
     private static Object convertValueForJson(Object val) {
-        if (val == null) {
-            return JSONObject.NULL;
+        if (isJsonNull(val)) {
+            return JSONObject.NULL != null ? JSONObject.NULL : null;
         }
         if (val instanceof String || val instanceof Boolean || val instanceof Number
             || val instanceof JSONObject || val instanceof JSONArray) {
@@ -402,55 +431,196 @@ public class JPushHelper {
         return copy;
     }
 
+    public static Map<String, Object> convertNotificationToMapObject(String eventType, NotificationMessage message) {
+        Map<String, Object> map = new HashMap<String, Object>();
+        map.put(JConstants.NOTIFICATION_EVENT_TYPE, eventType != null ? eventType : "");
+        if (message != null) {
+            map.put(JConstants.MESSAGE_ID, message.msgId != null ? message.msgId : "");
+            map.put(JConstants.TITLE, message.notificationTitle != null ? message.notificationTitle : "");
+            map.put(JConstants.CONTENT, message.notificationContent != null ? message.notificationContent : "");
+            convertExtrasToMap(message.notificationExtras, map);
+        }
+        return map;
+    }
+
+    public static Map<String, Object> convertInAppMessageToMapObject(String eventType, NotificationMessage message) {
+        Map<String, Object> map = new HashMap<String, Object>();
+        map.put(JConstants.INAPP_MESSAGE_EVENT, eventType != null ? eventType : "");
+        if (message != null) {
+            map.put(JConstants.MESSAGE_ID, message.msgId != null ? message.msgId : "");
+            map.put(JConstants.TITLE, message.inAppMsgTitle != null ? message.inAppMsgTitle : "");
+            map.put(JConstants.CONTENT, message.inAppMsgContentBody != null ? message.inAppMsgContentBody : "");
+            map.put(JConstants.INAPPCLICKACTION, message.inAppClickAction != null ? message.inAppClickAction : "");
+            map.put(JConstants.INAPPEXTRAS, message.inAppExtras != null ? message.inAppExtras : "");
+            map.put(JConstants.INAPPSHOWTARGET, message.inAppShowTarget != null ? message.inAppShowTarget : "");
+        }
+        return map;
+    }
+
+    public static Map<String, Object> convertNotificationBundleToMapObject(String eventType, Bundle bundle) {
+        Map<String, Object> map = new HashMap<String, Object>();
+        map.put(JConstants.NOTIFICATION_EVENT_TYPE, eventType != null ? eventType : "");
+        if (bundle != null) {
+            map.put(JConstants.MESSAGE_ID, bundle.getString("cn.jpush.android.MSG_ID", ""));
+            map.put(JConstants.TITLE, bundle.getString("cn.jpush.android.NOTIFICATION_CONTENT_TITLE", ""));
+            map.put(JConstants.CONTENT, bundle.getString("cn.jpush.android.ALERT", ""));
+            convertExtrasToMap(bundle.getString("cn.jpush.android.EXTRA", ""), map);
+        }
+        return map;
+    }
+
+    public static Map<String, Object> convertCustomMessageToMapObject(CustomMessage customMessage) {
+        Map<String, Object> map = new HashMap<String, Object>();
+        if (customMessage != null) {
+            map.put(JConstants.MESSAGE_ID, customMessage.messageId != null ? customMessage.messageId : "");
+            map.put(JConstants.TITLE, customMessage.title != null ? customMessage.title : "");
+            map.put(JConstants.CONTENT, customMessage.message != null ? customMessage.message : "");
+            convertExtrasToMap(customMessage.extra, map);
+        }
+        return map;
+    }
+
+    public static Map<String, Object> convertNotificationCustomButtonToMapObject(
+        NotificationCustomButton notificationCustomButton
+    ) {
+        Map<String, Object> map = new HashMap<String, Object>();
+        if (notificationCustomButton != null) {
+            map.put("msgId", notificationCustomButton.a != null ? notificationCustomButton.a : "");
+            map.put("platform", Integer.valueOf(notificationCustomButton.b));
+            map.put("name", notificationCustomButton.c != null ? notificationCustomButton.c : "");
+            map.put("actionType", Integer.valueOf(notificationCustomButton.d));
+            map.put("action", notificationCustomButton.e != null ? notificationCustomButton.e : "");
+            map.put("data", notificationCustomButton.f != null ? notificationCustomButton.f : "");
+        }
+        return map;
+    }
+
+    public static Map<String, Object> convertJPushMessageToMapObject(int type, JPushMessage message) {
+        Map<String, Object> map = new HashMap<String, Object>();
+        if (message == null) {
+            return map;
+        }
+        map.put(JConstants.CODE, Integer.valueOf(message.getErrorCode()));
+        map.put(JConstants.SEQUENCE, Integer.valueOf(message.getSequence()));
+        switch (type) {
+            case 1:
+                Set<String> tags = message.getTags();
+                List<String> tagsList = new ArrayList<String>();
+                if (tags == null || tags.isEmpty()) {
+                    JLogger.d("tags is empty");
+                } else {
+                    for (String tag : tags) {
+                        if (tag != null) {
+                            tagsList.add(tag);
+                        }
+                    }
+                }
+                map.put(JConstants.TAGS, tagsList);
+                break;
+            case 2:
+                map.put(JConstants.TAG_ENABLE, Boolean.valueOf(message.getTagCheckStateResult()));
+                map.put(JConstants.TAG, message.getCheckTag() != null ? message.getCheckTag() : "");
+                break;
+            case 3:
+                map.put(JConstants.ALIAS, message.getAlias() != null ? message.getAlias() : "");
+                break;
+            case 4:
+                Map<String, Object> prosMap = new HashMap<String, Object>();
+                if (message.getPros() != null) {
+                    for (Map.Entry<String, Object> entry : message.getPros().entrySet()) {
+                        if (entry.getKey() != null && entry.getValue() != null) {
+                            prosMap.put(entry.getKey(), String.valueOf(entry.getValue()));
+                        }
+                    }
+                }
+                map.put(JConstants.PROPERTIES, prosMap);
+                break;
+        }
+        return map;
+    }
+
+    public static void convertExtrasToMap(String extras, Map<String, Object> targetMap) {
+        if (targetMap == null || isEmpty(extras) || "{}".equals(extras)) {
+            return;
+        }
+        try {
+            Map<String, Object> extrasMap = new HashMap<String, Object>();
+            JSONObject jsonObject = new JSONObject(extras);
+            Iterator<String> it = jsonObject.keys();
+            while (it.hasNext()) {
+                String key = it.next();
+                if (key == null) {
+                    continue;
+                }
+                Object val = jsonObject.opt(key);
+                String value = !isJsonNull(val) ? String.valueOf(val) : "";
+                extrasMap.put(key, value);
+            }
+            targetMap.put(JConstants.EXTRAS, extrasMap);
+        } catch (Throwable throwable) {
+            JLogger.w("convertExtrasToMap error");
+        }
+    }
+
     public static WritableMap convertNotificationToMap(String eventType, NotificationMessage message) {
         WritableMap writableMap = Arguments.createMap();
         writableMap.putString(JConstants.NOTIFICATION_EVENT_TYPE, eventType);
-        writableMap.putString(JConstants.MESSAGE_ID, message.msgId);
-        writableMap.putString(JConstants.TITLE, message.notificationTitle);
-        writableMap.putString(JConstants.CONTENT, message.notificationContent);
-        convertExtras(message.notificationExtras, writableMap);
+        if (message != null) {
+            writableMap.putString(JConstants.MESSAGE_ID, message.msgId);
+            writableMap.putString(JConstants.TITLE, message.notificationTitle);
+            writableMap.putString(JConstants.CONTENT, message.notificationContent);
+            convertExtras(message.notificationExtras, writableMap);
+        }
         return writableMap;
     }
     public static WritableMap convertInAppMessageToMap(String eventType, NotificationMessage message) {
         WritableMap writableMap = Arguments.createMap();
         writableMap.putString(JConstants.INAPP_MESSAGE_EVENT, eventType);
-        writableMap.putString(JConstants.MESSAGE_ID, message.msgId);
-        writableMap.putString(JConstants.TITLE, message.inAppMsgTitle);
-        writableMap.putString(JConstants.CONTENT, message.inAppMsgContentBody);
-        writableMap.putString(JConstants.INAPPCLICKACTION, message.inAppClickAction);
-        writableMap.putString(JConstants.INAPPEXTRAS, message.inAppExtras);
-        writableMap.putString(JConstants.INAPPSHOWTARGET, message.inAppShowTarget);
+        if (message != null) {
+            writableMap.putString(JConstants.MESSAGE_ID, message.msgId);
+            writableMap.putString(JConstants.TITLE, message.inAppMsgTitle);
+            writableMap.putString(JConstants.CONTENT, message.inAppMsgContentBody);
+            writableMap.putString(JConstants.INAPPCLICKACTION, message.inAppClickAction);
+            writableMap.putString(JConstants.INAPPEXTRAS, message.inAppExtras);
+            writableMap.putString(JConstants.INAPPSHOWTARGET, message.inAppShowTarget);
+        }
         return writableMap;
     }
 
     public static WritableMap convertNotificationBundleToMap(String eventType, Bundle bundle) {
         WritableMap writableMap = Arguments.createMap();
         writableMap.putString(JConstants.NOTIFICATION_EVENT_TYPE, eventType);
-        writableMap.putString(JConstants.MESSAGE_ID, bundle.getString("cn.jpush.android.MSG_ID",""));
-        writableMap.putString(JConstants.TITLE, bundle.getString("cn.jpush.android.NOTIFICATION_CONTENT_TITLE",""));
-        writableMap.putString(JConstants.CONTENT, bundle.getString("cn.jpush.android.ALERT",""));
-        convertExtras(bundle.getString("cn.jpush.android.EXTRA",""), writableMap);
+        if (bundle != null) {
+            writableMap.putString(JConstants.MESSAGE_ID, bundle.getString("cn.jpush.android.MSG_ID",""));
+            writableMap.putString(JConstants.TITLE, bundle.getString("cn.jpush.android.NOTIFICATION_CONTENT_TITLE",""));
+            writableMap.putString(JConstants.CONTENT, bundle.getString("cn.jpush.android.ALERT",""));
+            convertExtras(bundle.getString("cn.jpush.android.EXTRA",""), writableMap);
+        }
         return writableMap;
     }
 
     public static WritableMap convertCustomMessage(CustomMessage customMessage) {
         WritableMap writableMap = Arguments.createMap();
-        writableMap.putString(JConstants.MESSAGE_ID, customMessage.messageId);
-        writableMap.putString(JConstants.TITLE, customMessage.title);
-        writableMap.putString(JConstants.CONTENT, customMessage.message);
-        convertExtras(customMessage.extra, writableMap);
+        if (customMessage != null) {
+            writableMap.putString(JConstants.MESSAGE_ID, customMessage.messageId);
+            writableMap.putString(JConstants.TITLE, customMessage.title);
+            writableMap.putString(JConstants.CONTENT, customMessage.message);
+            convertExtras(customMessage.extra, writableMap);
+        }
         return writableMap;
     }
 
     public static WritableMap convertNotificationCustomButtonToMap(NotificationCustomButton notificationCustomButton) {
         WritableMap writableMap = Arguments.createMap();
         try {
-            writableMap.putString("msgId", notificationCustomButton.a);
-            writableMap.putInt("platform", notificationCustomButton.b);
-            writableMap.putString("name", notificationCustomButton.c);
-            writableMap.putInt("actionType", notificationCustomButton.d);
-            writableMap.putString("action", notificationCustomButton.e);
-            writableMap.putString("data", notificationCustomButton.f);
+            if (notificationCustomButton != null) {
+                writableMap.putString("msgId", notificationCustomButton.a);
+                writableMap.putInt("platform", notificationCustomButton.b);
+                writableMap.putString("name", notificationCustomButton.c);
+                writableMap.putInt("actionType", notificationCustomButton.d);
+                writableMap.putString("action", notificationCustomButton.e);
+                writableMap.putString("data", notificationCustomButton.f);
+            }
             return writableMap;
          } catch (Throwable throwable) {
             JLogger.w("convertNotificationCustomButtonToMap error");
@@ -460,7 +630,9 @@ public class JPushHelper {
 
     public static WritableMap convertJPushMessageToMap(int type, JPushMessage message) {
         WritableMap writableMap = Arguments.createMap();
-
+        if (message == null) {
+            return writableMap;
+        }
         writableMap.putInt(JConstants.CODE, message.getErrorCode());
         writableMap.putInt(JConstants.SEQUENCE, message.getSequence());
         switch (type) {
@@ -506,7 +678,11 @@ public class JPushHelper {
             Iterator<String> it = jsonObject.keys();
             while (it.hasNext()) {
                 String key = it.next();
-                String value = jsonObject.getString(key);
+                if (key == null) {
+                    continue;
+                }
+                Object val = jsonObject.opt(key);
+                String value = !isJsonNull(val) ? String.valueOf(val) : "";
                 extrasMap.putString(key, value);
             }
             writableMap.putMap(JConstants.EXTRAS, extrasMap);
@@ -516,8 +692,14 @@ public class JPushHelper {
     }
 
     public static void launchApp(Context context) {
+        if (context == null) {
+            return;
+        }
         try {
             Intent intent = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
+            if (intent == null) {
+                return;
+            }
             intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
             context.startActivity(intent);
         }catch (Throwable throwable){

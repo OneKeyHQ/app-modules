@@ -81,6 +81,9 @@ public class JLogger {
         }
         String safeMsg = msg != null ? msg : "";
         recordRecentLog(level, safeMsg);
+        if (cn.jiguang.core.JCoreStorage.isLocalLogEnabled(null)) {
+            cn.jiguang.core.JCoreStorage.appendLocalLog("[" + level + "] " + safeMsg);
+        }
         resolveOneKeyLogIfNeeded();
         if (oneKeyMethod != null) {
             try {

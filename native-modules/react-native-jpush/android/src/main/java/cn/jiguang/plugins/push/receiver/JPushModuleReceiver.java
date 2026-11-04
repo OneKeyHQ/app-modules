@@ -2,8 +2,8 @@ package cn.jiguang.plugins.push.receiver;
 
 import android.content.Context;
 
-import com.facebook.react.bridge.Arguments;
-import com.facebook.react.bridge.WritableMap;
+import java.util.HashMap;
+import java.util.Map;
 
 import cn.jiguang.plugins.push.JPushModule;
 import cn.jiguang.plugins.push.common.JLogger;
@@ -32,8 +32,8 @@ public class JPushModuleReceiver extends JPushMessageReceiver {
               + customMessage.platform
       );
     }
-    WritableMap writableMap = JPushHelper.convertCustomMessage(customMessage);
-    JPushHelper.sendEvent(JConstants.CUSTOM_MESSAGE_EVENT, writableMap);
+    Map<String, Object> map = JPushHelper.convertCustomMessageToMapObject(customMessage);
+    JPushHelper.sendEventMap(JConstants.CUSTOM_MESSAGE_EVENT, map);
   }
 
   @Override
@@ -53,11 +53,11 @@ public class JPushModuleReceiver extends JPushMessageReceiver {
             + " notificationId="
             + notificationMessage.notificationId
     );
-    WritableMap writableMap = JPushHelper.convertNotificationToMap(JConstants.NOTIFICATION_ARRIVED, notificationMessage);
+    Map<String, Object> map = JPushHelper.convertNotificationToMapObject(JConstants.NOTIFICATION_ARRIVED, notificationMessage);
     if (notificationMessage.notificationType != 1) {
-      JPushHelper.sendEvent(JConstants.NOTIFICATION_EVENT, writableMap);
+      JPushHelper.sendEventMap(JConstants.NOTIFICATION_EVENT, map);
     } else {
-      JPushHelper.sendEvent(JConstants.LOCAL_NOTIFICATION_EVENT, writableMap);
+      JPushHelper.sendEventMap(JConstants.LOCAL_NOTIFICATION_EVENT, map);
     }
   }
   @Override
@@ -70,8 +70,8 @@ public class JPushModuleReceiver extends JPushMessageReceiver {
               + jPushMessage.getErrorCode()
       );
     }
-    WritableMap writableMap = JPushHelper.convertJPushMessageToMap(4, jPushMessage);
-    JPushHelper.sendEvent(JConstants.TAG_ALIAS_EVENT, writableMap);
+    Map<String, Object> map = JPushHelper.convertJPushMessageToMapObject(4, jPushMessage);
+    JPushHelper.sendEventMap(JConstants.TAG_ALIAS_EVENT, map);
   }
   @Override
   public void onNotifyMessageOpened(Context context, NotificationMessage notificationMessage) {
@@ -90,11 +90,11 @@ public class JPushModuleReceiver extends JPushMessageReceiver {
     if (!JPushModule.isAppForeground) {
       JPushHelper.launchApp(context);
     }
-    WritableMap writableMap = JPushHelper.convertNotificationToMap(JConstants.NOTIFICATION_OPENED, notificationMessage);
+    Map<String, Object> map = JPushHelper.convertNotificationToMapObject(JConstants.NOTIFICATION_OPENED, notificationMessage);
     if (notificationMessage != null && notificationMessage.notificationType == 1) {
-      JPushHelper.sendEvent(JConstants.LOCAL_NOTIFICATION_EVENT, writableMap);
+      JPushHelper.sendEventMap(JConstants.LOCAL_NOTIFICATION_EVENT, map);
     } else {
-      JPushHelper.sendEvent(JConstants.NOTIFICATION_EVENT, writableMap);
+      JPushHelper.sendEventMap(JConstants.NOTIFICATION_EVENT, map);
     }
   }
   @Override
@@ -112,8 +112,8 @@ public class JPushModuleReceiver extends JPushMessageReceiver {
     if (!JPushModule.isAppForeground) {
       JPushHelper.launchApp(context);
     }
-    WritableMap writableMap = JPushHelper.convertInAppMessageToMap(JConstants.IN_APP_MESSAGE_SHOW, notificationMessage);
-    JPushHelper.sendEvent(JConstants.INAPP_MESSAGE_EVENT, writableMap);
+    Map<String, Object> map = JPushHelper.convertInAppMessageToMapObject(JConstants.IN_APP_MESSAGE_SHOW, notificationMessage);
+    JPushHelper.sendEventMap(JConstants.INAPP_MESSAGE_EVENT, map);
   }
   @Override
   public void onInAppMessageClick(Context context, NotificationMessage notificationMessage) {
@@ -130,8 +130,8 @@ public class JPushModuleReceiver extends JPushMessageReceiver {
     if (!JPushModule.isAppForeground) {
       JPushHelper.launchApp(context);
     }
-    WritableMap writableMap = JPushHelper.convertInAppMessageToMap(JConstants.IN_APP_MESSAGE_CLICK, notificationMessage);
-    JPushHelper.sendEvent(JConstants.INAPP_MESSAGE_EVENT, writableMap);
+    Map<String, Object> map = JPushHelper.convertInAppMessageToMapObject(JConstants.IN_APP_MESSAGE_CLICK, notificationMessage);
+    JPushHelper.sendEventMap(JConstants.INAPP_MESSAGE_EVENT, map);
   }
 
   @Override
@@ -148,11 +148,11 @@ public class JPushModuleReceiver extends JPushMessageReceiver {
               + notificationMessage.notificationId
       );
     }
-    WritableMap writableMap = JPushHelper.convertNotificationToMap(JConstants.NOTIFICATION_DISMISSED, notificationMessage);
+    Map<String, Object> map = JPushHelper.convertNotificationToMapObject(JConstants.NOTIFICATION_DISMISSED, notificationMessage);
     if (notificationMessage != null && notificationMessage.notificationType == 1) {
-      JPushHelper.sendEvent(JConstants.LOCAL_NOTIFICATION_EVENT, writableMap);
+      JPushHelper.sendEventMap(JConstants.LOCAL_NOTIFICATION_EVENT, map);
     } else {
-      JPushHelper.sendEvent(JConstants.NOTIFICATION_EVENT, writableMap);
+      JPushHelper.sendEventMap(JConstants.NOTIFICATION_EVENT, map);
     }
   }
 
@@ -168,8 +168,8 @@ public class JPushModuleReceiver extends JPushMessageReceiver {
               + notificationCustomButton.d
       );
     }
-    WritableMap writableMap = JPushHelper.convertNotificationCustomButtonToMap(notificationCustomButton);
-    JPushHelper.sendEvent(JConstants.NOTIFY_BUTTON_CLICK_EVENT, writableMap);
+    Map<String, Object> map = JPushHelper.convertNotificationCustomButtonToMapObject(notificationCustomButton);
+    JPushHelper.sendEventMap(JConstants.NOTIFY_BUTTON_CLICK_EVENT, map);
  }
 
   @Override
@@ -180,9 +180,9 @@ public class JPushModuleReceiver extends JPushMessageReceiver {
   @Override
   public void onConnected(Context context, boolean state) {
     JLogger.i("onConnected state=" + state);
-    WritableMap writableMap = Arguments.createMap();
-    writableMap.putBoolean(JConstants.CONNECT_ENABLE, state);
-    JPushHelper.sendEvent(JConstants.CONNECT_EVENT, writableMap);
+    Map<String, Object> map = new HashMap<String, Object>();
+    map.put(JConstants.CONNECT_ENABLE, Boolean.valueOf(state));
+    JPushHelper.sendEventMap(JConstants.CONNECT_EVENT, map);
   }
 
   @Override
@@ -191,12 +191,12 @@ public class JPushModuleReceiver extends JPushMessageReceiver {
       return;
     }
     JLogger.i("onCommandResult cmd=" + message.cmd + " errorCode=" + message.errorCode);
-    WritableMap writableMap = Arguments.createMap();
-    writableMap.putInt(JConstants.COMMAND, message.cmd);
-    writableMap.putString(JConstants.COMMAND_EXTRA, message.extra != null ? message.extra.toString() : "");
-    writableMap.putString(JConstants.COMMAND_MESSAGE, message.msg != null ? message.msg : "");
-    writableMap.putInt(JConstants.COMMAND_RESULT, message.errorCode);
-    JPushHelper.sendEvent(JConstants.COMMAND_EVENT, writableMap);
+    Map<String, Object> map = new HashMap<String, Object>();
+    map.put(JConstants.COMMAND, Integer.valueOf(message.cmd));
+    map.put(JConstants.COMMAND_EXTRA, message.extra != null ? message.extra.toString() : "");
+    map.put(JConstants.COMMAND_MESSAGE, message.msg != null ? message.msg : "");
+    map.put(JConstants.COMMAND_RESULT, Integer.valueOf(message.errorCode));
+    JPushHelper.sendEventMap(JConstants.COMMAND_EVENT, map);
   }
 
   @Override
@@ -209,8 +209,8 @@ public class JPushModuleReceiver extends JPushMessageReceiver {
               + jPushMessage.getErrorCode()
       );
     }
-    WritableMap writableMap = JPushHelper.convertJPushMessageToMap(1, jPushMessage);
-    JPushHelper.sendEvent(JConstants.TAG_ALIAS_EVENT, writableMap);
+    Map<String, Object> map = JPushHelper.convertJPushMessageToMapObject(1, jPushMessage);
+    JPushHelper.sendEventMap(JConstants.TAG_ALIAS_EVENT, map);
   }
 
   @Override
@@ -225,8 +225,8 @@ public class JPushModuleReceiver extends JPushMessageReceiver {
               + jPushMessage.getTagCheckStateResult()
       );
     }
-    WritableMap writableMap = JPushHelper.convertJPushMessageToMap(2, jPushMessage);
-    JPushHelper.sendEvent(JConstants.TAG_ALIAS_EVENT, writableMap);
+    Map<String, Object> map = JPushHelper.convertJPushMessageToMapObject(2, jPushMessage);
+    JPushHelper.sendEventMap(JConstants.TAG_ALIAS_EVENT, map);
   }
 
   @Override
@@ -239,8 +239,8 @@ public class JPushModuleReceiver extends JPushMessageReceiver {
               + jPushMessage.getErrorCode()
       );
     }
-    WritableMap writableMap = JPushHelper.convertJPushMessageToMap(3, jPushMessage);
-    JPushHelper.sendEvent(JConstants.TAG_ALIAS_EVENT, writableMap);
+    Map<String, Object> map = JPushHelper.convertJPushMessageToMapObject(3, jPushMessage);
+    JPushHelper.sendEventMap(JConstants.TAG_ALIAS_EVENT, map);
   }
 
   @Override
@@ -254,10 +254,10 @@ public class JPushModuleReceiver extends JPushMessageReceiver {
             + " code="
             + jPushMessage.getErrorCode()
     );
-    WritableMap writableMap = Arguments.createMap();
-    writableMap.putInt(JConstants.CODE, jPushMessage.getErrorCode());
-    writableMap.putInt(JConstants.SEQUENCE, jPushMessage.getSequence());
-    JPushHelper.sendEvent(JConstants.MOBILE_NUMBER_EVENT, writableMap);
+    Map<String, Object> map = new HashMap<String, Object>();
+    map.put(JConstants.CODE, Integer.valueOf(jPushMessage.getErrorCode()));
+    map.put(JConstants.SEQUENCE, Integer.valueOf(jPushMessage.getSequence()));
+    JPushHelper.sendEventMap(JConstants.MOBILE_NUMBER_EVENT, map);
   }
 
 }

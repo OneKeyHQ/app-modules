@@ -49,8 +49,8 @@ class ReactNativeJpush : HybridReactNativeJpushSpec() {
 
   private fun flushQueuedNotificationBundle() {
     val bundle = JPushBroadcastReceiver.NOTIFICATION_BUNDLE ?: return
-    val writableMap = JPushHelper.convertNotificationBundleToMap(JConstants.NOTIFICATION_OPENED, bundle)
-    JPushHelper.sendEvent(JConstants.NOTIFICATION_EVENT, writableMap)
+    val map = JPushHelper.convertNotificationBundleToMapObject(JConstants.NOTIFICATION_OPENED, bundle)
+    JPushHelper.sendEventMap(JConstants.NOTIFICATION_EVENT, map)
     JPushBroadcastReceiver.NOTIFICATION_BUNDLE = null
   }
 

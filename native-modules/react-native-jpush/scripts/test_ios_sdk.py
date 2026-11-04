@@ -323,6 +323,56 @@ static void testSisWireFormatAndUdpLoopback(void) {
     ASSERT_TRUE(resolvedUdp.count == 1 && [resolvedUdp[0].host isEqualToString:@"127.0.0.1"] && resolvedUdp[0].port == 28888,
                 "UDP SIS loopback resolved unexpected endpoint");
 
+    // Verify stale SIS cache fallback in resolveEndpointsWithCompletion: when all cached ips/ssl_ips are in failedIps
+    int staleUdpFd = socket(AF_INET, SOCK_DGRAM, 0);
+    ASSERT_TRUE(staleUdpFd >= 0, "Failed to create stale-SIS UDP socket");
+    struct sockaddr_in staleUdpAddr;
+    memset(&staleUdpAddr, 0, sizeof(staleUdpAddr));
+    staleUdpAddr.sin_family = AF_INET;
+    staleUdpAddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    staleUdpAddr.sin_port = 0;
+    ASSERT_TRUE(bind(staleUdpFd, (struct sockaddr *)&staleUdpAddr, sizeof(staleUdpAddr)) == 0, "stale UDP bind() failed");
+    socklen_t staleUdpLen = sizeof(staleUdpAddr);
+    ASSERT_TRUE(getsockname(staleUdpFd, (struct sockaddr *)&staleUdpAddr, &staleUdpLen) == 0, "stale UDP getsockname() failed");
+    uint16_t staleUdpPort = ntohs(staleUdpAddr.sin_port);
+
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        uint8_t buf[2048];
+        struct sockaddr_in clientAddr;
+        socklen_t clientLen = sizeof(clientAddr);
+        ssize_t n = recvfrom(staleUdpFd, buf, sizeof(buf), 0, (struct sockaddr *)&clientAddr, &clientLen);
+        if (n > 0) {
+            NSData *respData = [JCORESisResolver assembleUdpSisPacketWithPayload:@{@"ips": @[@"127.0.0.1:29999"]}
+                                                                           magic:'U'
+                                                                            seed:0x654321];
+            sendto(staleUdpFd, respData.bytes, respData.length, 0, (struct sockaddr *)&clientAddr, clientLen);
+        }
+        close(staleUdpFd);
+    });
+
+    JCOREConfiguration *sisConfig = [JCOREConfiguration shared];
+    NSArray<NSString *> *savedHttpsSisUrls = sisConfig.httpsSisUrls;
+    sisConfig.httpsSisUrls = @[];
+    [sisConfig updateWithSisDictionary:@{
+        @"ips": @[@"127.0.0.1:21111"],
+        @"ssl_ips": @[],
+        @"sis_ips": @[[NSString stringWithFormat:@"127.0.0.1:%u", staleUdpPort]],
+    }];
+    [sisConfig clearFailedIps];
+    [sisConfig addFailedIp:@"127.0.0.1:21111"];
+
+    dispatch_semaphore_t staleSem = dispatch_semaphore_create(0);
+    __block NSArray<JCORESisEndpoint *> *refreshedEps = nil;
+    [[JCORESisResolver shared] resolveEndpointsWithCompletion:^(NSArray<JCORESisEndpoint *> *endpoints) {
+        refreshedEps = endpoints;
+        dispatch_semaphore_signal(staleSem);
+    }];
+    ASSERT_TRUE(dispatch_semaphore_wait(staleSem, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC))) == 0,
+                "Stale SIS cache refresh timed out");
+    sisConfig.httpsSisUrls = savedHttpsSisUrls;
+    ASSERT_TRUE(refreshedEps.count == 1 && [refreshedEps[0].host isEqualToString:@"127.0.0.1"] && refreshedEps[0].port == 29999,
+                "resolveEndpointsWithCompletion must refresh via SIS when all cached ips are in failedIps");
+
     printf("[PASS] Suite 2: JCORESisResolver 10-byte UDP & HTTPS SIS wire format + persistence + loopback verified\n");
 }
 

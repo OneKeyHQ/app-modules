@@ -56,11 +56,16 @@ public class JCoreInterface {
 
     public static void stop(Context context, String sdkType, Bundle bundle) {
         JCoreStorage.setPushStopped(context, true);
+        JCoreTcpEngine.getInstance().stop(context);
     }
 
     public static void restart(Context context, String sdkType, Bundle bundle, boolean force) {
         JCoreStorage.setPushStopped(context, false);
-        JCoreTcpEngine.getInstance().start(context);
+        if (force) {
+            JCoreTcpEngine.getInstance().triggerReconnectNow(context);
+        } else {
+            JCoreTcpEngine.getInstance().start(context);
+        }
     }
 
     public static String getDeviceId(Context context) {
@@ -197,6 +202,10 @@ public class JCoreInterface {
     }
 
     public static void setHeartbeatInterval(Context context, int intervalSeconds) {
+        if (intervalSeconds > 0) {
+            long clampedSeconds = Math.max(30L, Math.min(290L, (long) intervalSeconds));
+            JCoreTcpEngine.getInstance().setHeartbeatIntervalMs(clampedSeconds * 1000L);
+        }
     }
 
     public static void enableAutoWakeup(Context context, boolean enable) {

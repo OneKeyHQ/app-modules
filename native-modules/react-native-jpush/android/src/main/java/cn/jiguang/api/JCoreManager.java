@@ -42,7 +42,9 @@ public class JCoreManager {
     }
 
     public static void unRegister(Context context) {
+        JCoreStorage.clearRegistration(context);
         JCoreStorage.setConnected(context, false);
+        JCoreTcpEngine.getInstance().stop(context);
     }
 
     public static void changeLiveStatus(boolean live) {

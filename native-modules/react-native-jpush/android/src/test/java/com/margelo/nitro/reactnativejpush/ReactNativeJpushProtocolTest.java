@@ -5,13 +5,20 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import cn.jiguang.api.JCoreInterface;
+import cn.jiguang.api.JCoreManager;
 import cn.jiguang.core.JCoreCrypto;
 import cn.jiguang.core.JCoreStorage;
 import cn.jiguang.core.JCoreTcpEngine;
 import cn.jiguang.core.JCoreWireCodec;
 import cn.jiguang.plugins.push.JPushModule;
+import cn.jiguang.plugins.push.common.JLogger;
 import cn.jiguang.plugins.push.helper.JPushHelper;
+import cn.jiguang.plugins.push.receiver.JPushModuleReceiver;
+import cn.jpush.android.api.CustomMessage;
 import cn.jpush.android.api.JPushInterface;
+import cn.jpush.android.api.JPushMessage;
+import cn.jpush.android.api.NotificationMessage;
 import java.io.File;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -356,6 +363,88 @@ public class ReactNativeJpushProtocolTest {
         JPushHelper.unregisterNitroListener(bgListenerId);
         JPushHelper.clearNitroListeners();
 
+        // 2b. Verify JPushModuleReceiver callbacks on plain JVM (without Arguments.createMap() or ReactApplicationContext)
+        JPushModuleReceiver receiver = new JPushModuleReceiver();
+        CustomMessage customMsg = new CustomMessage();
+        customMsg.messageId = "cm_101";
+        customMsg.title = "CustomTitle";
+        customMsg.message = "CustomBody";
+        customMsg.extra = "{\"count\":42,\"flag\":true}";
+        receiver.onMessage(null, customMsg);
+
+        NotificationMessage arrivedMsg = new NotificationMessage();
+        arrivedMsg.msgId = "nm_102";
+        arrivedMsg.notificationType = 0;
+        arrivedMsg.notificationTitle = "ArrivedTitle";
+        arrivedMsg.notificationContent = "ArrivedBody";
+        arrivedMsg.notificationExtras = "{\"amount\":100}";
+        receiver.onNotifyMessageArrived(null, arrivedMsg);
+
+        JPushMessage tagMsg = new JPushMessage();
+        tagMsg.setSequence(11);
+        tagMsg.setErrorCode(0);
+        tagMsg.setTags(new java.util.HashSet<String>(Arrays.asList("tag_a", "tag_b")));
+        receiver.onTagOperatorResult(null, tagMsg);
+
+        JPushMessage aliasMsg = new JPushMessage();
+        aliasMsg.setSequence(12);
+        aliasMsg.setErrorCode(0);
+        aliasMsg.setAlias("user_alias_01");
+        receiver.onAliasOperatorResult(null, aliasMsg);
+
+        JPushMessage propMsg = new JPushMessage();
+        propMsg.setSequence(13);
+        propMsg.setErrorCode(0);
+        Map<String, Object> propMap = new LinkedHashMap<String, Object>();
+        propMap.put("vip", Boolean.TRUE);
+        propMsg.setPros(propMap);
+        receiver.onPropertyOperatorResult(null, propMsg);
+
+        final List<String> receiverEvents = new java.util.ArrayList<String>();
+        int recvListenerId = JPushHelper.registerNitroListener(new JPushHelper.NitroEventListener() {
+            @Override
+            public void onEvent(String eventName, String payloadJson) {
+                receiverEvents.add(eventName + ":" + payloadJson);
+            }
+        });
+        JPushHelper.unregisterNitroListener(recvListenerId);
+        JPushHelper.clearNitroListeners();
+        assertEquals(5L, (long) receiverEvents.size());
+        assertTrue(receiverEvents.get(0).startsWith("CustomMessageEvent:") && receiverEvents.get(0).contains("\"42\""));
+        assertTrue(receiverEvents.get(1).startsWith("NotificationEvent:") && receiverEvents.get(1).contains("\"100\""));
+        assertTrue(receiverEvents.get(2).startsWith("TagAliasEvent:") && receiverEvents.get(2).contains("tag_a"));
+        assertTrue(receiverEvents.get(3).startsWith("TagAliasEvent:") && receiverEvents.get(3).contains("user_alias_01"));
+        assertTrue(receiverEvents.get(4).startsWith("TagAliasEvent:") && receiverEvents.get(4).contains("vip"));
+
+        // 2c. Verify JCoreStorage.appendLocalLog cap and JLogger -> JCoreInterface.readNewLogs forwarding
+        JCoreInterface.enableSDKLocalLog(null, true, false);
+        JCoreInterface.readNewLogs(null);
+        StringBuilder longLine = new StringBuilder();
+        for (int i = 0; i < 600; i++) {
+            longLine.append("0123456789");
+        }
+        for (int i = 0; i < 10; i++) {
+            JCoreStorage.appendLocalLog("line_" + i + "_" + longLine.toString());
+        }
+        JLogger.i("jlogger_forwarded_marker_01");
+        String cappedLogs = JCoreInterface.readNewLogs(null);
+        assertTrue(cappedLogs.length() <= 32768);
+        assertTrue(cappedLogs.contains("jlogger_forwarded_marker_01"));
+        JCoreInterface.enableSDKLocalLog(null, false, false);
+
+        // 2d. Verify JCoreInterface.setHeartbeatInterval and JCoreManager.unRegister
+        JCoreInterface.setHeartbeatInterval(null, 120);
+        assertEquals(120000L, JCoreTcpEngine.getInstance().getHeartbeatIntervalMs());
+        JCoreTcpEngine.getInstance().setHeartbeatIntervalMs(290000L);
+        JCoreStorage.updateRegistration(null, 550011L, "unreg_pwd", "reg_550011", "dev_550011");
+        JCoreStorage.setServerRegistered(null, true);
+        JCoreStorage.setConnected(null, true);
+        JCoreManager.unRegister(null);
+        assertEquals(false, JCoreStorage.isServerRegistered(null));
+        assertEquals(0L, JCoreStorage.getUid(null));
+        assertEquals("", JCoreStorage.getRegistrationId(null));
+        assertEquals(false, JCoreStorage.isConnected(null));
+
         // 3. Verify AndroidManifest.xml has android:exported="false" on all 5 internal activities
         File manifestFile = new File("src/main/AndroidManifest.xml");
         if (!manifestFile.exists()) {
@@ -594,15 +683,17 @@ public class ReactNativeJpushProtocolTest {
         assertEquals(0L, (long) JCoreTcpEngine.getInstance().getCustomPort());
         assertTrue(JCoreStorage.getSisIps(null).isEmpty());
 
-        // (a) First SIS query returns deadTcpPort -> connectAndHandshake must NOT set fake connected=true
+        // (a) First SIS query returns deadTcpPort -> connectAndHandshake must NOT set fake connected=true,
+        //     and deadTcpPort is now cached in sisIps and recorded in failedIps.
         JCoreTcpEngine.getInstance().connectAndHandshake(null);
         assertEquals(false, JCoreStorage.isConnected(null));
         assertEquals("", JPushInterface.getRegistrationID(null));
+        assertTrue(JCoreStorage.getSisIps(null).contains("127.0.0.1:" + deadTcpPort));
+        assertTrue(JCoreStorage.getFailedIps(null).contains("127.0.0.1:" + deadTcpPort));
 
-        // (b) Clear cached SIS state; second SIS query returns live sisTcpPort -> connects without setCustomEndpoint
-        JCoreStorage.saveSisConfig(null, "{\"ips\":[],\"ssl_ips\":[]}");
-        JCoreStorage.setLastGoodIp(null, "");
-        assertTrue(JCoreStorage.getSisIps(null).isEmpty());
+        // (b) Without clearing sisIps, all cached SIS IPs are in failedIps (!hasHealthyCandidate) ->
+        //     connectAndHandshake automatically re-runs SIS resolution (second SIS query returns live sisTcpPort)
+        //     and connects cleanly!
         JCoreTcpEngine.getInstance().connectAndHandshake(null);
         assertEquals(true, JCoreStorage.isConnected(null));
         assertEquals("reg_auto_sis_990022", JPushInterface.getRegistrationID(null));
