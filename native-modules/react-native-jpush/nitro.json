@@ -1,0 +1,17 @@
+{
+  "cxxNamespace": ["reactnativejpush"],
+  "ios": {
+    "iosModuleName": "ReactNativeJpush"
+  },
+  "android": {
+    "androidNamespace": ["reactnativejpush"],
+    "androidCxxLibName": "reactnativejpush"
+  },
+  "autolinking": {
+    "ReactNativeJpush": {
+      "swift": "ReactNativeJpush",
+      "kotlin": "ReactNativeJpush"
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}
