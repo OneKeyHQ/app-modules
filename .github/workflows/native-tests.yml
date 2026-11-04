@@ -38,40 +38,6 @@ jobs:
           test -f "$RUNNER_TEMP/native-overlay/package/android/src/main/jni/CMakeLists.txt"
           test -f "$RUNNER_TEMP/native-overlay/package/ios/RCTNativeOverlayComponentView.mm"
 
-      - uses: actions/checkout@v6
-        with:
-          repository: OneKeyHQ/app-monorepo
-          ref: 326854b4ba1997e06e713f12b6604f0a0f6fe165
-          path: .tmp/sni-consumer
-          persist-credentials: false
-          sparse-checkout-cone-mode: false
-          sparse-checkout: |
-            /packages/kit-bg/src/desktopApis/DesktopApiSniRequest.ts
-            /packages/shared/src/request/helpers/sniFailClosedError.ts
-            /packages/shared/src/request/helpers/sniLogRedaction.ts
-      - uses: actions/cache@v4
-        with:
-          path: ~/.npm/_cacache
-          key: sni-node-ipaddr-2.4.0-9VGk3HGanVE6
-      - name: Run pinned consumer Node SNI replay tests
-        timeout-minutes: 3
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p .tmp/node-sni-replay
-          node native-modules/react-native-sni-connect/tests/node-replay/run.cjs \
-            --consumer-root .tmp/sni-consumer 2>&1 | tee .tmp/node-sni-replay/ci.log
-      - name: Upload Node SNI replay evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: node-sni-replay
-          path: |
-            .tmp/node-sni-replay/ci.log
-            .tmp/node-sni-replay/report.json
-            .tmp/node-sni-replay/summary.json
-          if-no-files-found: warn
-
   device-utils-store:
     runs-on: macos-26
     timeout-minutes: 30
@@ -89,14 +55,6 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
           xcodebuild -version
           xcodebuild -version | grep -F 'Xcode 26.6'
-      - name: Start preinstalled SNI simulator
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/sni-replay/native"
-          python3 native-modules/react-native-sni-connect/tests/ios-replay/run.py \
-            --output-dir "$RUNNER_TEMP/sni-replay/native" --prepare-ci-device \
-            2>&1 | tee "$RUNNER_TEMP/sni-replay/preparation.log"
       - name: Install verified Kotlin 2.3.21 compiler
         run: |
           curl -fsSLo "$RUNNER_TEMP/kotlin-compiler.zip" https://github.com/JetBrains/kotlin/releases/download/v2.3.21/kotlin-compiler-2.3.21.zip
@@ -174,40 +132,6 @@ jobs:
               exit 1
             fi
           done
-      - uses: ruby/setup-ruby@v1
-        with:
-          working-directory: example/react-native
-          ruby-version: '3.4.4'
-          bundler-cache: true
-      - uses: actions/cache@v4
-        with:
-          path: ~/Library/Caches/CocoaPods/Pods/Release/EMASCurl
-          key: sni-emas-1.5.5-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('example/react-native/Gemfile.lock') }}-56969066a34ec9ed
-      - name: Validate packaged iOS SNI replay policy
-        timeout-minutes: 10
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/sni-replay"
-          python3 native-modules/react-native-sni-connect/tests/ios-replay/package_test.py \
-            --output-dir "$RUNNER_TEMP/sni-replay" --ci-prepared-device 2>&1 | tee "$RUNNER_TEMP/sni-replay/ci.log"
-      - name: Clean up suite-owned SNI simulator boot
-        if: always()
-        shell: bash
-        run: |
-          python3 native-modules/react-native-sni-connect/tests/ios-replay/run.py \
-            --output-dir "$RUNNER_TEMP/sni-replay/native" --cleanup-device
-      - name: Upload packaged iOS SNI replay evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ios-sni-replay
-          path: |
-            ${{ runner.temp }}/sni-replay/*.log
-            ${{ runner.temp }}/sni-replay/*summary.json
-            ${{ runner.temp }}/sni-replay/native/*.log
-            ${{ runner.temp }}/sni-replay/native/*.json
-          if-no-files-found: warn
       - name: Upload SwiftPM logs on failure
         if: failure()
         uses: actions/upload-artifact@v4

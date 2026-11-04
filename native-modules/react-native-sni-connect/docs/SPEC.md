@@ -30,7 +30,7 @@ upload boundary and its focused review corrections.
 
 ## Transport recovery boundary
 
-Status: **Default platform-library behavior, characterized with real local TLS tests**.
+Status: **Default platform-library behavior, with historical real TLS characterization**.
 The SDK adds no request retry loop. Android retains the locked OkHttp 4.12.0
 connection-recovery and HTTP follow-up defaults; iOS retains the unmodified
 EMASCurl 1.5.5/libcurl behavior. Existing redirect, destination, TLS, proxy,
@@ -46,15 +46,15 @@ resource and deadline constraints remain unchanged.
 - Internal behavior differs by library, request body and connection history.
   Fixture-specific counts below characterize locked versions; they are not
   cross-platform public guarantees or a requirement to retry every request.
-- The consumer Node backend is tested by loading its actual source through an
-  explicit `--consumer-root`; this package has no Node transport implementation.
-  Its current HTTPS backend does not add a recovery loop in these cases.
-- iOS package acceptance compiles the unpacked npm artifact's five original
-  Swift sources against pristine EMASCurl 1.5.5. No dependency patch, consumer
-  patch hook or replay-verification build phase is required.
-- Local fixtures replace only test ports, DNS destinations and trusted CAs,
-  retaining certificate/hostname verification and production pooling/body
-  handling. JVM and simulator acceptance do not establish Android hostname
+- The historical Node fixture loaded the actual external consumer source;
+  this package has no Node transport implementation. That HTTPS backend does
+  not add a recovery loop in the characterized cases.
+- Historical iOS package acceptance compiled the unpacked npm artifact's five
+  original Swift sources against pristine EMASCurl 1.5.5. No dependency patch,
+  consumer patch hook or replay-verification build phase is required.
+- The removed fixtures replaced only test ports, DNS destinations and trusted
+  CAs, retaining certificate/hostname verification and production pooling/body
+  handling. Those JVM and simulator observations do not establish Android hostname
   verification, production destination admission, React Native bridge behavior
   or physical-device acceptance.
 
@@ -94,7 +94,7 @@ Implementation references:
   [request/session delegate](../ios/SniConnectClient.swift). The bundled version
   identifier comes from the EMASCurl artifact's
   `precompiled/libcurl-HTTP2.xcframework/<slice>/Headers/curl/curlver.h`; the
-  original Protocol source SHA is checked by the native fixture.
+  original Protocol source SHA was checked by the historical native fixture.
 - JS facade: [forwarding API](../src/index.tsx) and
   [native-module selection](../src/NativeSniConnect.ts).
 - Cross-repository source baseline is App commit
@@ -104,10 +104,17 @@ Implementation references:
   [desktop adapter](https://github.com/OneKeyHQ/app-monorepo/blob/326854b4ba1997e06e713f12b6604f0a0f6fe165/packages/shared/src/request/helpers/sniRequest.desktop.ts),
   and [Web/Extension adapter](https://github.com/OneKeyHQ/app-monorepo/blob/326854b4ba1997e06e713f12b6604f0a0f6fe165/packages/shared/src/request/helpers/sniRequest.ts).
   Its [desktop package](https://github.com/OneKeyHQ/app-monorepo/blob/326854b4ba1997e06e713f12b6604f0a0f6fe165/apps/desktop/package.json)
-  configures Electron 44.5.1. The Node CI host (observed as Node 24.22.1) tests
+  configures Electron 44.5.1. The historical Node CI host (observed as Node 24.22.1) tested
   the backend source; it does not establish Electron's embedded Node version.
 
-### Locked-library fixture observations
+### Historical locked-library fixture observations
+
+The experimental recovery suites and their dedicated CI steps have been removed
+from the current tree. These results come from fixed commit
+[`4bbcbe4c3f94a1a4d582668aebca52f85e4f1a06`](https://github.com/OneKeyHQ/app-modules/commit/4bbcbe4c3f94a1a4d582668aebca52f85e4f1a06)
+and the successful [historical CI run](https://github.com/OneKeyHQ/app-modules/actions/runs/41852054126).
+They are historical observations, not current automated coverage or a promise
+that future dependencies produce the same counts.
 
 Numbers below are **server-complete requests in the fixed TLS fixture**; native
 header/body events provide additional evidence. The Node suite does not
@@ -130,9 +137,9 @@ response body is empty. Other method/body combinations are not inferred.
 
 The last row is a test override, not the production Android default. These are
 characterization results for locked versions and fixtures, not public replay
-counts. Evidence: [Android TLS suite](../android/src/test/java/com/sniconnect/SniPinnedTransportReplayTest.kt),
-[iOS native fixture](../tests/ios-replay/run.py) and
-[Node consumer fixture](../tests/node-replay/transport.test.cjs).
+counts. Historical source: [Android TLS suite](https://github.com/OneKeyHQ/app-modules/blob/4bbcbe4c3f94a1a4d582668aebca52f85e4f1a06/native-modules/react-native-sni-connect/android/src/test/java/com/sniconnect/SniPinnedTransportReplayTest.kt),
+[iOS native fixture](https://github.com/OneKeyHQ/app-modules/blob/4bbcbe4c3f94a1a4d582668aebca52f85e4f1a06/native-modules/react-native-sni-connect/tests/ios-replay/run.py) and
+[Node consumer fixture](https://github.com/OneKeyHQ/app-modules/blob/4bbcbe4c3f94a1a4d582668aebca52f85e4f1a06/native-modules/react-native-sni-connect/tests/node-replay/transport.test.cjs).
 
 ### App shared routing defaults
 
@@ -173,45 +180,8 @@ retry configuration is introduced by this specification.
   become empty, and exact-limit binary contents.
 - Android tests exercise actual RequestBody writes for exact-limit data, growth
   before and during writing, and truncation, including output byte bounds.
-- `SniPinnedTransportReplayTest` uses real local TLS, the production client
-  factory, a warmed connection pool, server-side complete-body counters, and
-  OkHttp events. It covers lost responses, a closed listener, fresh-route and
-  disabled-connection-retry controls, all supported HTTP methods, 503/408
-  responses and streamed/empty POST bodies. The JVM fixture changes only local routing, certificate
-  trust/hostname verification, test ports and deadlines; it does not prove the
-  Android bridge or production destination admission.
+- The removed recovery suites used real TLS, production transport sources,
+  warmed pools, complete-body counters and native events. Their observations
+  are retained in the historical matrix above; the current tree and CI no
+  longer provide those experimental 18/15/14-case suites.
 - Native device/network upload acceptance remains separate from these unit tests.
-
-### Automated replay conformance
-
-- `native-tests` runs the Android TLS suite in the existing `android-unit` job.
-- The existing `device-utils-store` job installs only EMASCurl 1.5.5 in a
-  temporary CocoaPods project, then runs `tests/ios-replay/package_test.py
-  --output-dir <temporary-directory>`. It packs the SDK once, verifies original source
-  identity and the absence of the removed replay patch/hook, and compiles
-  that package with pristine EMASCurl for all 15 native TLS cases.
-  Runtime/device and host architecture are discovered from available simulator
-  inventory; a missing runtime fails rather than skipping. GitHub-hosted CI
-  starts an available preinstalled iPhone immediately after selecting Xcode,
-  overlapping its boot with existing host suites. It records the initial state
-  and whether this suite started the boot; cleanup shuts down only a boot owned
-  by this suite. Local runs still use only their dedicated external device set.
-  Readiness remains bounded by 180 seconds. Downloads may be cached; device
-  data and builds MUST NOT be cached.
-- One separate native-process preflight performs only a real GET `/warm` before
-  the formal 15 cases; it must succeed and is not included in their count or
-  connection pools. Fixture-only HTTP/connect/socket/process deadlines allow
-  slower CI hosts without changing SDK defaults or adding test-owned retries.
-  A timed-out native process preserves partial logs and server counters, stops
-  subsequent cases and fails the exact-count gate before owned-device cleanup.
-- The existing `native-overlay-package` job runs all 14 Node consumer cases
-  against App commit `326854b4ba1997e06e713f12b6604f0a0f6fe165`. Only three real
-  TypeScript source files are loaded from that read-only checkout. Existing
-  modules Jest/TypeScript tools and an integrity-locked `ipaddr.js` 2.4.0
-  archive avoid a full App dependency installation. Electron host services are
-  mocked; HTTPS, sockets, destination validation and shared helpers remain real.
-- Each replay runner requires its exact nonzero passing case count and records
-  machine-readable results, source provenance and elapsed time. Node pending,
-  skipped and todo tests fail acceptance. Each native case requires the exact
-  locked-library complete-request/header counts and warmed-pool reuse evidence.
-  These CI hosts do not establish React Native bridge or device acceptance.
