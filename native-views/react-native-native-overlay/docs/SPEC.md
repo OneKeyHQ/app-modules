@@ -472,6 +472,25 @@ Known divergences:
 
 ## 5.7 Failure, fallback, and safety
 
+### iOS global sheet diagnostics
+
+Implemented in source; physical-device verification pending. Native global
+sheets record present/completion, host dismiss/completion/teardown,
+interactive dismiss, appearance/disappearance and unexpected disappearance
+through dynamically resolved OneKeyLog. Missing logger class/selector is a
+no-op and adds no package dependency. These diagnostics do not change the
+presentation, retry, callback, cleanup, or timing contracts.
+
+Only process-local temporary controller/presenter counters, wall time,
+fixed stage/reason enums, and lifecycle booleans are logged. Controller addresses,
+descriptions, entry/business identifiers, content, and arbitrary errors are
+excluded. Weak controller keys must not extend controller lifetime. No layout
+or per-frame events are logged. JS and native IDs are independent; timeline
+correlation by time is approximate during concurrent operations. This host
+belongs to main on iOS; background JS has a separate heap and is not an owner
+of these UIKit resources. Native logger persistence is owned by the logger.
+
+
 - A page request without host or owner keys throws `OverlayRequestError`. This
   is a programming error; there is no silent global fallback, unlike today's
   `Portal.Render` retry.
