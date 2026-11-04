@@ -50,8 +50,11 @@ body streaming, and binary response transport.
 
 A logical operation may include internal connection recovery or HTTP follow-ups
 by the platform library. These defaults are not a cross-platform request-count
-equivalence promise. The SDK adds no retry loop; see the pinned-library
-[recovery characterization](docs/SPEC.md#transport-recovery-boundary).
+equivalence promise. The SDK adds no retry loop. Current configured defaults
+for all platform layers, fixed-fixture observations and the separate App routing
+policy are specified in the [defaults reference](docs/SPEC.md#default-behavior-by-layer),
+[fixture table](docs/SPEC.md#locked-library-fixture-observations) and
+[App routing boundary](docs/SPEC.md#app-shared-routing-defaults).
 
 General-purpose proxying is out of scope. SNI requests MUST bypass system,
 session, PAC, and environment proxy configuration so the socket endpoint remains
