@@ -131,8 +131,14 @@ end
   packaged-helper checks and the real verify-only build phase, and compiles
   that same package and verified dependency for all 15 native TLS cases.
   Runtime/device and host architecture are discovered from available simulator
-  inventory; a missing runtime fails rather than skipping. The simulator uses
-  a dedicated device set and is shut down after execution. Downloads may be
+  inventory; a missing runtime fails rather than skipping. GitHub-hosted CI
+  clones an available, shut-down preinstalled iPhone with the public `simctl
+  clone` command into its dedicated temporary device set, reusing its data while
+  retaining isolation. Actual boot timing and source state are recorded; a
+  preinstalled device is not assumed to have completed initialization. The
+  source device is never booted, erased or shut down.
+  Local runs still create only their dedicated external device set. The suite
+  shuts down only its own device after execution. Downloads may be
   cached; patched sources, builds and simulator data MUST NOT be cached.
 - The existing `native-overlay-package` job runs all 14 Node consumer cases
   against App commit `326854b4ba1997e06e713f12b6604f0a0f6fe165`. Only three real

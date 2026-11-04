@@ -164,7 +164,7 @@ static inline void ReplayStoreConfiguration(NSString *identifier, EMASCurlConfig
     return binary, hashes
 
 
-def select_simulator(runtime, device_type):
+def select_simulator(runtime, device_type, require_shutdown=False):
     inventory = json.loads(subprocess.check_output(["xcrun", "simctl", "list", "--json"], text=True))
     runtimes = [item for item in inventory["runtimes"] if item.get("isAvailable") and ".iOS-" in item["identifier"] and int(item["version"].split(".")[0]) >= 15]
     runtimes.sort(key=lambda item: tuple(int(part) for part in item["version"].split(".")), reverse=True)
@@ -173,8 +173,8 @@ def select_simulator(runtime, device_type):
             continue
         for device in inventory["devices"].get(candidate["identifier"], []):
             identifier = device.get("deviceTypeIdentifier")
-            if device.get("isAvailable") and device["name"].startswith("iPhone") and identifier and (not device_type or identifier == device_type):
-                return candidate["identifier"], identifier
+            if device.get("isAvailable") and device["name"].startswith("iPhone") and identifier and (not device_type or identifier == device_type) and (not require_shutdown or device["state"] == "Shutdown"):
+                return candidate["identifier"], identifier, device
     raise RuntimeError("No available iOS runtime with an iPhone device; replay tests cannot be skipped")
 
 
@@ -192,9 +192,12 @@ def main():
     parser.add_argument("--device-type")
     parser.add_argument("--output-dir", type=Path, default=OUT)
     parser.add_argument("--prepared-dependency", action="store_true")
+    parser.add_argument("--clone-preinstalled-device", action="store_true")
     args = parser.parse_args()
     OUT = args.output_dir.resolve()
-    args.runtime, args.device_type = select_simulator(args.runtime, args.device_type)
+    if args.clone_preinstalled_device:
+        assert os.environ.get("GITHUB_ACTIONS") == "true" and os.environ.get("RUNNER_ENVIRONMENT") == "github-hosted", "Preinstalled simulator cloning is restricted to GitHub-hosted CI"
+    args.runtime, args.device_type, source_device = select_simulator(args.runtime, args.device_type, args.clone_preinstalled_device)
     arch = platform.machine()
     assert arch in ("arm64", "x86_64"), "Unsupported simulator architecture"
     OUT.mkdir(parents=True, exist_ok=True)
@@ -240,11 +243,18 @@ def main():
     simctl = ["xcrun", "simctl", "--set", str(device_set)]
     device_record = OUT / "device.json"
     device = json.loads(device_record.read_text()) if device_record.exists() else None
-    if device and device["runtime"] == args.runtime and device["type"] == args.device_type:
+    if args.clone_preinstalled_device:
+        assert device is None, "CI cloning requires a fresh output directory"
+        udid = subprocess.check_output(["xcrun", "simctl", "clone", source_device["udid"], "SNI replay native tests", str(device_set)], text=True).strip()
+        device = {"udid": udid, "runtime": args.runtime, "type": args.device_type, "sourceUDID": source_device["udid"],
+                  "sourceState": source_device["state"], "sourceLastBootedAt": source_device.get("lastBootedAt")}
+        device_record.write_text(json.dumps(device))
+    elif device and device["runtime"] == args.runtime and device["type"] == args.device_type:
         udid = device["udid"]
     else:
         udid = subprocess.check_output(simctl + ["create", "SNI replay native tests", args.device_type, args.runtime], text=True).strip()
-        device_record.write_text(json.dumps({"udid": udid, "runtime": args.runtime, "type": args.device_type}))
+        device = {"udid": udid, "runtime": args.runtime, "type": args.device_type}
+        device_record.write_text(json.dumps(device))
     signal.signal(signal.SIGTERM, terminate)
     results = []
     file = OUT / "upload.txt"
@@ -264,9 +274,14 @@ def main():
              ("warm-head", "HEAD", "none", True, "drop"),
              ("warm-options", "OPTIONS", "none", True, "drop"),
              ("warm-patch", "PATCH", "demo", True, "drop")]
+    boot_started = time.monotonic()
+    boot_seconds = None
+    cases_started = None
     try:
         run(*simctl, "boot", udid)
         run(*simctl, "bootstatus", udid, "-b", timeout=180)
+        boot_seconds = round(time.monotonic() - boot_started, 3)
+        cases_started = time.monotonic()
         for name, method, body, warm, mode in cases:
             server = FixtureServer(port, context, mode)
             thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -312,6 +327,10 @@ def main():
         summary = {"passed": passed, "totalCases": len(results), "passedCases": sum(result["pass"] for result in results),
                    "failedCases": sum(not result["pass"] for result in results), "skippedCases": 0,
                    "runtime": args.runtime, "deviceType": args.device_type, "architecture": arch,
+                   "sourceDeviceUDID": device.get("sourceUDID"), "deviceUDID": udid,
+                   "sourceDeviceState": device.get("sourceState"), "sourceLastBootedAt": device.get("sourceLastBootedAt"),
+                   "bootSeconds": boot_seconds if boot_seconds is not None else round(time.monotonic() - boot_started, 3),
+                   "casesSeconds": round(time.monotonic() - cases_started, 3) if cases_started else 0,
                    "sdkRoot": str(sdk_root), "sourceSha256": hashes, "protocolSha256": digest(original_protocol),
                    "durationSeconds": round(time.monotonic() - started, 3)}
         (OUT / "summary.json").write_text(json.dumps(summary, indent=2))

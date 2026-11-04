@@ -182,7 +182,7 @@ jobs:
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/sni-replay"
           python3 native-modules/react-native-sni-connect/tests/ios-replay/package_test.py \
-            --output-dir "$RUNNER_TEMP/sni-replay" 2>&1 | tee "$RUNNER_TEMP/sni-replay/ci.log"
+            --output-dir "$RUNNER_TEMP/sni-replay" --clone-preinstalled-device 2>&1 | tee "$RUNNER_TEMP/sni-replay/ci.log"
       - name: Shut down the dedicated SNI simulator
         if: always()
         shell: bash

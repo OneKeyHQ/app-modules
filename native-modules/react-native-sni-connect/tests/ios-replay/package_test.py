@@ -34,7 +34,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--emascurl-root", type=Path)
+    parser.add_argument("--clone-preinstalled-device", action="store_true")
     args = parser.parse_args()
+    if args.clone_preinstalled_device:
+        assert os.environ.get("GITHUB_ACTIONS") == "true" and os.environ.get("RUNNER_ENVIRONMENT") == "github-hosted", "Preinstalled simulator cloning is restricted to GitHub-hosted CI"
     started = time.monotonic()
     output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -110,7 +113,8 @@ def main():
     (output / "package-summary.json").write_text(json.dumps(provenance, indent=2))
     print(json.dumps(provenance), flush=True)
     run("python3", HERE / "run.py", "--sdk-root", sdk, "--emascurl-root", dependency,
-        "--prepared-dependency", "--output-dir", output / "native")
+        "--prepared-dependency", "--output-dir", output / "native",
+        *(["--clone-preinstalled-device"] if args.clone_preinstalled_device else []))
     summary = json.loads((output / "native/summary.json").read_text())
     assert summary["passed"] and summary["totalCases"] == summary["passedCases"] == 15
     assert digest(original) == ORIGINAL_SHA, "Pristine dependency changed"
