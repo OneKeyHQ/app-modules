@@ -1,0 +1,43 @@
+--- a/EMASCurl/EMASCurlProtocol.m
++++ b/EMASCurl/EMASCurlProtocol.m
+@@ -143,0 +144,3 @@
++// One protocol instance owns one easy handle; recovery must not reset this permit.
++@property (nonatomic, assign) NSUInteger httpSendPermitsUsed;
++@property (nonatomic, assign) BOOL httpReplayRejected;
+@@ -235,0 +239,11 @@
++static int onekey_http_prereq(void *context, char *remoteIP, char *localIP,
++                             int remotePort, int localPort) {
++    EMASCurlProtocol *protocol = (__bridge EMASCurlProtocol *)context;
++    protocol.httpSendPermitsUsed += 1;
++    if (protocol.httpSendPermitsUsed > 1) {
++        protocol.httpReplayRejected = YES;
++        return CURL_PREREQFUNC_ABORT;
++    }
++    return CURL_PREREQFUNC_OK;
++}
++
+@@ -683,0 +698,11 @@
++        // This callback abort is a lost response, not a user cancellation.
++        if (self.httpReplayRejected && !succeed &&
++            [error.userInfo[@"EMASCurlErrorCodeKey"] integerValue] == CURLE_ABORTED_BY_CALLBACK &&
++            !self.cancelled && !self.shouldCancel) {
++            NSMutableDictionary *info = [error.userInfo mutableCopy] ?: [NSMutableDictionary dictionary];
++            info[NSUnderlyingErrorKey] = error;
++            info[NSLocalizedDescriptionKey] = @"Response lost; automatic HTTP replay blocked";
++            error = [NSError errorWithDomain:NSURLErrorDomain
++                                       code:NSURLErrorNetworkConnectionLost
++                                   userInfo:info];
++        }
+@@ -1237,0 +1263,12 @@
++    // Fail before enqueueing if the pinned libcurl cannot enforce the send limit.
++    CURLcode prereqResult = curl_easy_setopt(easyHandle, CURLOPT_PREREQFUNCTION, onekey_http_prereq);
++    if (prereqResult == CURLE_OK) {
++        prereqResult = curl_easy_setopt(easyHandle, CURLOPT_PREREQDATA, (__bridge void *)self);
++    }
++    if (prereqResult != CURLE_OK) {
++        *error = [NSError errorWithDomain:@"EMASCurlReplayPolicy"
++                                    code:prereqResult
++                                userInfo:@{NSLocalizedDescriptionKey: @"Cannot install HTTP replay guard"}];
++        return;
++    }
++
