@@ -156,6 +156,7 @@ visible)`, `removePage(ownerKey)`.
   dismissOnBackPress
   dismissOnPanDown   // sheet and toast only
   anchor?            // anchored only: a trigger ref or a window rect
+  contentSize?       // native non-sheet only: content frame instead of the window size
   onPresented onDismissRequest onDismissed(reason)
 />
 ```
@@ -432,6 +433,27 @@ the correction:
 - Rects already in screen space (for example from native lists) need no
   correction.
 
+### Content size for windows about to rotate
+
+Implemented; Android runtime-verified with OneKey's native chart fullscreen on
+an API 36 emulator. iOS takes the same JS layout path but was not
+runtime-verified. Non-sheet content is laid out by JS at the window size it
+last saw (`useWindowDimensions`), and the Android content host clips the
+content to that frame. JS hears about a rotation only after the window has
+rotated, so until then the content keeps the previous orientation's frame and
+is clipped to it.
+
+- `contentSize?: { width, height }` (non-sheet presentations) replaces the
+  window size for the content frame. A caller that prepares content for the
+  window it is about to rotate into passes the rotated size, so the first
+  rotated frame shows all of it. Omitted, the content follows the window size
+  as before.
+- The content stays anchored at the host origin. While the window has not
+  rotated yet, content larger than the window draws past its edges and takes
+  no touches there; the caller keeps it hidden until the window matches.
+- Sheets ignore it: they size their content from the sheet geometry. Web
+  ignores it: the DOM overlay sizes itself with CSS.
+
 ### Web keyboard focus containment
 
 The topmost active, unsuspended blocking Web entry MUST contain sequential
@@ -580,6 +602,9 @@ Automated (P0):
   - page suspend, restore and removal;
   - back resolution (global first, `block`, `pass`, focused host) and the
     blocking top.
+- `src/__tests__/contentSize.test.ts` covers the non-sheet content frame:
+  the window size by default, and a caller size before and after the window
+  size reaches JS.
 - `src/__tests__/animation.test.ts` covers:
   - the spring response in all damping regimes, overshoot clamping and settle
     time;

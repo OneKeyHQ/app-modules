@@ -88,6 +88,14 @@ export interface IOverlayViewProps {
    */
   windowOffsetRequest?: number;
   onWindowOffset?: (offset: { x: number; y: number }) => void;
+  /**
+   * Native only, non-sheet presentations. Lays the content out at this size
+   * instead of the window size JS last saw. The content host clips the
+   * content to that frame, and JS hears about a rotation only after the
+   * window has rotated: content prepared for the window it is about to rotate
+   * into passes the rotated size, so the first rotated frame shows all of it.
+   */
+  contentSize?: { width: number; height: number };
   /** The exit animation finished and the content unmounted. */
   onClose?: (reason: IOverlayDismissReason) => void;
   children?: ReactNode;
