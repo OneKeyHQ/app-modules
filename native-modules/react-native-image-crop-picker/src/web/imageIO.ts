@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import { ImageCropPickerError } from '../shared';
 import { scaleOf } from './geometry';
+import { IMAGE_HEADER_LENGTH } from './imageFormat';
 
 import type { CropState, Size } from './geometry';
 
@@ -144,6 +145,16 @@ export function renderWhole(
   const { canvas, context } = createCanvas(output);
   context.drawImage(image, 0, 0, output.width, output.height);
   return encode(canvas, quality);
+}
+
+// The leading bytes of a file, for detectImageMime.
+export function readImageHeader(blob: Blob): Promise<Uint8Array> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(new Uint8Array(reader.result as ArrayBuffer));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsArrayBuffer(blob.slice(0, IMAGE_HEADER_LENGTH));
+  });
 }
 
 // Base64 without the data: prefix, like native `data`.

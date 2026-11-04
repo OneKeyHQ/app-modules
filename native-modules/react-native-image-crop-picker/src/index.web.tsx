@@ -9,12 +9,14 @@ import {
   imageSizeOf,
   loadImage,
   normalizeQuality,
+  readImageHeader,
   releaseAllResultUrls,
   releaseResultUrl,
   renderCrop,
   renderWhole,
 } from './web/imageIO';
 import { presentCropper } from './web/CropperView';
+import { detectImageMime } from './web/imageFormat';
 
 import type { ReactNativeImageCropPicker as ReactNativeImageCropPickerSpec } from './ReactNativeImageCropPicker.nitro';
 import type { CropperOptions, Image, Options } from './shared';
@@ -137,9 +139,12 @@ async function decodeFile(file: File): Promise<HTMLImageElement> {
   }
 }
 
+// `mime` always describes the bytes in `blob`: RESULT_MIME for everything this
+// module encodes, the sniffed format for a preserved original.
 async function makeResult(
   blob: Blob,
   size: Size,
+  mime: string,
   options: Options,
   extra: Pick<Image, 'cropRect' | 'filename'>
 ): Promise<Image> {
@@ -148,7 +153,7 @@ async function makeResult(
     size: blob.size,
     width: size.width,
     height: size.height,
-    mime: blob.type || RESULT_MIME,
+    mime,
     data: options.includeBase64 ? await blobToBase64(blob) : undefined,
     ...extra,
   };
@@ -183,7 +188,10 @@ function crop(
         maxHeight: options.compressImageMaxHeight,
       });
       const blob = await renderCrop(image, state, box, output, quality);
-      return makeResult(blob, output, options, { cropRect, filename });
+      return makeResult(blob, output, RESULT_MIME, options, {
+        cropRect,
+        filename,
+      });
     }
   );
 }
@@ -195,8 +203,17 @@ async function pickWithoutCropping(
 ): Promise<Image> {
   const size = imageSizeOf(image);
   if (options.preserveOriginal) {
-    // The selected file as is; compression options are ignored.
-    return makeResult(file, size, options, { filename: file.name });
+    // The selected file as is; compression options are ignored. Its type
+    // comes from its bytes: `File.type` is only a guess from the name and can
+    // be empty or wrong.
+    const mime = detectImageMime(await readImageHeader(file));
+    if (!mime) {
+      throw new ImageCropPickerError(
+        'E_NO_IMAGE_DATA_FOUND',
+        'The selected file is not a recognized image format'
+      );
+    }
+    return makeResult(file, size, mime, options, { filename: file.name });
   }
   const output = shrinkToFit(
     outputSizeOf(size, {}),
@@ -208,7 +225,9 @@ async function pickWithoutCropping(
     output,
     normalizeQuality(options.compressImageQuality)
   );
-  return makeResult(blob, output, options, { filename: file.name });
+  return makeResult(blob, output, RESULT_MIME, options, {
+    filename: file.name,
+  });
 }
 
 export function openPicker(options: Options = {}): Promise<Image> {

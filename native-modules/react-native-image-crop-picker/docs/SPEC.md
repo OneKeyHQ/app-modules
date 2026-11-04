@@ -62,7 +62,10 @@ background and thirds grid while moving, Cancel / Confirm footer) as one flex
 column sized to the window, so no part can overflow it; it adds zoom controls,
 wheel, double click, pinch and keyboard input. Results are JPEG blobs exposed
 as `blob:` URLs owned by the module; clean/cleanSingle revoke only those.
-Original selection returns the selected file itself. The 64 MiB input limit,
+Original selection returns the selected file itself, with `mime` sniffed from
+its leading bytes (JPEG, PNG, GIF, WebP, HEIC/HEIF, AVIF, BMP, TIFF, ICO);
+`File.type` is not trusted, and an unrecognized format rejects
+`E_NO_IMAGE_DATA_FOUND`. The 64 MiB input limit,
 4096 px processed long side, exact target size and 0.8 default quality match
 iOS. `freeStyleCropEnabled` is not implemented on the web.
 
