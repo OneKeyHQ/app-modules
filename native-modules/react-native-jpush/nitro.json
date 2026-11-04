@@ -9,8 +9,14 @@
   },
   "autolinking": {
     "ReactNativeJpush": {
-      "swift": "ReactNativeJpush",
-      "kotlin": "ReactNativeJpush"
+      "ios": {
+        "language": "swift",
+        "implementationClassName": "ReactNativeJpush"
+      },
+      "android": {
+        "language": "kotlin",
+        "implementationClassName": "ReactNativeJpush"
+      }
     }
   },
   "ignorePaths": ["node_modules"]
