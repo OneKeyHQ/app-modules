@@ -30,14 +30,21 @@ typedef NS_ENUM(NSInteger, NFCLiteExceptions) {
 
 // React Native aborts the app when a callback runs twice, and NFC results can
 // arrive from more than one CoreNFC thread, so only the first result is sent.
-static RCTResponseSenderBlock OKLiteCallbackOnce(RCTResponseSenderBlock callback)
+static RCTResponseSenderBlock OKLiteCallbackOnce(NSString *operation, RCTResponseSenderBlock callback)
 {
+  static std::atomic<unsigned long> nextOperationID{0};
+  unsigned long operationID = ++nextOperationID;
+  NSTimeInterval started = NSProcessInfo.processInfo.systemUptime;
+  [LCLogger info:[NSString stringWithFormat:@"operation=%@ operationID=%lu stage=entry wallTimeMs=%.0f", operation, operationID, NSDate.date.timeIntervalSince1970 * 1000]];
   auto invoked = std::make_shared<std::atomic<bool>>(false);
   return ^(NSArray *response) {
     if (invoked->exchange(true)) {
-      [LCLogger warn:@"Dropped a repeated Lite card callback"];
+      [LCLogger warn:[NSString stringWithFormat:@"operation=%@ operationID=%lu stage=callback_dropped", operation, operationID]];
       return;
     }
+    id error = response.firstObject;
+    NSNumber *code = [error isKindOfClass:NSDictionary.class] ? error[@"code"] : @0;
+    [LCLogger info:[NSString stringWithFormat:@"operation=%@ operationID=%lu stage=callback code=%ld elapsedMs=%.0f wallTimeMs=%.0f", operation, operationID, (long)code.integerValue, (NSProcessInfo.processInfo.systemUptime - started) * 1000, NSDate.date.timeIntervalSince1970 * 1000]];
     callback(response);
   };
 }
@@ -74,7 +81,7 @@ static RCTResponseSenderBlock OKLiteCallbackOnce(RCTResponseSenderBlock callback
 
 - (void)getLiteInfo:(RCTResponseSenderBlock)callBack
 {
-  callBack = OKLiteCallbackOnce(callBack);
+  callBack = OKLiteCallbackOnce(@"getLiteInfo", callBack);
   if ([ReactNativeLiteCard checkSDKVaild:callBack]) {
     __block OKNFCManager *liteManager = [[OKNFCManager alloc] init];
     [liteManager getLiteInfo:^(OKLiteV1 *lite, OKNFCLiteStatus status) {
@@ -92,7 +99,7 @@ static RCTResponseSenderBlock OKLiteCallbackOnce(RCTResponseSenderBlock callback
 
 - (void)setMnemonic:(NSString *)mnemonic pwd:(NSString *)pwd overwrite:(BOOL)overwrite callback:(RCTResponseSenderBlock)callBack
 {
-  callBack = OKLiteCallbackOnce(callBack);
+  callBack = OKLiteCallbackOnce(@"setMnemonic", callBack);
   if ([ReactNativeLiteCard checkSDKVaild:callBack]) {
     __block OKNFCManager *liteManager = [[OKNFCManager alloc] init];
     [liteManager setMnemonic:mnemonic withPin:pwd overwrite:overwrite complete:^(OKLiteV1 *lite, OKNFCLiteSetMncStatus status) {
@@ -130,7 +137,7 @@ static RCTResponseSenderBlock OKLiteCallbackOnce(RCTResponseSenderBlock callback
 
 - (void)getMnemonicWithPin:(NSString *)pwd callback:(RCTResponseSenderBlock)callBack
 {
-  callBack = OKLiteCallbackOnce(callBack);
+  callBack = OKLiteCallbackOnce(@"getMnemonicWithPin", callBack);
   if ([ReactNativeLiteCard checkSDKVaild:callBack]) {
     __block OKNFCManager *liteManager = [[OKNFCManager alloc] init];
     [liteManager getMnemonicWithPin:pwd complete:^(OKLiteV1 *lite, NSString *mnemonic, OKNFCLiteGetMncStatus status) {
@@ -170,7 +177,7 @@ static RCTResponseSenderBlock OKLiteCallbackOnce(RCTResponseSenderBlock callback
 
 - (void)changePin:(NSString *)oldPin newPin:(NSString *)newPin callback:(RCTResponseSenderBlock)callBack
 {
-  callBack = OKLiteCallbackOnce(callBack);
+  callBack = OKLiteCallbackOnce(@"changePin", callBack);
   if ([ReactNativeLiteCard checkSDKVaild:callBack]) {
     __block OKNFCManager *liteManager = [[OKNFCManager alloc] init];
     [liteManager changePin:oldPin to:newPin complete:^(OKLiteV1 *lite, OKNFCLiteChangePinStatus status) {
@@ -204,7 +211,7 @@ static RCTResponseSenderBlock OKLiteCallbackOnce(RCTResponseSenderBlock callback
 
 - (void)reset:(RCTResponseSenderBlock)callBack
 {
-  callBack = OKLiteCallbackOnce(callBack);
+  callBack = OKLiteCallbackOnce(@"reset", callBack);
   if ([ReactNativeLiteCard checkSDKVaild:callBack]) {
     __block OKNFCManager *liteManager = [[OKNFCManager alloc] init];
     [liteManager reset:^(OKLiteV1 *lite, BOOL isSuccess, NSError *error) {
@@ -232,11 +239,13 @@ static RCTResponseSenderBlock OKLiteCallbackOnce(RCTResponseSenderBlock callback
 }
 
 + (BOOL)checkSDKVaild:(RCTResponseSenderBlock)callback {
+  [LCLogger info:@"stage=sdk_check"];
   if (![NFCNDEFReaderSession readingAvailable]) {
     callback(@[@{@"code":@(NFCLiteExceptionsNotNFCPermission),@"message":@""},[NSNull null],[NSNull null]]);
     return NO;
   }
   if ([NFCConfig envFor:@"crt"].length > 0 && [NFCConfig envFor:@"sk"].length > 0) {
+    [LCLogger info:@"stage=sdk_check_success"];
     return YES;
   }
   callback(@[@{@"code":@(NFCLiteExceptionsInitChannel),@"message":@""},[NSNull null],[NSNull null]]);

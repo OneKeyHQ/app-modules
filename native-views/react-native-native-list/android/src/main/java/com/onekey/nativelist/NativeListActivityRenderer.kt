@@ -83,10 +83,11 @@ internal class NativeListActivityRowView(context: ThemedReactContext, fonts: Nat
       setPadding(hp, vp, hp, vp)
       visual.recycle()
       details.bind(item, theme, sourceScale)
-      // This view may be reused from a legacy row whose overhanging badge
-      // switched clipping off; a rich row has no badge on the host, so restore
-      // the defaults before returning.
-      setHostClipping(nativeListActivityHostClips(rich = true, leadingOverhangs = false))
+      // The rich row's leading visual lives on the details view, where its
+      // network badge overhangs the box (OK-66275): this host must stop clipping
+      // as well, and a view reused from a badge row clips again when the bound
+      // row has no badge.
+      setHostClipping(nativeListActivityHostClips(details.leadingOverhangs))
       return
     }
     details.recycle()
@@ -174,12 +175,7 @@ internal class NativeListActivityRowView(context: ThemedReactContext, fonts: Nat
     // Stop clipping the content row and this row's padding exactly when the
     // bound visual reports such a badge (SPEC "Leading badge overhang"), as the
     // Identity renderer does.
-    setHostClipping(
-      nativeListActivityHostClips(
-        rich = false,
-        leadingOverhangs = !hideLeading && visual.requestsUnclippedHost,
-      )
-    )
+    setHostClipping(nativeListActivityHostClips(!hideLeading && visual.requestsUnclippedHost))
     bind(
       title,
       data.optString("title"),

@@ -238,6 +238,14 @@ function createIdentityRow(
       while (titleElement.firstChild && titleElement.firstChild !== badgeLine)
         titleText.appendChild(titleElement.firstChild);
       titleElement.prepend(titleText);
+      // The title slot tag moves with the text. `applyTextLayout` writes the
+      // single-line clamp (`display: block`, nowrap, ellipsis) onto the slot
+      // element; left on this container it would undo the flex row below and
+      // leave the inline-flex glyph baseline-aligned above the title (OK-66402).
+      if (titleElement.hasAttribute('data-nl-slot')) {
+        titleElement.removeAttribute('data-nl-slot');
+        tagSlot(titleText, 'title');
+      }
       const icons = [row.titleIcon, row.secondaryTitleIcon]
         .filter((icon): icon is NonNullable<typeof icon> => icon !== undefined)
         .map((descriptor) => {

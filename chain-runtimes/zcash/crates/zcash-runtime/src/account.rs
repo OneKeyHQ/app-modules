@@ -10,7 +10,7 @@ use zcash_client_backend::data_api::{
     Account as _, AccountBalance, AccountBirthday, AccountPurpose, AccountSource, Balance,
     WalletCommitmentTrees, WalletRead, WalletWrite, Zip32Derivation,
 };
-use zcash_client_sqlite::error::SqliteClientError;
+use zcash_client_sqlite::{error::SqliteClientError, ExtensionTransaction};
 use zcash_keys::keys::UnifiedFullViewingKey;
 
 use crate::error::{ErrorCode, Result, RuntimeError};
@@ -238,7 +238,7 @@ pub(crate) fn restart_with_birthday(
             .expose_uuid()
             .to_string();
         // The old birthday's unscanned ranges would find what the new one excludes.
-        prune_scan_queue_below_wallet_birthday(wallet)?;
+        prune_scan_queue_below_wallet_birthday(wallet, ext)?;
         crate::tx_state::prune_orphaned_rows(ext)?;
         Ok(uuid)
     })
@@ -469,26 +469,23 @@ pub fn remove_account(db: &mut Db, account_uuid: &str) -> Result<()> {
             )
             .detail(e)
         })?;
-        prune_scan_queue_below_wallet_birthday(wallet)?;
+        prune_scan_queue_below_wallet_birthday(wallet, ext)?;
         crate::tx_state::prune_orphaned_rows(ext)
     })
 }
 
 /// delete_account leaves the scan queue alone, so ranges queued only for a
-/// removed account's earlier birthday would still be scanned for nobody.
-fn prune_scan_queue_below_wallet_birthday<W>(wallet: &mut W) -> Result<()>
+/// removed account's earlier birthday would still be scanned for nobody. A paused
+/// account still counts: its remaining history waits for it.
+fn prune_scan_queue_below_wallet_birthday<W>(
+    wallet: &mut W,
+    ext: &ExtensionTransaction<'_>,
+) -> Result<()>
 where
     W: WalletWrite,
     <W as WalletRead>::Error: std::fmt::Display,
 {
-    let birthday = wallet.get_wallet_birthday().map_err(|e| {
-        RuntimeError::with(
-            ErrorCode::DatabaseError,
-            json!({ "operation": "getWalletBirthday" }),
-        )
-        .detail(e)
-    })?;
-    if let Some(birthday) = birthday {
+    if let Some(birthday) = crate::scan_floor::earliest_birthday(ext)? {
         wallet
             .prune_scan_queue_below(birthday, Some(ScanPriority::OpenAdjacent))
             .map_err(|e| {

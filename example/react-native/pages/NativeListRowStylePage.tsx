@@ -367,6 +367,52 @@ function buildRows(styled: boolean): RowModel[] {
     secondaryAmount: '-0.0000966 ETH',
     height: 60,
   });
+  // OK-66275 rendering check: the app's history rows always carry `amounts`,
+  // which Android renders through the rich details view. Its leading visual
+  // must keep the network badge (and the token pair) whole as well; Android
+  // used to clip both at the 40dp box after the legacy rows were fixed.
+  rows.push({
+    type: 'activity',
+    key: 'activity-network-badge-rich',
+    sectionKey: 'activity-badges',
+    leading: {
+      kind: 'token',
+      image: usdc,
+      shape: 'circle',
+      fallbackIcon: { name: 'CryptoCoinOutline' },
+      networkImage: arbitrumBadge,
+    },
+    title: 'Send',
+    description: 'Hidden #1 / Account #2',
+    amounts: [{ key: 'send', text: '-23.4363 USDC', secondaryText: '$23.42' }],
+    style: { horizontalPadding: 20, verticalPadding: 12 },
+  });
+  rows.push({
+    type: 'activity',
+    key: 'activity-token-pair-rich',
+    sectionKey: 'activity-badges',
+    leading: {
+      kind: 'token',
+      image: eth,
+      shape: 'circle',
+      fallbackIcon: { name: 'CryptoCoinOutline' },
+      networkImage: arbitrumBadge,
+    },
+    secondaryLeading: {
+      kind: 'token',
+      image: usdc,
+      shape: 'circle',
+      fallbackIcon: { name: 'CryptoCoinOutline' },
+      networkImage: arbitrumBadge,
+    },
+    title: 'Swap',
+    description: '0x',
+    amounts: [
+      { key: 'receive', text: '+0.0003449 ETH', tone: 'positive' },
+      { key: 'send', text: '-0.88 USDC', tone: 'secondary' },
+    ],
+    style: { horizontalPadding: 20, verticalPadding: 12 },
+  });
 
   // Cover remaining templates with local text/image/gap overrides. Outer row
   // callers can override allocation with container.height and choose fitting dimensions.

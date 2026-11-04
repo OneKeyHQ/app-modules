@@ -1,4 +1,5 @@
-cmake_minimum_required(VERSION 3.4.1)
+cmake_minimum_required(VERSION 3.16)
+project(ReactNativeLiteCard LANGUAGES C CXX)
 
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -Os -Oz")
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Os -Oz")
@@ -8,6 +9,9 @@ set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 # Support for Android 15 16KB page size
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wl,-z,max-page-size=16384")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wl,-z,max-page-size=16384")
+
+add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../../../../sdk"
+                 "${CMAKE_CURRENT_BINARY_DIR}/gpchannel")
 
 add_library(keys SHARED
         ../../../../keys/keys.c

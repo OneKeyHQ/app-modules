@@ -1,5 +1,11 @@
 [
   {
+    "name": "zcash_protocol",
+    "version": "0.10.5",
+    "sha256": "314329b91ec4bbb517441840e47d0b2029bf0b946f086980c96c889c2d92dc5d",
+    "patch": "zcash_protocol-0.10.5-nu7-mainnet.patch"
+  },
+  {
     "name": "zcash_client_sqlite",
     "version": "0.22.0",
     "sha256": "dd92e4334619b1e3f67019254049318ec0d0240a3c15d853bdf2ac4bba597078",

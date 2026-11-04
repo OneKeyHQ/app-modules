@@ -24,6 +24,7 @@ All notable changes to this project will be documented in this file.
 - **native-list**: Row style validation is strict. `validateSnapshot` and `validatePatches` throw for any `style` key a template does not declare, for unknown nested text/image/container keys, and for unknown Market badge style keys, where extra keys used to be ignored. Colors must be `#RRGGBB` or `#RRGGBBAA`, including `listStyle.separator.color`. Every key sent by the app-monorepo Market list builder (`marketNativeListRows.ts`) still validates.
 
 ### Bug Fixes
+- **native-list (Web)**: Center an Identity title help glyph on a single-line title (OK-66402). With `titleIcon`, `secondaryTitleIcon` or `titleImage` the title line is a centered flex row, but the `title` slot tag stayed on that container, so a `lines: 1` style clamp rewrote it to `display: block` and the inline-flex glyph sat on the text baseline, raised above the symbol and stretching the line box; the extension popup Home list showed the gas icon at the top-right of `ETH`. The slot tag now travels with the title text span (as it already did for `titleSuffixes`), the clamp applies to the text, and the glyph stays vertically centered. Badge-carrying titles and DataRow columns already clamped the text span and are unchanged.
 - **bottom-tabs (iOS)**: Restore iOS 26 Liquid Glass press-and-drag tab switching by removing the drag-cancellation recognizer that made the system tab bar gestures wait for it.
 - **native-list (iOS)**: Stop accessory buttons cross-fading their title on rebind (OK-64148). `NativeListAccessoryButton` is a `.system` UIButton, which animates every title change on its own, so a section header value such as the network selector's "$15.60" and its "Deselect all" action faded out and back in each time a checkbox toggle reconfigured the row. `setTitle`, `setAttributedTitle` and the button's own `layoutSubviews` (where UIKit applies a changed title) now run inside `UIView.performWithoutAnimation`; Android and Web text views never animated.
 - **native-list**: Review fixes for the renderer migration. Restore the legacy unstyled rendering of every template inside the new renderers (for example native linear DataRow single-label columns, pressed-row corners, Activity/Identity leading slots, and WalletGroup appearance and drag rules), without restoring key-based styling. Fix an Android sticky-header overlay crash and a leaked pre-draw listener on detached lists. On Web, keep loaded MetricCard images visible after rebinding, restore the legacy message-only retry row (no Web retry button for any presentation) and disabled WalletGroup member actions, include WalletGroup vertical padding in its height, and stop container alignment leaking into reused rows. On iOS, make `end` text alignment follow RTL layout and cache Message text measurement to cut its per-bind cost.
@@ -44,6 +45,22 @@ All notable changes to this project will be documented in this file.
 - **native-list (Web)**: Remove dead duplicated rules from `WEB_LIST_CSS`. Four blocks (`.ok-native-list-footer`/`-sticky`/`-index-rail`/`-index-button`, `-refresh`, `-warning`, `-subtitle-segments`) were emitted twice and a `prefers-reduced-motion` block three times; every property of the earlier copies was redeclared by the later ones, so removing them changes no rendering.
 - Stop tracking `nitrogen/generated` for `react-native-image` and `react-native-native-list`. Every other Nitro package already ignores `nitrogen/` and regenerates it from the spec at release time; these two were missing a package `.gitignore`, so 117 generated files rode along in every diff that touched a prop. `react-native-native-list` now runs `yarn nitrogen` in its `release` script like the other view packages, and local builds need `yarn nitrogen` in the package before the first native build.
 - No version bump here; these changes ship with the next release. Note that 3.0.157 was published from this branch before the review fixes landed and should not be used.
+
+## [6.7.0-22] - 2026-11-03
+
+### Bug Fixes
+- **pager-view (Web)**: Measure a collapsible pager page's owner synchronously when it is attached, instead of on the next animation frame. The page metrics start at width 0, so consumers that pin their content to the reported width painted one frame at 0 width; on desktop the aggregate token details modal flashed its fiat hero wrapped one character per line before the measurement landed (OK-66299). Resize and scroll re-measurements stay coalesced per frame.
+
+### Chores
+- Bump all 44 publishable packages to 6.7.0-22.
+
+## [6.7.0-21] - 2026-11-03
+
+### Bug Fixes
+- **native-list (Android)**: Render the network badge of a rich (`amounts`) Activity row in full (OK-66275). The OK-66071 fix covered only the legacy branch; the app's history rows always carry `amounts`, and that branch forced the host's clipping back on and rendered the leading visual inside the details view's columns at Android's default `clipChildren`, so the Home history rows still showed the badge (and the swap pair's badge) cut flat at the bottom-right of the 40dp box. The details view now stops clipping itself and its columns whenever its bound visual reports an overhanging badge, and the host derives its clipping from that visual on both branches (`nativeListActivityHostClips`, JVM test `NativeListActivityHostClipPolicyTest`); a view reused from a badge row still clips again when it is rebound to a row without one. Example row-style page rows `activity-network-badge-rich` / `activity-token-pair-rich` are the rendering check; iOS and Web never clipped.
+
+### Chores
+- Bump all 44 publishable packages to 6.7.0-21.
 
 ## [6.7.0-20] - 2026-10-30
 

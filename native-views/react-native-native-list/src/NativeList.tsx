@@ -149,6 +149,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     forwardedRef
   ) {
     const snapshotRef = useRef<NativeListSnapshot>(emptyNativeListSnapshot());
+    const needsNativeSnapshotRef = useRef(false);
     const renderedSnapshotRef = useRef<NativeListSnapshot | undefined>(
       undefined
     );
@@ -588,10 +589,11 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
           return;
         }
         pendingDisclosureSnapshotRef.current = undefined;
-        const nextSnapshotJson = JSON.stringify(accepted);
-        nativeRef.current?.applySnapshot(nextSnapshotJson);
+        const native = nativeRef.current;
+        if (native) native.applySnapshot(JSON.stringify(accepted));
         snapshotRef.current = accepted;
-        if (nativeRef.current && avatarLifecycle.current !== 'unmounted') {
+        needsNativeSnapshotRef.current = !native;
+        if (native && avatarLifecycle.current !== 'unmounted') {
           avatarModelRef.current?.replaceSnapshot(accepted.rows);
           updateAvatarPrefetchRef.current();
         }
@@ -614,12 +616,15 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
           return;
         }
         const native = nativeRef.current;
-        const dispatch = native
-          ? () => {
-              native.applyPatches(accepted.json);
-              snapshotRef.current = nextSnapshot;
-            }
-          : undefined;
+        if (!native) {
+          snapshotRef.current = nextSnapshot;
+          needsNativeSnapshotRef.current = true;
+          return;
+        }
+        const dispatch = () => {
+          native.applyPatches(accepted.json);
+          snapshotRef.current = nextSnapshot;
+        };
         if (avatarLifecycle.current === 'unmounted') {
           dispatch?.();
           return;
@@ -646,7 +651,10 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
           };
           if (pending)
             pendingDisclosureSnapshotRef.current = { ...pending, owned: next };
-          else snapshotRef.current = next;
+          else {
+            snapshotRef.current = next;
+            if (!nativeRef.current) needsNativeSnapshotRef.current = true;
+          }
         }
       },
       scrollToKey(paramsOrKey, animated, alignment) {
@@ -712,7 +720,19 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     const nativeCallbacks = useMemo(
       () => ({
         hybridRef: callback((ref: NativeListMethods) => {
+          const previous = nativeRef.current;
           nativeRef.current = ref;
+          if (
+            needsNativeSnapshotRef.current ||
+            (previous && previous !== ref)
+          ) {
+            // The parent can publish values before Fabric delivers the host.
+            const latest = snapshotRef.current;
+            ref.applySnapshot(JSON.stringify(latest));
+            needsNativeSnapshotRef.current = false;
+            avatarModelRef.current?.replaceSnapshot(latest.rows);
+            updateAvatarPrefetchRef.current();
+          }
           applyInitialScrollCallbackRef.current();
         }),
         onRowAction: callback((payloadJson: string) => {

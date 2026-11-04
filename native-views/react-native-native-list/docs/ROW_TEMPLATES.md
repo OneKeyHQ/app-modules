@@ -182,8 +182,12 @@ separately from source implementation in STYLE_SPEC §9.
   with at most 32 unique keyed entries. Each entry supports a leading visual,
   tone, primary/secondary text and subscript segments. The title supports at
   most four keyed badges. `descriptionActionKey` emits a description action.
-  `presentation: 'table'` allocates equal identity/amount columns and an
-  optional fee column; `stacked` keeps right-aligned amounts beside identity.
+  `presentation: 'table'` allocates identity (including the leading visual and
+  its gap), amounts and optional fee in a stable `1:1:0.6` ratio after column
+  gaps. Without fee, identity and amounts have equal widths. Amount content
+  stays start-aligned; native fee content stays end-aligned, while Web retains its
+  existing start alignment. Fee text length and leading visibility do not move
+  the amount column. `stacked` keeps right-aligned amounts beside identity.
   `fee.hidden` reserves its column while hiding its content. The Web rich
   Activity renderer uses these fields and the same `hideLeading` visibility.
 

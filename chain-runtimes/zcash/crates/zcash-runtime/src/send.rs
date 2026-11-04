@@ -1006,8 +1006,9 @@ pub enum SubmitOutcome {
     Accepted {
         txid: String,
     },
-    /// The trusted node rejected it. It is not stored and its notes are spendable
-    /// again, unless an earlier submit stored it: then they return at its expiry.
+    /// The node reported it expired and the local chain agrees. It is not stored and its
+    /// notes are spendable again, unless an earlier submit stored it: then they return at
+    /// its expiry.
     Rejected {
         txid: String,
         error: RuntimeError,
@@ -1041,6 +1042,7 @@ fn finish_submission(
     result: Result<()>,
 ) -> Result<SubmitOutcome> {
     let txid = staged.txid.to_string();
+    let result = result.map_err(|error| confirm_rejection(db, staged.lock_expiry, error));
     let result = match result.map_err(first_submit_rejection) {
         Err(Ok(error)) => {
             return Ok(match release_rejected(db, account_uuid, &staged, &error) {
@@ -1154,6 +1156,14 @@ where
 
 /// Reads a stored transaction's raw bytes from the wallet for broadcast.
 pub fn raw_transaction(db: &Db, txid: &str) -> Result<Vec<u8>> {
+    let tx = stored_transaction(db, txid)?;
+    let mut raw = Vec::new();
+    tx.write(&mut raw)
+        .map_err(|e| build_err("serializeTransaction", e))?;
+    Ok(raw)
+}
+
+fn stored_transaction(db: &Db, txid: &str) -> Result<zcash_primitives::transaction::Transaction> {
     let bytes = hex::decode(txid)
         .ok()
         .filter(|b| b.len() == 32)
@@ -1166,20 +1176,45 @@ pub fn raw_transaction(db: &Db, txid: &str) -> Result<Vec<u8>> {
         internal[i] = *b;
     }
 
-    let tx = db
-        .get_transaction(TxId::from_bytes(internal))
+    db.get_transaction(TxId::from_bytes(internal))
         .map_err(|e| build_err("getTransaction", e))?
         .ok_or_else(|| {
             RuntimeError::with(
                 ErrorCode::TransactionBuildError,
                 json!({ "stage": "getTransaction", "txid": txid }),
             )
-        })?;
+        })
+}
 
-    let mut raw = Vec::new();
-    tx.write(&mut raw)
-        .map_err(|e| build_err("serializeTransaction", e))?;
-    Ok(raw)
+/// A node's expiry reply holds only once the local chain has passed the expiry;
+/// until then the transaction may still be mined, so the outcome stays unknown.
+fn confirm_rejection(db: &Db, expiry: BlockHeight, error: RuntimeError) -> RuntimeError {
+    if error.code != ErrorCode::BroadcastRejected {
+        return error;
+    }
+    let expired = db
+        .chain_height()
+        .ok()
+        .flatten()
+        .is_some_and(|tip| tip >= expiry);
+    if expired {
+        error
+    } else {
+        RuntimeError {
+            code: ErrorCode::BroadcastOutcomeUnknown,
+            ..error
+        }
+    }
+}
+
+/// `confirm_rejection` for a stored transaction; one that never expires stays unknown.
+pub fn confirm_stored_rejection(db: &Db, txid: &str, error: RuntimeError) -> RuntimeError {
+    let expiry = stored_transaction(db, txid)
+        .ok()
+        .map(|tx| tx.expiry_height())
+        .filter(|height| u32::from(*height) != 0)
+        .unwrap_or(BlockHeight::from_u32(u32::MAX));
+    confirm_rejection(db, expiry, error)
 }
 
 /// Proof types supported by this wallet runtime.
@@ -1315,6 +1350,42 @@ mod submit_state_tests {
         )
         .unwrap();
         assert_eq!(held_state(&mut db), (None, false));
+    }
+
+    // The fixture's local tip is 1000 and its transaction expires at 1040.
+    #[test]
+    fn an_expiry_reply_before_the_local_expiry_stays_unknown() {
+        let (db, staged, _) = lock_fixture(false);
+        let error = confirm_rejection(
+            &db,
+            staged.lock_expiry,
+            RuntimeError::new(ErrorCode::BroadcastRejected),
+        );
+        assert_eq!(error.code, ErrorCode::BroadcastOutcomeUnknown);
+    }
+
+    #[test]
+    fn an_expiry_reply_the_local_chain_confirms_is_a_rejection() {
+        let (db, ..) = lock_fixture(false);
+        for expiry in [999, 1000] {
+            let error = confirm_rejection(
+                &db,
+                BlockHeight::from_u32(expiry),
+                RuntimeError::new(ErrorCode::BroadcastRejected),
+            );
+            assert_eq!(error.code, ErrorCode::BroadcastRejected, "{expiry}");
+        }
+    }
+
+    #[test]
+    fn other_errors_pass_the_expiry_check_unchanged() {
+        let (db, staged, _) = lock_fixture(false);
+        let error = confirm_rejection(
+            &db,
+            staged.lock_expiry,
+            RuntimeError::new(ErrorCode::NetworkError),
+        );
+        assert_eq!(error.code, ErrorCode::NetworkError);
     }
 
     #[test]

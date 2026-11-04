@@ -1,4 +1,29 @@
 import UIKit
+import ObjectiveC
+
+/// IDs are process-local and weakly keyed; never log controller descriptions or addresses.
+enum NativeOverlayDiagnostic {
+  private static var nextID = 0
+  private static let controllerIDs = NSMapTable<UIViewController, NSNumber>.weakToStrongObjects()
+
+  static func id(_ controller: UIViewController?) -> Int {
+    guard let controller else { return 0 }
+    if let existing = controllerIDs.object(forKey: controller) { return existing.intValue }
+    nextID += 1
+    controllerIDs.setObject(NSNumber(value: nextID), forKey: controller)
+    return nextID
+  }
+
+  static func log(_ details: String) {
+    guard let logClass = NSClassFromString("ReactNativeNativeLogger.OneKeyLog")
+      ?? NSClassFromString("OneKeyLog"),
+      let method = class_getClassMethod(logClass, NSSelectorFromString("info::")) else { return }
+    typealias LogFunction = @convention(c) (AnyClass, Selector, NSString, NSString) -> Void
+    let log = unsafeBitCast(method_getImplementation(method), to: LogFunction.self)
+    log(logClass, NSSelectorFromString("info::"), "NativeOverlay",
+        "wallTimeMs=\(Int64(Date().timeIntervalSince1970 * 1000)) \(details)" as NSString)
+  }
+}
 
 /// Levels mirror `OVERLAY_LEVEL_ORDER`. Each active level gets its own
 /// window so that order between levels never depends on show order.

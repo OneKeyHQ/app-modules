@@ -12,6 +12,7 @@ mod circuit_keys;
 pub mod clock;
 pub mod error;
 pub mod history;
+pub mod scan_floor;
 pub mod send;
 pub mod stats;
 pub mod storage;

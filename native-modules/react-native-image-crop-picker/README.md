@@ -7,7 +7,9 @@ Picking never asks for photo library permission:
 - **iOS** picks with `PHPickerViewController`, which runs out of process. `react-native-image-crop-picker` requested full photo library access first. Once a user denied it, iOS never showed the prompt again and every later `openPicker` call failed silently (OK-48227). The crop gestures come from a vendored TOCropViewController 3.2.0 `TOCropView`, with the OK-51551 rotation fix that upstream still lacks.
 - **Android** picks with the system Photo Picker (`ActivityResultContracts.PickVisualMedia`, which falls back to `ACTION_OPEN_DOCUMENT` on devices without it). The crop gestures come from uCrop `2.2.11-native`'s `UCropView`. Activity results go through the activity's `ActivityResultRegistry`, so no `ActivityEventListener` is needed.
 
-Both platforms show the same cropper screen, drawn by this package rather than by TOCropViewController or uCrop. See [Cropper screen](#cropper-screen).
+- **Web** (browsers, Electron and browser extensions) picks with an `<input type="file">` and crops with a DOM cropper, with no Nitro or native code. Bundlers select it through the `browser` export condition (`lib/module/index.web.js`).
+
+All platforms show the same cropper screen, drawn by this package rather than by TOCropViewController, uCrop or a web cropper library. See [Cropper screen](#cropper-screen).
 
 The behavioral contract and pending acceptance cases are in [docs/SPEC.md](docs/SPEC.md).
 
@@ -76,6 +78,12 @@ The cropper is a full-screen page with the same layout and metrics on iOS and An
 - The crop area. The crop box keeps 20 pt from every edge, and the image outside it shows the page background at 70% opacity. The rule-of-thirds grid shows while the image is moved, unless `showCropGuidelines` is `false`.
 - A footer with two capsule buttons, `cropperCancelText` and `cropperChooseText`, 50 pt tall with 10 pt between them. The confirm button shows a spinner while the image is saved.
 
+On the web the same screen is full screen on windows narrower than 640 px or shorter than 560 px, and a centered 560 × 760 px panel (smaller when the window is) otherwise. The header, crop area, toolbar and footer are a flex column, so the buttons always stay inside the panel. The web screen adds, for mouse and keyboard users:
+
+- A toolbar under the crop area: zoom out, a zoom slider, zoom in, and reset.
+- Wheel to zoom around the pointer (trackpad pinch included), double click to zoom in 2× or back out, and two-finger pinch on touch screens.
+- Keyboard: arrow keys move the image (Shift for larger steps), `+` / `-` zoom, `R` rotates, Enter confirms and Escape cancels. Focus stays inside the cropper and returns to the previous element when it closes.
+
 `cropperAppearance` sets its colors and fonts. The optional font-family fields
 below require the app to provide these Roobert faces and own the applicable
 font license; this package contains no font files. Omit the fields to use
@@ -106,7 +114,7 @@ await ImageCropPicker.openPicker({
 | `iconColor` | The rotate button. |
 | `cancelButtonColor`, `cancelButtonPressedColor`, `cancelButtonTextColor` | The cancel button. |
 | `confirmButtonColor`, `confirmButtonPressedColor`, `confirmButtonTextColor` | The confirm button. |
-| `titleFontFamily`, `buttonFontFamily` | Fonts bundled with the app. iOS looks them up with `UIFont(name:)`, Android with React Native's `ReactFontManager`. |
+| `titleFontFamily`, `buttonFontFamily` | Fonts bundled with the app. iOS looks them up with `UIFont(name:)`, Android with React Native's `ReactFontManager`. On the web they are CSS font families, drawn at weight 600 and 500. |
 | `scale` | Multiplies every size, for apps that scale their UI. |
 
 Colors are CSS hex strings: `#RGB`, `#RRGGBB` or `#RRGGBBAA`. Anything left out falls back to OneKey's light or dark palette.
@@ -117,8 +125,9 @@ Colors are CSS hex strings: `#RGB`, `#RRGGBB` or `#RRGGBBAA`. Anything left out 
 - `compressImageMaxWidth`, `compressImageMaxHeight` and `compressImageQuality` apply after cropping. The default quality is 0.8 on iOS and 1 on Android, as in `react-native-image-crop-picker`.
 - Photos are decoded at most 4096 px on the long side, which keeps very large photos from exhausting memory. `cropRect` is reported in the original image's coordinates on iOS.
 - Results are written to `<tmp>/react-native-image-crop-picker/` on iOS and `<cache>/react-native-image-crop-picker/` on Android. `clean()` empties that directory.
+- On the web, results are JPEG blobs: `path` is a `blob:` URL, and `clean()` / `cleanSingle()` revoke the URLs this package created. The default quality is 0.8, as on iOS. `cropRect` is in the coordinates of the image as the browser decodes it (EXIF orientation applied), rotated with the crop. With `preserveOriginal`, `mime` comes from the file's leading bytes rather than `File.type`, and a file in an unrecognized format rejects `E_NO_IMAGE_DATA_FOUND`. `http(s)` images for `openCropper` must allow CORS, or the crop cannot be read back and rejects `E_CANNOT_SAVE_IMAGE`. `freeStyleCropEnabled` is not implemented on the web; the crop box keeps the `width` / `height` ratio. With `cropperCircleOverlay` the crop box is 1:1 with no frame or grid on every platform, whatever the image or target ratio.
 - Only one picker or cropper can be open at a time. A second call rejects with `E_PICKER_IN_PROGRESS`.
-- On iOS, cancelling the cropper that `openPicker` opened returns to the photo picker. On Android it rejects with `E_PICKER_CANCELLED`.
+- On iOS, cancelling the cropper that `openPicker` opened returns to the photo picker. On Android and the web it rejects with `E_PICKER_CANCELLED`, as does dismissing the web file chooser.
 - On Android the cropper keeps the calling activity's requested orientation, so a portrait-only app gets a portrait-only cropper.
 
 ## Not supported

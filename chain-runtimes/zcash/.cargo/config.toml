@@ -2,3 +2,8 @@
 # it fails with "the wasm* targets are not supported by default".
 [target.wasm32-unknown-unknown]
 rustflags = ['--cfg', 'getrandom_backend="wasm_js"']
+
+# NU7 exists in this zcash_* release line only under this cfg; the patched
+# zcash_protocol gives it the mainnet height. Joined with the target flags above.
+[target.'cfg(all())']
+rustflags = ['--cfg', 'zcash_unstable="nu7"']

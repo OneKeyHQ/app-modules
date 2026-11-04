@@ -415,10 +415,13 @@
     if (sw1 != OKNFC_SW1_OK) {
       if (sw1 == FailedVerificationCode) {
         self.pinRTL = sw2 & PinRTLBitMask;
+        result = OKNFCLitePINVerifyResultNotMatch;
       } else if (sw1 == AuthenticationLockCode) {
         self.pinRTL = 0;
+        result = OKNFCLitePINVerifyResultNotMatch;
+      } else {
+        result = OKNFCLitePINVerifyResultError;
       }
-      result = OKNFCLitePINVerifyResultNotMatch;
       dispatch_semaphore_signal(sema);
       return;
     }
@@ -518,7 +521,7 @@
   __block BOOL success = NO;
   dispatch_semaphore_t sema = dispatch_semaphore_create(0);
   OKLiteCommandModal *modal = [[OKLiteCommandModal alloc] initWithCommand:OKLiteCommandImportMnemonic version:self.version];
-  modal.parseResp = true;
+  modal.parseResp = self.version == OKNFCLiteVersionV2;
   [self.commandTool sendCommandWithAPDU:[modal importMnemonic:mnc] modal:modal completionHandler:^(NSData * _Nonnull responseData, uint8_t sw1, uint8_t sw2, NSError * _Nullable error, NSString * _Nonnull parseRespon) {
     if (sw1 != OKNFC_SW1_OK) {
       dispatch_semaphore_signal(sema);
@@ -537,7 +540,7 @@
   __block NSString *mnc = nil;
   dispatch_semaphore_t sema = dispatch_semaphore_create(0);
   OKLiteCommandModal *modal = [[OKLiteCommandModal alloc] initWithCommand:OKLiteCommandExportMnemonic version:self.version];
-  modal.parseResp = true;
+  modal.parseResp = self.version == OKNFCLiteVersionV2;
   [self.commandTool sendCommandWithAPDU:[modal buildAPDU] modal:modal completionHandler:^(NSData * _Nonnull responseData, uint8_t sw1, uint8_t sw2, NSError * _Nullable error, NSString * _Nonnull parseRespon) {
     if (sw1 != OKNFC_SW1_OK) {
       dispatch_semaphore_signal(sema);

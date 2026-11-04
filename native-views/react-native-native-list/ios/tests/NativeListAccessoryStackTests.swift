@@ -42,6 +42,18 @@ final class NativeListAccessoryStackTests: XCTestCase {
     XCTAssertTrue(stack.hitTest(value.center, with: nil) === stack)
   }
 
+  func testSwapMenuUsesTheDotVerSolidImage() throws {
+    let metadata = try XCTUnwrap(nativeListIconMetadata(named: "DotVerSolid"))
+    XCTAssertGreaterThan(metadata.size.width, 0)
+    XCTAssertGreaterThan(metadata.size.height, 0)
+    let stack = try makeStack(trailing: [[
+      "kind": "icon", "name": "DotVerSolid", "buttonStyle": "tertiary",
+      "actionKey": "menu",
+    ]])
+    let button = try XCTUnwrap(try visibleControl(stack) as? UIButton)
+    XCTAssertNotNil(button.image(for: .normal))
+  }
+
   func testValuePairAccessoryLeavesTouchesToTheRow() throws {
     let stack = try makeStack(trailing: [
       ["kind": "valuePair", "primary": "$15.60", "secondary": "0.002 BTC"],

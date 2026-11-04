@@ -38,7 +38,6 @@ use crate::{
     error::{ErrorCode, KeysError, Result},
 };
 
-const MAX_EXPIRY_DELTA: u32 = onekey_zcash_send_policy::EXPIRY_DELTA;
 const XPRV_VERSION: [u8; 4] = [0x04, 0x88, 0xad, 0xe4];
 const ACCOUNT_XPRV_DEPTH: u8 = 3;
 
@@ -242,12 +241,16 @@ fn plan_transaction(request: TransparentTxRequest) -> Result<TransactionPlan> {
         )
     })?;
     let target_height = BlockHeight::from_u32(request.target_height);
-    if BranchId::for_height(&MAIN_NETWORK, target_height) != BranchId::Nu6_3 {
+    // Built as v6, which needs NU6.3 or later.
+    if !matches!(
+        BranchId::for_height(&MAIN_NETWORK, target_height),
+        BranchId::Nu6_3 | BranchId::Nu7
+    ) {
         return Err(KeysError::with(
             ErrorCode::InvalidTargetHeight,
             serde_json::json!({
                 "targetHeight": request.target_height,
-                "requiredBranch": "Nu6.3",
+                "requiredBranch": "Nu6.3+",
             }),
         ));
     }
@@ -273,7 +276,7 @@ fn plan_transaction(request: TransparentTxRequest) -> Result<TransactionPlan> {
             serde_json::json!({
                 "targetHeight": request.target_height,
                 "expiryHeight": request.expiry_height,
-                "maximumDelta": MAX_EXPIRY_DELTA,
+                "maximumDelta": onekey_zcash_send_policy::expiry_delta(&MAIN_NETWORK, target_height),
             }),
         ));
     }
@@ -567,6 +570,7 @@ fn build_transaction(
     account_key: &AccountPrivKey,
 ) -> Result<TransparentBuildResult> {
     let quote = plan.quote();
+    let branch = BranchId::for_height(&MAIN_NETWORK, plan.target_height);
     let mut builder = TransparentBuilder::empty();
     let mut signing_set = TransparentSigningSet::new();
 
@@ -626,7 +630,7 @@ fn build_transaction(
         )
     })?;
     let unsigned_tx = TransactionData::<TransparentUnauthorized>::from_parts_v6(
-        BranchId::Nu6_3,
+        branch,
         0,
         plan.expiry_height,
         Some(transparent_bundle.clone()),
@@ -649,7 +653,7 @@ fn build_transaction(
         )
         .map_err(|e| KeysError::new(ErrorCode::TransactionBuildFailed).detail(e))?;
     let transaction = TransactionData::<Authorized>::from_parts_v6(
-        BranchId::Nu6_3,
+        branch,
         0,
         plan.expiry_height,
         Some(authorized_bundle),
@@ -1025,6 +1029,25 @@ mod tests {
     }
 
     #[test]
+    fn fee_quotes_follow_a_delayed_or_disabled_switch() {
+        use onekey_zcash_send_policy::{set_zip2009_switch, Zip2009Switch};
+        let quote_at = |height: u32| {
+            let mut request: serde_json::Value =
+                serde_json::from_str(&request_json(&[100_000], true)).unwrap();
+            request["targetHeight"] = height.into();
+            request["expiryHeight"] = (height + 40).into();
+            let quote: serde_json::Value =
+                serde_json::from_str(&quote_json(&request.to_string()).unwrap()).unwrap();
+            quote["feeZat"].clone()
+        };
+        set_zip2009_switch(Zip2009Switch::Disabled);
+        assert_eq!(quote_at(3_590_100), "10000");
+        set_zip2009_switch(Zip2009Switch::from_host_json(Some("3600000")));
+        assert_eq!(quote_at(3_600_099), "10000");
+        assert_eq!(quote_at(3_600_100), "2000");
+    }
+
+    #[test]
     fn a_transparent_quote_needs_eight_valid_blocks_and_at_most_forty() {
         for delta in [0, 7, 41, 100] {
             let mut request: serde_json::Value =
@@ -1346,6 +1369,30 @@ mod tests {
             result.txid,
             "81004865cdc4217f34aafd1d4b307b3cc5d60fcee7afdb4a829983d394ae39cd"
         );
+    }
+
+    #[test]
+    fn builds_under_nu7_from_its_activation() {
+        use zcash_protocol::consensus::{NetworkUpgrade, Parameters};
+        let nu7 = u32::from(MAIN_NETWORK.activation_height(NetworkUpgrade::Nu7).unwrap());
+        let mut request: serde_json::Value =
+            serde_json::from_str(&request_json(&[100_000], true)).unwrap();
+        request["targetHeight"] = nu7.into();
+        request["expiryHeight"] = (nu7 + onekey_zcash_send_policy::NU7_EXPIRY_DELTA).into();
+        let raw = build_with_account_xprv_json(&request.to_string(), &xprv()).unwrap();
+        let result: TransparentBuildResult = serde_json::from_str(&raw).unwrap();
+        let tx = zcash_primitives::transaction::Transaction::read(
+            &hex::decode(&result.raw_tx).unwrap()[..],
+            BranchId::Sprout,
+        )
+        .unwrap();
+        assert_eq!(tx.consensus_branch_id(), BranchId::Nu7);
+        assert_eq!(tx.txid().to_string(), result.txid);
+
+        // Before activation the expiry must stay below NU7.
+        request["targetHeight"] = (nu7 - 20).into();
+        let error = build_with_account_xprv_json(&request.to_string(), &xprv()).unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidTargetHeight);
     }
 }
 

@@ -1721,3 +1721,145 @@ fn missing_root_guard_prevents_a_real_subtree_discontinuity_retry_loop() {
         height(f.birthday + 6)
     );
 }
+
+/// Scans what the production step would: ranges clipped to the scan floor.
+fn finish_above_floor(db: &mut Db, f: &Fixture, batch: u32, active: &[String]) {
+    for _ in 0..5000 {
+        let suggested =
+            crate::scan_floor::above_floor(db, db.suggest_scan_ranges().unwrap()).unwrap();
+        let Some(r) = suggested.into_iter().min_by_key(|r| r.block_range().start) else {
+            return;
+        };
+        let start = u32::from(r.block_range().start);
+        scan(db, f, start, batch.min(r.len() as u32), active).unwrap();
+    }
+    panic!("scan above the floor did not converge");
+}
+
+fn account_at(db: &Db, birthday: u32) -> AccountUuid {
+    db.get_account_ids()
+        .unwrap()
+        .into_iter()
+        .find(|a| db.get_account_birthday(*a).unwrap() == height(birthday))
+        .unwrap()
+}
+
+/// (Orchard, Ironwood) as the balance shows it and as a send can select it.
+fn spendable(db: &mut Db, account: AccountUuid, tip: u32) -> [(u64, u64); 2] {
+    use zcash_client_backend::data_api::{
+        wallet::{input_selection::LockFilter, ConfirmationsPolicy, TargetHeight},
+        InputSource, MaxSpendMode, TargetValue,
+    };
+    use zcash_protocol::ShieldedPool;
+    let summary = db
+        .get_wallet_summary(ConfirmationsPolicy::MIN)
+        .unwrap()
+        .unwrap();
+    let balance = &summary.account_balances()[&account];
+    let shown = (
+        balance.orchard_balance().spendable_value().into_u64(),
+        balance.ironwood_balance().spendable_value().into_u64(),
+    );
+    let select = |db: &mut Db, pool| {
+        let notes = db
+            .select_spendable_notes(
+                account,
+                TargetValue::AllFunds(MaxSpendMode::MaxSpendable),
+                &[pool],
+                TargetHeight::from(height(tip + 1)),
+                ConfirmationsPolicy::MIN,
+                &[],
+                LockFilter::Unfiltered,
+            )
+            .unwrap();
+        notes
+            .orchard()
+            .iter()
+            .chain(notes.ironwood())
+            .map(|n| n.note().value().inner())
+            .sum::<u64>()
+    };
+    let selectable = (
+        select(db, ShieldedPool::Orchard),
+        select(db, ShieldedPool::Ironwood),
+    );
+    [shown, selectable]
+}
+
+#[test]
+fn a_paused_account_does_not_hold_back_an_active_one() {
+    let f = fixture();
+    let b_birthday = f.birthday + 20;
+    let b_key = &f.keys[1..2];
+
+    let mut alone = crate::wallet::open_and_migrate("test", ":memory:").unwrap();
+    let b_alone = import(&mut alone, f, 1, 20);
+    alone.put_sapling_subtree_roots(0, &f.sapling).unwrap();
+    alone.put_orchard_subtree_roots(0, &f.orchard).unwrap();
+    alone.put_ironwood_subtree_roots(0, &f.ironwood).unwrap();
+    alone.update_chain_tip(height(f.tip)).unwrap();
+    finish_above_floor(&mut alone, f, 53, b_key);
+    let expected = spendable(&mut alone, b_alone, f.tip);
+    assert!(expected[0].0 > 0 && expected[0].1 > 0);
+
+    let mut db = wallet(f, &[0, 20]);
+    let b = account_at(&db, b_birthday);
+    crate::scan_floor::pause_inactive_accounts(&mut db, &[b]).unwrap();
+    assert_eq!(db.get_wallet_birthday().unwrap(), Some(height(b_birthday)));
+    finish_above_floor(&mut db, f, 53, b_key);
+    // Same as B alone, both as shown and as a send selects it.
+    assert_eq!(spendable(&mut db, b, f.tip), expected);
+    // The paused account's history is still queued for its return, but it is not
+    // remaining work for the active one.
+    assert!(db
+        .suggest_scan_ranges()
+        .unwrap()
+        .iter()
+        .any(|r| u32::from(r.block_range().end) <= b_birthday));
+    let peek: serde_json::Value = serde_json::from_str(&peek(&db).unwrap()).unwrap();
+    assert_eq!(peek["totalBlocks"], 0);
+}
+
+#[test]
+fn a_resumed_account_catches_up_as_if_never_paused() {
+    let f = fixture();
+    let b_birthday = f.birthday + 20;
+    let mut db = wallet(f, &[0, 20]);
+    let b = account_at(&db, b_birthday);
+    crate::scan_floor::pause_inactive_accounts(&mut db, &[b]).unwrap();
+    finish_above_floor(&mut db, f, 53, &f.keys[1..2]);
+
+    let a = account_at(&db, f.birthday);
+    crate::scan_floor::pause_inactive_accounts(&mut db, &[a, b]).unwrap();
+    assert_eq!(db.get_wallet_birthday().unwrap(), Some(height(f.birthday)));
+    // The host requeues what was scanned without the resumed key.
+    queue_rescan_from(&mut db, b_birthday).unwrap();
+    finish(&mut db, f, Order::Window, 53, &f.keys[..2]);
+
+    let mut reference = wallet(f, &[0, 20]);
+    finish(&mut reference, f, Order::Ascending, 53, &f.keys[..2]);
+    assert_same(snapshot(&mut db, f), &snapshot(&mut reference, f));
+}
+
+#[test]
+fn removing_an_account_keeps_a_paused_accounts_history_and_rows() {
+    let f = fixture();
+    let mut db = wallet(f, &[0, 20, 30]);
+    let a = account_at(&db, f.birthday);
+    let b = account_at(&db, f.birthday + 20);
+    let c = account_at(&db, f.birthday + 30);
+    crate::scan_floor::pause_inactive_accounts(&mut db, &[b, c]).unwrap();
+    crate::account::remove_account(&mut db, &c.expose_uuid().to_string()).unwrap();
+    // Pruning follows every account's birthday, the paused one's included.
+    assert!(db
+        .suggest_scan_ranges()
+        .unwrap()
+        .iter()
+        .any(|r| u32::from(r.block_range().start) < f.birthday + 20));
+
+    crate::account::remove_account(&mut db, &a.expose_uuid().to_string()).unwrap();
+    assert_eq!(rows(&mut db, "SELECT * FROM ext_onekey_paused_accounts"), Vec::<String>::new());
+    // With every account paused, the floor is the earliest birthday of all.
+    crate::scan_floor::pause_inactive_accounts(&mut db, &[]).unwrap();
+    assert_eq!(db.get_wallet_birthday().unwrap(), Some(height(f.birthday + 20)));
+}

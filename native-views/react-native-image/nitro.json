@@ -25,6 +25,16 @@
         "language": "kotlin",
         "implementationClassName": "HybridOneKeyImageCache"
       }
+    },
+    "OneKeyIcon": {
+      "ios": {
+        "language": "swift",
+        "implementationClassName": "HybridOneKeyIcon"
+      },
+      "android": {
+        "language": "kotlin",
+        "implementationClassName": "HybridOneKeyIcon"
+      }
     }
   },
   "ignorePaths": ["node_modules"]

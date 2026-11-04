@@ -11,7 +11,7 @@ final class NativeListMediaTileCell: NativeListRendererCell {
   private let picture = UIView()
   private let image = NativeListMediaPreviewSlot()
   private let network = NativeListImageSlot()
-  private let errorIcon = UIImageView()
+  private let errorIcon = NativeListIconImageView()
   private let title = NativeListTextLabel()
   private let subtitle = NativeListTextLabel()
   private let badge = NativeListTextLabel()
@@ -87,6 +87,9 @@ final class NativeListMediaTileCell: NativeListRendererCell {
     _ item: NativeListItem, theme: [String: Any]?, layout: String,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
   ) {
+    let iconUpdate = NativeListIconUpdate(self)
+    defer { iconUpdate.finish() }
+
     let style = item.data.dictionary("style") ?? [:]
     imageStyle = style.dictionary("image") ?? [:]
     let hp = CGFloat(style.double("horizontalPadding", default: 10))
@@ -122,7 +125,7 @@ final class NativeListMediaTileCell: NativeListRendererCell {
     let state = item.data.string("imageState")
     let placeholder = theme?.string("strongBackground", default: "#0000000F") ?? "#0000000F"
     errorIcon.isHidden = state != "error"
-    errorIcon.image = nativeListIcon(named: "ImageSquareWavesOutline")
+    errorIcon.bindIcon("ImageSquareWavesOutline")
     errorIcon.tintColor = UIColor(nativeListHex: "#00000044", fallback: .lightGray)
     let media = item.data.dictionary("media")
     if state != "empty", state != "error", let source = media?.dictionary("source") ?? item.data.dictionary("image") {
@@ -164,6 +167,7 @@ final class NativeListMediaTileCell: NativeListRendererCell {
     close.setTitle("×", for: .normal)
     close.titleLabel?.font = nativeListFont(ofSize: 16, weight: .medium, fonts: fonts)
     close.setTitleColor(nativeListColor(theme, "primaryText", "#202020"), for: .normal)
+
   }
   override func layoutSubviews() {
     let width = CGFloat(

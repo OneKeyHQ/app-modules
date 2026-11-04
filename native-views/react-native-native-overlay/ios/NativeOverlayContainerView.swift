@@ -574,9 +574,11 @@ final class NativeOverlayEntryView: UIView {
     }
     let controller = NativeOverlaySheetController(host: self, style: sheetStyle())
     sheetController = controller
+    NativeOverlayDiagnostic.log("stage=present_begin controllerID=\(NativeOverlayDiagnostic.id(controller)) presenterID=\(NativeOverlayDiagnostic.id(presenter))")
     phase = .entering
     presenter.present(controller, animated: true) { [weak self, weak controller] in
       guard let self, let controller, self.sheetController === controller else { return }
+      NativeOverlayDiagnostic.log("stage=present_complete controllerID=\(NativeOverlayDiagnostic.id(controller)) visible=\(self.visible) entering=\(self.phase == .entering)")
       if self.phase == .entering {
         self.phase = .shown
         self.didPresent()
@@ -592,6 +594,7 @@ final class NativeOverlayEntryView: UIView {
       finishDismiss(reason: "programmatic")
       return
     }
+    NativeOverlayDiagnostic.log("stage=dismiss_request controllerID=\(NativeOverlayDiagnostic.id(controller)) reason=programmatic presenting=\(controller.isBeingPresented) exiting=\(phase == .exiting)")
     if controller.resumeHostDismissal() {
       phase = .exiting
       return
@@ -602,6 +605,7 @@ final class NativeOverlayEntryView: UIView {
     controller.dismissRequestedByHost = true
     controller.dismiss(animated: true) { [weak self, weak controller] in
       guard let self, self.sheetController === controller, self.phase == .exiting else { return }
+      NativeOverlayDiagnostic.log("stage=dismiss_complete controllerID=\(NativeOverlayDiagnostic.id(controller)) reason=programmatic")
       self.finishDismiss(reason: "programmatic")
     }
   }
@@ -612,6 +616,7 @@ final class NativeOverlayEntryView: UIView {
       touchHandler.perform(NSSelectorFromString("detachFromView:"), with: controller.view)
     }
     stageContent()
+    NativeOverlayDiagnostic.log("stage=teardown controllerID=\(NativeOverlayDiagnostic.id(controller)) presented=\(controller.presentingViewController != nil) dismissing=\(controller.isBeingDismissed)")
     if controller.presentingViewController != nil, !controller.isBeingDismissed {
       controller.dismissRequestedByHost = true
       controller.dismiss(animated: false)
@@ -705,6 +710,7 @@ extension NativeOverlayContainerView: NativeOverlaySheetHost {
 
   func sheetDidDisappearUnexpectedly(_ controller: NativeOverlaySheetController) {
     guard sheetController === controller else { return }
+    NativeOverlayDiagnostic.log("stage=unexpected_disappear controllerID=\(NativeOverlayDiagnostic.id(controller)) visible=\(visible) reason=system")
     finishDismiss(reason: "system")
   }
 

@@ -1,5 +1,50 @@
 # NativeList contract
 
+## Shared image SVG integration — Implemented
+
+Static icons use the image package's named resources and SVG implementation:
+the main registry, Activity's ten private glyphs, Market stars/recognized badge,
+Media fallback and Android checkbox. The closed per-platform coverage, including
+the main-line asset-list additions, is recorded under Built-in icon metadata
+generation; unknown-name text fallbacks remain. The NativeList-only legacy name
+`BadgeVerifiedSolid` resolves to canonical `BadgeRecognizedSolid`. Circle and
+dynamic charts/spinners/dotted decoration remain local primitives.
+
+Each iOS glyph slot owns a request owner and revision, including overlays and
+UIButton states. Final graphical identity (name, raster geometry/scale and render
+strategy) controls requests. A private synchronous bind transaction preserves
+both an identical pending request and a ready raster across reset/rebind calls;
+changed or empty identities cancel and clear. Only the current attached revision
+may apply a completion. Detach, reuse and raster geometry changes invalidate
+ownership. UIKit template tint changes reuse the immutable mask. UIButton states
+share one decode, retaining template/original and disabled tint/alpha/action
+behavior. Name validity and descriptor geometry control visibility, layout and
+touch bounds; image availability does not control them.
+Detached binds and auto-height measurement use only known intrinsic metadata;
+they MUST NOT submit named requests or read/decode SVG resources. Initial attach
+starts loading without changing the measured glyph or button dimensions.
+
+iOS original brand/opacity modes and the size overload's always-template behavior
+remain. Android named glyphs preserve their source aspect ratio, fit both source
+dimensions within the view and optional glyph-size limit, and center the result
+on both axes. This includes the non-square 16 × 20 Apple artwork; it MUST NOT
+extend beyond the view. Checkboxes retain their 16 dp glyph plus 2 dp border
+offset in selector geometry, otherwise 80 percent centered geometry. Shared images are immutable; no cross-view mutable
+Drawable bounds or pixel changes are allowed. Named work uses image's existing
+two-worker and bounded cache service. Web consumers use its pure DOM external-icon
+helper while keeping inherited color, action labels, anchors and exact sizes.
+
+Acceptance must cover actual slots, first bind and repeated row reuse, unknown
+and empty inputs, detach/reattach, resize/tint changes, both UIButton states,
+checkboxes, Apple, original brands, legacy badge, and Web/desktop menus. All
+static path readers must be removed from migrated routes; procedural drawings
+and unrelated URI image loading retain their existing ownership.
+
+`NativeListRiskAccessoryTest` checks fractional and integral glyph bounds,
+portrait/landscape sources, rectangular slots and both glyph-size scaling modes.
+Its raw-SVG alpha comparison uses integral destination edges to isolate color
+semantics from fractional bitmap interpolation.
+
 This is the entry point for the package's behavioral contract. The linked
 documents are part of this spec; implementation status is separate from target
 architecture and runtime evidence.
@@ -51,6 +96,55 @@ ordinary press for that gesture. Motion cancellation, row rebind/recycle,
 disabled state and disposal cancel pending recognition. Trailing accessory
 actions remain independent. Omission preserves existing tap behavior.
 
+### Native Swap token menu backport
+
+Status: implemented in local native source, unreleased. Native build and runtime
+acceptance are separate checks. Web and Desktop layout and actions stay unchanged;
+their generated icon artwork is covered in the following section.
+
+iOS and Android render `DotVerSolid` with the app's existing 24-unit solid icon
+geometry. On Android, exactly two identity trailing accessories consisting of
+`valuePair` followed by an `icon` named `DotVerSolid` with `actionKey: 'menu'`
+lay out horizontally, matching iOS. Other icon names or action keys retain the
+existing axis rules. This backport does not change row padding, accessory spacing,
+button dimensions, actions, disabled state, or the public snapshot contract.
+
+`NativeListAccessoryStackTests` checks the iOS image lookup and bound button image.
+`NativeListRiskAccessoryTest` checks Android's actual icon drawing and the target
+horizontal pair, including vertical controls on rebind.
+
+### Built-in icon metadata generation
+
+The closed `scripts/native-list-icons.json` manifest retains platform coverage,
+canonical App source paths and iOS rendering strategy. `Circle` is a local
+primitive. The NativeList-only legacy `BadgeVerifiedSolid` name maps to
+`solid/badge-recognized.svg` / canonical `BadgeRecognizedSolid`, preserving its
+thumbs-up artwork without adding a general alias.
+
+`scripts/generate-icons.mjs --app-root <app-root>` matches each source uniquely
+against image's generated catalog, validates source digests and manifest
+metadata, then emits exactly three small Swift/Kotlin/Web name/geometry tables.
+It writes no SVG, path data or xcassets; image owns the single resource pipeline.
+All validation precedes writes. `--check` is read-only and detects missing or
+ambiguous sources, invalid metadata and stale output. Stable sorting emits no
+machine paths or timestamps. Frozen tests compare exact registry key sets;
+this does not prove that every application-computed name is registered.
+
+The closed manifest contains 43 names with iOS 42, Android 41 and Web 25
+registry entries (including DotVerSolid). Document2Outline, WalletOutline and
+PlusLargeOutline are registered on all three platforms; TicketOutline also
+retains Web and adds native coverage. These main-line names use image-owned
+canonical SVGs, not duplicate NativeList paths or asset catalogs.
+Existing Activity ten-name and Market/Media private call sites resolve canonical
+names through the same DOM helper; their previous coverage does not expand.
+Image preserves raw path order, fill rules, fixed colors, opacity and viewBoxes.
+NativeList retains its layout, button bounds, actions and snapshot interfaces.
+
+Focused SDK fixture acceptance covers native attached lifecycle/rebinding,
+legacy iOS asset comparisons, shared alpha semantics and real Web/Electron
+source/lib consumers. This is not full App, balance, transaction or signed
+release acceptance.
+
 Identity trailing accessories stack vertically, except for the pairs every
 platform lays out side by side: `value` + `checkbox`, `valuePair` + `menu`,
 `valuePair` + an `icon` named `DotVerSolid` whose `actionKey` is `menu`,
@@ -61,13 +155,6 @@ platform lays out side by side: `value` + `checkbox`, `valuePair` + `menu`,
 pair is the Swap token selector's balance column and row menu; stacking it
 clipped both inside the fixed 60dp row on Android.
 
-Icon names are a closed set drawn from the app's 24-unit Icon sources on every
-platform (`iconPaths` on Android, `NativeListIcons.xcassets` on iOS,
-`selectorIcons` on Web); an unmapped name renders an empty slot rather than a
-placeholder. The set includes every name the app's NativeList builders pass,
-including `DotVerSolid`, `Document2Outline`, `WalletOutline`, `PlusLargeOutline`
-and `TicketOutline` (added 2026-10-30 after the OK-66072 audit found them missing
-on native).
 
 A `message` row may opt into `bodyLines: 0`; its complete body wraps within its
 existing text area and determines natural height unless an explicit row or
@@ -237,7 +324,9 @@ label. "After the title" means directly after the title text: the title row
 packs at its start on every platform (Android `PackedTitleLineLayout`, Web flex
 `0 1 auto`, iOS a slack-absorbing filler at the end of the title row), so the
 glyph and any badge follow the text and never drift toward the trailing column
-(OK-66041). Its optional Web-only `hoverActionKey` emits an anchored help action
+(OK-66041). The glyph is vertically centered on the title line; on Web the
+`title` text style (including its line clamp) applies to the title text span,
+never to the flex row that carries the glyph (OK-66402). Its optional Web-only `hoverActionKey` emits an anchored help action
 from the icon alone on mouse/pen hover or touch press; the consumer owns the
 tooltip. Mouse/pen press closes the anchor until pointer leave. Touch press
 toggles the icon anchor. The icon adds no tab stop or separate click action;
@@ -374,6 +463,33 @@ keys are rejected (see Failures below and STYLE_SPEC.md §2). The renderer
 migration itself does not change any other protocol field.
 
 ## Lifecycle and concurrency
+
+### Updates before native host binding
+
+Status: implemented in local source, unreleased. The delayed-host regression fails
+on the previous wrapper and passes with this change; 438 package JS/Web tests and
+the package type check pass. This local JavaScript revision is verified with real
+iOS Fabric/UICollectionView rendering on an iPad simulator: delayed-ref,
+parent-layout-before-ref without an artificial delay, and host-ready control
+scenarios all retain the three complete rows after a later single-row update.
+The actual Home list also recovered all six rows after the task-specific Metro
+reload. Earlier natural re-entry evidence included development Metro bundle
+re-requests, so it does not establish a menu-only trigger or a Sui-specific natural
+reproduction. Android device acceptance remains unverified.
+
+Valid snapshots and row patches accepted before the native host is available MUST
+retain the latest owned logical state. When that host binds, its rows MUST reflect
+all accepted updates that are eligible for presentation, including updates to rows
+that do not change again afterward. Later single-row updates MUST NOT leave other
+rows at their initial placeholders. Existing disclosure measurement gates and
+snapshot replacement semantics still apply. Once the host is ready, ordinary row
+patches MUST remain incremental rather than requiring a complete snapshot for each
+patch. This contract does not add a public prop, method, or Nitro ABI field.
+
+Conformance covers multiple pre-bind patch batches, newer complete prop and
+imperative snapshots, rejected updates, equivalent prop clones after slot layout,
+selection state, repeated callbacks, distinct replacement hosts, and incremental
+single-row updates after binding.
 
 Full binding must work without a preceding recycle callback, including
 style set/change/clear and content A → B. A binding epoch invalidates stale
@@ -553,6 +669,14 @@ existing placeholders, and positive title-image dimensions are clamped to a
 square of 1...40 logical units. Image headers are string dictionaries, never
 interpreted as geometry. Unsafe object graphs are rejected before normalization.
 
+Shared image URI validation accepts the entire `onekey-avatar:` scheme,
+case-insensitively, in snapshots and row patches on iOS, Android and Web. It does
+not restrict the host, version, path, query string or fragment, and preserves the
+URI without decoding. Existing image URI schemes retain their acceptance rules.
+Unsupported image URIs fail development assertions and are sanitized out in
+production. This is validation acceptance only; avatar decoding and loading
+remain owned by the platform image loader or Web avatar worker.
+
 A complete snapshot remains atomic after decoration sanitization: invalid
 schema, duplicate/missing identities, required business fields or wallet-group
 parent/children relationships reject the snapshot. No row is silently removed.
@@ -640,6 +764,26 @@ Existing geometry/typography differences are recorded in
 [STYLE_SPEC.md](STYLE_SPEC.md); structural extraction must not silently change
 them. iOS uses UICollectionView, Android RecyclerView, and Web a windowed DOM
 engine. See [DESIGN.md](DESIGN.md) for their current ownership boundaries.
+
+### iOS account-selector trailing width (OK-65638)
+
+Status: implemented. Manual consuming-app verification on an iOS Simulator
+reported normal balance rendering after a local native rebuild. Automated
+XCTest execution and broader device acceptance are tracked separately.
+
+For an `identity` row with `presentation: 'accountSelector'`, an empty trailing
+collection or a spinner-only accessory MUST leave the remaining horizontal
+space available to the title and subtitle column. A short title MUST NOT cause
+the balance subtitle to collapse while unused row width remains. The existing
+gap before the trailing column and the shortened address's compression priority
+remain unchanged; content may still truncate when the row is actually too narrow.
+Visible controls keep their intrinsic width without introducing required-width
+conflicts. Rebinding between empty, spinner and single-icon states MUST release
+the previous row's width constraint.
+
+`NativeListAccountSelectorLayoutTests` covers balance/address geometry and
+control widths on production UIKit cells, including rebinds. Android and Web
+keep their existing layout and public interfaces.
 
 ### Android section-index attachment
 
@@ -743,7 +887,14 @@ Host clipping is per-bind state. A row view that serves several row shapes
 (the Android Activity view serves the legacy row and the rich `amounts` row) is
 reused across binds, so each bind MUST derive clipping from the item it binds
 (`nativeListActivityHostClips`): a view that last showed an overhanging badge
-clips again when it is rebound to a row without one.
+clips again when it is rebound to a row without one. The rule follows the
+visual, not the row shape: the rich row renders its leading visual on the
+details view, so that view and every column between the visual and the host
+stop clipping too, and the host derives its own clipping from the details
+view's visual (`leadingOverhangs`, OK-66275). Before this rule the rich branch
+forced the host's clipping back on and left the details view at Android's
+defaults, so the app's history rows (which always carry `amounts`) still showed
+the badge cut at the bottom-right after the legacy branch had been fixed.
 
 The row's own shape still clips on every platform: iOS masks the cell to its
 corner radius (`masksToBounds`), Web keeps the row `overflow: hidden`, and
@@ -780,9 +931,10 @@ over the badge. The per-source geometry is one pure function on Android
 `NativeListLeadingVisual.layoutSubviews` on iOS; both restore the stacking
 order by role on every bind because slots are reused across roles.
 
-The Android Activity renderer also applies the badge-overhang rule above
-(`requestsUnclippedHost` stops the content row and the row padding clipping),
-so the history rows' network badges render whole instead of cut flat.
+The Android Activity renderer also applies the badge-overhang rule above on
+both of its branches (`requestsUnclippedHost` stops the legacy content row, the
+rich details view with its columns, and the row padding clipping), so the
+history rows' network badges render whole instead of cut flat.
 
 ## Failures, fallback and limits
 
@@ -1434,9 +1586,14 @@ secondary text and subscript text segments. Segments are caller-formatted and
 never interpreted as numbers by NativeList. Omission preserves the legacy tree.
 
 `presentation: stacked` places the amount lines after the identity column and
-right-aligns them; `table` uses equal identity/amount columns, left-aligns amount
-lines and adds an optional trailing fee column. Fee supports label, primary and
-secondary text with their own segments; `hidden` preserves its column width
+right-aligns them. In `table`, the identity column includes its leading visual
+and gap; identity, amounts and an optional fee use stable widths in the ratio
+`1:1:0.6` after inter-column gaps. Without fee, identity and amounts split the
+remaining width equally. Amount content stays start-aligned within its column;
+native fee content stays end-aligned; Web retains its existing start alignment.
+Fee text length and leading visibility cannot move the amount column. These
+native widths match the existing Web table layout. Fee supports label, primary
+and secondary text with their own segments; `hidden` preserves its column width
 while hiding its contents. Up to four uniquely keyed title badges use declared
 tones. `descriptionActionKey` makes only the description emit that action with
 source `description`; footer actions retain their existing source/keys and
@@ -1456,6 +1613,15 @@ small-number segments in amounts/fiat/fee (ceil(0.6 × parent font size), unchan
 baseline, matching NumberSizeableText), badge tone/clear, hidden fee, disabled
 actions, description anchors, dark/RTL/font scaling and explicit/automatic height.
 
+
+Table regression acceptance additionally measures amount-column start, width and
+center across short/long/hidden fee, leading visibility, 1/2/6/32 amount lines and
+table/stacked reuse. Android DataRow primary and secondary groups honor their
+resolved text-role alignment (role style first, then column alignment), including
+start/center/end and styled/unstyled reuse. The secondary-prefix gap is present
+only when that prefix is visible; legacy linear rendering is unchanged. The UIKit
+regression explicitly forces each renderer view's direction; React Native/Fabric
+host direction propagation and real App RTL remain unverified.
 
 ### Android ancestor scroll distance
 
@@ -1633,6 +1799,51 @@ Acceptance: every cell kind, dynamic formatting, hover/focus/keyboard actions,
 row/presentation recycling, strict validation, native dictionary safe-ignore,
 header/body geometry, 100 quote ticks preserving nodes with zero geometry reads,
 then a real complex Market table before expanding to all five families.
+
+### Native Market metric columns
+
+Status: implemented in local source, unreleased; native runtime verification
+pending. A `market` row may supply two or three ordered, uniquely
+keyed text columns through `metrics`, typed as a `Pick<DataColumn, ...>` of
+the supported text fields. Each column uses
+the text subset of `DataColumn`: key, primary text and segments, optional
+secondary text and segments, weight, alignment, and primary/secondary tone.
+Icon and secondary-leading fields are rejected in development and stripped by
+the existing production decoration sanitizer.
+Keys are nonempty and callers format all text. The row keeps its required
+`price` and `change` fields as compact fallbacks. When `metrics` is present,
+iOS and Android display the existing leading action, visual, title, subtitle,
+and Market badges, then the metric columns in place of the compact price and
+change block. The metrics are authoritative for this native presentation; the
+SDK does not infer their values from the fallback fields or product data.
+The default native accessibility label includes the title and subtitle followed
+by the displayed metric text, primary then secondary, in column order. It
+updates with each quote. An explicit row accessibility label takes precedence.
+The metrics use their own text tones and alignment, with both lines aligned
+the same way; omitted alignment defaults to `end`. Existing change block
+width, height, and corner radius do not
+apply to metric columns. The title content receives a relative weight of two;
+metric columns receive their declared `weight` (1...3, default one) after the
+row's existing action, visual, padding, and gaps take their space. The SDK
+does not choose a mode from screen width. Without `metrics`, all platforms
+retain their existing compact Market presentation. Web ignores `metrics` and
+continues using `webTable` when supplied.
+
+Metric values travel in the existing row snapshot JSON and do not change the
+Nitro ABI, row key, action keys, badge anchors, or scroll ownership. Full
+snapshots may add, replace, or omit `metrics`; omission restores compact mode.
+An explicit patch with a valid two- or three-column array replaces metrics,
+while an omitted patch field leaves them unchanged. A full snapshot is used
+to remove metrics from a wide row; this contract adds no null patch meaning.
+Binding and recycling clear inactive metric and compact views in both
+directions, including changes between two and three columns, so reused rows
+cannot show stale text or targets. Metric fields contain no new action target;
+Market badge, leading action, press, press-in, and long-press behavior remains
+owned by the existing Market row. Conformance requires validation and patch
+tests, native bind/reuse and action-anchor checks, then consuming App device
+checks at narrow and wide list widths. Source and unit tests alone do not
+establish native layout acceptance.
+
 
 
 ### Web grid fractional column geometry
@@ -1839,6 +2050,23 @@ logo groups retain their4px gap and overlap geometry. No other text-part gaps
 change. Regression acceptance includes Dark/Light recycled visuals, preserved
 network overlays, independent copy actions and Stock hover group spacing.
 
+For token visuals in Web/Electron Market tables, changing only `overlays` MUST
+retain the main image frame, its loaded/error visibility and pending image
+callbacks. Removed overlay images release their pending work. Changes to the
+main image descriptor or other leading-visual fields keep the existing full
+rebind behavior. This is a Web renderer lifecycle rule; it changes neither the
+snapshot schema nor the iOS/Android implementations. Acceptance covers adding,
+replacing and removing overlays before and after image load/failure, including
+consumer row-key changes, and replacing the main image source. Overlay-only
+updates MUST retain the existing circular bitmap clipping of padded square
+badges and their caller-provided geometry.
+Status: implemented on the 6.7.0-alpha.402 publication source. Package DOM
+regressions, the built-module Chromium lifecycle fixture and consuming Electron
+refresh/navigation badge rendering are verified. Consuming Electron acceptance
+also covers a manually locked refresh, user password unlock, first Market entry
+and a complete quote polling cycle. No native implementation or public API
+changes are included.
+
 Gallery collection subtitles retain an 8px trailing text inset whether or not
 a network thumbnail is present. The subtitle uses border-box sizing and its row
 has no extra gap, preserving the same 8px separation with a thumbnail and the
@@ -1934,3 +2162,31 @@ A containing Web pager therefore applies insets, collapse/top commands and route
 restoration to the owned host, with slot content as its padding target. The
 ordinary no-slot viewport and explicit external-host paths keep their existing
 ownership; no Pager dependency or new API is required.
+
+### Shared icon recoloring revision — Implemented; scoped runtime acceptance
+
+Android named glyph slots consume image's typed immutable shape-cache results:
+compatible fixed/single/same-alpha multiple colors update per-view tint without a
+request; new alpha or mixed-color raster requests preserve the last successful
+same-source/geometry bitmap until completion. Name/geometry changes, invalid,
+hidden/detach/recycle clear immediately and revisions reject old callbacks.
+Circle remains local; checkbox rectangles and icon coverage are unchanged.
+Android non-square named glyphs use the aspect-fit geometry defined above.
+iOS retains its existing black template/original request and synchronous retint.
+Web React and DOM use the image package's demand-loaded external per-icon symbol
+URLs, with existing coverage/aliases/action labels and CSS color inheritance.
+
+## Host-owned named resources — Implemented; SDK fixture runtime verified
+
+Image provides decoding and the static Web `#onekey-icon-assets` provider boundary;
+the application owns complete named SVG resources. NativeList keeps its existing
+43-name platform coverage and three generated metadata tables, including its
+legacy `BadgeVerifiedSolid` to canonical `BadgeRecognizedSolid` mapping. No list
+props, naming coverage or rendering strategy changes. Android non-square glyph
+geometry follows the aspect-fit contract above.
+
+The SDK metadata generator validates against the shared 63-sample example/test
+catalog without an App checkout, including raw source digests and viewBox sizes.
+It emits metadata only. Production consumers must supply the complete host icon
+bundle/assets and Web provider; SDK-only fixture tests prove their closed sample
+coverage, while the App's independent generator verifies all 1,909 resources.

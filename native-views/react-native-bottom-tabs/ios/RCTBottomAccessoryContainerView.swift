@@ -1,6 +1,8 @@
 import Foundation
 import UIKit
+#if canImport(React)
 import React
+#endif
 
 extension Notification.Name {
   static let bottomAccessoryPlacementChanged = Notification.Name("bottomAccessoryPlacementChanged")

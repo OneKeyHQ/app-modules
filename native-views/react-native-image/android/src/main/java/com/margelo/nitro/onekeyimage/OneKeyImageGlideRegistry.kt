@@ -266,7 +266,7 @@ private class OneKeySvgDecoder : ResourceDecoder<InputStream, SVG> {
     options: Options,
   ): Resource<SVG> {
     val svg = try {
-      SVG.getFromInputStream(source)
+      OneKeySVG.parse(source)
     } catch (error: SVGParseException) {
       throw IOException("Cannot decode SVG", error)
     }

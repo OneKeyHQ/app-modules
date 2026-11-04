@@ -9,6 +9,7 @@ gradle.beforeProject { project ->
           testInstrumentationRunner 'android.test.InstrumentationTestRunner'
         }
         sourceSets {
+          main.assets.srcDirs += [project.rootProject.file("../icon-fixtures/native")]
           androidTest {
             java.srcDirs = ['../native-tests/android']
             manifest.srcFile '../native-tests/android/AndroidManifest.xml'

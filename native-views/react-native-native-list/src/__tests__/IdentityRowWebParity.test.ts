@@ -28,6 +28,7 @@ function renderIdentity(row: IdentityRow) {
       frame.append(main, corner);
       return frame;
     },
+    iconAction: () => document.createElement('span'),
     dispose: () => undefined,
   } as unknown as RowPrimitives;
   return identityRowRenderer.create(document, row, primitives);
@@ -109,5 +110,59 @@ describe('Web identity row visual and expanded text', () => {
     expect(suffixes[0]?.style.marginInlineStart).toBe('8px');
     expect(suffixes[0]?.style.color).toBe('var(--nl-disabled)');
     expect(body.querySelector('.ok-native-list-badge')).toBeNull();
+  });
+
+  it('keeps a single-line title with a help glyph centered on one flex row (OK-66402)', () => {
+    const row: IdentityRow = {
+      type: 'identity',
+      key: 'eth',
+      title: 'ETH',
+      subtitle: '$2,289.00',
+      leading: { kind: 'token', image: mainImage },
+      titleIcon: { name: 'GasSolid', hoverActionKey: 'gas-info' },
+      style: { title: { token: '$bodyLg', fontWeight: 'medium', lines: 1 } },
+    };
+    const body = renderIdentity(row);
+    const line = body.querySelector<HTMLElement>('.ok-native-list-title')!;
+    const text = body.querySelector<HTMLElement>(
+      '.ok-native-list-identity-title-text'
+    )!;
+    const icon = body.querySelector<HTMLElement>(
+      '.ok-native-list-identity-title-icon'
+    )!;
+    // The clamp lands on the text span; the line stays a centered flex row so
+    // the 20px glyph is not baseline-aligned above a block-level title.
+    expect(line.style.display).toBe('flex');
+    expect(line.style.alignItems).toBe('center');
+    expect(line.hasAttribute('data-nl-slot')).toBe(false);
+    expect(text.dataset.nlSlot).toBe('title');
+    expect(text.textContent).toBe('ETH');
+    expect(text.style.whiteSpace).toBe('nowrap');
+    expect(text.style.textOverflow).toBe('ellipsis');
+    expect(text.style.fontWeight).toBe('500');
+    expect(text.nextElementSibling).toBe(icon);
+  });
+
+  it('keeps the badge-carrying title slot inside the text span when a glyph is present', () => {
+    const row: IdentityRow = {
+      type: 'identity',
+      key: 'usdc',
+      title: 'USDC',
+      leading: { kind: 'token', image: mainImage },
+      titleIcon: { name: 'TicketOutline' },
+      badges: [{ key: 'network', text: 'Ethereum' }],
+      style: { title: { lines: 1 } },
+    };
+    const body = renderIdentity(row);
+    const line = body.querySelector<HTMLElement>('.ok-native-list-title')!;
+    const text = body.querySelector<HTMLElement>(
+      '.ok-native-list-identity-title-text'
+    )!;
+    const slot = body.querySelector<HTMLElement>('[data-nl-slot="title"]')!;
+    expect(line.style.display).toBe('flex');
+    expect(line.hasAttribute('data-nl-slot')).toBe(false);
+    expect(text.contains(slot)).toBe(true);
+    expect(slot.style.whiteSpace).toBe('nowrap');
+    expect(line.querySelector('.ok-native-list-badges')).not.toBeNull();
   });
 });
