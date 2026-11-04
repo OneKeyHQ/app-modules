@@ -217,6 +217,7 @@ public class DeviceEventManagerModule {
 """,
     "com/facebook/react/bridge/ReactApplicationContext.java": """
 package com.facebook.react.bridge;
+import android.app.Activity;
 import android.content.ContextWrapper;
 import com.facebook.react.modules.core.DeviceEventManagerModule;
 import java.util.List;
@@ -233,9 +234,18 @@ public class ReactApplicationContext extends ContextWrapper {
     }
 
     public final List<EmittedEvent> emittedEvents = new CopyOnWriteArrayList<EmittedEvent>();
+    private Activity currentActivity;
 
     public ReactApplicationContext() {
         super(null);
+    }
+
+    public void setCurrentActivity(Activity activity) {
+        this.currentActivity = activity;
+    }
+
+    public Activity getCurrentActivity() {
+        return currentActivity;
     }
 
     @SuppressWarnings("unchecked")
@@ -254,6 +264,8 @@ public class ReactApplicationContext extends ContextWrapper {
 """,
     "com/facebook/react/bridge/ReactContextBaseJavaModule.java": """
 package com.facebook.react.bridge;
+import android.app.Activity;
+
 public abstract class ReactContextBaseJavaModule implements NativeModule {
     private final ReactApplicationContext reactContext;
 
@@ -263,6 +275,10 @@ public abstract class ReactContextBaseJavaModule implements NativeModule {
 
     protected final ReactApplicationContext getReactApplicationContext() {
         return reactContext;
+    }
+
+    protected final Activity getCurrentActivity() {
+        return reactContext != null ? reactContext.getCurrentActivity() : null;
     }
 }
 """,
@@ -374,6 +390,10 @@ public class Binder implements IBinder {
     private String descriptor;
 
     public Binder() {}
+
+    public static int getCallingUid() {
+        return 10000;
+    }
 
     public void attachInterface(IInterface owner, String descriptor) {
         this.owner = owner;
@@ -799,6 +819,10 @@ public class ContextWrapper extends Context {
 
     public ContextWrapper(Context base) {
         this.base = base;
+    }
+
+    public Context getBaseContext() {
+        return base;
     }
 
     @Override
@@ -2246,6 +2270,132 @@ public final class SdkEndToEndTestRunner {
         }
     }
 
+    private static void testAutoReconnectScheduleAndBinderSecurity() throws Exception {
+        final ReactApplicationContext context = new ReactApplicationContext();
+        JCoreStorage.setAppContext(context);
+        JCoreStorage.setPushStopped(context, false);
+        check(JCoreTcpEngine.getInstance().isAutoReconnectEnabled(), "autoReconnectEnabled must default to true");
+
+        // 1. Verify automatic reconnect when remote server drops an established TCP connection
+        final ServerSocket dropServer = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"));
+        final int dropPort = dropServer.getLocalPort();
+        final AtomicInteger loginSessions = new AtomicInteger(0);
+        final CountDownLatch secondSessionLatch = new CountDownLatch(1);
+
+        Thread dropServerThread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    dropServer.setSoTimeout(5000);
+                    for (int sessionIdx = 0; sessionIdx < 2; sessionIdx++) {
+                        Socket client = dropServer.accept();
+                        client.setSoTimeout(5000);
+                        InputStream in = client.getInputStream();
+                        OutputStream out = client.getOutputStream();
+                        JCoreWireCodec.DecodedFrame loginFrame = JCoreWireCodec.readClientFrameFromStream(in, 770001L);
+                        if (loginFrame != null && loginFrame.command == JCoreWireCodec.CMD_LOGIN) {
+                            int sid = 9950 + sessionIdx;
+                            byte[] loginResp = JCoreWireCodec.buildLoginResponsePayload(sid, 520, "", 1700000500);
+                            out.write(JCoreWireCodec.encodeResponseFrame(
+                                JCoreWireCodec.CMD_LOGIN,
+                                JCoreWireCodec.VER_LOGIN,
+                                loginFrame.requestId,
+                                sid,
+                                770001L,
+                                0,
+                                loginResp
+                            ));
+                            out.flush();
+                        }
+                        JCoreWireCodec.DecodedFrame hbFrame = JCoreWireCodec.readClientFrameFromStream(in, 770001L);
+                        if (hbFrame != null && hbFrame.command == JCoreWireCodec.CMD_HEARTBEAT) {
+                            int sid = 9950 + sessionIdx;
+                            out.write(JCoreWireCodec.encodeResponseFrame(
+                                JCoreWireCodec.CMD_HEARTBEAT,
+                                JCoreWireCodec.VER_HEARTBEAT,
+                                hbFrame.requestId,
+                                sid,
+                                770001L,
+                                0,
+                                new byte[0]
+                            ));
+                            out.flush();
+                        }
+                        int count = loginSessions.incrementAndGet();
+                        if (count == 1) {
+                            // Drop first session immediately from server side to trigger client auto-reconnect!
+                            client.close();
+                        } else {
+                            secondSessionLatch.countDown();
+                            Thread.sleep(50L);
+                            client.close();
+                        }
+                    }
+                } catch (Throwable ignored) {
+                } finally {
+                    try {
+                        dropServer.close();
+                    } catch (Throwable ignored) {}
+                }
+            }
+        }, "test-drop-reconnect-server");
+        dropServerThread.setDaemon(true);
+        dropServerThread.start();
+
+        JCoreStorage.setServerRegistered(context, true);
+        JCoreTcpEngine.getInstance().setReconnectBaseDelayMs(25L);
+        JCoreTcpEngine.getInstance().setCustomEndpoint("127.0.0.1", dropPort);
+        JCoreTcpEngine.getInstance().triggerReconnectNow(context);
+        check(secondSessionLatch.await(3000L, TimeUnit.MILLISECONDS), "Dropped TCP session must automatically reconnect");
+        check(loginSessions.get() >= 2, "Engine must complete second handshake after dropped connection");
+        JCoreTcpEngine.getInstance().setReconnectBaseDelayMs(3000L);
+        JCoreTcpEngine.getInstance().closeSocket();
+
+        // 2. Verify notification schedule (pushTime & silenceTime) and latestNotificationNumber eviction
+        java.util.Set<Integer> allowedDays = new java.util.HashSet<Integer>(Arrays.asList(1, 3, 5));
+        JPushInterface.setPushTime(context, allowedDays, 9, 18);
+        check(JCoreStorage.isPushTimeAllowed(context, 1, 10), "Monday 10:00 must be allowed");
+        check(!JCoreStorage.isPushTimeAllowed(context, 1, 20), "Monday 20:00 must be outside push time");
+        check(!JCoreStorage.isPushTimeAllowed(context, 2, 10), "Tuesday 10:00 must be disallowed by day filter");
+        JPushInterface.setPushTime(context, null, 0, 23);
+        check(JCoreStorage.isPushTimeAllowed(context, 2, 22), "Reset pushTime must allow all times");
+
+        JPushInterface.setSilenceTime(context, 22, 30, 7, 0);
+        check(JCoreStorage.isInSilenceTime(context, 23, 15), "23:15 must be inside overnight silence window");
+        check(JCoreStorage.isInSilenceTime(context, 6, 45), "06:45 must be inside overnight silence window");
+        check(!JCoreStorage.isInSilenceTime(context, 12, 0), "12:00 must be outside overnight silence window");
+        JPushInterface.setSilenceTime(context, 0, 0, 0, 0);
+        check(!JCoreStorage.isInSilenceTime(context, 23, 15), "00:00-00:00 must disable silence time");
+
+        ActionHelper.getInstance().clearActiveNotificationIds();
+        JPushInterface.setLatestNotificationNumber(context, 2);
+        for (int id = 101; id <= 103; id++) {
+            cn.jpush.android.api.NotificationMessage msg = new cn.jpush.android.api.NotificationMessage();
+            msg.notificationId = id;
+            msg.notificationTitle = "Title " + id;
+            msg.notificationContent = "Body " + id;
+            ActionHelper.getInstance().postSystemNotification(context, msg);
+        }
+        List<Integer> activeIds = ActionHelper.getInstance().getActiveNotificationIds();
+        check(
+            activeIds.size() == 2 && !activeIds.contains(101) && activeIds.contains(102) && activeIds.contains(103),
+            "setLatestNotificationNumber(2) must evict oldest notification 101"
+        );
+
+        // 3. Verify DataShare rejects cross-UID Binder callers
+        DataShare share = new DataShare();
+        DataShare.setTestCallerUids(20001, 10000);
+        boolean rejectedCrossUid = false;
+        try {
+            share.execute("INTERNAL_API", "get_reg_id", new Bundle());
+        } catch (SecurityException expected) {
+            rejectedCrossUid = true;
+        } finally {
+            DataShare.setTestCallerUids(-1, -1);
+        }
+        check(rejectedCrossUid, "DataShare must throw SecurityException when callingUid != myUid");
+    }
+
     public static void main(String[] args) throws Exception {
         com.margelo.nitro.reactnativejpush.ReactNativeJpushProtocolTest junitSuite =
             new com.margelo.nitro.reactnativejpush.ReactNativeJpushProtocolTest();
@@ -2258,6 +2408,7 @@ public final class SdkEndToEndTestRunner {
         testTcpEngineEndToEndAndProductionResilience();
         testHttpReportChannelAndMultiProcessIpc();
         testDefaultHostVerifier();
+        testAutoReconnectScheduleAndBinderSecurity();
         System.out.println("ALL_ANDROID_SDK_TESTS_PASSED");
     }
 }

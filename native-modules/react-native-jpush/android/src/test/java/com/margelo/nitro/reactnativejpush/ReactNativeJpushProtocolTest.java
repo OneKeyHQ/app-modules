@@ -58,6 +58,10 @@ public class ReactNativeJpushProtocolTest {
         byte[] gz = JCoreCrypto.gzipCompress(plain);
         byte[] ungz = JCoreCrypto.gzipDecompress(gz);
         assertArrayEquals(plain, ungz);
+
+        String b64 = JCoreCrypto.base64Encode(plain);
+        byte[] b64Decoded = JCoreCrypto.base64Decode(b64);
+        assertArrayEquals(plain, b64Decoded);
     }
 
     @Test

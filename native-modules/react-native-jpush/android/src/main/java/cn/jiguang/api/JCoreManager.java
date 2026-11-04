@@ -1,13 +1,18 @@
 package cn.jiguang.api;
 
 import android.app.Activity;
+import android.app.NotificationManager;
 import android.content.Context;
+import android.content.ContextWrapper;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import cn.jiguang.core.JCoreStorage;
 import cn.jiguang.core.JCoreTcpEngine;
 import cn.jiguang.internal.ActionManager;
 import cn.jiguang.internal.JConstants;
 import cn.jiguang.internal.JCoreInternalHelper;
+import cn.jpush.android.api.JPushInterface;
 import java.util.List;
 
 public class JCoreManager {
@@ -90,8 +95,43 @@ public class JCoreManager {
     }
 
     public static void requestPermission(Context context) {
-        if (context instanceof Activity) {
-            // Permission handling is delegated to Android system / RN layer.
+        if (context == null) {
+            return;
+        }
+        Activity activity = null;
+        Context current = context;
+        while (current != null) {
+            if (current instanceof Activity) {
+                activity = (Activity) current;
+                break;
+            }
+            if (current instanceof ContextWrapper) {
+                Context next = ((ContextWrapper) current).getBaseContext();
+                if (next == current) {
+                    break;
+                }
+                current = next;
+            } else {
+                break;
+            }
+        }
+        if (activity != null) {
+            if (Build.VERSION.SDK_INT >= 33) {
+                try {
+                    if (activity.checkSelfPermission("android.permission.POST_NOTIFICATIONS")
+                        != PackageManager.PERMISSION_GRANTED) {
+                        activity.requestPermissions(
+                            new String[] { "android.permission.POST_NOTIFICATIONS" },
+                            10001
+                        );
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= 33 && JPushInterface.isNotificationEnabled(context) == 0) {
+            JPushInterface.goToAppNotificationSettings(context);
         }
     }
 

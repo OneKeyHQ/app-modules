@@ -52,6 +52,16 @@ public final class JCoreStorage {
     private static final String KEY_FAILED_IPS = "sis_failed_ips";
     private static final String KEY_LAST_GOOD_IP = "sis_last_good_ip";
     private static final String KEY_THIRD_TOKEN_PREFIX = "third_token_";
+    private static final String KEY_LATEST_NOTIFICATION_NUM = "latest_notification_num";
+    private static final String KEY_PUSH_TIME_CONFIGURED = "push_time_configured";
+    private static final String KEY_PUSH_TIME_DAYS = "push_time_days";
+    private static final String KEY_PUSH_TIME_START_HOUR = "push_time_start_hour";
+    private static final String KEY_PUSH_TIME_END_HOUR = "push_time_end_hour";
+    private static final String KEY_SILENCE_TIME_ENABLED = "silence_time_enabled";
+    private static final String KEY_SILENCE_START_HOUR = "silence_start_hour";
+    private static final String KEY_SILENCE_START_MIN = "silence_start_min";
+    private static final String KEY_SILENCE_END_HOUR = "silence_end_hour";
+    private static final String KEY_SILENCE_END_MIN = "silence_end_min";
 
     private static final AtomicInteger REQUEST_ID = new AtomicInteger(100);
     private static final Map<String, Object> MEMORY_FALLBACK = new ConcurrentHashMap<String, Object>();
@@ -642,5 +652,93 @@ public final class JCoreStorage {
 
     public static void saveMobileNumber(Context context, String mobileNumber) {
         putStringPref(context, KEY_MOBILE_NUMBER, mobileNumber != null ? mobileNumber : "");
+    }
+
+    public static void setLatestNotificationNumber(Context context, int maxNum) {
+        if (maxNum > 0) {
+            putLongPref(context, KEY_LATEST_NOTIFICATION_NUM, maxNum);
+        }
+    }
+
+    public static int getLatestNotificationNumber(Context context) {
+        long val = getLongPref(context, KEY_LATEST_NOTIFICATION_NUM, 5L);
+        return val > 0L ? (int) val : 5;
+    }
+
+    public static void setPushTime(Context context, Set<Integer> days, int startHour, int endHour) {
+        if (days == null) {
+            putBooleanPref(context, KEY_PUSH_TIME_CONFIGURED, false);
+            putStringPref(context, KEY_PUSH_TIME_DAYS, "");
+            return;
+        }
+        if (startHour < 0 || startHour > 23 || endHour < 0 || endHour > 23 || endHour < startHour) {
+            return;
+        }
+        List<String> validDays = new ArrayList<String>();
+        for (Integer day : days) {
+            if (day != null && day >= 0 && day <= 6) {
+                validDays.add(String.valueOf(day));
+            }
+        }
+        putBooleanPref(context, KEY_PUSH_TIME_CONFIGURED, true);
+        saveCsvSet(context, KEY_PUSH_TIME_DAYS, validDays);
+        putLongPref(context, KEY_PUSH_TIME_START_HOUR, startHour);
+        putLongPref(context, KEY_PUSH_TIME_END_HOUR, endHour);
+    }
+
+    public static boolean isPushTimeAllowed(Context context, int dayOfWeekZeroBasedSunday, int hourOfDay) {
+        if (!getBooleanPref(context, KEY_PUSH_TIME_CONFIGURED, false)) {
+            return true;
+        }
+        List<String> allowedDays = loadCsvList(context, KEY_PUSH_TIME_DAYS);
+        if (!allowedDays.contains(String.valueOf(dayOfWeekZeroBasedSunday))) {
+            return false;
+        }
+        int startHour = (int) getLongPref(context, KEY_PUSH_TIME_START_HOUR, 0L);
+        int endHour = (int) getLongPref(context, KEY_PUSH_TIME_END_HOUR, 23L);
+        return hourOfDay >= startHour && hourOfDay <= endHour;
+    }
+
+    public static void setSilenceTime(
+        Context context,
+        int startHour,
+        int startMinute,
+        int endHour,
+        int endMinute
+    ) {
+        if (startHour == 0 && startMinute == 0 && endHour == 0 && endMinute == 0) {
+            putBooleanPref(context, KEY_SILENCE_TIME_ENABLED, false);
+            return;
+        }
+        if (startHour < 0 || startHour > 23 || startMinute < 0 || startMinute > 59
+            || endHour < 0 || endHour > 23 || endMinute < 0 || endMinute > 59) {
+            return;
+        }
+        putBooleanPref(context, KEY_SILENCE_TIME_ENABLED, true);
+        putLongPref(context, KEY_SILENCE_START_HOUR, startHour);
+        putLongPref(context, KEY_SILENCE_START_MIN, startMinute);
+        putLongPref(context, KEY_SILENCE_END_HOUR, endHour);
+        putLongPref(context, KEY_SILENCE_END_MIN, endMinute);
+    }
+
+    public static boolean isInSilenceTime(Context context, int hourOfDay, int minute) {
+        if (!getBooleanPref(context, KEY_SILENCE_TIME_ENABLED, false)) {
+            return false;
+        }
+        int startHour = (int) getLongPref(context, KEY_SILENCE_START_HOUR, 0L);
+        int startMin = (int) getLongPref(context, KEY_SILENCE_START_MIN, 0L);
+        int endHour = (int) getLongPref(context, KEY_SILENCE_END_HOUR, 0L);
+        int endMin = (int) getLongPref(context, KEY_SILENCE_END_MIN, 0L);
+
+        int currentTotal = hourOfDay * 60 + minute;
+        int startTotal = startHour * 60 + startMin;
+        int endTotal = endHour * 60 + endMin;
+        if (startTotal == endTotal) {
+            return false;
+        }
+        if (startTotal < endTotal) {
+            return currentTotal >= startTotal && currentTotal <= endTotal;
+        }
+        return currentTotal >= startTotal || currentTotal <= endTotal;
     }
 }

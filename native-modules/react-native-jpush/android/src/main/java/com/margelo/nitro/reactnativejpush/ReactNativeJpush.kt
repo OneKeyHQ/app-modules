@@ -247,7 +247,8 @@ class ReactNativeJpush : HybridReactNativeJpushSpec() {
 
   override fun requestPermission() {
     val ctx = getReactContext() ?: return
-    JPushInterface.requestPermission(ctx)
+    val target: Context = ctx.currentActivity ?: ctx
+    JPushInterface.requestPermission(target)
   }
 
   override fun setPushTime(days: DoubleArray, startHour: Double, endHour: Double) {

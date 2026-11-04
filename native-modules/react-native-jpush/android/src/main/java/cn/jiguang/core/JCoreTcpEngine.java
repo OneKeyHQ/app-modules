@@ -16,7 +16,6 @@ import java.net.Socket;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -111,8 +110,10 @@ public final class JCoreTcpEngine {
 
     private volatile boolean started = false;
     private volatile boolean loggedIn = false;
-    private volatile boolean autoReconnectEnabled = false;
+    private volatile boolean autoReconnectEnabled = true;
+    private volatile long reconnectBaseDelayMs = 3000L;
     private volatile int reconnectAttempt = 0;
+    private volatile long connectionGeneration = 0L;
     private volatile int sessionId = 1;
     private volatile String customHost = "";
     private volatile int customPort = 0;
@@ -143,13 +144,28 @@ public final class JCoreTcpEngine {
         return autoReconnectEnabled;
     }
 
+    public void setReconnectBaseDelayMs(long baseDelayMs) {
+        if (baseDelayMs > 0L) {
+            this.reconnectBaseDelayMs = baseDelayMs;
+        }
+    }
+
+    public long getReconnectBaseDelayMs() {
+        return reconnectBaseDelayMs;
+    }
+
     public int getReconnectAttempt() {
         return reconnectAttempt;
     }
 
     public static long computeReconnectDelayMs(int attempt) {
+        return computeReconnectDelayMs(attempt, 3000L);
+    }
+
+    public static long computeReconnectDelayMs(int attempt, long baseDelayMs) {
         int cappedShift = Math.max(0, Math.min(attempt, 6));
-        long delay = 3000L * (1L << cappedShift);
+        long effectiveBase = baseDelayMs > 0L ? baseDelayMs : 3000L;
+        long delay = effectiveBase * (1L << cappedShift);
         return Math.min(delay, 120000L);
     }
 
@@ -255,6 +271,7 @@ public final class JCoreTcpEngine {
     }
 
     public synchronized void closeSocket() {
+        this.connectionGeneration++;
         synchronized (socketLock) {
             if (activeSocket != null) {
                 try {
@@ -270,6 +287,14 @@ public final class JCoreTcpEngine {
         }
         pendingRequests.clear();
         loggedIn = false;
+    }
+
+    public synchronized void stop(Context context) {
+        closeSocket();
+        this.started = false;
+        if (context != null) {
+            JCoreStorage.setConnected(context, false);
+        }
     }
 
     public void start(final Context context) {
@@ -696,19 +721,36 @@ public final class JCoreTcpEngine {
         } finally {
             boolean wasLoggedIn = this.loggedIn;
             this.loggedIn = false;
+            boolean droppedUnexpectedly = false;
+            synchronized (socketLock) {
+                if (this.activeSocket == socket) {
+                    droppedUnexpectedly = !socket.isClosed();
+                    try {
+                        socket.close();
+                    } catch (Throwable ignored) {
+                    }
+                    this.activeSocket = null;
+                    this.activeOutput = null;
+                }
+            }
             for (ResponseSlot slot : pendingRequests.values()) {
                 slot.complete(null);
             }
             pendingRequests.clear();
-            if (wasLoggedIn && autoReconnectEnabled && !socket.isClosed()) {
-                final long delayMs = computeReconnectDelayMs(reconnectAttempt++);
+            if (wasLoggedIn && autoReconnectEnabled && droppedUnexpectedly && !JCoreStorage.isPushStopped(context)) {
+                final long delayMs = computeReconnectDelayMs(reconnectAttempt++, reconnectBaseDelayMs);
+                final long scheduledGen = this.connectionGeneration;
+                this.handshakeLatch = new CountDownLatch(1);
                 ioExecutor.execute(new Runnable() {
                     @Override
                     public void run() {
                         try {
-                            Thread.sleep(Math.min(delayMs, 50L));
+                            Thread.sleep(delayMs);
                         } catch (InterruptedException e) {
                             Thread.currentThread().interrupt();
+                            return;
+                        }
+                        if (scheduledGen != connectionGeneration || loggedIn || JCoreStorage.isPushStopped(context)) {
                             return;
                         }
                         connectAndHandshake(context);
@@ -985,7 +1027,7 @@ public final class JCoreTcpEngine {
             String pwdMd5 = JCoreCrypto.md5Hex(password);
             String signSha1 = JCoreCrypto.sha1Hex(uid + pwdMd5 + bodySha1);
             String authRaw = uid + ":" + signSha1 + ":" + aesKey;
-            String authHeader = "Basic " + Base64.getEncoder().encodeToString(authRaw.getBytes(StandardCharsets.UTF_8));
+            String authHeader = "Basic " + JCoreCrypto.base64Encode(authRaw.getBytes(StandardCharsets.UTF_8));
 
             String targetUrl = customReportUrl;
             if (targetUrl == null || targetUrl.isEmpty()) {

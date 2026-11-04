@@ -371,6 +371,13 @@ jobs:
             target.build_configurations.each do |config|
               config.build_settings.delete('TEST_HOST')
               config.build_settings.delete('BUNDLE_LOADER')
+              config.build_settings['LD_RUNPATH_SEARCH_PATHS'] = [
+                '$(inherited)',
+                '@executable_path/Frameworks',
+                '@loader_path/Frameworks',
+                '$(PODS_XCFRAMEWORKS_BUILD_DIR)/hermes-engine/Pre-built',
+                '$(PODS_ROOT)/hermes-engine/destroot/Library/Frameworks/universal/hermesvm.xcframework/ios-arm64_x86_64-simulator'
+              ]
             end
             scheme.add_build_target(target, false)
             scheme.add_test_target(target)

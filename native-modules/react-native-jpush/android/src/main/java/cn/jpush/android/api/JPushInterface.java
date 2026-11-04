@@ -101,6 +101,7 @@ public class JPushInterface {
 
     public static void stopPush(Context context) {
         JCoreStorage.setPushStopped(context, true);
+        JCoreTcpEngine.getInstance().stop(context);
         ActionHelper.getInstance().setPushStatusWithCallBack(context, 4, 0);
     }
 
@@ -127,12 +128,19 @@ public class JPushInterface {
     }
 
     public static void setLatestNotificationNumber(Context context, int maxNum) {
+        if (maxNum <= 0) {
+            return;
+        }
+        JCoreStorage.setLatestNotificationNumber(context, maxNum);
+        ActionHelper.getInstance().enforceLatestNotificationLimit(context, maxNum);
     }
 
     public static void setPushTime(Context context, Set<Integer> days, int startHour, int endHour) {
+        JCoreStorage.setPushTime(context, days, startHour, endHour);
     }
 
     public static void setSilenceTime(Context context, int startHour, int startMinute, int endHour, int endMinute) {
+        JCoreStorage.setSilenceTime(context, startHour, startMinute, endHour, endMinute);
     }
 
     public static void setDefaultPushNotificationBuilder(DefaultPushNotificationBuilder builder) {
@@ -268,6 +276,7 @@ public class JPushInterface {
     }
 
     public static void clearNotificationById(Context context, int notificationId) {
+        ActionHelper.getInstance().removeActiveNotificationId(notificationId);
         if (context == null) {
             return;
         }
@@ -281,6 +290,7 @@ public class JPushInterface {
     }
 
     public static void clearAllNotifications(Context context) {
+        ActionHelper.getInstance().clearActiveNotificationIds();
         if (context == null) {
             return;
         }

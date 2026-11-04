@@ -53,7 +53,6 @@ Pod::Spec.new do |s|
 
   s.dependency 'React-jsi'
   s.dependency 'React-callinvoker'
-  s.dependency 'ReactNativeNativeLogger'
 
   load 'nitrogen/generated/ios/ReactNativeJpush+autolinking.rb'
   add_nitrogen_files(s)

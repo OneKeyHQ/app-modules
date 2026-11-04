@@ -25,8 +25,10 @@ import cn.jpush.android.service.JNotifyActivity;
 import cn.jpush.android.service.JPushMessageReceiver;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -37,6 +39,7 @@ public class ActionHelper {
     public static final String ACTION_RECEIVER_MESSAGE = "cn.jpush.android.intent.RECEIVER_MESSAGE";
     public static final String ACTION_RECEIVE_MESSAGE = "cn.jpush.android.intent.RECEIVE_MESSAGE";
     public static final String DEFAULT_CHANNEL_ID = "jpush_default_channel";
+    public static final String DEFAULT_SILENT_CHANNEL_ID = "jpush_silent_channel";
 
     private static final String KEY_EVENT_TYPE = "jpush_event_type";
     private static final String KEY_SEQUENCE = "jpush_sequence";
@@ -53,6 +56,7 @@ public class ActionHelper {
 
     private static volatile ActionHelper instance;
     private final List<JPushMessageReceiver> registeredReceivers = new CopyOnWriteArrayList<JPushMessageReceiver>();
+    private final LinkedList<Integer> activeNotificationIds = new LinkedList<Integer>();
 
     private ActionHelper() {
     }
@@ -151,11 +155,64 @@ public class ActionHelper {
         }
     }
 
+    public synchronized List<Integer> getActiveNotificationIds() {
+        return new ArrayList<Integer>(activeNotificationIds);
+    }
+
+    public synchronized void removeActiveNotificationId(int notificationId) {
+        activeNotificationIds.remove(Integer.valueOf(notificationId));
+    }
+
+    public synchronized void clearActiveNotificationIds() {
+        activeNotificationIds.clear();
+    }
+
+    public synchronized void recordNotificationPosted(Context context, int notifyId) {
+        activeNotificationIds.remove(Integer.valueOf(notifyId));
+        activeNotificationIds.addLast(Integer.valueOf(notifyId));
+        enforceLatestNotificationLimit(context, JCoreStorage.getLatestNotificationNumber(context));
+    }
+
+    public synchronized void enforceLatestNotificationLimit(Context context, int maxNum) {
+        if (maxNum <= 0) {
+            return;
+        }
+        Context app = JCoreStorage.getAppContext(context);
+        NotificationManager nm = null;
+        if (app != null) {
+            try {
+                nm = (NotificationManager) app.getSystemService(Context.NOTIFICATION_SERVICE);
+            } catch (Throwable ignored) {
+            }
+        }
+        while (activeNotificationIds.size() > maxNum) {
+            Integer evictedId = activeNotificationIds.removeFirst();
+            if (evictedId != null && nm != null) {
+                try {
+                    nm.cancel(evictedId.intValue());
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+    }
+
     public void postSystemNotification(Context context, NotificationMessage message) {
         Context app = JCoreStorage.getAppContext(context);
         if (app == null || message == null) {
             return;
         }
+        Calendar now = Calendar.getInstance();
+        int dayOfWeekZeroBased = now.get(Calendar.DAY_OF_WEEK) - Calendar.SUNDAY;
+        int hourOfDay = now.get(Calendar.HOUR_OF_DAY);
+        int minute = now.get(Calendar.MINUTE);
+        if (!JCoreStorage.isPushTimeAllowed(app, dayOfWeekZeroBased, hourOfDay)) {
+            return;
+        }
+        boolean silenceActive = JCoreStorage.isInSilenceTime(app, hourOfDay, minute);
+        int notifyId = message.notificationId != 0
+            ? message.notificationId
+            : (message.msgId != null ? Math.abs(message.msgId.hashCode()) : 1);
+        recordNotificationPosted(app, notifyId);
         try {
             NotificationManager nm = (NotificationManager) app.getSystemService(Context.NOTIFICATION_SERVICE);
             if (nm == null) {
@@ -163,17 +220,20 @@ public class ActionHelper {
             }
             String channelId = (message.notificationChannelId != null && !message.notificationChannelId.isEmpty())
                 ? message.notificationChannelId
-                : DEFAULT_CHANNEL_ID;
+                : (silenceActive ? DEFAULT_SILENT_CHANNEL_ID : DEFAULT_CHANNEL_ID);
             if (Build.VERSION.SDK_INT >= 26) {
                 String channelName = JCoreStorage.getChannel(app);
                 if (channelName == null || channelName.isEmpty()) {
                     channelName = "Notifications";
                 }
-                NotificationChannel channel = new NotificationChannel(
-                    channelId,
-                    channelName,
-                    NotificationManager.IMPORTANCE_HIGH
-                );
+                int importance = silenceActive
+                    ? NotificationManager.IMPORTANCE_LOW
+                    : NotificationManager.IMPORTANCE_HIGH;
+                NotificationChannel channel = new NotificationChannel(channelId, channelName, importance);
+                if (silenceActive) {
+                    channel.setSound(null, null);
+                    channel.enableVibration(false);
+                }
                 nm.createNotificationChannel(channel);
             }
 
@@ -182,6 +242,9 @@ public class ActionHelper {
                 builder = new Notification.Builder(app, channelId);
             } else {
                 builder = new Notification.Builder(app);
+            }
+            if (silenceActive) {
+                builder.setDefaults(0).setSound(null).setVibrate(null);
             }
 
             int smallIcon = android.R.drawable.ic_dialog_info;
@@ -212,9 +275,6 @@ public class ActionHelper {
             }
 
             Notification notification = builder.build();
-            int notifyId = message.notificationId != 0
-                ? message.notificationId
-                : (message.msgId != null ? Math.abs(message.msgId.hashCode()) : 1);
             nm.notify(notifyId, notification);
         } catch (Throwable ignored) {
         }

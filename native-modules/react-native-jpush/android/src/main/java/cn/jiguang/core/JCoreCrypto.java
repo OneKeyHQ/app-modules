@@ -11,7 +11,6 @@ import java.security.SecureRandom;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Arrays;
-import java.util.Base64;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 import javax.crypto.Cipher;
@@ -24,6 +23,18 @@ public final class JCoreCrypto {
     private static final int[] MODULI = { 74, 88, 15, 73, 96, 49, 68, 39, 41, 91 };
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final String HTTP_REPORT_IV_BASE64 = "aW9wMjAzMDQwNTA2YVBrIQ==";
+    private static final char[] BASE64_ALPHABET =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".toCharArray();
+    private static final int[] BASE64_DECODE_TABLE = new int[128];
+
+    static {
+        Arrays.fill(BASE64_DECODE_TABLE, -1);
+        for (int i = 0; i < BASE64_ALPHABET.length; i++) {
+            BASE64_DECODE_TABLE[BASE64_ALPHABET[i]] = i;
+        }
+        BASE64_DECODE_TABLE['-'] = 62;
+        BASE64_DECODE_TABLE['_'] = 63;
+    }
 
     private static final int[] SM4_FK = {
         0xa3b1bac6, 0x56aa3350, 0x677d9197, 0xb27022dc
@@ -110,7 +121,7 @@ public final class JCoreCrypto {
     }
 
     public static byte[] aes256CbcHttpEncrypt(byte[] data, String key32) {
-        byte[] iv = Base64.getDecoder().decode(HTTP_REPORT_IV_BASE64);
+        byte[] iv = base64Decode(HTTP_REPORT_IV_BASE64);
         return doAesCbcBytes(
             Cipher.ENCRYPT_MODE,
             data,
@@ -121,7 +132,7 @@ public final class JCoreCrypto {
     }
 
     public static byte[] aes256CbcHttpDecrypt(byte[] data, String key32) {
-        byte[] iv = Base64.getDecoder().decode(HTTP_REPORT_IV_BASE64);
+        byte[] iv = base64Decode(HTTP_REPORT_IV_BASE64);
         return doAesCbcBytes(
             Cipher.DECRYPT_MODE,
             data,
@@ -356,19 +367,77 @@ public final class JCoreCrypto {
         return sb.toString();
     }
 
+    public static String base64Encode(byte[] data) {
+        if (data == null || data.length == 0) {
+            return "";
+        }
+        StringBuilder out = new StringBuilder(((data.length + 2) / 3) * 4);
+        int i = 0;
+        int len = data.length;
+        while (i < len) {
+            int b0 = data[i++] & 0xFF;
+            int b1 = (i < len) ? (data[i++] & 0xFF) : -1;
+            int b2 = (i < len) ? (data[i++] & 0xFF) : -1;
+
+            out.append(BASE64_ALPHABET[b0 >>> 2]);
+            if (b1 < 0) {
+                out.append(BASE64_ALPHABET[(b0 & 0x03) << 4]);
+                out.append("==");
+            } else if (b2 < 0) {
+                out.append(BASE64_ALPHABET[((b0 & 0x03) << 4) | (b1 >>> 4)]);
+                out.append(BASE64_ALPHABET[(b1 & 0x0F) << 2]);
+                out.append('=');
+            } else {
+                out.append(BASE64_ALPHABET[((b0 & 0x03) << 4) | (b1 >>> 4)]);
+                out.append(BASE64_ALPHABET[((b1 & 0x0F) << 2) | (b2 >>> 6)]);
+                out.append(BASE64_ALPHABET[b2 & 0x3F]);
+            }
+        }
+        return out.toString();
+    }
+
+    public static byte[] base64Decode(String input) {
+        if (input == null || input.isEmpty()) {
+            return new byte[0];
+        }
+        ByteArrayOutputStream out = new ByteArrayOutputStream((input.length() * 3) / 4);
+        int buffer = 0;
+        int bitsCollected = 0;
+        for (int i = 0; i < input.length(); i++) {
+            char c = input.charAt(i);
+            if (c == '=') {
+                break;
+            }
+            if (c >= 128) {
+                continue;
+            }
+            int val = BASE64_DECODE_TABLE[c];
+            if (val < 0) {
+                continue;
+            }
+            buffer = (buffer << 6) | val;
+            bitsCollected += 6;
+            if (bitsCollected >= 8) {
+                bitsCollected -= 8;
+                out.write((buffer >>> bitsCollected) & 0xFF);
+            }
+        }
+        return out.toByteArray();
+    }
+
     public static String rsaEncryptBase64(String plainText, String publicKeyBase64) {
         if (plainText == null || publicKeyBase64 == null) {
             return "";
         }
         try {
-            byte[] keyBytes = Base64.getMimeDecoder().decode(publicKeyBase64);
+            byte[] keyBytes = base64Decode(publicKeyBase64);
             X509EncodedKeySpec keySpec = new X509EncodedKeySpec(keyBytes);
             KeyFactory keyFactory = KeyFactory.getInstance("RSA");
             PublicKey publicKey = keyFactory.generatePublic(keySpec);
             Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
             cipher.init(Cipher.ENCRYPT_MODE, publicKey);
             byte[] encrypted = cipher.doFinal(plainText.getBytes(StandardCharsets.UTF_8));
-            return Base64.getEncoder().encodeToString(encrypted);
+            return base64Encode(encrypted);
         } catch (Throwable ignored) {
             return "";
         }
@@ -379,13 +448,13 @@ public final class JCoreCrypto {
             return "";
         }
         try {
-            byte[] keyBytes = Base64.getMimeDecoder().decode(privateKeyBase64);
+            byte[] keyBytes = base64Decode(privateKeyBase64);
             PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(keyBytes);
             KeyFactory keyFactory = KeyFactory.getInstance("RSA");
             PrivateKey privateKey = keyFactory.generatePrivate(keySpec);
             Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
             cipher.init(Cipher.DECRYPT_MODE, privateKey);
-            byte[] decrypted = cipher.doFinal(Base64.getMimeDecoder().decode(cipherBase64));
+            byte[] decrypted = cipher.doFinal(base64Decode(cipherBase64));
             return new String(decrypted, StandardCharsets.UTF_8);
         } catch (Throwable ignored) {
             return "";

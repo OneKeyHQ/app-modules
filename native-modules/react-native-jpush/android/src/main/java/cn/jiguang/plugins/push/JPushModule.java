@@ -210,7 +210,7 @@ public class JPushModule extends ReactContextBaseJavaModule {
         ReadableArray readableArray = readableMap.getArray(JConstants.PUSH_TIME_DAYS);
         int startHour = readableMap.getInt(JConstants.PUSH_TIME_START_HOUR);
         int endHour = readableMap.getInt(JConstants.PUSH_TIME_END_HOUR);
-        if (readableArray == null || startHour == 0 || endHour == 0) {
+        if (readableArray == null || startHour < 0 || startHour > 23 || endHour < 0 || endHour > 23) {
             JLogger.w(JConstants.PARAMS_NULL);
             return;
         }
@@ -236,7 +236,8 @@ public class JPushModule extends ReactContextBaseJavaModule {
         int startMinute = readableMap.getInt(JConstants.SILENCE_TIME_START_MINUTE);
         int endHour = readableMap.getInt(JConstants.SILENCE_TIME_END_HOUR);
         int endMinute = readableMap.getInt(JConstants.SILENCE_TIME_END_MINUTE);
-        if (startHour == 0 || startMinute == 0 || endHour == 0 || endMinute == 0) {
+        if (startHour < 0 || startHour > 23 || startMinute < 0 || startMinute > 59
+            || endHour < 0 || endHour > 23 || endMinute < 0 || endMinute > 59) {
             JLogger.w(JConstants.PARAMS_NULL);
             return;
         }
@@ -609,7 +610,8 @@ public class JPushModule extends ReactContextBaseJavaModule {
 
     @ReactMethod
     public void requestPermission() {
-        JPushInterface.requestPermission(reactContext);
+        Activity current = getCurrentActivity();
+        JPushInterface.requestPermission(current != null ? current : reactContext);
     }
 
     @ReactMethod
