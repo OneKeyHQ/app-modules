@@ -77,9 +77,9 @@ OkHttp 4.12.0 recovery requires retry enabled, a recoverable exception and an
 available recovery route; once sending started, one-shot bodies and
 `FileNotFoundException` prevent recovery. Protocol errors, sent-request
 interruptions/timeouts and certificate-verification failures are not recovered.
-408 follow-up requires retry enabled, a replayable body, an immediately
-preceding response other than 408, and parsed `Retry-After <= 0` (missing means
-zero). 503 requires the immediately preceding response not to be 503 and parsed
+408 follow-up requires retry enabled, a replayable body, the immediately
+preceding response (if any) not to be 408, and parsed `Retry-After <= 0` (missing
+means zero). 503 requires the immediately preceding response (if any) not to be 503 and parsed
 `Retry-After == 0` (missing means no immediate follow-up), without checking
 the retry flag; the common follow-up exit still rejects one-shot bodies.
 Non-numeric values do not request an immediate follow-up. These conditions are
