@@ -19,9 +19,16 @@ yarn workspace @onekeyfe/react-native-jpush typecheck
 yarn workspace @onekeyfe/react-native-jpush lint
 yarn workspace @onekeyfe/react-native-jpush test
 
-# Native iOS & Android E2E protocol verification (uses non-production demo key 1f2027d3cfb1b51dac664c42)
+# Resolve JUnit dependencies and run the core/FCM module suites
+(cd example/react-native/android && ./gradlew :onekeyfe_react-native-jpush:testDebugUnitTest :onekey-jpush-fcm:testDebugUnitTest)
+
+# macOS: native host build/protocol regressions (loopback servers and isolated RN/Android shims)
 python3 native-modules/react-native-jpush/scripts/verify_clean_sdk.py
 ```
+
+Java and Objective-C host fixtures live in `tests/android` and `tests/ios`; Python only builds, runs and checks artifacts. Android host tests use real JUnit 4.13.2 from the Gradle dependency cache. The FCM Gradle suite uses Robolectric and real Firebase message/task types, with mocked external token requests. These checks do not establish physical-device or cloud delivery.
+
+The external Jiguang sandbox register/login test is explicitly skipped by default. Set `JPUSH_LIVE_TESTS=1` when running either Android test entry to enable it; then all network/protocol/assertion failures fail the test. CI runs both host suites plus Gradle FCM tests. A manual `native-tests` workflow can enable the same cloud check with `jpush_live_cloud`.
 
 ## Android Google / FCM source transport
 

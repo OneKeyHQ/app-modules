@@ -107,6 +107,7 @@ android {
   testOptions {
     unitTests.returnDefaultValues = true
     unitTests.all {
+      inputs.property("jpushLiveTests", System.getenv("JPUSH_LIVE_TESTS") ?: "0")
       testLogging {
         events "passed", "skipped", "failed", "standardOut", "standardError"
         outputs.upToDateWhen { false }

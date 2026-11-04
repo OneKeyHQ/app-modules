@@ -170,6 +170,13 @@ Status: `Implemented` in clean-room Objective-C/Swift (iOS) and Java/Kotlin (And
 
 ## 5.9 Conformance and acceptance
 
+### Native test sources and execution (`Implemented`)
+- Java, Objective-C and header fixtures live in native source files under `tests/android` and `tests/ios`. Python remains a build/execution and artifact-validation launcher; it must not embed native source strings. Host Android tests use real JUnit with explicitly isolated Android/RN shims; Mac Catalyst tests use the existing Objective-C runner. Both host suites run in CI alongside the existing Gradle JUnit and Simulator XCTest suites.
+- External Jiguang handshake testing is opt-in with `JPUSH_LIVE_TESTS=1`. The default JUnit result is explicitly skipped. Once enabled, network, malformed-response, nonzero status and assertion failures must fail the test; no broad exception catch may convert them to a pass. Deterministic regressions verify the handshake failure contract without external access.
+- The optional `android/fcm` module has a separate Gradle JUnit/Robolectric suite linked by the example Gradle test host and required by CI report checks. It executes the production manager/service with real Firebase message/task types, mocks the external token provider, and verifies success/failure/rotation, stopped/auth guards, metadata/notification/custom conversion, bounded malformed payload handling, notification click intents and diagnostic privacy. Robolectric and mocked providers do not establish FCM cloud delivery; physical-device acceptance remains separate.
+- Production transport, JS/Nitro APIs and native logger behavior remain unchanged by this test-only work.
+- Post-change audit: native fixture extraction preserves the Objective-C runner byte-for-byte and retains the Java host regression sequence. Local validation passed for the Java host suites, all six Mac Catalyst suites, eight deterministic Gradle core cases (one external test explicitly skipped), seventeen FCM Robolectric cases, and an explicitly enabled real Jiguang register/login handshake. The test contract and CI wiring changed; production transport and logging contracts did not. Firebase cloud delivery remains a separate physical-device acceptance gate.
+
 ### Source Locations
 - Nitro Spec & JS API: `src/ReactNativeJpush.nitro.ts`, `src/index.tsx`
 - iOS Implementation: `ios/ReactNativeJpush.swift`, `ios/include/*.h`, `ios/jcore/*.{h,m}`, `ios/jpush/*.{h,m}`, `ios/bridge/*.{h,m}`
