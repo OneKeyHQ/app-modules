@@ -100,7 +100,7 @@ class TextInputViewPasteTest {
     ClipData(ClipDescription("uri", arrayOf("text/uri-list")), ClipData.Item(uri))
 
   private class TestReactContext(base: Context) : BridgeReactContext(base) {
-    override fun <T : NativeModule?> getNativeModule(nativeModuleInterface: Class<T>): T? = null
+    override fun <T : NativeModule> getNativeModule(nativeModuleInterface: Class<T>): T? = null
   }
 
   private class MimeProvider(private val mime: String?) : ContentProvider() {

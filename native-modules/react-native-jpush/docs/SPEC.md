@@ -141,6 +141,9 @@ Status: `Implemented` in clean-room Objective-C/Swift (iOS) and Java/Kotlin (And
   - Unexpected disconnects trigger exponential backoff reconnect (`3s * 2^attempt`, capped at `120s`), reset on network reachability recovery (`NWPathMonitor` / `ConnectivityManager`) or foreground transition.
 - **Request Timeouts**:
   - Each in-flight `rid` request starts a `10s` timeout timer (resolving with `6002` timeout if unacknowledged). Android `ThirdToken (cmd=27)` retries up to 3 times before reporting failure.
+- **Native Logging & Privacy Redaction (`@onekeyfe/react-native-native-logger`)**:
+  - Both iOS (`JCOREConfiguration` / `RCTJPushModule` / `JCORETcpSession` / `ReactNativeJpush`) and Android (`JLogger` / `JPushModuleReceiver` / `JPushHelper` / `JCoreTcpEngine` / `ReactNativeJpush`) emit diagnostic logs through `OneKeyLog` (`tag = "RN-JPush"`) by default.
+  - Logs strictly redact sensitive payloads: notification `title`, `content` / `alert`, and `extras` are never logged (only non-sensitive metadata such as `notificationEventType` and `messageID` is emitted), and user-identifying fields (`alias`, `tags`, `properties`, `mobileNumber`, `password`, device tokens) are excluded from log output. Non-sensitive identifiers (`registrationID`, `uid`, `sequence`, `code`, `cmd`, `rid`, `statusCode`) are logged for diagnostics.
 
 ---
 
