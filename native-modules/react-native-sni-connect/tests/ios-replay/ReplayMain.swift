@@ -21,30 +21,34 @@ struct ReplayMain {
       func config(path: String, method: String, body: String?) -> SniConnectClient.RequestConfig {
         SniConnectClient.RequestConfig(
           requestId: nil, ip: "93.184.216.34", hostname: "sni-replay.local",
-          method: method, path: path, headers: [:], body: body, timeout: 4000,
-          connectTimeout: 1000, totalTimeout: nil
+          method: method, path: path, headers: [:], body: body, timeout: 15000,
+          connectTimeout: 5000, totalTimeout: nil
         )
       }
-      if warm {
+      if warm || bodyMode == "warmup-only" {
         let response = try await client.performRequest(config: config(path: "/warm", method: "GET", body: nil))
         guard response.status == 200 && response.data == "warm" else {
           throw NSError(domain: "SniReplayWarmup", code: response.status)
         }
         result["warmStatus"] = response.status
       }
-      var request = config(
-        path: "/target", method: method,
-        body: bodyMode == "none" || bodyMode == "file" ? nil : (bodyMode == "empty" ? "" : "demo")
-      )
-      if bodyMode == "file" { request.bodyFileURL = URL(fileURLWithPath: filePath) }
-      do {
-        let response = try await client.performRequest(config: request)
-        result["status"] = response.status
-        result["data"] = response.data
-        result["headers"] = response.headers
-      } catch {
-        result["requestError"] = String(describing: error)
-        result["requestErrorCode"] = (error as? SniConnectClient.SniConnectError)?.code ?? "unclassified"
+      if bodyMode == "warmup-only" {
+        result["preflight"] = true
+      } else {
+        var request = config(
+          path: "/target", method: method,
+          body: bodyMode == "none" || bodyMode == "file" ? nil : (bodyMode == "empty" ? "" : "demo")
+        )
+        if bodyMode == "file" { request.bodyFileURL = URL(fileURLWithPath: filePath) }
+        do {
+          let response = try await client.performRequest(config: request)
+          result["status"] = response.status
+          result["data"] = response.data
+          result["headers"] = response.headers
+        } catch {
+          result["requestError"] = String(describing: error)
+          result["requestErrorCode"] = (error as? SniConnectClient.SniConnectError)?.code ?? "unclassified"
+        }
       }
     } catch {
       result["fixtureError"] = String(describing: error)

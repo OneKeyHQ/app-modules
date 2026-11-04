@@ -89,6 +89,14 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
           xcodebuild -version
           xcodebuild -version | grep -F 'Xcode 26.6'
+      - name: Start preinstalled SNI simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/sni-replay/native"
+          python3 native-modules/react-native-sni-connect/tests/ios-replay/run.py \
+            --output-dir "$RUNNER_TEMP/sni-replay/native" --prepare-ci-device \
+            2>&1 | tee "$RUNNER_TEMP/sni-replay/preparation.log"
       - name: Install verified Kotlin 2.3.21 compiler
         run: |
           curl -fsSLo "$RUNNER_TEMP/kotlin-compiler.zip" https://github.com/JetBrains/kotlin/releases/download/v2.3.21/kotlin-compiler-2.3.21.zip
@@ -182,15 +190,13 @@ jobs:
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/sni-replay"
           python3 native-modules/react-native-sni-connect/tests/ios-replay/package_test.py \
-            --output-dir "$RUNNER_TEMP/sni-replay" --clone-preinstalled-device 2>&1 | tee "$RUNNER_TEMP/sni-replay/ci.log"
-      - name: Shut down the dedicated SNI simulator
+            --output-dir "$RUNNER_TEMP/sni-replay" --ci-prepared-device 2>&1 | tee "$RUNNER_TEMP/sni-replay/ci.log"
+      - name: Clean up suite-owned SNI simulator boot
         if: always()
         shell: bash
         run: |
-          if [[ -f "$RUNNER_TEMP/sni-replay/native/device.json" ]]; then
-            udid=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["udid"])' "$RUNNER_TEMP/sni-replay/native/device.json")
-            xcrun simctl --set "$RUNNER_TEMP/sni-replay/native/devices" shutdown "$udid" || true
-          fi
+          python3 native-modules/react-native-sni-connect/tests/ios-replay/run.py \
+            --output-dir "$RUNNER_TEMP/sni-replay/native" --cleanup-device
       - name: Upload packaged iOS SNI replay evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -200,8 +206,7 @@ jobs:
             ${{ runner.temp }}/sni-replay/*.log
             ${{ runner.temp }}/sni-replay/*summary.json
             ${{ runner.temp }}/sni-replay/native/*.log
-            ${{ runner.temp }}/sni-replay/native/results.json
-            ${{ runner.temp }}/sni-replay/native/summary.json
+            ${{ runner.temp }}/sni-replay/native/*.json
           if-no-files-found: warn
       - name: Upload SwiftPM logs on failure
         if: failure()

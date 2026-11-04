@@ -132,14 +132,18 @@ end
   that same package and verified dependency for all 15 native TLS cases.
   Runtime/device and host architecture are discovered from available simulator
   inventory; a missing runtime fails rather than skipping. GitHub-hosted CI
-  clones an available, shut-down preinstalled iPhone with the public `simctl
-  clone` command into its dedicated temporary device set, reusing its data while
-  retaining isolation. Actual boot timing and source state are recorded; a
-  preinstalled device is not assumed to have completed initialization. The
-  source device is never booted, erased or shut down.
-  Local runs still create only their dedicated external device set. The suite
-  shuts down only its own device after execution. Downloads may be
-  cached; patched sources, builds and simulator data MUST NOT be cached.
+  starts an available preinstalled iPhone immediately after selecting Xcode,
+  overlapping its boot with existing host suites. It records the initial state
+  and whether this suite started the boot; cleanup shuts down only a boot owned
+  by this suite. Local runs still use only their dedicated external device set.
+  Readiness remains bounded by 180 seconds. Downloads may be cached; device
+  data and builds MUST NOT be cached.
+- One separate native-process preflight performs only a real GET `/warm` before
+  the formal 15 cases; it must succeed and is not included in their count or
+  connection pools. Fixture-only HTTP/connect/socket/process deadlines allow
+  slower CI hosts without changing SDK defaults or retrying a target request.
+  A timed-out native process preserves partial logs and server counters, stops
+  subsequent cases and fails the exact-count gate before owned-device cleanup.
 - The existing `native-overlay-package` job runs all 14 Node consumer cases
   against App commit `326854b4ba1997e06e713f12b6604f0a0f6fe165`. Only three real
   TypeScript source files are loaded from that read-only checkout. Existing
