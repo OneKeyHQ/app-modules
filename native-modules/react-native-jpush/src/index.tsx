@@ -651,7 +651,9 @@ export default class JPush {
     }
     const nitro = getNitroModule();
     if (nitro) {
-      callback(Boolean(nitro.isNotificationEnabled()));
+      nitro.isNotificationEnabled((enabled: boolean) => {
+        callback(Boolean(enabled));
+      });
       return;
     }
     const legacy = getLegacyJPushModule();

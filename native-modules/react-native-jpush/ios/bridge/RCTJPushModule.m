@@ -873,12 +873,19 @@ RCT_EXPORT_METHOD(addNotification:(NSDictionary *)params) {
 RCT_EXPORT_METHOD(removeNotification:(NSDictionary *)params) {
     NSString *requestIdentifier = params[MESSAGE_ID];
     if ([requestIdentifier isKindOfClass:[NSString class]]) {
-        JPushNotificationIdentifier *identifier = [[JPushNotificationIdentifier alloc] init];
-        identifier.identifiers = @[requestIdentifier];
+        JPushNotificationIdentifier *pendingIdentifier = [[JPushNotificationIdentifier alloc] init];
+        pendingIdentifier.identifiers = @[requestIdentifier];
         if (@available(iOS 10.0, *)) {
-            identifier.delivered = YES;
+            pendingIdentifier.delivered = NO;
         }
-        [JPUSHService removeNotification:identifier];
+        [JPUSHService removeNotification:pendingIdentifier];
+
+        JPushNotificationIdentifier *deliveredIdentifier = [[JPushNotificationIdentifier alloc] init];
+        deliveredIdentifier.identifiers = @[requestIdentifier];
+        if (@available(iOS 10.0, *)) {
+            deliveredIdentifier.delivered = YES;
+        }
+        [JPUSHService removeNotification:deliveredIdentifier];
     }
 }
 

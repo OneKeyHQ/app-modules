@@ -120,9 +120,10 @@ class ReactNativeJpush : HybridReactNativeJpushSpec() {
     return JPushInterface.getRegistrationID(ctx) ?: ""
   }
 
-  override fun isNotificationEnabled(): Boolean {
+  override fun isNotificationEnabled(callback: (enabled: Boolean) -> Unit) {
     val ctx = getAppContext()
-    return JPushInterface.isNotificationEnabled(ctx) == 1
+    val enabled = if (ctx != null) JPushInterface.isNotificationEnabled(ctx) == 1 else false
+    callback(enabled)
   }
 
   override fun addTags(sequence: Double, tags: Array<String>) {

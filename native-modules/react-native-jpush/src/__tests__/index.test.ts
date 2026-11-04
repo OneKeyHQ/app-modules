@@ -13,7 +13,7 @@ const mockHybridObject = {
   resumePush: jest.fn(),
   isPushStopped: jest.fn(() => false),
   getRegistrationID: jest.fn(() => '1a0018970a900100200'),
-  isNotificationEnabled: jest.fn(() => true),
+  isNotificationEnabled: jest.fn((cb: (enabled: boolean) => void) => cb(true)),
   addTags: jest.fn(),
   setTags: jest.fn(),
   deleteTags: jest.fn(),
@@ -147,6 +147,11 @@ describe('@onekeyfe/react-native-jpush JS & Nitro API contract', () => {
     expect(callback).toHaveBeenCalledWith({
       registerID: '1a0018970a900100200',
     });
+
+    const notifEnabledCallback = jest.fn();
+    JPush.isNotificationEnabled(notifEnabledCallback);
+    expect(mockHybridObject.isNotificationEnabled).toHaveBeenCalledTimes(1);
+    expect(notifEnabledCallback).toHaveBeenCalledWith(true);
   });
 
   it('dispatches tag, alias, properties, badge, and mobile number calls to Nitro', () => {

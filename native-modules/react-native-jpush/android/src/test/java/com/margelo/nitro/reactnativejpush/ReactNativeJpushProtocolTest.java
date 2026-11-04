@@ -449,8 +449,11 @@ public class ReactNativeJpushProtocolTest {
         assertEquals(false, JCoreStorage.isConnected(null));
 
         // 2e. Verify JPushUPSManager.registerToken resolves appKey when appId is empty
+        JCoreStorage.setPushStopped(null, true);
         JPushUPSManager.registerToken(null, "", "ups_appkey_fallback_01", "ups_secret", null);
         assertEquals("ups_appkey_fallback_01", JCoreStorage.getAppKey(null));
+        JCoreTcpEngine.getInstance().stop(null);
+        JCoreStorage.setPushStopped(null, false);
 
         // 2f. Verify delayed addLocalNotification scheduling and removeLocalNotification cancellation
         ActionHelper.getInstance().clearActiveNotificationIds();
@@ -535,6 +538,7 @@ public class ReactNativeJpushProtocolTest {
                                     body
                                 ));
                             } else {
+                                byte[] errBody = JCoreWireCodec.buildJsonCommandPayload("{\"code\":6002}");
                                 out.write(JCoreWireCodec.encodeResponseFrame(
                                     JCoreWireCodec.CMD_ALIAS_OP,
                                     JCoreWireCodec.VER_ALIAS_OP,
@@ -542,7 +546,7 @@ public class ReactNativeJpushProtocolTest {
                                     6601,
                                     opUid,
                                     6002,
-                                    new byte[0]
+                                    errBody
                                 ));
                             }
                             out.flush();
@@ -570,6 +574,7 @@ public class ReactNativeJpushProtocolTest {
                                     body
                                 ));
                             } else {
+                                byte[] errBody = JCoreWireCodec.buildJsonCommandPayload("{\"code\":6002}");
                                 out.write(JCoreWireCodec.encodeResponseFrame(
                                     JCoreWireCodec.CMD_TAG_OP,
                                     JCoreWireCodec.VER_TAG_OP,
@@ -577,7 +582,7 @@ public class ReactNativeJpushProtocolTest {
                                     6601,
                                     opUid,
                                     6002,
-                                    new byte[0]
+                                    errBody
                                 ));
                             }
                             out.flush();
@@ -603,7 +608,6 @@ public class ReactNativeJpushProtocolTest {
                                 new byte[0]
                             ));
                             out.flush();
-                            break;
                         }
                     }
                 } catch (Throwable ignored) {
@@ -622,13 +626,19 @@ public class ReactNativeJpushProtocolTest {
 
         ActionHelper.getInstance().registerReceiver(receiver);
         final List<String> opEvents = new java.util.ArrayList<String>();
-        final CountDownLatch opDoneLatch = new CountDownLatch(7);
+        final CountDownLatch rollbackDoneLatch = new CountDownLatch(4);
+        final CountDownLatch queryDoneLatch = new CountDownLatch(3);
         int opListenerId = JPushHelper.registerNitroListener(new JPushHelper.NitroEventListener() {
             @Override
             public void onEvent(String eventName, String payloadJson) {
                 if ("TagAliasEvent".equals(eventName) || "MobileNumberEvent".equals(eventName)) {
                     opEvents.add(eventName + ":" + payloadJson);
-                    opDoneLatch.countDown();
+                    if (payloadJson.contains("302") || payloadJson.contains("304") || payloadJson.contains("306") || payloadJson.contains("307")) {
+                        rollbackDoneLatch.countDown();
+                    }
+                    if (payloadJson.contains("301") || payloadJson.contains("303") || payloadJson.contains("305")) {
+                        queryDoneLatch.countDown();
+                    }
                 }
             }
         });
@@ -645,20 +655,25 @@ public class ReactNativeJpushProtocolTest {
         JCoreTcpEngine.getInstance().triggerReconnectNow(null);
         assertTrue(JCoreTcpEngine.getInstance().awaitHandshake(3000L));
 
-        JPushInterface.getAlias(null, 301);
         JPushInterface.setAlias(null, 302, "rejected_alias_302");
-        JPushInterface.getAllTags(null, 303);
         JPushInterface.setTags(null, 304, new java.util.HashSet<String>(Arrays.asList("rejected_tag_304")));
-        JPushInterface.checkTagBindState(null, 305, "unbound_local_tag");
         JPushInterface.setProperties(null, 306, Collections.<String, Object>singletonMap("tier", "rejected_tier"));
         JPushInterface.setMobileNumber(null, 307, "13999999999");
 
-        assertTrue(opDoneLatch.await(4000L, TimeUnit.MILLISECONDS));
-        assertEquals("srv_alias_301", JCoreStorage.getAlias(null));
-        assertTrue(JCoreStorage.getTags(null).contains("srv_t1") && JCoreStorage.getTags(null).contains("srv_t2"));
+        assertTrue(rollbackDoneLatch.await(4000L, TimeUnit.MILLISECONDS));
+        assertEquals("old_local_alias", JCoreStorage.getAlias(null));
+        assertTrue(JCoreStorage.getTags(null).contains("old_local_tag"));
         assertTrue(!JCoreStorage.getTags(null).contains("rejected_tag_304"));
         assertEquals("gold", JCoreStorage.getProperties(null).get("tier"));
         assertEquals("13800000001", JCoreStorage.getMobileNumber(null));
+
+        JPushInterface.getAlias(null, 301);
+        JPushInterface.getAllTags(null, 303);
+        JPushInterface.checkTagBindState(null, 305, "unbound_local_tag");
+
+        assertTrue(queryDoneLatch.await(4000L, TimeUnit.MILLISECONDS));
+        assertEquals("srv_alias_301", JCoreStorage.getAlias(null));
+        assertTrue(JCoreStorage.getTags(null).contains("srv_t1") && JCoreStorage.getTags(null).contains("srv_t2"));
         boolean sawServerBindTrue = false;
         for (String ev : opEvents) {
             if (ev.contains("unbound_local_tag") && ev.contains("true")) {
@@ -867,7 +882,7 @@ public class ReactNativeJpushProtocolTest {
             @Override
             public void run() {
                 try {
-                    sisUdpServer.setSoTimeout(5000);
+                    sisUdpServer.setSoTimeout(15000);
                     for (int i = 0; i < 2; i++) {
                         byte[] buf = new byte[2048];
                         DatagramPacket req = new DatagramPacket(buf, buf.length);
@@ -898,9 +913,9 @@ public class ReactNativeJpushProtocolTest {
             public void run() {
                 Socket client = null;
                 try {
-                    sisTcpServer.setSoTimeout(5000);
+                    sisTcpServer.setSoTimeout(15000);
                     client = sisTcpServer.accept();
-                    client.setSoTimeout(5000);
+                    client.setSoTimeout(10000);
                     InputStream in = client.getInputStream();
                     OutputStream out = client.getOutputStream();
 

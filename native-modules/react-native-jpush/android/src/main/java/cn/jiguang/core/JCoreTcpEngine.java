@@ -380,19 +380,31 @@ public final class JCoreTcpEngine {
 
     public void start(final Context context) {
         JCoreStorage.setAppContext(context);
+        final long startGen;
+        final CountDownLatch latchForStart;
         synchronized (this) {
             if (started) {
                 return;
             }
             started = true;
             handshakeLatch = new CountDownLatch(1);
+            startGen = this.connectionGeneration;
+            latchForStart = this.handshakeLatch;
+        }
+        if (JCoreStorage.isPushStopped(JCoreStorage.getAppContext(context))) {
+            latchForStart.countDown();
+            return;
         }
         ioExecutor.execute(new Runnable() {
             @Override
             public void run() {
+                if (!started || startGen != connectionGeneration) {
+                    latchForStart.countDown();
+                    return;
+                }
                 Context app = JCoreStorage.getAppContext(context);
-                if (app != null && JCoreStorage.isPushStopped(app)) {
-                    handshakeLatch.countDown();
+                if (JCoreStorage.isPushStopped(app)) {
+                    latchForStart.countDown();
                     return;
                 }
                 connectAndHandshake(app);
@@ -401,14 +413,22 @@ public final class JCoreTcpEngine {
     }
 
     public void triggerReconnectNow(final Context context) {
+        final long reconnectGen;
+        final CountDownLatch latchForReconnect;
         synchronized (this) {
             closeSocket();
             this.started = true;
             this.handshakeLatch = new CountDownLatch(1);
+            reconnectGen = this.connectionGeneration;
+            latchForReconnect = this.handshakeLatch;
         }
         ioExecutor.execute(new Runnable() {
             @Override
             public void run() {
+                if (!started || reconnectGen != connectionGeneration) {
+                    latchForReconnect.countDown();
+                    return;
+                }
                 connectAndHandshake(JCoreStorage.getAppContext(context));
             }
         });
@@ -563,21 +583,23 @@ public final class JCoreTcpEngine {
                 if (this.started && this.autoReconnectEnabled && !JCoreStorage.isPushStopped(context)) {
                     final long delayMs = computeReconnectDelayMs(reconnectAttempt++, reconnectBaseDelayMs);
                     final long scheduledGen = this.connectionGeneration;
-                    ioExecutor.execute(new Runnable() {
+                    heartbeatExecutor.schedule(new Runnable() {
                         @Override
                         public void run() {
-                            try {
-                                Thread.sleep(delayMs);
-                            } catch (InterruptedException e) {
-                                Thread.currentThread().interrupt();
-                                return;
-                            }
                             if (!started || scheduledGen != connectionGeneration || loggedIn || JCoreStorage.isPushStopped(context)) {
                                 return;
                             }
-                            connectAndHandshake(context);
+                            ioExecutor.execute(new Runnable() {
+                                @Override
+                                public void run() {
+                                    if (!started || scheduledGen != connectionGeneration || loggedIn || JCoreStorage.isPushStopped(context)) {
+                                        return;
+                                    }
+                                    connectAndHandshake(context);
+                                }
+                            });
                         }
-                    });
+                    }, delayMs, TimeUnit.MILLISECONDS);
                 } else {
                     this.reconnectAttempt++;
                 }
@@ -879,12 +901,14 @@ public final class JCoreTcpEngine {
             }
         } catch (Throwable ignored) {
         } finally {
-            cancelHeartbeatTimer();
-            boolean wasLoggedIn = this.loggedIn;
-            this.loggedIn = false;
+            boolean wasCurrentSocket = false;
+            boolean wasLoggedIn = false;
             boolean droppedUnexpectedly = false;
             synchronized (socketLock) {
                 if (this.activeSocket == socket) {
+                    wasCurrentSocket = true;
+                    wasLoggedIn = this.loggedIn;
+                    this.loggedIn = false;
                     droppedUnexpectedly = !socket.isClosed();
                     try {
                         socket.close();
@@ -894,31 +918,36 @@ public final class JCoreTcpEngine {
                     this.activeOutput = null;
                 }
             }
-            if (wasLoggedIn) {
-                JCoreStorage.setConnected(context, false);
-            }
-            for (ResponseSlot slot : pendingRequests.values()) {
-                slot.complete(null);
-            }
-            pendingRequests.clear();
-            if (wasLoggedIn && autoReconnectEnabled && droppedUnexpectedly && !JCoreStorage.isPushStopped(context)) {
-                final long delayMs = computeReconnectDelayMs(reconnectAttempt++, reconnectBaseDelayMs);
-                final long scheduledGen = this.connectionGeneration;
-                ioExecutor.execute(new Runnable() {
-                    @Override
-                    public void run() {
-                        try {
-                            Thread.sleep(delayMs);
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                            return;
+            if (wasCurrentSocket) {
+                cancelHeartbeatTimer();
+                if (wasLoggedIn) {
+                    JCoreStorage.setConnected(context, false);
+                }
+                for (ResponseSlot slot : pendingRequests.values()) {
+                    slot.complete(null);
+                }
+                pendingRequests.clear();
+                if (wasLoggedIn && autoReconnectEnabled && droppedUnexpectedly && !JCoreStorage.isPushStopped(context)) {
+                    final long delayMs = computeReconnectDelayMs(reconnectAttempt++, reconnectBaseDelayMs);
+                    final long scheduledGen = this.connectionGeneration;
+                    heartbeatExecutor.schedule(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (!started || scheduledGen != connectionGeneration || loggedIn || JCoreStorage.isPushStopped(context)) {
+                                return;
+                            }
+                            ioExecutor.execute(new Runnable() {
+                                @Override
+                                public void run() {
+                                    if (!started || scheduledGen != connectionGeneration || loggedIn || JCoreStorage.isPushStopped(context)) {
+                                        return;
+                                    }
+                                    connectAndHandshake(context);
+                                }
+                            });
                         }
-                        if (!started || scheduledGen != connectionGeneration || loggedIn || JCoreStorage.isPushStopped(context)) {
-                            return;
-                        }
-                        connectAndHandshake(context);
-                    }
-                });
+                    }, delayMs, TimeUnit.MILLISECONDS);
+                }
             }
         }
     }

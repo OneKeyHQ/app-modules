@@ -10,7 +10,7 @@ export interface ReactNativeJpush
   resumePush(): void;
   isPushStopped(): boolean;
   getRegistrationID(): string;
-  isNotificationEnabled(): boolean;
+  isNotificationEnabled(callback: (enabled: boolean) => void): void;
 
   addTags(sequence: number, tags: string[]): void;
   setTags(sequence: number, tags: string[]): void;

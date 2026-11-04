@@ -81,15 +81,11 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
     return JPUSHService.registrationID() ?? ""
   }
 
-  func isNotificationEnabled() throws -> Bool {
-    let semaphore = DispatchSemaphore(value: 0)
-    var enabled = false
+  func isNotificationEnabled(callback: @escaping (_ enabled: Bool) -> Void) throws {
     JPUSHNotificationManager.shared().getAuthorizationStatus { status in
-      enabled = status.rawValue > JPAuthorizationStatus.statusDenied.rawValue
-      semaphore.signal()
+      let enabled = status.rawValue > JPAuthorizationStatus.statusDenied.rawValue
+      callback(enabled)
     }
-    _ = semaphore.wait(timeout: .now() + .milliseconds(500))
-    return enabled
   }
 
   func addTags(sequence: Double, tags: [String]) throws {
@@ -360,10 +356,15 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
 
   func removeLocalNotification(messageID: String) throws {
     guard !messageID.isEmpty else { return }
-    let identifier = JPushNotificationIdentifier()
-    identifier.identifiers = [messageID]
-    identifier.delivered = true
-    JPUSHService.removeNotification(identifier)
+    let pendingIdentifier = JPushNotificationIdentifier()
+    pendingIdentifier.identifiers = [messageID]
+    pendingIdentifier.delivered = false
+    JPUSHService.removeNotification(pendingIdentifier)
+
+    let deliveredIdentifier = JPushNotificationIdentifier()
+    deliveredIdentifier.identifiers = [messageID]
+    deliveredIdentifier.delivered = true
+    JPUSHService.removeNotification(deliveredIdentifier)
   }
 
   func clearLocalNotifications() throws {
@@ -376,10 +377,15 @@ class ReactNativeJpush: HybridReactNativeJpushSpec {
 
   func clearNotificationById(notificationId: Double) throws {
     let idStr = String(Int(notificationId))
-    let identifier = JPushNotificationIdentifier()
-    identifier.identifiers = [idStr]
-    identifier.delivered = true
-    JPUSHService.removeNotification(identifier)
+    let pendingIdentifier = JPushNotificationIdentifier()
+    pendingIdentifier.identifiers = [idStr]
+    pendingIdentifier.delivered = false
+    JPUSHService.removeNotification(pendingIdentifier)
+
+    let deliveredIdentifier = JPushNotificationIdentifier()
+    deliveredIdentifier.identifiers = [idStr]
+    deliveredIdentifier.delivered = true
+    JPUSHService.removeNotification(deliveredIdentifier)
   }
 
   func requestPermission() throws {
