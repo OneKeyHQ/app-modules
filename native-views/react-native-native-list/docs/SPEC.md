@@ -324,7 +324,9 @@ label. "After the title" means directly after the title text: the title row
 packs at its start on every platform (Android `PackedTitleLineLayout`, Web flex
 `0 1 auto`, iOS a slack-absorbing filler at the end of the title row), so the
 glyph and any badge follow the text and never drift toward the trailing column
-(OK-66041). Its optional Web-only `hoverActionKey` emits an anchored help action
+(OK-66041). The glyph is vertically centered on the title line; on Web the
+`title` text style (including its line clamp) applies to the title text span,
+never to the flex row that carries the glyph (OK-66402). Its optional Web-only `hoverActionKey` emits an anchored help action
 from the icon alone on mouse/pen hover or touch press; the consumer owns the
 tooltip. Mouse/pen press closes the anchor until pointer leave. Touch press
 toggles the icon anchor. The icon adds no tab stop or separate click action;
