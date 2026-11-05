@@ -245,7 +245,15 @@ final class NativeOverlayEntryView: UIView {
     case exiting
   }
 
-  private var phase: Phase = .hidden
+  private var phase: Phase = .hidden {
+    didSet { NativeOverlayWindowManager.shared.setClosing(phase == .exiting || finishing, window: hostWindow) }
+  }
+  private var presentationGeneration = 0
+  private var dismissalGeneration = 0
+  private var invalidated = false
+  private var finishing = false
+  private weak var pendingReopenResponder: UIView?
+  private var activeGlobalLevel: NativeOverlayLevel?
   private weak var contentChild: UIView?
   private var entryView: NativeOverlayEntryView?
   private var sheetController: NativeOverlaySheetController?
@@ -263,7 +271,11 @@ final class NativeOverlayEntryView: UIView {
 
   override public func didMoveToWindow() {
     super.didMoveToWindow()
-    if window != nil {
+    if let window {
+      if let hostWindow, hostWindow.windowScene !== window.windowScene {
+        finishDismiss(reason: "system")
+        return
+      }
       commitConfiguration()
     } else if phase != .hidden && !isPageScope {
       // A page overlay's owner screen leaves the window when another screen
@@ -315,6 +327,11 @@ final class NativeOverlayEntryView: UIView {
   }
 
   @objc public func commitConfiguration() {
+    guard !invalidated else { return }
+    NativeOverlayWindowManager.shared.update(
+      hostWindow, stackOrder: stackOrder,
+      blocking: usesSystemSheet || blocking, visible: visible
+    )
     if parsedConfigSource != animationConfig {
       parsedConfigSource = animationConfig
       config = NativeOverlayAnimationConfig(jsonString: animationConfig)
@@ -326,34 +343,28 @@ final class NativeOverlayEntryView: UIView {
       sheetController.update(style: sheetStyle(), animated: phase == .shown)
     }
     if visible {
+      if !cycleOpen && !isPageScope {
+        activeGlobalLevel = NativeOverlayLevel(rawValue: level)
+      }
       cycleOpen = true
-      if phase == .exiting, usesSystemSheet, let controller = sheetController,
-         controller.cancelHostDismissal(completion: { [weak self, weak controller] in
-           DispatchQueue.main.async {
-             guard let self, self.sheetController === controller, self.phase == .entering else { return }
-             self.phase = .shown
-             self.didPresent()
-             if !self.visible { self.dismissSheet() }
-           }
-         }) {
-        phase = .entering
-      } else if phase == .hidden || (phase == .exiting && !usesSystemSheet) {
+      // A non-interactive UIKit sheet dismissal cannot safely be reversed.
+      // Its completion reconciles the latest desired visibility instead.
+      if phase == .hidden || (phase == .exiting && !usesSystemSheet) {
         present()
       }
     } else if cycleOpen {
       if phase == .entering || phase == .shown {
         dismiss()
       } else if phase == .hidden {
-        cycleOpen = false
-        onDismissed?(["reason": "programmatic"])
+        finishDismiss(reason: "programmatic")
       }
     }
   }
 
   @objc public func invalidate() {
-    if phase != .hidden {
-      finishDismiss(reason: nil)
-    }
+    invalidated = true
+    activeGlobalLevel = nil
+    finishDismiss(reason: nil)
     onPresented = nil
     onDismissed = nil
     onRequestDismiss = nil
@@ -362,7 +373,11 @@ final class NativeOverlayEntryView: UIView {
   // MARK: - Presentation
 
   private func present() {
-    guard let overlayLevel = NativeOverlayLevel(rawValue: level) else { return }
+    guard !invalidated else { return }
+    presentationGeneration += 1
+    let generation = presentationGeneration
+    guard let overlayLevel = isPageScope ? NativeOverlayLevel(rawValue: level)
+      : (activeGlobalLevel ?? NativeOverlayLevel(rawValue: level)) else { return }
     let entry: NativeOverlayEntryView
     if isPageScope {
       guard let pageHost = NativeOverlayPageHostView.host(for: hostKey) else { return }
@@ -373,7 +388,10 @@ final class NativeOverlayEntryView: UIView {
       pageHost.insert(entry)
     } else {
       guard let appWindow = window,
-            let host = NativeOverlayWindowManager.shared.window(for: overlayLevel, appWindow: appWindow)
+            let host = NativeOverlayWindowManager.shared.window(
+              for: self, level: overlayLevel, stackOrder: stackOrder,
+              blocking: usesSystemSheet || blocking, appWindow: appWindow
+            )
       else { return }
       hostWindow = host
       if isSheet {
@@ -418,7 +436,8 @@ final class NativeOverlayEntryView: UIView {
       entry.contentView.transform = .identity
     }
     contentAnimator.addCompletion { [weak self] position in
-      guard let self, position == .end, self.phase == .entering else { return }
+      guard let self, self.presentationGeneration == generation,
+            self.entryView === entry, position == .end, self.phase == .entering else { return }
       self.phase = .shown
       self.didPresent()
     }
@@ -440,6 +459,7 @@ final class NativeOverlayEntryView: UIView {
       return
     }
     stopAnimators()
+    let generation = presentationGeneration
     phase = .exiting
     let transition = config.exit.accessibilityAdjusted
     guard transition.kind != .none else {
@@ -458,7 +478,8 @@ final class NativeOverlayEntryView: UIView {
       entry.contentView.transform = hiddenTransform
     }
     contentAnimator.addCompletion { [weak self] position in
-      guard let self, position == .end, self.phase == .exiting else { return }
+      guard let self, self.presentationGeneration == generation,
+            self.entryView === entry, position == .end, self.phase == .exiting else { return }
       self.finishDismiss(reason: "programmatic")
     }
     let backdrop = config.backdropMotion.makeAnimator()
@@ -471,6 +492,14 @@ final class NativeOverlayEntryView: UIView {
 
   /// `reason == nil` tears down without notifying JS (view invalidated).
   private func finishDismiss(reason: String?) {
+    guard !finishing else { return }
+    if reason != "programmatic" || !visible || invalidated {
+      pendingReopenResponder = nil
+    }
+    finishing = true
+    NativeOverlayWindowManager.shared.setClosing(true, window: hostWindow)
+    presentationGeneration += 1
+    dismissalGeneration += 1
     stopAnimators()
     phase = .hidden
     teardownSheet()
@@ -484,13 +513,20 @@ final class NativeOverlayEntryView: UIView {
     entryView = nil
     stageContent()
     reportContentOffset()
-    NativeOverlayWindowManager.shared.entryRemoved(from: hostWindow)
-    guard let reason, cycleOpen else { return }
+    let removedWindow = hostWindow
+    hostWindow = nil
+    NativeOverlayWindowManager.shared.entryRemoved(from: removedWindow)
+    finishing = false
+    guard let reason, cycleOpen else {
+      activeGlobalLevel = nil
+      return
+    }
     // A reopen at UIKit's completion boundary keeps the same JS entry.
-    if reason == "programmatic", visible, window != nil {
+    if reason == "programmatic", visible, window != nil, !invalidated {
       present()
       return
     }
+    activeGlobalLevel = nil
     cycleOpen = visible
     onDismissed?(["reason": reason])
   }
@@ -564,10 +600,13 @@ final class NativeOverlayEntryView: UIView {
   private func presentSheet(in host: UIWindow) {
     guard sheetController == nil,
           let presenter = NativeOverlayWindowManager.shared.presenter(in: host) else { return }
-    // UIKit refuses to present while another transition runs in this window.
+    let generation = presentationGeneration
+    // Only this entry's root can be transitioning in its private window.
     if presenter.isBeingPresented || presenter.transitionCoordinator != nil {
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-        guard let self, self.visible, self.phase == .hidden else { return }
+        guard let self, self.presentationGeneration == generation,
+              self.hostWindow === host, !self.invalidated,
+              self.visible, self.phase == .hidden else { return }
         self.present()
       }
       return
@@ -577,14 +616,23 @@ final class NativeOverlayEntryView: UIView {
     NativeOverlayDiagnostic.log("stage=present_begin controllerID=\(NativeOverlayDiagnostic.id(controller)) presenterID=\(NativeOverlayDiagnostic.id(presenter))")
     phase = .entering
     presenter.present(controller, animated: true) { [weak self, weak controller] in
-      guard let self, let controller, self.sheetController === controller else { return }
+      guard let self, let controller, self.presentationGeneration == generation,
+            self.sheetController === controller else { return }
       NativeOverlayDiagnostic.log("stage=present_complete controllerID=\(NativeOverlayDiagnostic.id(controller)) visible=\(self.visible) entering=\(self.phase == .entering)")
       if self.phase == .entering {
         self.phase = .shown
         self.didPresent()
       }
       if !self.visible {
+        self.pendingReopenResponder = nil
         self.dismissSheet()
+      } else if let responder = self.pendingReopenResponder {
+        self.pendingReopenResponder = nil
+        if let child = self.contentChild,
+           responder === child || responder.isDescendant(of: child),
+           let window = self.hostWindow {
+          _ = NativeOverlayWindowManager.shared.restoreFocus(responder, in: window)
+        }
       }
     }
   }
@@ -595,16 +643,19 @@ final class NativeOverlayEntryView: UIView {
       return
     }
     NativeOverlayDiagnostic.log("stage=dismiss_request controllerID=\(NativeOverlayDiagnostic.id(controller)) reason=programmatic presenting=\(controller.isBeingPresented) exiting=\(phase == .exiting)")
-    if controller.resumeHostDismissal() {
-      phase = .exiting
-      return
-    }
     // Closing mid-presentation is handled by the present completion.
     guard !controller.isBeingPresented, phase != .exiting else { return }
+    pendingReopenResponder = hostWindow?.isKeyWindow == true
+      ? NativeOverlayWindowManager.firstResponder(in: controller.view) : nil
     phase = .exiting
+    let generation = presentationGeneration
+    dismissalGeneration += 1
+    let dismissal = dismissalGeneration
     controller.dismissRequestedByHost = true
     controller.dismiss(animated: true) { [weak self, weak controller] in
-      guard let self, self.sheetController === controller, self.phase == .exiting else { return }
+      guard let self, self.presentationGeneration == generation,
+            self.dismissalGeneration == dismissal,
+            self.sheetController === controller, self.phase == .exiting else { return }
       NativeOverlayDiagnostic.log("stage=dismiss_complete controllerID=\(NativeOverlayDiagnostic.id(controller)) reason=programmatic")
       self.finishDismiss(reason: "programmatic")
     }
@@ -612,6 +663,7 @@ final class NativeOverlayEntryView: UIView {
 
   private func teardownSheet() {
     guard let controller = sheetController else { return }
+    sheetController = nil
     if let touchHandler, controller.isViewLoaded, touchHandler.view === controller.view {
       touchHandler.perform(NSSelectorFromString("detachFromView:"), with: controller.view)
     }
@@ -621,7 +673,6 @@ final class NativeOverlayEntryView: UIView {
       controller.dismissRequestedByHost = true
       controller.dismiss(animated: false)
     }
-    sheetController = nil
   }
 
   // MARK: - Entry view
@@ -691,6 +742,7 @@ extension NativeOverlayContainerView: NativeOverlaySheetHost {
   }
 
   func sheetDidLoad(_ controller: NativeOverlaySheetController) {
+    guard !invalidated, sheetController === controller else { return }
     if let touchHandler, touchHandler.view == nil {
       touchHandler.perform(NSSelectorFromString("attachToView:"), with: controller.view)
     }
@@ -718,5 +770,11 @@ extension NativeOverlayContainerView: NativeOverlaySheetHost {
     guard sheetController === controller, phase != .exiting else { return }
     if reason == "back", !dismissOnBackPress { return }
     onRequestDismiss?(["reason": reason])
+  }
+}
+
+extension NativeOverlayContainerView: NativeOverlayWindowOwner {
+  func overlaySceneDidDisconnect() {
+    finishDismiss(reason: "system")
   }
 }

@@ -25,8 +25,7 @@ enum NativeOverlayDiagnostic {
   }
 }
 
-/// Levels mirror `OVERLAY_LEVEL_ORDER`. Each active level gets its own
-/// window so that order between levels never depends on show order.
+/// Levels mirror `OVERLAY_LEVEL_ORDER`; each level reserves a window-level band.
 enum NativeOverlayLevel: String, CaseIterable {
   case modal
   case hardware
@@ -144,76 +143,200 @@ final class NativeOverlayRootViewController: UIViewController {
   }
 }
 
-final class NativeOverlayWindowManager {
+protocol NativeOverlayWindowOwner: AnyObject {
+  func overlaySceneDidDisconnect()
+}
+
+final class NativeOverlayWindowManager: NSObject {
   static let shared = NativeOverlayWindowManager()
 
-  private struct SceneKey: Hashable {
-    let id: ObjectIdentifier
+  private final class Entry {
+    weak var owner: NativeOverlayWindowOwner?
+    weak var appWindow: UIWindow?
+    let window: NativeOverlayPassthroughWindow
+    let sequence: Int
+    let level: NativeOverlayLevel
+    var stackOrder: Int
+    var blocking: Bool
+    var desiredVisible = true
+    var closing = false
+
+    init(owner: NativeOverlayWindowOwner, appWindow: UIWindow,
+         window: NativeOverlayPassthroughWindow, sequence: Int,
+         level: NativeOverlayLevel, stackOrder: Int, blocking: Bool) {
+      self.owner = owner
+      self.appWindow = appWindow
+      self.window = window
+      self.sequence = sequence
+      self.level = level
+      self.stackOrder = stackOrder
+      self.blocking = blocking
+    }
   }
 
-  private var windows: [SceneKey: [NativeOverlayLevel: NativeOverlayPassthroughWindow]] = [:]
+  private var scenes: [ObjectIdentifier: [ObjectIdentifier: Entry]] = [:]
+  private var sequence = 0
 
-  /// The level window for `level` in the scene of `appWindow`, shown on demand.
-  /// Non-sheet entries are added directly to it so they interleave by insertion
-  /// order with UIKit presentation containers of sheets in the same level.
-  func window(for level: NativeOverlayLevel, appWindow hostWindow: UIWindow) -> UIWindow? {
-    // An overlay opened from inside another overlay (a popover in a password
-    // prompt) is hosted in a level window; follow it back to the app window.
+  override init() {
+    super.init()
+    NotificationCenter.default.addObserver(
+      self, selector: #selector(sceneDidDisconnect(_:)),
+      name: UIScene.didDisconnectNotification, object: nil
+    )
+  }
+
+  deinit { NotificationCenter.default.removeObserver(self) }
+
+  /// Every owner has an independent root presenter, shared by no other entry.
+  func window(for owner: NativeOverlayWindowOwner, level: NativeOverlayLevel,
+              stackOrder: Int, blocking: Bool, appWindow hostWindow: UIWindow) -> UIWindow? {
+    precondition(Thread.isMainThread)
     let appWindow =
       ((hostWindow as? NativeOverlayPassthroughWindow)?.rootViewController
         as? NativeOverlayRootViewController)?.appWindow ?? hostWindow
-    guard let scene = appWindow.windowScene else { return nil }
-    let key = SceneKey(id: ObjectIdentifier(scene))
-    pruneDisconnectedScenes()
-    var sceneWindows = windows[key] ?? [:]
-    let window: NativeOverlayPassthroughWindow
-    if let existing = sceneWindows[level] {
-      window = existing
+    guard let scene = appWindow.windowScene, scene.activationState != .unattached else { return nil }
+    let sceneKey = ObjectIdentifier(scene)
+    let orphanWindows = (scenes[sceneKey] ?? [:]).values.filter { $0.owner == nil }.map(\.window)
+    orphanWindows.forEach { entryRemoved(from: $0) }
+    let ownerKey = ObjectIdentifier(owner)
+    var entries = scenes[sceneKey] ?? [:]
+    let entry: Entry
+    if let existing = entries[ownerKey], existing.owner === owner {
+      entry = existing
+      entry.stackOrder = stackOrder
+      entry.blocking = blocking
     } else {
-      window = NativeOverlayPassthroughWindow(windowScene: scene)
-      window.windowLevel = level.windowLevel
+      sequence += 1
+      let window = NativeOverlayPassthroughWindow(windowScene: scene)
       window.backgroundColor = .clear
-      window.rootViewController = NativeOverlayRootViewController()
-      sceneWindows[level] = window
-      windows[key] = sceneWindows
-    }
-    (window.rootViewController as? NativeOverlayRootViewController)?.appWindow = appWindow
-    if window.isHidden {
+      let root = NativeOverlayRootViewController()
+      root.appWindow = appWindow
+      window.rootViewController = root
       window.frame = scene.coordinateSpace.bounds
-      window.isHidden = false
-      window.rootViewController?.setNeedsStatusBarAppearanceUpdate()
+      entry = Entry(owner: owner, appWindow: appWindow, window: window,
+                    sequence: sequence, level: level, stackOrder: stackOrder, blocking: blocking)
+      entries[ownerKey] = entry
+      scenes[sceneKey] = entries
     }
-    return window
+    entry.appWindow = appWindow
+    (entry.window.rootViewController as? NativeOverlayRootViewController)?.appWindow = appWindow
+    reorder(entries)
+    entry.window.isHidden = false
+    entry.window.rootViewController?.setNeedsStatusBarAppearanceUpdate()
+    return entry.window
   }
 
-  /// Top of the level window's presentation chain; sheets of one level stack here.
+  func update(_ window: UIWindow?, stackOrder: Int,
+              blocking: Bool, visible: Bool) {
+    precondition(Thread.isMainThread)
+    guard let (sceneKey, _, entry) = find(window) else { return }
+    let orderChanged = entry.stackOrder != stackOrder
+    entry.stackOrder = stackOrder
+    entry.blocking = blocking
+    entry.desiredVisible = visible
+    if orderChanged { reorder(scenes[sceneKey] ?? [:]) }
+  }
+
+  func setClosing(_ closing: Bool, window: UIWindow?) {
+    precondition(Thread.isMainThread)
+    find(window)?.2.closing = closing
+  }
+
   func presenter(in window: UIWindow) -> UIViewController? {
-    var controller = window.rootViewController
-    while let presented = controller?.presentedViewController, !presented.isBeingDismissed {
-      controller = presented
-    }
-    return controller
+    window.rootViewController
   }
 
-  /// Hides a level window once nothing is shown in it, and hands key status
-  /// back to the app window if an input in the overlay had taken it.
   func entryRemoved(from window: UIWindow?) {
-    guard let window = window as? NativeOverlayPassthroughWindow,
-          let root = window.rootViewController else { return }
-    let hasEntries = window.subviews.contains { $0 is NativeOverlayEntryView }
-    let presented = root.presentedViewController
-    guard !hasEntries, presented == nil || presented?.isBeingDismissed == true else { return }
-    let wasKey = window.isKeyWindow
-    window.isHidden = true
-    if wasKey {
-      (root as? NativeOverlayRootViewController)?.appWindow?.makeKey()
+    precondition(Thread.isMainThread)
+    guard let (sceneKey, ownerKey, entry) = find(window) else { return }
+    let wasKey = entry.window.isKeyWindow
+    let scene = entry.window.windowScene
+    scenes[sceneKey]?[ownerKey] = nil
+    let remaining = scenes[sceneKey] ?? [:]
+    if remaining.isEmpty { scenes[sceneKey] = nil }
+    release(entry.window)
+    reorder(remaining)
+    guard wasKey, let scene,
+          scene.activationState == .foregroundActive || scene.activationState == .foregroundInactive else { return }
+    let next = remaining.values.filter { Self.eligible($0, in: scene) }
+      .max { Self.ordered($0, before: $1) }
+    (next?.window ?? entry.appWindow)?.makeKey()
+  }
+
+  func restoreFocus(_ responder: UIView, in window: UIWindow) -> Bool {
+    precondition(Thread.isMainThread)
+    guard let (sceneKey, _, entry) = find(window),
+          let scene = window.windowScene, scene.activationState == .foregroundActive,
+          responder.window === window, responder.canBecomeFirstResponder else { return false }
+    let entries = scenes[sceneKey] ?? [:]
+    guard entries.values.filter({ Self.eligible($0, in: scene) })
+      .max(by: { Self.ordered($0, before: $1) }) === entry,
+      let key = scene.windows.first(where: { $0.isKeyWindow }) else { return false }
+    if key !== entry.appWindow {
+      guard let keyEntry = entries.values.first(where: { $0.window === key && $0.owner != nil }),
+            !Self.ordered(entry, before: keyEntry) else { return false }
+    }
+    if let current = Self.firstResponder(in: window), current !== responder { return false }
+    window.makeKey()
+    return responder.becomeFirstResponder()
+  }
+
+  private static func eligible(_ entry: Entry, in scene: UIWindowScene) -> Bool {
+    entry.owner != nil && entry.desiredVisible && !entry.closing &&
+      !entry.window.isHidden && entry.window.windowScene === scene &&
+      (entry.blocking || firstResponder(in: entry.window) != nil)
+  }
+
+  private func find(_ window: UIWindow?) -> (ObjectIdentifier, ObjectIdentifier, Entry)? {
+    guard let window else { return nil }
+    for (sceneKey, entries) in scenes {
+      if let (ownerKey, entry) = entries.first(where: { $0.value.window === window }) {
+        return (sceneKey, ownerKey, entry)
+      }
+    }
+    return nil
+  }
+
+  private static func ordered(_ a: Entry, before b: Entry) -> Bool {
+    if a.level.order != b.level.order { return a.level.order < b.level.order }
+    if a.stackOrder != b.stackOrder { return a.stackOrder < b.stackOrder }
+    return a.sequence < b.sequence
+  }
+
+  private func reorder(_ entries: [ObjectIdentifier: Entry]) {
+    let levels = Dictionary(grouping: entries.values, by: { $0.level })
+    for (level, group) in levels {
+      let sorted = group.sorted { Self.ordered($0, before: $1) }
+      for (index, entry) in sorted.enumerated() {
+        // A bounded rank cannot cross another band's base, even for large seq values.
+        let rank = CGFloat(index) / CGFloat(sorted.count + 1)
+        entry.window.windowLevel = UIWindow.Level(rawValue: level.windowLevel.rawValue + rank)
+      }
     }
   }
 
-  private func pruneDisconnectedScenes() {
-    let connected = Set(
-      UIApplication.shared.connectedScenes.map { SceneKey(id: ObjectIdentifier($0)) }
-    )
-    windows = windows.filter { connected.contains($0.key) }
+  static func firstResponder(in view: UIView) -> UIView? {
+    if view.isFirstResponder { return view }
+    for child in view.subviews {
+      if let responder = firstResponder(in: child) { return responder }
+    }
+    return nil
+  }
+
+  private func release(_ window: UIWindow) {
+    window.isHidden = true
+    window.rootViewController = nil
+    window.windowScene = nil
+  }
+
+  @objc private func sceneDidDisconnect(_ notification: Notification) {
+    precondition(Thread.isMainThread)
+    guard let scene = notification.object as? UIWindowScene,
+          let entries = scenes.removeValue(forKey: ObjectIdentifier(scene)) else { return }
+    // Unregister first: owner callbacks must not restore a disconnected scene's key.
+    for entry in entries.values {
+      entry.owner?.overlaySceneDidDisconnect()
+      release(entry.window)
+    }
   }
 }
