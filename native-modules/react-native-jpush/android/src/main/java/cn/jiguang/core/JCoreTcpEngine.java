@@ -1323,6 +1323,7 @@ public final class JCoreTcpEngine {
         String regId = JCoreStorage.getRegistrationId(context);
         ActionHelper.getInstance().dispatchRegisterEvent(context, regId);
         ActionHelper.getInstance().dispatchConnectedEvent(context, true);
+        cn.jpush.android.api.JThirdPlatFormInterface.initializeFcm(context);
     }
 
     public Bundle handleEvent(Context context, String sdkType, int cmd, String action, Bundle bundle, Object... extras) {

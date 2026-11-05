@@ -1,6 +1,8 @@
 package cn.jpush.android.local;
 
 import android.app.Activity;
+import android.app.ActivityManager;
+import android.app.KeyguardManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -16,6 +18,7 @@ import cn.jiguang.core.JCoreWireCodec;
 import cn.jpush.android.api.CmdMessage;
 import cn.jpush.android.api.CustomMessage;
 import cn.jpush.android.api.JPushInterface;
+import cn.jpush.android.api.JThirdPlatFormInterface;
 import cn.jpush.android.api.JPushMessage;
 import cn.jpush.android.api.NotificationCustomButton;
 import cn.jpush.android.api.NotificationMessage;
@@ -111,6 +114,74 @@ public class ActionHelper {
     }
 
     public void doAction(Context context, String action, Object data) {
+        if (!(data instanceof Bundle) || JCoreStorage.isPushStopped(context) || !JCoreStorage.isCollectionAuth(context)) {
+            return;
+        }
+        Bundle bundle = (Bundle) data;
+        if ("third_action".equals(action)) {
+            action = bundle.getString("third_key_action", "");
+        }
+        if (JThirdPlatFormInterface.ACTION_REGISTER_TOKEN.equals(action)) {
+            String token = bundle.getString("token", "");
+            byte platform = bundle.getByte("platform", (byte) 8);
+            if (platform == 8 && !token.isEmpty()) {
+                setThirdTokenWithCallBack(context, token, platform, false);
+            }
+            return;
+        }
+        if (JThirdPlatFormInterface.ACTION_SEND_EXCEPTION.equals(action)) {
+            cn.jiguang.plugins.push.common.JLogger.w("FCM plugin reported an error");
+            return;
+        }
+        String raw = bundle.getString("data", bundle.getString("JMessageExtra", ""));
+        String decoded = JThirdPlatFormInterface.decodeMessageJson(raw);
+        if (decoded == null) {
+            return;
+        }
+        NotificationMessage message = JThirdPlatFormInterface.parseMessage(context, decoded);
+        if (message.msgId == null || message.msgId.isEmpty()) {
+            return;
+        }
+        message.notificationId = bundle.getInt("noti_id", message.notificationId);
+        if (JThirdPlatFormInterface.ACTION_PLUGIN_PALTFORM_ON_MESSAGING.equals(action)) {
+            try {
+                JSONObject json = new JSONObject(decoded);
+                if (json.has("message") && message.notificationContent.isEmpty()) {
+                    CustomMessage custom = new CustomMessage();
+                    custom.messageId = message.msgId;
+                    custom.message = json.optString("message", "");
+                    custom.title = message.notificationTitle;
+                    custom.extra = message.notificationExtras;
+                    custom.contentType = json.optString("content_type", "");
+                    custom.platform = 8;
+                    dispatchCustomMessageEvent(context, custom);
+                } else {
+                    if ("0".equals(message.displayForeground) && isApplicationForeground(context)) {
+                        return;
+                    }
+                    postSystemNotification(context, message);
+                    dispatchNotificationEvent(context, "notify_arrived", message);
+                }
+            } catch (Exception invalidMessage) {
+                cn.jiguang.plugins.push.common.JLogger.w("FCM payload rejected");
+            }
+        } else if (JThirdPlatFormInterface.ACTION_NOTIFICATION_ARRIVED.equals(action)) {
+            recordNotificationPosted(context, message.notificationId);
+            dispatchNotificationEvent(context, "notify_arrived", message);
+        } else if (JThirdPlatFormInterface.ACTION_NOTIFICATION_CLCKED.equals(action)) {
+            dispatchNotificationEvent(context, "notify_opened", message);
+            broadcastNotificationOpened(context, message);
+        }
+    }
+
+    private boolean isApplicationForeground(Context context) {
+        KeyguardManager keyguard = (KeyguardManager) context.getSystemService(Context.KEYGUARD_SERVICE);
+        if (keyguard != null && keyguard.isKeyguardLocked()) {
+            return false;
+        }
+        ActivityManager.RunningAppProcessInfo process = new ActivityManager.RunningAppProcessInfo();
+        ActivityManager.getMyMemoryState(process);
+        return process.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND;
     }
 
     public void doSingleAction(Context context, String action, Object data) {
@@ -148,10 +219,33 @@ public class ActionHelper {
                 return;
             }
             Serializable msg = intent.getSerializableExtra("multi_notification_msg");
+            boolean fcmClick = !(msg instanceof NotificationMessage) && intent.hasExtra("JMessageExtra");
+            if (fcmClick) {
+                if (JCoreStorage.isPushStopped(context) || !JCoreStorage.isCollectionAuth(context)) {
+                    return;
+                }
+                NotificationMessage message = JThirdPlatFormInterface.parseMessage(context, intent.getStringExtra("JMessageExtra"));
+                if (message.msgId == null || message.msgId.isEmpty()) {
+                    return;
+                }
+                msg = message;
+            }
             if (msg instanceof NotificationMessage) {
                 NotificationMessage notificationMessage = (NotificationMessage) msg;
+                if (notificationMessage.platform == 8
+                    && (JCoreStorage.isPushStopped(context) || !JCoreStorage.isCollectionAuth(context))) {
+                    return;
+                }
                 dispatchNotificationEvent(context, "notify_opened", notificationMessage);
                 broadcastNotificationOpened(context, notificationMessage);
+                if (fcmClick || notificationMessage.platform == 8) {
+                    android.content.pm.PackageManager manager = context.getPackageManager();
+                    Intent launcher = manager != null ? manager.getLaunchIntentForPackage(appPkg) : null;
+                    if (launcher != null) {
+                        launcher.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                        context.startActivity(launcher);
+                    }
+                }
             }
         } catch (Throwable ignored) {
         }
@@ -897,6 +991,7 @@ public class ActionHelper {
                     if (statusCode == 0) {
                         JCoreStorage.saveThirdToken(context, platform, unbind ? "" : token);
                     }
+                    cn.jiguang.plugins.push.common.JLogger.i("Third token result platform=" + platform + " code=" + statusCode);
                     Intent intent = buildBaseReceiverIntent(context, "cmd_result", 0, statusCode);
                     intent.putExtra("cmd", 10000);
                     intent.putExtra("msg", unbind ? "unbind" : "bind");

@@ -4,11 +4,21 @@ import android.app.Notification;
 import android.content.Context;
 import android.os.Bundle;
 import cn.jiguang.core.JCoreCrypto;
+import cn.jiguang.core.JCoreStorage;
+import cn.jiguang.core.JCoreTcpEngine;
+import cn.jiguang.plugins.push.common.JLogger;
 import cn.jpush.android.helper.JCoreHelper;
 import cn.jpush.android.local.ActionHelper;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.zip.GZIPInputStream;
 import org.json.JSONObject;
 
 public abstract class JThirdPlatFormInterface {
+    private static JThirdPlatFormInterface fcmPlugin;
+    private static boolean fcmRegistered;
+    private static final int MAX_MESSAGE_BYTES = 65536;
     public static final String ACTION_NOTIFICATION_SHOW = "action_notification_show";
     public static final String ACTION_NOTIFICATION_ARRIVED = "action_notification_arrived";
     public static final String ACTION_NOTIFICATION_UN_SHOW = "action_notification_unshow";
@@ -69,6 +79,44 @@ public abstract class JThirdPlatFormInterface {
         return false;
     }
 
+    public static void initializeFcm(final Context context) {
+        if (context == null || JCoreStorage.isPushStopped(context) || !JCoreStorage.isCollectionAuth(context)) {
+            return;
+        }
+        JCoreTcpEngine.getInstance().executeAsync(new Runnable() {
+            @Override
+            public void run() {
+                synchronized (JThirdPlatFormInterface.class) {
+                    if (JCoreStorage.isPushStopped(context) || !JCoreStorage.isCollectionAuth(context)) {
+                        return;
+                    }
+                    try {
+                        if (fcmPlugin == null) {
+                            // This optional source module is linked only by Google hosts.
+                            fcmPlugin = (JThirdPlatFormInterface) Class.forName(
+                                "com.onekey.jpush.fcm.FcmPushManager"
+                            ).getDeclaredConstructor().newInstance();
+                        }
+                        if (!fcmPlugin.isSupport(context)) {
+                            return;
+                        }
+                        if (!fcmRegistered) {
+                            fcmPlugin.init(context);
+                            fcmPlugin.register(context, new Bundle());
+                            fcmRegistered = true;
+                        }
+                        fcmPlugin.getToken(context);
+                        JLogger.i("FCM registration requested");
+                    } catch (ClassNotFoundException absentPlugin) {
+                        // Non-Google hosts intentionally do not include the optional plugin.
+                    } catch (Exception | LinkageError unavailablePlugin) {
+                        JLogger.w("FCM registration unavailable");
+                    }
+                }
+            }
+        });
+    }
+
     public static void onEvent(Thread thread, Throwable error) {
         ActionHelper.getInstance().onEvent(thread, error);
     }
@@ -84,6 +132,10 @@ public abstract class JThirdPlatFormInterface {
     }
 
     public static void sendActionByJCore(Context context, Bundle bundle, String action) {
+        if (ACTION_PLUGIN_PALTFORM_ON_MESSAGING.equals(action)) {
+            ActionHelper.getInstance().doAction(context, action, bundle);
+            return;
+        }
         JCoreHelper.runActionWithService(context, "JPUSH", action, bundle);
     }
 
@@ -132,16 +184,64 @@ public abstract class JThirdPlatFormInterface {
     public static NotificationMessage parseMessage(Context context, String rawJson) {
         NotificationMessage message = new NotificationMessage();
         message.context = context;
-        if (rawJson != null) {
+        message.platform = 8;
+        message.displayForeground = "0";
+        String decoded = decodeMessageJson(rawJson);
+        if (decoded != null) {
             try {
-                JSONObject json = new JSONObject(rawJson);
-                message.msgId = json.optString("msg_id", "");
-                message.notificationTitle = json.optString("n_title", "");
-                message.notificationContent = json.optString("n_content", "");
-                message.notificationExtras = json.optString("n_extras", "");
-            } catch (Throwable ignored) {
+                JSONObject json = new JSONObject(decoded);
+                message.msgId = json.optString("_jmsgid_", json.optString("_j_msgid", ""));
+                if (message.msgId.isEmpty()) {
+                    message.msgId = json.optString("msg_id", "");
+                }
+                String overrideId = json.optString("override_msg_id", "");
+                if (!overrideId.isEmpty()) {
+                    message.msgId = overrideId;
+                }
+                message.notificationId = getNofiticationID(message.msgId, 0);
+                message.notificationTitle = json.optString("n_title", json.optString("title", ""));
+                message.notificationContent = json.optString("n_content", json.optString("alert", json.optString("content", "")));
+                Object extras = json.opt("n_extras");
+                if (extras == null) {
+                    extras = json.opt("extras");
+                }
+                message.notificationExtras = extras != null ? extras.toString() : "";
+                message.notificationChannelId = json.optString("n_channel_id", "");
+                if (!JCoreStorage.isPushStopped(context) && JCoreStorage.isCollectionAuth(context)) {
+                    message.displayForeground = json.optString("n_foreground", "1");
+                }
+            } catch (Exception invalidMessage) {
+                JLogger.w("FCM payload rejected");
             }
         }
         return message;
+    }
+
+    public static String decodeMessageJson(String rawJson) {
+        if (rawJson == null || rawJson.length() > MAX_MESSAGE_BYTES
+            || rawJson.getBytes(StandardCharsets.UTF_8).length > MAX_MESSAGE_BYTES) {
+            return null;
+        }
+        try {
+            JSONObject json = new JSONObject(rawJson);
+            if (!json.has("jg_c")) {
+                return rawJson;
+            }
+            byte[] compressed = JCoreCrypto.base64Decode(json.getString("jg_c"));
+            try (GZIPInputStream input = new GZIPInputStream(new ByteArrayInputStream(compressed));
+                 ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+                byte[] buffer = new byte[2048];
+                int count;
+                while ((count = input.read(buffer)) != -1) {
+                    if (output.size() + count > MAX_MESSAGE_BYTES) {
+                        return null;
+                    }
+                    output.write(buffer, 0, count);
+                }
+                return new String(output.toByteArray(), StandardCharsets.UTF_8);
+            }
+        } catch (Exception invalidMessage) {
+            return null;
+        }
     }
 }

@@ -2,10 +2,15 @@ package cn.jiguang.api.utils;
 
 import android.content.Context;
 import cn.jiguang.core.JCoreStorage;
+import cn.jpush.android.api.JThirdPlatFormInterface;
 
 public class JCollectionAuth {
-    public static void setAuth(Context context, boolean auth) {
+    public static synchronized void setAuth(Context context, boolean auth) {
+        boolean wasAuthorized = JCoreStorage.isCollectionAuth(context);
         JCoreStorage.setCollectionAuth(context, auth);
+        if (auth && !wasAuthorized) {
+            JThirdPlatFormInterface.initializeFcm(context);
+        }
     }
 
     public static boolean isAuth(Context context) {
