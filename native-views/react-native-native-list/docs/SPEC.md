@@ -689,6 +689,16 @@ Unsupported image URIs fail development assertions and are sanitized out in
 production. This is validation acceptance only; avatar decoding and loading
 remain owned by the platform image loader or Web avatar worker.
 
+Common mobile image URI schemes are accepted case-insensitively in snapshots
+and row patches: `http:`, `https:`, `file:`, `content:`, `android.resource:`,
+`asset:`, `res:`, `ph:`, `assets-library:` and image `data:` URIs. Relative paths
+and bare resource names remain accepted. In particular, production MUST NOT
+strip bundled Android Release resource URIs such as
+`android.resource://<package>/drawable/<name>`. This only permits the URI through
+shared validation; resource lookup, permissions and decoding remain the
+platform loader's responsibility. No new loader is registered by this policy.
+Android Release App rendering acceptance remains pending.
+
 A complete snapshot remains atomic after decoration sanitization: invalid
 schema, duplicate/missing identities, required business fields or wallet-group
 parent/children relationships reject the snapshot. No row is silently removed.
