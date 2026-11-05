@@ -104,6 +104,11 @@ height: a rendered custom bar's own measured height takes precedence; otherwise
 `tabBarHidden` forces zero. Native hide measurements MUST NOT overwrite a custom
 bar's height, including across native/custom presentation switches.
 
+The iOS drawer MUST NOT receive touches inside the native tab bar at any
+placement, because a vertical bar reports no bottom height. That covers
+everything under the tab controller's view outside tab content, including the
+floating item platter and side accessory.
+
 With opening swipes enabled, a one-finger rightward gesture may start anywhere
 in the foreground content. At the first confirmed direction, the actual native
 touch target and its ancestor chain determine ownership. A horizontal scroll

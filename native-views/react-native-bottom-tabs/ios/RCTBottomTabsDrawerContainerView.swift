@@ -135,6 +135,7 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
     guard enabled else { return false }
     let start = touch.location(in: self)
     guard start.y < bounds.height - CGFloat(max(0, bottomBarHeight)) else { return false }
+    guard !isInsideNativeTabBar(touch.view) else { return false }
     touchTarget = touch.view
     if progress > 0 { return start.x >= bounds.width * 0.78 * progress }
     return swipeEnabled && !touchPathContainsExclusiveControl()
@@ -169,6 +170,24 @@ final class RCTBottomTabsDrawerContainerView: UIView, UIGestureRecognizerDelegat
     guard gestureRecognizer === pan else { return false }
     // UIKit's navigation edge gesture retains priority over the drawer.
     return other is UIScreenEdgePanGestureRecognizer
+  }
+
+  // A vertical bar reports no bottom height, and UIKit draws its items in a
+  // floating platter outside UITabBar, so match anything under the tab
+  // controller's view that is not tab content.
+  private func isInsideNativeTabBar(_ target: UIView?) -> Bool {
+    var path: [UIView] = []
+    var view = target
+    while let current = view, current !== self {
+      if current is UITabBar { return true }
+      if let tabs = current.next as? UITabBarController {
+        let content = (tabs.viewControllers ?? []).compactMap { $0.viewIfLoaded }
+        return !path.contains { step in content.contains { $0 === step } }
+      }
+      path.append(current)
+      view = current.superview
+    }
+    return false
   }
 
   private func touchPathContainsExclusiveControl() -> Bool {
