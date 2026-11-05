@@ -227,6 +227,7 @@ dependencies {
   implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
   implementation 'androidx.viewpager2:viewpager2:1.1.0'
   implementation project(":onekeyfe_react-native-native-logger")
+  implementation project(":onekeyfe_react-native-image")
 }
 
 if (isNewArchitectureEnabled()) {

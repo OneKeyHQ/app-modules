@@ -377,7 +377,7 @@ PODS:
     - SDWebImage (~> 5.21.7)
     - SDWebImageSVGCoder (~> 1.7.0)
     - SDWebImageWebPCoder (~> 0.14.6)
-    - Skeleton (= 6.7.0-22)
+    - Skeleton
     - Yoga
   - OneKeyImage/Tests (6.7.0-22):
     - hermes-engine
@@ -406,7 +406,7 @@ PODS:
     - SDWebImage (~> 5.21.7)
     - SDWebImageSVGCoder (~> 1.7.0)
     - SDWebImageWebPCoder (~> 0.14.6)
-    - Skeleton (= 6.7.0-22)
+    - Skeleton
     - Yoga
   - OneKeyTextInput (6.7.0-22):
     - React-Core
@@ -1845,7 +1845,7 @@ PODS:
     - Yoga
   - react-native-bottom-tabs (6.7.0-22):
     - hermes-engine
-    - OneKeyImage (= 6.7.0-22)
+    - OneKeyImage
     - RCTRequired
     - RCTTypeSafety
     - React-bridging
@@ -1870,7 +1870,7 @@ PODS:
     - Yoga
   - react-native-bottom-tabs/common (6.7.0-22):
     - hermes-engine
-    - OneKeyImage (= 6.7.0-22)
+    - OneKeyImage
     - RCTRequired
     - RCTTypeSafety
     - React-bridging
@@ -1895,7 +1895,7 @@ PODS:
   - react-native-native-list (6.7.0-22):
     - hermes-engine
     - NitroModules
-    - OneKeyImage (= 6.7.0-22)
+    - OneKeyImage
     - RCTRequired
     - RCTTypeSafety
     - React-bridging
@@ -1921,7 +1921,7 @@ PODS:
   - react-native-native-list/Tests (6.7.0-22):
     - hermes-engine
     - NitroModules
-    - OneKeyImage (= 6.7.0-22)
+    - OneKeyImage
     - RCTRequired
     - RCTTypeSafety
     - React-bridging
@@ -3694,7 +3694,7 @@ SPEC CHECKSUMS:
   NetworkInfo: 19715e21aea9ec8e47e793b9d622aecc173c3dcb
   NitroMmkv: 1cbda910413acda474751ac9b2522a6d466f74ad
   NitroModules: ee352d84c766ae91ce64a52fa6af216bbb6ecda8
-  OneKeyImage: 2148d5103262a903765193b1c9b2d19be0cb3ef4
+  OneKeyImage: aa8535a76d79dbb6ac334179ba47499db0917289
   OneKeyTextInput: a65703ecd8c324500e57af4cf408353c8bc82c30
   Pbkdf2: 1752ecdf909ceeb78fd7db024bf76497101544fa
   PerpDepthBar: b38e4841e0e90224ed16fa66c586dfdbaccc8fe6
@@ -3739,8 +3739,8 @@ SPEC CHECKSUMS:
   React-Mapbuffer: a2dae4f2cb335ebb97f2240494d0c2bab84cd339
   React-microtasksnativemodule: 8b3aaa5f3b907ecf071b105589868d9f027a448d
   React-mutationobservernativemodule: 11d77d3f7360578f07847843544ada23cc473049
-  react-native-bottom-tabs: 0852af80eec32e48e608747d6e81fdeb2f9d2c03
-  react-native-native-list: 3f2a16d002cf0ac8261ca52a1abc3ef97b61f56d
+  react-native-bottom-tabs: f0edf5d1bd79b4874b7147773f59886ae9e0af0c
+  react-native-native-list: f35a23927d01fcd8708c5580e55299266c57a5ab
   react-native-pager-view: d30578621319bdd9972b1b8ed477e68364dedf2d
   react-native-safe-area-context: 839ca66874035361e526a8bcb1bfe7c2076c5c0d
   React-NativeModulesApple: 52f3def085f129de1307e3eb78e26729ff70f421
@@ -3811,6 +3811,6 @@ SPEC CHECKSUMS:
   TcpSocket: 579068f86d0d4e83f5f046737850f3951dfa1c9d
   Yoga: d1c536142c5ff8ec8cd856ab2a7c227a1d875c8e
 
-PODFILE CHECKSUM: a446f9fe6a19b4030c6b4e0647251f53543bed7f
+PODFILE CHECKSUM: 6dbd008521e902b8ae039b8440e066a762f0955e
 
 COCOAPODS: 1.16.2

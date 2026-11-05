@@ -23,7 +23,7 @@ Pod::Spec.new do |s|
     "CLANG_CXX_LANGUAGE_STANDARD" => "c++20"
   }
 
-  s.dependency "OneKeyImage", package["peerDependencies"]["@onekeyfe/react-native-image"]
+  s.dependency "OneKeyImage"
   s.dependency "React-jsi"
   s.dependency "React-callinvoker"
 

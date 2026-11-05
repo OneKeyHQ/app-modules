@@ -14,6 +14,8 @@
 #import "React/RCTSurfaceTouchHandler.h"
 #import "React/RCTTouchHandler.h"
 #import <objc/runtime.h>
+#import <React/RCTConvert.h>
+#import <React/RCTFont.h>
 #import <UIKit/UIGestureRecognizerSubclass.h>
 
 // OneKey patch: deduplicate structural mutation parents before scanning the page.
@@ -398,8 +400,65 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     (long)pagerState]);
 }
 
+static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFloat fallback, CGFloat minimum, CGFloat maximum)
+{
+  id value = entry[key];
+  if (![value isKindOfClass:NSNumber.class]) return fallback;
+  double dimension = [value doubleValue];
+  return std::isfinite(dimension) ? MIN(maximum, MAX(minimum, dimension)) : fallback;
+}
+
+@protocol RNCPagerNamedSVGBridge <NSObject>
++ (void)cancelWithOwner:(id)owner;
++ (void)requestWithOwner:(id)owner name:(NSString *)name color:(NSString *)color
+                   width:(NSInteger)width height:(NSInteger)height scale:(double)scale
+                complete:(void (^)(UIImage *))complete;
+@end
+
+@interface RNCPagerToolbarButton : UIButton
+@property (nonatomic, strong) UIColor *baseColor;
+@property (nonatomic, strong) UIColor *hoverColor;
+@property (nonatomic, strong) UIColor *pressedColor;
+@property (nonatomic) BOOL hovering;
+@property (nonatomic) CGFloat iconSize;
+- (void)refreshBackground;
+@end
+@implementation RNCPagerToolbarButton
+- (instancetype)initWithFrame:(CGRect)frame {
+  if ((self = [super initWithFrame:frame])) {
+    self.adjustsImageWhenHighlighted = NO;
+    [self addGestureRecognizer:[[UIHoverGestureRecognizer alloc] initWithTarget:self action:@selector(hover:)]];
+  }
+  return self;
+}
+- (CGRect)imageRectForContentRect:(CGRect)contentRect {
+  CGFloat side = MIN(self.iconSize, MIN(CGRectGetWidth(contentRect), CGRectGetHeight(contentRect)));
+  return CGRectMake(CGRectGetMidX(contentRect) - side / 2, CGRectGetMidY(contentRect) - side / 2, side, side);
+}
+- (void)hover:(UIHoverGestureRecognizer *)gesture {
+  self.hovering = gesture.state == UIGestureRecognizerStateBegan || gesture.state == UIGestureRecognizerStateChanged;
+  [self refreshBackground];
+}
+- (void)setEnabled:(BOOL)enabled {
+  [super setEnabled:enabled];
+  if (!enabled) self.hovering = NO;
+  [self refreshBackground];
+}
+- (void)setHighlighted:(BOOL)highlighted {
+  [super setHighlighted:highlighted];
+  [self refreshBackground];
+}
+- (void)refreshBackground {
+  self.backgroundColor = self.enabled && self.highlighted ? self.pressedColor : (self.enabled && self.hovering ? self.hoverColor : self.baseColor);
+}
+@end
+
 @interface RNCCollapsiblePagerNativeTabBarView : UIView <UIScrollViewDelegate>
 @property (nonatomic, copy) RNCCollapsiblePagerNativeTabPressHandler onTabPress;
+@property (nonatomic, copy) void (^onToolbarPress)(NSString *, CGRect);
+@property (nonatomic, copy) void (^onToolbarNeedsSettlement)(void);
+- (void)updateToolbarPagerIndex:(NSInteger)index busy:(BOOL)busy;
+- (void)updateConfigJSON:(NSString *)json;
 - (void)updateItemsJSON:(NSString *)itemsJSON;
 - (void)updateStyleWithHeight:(CGFloat)height
                       variant:(NSString *)variant
@@ -415,6 +474,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
               indicatorHeight:(CGFloat)indicatorHeight
               indicatorBottom:(CGFloat)indicatorBottom;
 - (void)setProgress:(CGFloat)progress;
+- (BOOL)usesControlledTextProgress;
+- (BOOL)ownsSettledToolbar;
 - (void)setLeftToRight:(BOOL)leftToRight;
 - (void)updateAncestorGesturePrecedence;
 @end
@@ -430,6 +491,40 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   CGFloat _contentPaddingHorizontal;
   CGFloat _contentPaddingVertical;
   BOOL _segmented;
+  BOOL _textVariant;
+  NSDictionary *_config;
+  RNCPagerToolbarButton *_toolbarButton;
+  NSString *_toolbarKey;
+  BOOL _toolbarPagerBusy;
+  NSInteger _toolbarPageIndex;
+  NSDictionary *_committedToolbarEntry;
+  NSString *_desiredToolbarKey;
+  NSDictionary *_desiredToolbarEntry;
+  UIImage *_loadedToolbarImage;
+  BOOL _toolbarPresenceAnimating;
+  BOOL _toolbarPresenceInterrupted;
+  NSString *_toolbarTouchKey;
+  BOOL _toolbarTouchStarted;
+  NSString *_iconIdentity;
+  NSObject *_iconOwner;
+  NSInteger _progressSource;
+  NSInteger _progressDestination;
+  CGFloat _progressFraction;
+  CGFloat _nativeProgress;
+  BOOL _hasNativeProgress;
+  BOOL _hasMappedPageProgress;
+  CGFloat _toolbarReservedWidth;
+  BOOL _toolbarVisible;
+  NSUInteger _toolbarAnimationGeneration;
+  NSString *_loadedIconIdentity;
+  BOOL _iconRequestPending;
+  UIImage *_readyToolbarImage;
+  NSString *_readyToolbarIdentity;
+  NSString *_failedIconIdentity;
+  CGFloat _toolbarSize;
+  CGFloat _toolbarIconSize;
+  CGFloat _toolbarContentWidth;
+  CGFloat _toolbarTrailingInset;
   CGFloat _itemSpacing;
   CGFloat _fontSize;
   NSString *_fontFamily;
@@ -448,6 +543,21 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 {
   if (self = [super initWithFrame:frame]) {
     _items = @[];
+    _config = @{};
+    _toolbarPagerBusy = YES;
+    _toolbarPageIndex = -1;
+    _toolbarButton = [RNCPagerToolbarButton new];
+    _toolbarButton.layer.cornerRadius = 19;
+    _toolbarButton.hidden = YES;
+    _toolbarButton.alpha = 0;
+    _toolbarButton.userInteractionEnabled = NO;
+    _toolbarButton.accessibilityElementsHidden = YES;
+    _toolbarButton.imageView.contentMode = UIViewContentModeScaleAspectFit;
+    _toolbarButton.iconSize = 24;
+    [_toolbarButton addTarget:self action:@selector(toolbarTouchDown) forControlEvents:UIControlEventTouchDown];
+    [_toolbarButton addTarget:self action:@selector(toolbarPress:forEvent:) forControlEvents:UIControlEventTouchUpInside];
+    [_toolbarButton addTarget:self action:@selector(toolbarCancel) forControlEvents:UIControlEventTouchCancel | UIControlEventTouchUpOutside];
+    [self addSubview:_toolbarButton];
     _buttons = [NSMutableArray new];
     _indicatorFrames = [NSMutableArray new];
     _barHeight = 44;
@@ -495,6 +605,18 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   return [UIFont systemFontOfSize:_fontSize weight:UIFontWeightMedium];
 }
 
+- (UIFont *)activeTabFont
+{
+  NSString *activeFamily = _config[@"activeFontFamily"];
+  if (activeFamily.length > 0) {
+    return [UIFont fontWithName:activeFamily size:_fontSize]
+      ?: [UIFont systemFontOfSize:_fontSize weight:UIFontWeightSemibold];
+  }
+  UIFont *normalFont = _fontFamily.length > 0 ? [UIFont fontWithName:_fontFamily size:_fontSize] : nil;
+  return normalFont != nil ? [RCTFont updateFont:normalFont withWeight:@"600"]
+    : [UIFont systemFontOfSize:_fontSize weight:UIFontWeightSemibold];
+}
+
 - (void)updateItemsJSON:(NSString *)itemsJSON
 {
   NSData *data = [itemsJSON dataUsingEncoding:NSUTF8StringEncoding];
@@ -529,6 +651,11 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   for (UIButton *button in _buttons) [_scrollView bringSubviewToFront:button];
   _shouldCenterSelectedItem = YES;
   self.hidden = _items.count == 0;
+  if (_hasNativeProgress) [self setProgress:_nativeProgress];
+  else if ([_config[@"controlled"] boolValue]) {
+    NSUInteger selected = [_items indexOfObjectPassingTest:^BOOL(NSDictionary *item, NSUInteger i, BOOL *stop) { return [item[@"key"] isEqual:self->_config[@"selectedKey"]]; }];
+    if (selected != NSNotFound) { _progress = selected; _progressSource = selected; _progressDestination = selected; _progressFraction = 0; }
+  }
   [self setNeedsLayout];
 }
 
@@ -549,13 +676,14 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   _barHeight = MAX(1, height);
   BOOL wasSegmented = _segmented;
   _segmented = [variant isEqualToString:@"segmented"];
+  _textVariant = [variant isEqualToString:@"text"];
   _contentPaddingHorizontal = MAX(0, contentPaddingHorizontal);
   _contentPaddingVertical = MAX(0, contentPaddingVertical);
   _itemSpacing = MAX(0, itemSpacing);
   _fontSize = MAX(1, fontSize);
   _fontFamily = [fontFamily copy];
   self.backgroundColor = _segmented ? UIColor.clearColor : (backgroundColor ?: UIColor.clearColor);
-  _scrollView.backgroundColor = self.backgroundColor;
+  _scrollView.backgroundColor = _textVariant ? UIColor.clearColor : self.backgroundColor;
   _scrollView.scrollEnabled = !_segmented;
   if (_segmented && !wasSegmented) [_scrollView setContentOffset:CGPointZero animated:NO];
   _trackView.hidden = !_segmented;
@@ -624,9 +752,15 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 - (void)layoutSubviews
 {
   [super layoutSubviews];
-  _scrollView.frame = self.bounds;
+  CGFloat reserved = _toolbarReservedWidth;
+  [self bringSubviewToFront:_toolbarButton];
+  _scrollView.frame = CGRectMake(_leftToRight ? 0 : reserved, 0,
+    MAX(0, CGRectGetWidth(self.bounds) - reserved), CGRectGetHeight(self.bounds));
+  CGFloat inset = _toolbarTrailingInset - (_toolbarSize - _toolbarContentWidth) / 2;
+  _toolbarButton.frame = CGRectMake(_leftToRight ? CGRectGetWidth(self.bounds) - inset - _toolbarSize : inset,
+    (CGRectGetHeight(self.bounds) - _toolbarSize) / 2, _toolbarSize, _toolbarSize);
   if (_segmented) {
-    CGFloat width = CGRectGetWidth(self.bounds);
+    CGFloat width = CGRectGetWidth(_scrollView.bounds);
     CGFloat height = CGRectGetHeight(self.bounds);
     CGFloat insetX = MIN(_contentPaddingHorizontal, width / 2);
     CGFloat insetY = MIN(_contentPaddingVertical, height / 2);
@@ -634,7 +768,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
       MAX(0, width - 2 * insetX), MAX(0, height - 2 * insetY));
     _trackView.frame = trackFrame;
     _trackView.layer.cornerRadius = CGRectGetHeight(trackFrame) / 2;
-    _scrollView.contentSize = self.bounds.size;
+    _scrollView.contentSize = _scrollView.bounds.size;
     [_indicatorFrames removeAllObjects];
     NSUInteger count = _buttons.count;
     [_buttons enumerateObjectsUsingBlock:^(UIButton *button, NSUInteger index, BOOL *stop) {
@@ -658,12 +792,16 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   for (UIButton *button in _buttons) {
     NSString *title = [button titleForState:UIControlStateNormal] ?: @"";
     CGFloat textWidth = ceil([title sizeWithAttributes:@{NSFontAttributeName: font}].width);
-    CGFloat buttonWidth = MAX(44, textWidth + 16);
+    if (_textVariant) {
+      UIFont *activeFont = self.activeTabFont;
+      textWidth = MAX(textWidth, ceil([title sizeWithAttributes:@{NSFontAttributeName: activeFont}].width));
+    }
+    CGFloat buttonWidth = MAX(44, textWidth + (_textVariant ? 20 : 16));
     [widths addObject:@(buttonWidth)];
     itemsWidth += buttonWidth;
   }
   if (_buttons.count > 1) itemsWidth += (_buttons.count - 1) * _itemSpacing;
-  CGFloat contentWidth = MAX(CGRectGetWidth(self.bounds),
+  CGFloat contentWidth = MAX(CGRectGetWidth(_scrollView.bounds),
                              itemsWidth + _contentPaddingHorizontal * 2);
   _scrollView.contentSize = CGSizeMake(contentWidth, MAX(_barHeight, CGRectGetHeight(self.bounds)));
   [_indicatorFrames removeAllObjects];
@@ -693,12 +831,491 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   [self updatePresentation];
 }
 
+- (Class<RNCPagerNamedSVGBridge>)iconBridge {
+  Class cls = NSClassFromString(@"OneKeyNamedSVGBridge");
+  if (![cls respondsToSelector:@selector(cancelWithOwner:)] ||
+      ![cls respondsToSelector:@selector(requestWithOwner:name:color:width:height:scale:complete:)]) return Nil;
+  return (Class<RNCPagerNamedSVGBridge>)cls;
+}
+- (void)updateConfigJSON:(NSString *)json {
+  BOOL wasOwned = [self ownsSettledToolbar];
+  NSData *data = [json dataUsingEncoding:NSUTF8StringEncoding];
+  id parsed = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+  _config = [parsed isKindOfClass:NSDictionary.class] ? parsed : @{};
+  BOOL owned = [self ownsSettledToolbar];
+  if (owned != wasOwned) {
+    if (_iconOwner) [[self iconBridge] cancelWithOwner:_iconOwner];
+    _iconOwner = [NSObject new];
+    _iconRequestPending = NO;
+    _readyToolbarImage = nil;
+    _readyToolbarIdentity = nil;
+    _desiredToolbarKey = nil;
+    _desiredToolbarEntry = nil;
+    [self suspendToolbar];
+    if (!owned) {
+      ++_toolbarAnimationGeneration;
+      [_toolbarButton.layer removeAllAnimations];
+      _toolbarPresenceAnimating = NO;
+      _toolbarPresenceInterrupted = NO;
+      _toolbarButton.alpha = _toolbarVisible ? 1 : 0;
+      _toolbarButton.hidden = !_toolbarVisible;
+      [self setToolbarInteractive:_toolbarVisible];
+    }
+  }
+  if (!owned) {
+    _toolbarTouchKey = nil;
+    _toolbarButton.highlighted = NO;
+    _toolbarButton.hovering = NO;
+  }
+  _toolbarButton.adjustsImageWhenDisabled = !owned;
+  NSString *key = _config[@"selectedKey"];
+  if (![_config[@"controlled"] boolValue]) {
+    _progress = RNCClamp(_nativeProgress, 0, MAX(0, (NSInteger)_items.count - 1));
+    key = _items.count ? _items[(NSInteger)round(_progress)][@"key"] : nil;
+  }
+  if (_hasNativeProgress) {
+    [self setProgress:_nativeProgress];
+  } else {
+    NSUInteger index = [_items indexOfObjectPassingTest:^BOOL(NSDictionary *item, NSUInteger i, BOOL *stop) { return [item[@"key"] isEqual:key]; }];
+    if (index != NSNotFound) {
+      _progress = index;
+      _progressSource = index;
+      _progressDestination = index;
+      _progressFraction = 0;
+    }
+  }
+  [self updateToolbarForKey:key];
+  [self setNeedsLayout];
+}
+- (BOOL)usesControlledTextProgress { return _textVariant && [_config[@"controlled"] boolValue]; }
+- (void)setLegacyToolbarVisible:(BOOL)visible {
+  _toolbarButton.enabled = visible;
+  _toolbarButton.userInteractionEnabled = visible;
+  _toolbarButton.accessibilityElementsHidden = !visible;
+  _toolbarButton.isAccessibilityElement = visible;
+  if (_toolbarVisible == visible) return;
+  _toolbarVisible = visible;
+  NSUInteger generation = ++_toolbarAnimationGeneration;
+  CALayer *presentation = _toolbarButton.layer.presentationLayer;
+  CGFloat alpha = presentation ? presentation.opacity : _toolbarButton.alpha;
+  [_toolbarButton.layer removeAllAnimations];
+  _toolbarButton.alpha = alpha;
+  _toolbarButton.enabled = visible;
+  _toolbarButton.userInteractionEnabled = visible;
+  _toolbarButton.accessibilityElementsHidden = !visible;
+  if (visible) _toolbarButton.hidden = NO;
+  if (self.window == nil) {
+    _toolbarButton.alpha = visible ? 1 : 0;
+    _toolbarButton.hidden = !visible;
+    return;
+  }
+  [UIView animateWithDuration:0.15 delay:0 options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction animations:^{
+    self->_toolbarButton.alpha = visible ? 1 : 0;
+  } completion:^(BOOL finished) {
+    if (self->_toolbarAnimationGeneration == generation && !visible) {
+      self->_toolbarButton.hidden = YES;
+      [self applyReadyLegacyToolbarImage];
+    }
+  }];
+}
+- (void)applyReadyLegacyToolbarImage {
+  if (_readyToolbarImage == nil || ![_readyToolbarIdentity isEqualToString:_iconIdentity]) return;
+  CALayer *presentation = _toolbarButton.layer.presentationLayer;
+  if (_toolbarButton.alpha > 0.001 || (presentation && presentation.opacity > 0.001)) return;
+  [_toolbarButton setImage:_readyToolbarImage forState:UIControlStateNormal];
+  _loadedIconIdentity = _readyToolbarIdentity;
+  _loadedToolbarImage = _readyToolbarImage;
+  _readyToolbarImage = nil;
+  _readyToolbarIdentity = nil;
+  _iconRequestPending = NO;
+  [self setLegacyToolbarVisible:YES];
+}
+- (void)updateLegacyToolbarForKey:(NSString *)key {
+  NSDictionary *toolbar = [_config[@"toolbar"] isKindOfClass:NSDictionary.class] ? _config[@"toolbar"] : nil;
+  _toolbarReservedWidth = toolbar == nil ? 0 : 44;
+  if (toolbar.count > 0) {
+    _toolbarReservedWidth = 0;
+    for (id value in toolbar.allValues) {
+      NSDictionary *entry = [value isKindOfClass:NSDictionary.class] ? value : @{};
+      CGFloat size = RNCPagerToolbarDimension(entry, @"size", 38, 1, 128);
+      CGFloat content = RNCPagerToolbarDimension(entry, @"contentWidth", MIN(24, size), 0, size);
+      CGFloat trailing = RNCPagerToolbarDimension(entry, @"trailingInset", 20, 0, 128);
+      _toolbarReservedWidth = MAX(_toolbarReservedWidth, content + trailing);
+    }
+  }
+  NSDictionary *entry = [toolbar[key ?: @""] isKindOfClass:NSDictionary.class] ? toolbar[key] : nil;
+  NSString *name = [entry[@"iconName"] isKindOfClass:NSString.class] ? entry[@"iconName"] : nil;
+  if (![_toolbarKey isEqualToString:key]) {
+    _toolbarTouchKey = nil;
+    _toolbarButton.highlighted = NO;
+    _toolbarButton.hovering = NO;
+  }
+  _toolbarKey = [key copy];
+  if (name.length == 0) {
+    _toolbarTouchKey = nil;
+    _toolbarButton.accessibilityLabel = nil;
+    _toolbarButton.accessibilityIdentifier = nil;
+    if (_iconOwner) [[self iconBridge] cancelWithOwner:_iconOwner];
+    _iconOwner = [NSObject new];
+    _iconRequestPending = NO;
+    _readyToolbarImage = nil;
+    _readyToolbarIdentity = nil;
+    [self setLegacyToolbarVisible:NO];
+    return;
+  }
+  _toolbarSize = RNCPagerToolbarDimension(entry, @"size", 38, 1, 128);
+  _toolbarIconSize = RNCPagerToolbarDimension(entry, @"iconSize", MIN(24, _toolbarSize), 1, _toolbarSize);
+  _toolbarContentWidth = RNCPagerToolbarDimension(entry, @"contentWidth", MIN(24, _toolbarSize), 0, _toolbarSize);
+  _toolbarTrailingInset = RNCPagerToolbarDimension(entry, @"trailingInset", 20, 0, 128);
+  _toolbarButton.layer.cornerRadius = _toolbarSize / 2;
+  _toolbarButton.iconSize = _toolbarIconSize;
+  [_toolbarButton setNeedsLayout];
+  _toolbarButton.baseColor = [entry[@"selected"] boolValue] ? ([RCTConvert UIColor:entry[@"selectedBackgroundColor"]] ?: UIColor.clearColor) : UIColor.clearColor;
+  _toolbarButton.hoverColor = [RCTConvert UIColor:entry[@"hoverBackgroundColor"]] ?: _toolbarButton.baseColor;
+  _toolbarButton.pressedColor = [RCTConvert UIColor:entry[@"pressedBackgroundColor"]] ?: _toolbarButton.baseColor;
+  [_toolbarButton refreshBackground];
+  _toolbarButton.accessibilityLabel = entry[@"accessibilityLabel"];
+  _toolbarButton.accessibilityIdentifier = entry[@"testID"];
+  NSString *color = [entry[@"iconColor"] isKindOfClass:NSString.class] ? entry[@"iconColor"] : @"#000000";
+  CGFloat scale = self.window.screen.scale ?: UIScreen.mainScreen.scale;
+  NSString *identity = [NSString stringWithFormat:@"%@|%@|%g|%g", name, color, scale, _toolbarIconSize];
+  if ([_loadedIconIdentity isEqualToString:identity] && [_toolbarButton imageForState:UIControlStateNormal] != nil) {
+    if (_iconRequestPending) {
+      [[self iconBridge] cancelWithOwner:_iconOwner];
+      _iconOwner = [NSObject new];
+    }
+    _iconIdentity = identity;
+    _iconRequestPending = NO;
+    _readyToolbarImage = nil;
+    _readyToolbarIdentity = nil;
+    [self setLegacyToolbarVisible:YES];
+    return;
+  }
+  if ((_iconRequestPending || [_failedIconIdentity isEqualToString:identity]) && [_iconIdentity isEqualToString:identity]) return;
+  if (_iconOwner) [[self iconBridge] cancelWithOwner:_iconOwner];
+  NSObject *owner = [NSObject new];
+  _iconOwner = owner;
+  _iconIdentity = identity;
+  _iconRequestPending = NO;
+  _readyToolbarImage = nil;
+  _readyToolbarIdentity = nil;
+  [self setLegacyToolbarVisible:NO];
+  if ([_failedIconIdentity isEqualToString:identity] || self.window == nil) return;
+  _iconRequestPending = YES;
+  __weak __typeof__(self) weakSelf = self;
+  [[self iconBridge] requestWithOwner:owner name:name color:color width:(NSInteger)ceil(_toolbarIconSize * scale) height:(NSInteger)ceil(_toolbarIconSize * scale) scale:scale complete:^(UIImage *image) {
+    __strong __typeof__(weakSelf) self = weakSelf;
+    if (!self || self->_iconOwner != owner || ![self->_iconIdentity isEqualToString:identity] || !self.window) return;
+    if (image == nil) {
+      self->_iconRequestPending = NO;
+      self->_failedIconIdentity = identity;
+      return;
+    }
+    UIImage *scaled = image.CGImage ? [UIImage imageWithCGImage:image.CGImage scale:scale orientation:UIImageOrientationUp] : image;
+    self->_readyToolbarImage = [scaled imageWithRenderingMode:UIImageRenderingModeAlwaysOriginal];
+    self->_readyToolbarIdentity = identity;
+    [self applyReadyLegacyToolbarImage];
+  }];
+}
+
+- (BOOL)ownsSettledToolbar {
+  return [_config[@"controlled"] boolValue] && [_config[@"toolbar"] isKindOfClass:NSDictionary.class];
+}
+- (BOOL)toolbarCanCommit {
+  if (!self.window) return NO;
+  if (![self ownsSettledToolbar]) return YES;
+  if (_toolbarPagerBusy || _toolbarPageIndex < 0) return NO;
+  NSArray *pages = [_config[@"pageKeys"] isKindOfClass:NSArray.class] ? _config[@"pageKeys"] : @[];
+  NSArray *items = [_items valueForKey:@"key"];
+  BOOL valid = pages.count > 0 && [pages containsObject:_config[@"selectedKey"] ?: @""] &&
+    [NSSet setWithArray:pages].count == pages.count && [NSSet setWithArray:items].count == items.count;
+  for (id key in pages) if (![items containsObject:key]) { valid = NO; break; }
+  return !valid || (_toolbarPageIndex < pages.count && [pages[_toolbarPageIndex] isEqual:_config[@"selectedKey"]]);
+}
+- (void)setToolbarInteractive:(BOOL)interactive {
+  _toolbarButton.enabled = interactive;
+  _toolbarButton.userInteractionEnabled = interactive;
+  _toolbarButton.accessibilityElementsHidden = !interactive;
+  _toolbarButton.isAccessibilityElement = interactive;
+  if (!interactive) {
+    _toolbarTouchKey = nil;
+    _toolbarButton.highlighted = NO;
+    _toolbarButton.hovering = NO;
+    [_toolbarButton refreshBackground];
+  }
+}
+- (void)cancelToolbarRequest {
+  if (_iconRequestPending || _readyToolbarImage) {
+    if (_iconOwner) [[self iconBridge] cancelWithOwner:_iconOwner];
+    _iconOwner = [NSObject new];
+    _iconRequestPending = NO;
+    _readyToolbarImage = nil;
+    _readyToolbarIdentity = nil;
+  }
+}
+- (void)suspendToolbar {
+  [self setToolbarInteractive:NO];
+  [self cancelToolbarRequest];
+  _desiredToolbarKey = nil;
+  _desiredToolbarEntry = nil;
+  if (_toolbarPresenceAnimating) {
+    CALayer *presentation = _toolbarButton.layer.presentationLayer;
+    CGFloat alpha = presentation ? presentation.opacity : _toolbarButton.alpha;
+    ++_toolbarAnimationGeneration;
+    [_toolbarButton.layer removeAllAnimations];
+    _toolbarButton.alpha = alpha;
+    _toolbarPresenceAnimating = NO;
+    _toolbarPresenceInterrupted = YES;
+  }
+}
+- (void)updateToolbarPagerIndex:(NSInteger)index busy:(BOOL)busy {
+  if (_toolbarPagerBusy == busy && (busy || _toolbarPageIndex == index)) return;
+  _toolbarPagerBusy = busy;
+  if (!busy) _toolbarPageIndex = index;
+  NSString *key = [_config[@"controlled"] boolValue] ? _config[@"selectedKey"] : _toolbarKey;
+  [self updateToolbarForKey:key];
+}
+- (void)setToolbarVisible:(BOOL)visible {
+  if (_toolbarVisible == visible && !_toolbarPresenceInterrupted) return;
+  _toolbarVisible = visible;
+  _toolbarPresenceInterrupted = NO;
+  NSUInteger generation = ++_toolbarAnimationGeneration;
+  CALayer *presentation = _toolbarButton.layer.presentationLayer;
+  CGFloat alpha = presentation ? presentation.opacity : _toolbarButton.alpha;
+  [_toolbarButton.layer removeAllAnimations];
+  _toolbarButton.alpha = alpha;
+  if (visible) _toolbarButton.hidden = NO;
+  if (!self.window) {
+    _toolbarPresenceAnimating = NO;
+    _toolbarButton.alpha = visible ? 1 : 0;
+    _toolbarButton.hidden = !visible;
+    return;
+  }
+  _toolbarPresenceAnimating = YES;
+  [UIView animateWithDuration:0.10 delay:0 options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction animations:^{
+    self->_toolbarButton.alpha = visible ? 1 : 0;
+  } completion:^(BOOL finished) {
+    if (self->_toolbarAnimationGeneration != generation) return;
+    self->_toolbarPresenceAnimating = NO;
+    if (!visible) self->_toolbarButton.hidden = YES;
+  }];
+}
+- (void)commitToolbarImage:(UIImage *)image identity:(NSString *)identity {
+  if (![self toolbarCanCommit] || !_desiredToolbarKey || !_desiredToolbarEntry) return;
+  NSDictionary *entry = _desiredToolbarEntry;
+  BOOL changed = ![_toolbarKey isEqualToString:_desiredToolbarKey] || ![_committedToolbarEntry isEqual:entry] || _loadedToolbarImage != image;
+  if (![_toolbarKey isEqualToString:_desiredToolbarKey]) [self setToolbarInteractive:NO];
+  _toolbarKey = [_desiredToolbarKey copy];
+  _committedToolbarEntry = entry;
+  _toolbarSize = RNCPagerToolbarDimension(entry, @"size", 38, 1, 128);
+  _toolbarIconSize = RNCPagerToolbarDimension(entry, @"iconSize", MIN(24, _toolbarSize), 1, _toolbarSize);
+  _toolbarContentWidth = RNCPagerToolbarDimension(entry, @"contentWidth", MIN(24, _toolbarSize), 0, _toolbarSize);
+  _toolbarTrailingInset = RNCPagerToolbarDimension(entry, @"trailingInset", 20, 0, 128);
+  _toolbarButton.layer.cornerRadius = _toolbarSize / 2;
+  _toolbarButton.iconSize = _toolbarIconSize;
+  [_toolbarButton setNeedsLayout];
+  _toolbarButton.baseColor = [entry[@"selected"] boolValue] ? ([RCTConvert UIColor:entry[@"selectedBackgroundColor"]] ?: UIColor.clearColor) : UIColor.clearColor;
+  _toolbarButton.hoverColor = [RCTConvert UIColor:entry[@"hoverBackgroundColor"]] ?: _toolbarButton.baseColor;
+  _toolbarButton.pressedColor = [RCTConvert UIColor:entry[@"pressedBackgroundColor"]] ?: _toolbarButton.baseColor;
+  [_toolbarButton refreshBackground];
+  _toolbarButton.accessibilityLabel = entry[@"accessibilityLabel"];
+  _toolbarButton.accessibilityIdentifier = entry[@"testID"];
+  [_toolbarButton setImage:image forState:UIControlStateNormal];
+  _loadedIconIdentity = identity;
+  _loadedToolbarImage = image;
+  _readyToolbarImage = nil;
+  _readyToolbarIdentity = nil;
+  _iconRequestPending = NO;
+  [self setToolbarVisible:YES];
+  [self setToolbarInteractive:YES];
+  if (changed) [self setNeedsLayout];
+}
+- (void)applyReadyToolbarImage {
+  if (!_readyToolbarImage || ![_readyToolbarIdentity isEqualToString:_iconIdentity] || ![self toolbarCanCommit]) return;
+  [self commitToolbarImage:_readyToolbarImage identity:_readyToolbarIdentity];
+}
+- (void)hideFailedToolbar {
+  [self setToolbarInteractive:NO];
+  _toolbarKey = nil;
+  _committedToolbarEntry = nil;
+  [_toolbarButton setImage:nil forState:UIControlStateNormal];
+  _toolbarButton.accessibilityLabel = nil;
+  _toolbarButton.accessibilityIdentifier = nil;
+  [self setToolbarVisible:NO];
+}
+- (void)updateToolbarForKey:(NSString *)key {
+  if (![self ownsSettledToolbar]) { [self updateLegacyToolbarForKey:key]; return; }
+  NSDictionary *toolbar = [_config[@"toolbar"] isKindOfClass:NSDictionary.class] ? _config[@"toolbar"] : nil;
+  _toolbarReservedWidth = toolbar == nil ? 0 : 44;
+  if (toolbar.count > 0) {
+    _toolbarReservedWidth = 0;
+    for (id value in toolbar.allValues) {
+      NSDictionary *entry = [value isKindOfClass:NSDictionary.class] ? value : @{};
+      CGFloat size = RNCPagerToolbarDimension(entry, @"size", 38, 1, 128);
+      CGFloat content = RNCPagerToolbarDimension(entry, @"contentWidth", MIN(24, size), 0, size);
+      CGFloat trailing = RNCPagerToolbarDimension(entry, @"trailingInset", 20, 0, 128);
+      _toolbarReservedWidth = MAX(_toolbarReservedWidth, content + trailing);
+    }
+  }
+  if (![self toolbarCanCommit]) { [self suspendToolbar]; return; }
+  NSDictionary *entry = [toolbar[key ?: @""] isKindOfClass:NSDictionary.class] ? toolbar[key] : nil;
+  NSString *name = [entry[@"iconName"] isKindOfClass:NSString.class] ? entry[@"iconName"] : nil;
+  if (!name.length) {
+    [self cancelToolbarRequest];
+    _desiredToolbarKey = nil;
+    _desiredToolbarEntry = nil;
+    _toolbarKey = nil;
+    _committedToolbarEntry = nil;
+    [self setToolbarInteractive:NO];
+    _toolbarButton.accessibilityLabel = nil;
+    _toolbarButton.accessibilityIdentifier = nil;
+    [self setToolbarVisible:NO];
+    return;
+  }
+  _desiredToolbarKey = [key copy];
+  _desiredToolbarEntry = [entry copy];
+  CGFloat size = RNCPagerToolbarDimension(entry, @"size", 38, 1, 128);
+  CGFloat iconSize = RNCPagerToolbarDimension(entry, @"iconSize", MIN(24, size), 1, size);
+  NSString *color = [entry[@"iconColor"] isKindOfClass:NSString.class] ? entry[@"iconColor"] : @"#000000";
+  CGFloat scale = self.window.screen.scale ?: UIScreen.mainScreen.scale;
+  NSString *identity = [NSString stringWithFormat:@"%@|%@|%g|%g", name, color, scale, iconSize];
+  if ([_loadedIconIdentity isEqualToString:identity] && _loadedToolbarImage) {
+    [self cancelToolbarRequest];
+    _iconIdentity = identity;
+    [self commitToolbarImage:_loadedToolbarImage identity:identity];
+    return;
+  }
+  if ([_iconIdentity isEqualToString:identity] && (_iconRequestPending || _readyToolbarImage)) {
+    [self setToolbarInteractive:NO];
+    [self applyReadyToolbarImage];
+    return;
+  }
+  [self cancelToolbarRequest];
+  _iconIdentity = identity;
+  [self setToolbarInteractive:NO];
+  if ([_failedIconIdentity isEqualToString:identity]) { [self hideFailedToolbar]; return; }
+  NSObject *owner = [NSObject new];
+  _iconOwner = owner;
+  _iconRequestPending = YES;
+  __weak __typeof__(self) weakSelf = self;
+  [[self iconBridge] requestWithOwner:owner name:name color:color width:(NSInteger)ceil(iconSize * scale) height:(NSInteger)ceil(iconSize * scale) scale:scale complete:^(UIImage *image) {
+    __strong __typeof__(weakSelf) self = weakSelf;
+    if (!self || self->_iconOwner != owner || ![self->_iconIdentity isEqualToString:identity] || !self.window) return;
+    self->_iconRequestPending = NO;
+    if (!image) {
+      self->_failedIconIdentity = identity;
+      if ([self toolbarCanCommit]) [self hideFailedToolbar];
+      return;
+    }
+    UIImage *scaled = image.CGImage ? [UIImage imageWithCGImage:image.CGImage scale:scale orientation:UIImageOrientationUp] : image;
+    self->_readyToolbarImage = [scaled imageWithRenderingMode:UIImageRenderingModeAlwaysOriginal];
+    self->_readyToolbarIdentity = identity;
+    [self applyReadyToolbarImage];
+  }];
+}
+- (void)didMoveToWindow {
+  [super didMoveToWindow];
+  if (![self ownsSettledToolbar]) {
+    if (_iconOwner) [[self iconBridge] cancelWithOwner:_iconOwner];
+    _iconIdentity = nil;
+    _loadedIconIdentity = nil;
+    _iconRequestPending = NO;
+    _readyToolbarImage = nil;
+    _readyToolbarIdentity = nil;
+    _failedIconIdentity = nil;
+    _iconOwner = [NSObject new];
+    _toolbarAnimationGeneration++;
+    [_toolbarButton.layer removeAllAnimations];
+    _toolbarVisible = NO;
+    _toolbarButton.alpha = 0;
+    _toolbarButton.hidden = YES;
+    _toolbarButton.enabled = NO;
+    _toolbarButton.userInteractionEnabled = NO;
+    _toolbarButton.accessibilityElementsHidden = YES;
+    _toolbarTouchKey = nil;
+    _toolbarTouchStarted = NO;
+    _toolbarButton.highlighted = NO;
+    _toolbarButton.hovering = NO;
+    [self updateToolbarForKey:_toolbarKey];
+    return;
+  }
+  [self suspendToolbar];
+  _toolbarPagerBusy = YES;
+  _toolbarPageIndex = -1;
+  _toolbarTouchStarted = NO;
+  if (self.window && self.onToolbarNeedsSettlement) self.onToolbarNeedsSettlement();
+}
+- (void)dealloc { if (_iconOwner) [[self iconBridge] cancelWithOwner:_iconOwner]; }
+- (void)toolbarTouchDown {
+  _toolbarTouchStarted = YES;
+  _toolbarTouchKey = _toolbarButton.enabled && [self toolbarCanCommit] ? [_toolbarKey copy] : nil;
+}
+- (void)toolbarCancel {
+  _toolbarTouchKey = nil;
+  if (![self ownsSettledToolbar]) _toolbarTouchStarted = NO;
+}
+- (void)toolbarPress:(UIControl *)sender forEvent:(UIEvent *)event {
+  if (![self ownsSettledToolbar]) {
+    NSString *key = _toolbarTouchStarted ? _toolbarTouchKey : _toolbarKey;
+    _toolbarTouchStarted = NO; _toolbarTouchKey = nil;
+    if (key && [key isEqualToString:_toolbarKey] && !_toolbarButton.hidden && _toolbarButton.enabled && self.window && self.onToolbarPress)
+      self.onToolbarPress(key, [_toolbarButton convertRect:_toolbarButton.bounds toView:self.window]);
+    return;
+  }
+  BOOL pointer = event && event.type == UIEventTypeTouches;
+  NSString *key = pointer ? (_toolbarTouchStarted ? _toolbarTouchKey : nil) : _toolbarKey;
+  if (pointer) { _toolbarTouchStarted = NO; _toolbarTouchKey = nil; }
+  BOOL selectedMatches = ![_config[@"controlled"] boolValue] || [key isEqual:_config[@"selectedKey"]];
+  if (key && selectedMatches && [key isEqualToString:_toolbarKey] && [self toolbarCanCommit] &&
+      !_toolbarButton.hidden && _toolbarButton.enabled && self.onToolbarPress) {
+    self.onToolbarPress(key, [_toolbarButton convertRect:_toolbarButton.bounds toView:self.window]);
+  }
+}
+
 - (void)setProgress:(CGFloat)progress
 {
+  _hasMappedPageProgress = NO;
+  _nativeProgress = progress;
+  _hasNativeProgress = YES;
   if (_items.count == 0) return;
   if (fabs(_progress - progress) >= 0.001) _shouldCenterSelectedItem = YES;
+  if ([_config[@"controlled"] boolValue]) {
+    NSArray *pageKeys = [_config[@"pageKeys"] isKindOfClass:NSArray.class] ? _config[@"pageKeys"] : @[];
+    NSMutableArray<NSNumber *> *indices = [NSMutableArray new];
+    NSSet *unique = [NSSet setWithArray:pageKeys];
+    NSArray *itemKeys = [_items valueForKey:@"key"];
+    BOOL valid = pageKeys.count > 0 && [pageKeys containsObject:_config[@"selectedKey"] ?: @""] && unique.count == pageKeys.count && [NSSet setWithArray:itemKeys].count == itemKeys.count;
+    for (NSString *key in pageKeys) {
+      NSUInteger index = [_items indexOfObjectPassingTest:^BOOL(NSDictionary *item, NSUInteger i, BOOL *stop) { return [item[@"key"] isEqual:key]; }];
+      if (index == NSNotFound) { valid = NO; break; }
+      [indices addObject:@(index)];
+    }
+    if (!valid) {
+      NSUInteger selected = [_items indexOfObjectPassingTest:^BOOL(NSDictionary *item, NSUInteger i, BOOL *stop) { return [item[@"key"] isEqual:self->_config[@"selectedKey"]]; }];
+      if (selected == NSNotFound) return;
+      _progressSource = selected; _progressDestination = selected; _progressFraction = 0;
+      _progress = selected;
+      if (_indicatorFrames.count == _items.count) [self updatePresentation];
+      return;
+    }
+    _hasMappedPageProgress = YES;
+    CGFloat bounded = RNCClamp(progress, 0, pageKeys.count - 1);
+    NSInteger lower = (NSInteger)floor(bounded);
+    NSInteger upper = MIN(lower + 1, pageKeys.count - 1);
+    _progressSource = indices[lower].integerValue;
+    _progressDestination = indices[upper].integerValue;
+    _progressFraction = bounded - lower;
+    progress = _progressSource + (_progressDestination - _progressSource) * _progressFraction;
+  }
   _progress = RNCClamp(progress, 0, _items.count - 1);
   if (_indicatorFrames.count == _items.count) [self updatePresentation];
+}
+
+- (NSInteger)visualFontOwnerIndex:(NSInteger)semanticIndex {
+  if (_textVariant && [_config[@"controlled"] boolValue] && _hasMappedPageProgress) {
+    return _progressFraction < 0.5 ? _progressSource : _progressDestination;
+  }
+  return semanticIndex;
 }
 
 - (void)updatePresentation
@@ -718,11 +1335,22 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     _segmented ? CGRectGetHeight(fromFrame) : _indicatorHeight
   );
   _indicatorView.frame = indicatorFrame;
-  _indicatorView.hidden = CGRectGetHeight(indicatorFrame) <= 0;
+  _indicatorView.hidden = _textVariant || CGRectGetHeight(indicatorFrame) <= 0;
 
   NSInteger selectedIndex = (NSInteger)round(progress);
+  if ([_config[@"controlled"] boolValue]) {
+    NSUInteger selected = [_items indexOfObjectPassingTest:^BOOL(NSDictionary *item, NSUInteger i, BOOL *stop) { return [item[@"key"] isEqual:self->_config[@"selectedKey"]]; }];
+    selectedIndex = selected == NSNotFound ? -1 : (NSInteger)selected;
+  }
+  NSInteger fontOwnerIndex = [self visualFontOwnerIndex:selectedIndex];
+  NSString *key = selectedIndex >= 0 && selectedIndex < count ? _items[selectedIndex][@"key"] : nil;
+  [self updateToolbarForKey:key];
   [_buttons enumerateObjectsUsingBlock:^(UIButton *button, NSUInteger index, BOOL *stop) {
     CGFloat emphasis = 1 - MIN(1, fabs(progress - index));
+    if ([self->_config[@"controlled"] boolValue]) {
+      emphasis = index == self->_progressSource ? 1 - self->_progressFraction : 0;
+      if (index == self->_progressDestination) emphasis += self->_progressFraction;
+    }
     UIColor *color = RNCInterpolateColor(
       self->_inactiveTextColor,
       self->_activeTextColor,
@@ -730,6 +1358,11 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
       self.traitCollection
     );
     [button setTitleColor:color forState:UIControlStateNormal];
+    if (self->_textVariant) {
+      button.titleLabel.font = index == fontOwnerIndex
+        ? self.activeTabFont
+        : self.tabFont;
+    }
     button.accessibilityTraits = index == selectedIndex
       ? UIAccessibilityTraitButton | UIAccessibilityTraitSelected
       : UIAccessibilityTraitButton;
@@ -1534,6 +2167,24 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 - (BOOL)canPreventGestureRecognizer:(UIGestureRecognizer *)other { return YES; }
 @end
 
+@protocol RNCPagerPresentationProgressTarget <NSObject>
+- (void)sampleProgrammaticTabProgress:(CADisplayLink *)link;
+- (void)sampleToolbarSettlement:(CADisplayLink *)link;
+@end
+
+@interface RNCPagerPresentationProgressProxy : NSObject
+@property (nonatomic, weak) id<RNCPagerPresentationProgressTarget> target;
+@property (nonatomic, assign) BOOL toolbarSettlement;
+@end
+@implementation RNCPagerPresentationProgressProxy
+- (void)tick:(CADisplayLink *)link {
+  id<RNCPagerPresentationProgressTarget> target = self.target;
+  if (target && self.toolbarSettlement) [target sampleToolbarSettlement:link];
+  else if (target) [target sampleProgrammaticTabProgress:link];
+  else [link invalidate];
+}
+@end
+
 @interface RNCCollapsiblePagerViewComponentView () <
   RCTRNCCollapsiblePagerViewViewProtocol,
   UIPageViewControllerDataSource,
@@ -1542,8 +2193,12 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   UIGestureRecognizerDelegate,
   RCTMountingTransactionObserving,
   RNCNativeScrollerInsetCoordinator,
-  RNCPagerViewNestedOverlayObserver
+  RNCPagerViewNestedOverlayObserver,
+  RNCPagerPresentationProgressTarget
 >
+- (void)syncNativeToolbarState;
+- (void)cancelNativeToolbarSettlement;
+- (void)scheduleNativeToolbarSettlement;
 - (void)finishPagerScrollEmittingSelection:(BOOL)emitSelection;
 - (void)cancelPendingNativePagerScroll;
 - (void)completeTransitionOnNextRunLoopForGeneration:(NSUInteger)generation
@@ -1662,6 +2317,14 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   BOOL _nativeSmoothHeaderScrollEnabled;
   UIPanGestureRecognizer *_blockerGesture;
   BOOL _transitioning;
+  BOOL _toolbarTransitionPending;
+  CADisplayLink *_toolbarSettleDisplayLink;
+  NSUInteger _toolbarSettleGeneration;
+  NSUInteger _toolbarSettleTransition;
+  NSInteger _toolbarSettlePage;
+  CGFloat _toolbarSettleWidth;
+  NSUInteger _toolbarSettleTicks;
+  BOOL _toolbarSettleAttempted;
   BOOL _isPagerDragging;
   BOOL _directNativePagerEnabled;
   BOOL _pendingDirectNativePagerEnabled;
@@ -1672,6 +2335,10 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   NSUInteger _pendingNativePagerScrollGeneration;
   NSUInteger _pendingNativePagerScrollTransition;
   CGFloat _pendingNativePagerScrollTarget;
+  CADisplayLink *_tabProgressDisplayLink;
+  NSUInteger _tabProgressGeneration;
+  NSUInteger _tabProgressTransition;
+  CGFloat _tabProgressWidth;
   NSIndexSet *_programmaticPageMaskIndexes;
   NSMapTable<UIScrollView *, RNCCollapsiblePagerTransitionEdgeOwner *> *_programmaticScrollEdges;
   NSMutableArray<RNCCollapsiblePagerTransitionEdgeOwner *> *_programmaticScrollEdgeOwners;
@@ -1851,6 +2518,23 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
         });
       }
     };
+    _nativeTabBarView.onToolbarNeedsSettlement = ^{
+      __strong __typeof__(weakSelf) self = weakSelf;
+      if (!self) return;
+      NSUInteger generation = self->_generation;
+      dispatch_async(dispatch_get_main_queue(), ^{
+        if (self->_generation == generation) [self syncNativeToolbarState];
+      });
+    };
+    _nativeTabBarView.onToolbarPress = ^(NSString *key, CGRect rect) {
+      __strong __typeof__(weakSelf) self = weakSelf;
+      if (!self || self->_isBeingRecycled) return;
+      const auto emitter = [self eventEmitter];
+      if (emitter) emitter->onNativeToolbarPress({
+        .key = std::string(key.UTF8String ?: ""),
+        .anchorRect = {.x = rect.origin.x, .y = rect.origin.y, .width = rect.size.width, .height = rect.size.height}
+      });
+    };
     [_sharedHeaderHostView addSubview:_nativeTabBarView];
 
     _nativeSubHeaderView = [RNCCollapsiblePagerNativeSubHeaderView new];
@@ -1935,11 +2619,14 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 - (void)didMoveToWindow
 {
   [super didMoveToWindow];
+  [self cancelNativeToolbarSettlement];
+  if (self.window == nil) [self stopProgrammaticTabProgress];
   if (self.window == nil && _pendingNativePagerScrollCompletion != nil) {
     [self cancelPendingNativePagerScroll];
     _pagerScrollView.scrollEnabled = _scrollEnabled;
     [self finishPagerScrollEmittingSelection:NO];
   }
+  [self syncNativeToolbarState];
   [self registerExternalOuterPager];
   BOOL externalHeightChanged = [self resolveExternalTopOverlay];
   if (self.window == nil) [self restoreScrollEdgeContentMasks];
@@ -2054,6 +2741,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   BOOL wasTransitioning = _externalOuterTransitioning;
   _externalOuterPageActive = active;
   _externalOuterTransitioning = transitioning;
+  [self syncNativeToolbarState];
   if (transitioning && !wasTransitioning) {
     [self updateTopScrollEdgeForScrollView:nil];
     [self liftSharedHeadersForPagerTransition:@"outer"];
@@ -2418,8 +3106,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
         [host addSubview:marker];
         return marker;
       };
-      owner.ownsTransitionHosts = allowExternalOverlay && _topOverlayView == nil &&
-        _externalTopOverlayTag > 0 && pageIndex != _currentIndex;
+      owner.ownsTransitionHosts = pageIndex != _currentIndex;
       UIView *(^transitionHost)(UIView *) = ^UIView *(UIView *referenceHost) {
         CGRect frame = [referenceHost convertRect:referenceHost.bounds toView:owner.page];
         CGRect viewport = [scrollView convertRect:scrollView.bounds toView:owner.page];
@@ -2680,6 +3367,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 - (void)dealloc
 {
+  [self cancelNativeToolbarSettlement];
+  [self stopProgrammaticTabProgress];
   [self clearProgrammaticScrollEdges];
   [self updateTopScrollEdgeForScrollView:nil];
   [self cancelHeaderSettledCheck];
@@ -2734,6 +3423,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   }
   _hasPendingDirectNativePagerChange = NO;
   if (_directNativePagerEnabled == enabled) return;
+  [self cancelNativeToolbarSettlement];
   [self cancelPendingNativePagerScroll];
 
   [self restoreScrollEdgeContentMasks];
@@ -2796,18 +3486,62 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   return width * MAX(0, physicalIndex);
 }
 
-- (CGFloat)directPagerProgress
+- (CGFloat)directPagerProgressForOffset:(CGFloat)offset
 {
   CGFloat width = CGRectGetWidth(_pagerScrollView.bounds);
   if (width <= 0 || _pageControllers.count == 0) return _currentIndex;
   CGFloat physicalProgress = RNCClamp(
-    _pagerScrollView.contentOffset.x / width,
+    offset / width,
     0,
     _pageControllers.count - 1
   );
   return self.isLtrLayout
     ? physicalProgress
     : _pageControllers.count - 1 - physicalProgress;
+}
+
+- (CGFloat)directPagerProgress {
+  return [self directPagerProgressForOffset:_pagerScrollView.contentOffset.x];
+}
+
+- (void)stopProgrammaticTabProgress {
+  if (_tabProgressDisplayLink != nil && _tabProgressWidth > 0 && fabs(CGRectGetWidth(_pagerScrollView.bounds) - _tabProgressWidth) < 0.5) {
+    CALayer *presentation = _pagerScrollView.layer.presentationLayer;
+    if (presentation && std::isfinite(presentation.bounds.origin.x)) {
+      [_nativeTabBarView setProgress:[self directPagerProgressForOffset:presentation.bounds.origin.x]];
+    }
+  }
+  [_tabProgressDisplayLink invalidate];
+  _tabProgressDisplayLink = nil;
+}
+
+- (void)updateNativeTabProgress:(CGFloat)progress {
+  if (_tabProgressDisplayLink == nil) [_nativeTabBarView setProgress:progress];
+}
+
+- (void)sampleProgrammaticTabProgress:(CADisplayLink *)link {
+  if (link != _tabProgressDisplayLink) { [link invalidate]; return; }
+  if (self.window == nil || !_transitioning || ![_nativeTabBarView usesControlledTextProgress] ||
+      _tabProgressGeneration != _generation || _tabProgressTransition != _transitionId ||
+      !std::isfinite(CGRectGetWidth(_pagerScrollView.bounds)) || _tabProgressWidth <= 0 ||
+      fabs(CGRectGetWidth(_pagerScrollView.bounds) - _tabProgressWidth) >= 0.5) {
+    [self stopProgrammaticTabProgress];
+    return;
+  }
+  CALayer *presentation = _pagerScrollView.layer.presentationLayer;
+  if (presentation == nil || !std::isfinite(presentation.bounds.origin.x)) return;
+  [_nativeTabBarView setProgress:[self directPagerProgressForOffset:presentation.bounds.origin.x]];
+}
+
+- (void)startProgrammaticTabProgress {
+  [self stopProgrammaticTabProgress];
+  RNCPagerPresentationProgressProxy *proxy = [RNCPagerPresentationProgressProxy new];
+  proxy.target = self;
+  _tabProgressWidth = CGRectGetWidth(_pagerScrollView.bounds);
+  _tabProgressGeneration = _generation;
+  _tabProgressTransition = _transitionId;
+  _tabProgressDisplayLink = [CADisplayLink displayLinkWithTarget:proxy selector:@selector(tick:)];
+  [_tabProgressDisplayLink addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
 }
 
 #pragma mark - Smooth shared header ownership
@@ -3068,8 +3802,81 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   }
 }
 
+- (void)cancelNativeToolbarSettlement {
+  [_toolbarSettleDisplayLink invalidate];
+  _toolbarSettleDisplayLink = nil;
+  _toolbarSettleAttempted = NO;
+  _toolbarSettleTicks = 0;
+}
+
+- (void)scheduleNativeToolbarSettlement {
+  CGFloat width = CGRectGetWidth(_pagerScrollView.bounds);
+  BOOL sameAttempt = _toolbarSettleAttempted && _toolbarSettleGeneration == _generation &&
+    _toolbarSettleTransition == _transitionId && _toolbarSettlePage == _currentIndex &&
+    _toolbarSettleWidth == width;
+  if (sameAttempt) return;
+  [self cancelNativeToolbarSettlement];
+  _toolbarSettleAttempted = YES;
+  _toolbarSettleGeneration = _generation;
+  _toolbarSettleTransition = _transitionId;
+  _toolbarSettlePage = _currentIndex;
+  _toolbarSettleWidth = width;
+  RNCPagerPresentationProgressProxy *proxy = [RNCPagerPresentationProgressProxy new];
+  proxy.target = self;
+  proxy.toolbarSettlement = YES;
+  _toolbarSettleDisplayLink = [CADisplayLink displayLinkWithTarget:proxy selector:@selector(tick:)];
+  [_toolbarSettleDisplayLink addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
+}
+
+- (void)sampleToolbarSettlement:(CADisplayLink *)link {
+  if (link != _toolbarSettleDisplayLink) { [link invalidate]; return; }
+  if (_toolbarSettleGeneration != _generation || _toolbarSettleTransition != _transitionId ||
+      _toolbarSettlePage != _currentIndex ||
+      _toolbarSettleWidth != CGRectGetWidth(_pagerScrollView.bounds) ||
+      !self.window || _nativeTabBarView.window != self.window || ![_nativeTabBarView ownsSettledToolbar]) {
+    [self cancelNativeToolbarSettlement];
+    return;
+  }
+  ++_toolbarSettleTicks;
+  [self syncNativeToolbarState];
+  if (link == _toolbarSettleDisplayLink && _toolbarSettleTicks >= 2) {
+    [link invalidate];
+    _toolbarSettleDisplayLink = nil;
+  }
+}
+
+- (void)syncNativeToolbarState {
+  BOOL logicalBusy = !self.window || _isBeingRecycled || !_hasAppliedInitialPage || _toolbarTransitionPending ||
+    _transitioning || _isPagerDragging || _externalOuterTransitioning ||
+    (_externalOuterPager != nil && !_externalOuterPageActive) || _needsSlotRebuild ||
+    _pendingGoToIndex >= 0 || _transitionPageOffsets != nil || _pendingNativePagerScrollCompletion != nil ||
+    _tabProgressDisplayLink != nil || _currentIndex < 0 || _currentIndex >= _pageControllers.count ||
+    CGRectGetWidth(self.bounds) <= 0 || CGRectGetHeight(self.bounds) <= 0 ||
+    _pagerScrollView.dragging || _pagerScrollView.decelerating;
+  BOOL busy = logicalBusy || _pagerScrollView.tracking;
+  if (!busy && _directNativePagerEnabled) {
+    CALayer *presentation = _pagerScrollView.layer.presentationLayer;
+    CGFloat offset = presentation ? presentation.bounds.origin.x : _pagerScrollView.contentOffset.x;
+    busy = CGRectGetWidth(_pagerScrollView.bounds) <= 0 || !std::isfinite(offset) ||
+      fabs(offset - [self directPagerOffsetForIndex:_currentIndex]) >= 0.5;
+  } else if (!busy) {
+    busy = _pageViewController.viewControllers.firstObject != _pageControllers[_currentIndex];
+  }
+  [_nativeTabBarView updateToolbarPagerIndex:_currentIndex busy:busy];
+  if (busy && !logicalBusy && [_nativeTabBarView ownsSettledToolbar] &&
+      _nativeTabBarView.window == self.window && !_nativeTabBarView.hidden &&
+      CGRectGetWidth(_pagerScrollView.bounds) > 0) {
+    [self scheduleNativeToolbarSettlement];
+  } else {
+    [self cancelNativeToolbarSettlement];
+  }
+}
+
 - (void)beginPageStateTransition
 {
+  [self cancelNativeToolbarSettlement];
+  _toolbarTransitionPending = YES;
+  [_nativeTabBarView updateToolbarPagerIndex:-1 busy:YES];
   [self cancelPagerTop];
   if (!_nativeSmoothHeaderScrollEnabled || _headerHeight <= 0 || _transitionPageOffsets != nil) return;
   _transitionSourceDisplayBody = MAX(_observedScrollView.contentOffset.y + _observedScrollView.contentInset.top - _headerHeight, 0);
@@ -3444,7 +4251,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
                                      animated:NO
                                    completion:nil];
     }
-    [_nativeTabBarView setProgress:_currentIndex];
+    [self updateNativeTabProgress:_currentIndex];
   }
   if (_stickyHeaderView != nil) [_sharedHeaderHostView bringSubviewToFront:_stickyHeaderView];
   if (!_nativeTabBarView.hidden) [_sharedHeaderHostView bringSubviewToFront:_nativeTabBarView];
@@ -3462,6 +4269,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 - (void)layoutSubviews
 {
   [super layoutSubviews];
+  if (_tabProgressDisplayLink != nil && fabs(CGRectGetWidth(self.bounds) - _tabProgressWidth) >= 0.5) {
+    [self stopProgrammaticTabProgress];
+  }
   void (^resizedPagerCompletion)(BOOL) = nil;
   NSInteger resizedPagerDestination = -1;
   NSUInteger resizedPagerGeneration = 0;
@@ -3504,7 +4314,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
                                      animated:NO
                                    completion:nil];
     }
-    [_nativeTabBarView setProgress:_currentIndex];
+    [self updateNativeTabProgress:_currentIndex];
   }
   // UIKit frame assignment is undefined while a view has a non-identity transform.
   // Restore transforms before settling page and shared-header frames.
@@ -3556,10 +4366,12 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     ) animated:NO];
     resizedPagerCompletion(YES);
   }
+  [self syncNativeToolbarState];
 }
 
 - (void)prepareForRecycle
 {
+  [self cancelNativeToolbarSettlement];
   [self cancelPendingNativePagerScroll];
   [_externalOuterPager removeNestedOverlayObserver:self];
   _externalOuterPager = nil;
@@ -3569,6 +4381,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   [self cancelHeaderSettledCheck];
   [self publishHeaderSettledAtTop:NO identityChanged:NO];
   _isBeingRecycled = YES;
+  _toolbarTransitionPending = NO;
+  [_nativeTabBarView updateToolbarPagerIndex:-1 busy:YES];
   _pendingTopOverlayAppearanceCommit = NO;
   [self syncScrollEdgeAppearance];
   _generation++;
@@ -3706,7 +4520,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   _needsPropsReapply = YES;
   _layoutDirection = @"ltr";
   [_nativeTabBarView updateItemsJSON:@"[]"];
-  [_nativeTabBarView setProgress:0];
+  [_nativeTabBarView updateConfigJSON:@"{}"];
+  [self updateNativeTabProgress:0];
   [_nativeSubHeaderView updateConfigJSON:@"{}"];
   _isBeingRecycled = NO;
 }
@@ -3835,6 +4650,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     _retainedPages = RCTNSStringFromString(newViewProps.retainedPages);
     [self setNeedsLayout];
   }
+  if (_needsPropsReapply || oldViewProps.nativeTabBarConfig != newViewProps.nativeTabBarConfig) {
+    [_nativeTabBarView updateConfigJSON:RCTNSStringFromString(newViewProps.nativeTabBarConfig)];
+  }
   if (_needsPropsReapply || oldViewProps.nativeTabBarItems != newViewProps.nativeTabBarItems) {
     NSString *itemsJSON = RCTNSStringFromString(newViewProps.nativeTabBarItems);
     [_nativeTabBarView updateItemsJSON:itemsJSON];
@@ -3899,6 +4717,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     [self logHomeVisualGeometry:@"props-inset" scrollView:_observedScrollView];
   }
   _applyingTopOverlayInsetChange = NO;
+  [self syncNativeToolbarState];
   if (!_nativeTabBarView.hidden) {
     [_nativeTabBarView.superview bringSubviewToFront:_nativeTabBarView];
   }
@@ -5324,6 +6143,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 - (void)cancelPendingNativePagerScroll
 {
+  [self stopProgrammaticTabProgress];
   if (_pendingNativePagerScrollCompletion == nil) return;
   _pendingNativePagerScrollCompletion = nil;
   _pendingNativePagerScrollGeneration = 0;
@@ -5342,6 +6162,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 {
   [self cancelTopInsetReboundCheck];
   if (_isBeingRecycled || index < 0 || index >= _pageControllers.count) return;
+  [self cancelNativeToolbarSettlement];
   _hasReceivedPageCommand = YES;
   _hasAppliedInitialPage = YES;
   if (_transitioning || _isPagerDragging) {
@@ -5363,6 +6184,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     [self attachScrollObserverForCurrentPage];
     [self emitPageSelected:index];
     [self emitDiagnostics:@"page-selected"];
+    [self syncNativeToolbarState];
     return;
   }
 
@@ -5391,13 +6213,14 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     CGFloat targetOffset = [self directPagerOffsetForIndex:index];
     void (^animations)(void) = ^{
       [self->_pagerScrollView setContentOffset:CGPointMake(targetOffset, 0)];
-      [self->_nativeTabBarView setProgress:index];
+      if (self->_tabProgressDisplayLink == nil) [self->_nativeTabBarView setProgress:index];
       [self updatePageStateTransitionProgress:index];
     };
     void (^completion)(BOOL) = ^(BOOL finished) {
       __strong __typeof__(weakSelf) self = weakSelf;
       if (self == nil || self->_generation != capturedGeneration ||
           self->_transitionId != capturedTransition || self->_isBeingRecycled) return;
+      [self stopProgrammaticTabProgress];
       self->_pagerScrollView.scrollEnabled = self->_scrollEnabled;
       if (finished) {
         [self detachScrollObserver];
@@ -5433,7 +6256,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
       _pagerScrollView.scrollEnabled = NO;
       if (useNativeAnimatedScroll) {
         if (fabs(_pagerScrollView.contentOffset.x - targetOffset) <= 0.5) {
-          [_nativeTabBarView setProgress:index];
+          [self updateNativeTabProgress:index];
           [self updatePageStateTransitionProgress:index];
           completion(YES);
         } else {
@@ -5444,6 +6267,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
           [_pagerScrollView setContentOffset:CGPointMake(targetOffset, 0) animated:YES];
         }
       } else {
+        if ([_nativeTabBarView usesControlledTextProgress]) [self startProgrammaticTabProgress];
         [UIView animateWithDuration:0.28
                               delay:0
                             options:UIViewAnimationOptionCurveEaseInOut |
@@ -5508,10 +6332,12 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
       [self attachScrollObserverForCurrentPage];
     }
     [self drainPendingGoTo];
+    if (!self->_transitioning && !self->_isPagerDragging && self->_pendingGoToIndex < 0) self->_toolbarTransitionPending = NO;
     if (!hadProgrammaticScrollEdges && !self->_transitioning && !self->_needsSlotRebuild) {
       [self attachScrollObserverForCurrentPage];
     }
     [self updateScrollEdgeContentMasks];
+    [self syncNativeToolbarState];
   });
 }
 
@@ -5631,7 +6457,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
       [self directPagerOffsetForIndex:index],
       0
     ) animated:NO];
-    [_nativeTabBarView setProgress:index];
+    [self updateNativeTabProgress:index];
     [self attachScrollObserverForCurrentPageAfterTransition:YES];
     if (emitSelection &&
         (_pendingGoToIndex < 0 || _pendingGoToIndex == index)) {
@@ -5682,7 +6508,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
       [self detachScrollObserver];
       _currentIndex = index;
       _destinationIndex = index;
-      [_nativeTabBarView setProgress:index];
+      [self updateNativeTabProgress:index];
       [self attachScrollObserverForCurrentPageAfterTransition:YES];
       // A newer tab tap remains authoritative while its queued command runs.
       if (emitSelection &&
@@ -5743,7 +6569,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     position = MAX(0, MIN(position, (NSInteger)_pageControllers.count - 1));
     [self updatePageStateTransitionProgress:progress];
     [self updateScrollEdgeContentMasks];
-    [_nativeTabBarView setProgress:progress];
+    if (_tabProgressDisplayLink == nil) [self updateNativeTabProgress:progress];
     const auto emitter = [self eventEmitter];
     if (emitter) {
       emitter->onPageScroll({.position = (double)position, .offset = (double)offset});
@@ -5762,7 +6588,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   }
   [self updatePageStateTransitionProgress:tabProgress];
   [self updateScrollEdgeContentMasks];
-  [_nativeTabBarView setProgress:tabProgress];
+  [self updateNativeTabProgress:tabProgress];
   const auto emitter = [self eventEmitter];
   if (emitter) {
     emitter->onPageScroll({.position = (double)position, .offset = (double)offset});

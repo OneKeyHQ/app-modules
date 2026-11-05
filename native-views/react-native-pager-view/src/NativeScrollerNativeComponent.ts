@@ -8,7 +8,6 @@ import {
   type ViewProps,
 } from "react-native";
 
-
 export type NativeScrollerScrollEvent = Readonly<{
   contentInset: Readonly<{
     top: CodegenTypes.Double;

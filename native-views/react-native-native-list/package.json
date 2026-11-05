@@ -89,8 +89,8 @@
     "typescript": "^5.9.2"
   },
   "peerDependencies": {
-    "@onekeyfe/react-native-image": "6.7.0-22",
-    "@onekeyfe/react-native-native-logger": "6.7.0-22",
+    "@onekeyfe/react-native-image": "*",
+    "@onekeyfe/react-native-native-logger": "*",
     "react": "*",
     "react-native": "*",
     "react-native-nitro-modules": "0.37.0"

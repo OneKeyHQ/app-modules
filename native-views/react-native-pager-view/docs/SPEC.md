@@ -136,6 +136,34 @@ style forwarding, overlay retention and disabling; UIKit tests cover native
 style switching and restoring the previous style. Rendered iOS acceptance must
 be reported separately from type, codegen and build checks.
 
+### iOS 27 local incoming transition hosts
+
+Status: Implemented; scoped iOS 27 simulator runtime verified.
+
+For the existing local smooth Hard direct-pager transition, incoming pages use
+the external path's transparent, noninteractive per-page top/sticky interaction
+hosts. Their horizontal origin follows each page's scroll viewport; vertical
+geometry follows the existing overlay and sticky references. The actual local
+overlay and source interaction/marker/borrowed-host identities remain unchanged.
+No replacement material, background, public API or additional mask is added.
+Existing completion, release-back-to-source, invalidation and recycle paths
+release only owned temporary hosts.
+
+Source-matched iOS 27 simulator checks passed for slow movement in both
+directions, same-contact over-half return followed by UP, retained nonzero scroll
+regions, light/dark header protection and actual toolbar sheet opening/closing.
+Selected fixed-label anchors retained their geometry. This is scoped main-UI
+native-view evidence; background runtime readiness and shared JS heaps are not
+assumed. Continuous/rapid alternation remains unproven: the final recording
+shows no discernible alternating page motion despite successful input ACKs.
+True CANCEL, resize/orientation and native lifecycle test execution remain
+unverified. The original physical-device recording's exact OS/build is unknown;
+selected-frame results do not establish exhaustive frame or numeric-offset parity.
+The run retains `normalDevSession=false` and its official launcher failure notice;
+diagnostic compilation and strict-input installation are separate build evidence.
+Market's equal-height secondary display-owner change is an independent consumer
+companion, not a new SDK public guarantee or JS/native same-frame contract.
+
 ### iOS 27 external-overlay interactive ownership
 
 Status: Implemented in iOS source; runtime acceptance is reported separately.
@@ -555,11 +583,11 @@ input, coalesced-event delivery, and physical-device acceptance.
 
 Status: implemented locally. Focused production-class iOS XCTest and Android
 instrumentation checks pass; consuming App interaction acceptance is separate.
-`nativeTabBar.style.variant` accepts `"underline"` (the default) or
-`"segmented"` on iOS and Android. The optional
+`nativeTabBar.style.variant` retains `"underline"` (the default) and
+`"segmented"` on iOS and Android; the text variant is specified below. The optional
 `nativeTabBar.style.contentPaddingVertical` is a nonnegative logical inset,
 defaulting to zero. Omitting both fields preserves the existing content-width,
-horizontally scrollable underline bar. Web ignores `nativeTabBar` and retains
+horizontally scrollable underline bar. Web ignores legacy `nativeTabBar` configurations and retains
 its caller-rendered sticky header.
 
 In segmented mode, the existing `height` is the entire tab slot. The track
@@ -1128,3 +1156,305 @@ This separates package initialization in the Native UI main runtime; it does not
 add a bridge, share JS heaps with background, or change Native scroll commands.
 Acceptance includes the actual Native dependency graph and unchanged startup
 budgets, Web runtime/type exports, and package source/module/declaration entries.
+
+## Text tabs, controlled selection and per-tab toolbar
+
+Physical font-owner revision: Implemented from source-matched consumer candidates
+and independently accepted for the scoped three-platform checks: iOS `e6dab83e`,
+Android Header `c7fdbb4d` and Web `c75c725c`. Native compiled objects/classes,
+archives/APKs and installed binaries are matched separately from runtime evidence.
+iOS original-resolution bidirectional slow motion pairs body displacement with
+normalized same-label glyph references across halfway, and actual adjacent and
+nonadjacent clicks were reviewed. Supplemental same-contact out-and-back followed
+by UP also passed on the same task device/source: one native path contains 244
+events (1 DOWN, 242 MOVE, 1 UP). Selected-frame analysis of the 442-frame original
+recording independently pairs body displacement with normalized glyphs across the outgoing and returning
+halfway crossings, closing the out-and-back/UP evidence gap. An injected CANCEL
+event remains untested. Image-derived progress has plus/minus two-physical-pixel
+uncertainty; exact midpoint paint time is not claimed. Its authorized lower-level
+runtime remains `normalDevSession=false` with the existing DeviceHub GUI limitation.
+
+Android actual slow and reverse motion, clicks and same-contact out-and-back
+input were reviewed with glyph/body evidence. The boundary estimate has a
+plus/minus two-physical-pixel uncertainty; the cancel input settled on Perps, so
+it is not evidence that cancellation returned to the source page. Web reviewed
+actual release-time CSS motion, normalized glyph ownership and stable neighboring
+tab geometry. Its existing touch path still moves the body after release. These
+are scoped runtime passes, not full gesture, typography or accessibility coverage.
+Two mounted DOM regressions exercise the physical-owner/semantic distinction and
+inherited-family/mode cleanup; they do not replace browser/native pixel evidence.
+
+Prior interaction revision evidence (retained for unchanged paths): Implemented
+and synchronized from the source-matched consumer prototype. Targeted independent
+runtime acceptance passed for Web (`f22adedb`),
+iOS (`14ac191c`) and Android (Header `bafa2c02`, Host `f80156f7`). The consumer
+records are `web-settled-review.json`, `ios-14ac-review.json` and
+`android-bafa-review.json`; the unchanged Android Host/component/history evidence
+is retained separately in `android-f801-review.json`.
+
+Web exercised different/same SVG handoff, approximately 100 ms presence, pointer
+cancellation/late UP, keyboard activation, resize/reattach and real Home menus.
+iOS exercised fresh History-to-Spot settlement, route/owner return, different/same
+SVG and no-entry Gallery controls, continuous actual-motion label colors, and a
+50-to-100 History append with exact key/image prefix. Android's final background
+build measured zero leaked badge pixels over 142 with-entry frames and a clean
+slot over 84 no-entry frames, plus real pressed feedback and route/owner menus.
+Its unchanged Host build separately exercised Gallery return, owner changes,
+50-to-100 History append and retained viewport/key-image prefix.
+
+These are main-UI/native-view checks; background initializes independently and no
+shared JS heap/readiness is assumed. iOS verification used the authorized
+lower-level launch with `normalDevSession=false`. Its unchanged vendor/session
+payload followed an earlier OCI manifest HTTP 404 local-build fallback, so this
+is not normal-launcher or clean cache-hit evidence. Existing debugger/Purchases
+and Gallery warnings remain; no console-clean claim is made.
+
+Native exact slow-drag/cancel and sub-150 ms tap storms, physical hover, complete
+RTL/extreme-font coverage, live custom-RGBA composition and exact append commit
+frame stability were not established by the final targeted builds. Earlier
+component evidence remains scoped to unchanged paths, never relabeled as new
+binary footage. Source/type/method-double checks and new native test drafts are
+separate from runtime evidence; the new native host/Bitmap test additions have
+not yet executed in the SDK host.
+
+Earlier revision validation (retained baseline; not proof of the revision below):
+Validation scope: Web exercised real content switching, toolbar menus and selected
+feedback, drag cancellation, keyboard activation, sticky headers, localized narrow
+labels, dark mode and the unchanged wide layout. iOS exercised real page contents,
+medium/semibold labels and descenders, named SVG controls, 38-point button frames,
+press/drag cancellation, filter menus, LP selected-background restoration and sticky
+navigation. Android exercised real page contents, toolbar controls, native press
+and drag cancellation, LP selected-background restoration and sticky scrolling.
+
+Rich-data Home checks on all three targets expanded the token list from 6 to 50
+items, loaded 785 NFT items, and reached 150 unique History entries through two
+successive page appends. History checks included the companion consumer
+content-generation update. Native append recordings showed no return to the
+initial list top, and 10-fps samples showed no whole-column icon clearing.
+Pixel-exact anchor stability and zero individual-image flicker were not measured.
+
+VoiceOver/TalkBack speech and native hover were not exercised. An iOS Spot
+accessibility-tree snapshot failure also occurs with the original Home JS tab
+bar in the same binary; History snapshots succeed. This comparison does not
+establish a full native baseline or resolve the separate accessibility issue.
+
+The existing `nativeTabBar` additionally accepts the `text` style variant. It
+uses scrollable, intrinsic-width labels, no indicator or track, and full-height
+hit areas with sufficient font ascent/descent space. Text labels use 18-point medium by default, with semibold text for the visual
+font owner defined below; consumers supply fontSize, fontFamily and
+activeFontFamily for their bundled brand faces. Native width reserves the larger
+medium/semibold label. Controlled Web text buttons use a private overlapping grid
+with one visible label and two hidden normal/active face reservations, so a font
+handoff does not resize the button or move its neighboring tabs. Hidden copies
+are AX-hidden, noninteractive and unselectable; there remains one named button
+and one visible label. The normal face keeps its inherited family when
+fontFamily is omitted, and the active face falls back to that normal family.
+On native text tabs, an omitted or empty `activeFontFamily` derives the active
+semibold weight (600, or Android legacy bold) from the resolved normal face,
+using the nearest available family weight on iOS.
+A nonempty explicit active face takes precedence and retains its named weight;
+an unavailable explicit iOS face retains the existing system-semibold fallback.
+Invalid normal iOS faces resolve to system medium before deriving active weight;
+Android family resolution retains ReactFontManager fallback behavior. Native
+measurement and rendering use the same resolved active face. On iOS text bars,
+the parent paints the full row background once and the inner scroll view is
+transparent, including fractional-alpha colors and the fixed toolbar slot.
+Other modes retain their existing structure and behavior. Existing underline and
+segmented defaults remain unchanged.
+
+`nativeTabBar.controlled` defaults to false. When true, a tab press emits its
+stable item key without issuing a pager command. `selectedKey` identifies the
+selected item independently of its visual index. Consumers own business routing
+and call the existing pager commands when appropriate. With unique item/page
+keys and every page matched, label colors follow actual pager progress, including
+integer samples. Only the two page endpoints interpolate; extra non-page items
+receive no transition emphasis. Config echoes and semantic selection callbacks
+MUST NOT replace this actual progress with the target endpoint. Semantic selection,
+including selectedKey, aria-selected/native selected traits and press callbacks,
+continues to follow the existing controlled contract. Toolbar snapshot ownership,
+activation and settlement are unchanged.
+
+For valid controlled text tabs with an actual progress sample, only the visual
+font owner follows the physical page: clamp raw page progress to the page range,
+choose its source page below fraction 0.5 and its destination at or above 0.5,
+then map that page key to its item. At 0.49 the source uses the active face; at
+0.50 and 0.51 the destination does. Reversing actual progress uses the same rule.
+Do not round interpolated item coordinates: an extra non-page item between the
+two endpoints must never become the transition font owner. Both font weight and
+normal/active font family use this owner, including native remeasurement and Web
+render/RAF synchronization. Config or semantic echoes do not move the font owner
+ahead of physical progress. Missing/invalid mappings, selected non-page items,
+no actual sample, uncontrolled and non-text modes retain their existing semantic
+or automatic fallback; stale valid mapping state must not survive a newly invalid
+configuration. Label color interpolation is unchanged.
+
+
+`nativeTabBar.toolbar` is one JSON-compatible dictionary indexed by stable tab
+key. Each entry describes one `iconName` from the existing OneKeyImage named-SVG
+pipeline, `selected`, `accessibilityLabel` and `testID`. Omitting `toolbar`
+reserves zero width. Explicit `toolbar: {}` reserves 44 logical units. A nonempty
+map reserves the largest resolved `contentWidth + trailingInset` across all its
+entries, independent of the displayed owner. A missing selected entry has no
+button, hit target or accessibility element while this fixed slot remains. Each toolbar entry accepts `iconColor`, `selectedBackgroundColor`, `hoverBackgroundColor` and `pressedBackgroundColor` as resolved CSS strings. `size`, `iconSize`, `contentWidth` and `trailingInset` are logical dimensions supplied by the consumer (defaults 38, 24, 24 and 20). The circular frame includes the icon and border; layout reservation is contentWidth plus trailingInset, preserving the consumer's negative-margin layout. The SDK does not infer application scale rules.
+At the native JSON boundary, finite `size` is clamped to 1..128,
+`iconSize` to 1..size, `contentWidth` to 0..size, and `trailingInset` to
+0..128. Missing, null, nonnumeric or nonfinite dimensions use the defaults
+above (iconSize/contentWidth defaults are additionally capped by size).
+Consumers supply finite dimensions on Web; finite bounds and missing/null
+defaults apply there, while direct NaN/Infinity values are unsupported CSS
+inputs. Colors are normalized at the native wrapper boundary: iconColor uses
+OneKeyImage's rgba representation and native background colors use ARGB.
+This does not add a second toolbar configuration or a JavaScript feedback loop. Default background is transparent;
+selected background remains the base color after hover, press or cancellation.
+Omitted hover and pressed colors inherit that resolved base on every platform;
+explicit colors, including transparent, override it.
+iOS UIKit and Android drawable state own feedback without JavaScript roundtrips
+or default Android ripples. No menus or business capability checks live here.
+
+`onNativeToolbarPress` reports the stable `key` of the displayed control and
+`anchorRect` (`x`, `y`, `width`, `height`) in window/viewport logical coordinates.
+It never changes pager selection. Invalid, stale or removed controls emit
+nothing. The controlled toolbar has a private committed presentation snapshot:
+owner key, image, dimensions, label/test identifier, colors and selected base.
+During a gesture, programmatic/queued transition or detach, the old whole visual
+remains, with hit testing and accessibility disabled and active input invalidated.
+A config-selected target before the page command cannot transfer this snapshot.
+
+With a valid page mapping, commit requires genuine physical settlement and a
+physical page key matching the latest `selectedKey`. A late business echo delays
+enablement; it never changes business selection. Cancellation restores the old
+owner, rapid commands submit only the final stable owner, and idle same-owner
+LP/config updates apply once ready. Non-page/invalid mapping uses semantic fallback
+at genuine idle. Automatic/legacy modes retain their existing timing; changing
+modes cancels requests/ready owners and restores the destination mode's hit/AX state.
+
+Presence changes alone fade for approximately 100 ms from current presentation
+opacity. Two present entries never fade the whole button out: identical rendering
+inputs reuse artwork across distinct action owners; different ready artwork
+replaces in place once, without crossfade or fade-through. Pending artwork may
+retain the old snapshot only as disabled, AX-hidden decoration. Ready callbacks
+recheck owner, attachment and physical settlement before atomically changing the
+whole entry. Missing/failed artwork hides content without removing the fixed slot.
+
+The existing named-SVG identity includes name, color, scale and raster geometry;
+it is separate from the owner key. Replacement/detach cancels pending and ready
+owners; stale callbacks cannot paint or enable. One loaded image, at most one
+pending/ready target and one failed identity are retained per toolbar view; this
+does not replace the image package's existing resource cache. Repeated config or
+frame updates do not retry a failed identity. Returning to it still cancels a
+different pending target and hides old content; matching loaded artwork wins over
+failure memory. Android clears failed identity on detach; iOS retains it across
+transient header reparenting, and Web clears it on disposal.
+
+A pointer origin is invalidated on suspension/owner transfer; a late UP cannot
+fall back to the new owner. Valid idle keyboard/AX activation remains available.
+Web blurs a focused toolbar before AX hiding. Native busy state must preserve the
+old raster without UIKit's default disabled-image dimming.
+
+Platform settlement and progress:
+
+- iOS uses actual scroll/presentation bounds during programmatic animation;
+  UIView's model offset is not physical completion. Toolbar settlement follows
+  completion, pending-command drain and observer/header restoration, with current
+  generation, controller, transition, attachment and geometry checks. An owned,
+  logically idle toolbar may retry transient tracking/presentation guards on at
+  most two actual display ticks. Every tick rechecks full state; tracking still
+  prevents commit. Real dragging/deceleration/queued transitions do not poll.
+  Success stops immediately; same-context sync does not replenish the budget,
+  and exhaustion stays disabled without self-renewal. Command, drag, route,
+  recycle, mode and exact width changes cancel stale callbacks. Width identifies
+  the geometry owner exactly, independently of visual offset-arrival tolerance.
+- Android accepts actual `onPageScrolled` for controlled text, independently of
+  shared-header transition bookkeeping. Semantic `onPageSelected` keeps its
+  business timing but cannot write the visual target early. IDLE settlement also
+  requires valid attached bounds, no fake drag/suppression and no pending/computing
+  RecyclerView or ViewPager2 layout. The existing pre-draw drain normally measures
+  and lays out a requested parent pager for this opt-in mode, including when its
+  RecyclerView is already clean. A retained host may reattach with positive
+  bounds but without a completed layout; this opt-in path normally measures and
+  lays out the attached, shown, idle host before testing its real `isLaidOut`.
+  It never assigns that flag or bypasses it. Hidden/zero/busy/computing hosts wait.
+  The existing RecyclerView drain then keeps its original behavior. A deferred turn rechecks all guards and the fresh page before updating
+  endpoint color and toolbar together. Only success records a generation/page
+  stamp; later idle draws do not repeatedly post or lay out. Config, actual motion,
+  transitions and attachment invalidate it; a separately attached busy header can
+  recover. Legacy RecyclerView drain behavior is unchanged. Text-bar background belongs to
+  the parent Header over the full row and fixed slot; row/content are transparent
+  to composite fractional alpha once. Non-text clears that parent and keeps its
+  original row/track path. Toolbar presence/LP/hover/pressed fills do not change
+  this background ownership.
+- Web samples the live computed CSS track transform and existing gesture progress.
+  Its existing touch path moves the body after release; the new font owner follows
+  that actual CSS movement and does not add continuous body dragging. Timeout or
+  semantic state alone does not settle. Finish, resize and route return
+  require valid live width/transform and no active gesture/inactive route; old
+  RAF/timer/transition owners cannot finish a newer transition.
+
+Web uses the same existing `CollapsiblePagerView.nativeTabBar` entry point,
+selection semantics and toolbar dictionary. Pointer CSS owns hover/active states;
+viewport geometry comes from the clicked element. For compatibility, legacy configurations containing only underline/segmented items remain ignored by Web as before; the new text variant, controlled=true or an explicitly supplied toolbar opt into Web rendering. The consumer remains the owner
+of menus, filtering, export, analytics and translated labels.
+
+Acceptance: focused wrapper tests must cover automatic compatibility, controlled
+presses, stable keys with extra tabs, empty toolbar and toolbar events. Rendered
+checks must cover long localized labels and p/y/g glyphs, changing tabs while
+pressed, drag cancellation, sticky headers, SVG icons, light/dark colors, no-icon
+fixed reservation and native/Web parity. Include adjacent same/different SVG,
+LP differences, config-before-command, fast reversals/cancel, DOWN-switch-UP,
+pending/failed/late image completion, mode changes, no-animation, initial attach,
+resize/reorder/route return and interrupted presence fades. Different-artwork
+acceptance must render the actual component, not infer it from Home's same icon.
+Rebuilt Android frames must remove semantic-endpoint flashes and retained-layout
+settle deadlocks. Focused mounted DOM regressions cover the actual track matrix
+around 0.49/0.50/0.51 and reversal with interleaved items and unchanged selected
+AX, plus inherited normal family and text-only reservation cleanup across mode
+changes. DOM style checks do not prove browser geometry or native glyph weight.
+Real frame acceptance pairs physical body displacement with normalized glyph
+shape using the same label's normal/active endpoint references; color darkness
+alone is not font-weight evidence. Separate bidirectional gestures do not prove
+same-contact out-and-back behavior, and an out-and-back ending in UP does not prove
+CANCEL-event behavior. Source/type/JVM-double checks are not runtime proof.
+
+### React Native public type boundary
+
+The three codegen specs import the public `CodegenTypes` namespace from
+`react-native`. NativeScroller's six host methods derive from its existing
+native `HostRef`, preserving the 11-method ref API and valid parameter calls.
+`keyboardShouldPersistTaps` explicitly retains the deprecated boolean aliases
+(`true` to `always`, `false` to `never`) alongside the standard string values;
+the Web wrapper also normalizes these aliases before forwarding to ScrollView,
+as in the merged main branch. Other values and owner/ref behavior are unchanged.
+
+The merged development workspace follows main's RN 0.88/React 19.3 dependency
+baseline. Fresh normal package prepare/typecheck passed there; isolated copies of
+the current sources also passed normal declaration builds with RN 0.86.2.
+Actual ref/parameter fixtures passed on both RN versions, and RN 0.88 checks
+established bidirectional compatibility of the derived six host methods with
+public `HostInstance`. Both Codegen parsers produced unchanged three-component
+schemas relative to the pre-integration PR. Native source and erased JavaScript
+for the native wrapper/codegen files remain unchanged; the Web boolean forwarding
+above is a separate main-branch runtime change. These checks do not prove a new
+RN 0.88 SDK native example build or extend the scoped consumer UI acceptance.
+
+
+### Registry consumer integration (2026-11-05)
+
+Preview `6.7.0-alpha.449` was published from production source `76834daf9`.
+The consumer normally installed only Pager and NativeList, with exact package
+file/tarball parity; Image/logger/skeleton/bottom-tabs remain alpha.422.
+New official iOS/Android shell and vendor builds exercised Home tab/body/toolbar,
+Market primary tabs and sticky scrolling. Web exercised the actual narrow App
+Home and the installed public wrapper keyboard/ref/scroll contract. These are
+scoped consumer checks, not exact-frame/glyph/performance or rapid/CANCEL/resize
+acceptance. Earlier source-matched evidence and its limits above remain.
+
+The publish workflow's Image registry poll timed out; later all 45 exact versions
+were verified without republishing. Official launch notices record shell and
+vendor HTTP-404 local-build fallbacks, a shared-preparation wait, and the initial
+iOS deployment-lock failure (`[nativeDevShell] Command failed (1): node`). Normal
+App Pod installation refreshed the two selected versions before the successful
+official launch. Neither platform is described as a clean cache hit. Consumer
+commit checks passed 9/9; unrelated postinstall noble patch and Web notification/
+external-image warnings remain separately recorded. Alpha.445 failed Pod
+integration and was not reused. SDK iOS CI ran on iOS 26.5: iOS-27-only incoming
+lifecycle cases remained skipped; no local SDK UIKit execution is claimed.

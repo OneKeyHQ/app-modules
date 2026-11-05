@@ -40,8 +40,10 @@ yarn install             # Refresh the lockfile after changing versions
 (cd example/react-native/ios && bundle exec pod install) # Refresh pod versions/checksums
 ```
 
-The version scripts update package versions and exact internal dependency pins;
-they do not publish. A numeric release must be chosen explicitly after a preview.
+The version scripts update package versions; they do not publish. References
+between publishable `@onekeyfe/*` workspaces use `*` in dependency, peer, optional
+and development sections, and version changes preserve those wildcards. Private
+example `workspace:*` links stay local. App consumers keep exact dependency pins. A numeric release must be chosen explicitly after a preview.
 App baselines and counters within each channel cannot move backwards. Choose the
 baseline for the intended app-monorepo release; it is not inferred from a moving
 remote branch.

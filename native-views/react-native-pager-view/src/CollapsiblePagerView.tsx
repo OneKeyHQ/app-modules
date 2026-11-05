@@ -1,6 +1,6 @@
 import type { ScrollEdgeEffect } from "./ScrollEdgeEffect";
 import React from "react";
-import { I18nManager, Platform, StyleSheet, View } from "react-native";
+import { I18nManager, Platform, StyleSheet, View, processColor } from "react-native";
 import type * as ReactNative from "react-native";
 
 import CollapsiblePagerViewNativeComponent, {
@@ -32,7 +32,7 @@ export type CollapsiblePagerNativeTabBarItem = Readonly<{
 }>;
 
 export type CollapsiblePagerNativeTabBarStyle = Readonly<{
-  variant?: "underline" | "segmented";
+  variant?: "underline" | "segmented" | "text";
   height?: number;
   trailingReservedWidth?: number;
   contentPaddingHorizontal?: number;
@@ -40,6 +40,7 @@ export type CollapsiblePagerNativeTabBarStyle = Readonly<{
   itemSpacing?: number;
   fontSize?: number;
   fontFamily?: string;
+  activeFontFamily?: string;
   backgroundColor?: ReactNative.ColorValue;
   activeTextColor?: ReactNative.ColorValue;
   inactiveTextColor?: ReactNative.ColorValue;
@@ -48,7 +49,30 @@ export type CollapsiblePagerNativeTabBarStyle = Readonly<{
   indicatorBottom?: number;
 }>;
 
+export type CollapsiblePagerToolbarItem = Readonly<{
+  iconName: string;
+  selected?: boolean;
+  accessibilityLabel?: string;
+  testID?: string;
+  iconColor?: string;
+  selectedBackgroundColor?: string;
+  hoverBackgroundColor?: string;
+  pressedBackgroundColor?: string;
+  size?: number;
+  iconSize?: number;
+  contentWidth?: number;
+  trailingInset?: number;
+}>;
+
+export type CollapsiblePagerToolbarPress = Readonly<{
+  key: string;
+  anchorRect: Readonly<{ x: number; y: number; width: number; height: number }>;
+}>;
+
 export type CollapsiblePagerNativeTabBarConfig = Readonly<{
+  controlled?: boolean;
+  selectedKey?: string;
+  toolbar?: Readonly<Record<string, CollapsiblePagerToolbarItem>>;
   items: readonly CollapsiblePagerNativeTabBarItem[];
   style?: CollapsiblePagerNativeTabBarStyle;
 }>;
@@ -95,6 +119,8 @@ export interface CollapsiblePagerViewProps
     | "externalTopOverlayTag"
     | "pageKeys"
     | "retainedPages"
+    | "nativeTabBarConfig"
+    | "onNativeToolbarPress"
     | "nativeTabBarItems"
     | "nativeTabBarHeight"
     | "nativeTabBarVariant"
@@ -148,6 +174,7 @@ export interface CollapsiblePagerViewProps
   layoutDirection?: "ltr" | "rtl" | "locale";
   /** Optional native tab bar for iOS and Android. */
   nativeTabBar?: CollapsiblePagerNativeTabBarConfig;
+  onNativeToolbarPress?: (event: ReactNative.NativeSyntheticEvent<CollapsiblePagerToolbarPress>) => void;
   onNativeTabPress?: (event: CollapsiblePagerViewOnNativeTabPressEvent) => void;
   /**
    * Defaults to animating adjacent native tab presses and jumping directly to
@@ -167,6 +194,20 @@ type State = {
   selectedPage: number;
   transientRetainedPages: readonly number[];
   topOverlayHeight: number | null;
+};
+
+const nativeToolbar = (toolbar: CollapsiblePagerNativeTabBarConfig["toolbar"]) => {
+  if (!toolbar) return undefined;
+  return Object.fromEntries(Object.entries(toolbar).map(([key, item]) => {
+    const color = processColor(item.iconColor ?? "#000000");
+    const argb = typeof color === "number" ? color >>> 0 : 0xff000000;
+    return [key, { ...item,
+      iconColor: `rgba(${(argb >>> 16) & 255},${(argb >>> 8) & 255},${argb & 255},${Math.round(((argb >>> 24) / 255) * 1000000) / 1000000})`,
+      selectedBackgroundColor: processColor(item.selectedBackgroundColor ?? "transparent"),
+      hoverBackgroundColor: processColor(item.hoverBackgroundColor ?? "transparent"),
+      pressedBackgroundColor: processColor(item.pressedBackgroundColor ?? "transparent"),
+    }];
+  }));
 };
 
 const pageIndex = (value: number) => {
@@ -260,7 +301,7 @@ export class CollapsiblePagerView extends React.PureComponent<
       position >= 0 &&
       position < this.pages().length
     ) {
-      if (this.nativeTabBarEnabled()) {
+      if (this.nativeTabBarEnabled() && !this.props.nativeTabBar?.controlled) {
         this.dispatchNativeTabPageCommand(position, true);
       } else {
         CollapsiblePagerViewNativeCommands.setPage(this.nativeRef, position);
@@ -276,7 +317,7 @@ export class CollapsiblePagerView extends React.PureComponent<
       position >= 0 &&
       position < this.pages().length
     ) {
-      if (this.nativeTabBarEnabled()) {
+      if (this.nativeTabBarEnabled() && !this.props.nativeTabBar?.controlled) {
         this.dispatchNativeTabPageCommand(position, false);
       } else {
         CollapsiblePagerViewNativeCommands.setPageWithoutAnimation(
@@ -497,6 +538,7 @@ export class CollapsiblePagerView extends React.PureComponent<
       return;
     }
     if (
+      !this.props.nativeTabBar?.controlled &&
       position >= 0 &&
       position < this.pages().length &&
       (position !== this.state.selectedPage ||
@@ -513,6 +555,13 @@ export class CollapsiblePagerView extends React.PureComponent<
       );
     }
     this.props.onNativeTabPress?.(event);
+  };
+
+  private onNativeToolbarPress = (
+    event: ReactNative.NativeSyntheticEvent<CollapsiblePagerToolbarPress>
+  ) => {
+    if (!this.props.nativeTabBar?.toolbar?.[event.nativeEvent.key]?.iconName) return;
+    this.props.onNativeToolbarPress?.(event);
   };
 
   private onNativeSubHeaderPress = (
@@ -635,6 +684,20 @@ export class CollapsiblePagerView extends React.PureComponent<
         retainedPages={JSON.stringify([...retained])}
         onPageSelected={this.onPageSelected}
         onPageScrollStateChanged={this.onPageScrollStateChanged}
+        nativeTabBarConfig={nativeTabBarEnabled ? JSON.stringify({
+          controlled: nativeTabBar.controlled,
+          selectedKey: nativeTabBar.selectedKey,
+          pageKeys: (() => {
+            const keys: string[] = [];
+            React.Children.forEach(this.props.children, (child) => {
+              if (child !== null && child !== undefined && typeof child !== "boolean") keys.push(pageKey(child, keys.length));
+            });
+            return keys;
+          })(),
+          toolbar: nativeToolbar(nativeTabBar.toolbar),
+          activeFontFamily: nativeTabBar.style?.activeFontFamily,
+        }) : undefined}
+        onNativeToolbarPress={this.onNativeToolbarPress}
         nativeTabBarItems={
           nativeTabBarEnabled ? JSON.stringify(nativeTabBar.items) : undefined
         }
@@ -659,7 +722,7 @@ export class CollapsiblePagerView extends React.PureComponent<
           nativeTabBarEnabled ? nativeTabBarStyle?.itemSpacing ?? 8 : undefined
         }
         nativeTabBarFontSize={
-          nativeTabBarEnabled ? nativeTabBarStyle?.fontSize ?? 16 : undefined
+          nativeTabBarEnabled ? nativeTabBarStyle?.fontSize ?? (nativeTabBarStyle?.variant === "text" ? 18 : 16) : undefined
         }
         nativeTabBarFontFamily={
           nativeTabBarEnabled ? nativeTabBarStyle?.fontFamily : undefined

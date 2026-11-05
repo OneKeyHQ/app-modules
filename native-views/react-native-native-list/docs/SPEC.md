@@ -2212,3 +2212,38 @@ catalog without an App checkout, including raw source digests and viewBox sizes.
 It emits metadata only. Production consumers must supply the complete host icon
 bundle/assets and Web provider; SDK-only fixture tests prove their closed sample
 coverage, while the App's independent generator verifies all 1,909 resources.
+
+## Public host-ref types
+
+`webSectionIndexContainerRef` continues to derive its host instance from
+`React.ElementRef<typeof View>` with the existing nullable `RefObject` shape.
+The main integration preserves this existing declaration boundary without a
+private type import, extra compatibility layer or consumer declaration patch.
+Fresh normal package prepare/typecheck passed with RN 0.88/React 19.3; an isolated
+copy of the current sources passed a normal RN 0.86.2 declaration build.
+Actual View-ref positive/negative fixtures passed on both versions, with RN 0.88
+bidirectional compatibility against public `ViewInstance`. This is type-only:
+emitted JavaScript, native schemas, props and list behavior are unchanged by
+this ref declaration. Independent main-branch Web renderer changes and consumer
+runtime acceptance remain separately scoped.
+
+
+## Registry consumer integration (2026-11-05)
+
+Preview alpha.449 from source `76834daf9` was normally installed together with
+Pager; all 330 installed NativeList files match its verified registry tarball.
+The published runtime includes main's Web identity-row layout and iOS empty
+accessory constraint changes; the earlier types-only overlay is historical.
+New iOS source/object/built/installed binary hashes bind this Swift renderer.
+The existing App account-selector rows were opened and closed without importing
+accounts or editing the independent consumer WIP. This is row integration
+coverage; ellipsis accessory rows do not prove the empty-accessory branch.
+SDK iOS CI independently passed the empty-trailing, rebind and spinner layout
+cases. Actual Web Recipient auto-height rows and the installed public fixture's
+scale/width/long-word/same-DOM reuse checks were separately exercised. External
+notification/image/postinstall warnings and other prior limits remain recorded.
+
+Internal Pod edges use unversioned CocoaPods dependencies, matching the npm
+internal `*` policy while retaining external constraints. Real specification
+readback is `>= 0`; normal SDK example and consumer Pod installs passed. This
+does not retroactively make alpha.445's invalid `*` Pod requirement usable.

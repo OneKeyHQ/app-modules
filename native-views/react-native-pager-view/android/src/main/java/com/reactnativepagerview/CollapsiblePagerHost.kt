@@ -115,6 +115,16 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
 
   val pager = ViewPager2(context)
   internal val adapter = CollapsiblePagerAdapter()
+  var onNativeToolbarPress: ((String, DoubleArray) -> Unit)? = null
+  fun updateNativeTabBarConfig(value: String?) {
+    toolbarSettledStamp = null
+    nativeTabBarView.updateConfigJSON(value)
+    settleNativeTabProgressIfReady()
+  }
+
+  private var toolbarTransitionGeneration = 0
+  private var toolbarSettlePostedGeneration: Int? = null
+  private var toolbarSettledStamp: Pair<Int, Int>? = null
   private val nativeTabBarView = CollapsiblePagerNativeTabBarView(context)
   private val nativeSubHeaderView = CollapsiblePagerNativeSubHeaderView(context)
   private val logicalChildren = ArrayList<View>()
@@ -332,6 +342,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
       pager,
       LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
     )
+    nativeTabBarView.onToolbarPress = { key, rect -> onNativeToolbarPress?.invoke(key, rect) }
     nativeTabBarView.onItemPress = { index, key -> onNativeTabPress?.invoke(index, key) }
     nativeSubHeaderView.onItemPress = { index, key -> onNativeSubHeaderPress?.invoke(index, key) }
     super.addView(nativeTabBarView)
@@ -399,6 +410,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   }
 
   fun updateNativeTabBarItems(value: String?) {
+    toolbarSettledStamp = null
     nativeTabBarView.updateItemsJSON(value)
     bringNativeHeadersToFront()
     updateHeaderLayout()
@@ -411,8 +423,42 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     updateHeaderLayout()
   }
 
-  fun updateNativeTabProgress(position: Int, offset: Float) {
+  fun updateNativeTabProgress(position: Int, offset: Float, fromActualPosition: Boolean = false) {
+    // ViewPager2 selects the target before a smooth scroll reaches it.
+    if (!fromActualPosition && nativeTabBarView.usesControlledTextProgress()) return
+    if (fromActualPosition) toolbarSettledStamp = null
     nativeTabBarView.setProgress(position + offset)
+  }
+
+  private fun settledPagerPage(): Int? {
+    if (!isAttachedToWindow || !isLaidOut || width <= 0 || pager.width <= 0 ||
+      pager.isLayoutRequested || isPagerRecyclerLayoutSuppressed() || pager.isFakeDragging ||
+      pager.scrollState != ViewPager2.SCROLL_STATE_IDLE || pager.currentItem !in 0 until adapter.itemCount) return null
+    val recycler = pager.getChildAt(0) as? RecyclerView ?: return null
+    if (recycler.isLayoutRequested || recycler.isComputingLayout || recycler.width <= 0 || recycler.height <= 0) return null
+    return pager.currentItem
+  }
+
+  private fun suspendNativeToolbar() {
+    toolbarTransitionGeneration++
+    toolbarSettledStamp = null
+    nativeTabBarView.updateToolbarPagerState(-1, true)
+  }
+
+  private fun settleNativeTabProgressIfReady() {
+    val page = settledPagerPage() ?: return
+    val generation = toolbarTransitionGeneration
+    if (toolbarSettledStamp == (generation to page) && !nativeTabBarView.needsToolbarPagerSettlement(page)) return
+    if (toolbarSettlePostedGeneration == generation) return
+    toolbarSettlePostedGeneration = generation
+    postForCurrentAttachment {
+      if (toolbarTransitionGeneration != generation || toolbarSettlePostedGeneration != generation) return@postForCurrentAttachment
+      toolbarSettlePostedGeneration = null
+      val settledPage = settledPagerPage() ?: return@postForCurrentAttachment
+      if (nativeTabBarView.usesControlledTextProgress()) updateNativeTabProgress(settledPage, 0f, fromActualPosition = true)
+      nativeTabBarView.updateToolbarPagerState(settledPage, false)
+      toolbarSettledStamp = generation to settledPage
+    }
   }
 
   fun logPagerState(reason: String) {
@@ -588,6 +634,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   }
 
   internal fun beginPageTransition(target: Int? = null) {
+    suspendNativeToolbar()
     cancelPagerTop()
     if (adapter.itemCount == 0 || !nativeSmoothHeaderScrollEnabled || headerHeightPx <= 0) return
     if (transitionHeaderOffsets == null) {
@@ -627,10 +674,12 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   }
 
   internal fun onPagerScrolled(position: Int, offset: Float) {
+    val controlledTextProgress = nativeTabBarView.usesControlledTextProgress()
+    if (controlledTextProgress) updateNativeTabProgress(position, offset, fromActualPosition = true)
     if (transitionHeaderOffsets == null) return
     alignPageBody(position)
     if (position + 1 < adapter.itemCount) alignPageBody(position + 1)
-    updateNativeTabProgress(position, offset)
+    if (!controlledTextProgress) updateNativeTabProgress(position, offset)
   }
 
   internal fun onPagerScrollStateChanged(state: Int) {
@@ -640,6 +689,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     } else if (state == ViewPager2.SCROLL_STATE_IDLE && transitionHeaderOffsets != null) {
       finishPageTransition(pager.currentItem)
     }
+    if (state == ViewPager2.SCROLL_STATE_IDLE) settleNativeTabProgressIfReady()
   }
 
   private fun finishPageTransition(position: Int) {
@@ -729,23 +779,44 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
 
   private fun layoutPagerIfRequested() {
     val recycler = pager.getChildAt(0) as? RecyclerView ?: return
-    if (
-      !shouldDrainCollapsiblePagerLayout(
+    val controlledSettlement = nativeTabBarView.usesControlledTextProgress() || nativeTabBarView.usesSettledToolbarOwner()
+    if (controlledSettlement && !isLaidOut && isAttachedToWindow && isShown &&
+      width > 0 && height > 0 && pager.width > 0 && pager.height > 0 &&
+      pager.scrollState == ViewPager2.SCROLL_STATE_IDLE && !pager.isFakeDragging &&
+      pager.currentItem in 0 until adapter.itemCount && !isPagerRecyclerLayoutSuppressed() &&
+      !recycler.isLayoutSuppressed && !recycler.isComputingLayout) {
+      // A retained Fabric host can reattach with bounds but no completed layout.
+      updateHeaderLayout()
+    }
+    if (controlledSettlement && pager.isLayoutRequested && isAttachedToWindow && isLaidOut &&
+      width > 0 && height > 0 && pager.width > 0 && pager.height > 0 &&
+      pager.scrollState == ViewPager2.SCROLL_STATE_IDLE && !pager.isFakeDragging &&
+      pager.currentItem in 0 until adapter.itemCount && !isPagerRecyclerLayoutSuppressed() &&
+      !recycler.isLayoutSuppressed && !recycler.isComputingLayout) {
+      // RN can stop the parent request after the recycler has already laid out.
+      pager.measure(
+        MeasureSpec.makeMeasureSpec(pager.width, MeasureSpec.EXACTLY),
+        MeasureSpec.makeMeasureSpec(pager.height, MeasureSpec.EXACTLY),
+      )
+      pager.layout(pager.left, pager.top, pager.right, pager.bottom)
+    }
+    if (shouldDrainCollapsiblePagerLayout(
         recycler.isLayoutRequested,
         recycler.isLayoutSuppressed,
         recycler.isComputingLayout,
         recycler.width,
         recycler.height,
         adapter.itemCount,
+      )) {
+      // OneKey patch: a non-animated page command queues RecyclerView layout, but RN
+      // can stop that request after navigation. Drain it before showing the page.
+      recycler.measure(
+        MeasureSpec.makeMeasureSpec(recycler.width, MeasureSpec.EXACTLY),
+        MeasureSpec.makeMeasureSpec(recycler.height, MeasureSpec.EXACTLY),
       )
-    ) return
-    // OneKey patch: a non-animated page command queues RecyclerView layout, but RN
-    // can stop that request after navigation. Drain it before showing the page.
-    recycler.measure(
-      MeasureSpec.makeMeasureSpec(recycler.width, MeasureSpec.EXACTLY),
-      MeasureSpec.makeMeasureSpec(recycler.height, MeasureSpec.EXACTLY),
-    )
-    recycler.layout(recycler.left, recycler.top, recycler.right, recycler.bottom)
+      recycler.layout(recycler.left, recycler.top, recycler.right, recycler.bottom)
+    }
+    if (controlledSettlement) settleNativeTabProgressIfReady()
   }
 
   private fun updateHeaderLayout() {
@@ -843,6 +914,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     postForCurrentAttachment {
       prepareAdjacentPages()
       attachPrimaryScrollObserver()
+      settleNativeTabProgressIfReady()
     }
   }
 
@@ -2451,6 +2523,9 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   override fun onAttachedToWindow() {
     super.onAttachedToWindow()
     attachmentGeneration += 1
+    toolbarSettledStamp = null
+    toolbarSettlePostedGeneration = null
+    postForCurrentAttachment { settleNativeTabProgressIfReady() }
     restoredRecyclerKeys.clear()
     restoredScrollerKeys.clear()
     viewTreeObserver.addOnPreDrawListener(pageContentLayoutListener)
@@ -2468,6 +2543,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   }
 
   override fun onDetachedFromWindow() {
+    suspendNativeToolbar()
     cancelHeaderSettledCheck()
     headerCommandOwner = null
     publishHeaderSettledState(false)

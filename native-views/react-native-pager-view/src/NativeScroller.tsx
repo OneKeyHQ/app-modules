@@ -7,7 +7,6 @@ import {
   TextInput,
   View,
   type GestureResponderEvent,
-  type HostInstance,
   type RefreshControlProps,
   type ScrollView,
   type ScrollViewProps,
@@ -62,7 +61,7 @@ type HostRef = React.ElementRef<typeof NativeScrollerHost>;
 
 export interface NativeScrollerRef
   extends Pick<
-      HostInstance,
+      HostRef,
       | "measure"
       | "measureInWindow"
       | "measureLayout"
@@ -166,7 +165,7 @@ export const NativeScroller = React.forwardRef<
 
   React.useImperativeHandle(
     forwardedRef,
-    () => ({
+    (): NativeScrollerRef => ({
       scrollTo(options, x, animated) {
         const host = hostRef.current;
         if (!host) return;

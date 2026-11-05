@@ -463,3 +463,7 @@ helper directly. These are geometry unit tests, not RecyclerView/UICollectionVie
 integration tests. Full-app visibility, unmounted/deferred behavior and
 consumer-owned layout/input cancellation require separate runtime validation;
 see [the scrolling spec](docs/SPEC.md).
+
+`webSectionIndexContainerRef` uses the actual View instance type through
+`React.ElementRef<typeof View>`. RN 0.86.2/0.88.0 declaration checks preserve its
+existing nullable ref API without a consumer declaration patch.

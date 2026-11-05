@@ -7,6 +7,7 @@ import test from "node:test";
 import {
   makePreviewVersion,
   preparePreview,
+  setWorkspaceVersions,
   updatePreviewManifest,
 } from "./prepare-preview.mjs";
 
@@ -146,4 +147,43 @@ test("updates package and exact internal dependency versions", () => {
       },
     }
   );
+});
+
+test("preserves internal wildcards through preview and numeric releases", async (t) => {
+  const root = await previewRepo(t, "6.7.0-22");
+  const sections = ["dependencies", "peerDependencies", "optionalDependencies", "devDependencies"];
+  for (const name of ["module-a", "module-b"]) {
+    const path = join(root, "packages", name, "package.json");
+    const manifest = JSON.parse(await readFile(path, "utf8"));
+    for (const section of sections) {
+      manifest[section] = { "module-a": "*", external: "1.2.3" };
+    }
+    await writeFile(path, JSON.stringify(manifest));
+  }
+  const example = {
+    name: "example",
+    private: true,
+    dependencies: { "module-a": "workspace:*", external: "1.2.3" },
+  };
+  await mkdir(join(root, "packages", "example"));
+  const examplePath = join(root, "packages", "example", "package.json");
+  await writeFile(examplePath, JSON.stringify(example));
+  t.mock.method(globalThis, "fetch", async () =>
+    new Response(JSON.stringify({ "dist-tags": { next: "6.7.0-alpha.444" } }))
+  );
+  const preview = await preparePreview(root, "445");
+  assert.equal(preview, "6.7.0-alpha.445");
+  for (const version of [preview, "6.7.0-24", "6.7.1-1"]) {
+    if (version !== preview) await setWorkspaceVersions(root, version);
+    for (const name of ["module-a", "module-b"]) {
+      const manifest = JSON.parse(
+        await readFile(join(root, "packages", name, "package.json"), "utf8")
+      );
+      assert.equal(manifest.version, version);
+      for (const section of sections) {
+        assert.deepEqual(manifest[section], { "module-a": "*", external: "1.2.3" });
+      }
+    }
+    assert.deepEqual(JSON.parse(await readFile(examplePath, "utf8")), example);
+  }
 });
