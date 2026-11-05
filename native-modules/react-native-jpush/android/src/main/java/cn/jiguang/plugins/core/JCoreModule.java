@@ -26,13 +26,24 @@ import cn.jiguang.plugins.push.JPushModule;
 
 public class JCoreModule extends ReactContextBaseJavaModule {
 
-    public static ReactApplicationContext reactContext;
+    public static volatile ReactApplicationContext reactContext;
+    private boolean invalidated;
 
 
     public JCoreModule(ReactApplicationContext reactApplicationContext) {
         super(reactApplicationContext);
         reactContext = reactApplicationContext;
-        JPushModule.registerReactContext(reactApplicationContext);
+        JPushModule.retainReactContext(reactApplicationContext);
+    }
+
+    @Override
+    public void invalidate() {
+        synchronized (this) {
+            if (invalidated) return;
+            invalidated = true;
+        }
+        JPushModule.releaseReactContext(getReactApplicationContext());
+        super.invalidate();
     }
 
     @Override

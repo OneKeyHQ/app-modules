@@ -26,6 +26,10 @@ public class Intent {
 
     public Intent(Context packageContext, Class<?> cls) {}
 
+    public ComponentName getComponent() {
+        return null;
+    }
+
     public String getAction() {
         return action;
     }
@@ -79,6 +83,11 @@ public class Intent {
         return this;
     }
 
+    public Intent putExtra(String name, long value) {
+        extras.putLong(name, value);
+        return this;
+    }
+
     public Intent putExtra(String name, int value) {
         extras.putInt(name, value);
         return this;
@@ -101,6 +110,10 @@ public class Intent {
 
     public String getStringExtra(String name) {
         return extras.getString(name);
+    }
+
+    public long getLongExtra(String name, long defaultValue) {
+        return extras.getLong(name, defaultValue);
     }
 
     public int getIntExtra(String name, int defaultValue) {

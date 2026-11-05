@@ -28,6 +28,7 @@ import cn.jpush.android.api.JPushInterface;
 import cn.jpush.android.api.JThirdPlatFormInterface;
 import cn.jpush.android.api.NotificationMessage;
 import cn.jpush.android.local.ActionHelper;
+import cn.jpush.android.data.JPushLocalNotification;
 import cn.jpush.android.service.JNotifyActivity;
 import cn.jpush.android.service.JPushMessageReceiver;
 import com.google.android.gms.common.GoogleApiAvailabilityLight;
@@ -44,6 +45,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -102,6 +106,56 @@ public class FcmAdapterTest {
     public void tearDown() {
         ActionHelper.getInstance().clearRegisteredReceivers();
         notifications.cancelAll();
+    }
+
+    @Test
+    public void localSchedulingPostsAndDispatchesOnlyTheUncancelledNotification() throws Exception {
+        ActionHelper helper = ActionHelper.getInstance();
+        helper.clearActiveNotificationIds();
+        CountDownLatch fired = new CountDownLatch(1), cancelled = new CountDownLatch(1);
+        AtomicReference<NotificationMessage> delivered = new AtomicReference<>();
+        JPushMessageReceiver receiver = new JPushMessageReceiver() {
+            @Override public void onNotifyMessageArrived(Context c, NotificationMessage message) {
+                if (message.notificationId == 77001) cancelled.countDown();
+                if (message.notificationId == 77002) { delivered.set(message); fired.countDown(); }
+            }
+        };
+        helper.registerReceiver(receiver);
+        try {
+            JPushLocalNotification removed = new JPushLocalNotification();
+            removed.setNotificationId(77001L);
+            removed.setTitle("Cancelled local");
+            removed.setContent("Must not be delivered");
+            removed.setBroadcastTime(300L);
+            JPushInterface.addLocalNotification(context, removed);
+            JPushInterface.removeLocalNotification(context, 77001L);
+
+            JPushLocalNotification scheduled = new JPushLocalNotification();
+            scheduled.setNotificationId(77002L);
+            scheduled.setTitle("Scheduled local");
+            scheduled.setContent("Synthetic local scheduling verification");
+            scheduled.setBroadcastTime(70L);
+            JPushInterface.addLocalNotification(context, scheduled);
+            assertTrue("Scheduled local notification must arrive", fired.await(1000L, TimeUnit.MILLISECONDS));
+            assertEquals(1, delivered.get().notificationType);
+            assertEquals("77002", delivered.get().msgId);
+            Notification posted = Shadows.shadowOf(notifications).getNotification(77002);
+            assertNotNull(posted);
+            assertEquals("Scheduled local", posted.extras.getString(Notification.EXTRA_TITLE));
+            assertNotNull(posted.contentIntent);
+            NotificationMessage clicked = (NotificationMessage) Shadows.shadowOf(posted.contentIntent).getSavedIntent()
+                .getSerializableExtra("multi_notification_msg");
+            assertEquals(77002, clicked.notificationId);
+            assertEquals(1, clicked.notificationType);
+            assertTrue(helper.getActiveNotificationIds().contains(77002));
+            assertFalse("Cancelled local notification must stay cancelled", cancelled.await(360L, TimeUnit.MILLISECONDS));
+            assertNull(Shadows.shadowOf(notifications).getNotification(77001));
+            assertFalse(helper.getActiveNotificationIds().contains(77001));
+            assertEquals(1, arrived.size());
+        } finally {
+            helper.unregisterReceiver(receiver);
+            helper.clearActiveNotificationIds();
+        }
     }
 
     @Test
@@ -415,6 +469,164 @@ public class FcmAdapterTest {
             assertNull(Shadows.shadowOf(RuntimeEnvironment.getApplication()).getNextStartedActivity());
             notifications.cancelAll();
         }
+    }
+
+    private void installHostLauncher() {
+        ActivityInfo host = new ActivityInfo();
+        host.packageName = context.getPackageName();
+        host.name = context.getPackageName() + ".MainActivity";
+        host.applicationInfo = new ApplicationInfo(context.getApplicationInfo());
+        ResolveInfo resolvedHost = new ResolveInfo();
+        resolvedHost.activityInfo = host;
+        Intent launcher = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(context.getPackageName());
+        Shadows.shadowOf(context.getPackageManager()).addResolveInfoForIntent(launcher, resolvedHost);
+    }
+
+    @Test
+    public void tcpReceiveAndSerializedTapsRespectStopAndAuthorization() {
+        installHostLauncher();
+        ActionHelper helper = ActionHelper.getInstance();
+        for (boolean stopped : new boolean[]{true, false}) {
+            JCoreStorage.setPushStopped(context, false);
+            JCoreStorage.setCollectionAuth(context, true);
+            helper.handleDownlinkPushMessage(context, (byte) 0, 7101, "{\"n_title\":\"TCP\",\"n_content\":\"body\"}");
+            helper.handleDownlinkPushMessage(context, (byte) 2, 7102, "{\"message\":\"custom\"}");
+            assertEquals(1, arrived.size());
+            assertEquals(1, custom.size());
+            Intent tap = Shadows.shadowOf(Shadows.shadowOf(notifications).getAllNotifications().get(0).contentIntent).getSavedIntent();
+            notifications.cancelAll();
+            JCoreStorage.setPushStopped(context, stopped);
+            JCoreStorage.setCollectionAuth(context, stopped);
+            helper.handleDownlinkPushMessage(context, (byte) 0, 7103, "{\"n_title\":\"blocked\",\"n_content\":\"body\"}");
+            helper.handleDownlinkPushMessage(context, (byte) 2, 7104, "{\"message\":\"blocked\"}");
+            Robolectric.buildActivity(JNotifyActivity.class, tap).create();
+            assertTrue(Shadows.shadowOf(notifications).getAllNotifications().isEmpty());
+            assertEquals(1, arrived.size());
+            assertEquals(1, custom.size());
+            assertTrue(opened.isEmpty());
+            assertNull(Shadows.shadowOf(RuntimeEnvironment.getApplication()).getNextStartedActivity());
+            arrived.clear();
+            custom.clear();
+        }
+    }
+
+    @Test
+    public void bothTransportTapsLaunchTheHostOnceAndRejectForeignOrInvalidIntents() {
+        installHostLauncher();
+        ActionHelper helper = ActionHelper.getInstance();
+        for (int platform : new int[]{0, 8}) {
+            NotificationMessage message = new NotificationMessage();
+            message.msgId = "tap_" + platform;
+            message.platform = platform;
+            Intent tap = new Intent(context, JNotifyActivity.class)
+                .setAction(JPushInterface.ACTION_NOTIFICATION_OPENED)
+                .putExtra("multi_notification_msg", message);
+            JNotifyActivity activity = Robolectric.buildActivity(JNotifyActivity.class, tap).create().get();
+            assertTrue(activity.isFinishing());
+            assertEquals(platform == 0 ? 1 : 2, opened.size());
+            Intent launched = Shadows.shadowOf(RuntimeEnvironment.getApplication()).getNextStartedActivity();
+            assertNotNull(launched);
+            assertEquals(context.getPackageName() + ".MainActivity", launched.getComponent().getClassName());
+            assertNull(Shadows.shadowOf(RuntimeEnvironment.getApplication()).getNextStartedActivity());
+            helper.handleNotificationIntent(context, new Intent(tap).setAction("unrelated"));
+            helper.handleNotificationIntent(context, new Intent(tap).setPackage("foreign.package"));
+            helper.handleNotificationIntent(context, new Intent(tap).setComponent(new android.content.ComponentName("foreign.package", "Foreign")));
+            message.msgId = "";
+            helper.handleNotificationIntent(context, tap);
+            assertEquals(platform == 0 ? 1 : 2, opened.size());
+            assertNull(Shadows.shadowOf(RuntimeEnvironment.getApplication()).getNextStartedActivity());
+        }
+    }
+
+    @Test
+    public void notificationConstructionCannotCrossAnAuthorizationGeneration() {
+        NotificationManager manager = mock(NotificationManager.class);
+        android.content.ContextWrapper wrapped = new android.content.ContextWrapper(context) {
+            @Override public Object getSystemService(String name) {
+                return Context.NOTIFICATION_SERVICE.equals(name) ? manager : super.getSystemService(name);
+            }
+        };
+        ReflectionHelpers.setStaticField(JCoreStorage.class, "sAppContext", wrapped);
+        doAnswer(call -> {
+            JCoreStorage.setCollectionAuth(wrapped, false);
+            JCoreStorage.setCollectionAuth(wrapped, true);
+            return null;
+        }).when(manager).createNotificationChannel(any(android.app.NotificationChannel.class));
+        ActionHelper helper = ActionHelper.getInstance();
+        helper.handleDownlinkPushMessage(wrapped, (byte) 0, 7105, "{\"n_title\":\"TCP\",\"n_content\":\"body\"}");
+        Bundle payload = new Bundle();
+        payload.putString("data", "{\"msg_id\":\"fcm_generation\",\"n_title\":\"FCM\",\"n_content\":\"body\"}");
+        helper.doAction(wrapped, JThirdPlatFormInterface.ACTION_PLUGIN_PALTFORM_ON_MESSAGING, payload);
+        verify(manager, times(2)).createNotificationChannel(any(android.app.NotificationChannel.class));
+        verify(manager, never()).notify(anyInt(), any(Notification.class));
+        assertTrue(arrived.isEmpty());
+    }
+
+    @Test
+    public void revokedConstructionCannotMutateAnExistingClickIntentOrNotificationTracking() {
+        ActionHelper helper = ActionHelper.getInstance();
+        helper.clearActiveNotificationIds();
+        JCoreStorage.setLatestNotificationNumber(context, 2);
+        for (int id : new int[]{7105, 7106}) {
+            NotificationMessage previous = new NotificationMessage();
+            previous.msgId = "existing_" + id;
+            previous.notificationId = id;
+            previous.notificationTitle = "Existing notification";
+            helper.postSystemNotification(context, previous);
+        }
+        assertEquals(java.util.Arrays.asList(7105, 7106), helper.getActiveNotificationIds());
+        Notification previous = Shadows.shadowOf(notifications).getNotification(7105);
+        android.app.PendingIntent previousClick = previous.contentIntent;
+        NotificationManager manager = spy(notifications);
+        android.content.ContextWrapper wrapped = new android.content.ContextWrapper(context) {
+            @Override public Object getSystemService(String name) {
+                return Context.NOTIFICATION_SERVICE.equals(name) ? manager : super.getSystemService(name);
+            }
+        };
+        ReflectionHelpers.setStaticField(JCoreStorage.class, "sAppContext", wrapped);
+        doAnswer(call -> {
+            JCoreStorage.setCollectionAuth(wrapped, false);
+            return null;
+        }).when(manager).createNotificationChannel(any(android.app.NotificationChannel.class));
+        for (int id : new int[]{7105, 7107}) {
+            JCoreStorage.setCollectionAuth(wrapped, true);
+            NotificationMessage rejected = new NotificationMessage();
+            rejected.msgId = "rejected_" + id;
+            rejected.notificationId = id;
+            rejected.notificationTitle = "Rejected replacement";
+            helper.postSystemNotification(wrapped, rejected);
+            assertEquals(java.util.Arrays.asList(7105, 7106), helper.getActiveNotificationIds());
+            assertEquals(2, Shadows.shadowOf(notifications).getAllNotifications().size());
+            NotificationMessage saved = (NotificationMessage) Shadows.shadowOf(previousClick).getSavedIntent()
+                .getSerializableExtra("multi_notification_msg");
+            assertEquals("existing_7105", saved.msgId);
+            assertEquals("Existing notification", Shadows.shadowOf(notifications).getNotification(7105)
+                .extras.getString(Notification.EXTRA_TITLE));
+        }
+        verify(manager, never()).notify(anyInt(), any(Notification.class));
+        verify(manager, never()).cancel(anyInt());
+    }
+
+    @Test
+    public void openedCallbackRevocationAndRegrantCannotContinueTheOldTapLaunch() {
+        installHostLauncher();
+        ActionHelper helper = ActionHelper.getInstance();
+        JPushMessageReceiver revoke = new JPushMessageReceiver() {
+            @Override public void onNotifyMessageOpened(Context c, NotificationMessage message) {
+                JCoreStorage.setCollectionAuth(c, false);
+                JCoreStorage.setCollectionAuth(c, true);
+            }
+        };
+        helper.registerReceiver(revoke);
+        NotificationMessage message = new NotificationMessage();
+        message.msgId = "tap_generation";
+        Intent tap = new Intent(context, JNotifyActivity.class)
+            .setAction(JPushInterface.ACTION_NOTIFICATION_OPENED)
+            .putExtra("multi_notification_msg", message);
+        Robolectric.buildActivity(JNotifyActivity.class, tap).create();
+        assertEquals(1, opened.size());
+        assertNull(Shadows.shadowOf(RuntimeEnvironment.getApplication()).getNextStartedActivity());
+        helper.unregisterReceiver(revoke);
     }
 
     @Test

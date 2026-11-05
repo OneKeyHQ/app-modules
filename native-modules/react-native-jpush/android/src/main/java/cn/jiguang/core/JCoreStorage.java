@@ -19,9 +19,11 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import org.json.JSONObject;
 
 public final class JCoreStorage {
+    private static final AtomicLong CONTENT_GENERATION = new AtomicLong();
     private static final String PREFS_NAME = "cn.jiguang.sdk.clean.prefs";
     private static final String KEY_APP_KEY = "app_key";
     private static final String KEY_CHANNEL = "channel";
@@ -230,8 +232,15 @@ public final class JCoreStorage {
         return getBooleanPref(null, KEY_DEBUG_MODE, sDebugMode);
     }
 
-    public static void setCollectionAuth(Context context, boolean auth) {
+    public static synchronized void setCollectionAuth(Context context, boolean auth) {
         putBooleanPref(context, KEY_COLLECTION_AUTH, auth);
+        if (!auth) {
+            CONTENT_GENERATION.incrementAndGet();
+        }
+    }
+
+    public static long getContentGeneration() {
+        return CONTENT_GENERATION.get();
     }
 
     public static boolean isCollectionAuth(Context context) {
@@ -426,8 +435,11 @@ public final class JCoreStorage {
         return getBooleanPref(context, KEY_PUSH_STOPPED, false);
     }
 
-    public static void setPushStopped(Context context, boolean stopped) {
+    public static synchronized void setPushStopped(Context context, boolean stopped) {
         putBooleanPref(context, KEY_PUSH_STOPPED, stopped);
+        if (stopped) {
+            CONTENT_GENERATION.incrementAndGet();
+        }
     }
 
     public static boolean isConnected(Context context) {

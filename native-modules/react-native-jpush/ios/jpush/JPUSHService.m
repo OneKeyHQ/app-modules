@@ -69,11 +69,14 @@ static NSString *JPushHexFromData(NSData *data) {
     if (remoteNotification == nil && [launchingOption isKindOfClass:[NSDictionary class]]) {
         remoteNotification = launchingOption[@"UIApplicationLaunchOptionsRemoteNotificationKey"];
     }
-    if ([remoteNotification isKindOfClass:[NSDictionary class]]) {
+    NSUInteger generation = config.policyGeneration;
+    if ([config allowsPolicyGeneration:generation] && [remoteNotification isKindOfClass:[NSDictionary class]]) {
         [self handleRemoteNotification:remoteNotification];
+        NSMutableDictionary *notificationInfo = [NSMutableDictionary dictionaryWithDictionary:remoteNotification];
+        notificationInfo[@"_j_InternalPolicyGeneration"] = @(generation);
         [[NSNotificationCenter defaultCenter] postNotificationName:@"J_APNS_NOTIFICATION_OPENED_EVENT"
                                                             object:remoteNotification
-                                                          userInfo:remoteNotification];
+                                                          userInfo:notificationInfo];
     }
 
     [[JCORETcpSession shared] startIfNeeded];
@@ -160,7 +163,7 @@ static NSString *JPushHexFromData(NSData *data) {
 }
 
 + (void)handleRemoteNotification:(NSDictionary *)remoteInfo {
-    if (![remoteInfo isKindOfClass:[NSDictionary class]]) {
+    if (![JCOREConfiguration shared].policyAllowsPush || ![remoteInfo isKindOfClass:[NSDictionary class]]) {
         return;
     }
     id msgIdObj = remoteInfo[@"_j_msgid"];
@@ -782,13 +785,8 @@ callbackSelector:(SEL)cbSelector
 }
 
 + (void)turnOFFPush {
+    [JCORETcpSession shared];
     [JCOREConfiguration shared].pushStopped = YES;
-    if ([[JCORETcpSession shared] isConnected] && [[JCORETcpSession shared] isLoggedIn]) {
-        NSData *body = [JCOREWireProtocol buildPushControlPayloadWithStopped:YES];
-        [[JCORETcpSession shared] sendCommand:JCOREWireCommandPushCtrl version:1 bodyData:body completion:nil];
-    } else {
-        [[JCORETcpSession shared] disconnect];
-    }
 }
 
 @end

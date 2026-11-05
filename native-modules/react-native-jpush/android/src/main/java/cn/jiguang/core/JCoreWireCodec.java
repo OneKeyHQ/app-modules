@@ -656,6 +656,7 @@ public final class JCoreWireCodec {
                     return clientDecoded;
                 }
             }
+            if ((flag & 1) != 0 && decrypted.length == 0) return null;
             body = decrypted;
         }
 

@@ -423,9 +423,8 @@ static NSString *JCoreReadString(NSData *data, NSUInteger *offset) {
         const uint8_t *b = decodedBody.bytes;
         if (b[0] == 0x1f && b[1] == 0x8b) {
             NSData *unzipped = [JCORECrypto gzipDecompress:decodedBody];
-            if (unzipped != nil) {
-                decodedBody = unzipped;
-            }
+            if (unzipped == nil) { return nil; }
+            decodedBody = unzipped;
         }
     }
 
@@ -1366,7 +1365,8 @@ static NSString *JCoreReadString(NSData *data, NSUInteger *offset) {
 - (void)sendHttpReportItems:(NSArray<NSDictionary *> *)items
                  completion:(void (^)(BOOL, NSInteger))completion {
     JCOREConfiguration *config = [JCOREConfiguration shared];
-    if (config.uid == 0 || config.appKey.length == 0) {
+    NSUInteger generation = config.policyGeneration;
+    if (!config.policyAllowsPush || config.uid == 0 || config.appKey.length == 0) {
         if (completion) {
             completion(NO, -1);
         }
@@ -1394,13 +1394,19 @@ static NSString *JCoreReadString(NSData *data, NSUInteger *offset) {
         }
         return;
     }
+    if (![config allowsPolicyGeneration:generation]) {
+        if (completion) { completion(NO, 6002); }
+        return;
+    }
     [[self.reportSession dataTaskWithRequest:req
                            completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         (void)data;
         NSInteger status = [response isKindOfClass:[NSHTTPURLResponse class]]
             ? [(NSHTTPURLResponse *)response statusCode]
             : 0;
-        BOOL ok = (error == nil && status == 200);
+        BOOL current = [config allowsPolicyGeneration:generation];
+        BOOL ok = (current && error == nil && status == 200);
+        if (!current) { status = 6002; }
         if (completion) {
             completion(ok, status);
         }
@@ -1410,7 +1416,8 @@ static NSString *JCoreReadString(NSData *data, NSUInteger *offset) {
 - (void)reportBadgeValue:(NSInteger)badgeValue
               completion:(void (^)(BOOL, NSInteger))completion {
     JCOREConfiguration *config = [JCOREConfiguration shared];
-    if (config.uid == 0 || config.appKey.length == 0) {
+    NSUInteger generation = config.policyGeneration;
+    if (!config.policyAllowsPush || config.uid == 0 || config.appKey.length == 0) {
         if (completion) {
             completion(NO, -1);
         }
@@ -1437,13 +1444,19 @@ static NSString *JCoreReadString(NSData *data, NSUInteger *offset) {
         }
         return;
     }
+    if (![config allowsPolicyGeneration:generation]) {
+        if (completion) { completion(NO, 6002); }
+        return;
+    }
     [[self.reportSession dataTaskWithRequest:req
                            completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         (void)data;
         NSInteger status = [response isKindOfClass:[NSHTTPURLResponse class]]
             ? [(NSHTTPURLResponse *)response statusCode]
             : 0;
-        BOOL ok = (error == nil && status == 200);
+        BOOL current = [config allowsPolicyGeneration:generation];
+        BOOL ok = (current && error == nil && status == 200);
+        if (!current) { status = 6002; }
         if (completion) {
             completion(ok, status);
         }

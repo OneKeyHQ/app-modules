@@ -347,28 +347,60 @@ public class ReactNativeJpushProtocolTest {
         JCoreTcpEngine.getInstance().stop(null);
         JCoreStorage.setPushStopped(null, false);
 
-        // 2f. Verify delayed addLocalNotification scheduling and removeLocalNotification cancellation
-        ActionHelper.getInstance().clearActiveNotificationIds();
-        JPushLocalNotification cancelledLn = new JPushLocalNotification();
-        cancelledLn.setNotificationId(77001L);
-        cancelledLn.setTitle("CancelledTitle");
-        cancelledLn.setContent("CancelledContent");
-        cancelledLn.setBroadcastTime(300L);
-        JPushInterface.addLocalNotification(null, cancelledLn);
-        assertTrue(!ActionHelper.getInstance().getActiveNotificationIds().contains(Integer.valueOf(77001)));
-        JPushInterface.removeLocalNotification(null, 77001L);
+        // 2f. Verify Java scheduler ownership/cancellation; plain android.jar cannot prove Intent delivery or OS display.
+        final ActionHelper localHelper = ActionHelper.getInstance();
+        localHelper.clearActiveNotificationIds();
+        java.lang.reflect.Field pendingField = ActionHelper.class.getDeclaredField("pendingLocalNotifications");
+        pendingField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<Integer, java.util.concurrent.ScheduledFuture<?>> pendingLocal =
+            (Map<Integer, java.util.concurrent.ScheduledFuture<?>>) pendingField.get(localHelper);
+        java.lang.reflect.Field schedulerField = ActionHelper.class.getDeclaredField("localNotificationScheduler");
+        schedulerField.setAccessible(true);
+        java.util.concurrent.ScheduledExecutorService scheduler =
+            (java.util.concurrent.ScheduledExecutorService) schedulerField.get(localHelper);
+        final CountDownLatch schedulerHeld = new CountDownLatch(1), releaseScheduler = new CountDownLatch(1);
+        scheduler.execute(new Runnable() {
+            @Override public void run() {
+                schedulerHeld.countDown();
+                try { releaseScheduler.await(); }
+                catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+            }
+        });
+        try {
+            assertTrue(schedulerHeld.await(1000L, TimeUnit.MILLISECONDS));
+            JPushLocalNotification cancelledLn = new JPushLocalNotification();
+            cancelledLn.setNotificationId(77001L);
+            cancelledLn.setTitle("CancelledTitle");
+            cancelledLn.setContent("CancelledContent");
+            cancelledLn.setBroadcastTime(300L);
+            JPushInterface.addLocalNotification(null, cancelledLn);
+            java.util.concurrent.ScheduledFuture<?> cancelledFuture = pendingLocal.get(Integer.valueOf(77001));
+            assertNotNull(cancelledFuture);
+            assertTrue(!cancelledFuture.isDone());
+            JPushInterface.removeLocalNotification(null, 77001L);
+            assertTrue(cancelledFuture.isCancelled());
+            assertTrue(!pendingLocal.containsKey(Integer.valueOf(77001)));
 
-        JPushLocalNotification firedLn = new JPushLocalNotification();
-        firedLn.setNotificationId(77002L);
-        firedLn.setTitle("FiredTitle");
-        firedLn.setContent("FiredContent");
-        firedLn.setBroadcastTime(70L);
-        JPushInterface.addLocalNotification(null, firedLn);
-        assertTrue(!ActionHelper.getInstance().getActiveNotificationIds().contains(Integer.valueOf(77002)));
-        Thread.sleep(360L);
-        assertTrue(!ActionHelper.getInstance().getActiveNotificationIds().contains(Integer.valueOf(77001)));
-        assertTrue(ActionHelper.getInstance().getActiveNotificationIds().contains(Integer.valueOf(77002)));
-        ActionHelper.getInstance().clearActiveNotificationIds();
+            JPushLocalNotification firedLn = new JPushLocalNotification();
+            firedLn.setNotificationId(77002L);
+            firedLn.setTitle("FiredTitle");
+            firedLn.setContent("FiredContent");
+            firedLn.setBroadcastTime(70L);
+            JPushInterface.addLocalNotification(null, firedLn);
+            java.util.concurrent.ScheduledFuture<?> firedFuture = pendingLocal.get(Integer.valueOf(77002));
+            assertNotNull(firedFuture);
+            assertTrue(!firedFuture.isDone());
+            releaseScheduler.countDown();
+            long schedulerDeadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(1000L);
+            while (!firedFuture.isDone() && System.nanoTime() < schedulerDeadline) Thread.sleep(5L);
+            assertTrue(firedFuture.isDone() && !firedFuture.isCancelled());
+            assertTrue(!pendingLocal.containsKey(Integer.valueOf(77002)));
+            assertTrue(cancelledFuture.isCancelled());
+        } finally {
+            releaseScheduler.countDown();
+            localHelper.clearActiveNotificationIds();
+        }
 
         // 2g. Verify ActionHelper server response parsing (getAlias, getAllTags, checkTagBindState)
         //     and rollback on non-zero statusCode for Tag/Alias/Property/MobileNumber
@@ -406,6 +438,7 @@ public class ReactNativeJpushProtocolTest {
                         if (req == null) {
                             break;
                         }
+                        int sequence = JCoreWireCodec.extractJsonInt(JCoreWireCodec.parseJsonCommandPayload(req.body), "seq", -1);
                         if (req.command == JCoreWireCodec.CMD_HEARTBEAT) {
                             out.write(JCoreWireCodec.encodeResponseFrame(
                                 JCoreWireCodec.CMD_HEARTBEAT,
@@ -418,7 +451,7 @@ public class ReactNativeJpushProtocolTest {
                             ));
                             out.flush();
                         } else if (req.command == JCoreWireCodec.CMD_ALIAS_OP) {
-                            if (req.requestId == 301L) {
+                            if (sequence == 301) {
                                 byte[] body = JCoreWireCodec.buildJsonCommandPayload("{\"alias\":\"srv_alias_301\"}");
                                 out.write(JCoreWireCodec.encodeResponseFrame(
                                     JCoreWireCodec.CMD_ALIAS_OP,
@@ -443,7 +476,7 @@ public class ReactNativeJpushProtocolTest {
                             }
                             out.flush();
                         } else if (req.command == JCoreWireCodec.CMD_TAG_OP) {
-                            if (req.requestId == 303L) {
+                            if (sequence == 303) {
                                 byte[] body = JCoreWireCodec.buildJsonCommandPayload("{\"tags\":[\"srv_t1\",\"srv_t2\"]}");
                                 out.write(JCoreWireCodec.encodeResponseFrame(
                                     JCoreWireCodec.CMD_TAG_OP,
@@ -454,7 +487,7 @@ public class ReactNativeJpushProtocolTest {
                                     0,
                                     body
                                 ));
-                            } else if (req.requestId == 305L) {
+                            } else if (sequence == 305) {
                                 byte[] body = JCoreWireCodec.buildJsonCommandPayload("{\"bind\":true}");
                                 out.write(JCoreWireCodec.encodeResponseFrame(
                                     JCoreWireCodec.CMD_TAG_OP,
@@ -485,7 +518,7 @@ public class ReactNativeJpushProtocolTest {
                                 req.requestId,
                                 6601,
                                 opUid,
-                                6002,
+                                sequence >= 401 && sequence <= 403 ? 0 : 6002,
                                 new byte[0]
                             ));
                             out.flush();
@@ -576,19 +609,22 @@ public class ReactNativeJpushProtocolTest {
 
         JPushHelper.unregisterNitroListener(opListenerId);
         JPushHelper.clearNitroListeners();
-        JCoreTcpEngine.getInstance().setRequireServerAckForOperations(false);
-        JCoreTcpEngine.getInstance().setCustomEndpoint("", 0);
-        JCoreTcpEngine.getInstance().stop(null);
-        JCoreStorage.clearRegistration(null);
 
-        // 2h. Verify JPushInterface.setProperties / deleteProperties / cleanProperties emit TagAliasEvent with pros
+        // 2h. Verify acknowledged property mutations commit before their TagAliasEvent with pros
         //     via JPushModuleReceiver.onPropertyOperatorResult, and JPushBroadcastReceiver ignores intents with
         //     "jpush_already_dispatched" == true while JPushModuleReceiver.onNotifyMessageOpened clears stale NOTIFICATION_BUNDLE.
-        final List<String> propEvents = new java.util.ArrayList<String>();
+        final List<String> propEvents = java.util.Collections.synchronizedList(new java.util.ArrayList<String>());
+        final CountDownLatch setPropertyAck = new CountDownLatch(1);
+        final CountDownLatch deletePropertyAck = new CountDownLatch(1);
+        final CountDownLatch cleanPropertyAck = new CountDownLatch(1);
         int propListenerId = JPushHelper.registerNitroListener(new JPushHelper.NitroEventListener() {
             @Override
             public void onEvent(String eventName, String payloadJson) {
+                if (!"TagAliasEvent".equals(eventName)) return;
                 propEvents.add(eventName + ":" + payloadJson);
+                if (payloadJson.contains("401")) setPropertyAck.countDown();
+                if (payloadJson.contains("402")) deletePropertyAck.countDown();
+                if (payloadJson.contains("403")) cleanPropertyAck.countDown();
             }
         });
         ActionHelper.getInstance().registerReceiver(receiver);
@@ -596,16 +632,19 @@ public class ReactNativeJpushProtocolTest {
         setPropsInput.put("region", "apac");
         setPropsInput.put("plan", "enterprise");
         JPushInterface.setProperties(null, 401, setPropsInput);
+        assertTrue(setPropertyAck.await(3000L, TimeUnit.MILLISECONDS));
         assertEquals("apac", JCoreStorage.getProperties(null).get("region"));
         assertEquals("enterprise", JCoreStorage.getProperties(null).get("plan"));
 
         Map<String, Object> delPropsInput = new LinkedHashMap<String, Object>();
         delPropsInput.put("region", "");
         JPushInterface.deleteProperties(null, 402, delPropsInput);
+        assertTrue(deletePropertyAck.await(3000L, TimeUnit.MILLISECONDS));
         assertTrue(!JCoreStorage.getProperties(null).containsKey("region"));
         assertEquals("enterprise", JCoreStorage.getProperties(null).get("plan"));
 
         JPushInterface.cleanProperties(null, 403);
+        assertTrue(cleanPropertyAck.await(3000L, TimeUnit.MILLISECONDS));
         assertTrue(JCoreStorage.getProperties(null).isEmpty());
 
         assertEquals(3L, (long) propEvents.size());
@@ -614,6 +653,11 @@ public class ReactNativeJpushProtocolTest {
         assertTrue(propEvents.get(2).startsWith("TagAliasEvent:") && propEvents.get(2).contains("403"));
         JPushHelper.unregisterNitroListener(propListenerId);
         JPushHelper.clearNitroListeners();
+        JCoreTcpEngine.getInstance().setRequireServerAckForOperations(false);
+        JCoreTcpEngine.getInstance().setCustomEndpoint("", 0);
+        JCoreTcpEngine.getInstance().stop(null);
+        JCoreStorage.clearRegistration(null);
+
 
         android.os.Bundle staleBundle = new android.os.Bundle();
         cn.jiguang.plugins.push.receiver.JPushBroadcastReceiver.NOTIFICATION_BUNDLE = staleBundle;

@@ -562,20 +562,18 @@ static NSData *JCORESm4StripPkcs7Padding(NSData *decrypted) {
     if (inflateInit2(&stream, 15 + 32) != Z_OK) {
         return nil;
     }
-    NSMutableData *decompressed = [NSMutableData dataWithLength:data.length * 2];
-    int status = Z_OK;
-    while (status == Z_OK) {
-        if (stream.total_out >= decompressed.length) {
-            [decompressed increaseLengthBy:MAX((NSUInteger)4096, data.length)];
-        }
-        stream.next_out = (Bytef *)decompressed.mutableBytes + stream.total_out;
-        stream.avail_out = (uInt)(decompressed.length - stream.total_out);
-        status = inflate(&stream, Z_SYNC_FLUSH);
-    }
-    if (inflateEnd(&stream) != Z_OK || status != Z_STREAM_END) {
+    // One extra byte distinguishes an exact-limit result from an oversized result.
+    const NSUInteger decodedLimit = 65536;
+    NSMutableData *decompressed = [NSMutableData dataWithLength:decodedLimit + 1];
+    stream.next_out = decompressed.mutableBytes;
+    stream.avail_out = (uInt)decompressed.length;
+    int status = inflate(&stream, Z_FINISH);
+    NSUInteger decodedLength = stream.total_out;
+    int endStatus = inflateEnd(&stream);
+    if (endStatus != Z_OK || status != Z_STREAM_END || decodedLength > decodedLimit) {
         return nil;
     }
-    decompressed.length = stream.total_out;
+    decompressed.length = decodedLength;
     return decompressed;
 }
 

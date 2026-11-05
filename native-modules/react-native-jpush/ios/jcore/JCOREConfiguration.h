@@ -9,6 +9,8 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+FOUNDATION_EXPORT NSString *const JCOREPolicyDidChangeNotification;
+
 @interface JCOREConfiguration : NSObject
 
 + (instancetype)shared;
@@ -35,6 +37,9 @@ NS_ASSUME_NONNULL_BEGIN
 
 @property (nonatomic, assign) BOOL collectionAuthorized;
 @property (nonatomic, assign) BOOL pushStopped;
+@property (nonatomic, assign, readonly) NSUInteger policyGeneration;
+@property (nonatomic, assign, readonly) BOOL policyAllowsPush;
+- (BOOL)allowsPolicyGeneration:(NSUInteger)generation;
 @property (nonatomic, assign) BOOL debugEnabled;
 @property (nonatomic, assign) BOOL logOff;
 @property (nonatomic, assign) BOOL localLogEnabled;

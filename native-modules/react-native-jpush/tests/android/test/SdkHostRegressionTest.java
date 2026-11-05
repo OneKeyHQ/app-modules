@@ -18,6 +18,7 @@ import cn.jiguang.plugins.core.JCoreModule;
 import cn.jiguang.plugins.push.JPushModule;
 import cn.jiguang.plugins.push.common.JConstants;
 import cn.jiguang.plugins.push.common.JLogger;
+import cn.jiguang.plugins.push.helper.JPushHelper;
 import cn.jiguang.plugins.push.receiver.JPushModuleReceiver;
 import cn.jpush.android.api.CmdMessage;
 import cn.jpush.android.api.CustomMessage;
@@ -119,6 +120,15 @@ public final class SdkHostRegressionTest {
         // 5. GZIP, RSA, MD5, SHA-1, HmacSHA256
         byte[] gz = JCoreCrypto.gzipCompress(plain);
         check(Arrays.equals(plain, JCoreCrypto.gzipDecompress(gz)), "GZIP roundtrip must match");
+
+        for (int length : new int[]{65535, 65536, 65537}) {
+            byte[] boundaryText = new byte[length];
+            java.util.Random random = new java.util.Random(length);
+            for (int i = 0; i < length; i++) boundaryText[i] = (byte) ('a' + random.nextInt(26));
+            byte[] decoded = JCoreCrypto.gzipDecompress(JCoreCrypto.gzipCompress(boundaryText));
+            check(length <= 65536 ? Arrays.equals(boundaryText, decoded) : decoded.length == 0,
+                "GZIP must enforce the decoded resource boundary at " + length + " bytes");
+        }
 
         KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
         kpg.initialize(1024);
@@ -828,6 +838,8 @@ public final class SdkHostRegressionTest {
 
         // 4. Exercise React Native bridge methods on JCoreModule and JPushModule
         jcoreModule.setAuth(false);
+        check(!JCoreStorage.isCollectionAuth(reactContext), "Legacy bridge revokes collection authorization");
+        jcoreModule.setAuth(true);
         jcoreModule.enableAutoWakeup(false);
         WritableMap logCfg = Arguments.createMap();
         logCfg.putBoolean("enable", true);
@@ -1435,13 +1447,8 @@ public final class SdkHostRegressionTest {
 
         ActionHelper.getInstance().clearActiveNotificationIds();
         JPushInterface.setLatestNotificationNumber(context, 2);
-        for (int id = 101; id <= 103; id++) {
-            cn.jpush.android.api.NotificationMessage msg = new cn.jpush.android.api.NotificationMessage();
-            msg.notificationId = id;
-            msg.notificationTitle = "Title " + id;
-            msg.notificationContent = "Body " + id;
-            ActionHelper.getInstance().postSystemNotification(context, msg);
-        }
+        // This host fixture verifies tracking after a successful post; actual OS display is covered by Robolectric/device tests.
+        for (int id = 101; id <= 103; id++) ActionHelper.getInstance().recordNotificationPosted(context, id);
         List<Integer> activeIds = ActionHelper.getInstance().getActiveNotificationIds();
         check(
             activeIds.size() == 2 && !activeIds.contains(101) && activeIds.contains(102) && activeIds.contains(103),
@@ -1539,7 +1546,9 @@ public final class SdkHostRegressionTest {
                 new cn.jiguang.plugins.push.helper.JPushHelper.NitroEventListener() {
                     @Override
                     public void onEvent(String eventName, String payloadJson) {
-                        coldStartOpenedEvents.add(eventName + ":" + payloadJson);
+                        if ("NotificationEvent".equals(eventName) || "LocalNotificationEvent".equals(eventName)) {
+                            coldStartOpenedEvents.add(eventName + ":" + payloadJson);
+                        }
                     }
                 }
             );
@@ -1557,6 +1566,1035 @@ public final class SdkHostRegressionTest {
         );
     }
 
+    private interface AwaitCondition { boolean ready(); }
+
+    private static void awaitCondition(AwaitCondition condition, String message) throws Exception {
+        long end = System.currentTimeMillis() + 5000L;
+        while (!condition.ready() && System.currentTimeMillis() < end) Thread.sleep(10L);
+        check(condition.ready(), message);
+    }
+
+    private static void testStoppedInitAndRealLoginFcmRebind() throws Exception {
+        final Context context = new Context();
+        final JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
+        engine.setAutoReconnectEnabled(false);
+        engine.stop(context);
+        JCoreStorage.setCollectionAuth(context, true);
+        JCoreStorage.setPushStopped(context, false);
+        JCoreStorage.clearRegistration(context);
+        final AtomicInteger tokenRequests = new AtomicInteger(), acknowledgedBinds = new AtomicInteger();
+        JPushMessageReceiver bindReceiver = new JPushMessageReceiver() {
+            @Override public void onCommandResult(Context c, CmdMessage message) {
+                if (message.cmd == 10000 && message.errorCode == 0 && message.extra != null
+                    && "loopback_rebind_token".equals(message.extra.getString("token"))) acknowledgedBinds.incrementAndGet();
+            }
+        };
+        ActionHelper.getInstance().registerReceiver(bindReceiver);
+        cn.jpush.android.api.JThirdPlatFormInterface adapter = new cn.jpush.android.api.JThirdPlatFormInterface() {
+            public void init(Context c) {} public void register(Context c, Bundle b) {}
+            public String getToken(Context c) {
+                tokenRequests.incrementAndGet();
+                ActionHelper.getInstance().setThirdTokenWithCallBack(c, "loopback_rebind_token", (byte) 8, false);
+                return "loopback_rebind_token";
+            }
+            public boolean isSupport(Context c) { return true; } public byte getRomType(Context c) { return 8; }
+            public String getRomName() { return "test"; } public String getAppkey(Context c) { return "test"; }
+            public String getAppId(Context c) { return "test"; } public boolean isNeedClearToken(Context c) { return false; }
+            public void clearNotification(Context c, int id) {} public void clearAllNotification(Context c) {}
+        };
+        java.lang.reflect.Field plugin = cn.jpush.android.api.JThirdPlatFormInterface.class.getDeclaredField("fcmPlugin");
+        java.lang.reflect.Field registered = cn.jpush.android.api.JThirdPlatFormInterface.class.getDeclaredField("fcmRegistered");
+        plugin.setAccessible(true); registered.setAccessible(true);
+        plugin.set(null, adapter); registered.setBoolean(null, false);
+        final AtomicInteger connections = new AtomicInteger(), registrations = new AtomicInteger(), binds = new AtomicInteger();
+        final java.util.Set<Long> boundUids = java.util.concurrent.ConcurrentHashMap.<Long>newKeySet();
+        final AtomicBoolean failLogin = new AtomicBoolean(false), done = new AtomicBoolean(false);
+        final AtomicReference<Throwable> serverError = new AtomicReference<Throwable>();
+        final AtomicReference<Socket> active = new AtomicReference<Socket>();
+        try (ServerSocket listener = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"))) {
+            Thread server = new Thread(() -> {
+                while (!done.get()) {
+                    try (Socket socket = listener.accept()) {
+                        active.set(socket); connections.incrementAndGet();
+                        long uid = 0L;
+                        while (!done.get()) {
+                            JCoreWireCodec.DecodedFrame frame = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), uid);
+                            if (frame == null) break;
+                            byte[] body = new byte[0]; int status = 0;
+                            if (frame.command == JCoreWireCodec.CMD_REGISTER) {
+                                int registration = registrations.incrementAndGet(); uid = 880000L + registration;
+                                body = JCoreWireCodec.buildRegisterResponsePayload(uid, "loopback_password", "rebind_rid_" + registration, "loopback_device");
+                            } else if (frame.command == JCoreWireCodec.CMD_LOGIN) {
+                                status = failLogin.get() ? 1005 : 0;
+                                body = JCoreWireCodec.buildLoginResponsePayload(9001, 520, "", 1700000000);
+                            }
+                            socket.getOutputStream().write(JCoreWireCodec.encodeResponseFrame(frame.command, frame.version,
+                                frame.requestId, frame.command == JCoreWireCodec.CMD_REGISTER ? frame.sessionId : 9001, uid, status, body));
+                            socket.getOutputStream().flush();
+                            if (frame.command == JCoreWireCodec.CMD_THIRD_TOKEN) { binds.incrementAndGet(); boundUids.add(uid); }
+                        }
+                    } catch (java.net.SocketException closed) {
+                        // A client stop closes its active session; the next iteration accepts its resume.
+                    } catch (Throwable error) { serverError.set(error); return; }
+                }
+            }, "test-real-login-fcm-rebind");
+            server.setDaemon(true); server.start();
+            try {
+                engine.setCustomEndpoint("127.0.0.1", listener.getLocalPort());
+                engine.setDefaultRequestTimeoutMs(500L);
+                JPushInterface.stopPush(context);
+                JPushInterface.init(context);
+                java.lang.reflect.Field started = JCoreTcpEngine.class.getDeclaredField("started"); started.setAccessible(true);
+                check(!started.getBoolean(engine), "Stopped init must not reserve started");
+                JPushInterface.resumePush(context);
+                awaitCondition(() -> engine.isLoggedIn() && tokenRequests.get() == 2 && binds.get() == 2
+                    && acknowledgedBinds.get() == 2, "First resume and login must complete both FCM token requests and bind callbacks");
+                int initialRequests = tokenRequests.get();
+                String initialRid = JCoreStorage.getRegistrationId(context);
+                engine.start(context); engine.start(context);
+                check(connections.get() == 1, "Repeated init must not establish another connection");
+                engine.stop(context); JCoreStorage.clearRegistration(context); engine.start(context);
+                awaitCondition(() -> engine.isLoggedIn() && boundUids.contains(880002L)
+                    && tokenRequests.get() == initialRequests + 1 && binds.get() == initialRequests + 1
+                    && acknowledgedBinds.get() == initialRequests + 1, "Second real registration must complete its new-UID bind acknowledgement callback");
+                check(registrations.get() == 2 && !initialRid.equals(JCoreStorage.getRegistrationId(context)), "Rebind must follow a changed RID from real Register");
+                check(tokenRequests.get() == initialRequests + 1, "Successful re-registration requests the current FCM token once");
+                awaitCondition(() -> "loopback_rebind_token".equals(JCoreStorage.getThirdToken(context, (byte) 8)), "Successful bind acknowledgement persists current token");
+
+                engine.stop(context); JCoreStorage.clearRegistration(context);
+                java.lang.reflect.Field handshakeLatch = JCoreTcpEngine.class.getDeclaredField("handshakeLatch");
+                handshakeLatch.setAccessible(true);
+                final CountDownLatch obsoleteStart, currentStart;
+                // Neither queued worker can pass the engine's initial ownership check until this monitor is released.
+                synchronized (engine) {
+                    engine.start(context);
+                    obsoleteStart = (CountDownLatch) handshakeLatch.get(engine);
+                    JPushInterface.stopPush(context);
+                    JPushInterface.resumePush(context);
+                    currentStart = (CountDownLatch) handshakeLatch.get(engine);
+                    check(obsoleteStart != currentStart, "Resume must own a new handshake latch");
+                }
+                check(obsoleteStart.await(3000L, TimeUnit.MILLISECONDS), "Obsolete queued start must release its own latch");
+                check(currentStart.await(3000L, TimeUnit.MILLISECONDS), "Current start must complete its handshake");
+                awaitCondition(() -> engine.isLoggedIn() && registrations.get() == 3
+                    && tokenRequests.get() == initialRequests + 3 && binds.get() == initialRequests + 3
+                    && acknowledgedBinds.get() == initialRequests + 3, "Current resume and login must complete both FCM bind callbacks");
+                check(connections.get() == 3 && started.getBoolean(engine) && engine.isLoggedIn(),
+                    "An obsolete queued start must leave the current owner started and logged in with only one new connection: connections=" + connections.get()
+                        + " started=" + started.getBoolean(engine) + " loggedIn=" + engine.isLoggedIn());
+                int beforeFailedLogin = tokenRequests.get();
+                engine.stop(context); JCoreStorage.clearRegistration(context); failLogin.set(true); engine.start(context);
+                check(engine.awaitHandshake(3000L), "Failed login must complete the handshake wait");
+                check(!engine.isLoggedIn() && tokenRequests.get() == beforeFailedLogin
+                    && binds.get() == beforeFailedLogin && acknowledgedBinds.get() == beforeFailedLogin,
+                    "Failed login does not request or acknowledge another FCM bind");
+                check(serverError.get() == null, "Loopback registration server must remain healthy");
+            } finally {
+                done.set(true); engine.stop(context);
+                Socket socket = active.get(); if (socket != null) socket.close();
+                plugin.set(null, null); registered.setBoolean(null, false);
+                ActionHelper.getInstance().unregisterReceiver(bindReceiver);
+            }
+        }
+    }
+
+    private static void disableAndEnableContent(Context context, boolean stop) {
+        if (stop) {
+            JCoreStorage.setPushStopped(context, true);
+            JCoreStorage.setPushStopped(context, false);
+        } else {
+            JCoreStorage.setCollectionAuth(context, false);
+            JCoreStorage.setCollectionAuth(context, true);
+        }
+    }
+
+    private static void testContentQueueInvalidation() throws Exception {
+        Context context = new Context();
+        JCoreStorage.setAppContext(context);
+        JCoreStorage.setCollectionAuth(context, true);
+        JCoreStorage.setPushStopped(context, false);
+        JPushModule.clearActiveReactContexts();
+        JPushHelper.clearNitroListeners();
+        for (boolean stop : new boolean[]{false, true}) {
+            JPushHelper.sendEventMap(JConstants.NOTIFICATION_EVENT, Collections.<String, Object>emptyMap());
+            JPushHelper.sendEvent(JConstants.CUSTOM_MESSAGE_EVENT, Arguments.createMap());
+            JPushHelper.sendEventMap(JConstants.COMMAND_EVENT, Collections.<String, Object>emptyMap());
+            disableAndEnableContent(context, stop);
+            final List<String> nitro = new java.util.ArrayList<String>();
+            int listener = JPushHelper.registerNitroListener((name, payload) -> nitro.add(name));
+            check(nitro.equals(Collections.singletonList(JConstants.COMMAND_EVENT)), "Reenabled Nitro must discard content queued before disable and retain control");
+            JPushHelper.unregisterNitroListener(listener);
+            ReactApplicationContext legacy = new ReactApplicationContext();
+            JPushModule.registerReactContext(legacy);
+            check(legacy.emittedEvents.size() == 1 && JConstants.COMMAND_EVENT.equals(legacy.emittedEvents.get(0).name), "Reenabled legacy must discard content queued before disable and retain control");
+            JPushModule.clearActiveReactContexts();
+            JPushHelper.clearNitroListeners();
+
+            JPushHelper.sendEventMap(JConstants.NOTIFICATION_EVENT, Collections.<String, Object>emptyMap());
+            JPushHelper.sendEventMap(JConstants.CUSTOM_MESSAGE_EVENT, Collections.<String, Object>emptyMap());
+            JPushHelper.sendEventMap(JConstants.COMMAND_EVENT, Collections.<String, Object>emptyMap());
+            nitro.clear();
+            listener = JPushHelper.registerNitroListener((name, payload) -> {
+                nitro.add(name);
+                if (JConstants.NOTIFICATION_EVENT.equals(name)) disableAndEnableContent(context, stop);
+            });
+            check(nitro.equals(Arrays.asList(JConstants.NOTIFICATION_EVENT, JConstants.COMMAND_EVENT)), "Disable while flushing a Nitro snapshot invalidates its remaining content");
+            JPushHelper.unregisterNitroListener(listener);
+            JPushHelper.clearNitroListeners();
+
+            JPushHelper.sendEvent(JConstants.NOTIFICATION_EVENT, Arguments.createMap());
+            JPushHelper.sendEvent(JConstants.CUSTOM_MESSAGE_EVENT, Arguments.createMap());
+            JPushHelper.sendEvent(JConstants.CONNECT_EVENT, Arguments.createMap());
+            final List<String> legacyEvents = new java.util.ArrayList<String>();
+            ReactApplicationContext flushingContext = new ReactApplicationContext() {
+                @Override @SuppressWarnings("unchecked")
+                public <T extends com.facebook.react.bridge.JavaScriptModule> T getJSModule(Class<T> type) {
+                    return (T) new com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter() {
+                        @Override public void emit(String name, Object payload) {
+                            legacyEvents.add(name);
+                            if (JConstants.NOTIFICATION_EVENT.equals(name)) disableAndEnableContent(context, stop);
+                        }
+                    };
+                }
+            };
+            JPushModule.registerReactContext(flushingContext);
+            check(legacyEvents.equals(Arrays.asList(JConstants.NOTIFICATION_EVENT, JConstants.CONNECT_EVENT)), "Disable while flushing a legacy snapshot invalidates its remaining content");
+            JPushModule.clearActiveReactContexts();
+            JPushHelper.clearNitroListeners();
+        }
+
+        final AtomicReference<android.content.Intent> broadcast = new AtomicReference<android.content.Intent>();
+        Context broadcastContext = new Context() {
+            @Override public void sendBroadcast(android.content.Intent intent) { broadcast.set(intent); }
+        };
+        java.lang.reflect.Field appContext = JCoreStorage.class.getDeclaredField("sAppContext");
+        appContext.setAccessible(true);
+        appContext.set(null, broadcastContext);
+        ActionHelper helper = ActionHelper.getInstance();
+        helper.clearRegisteredReceivers();
+        NotificationMessage message = new NotificationMessage();
+        message.msgId = "queued_broadcast";
+        helper.dispatchNotificationEvent(broadcastContext, "notify_arrived", message);
+        check(broadcast.get() != null, "Authorized content is broadcast");
+        disableAndEnableContent(broadcastContext, false);
+        final AtomicInteger arrivals = new AtomicInteger();
+        helper.onJPushMessageReceive(broadcastContext, new JPushMessageReceiver() {
+            @Override public void onNotifyMessageArrived(Context c, NotificationMessage m) { arrivals.incrementAndGet(); }
+        }, broadcast.get());
+        check(arrivals.get() == 0, "A delayed native broadcast from before revocation cannot replay after regrant");
+    }
+
+    private static void testQueueBudgetAndListenerOwnership() throws Exception {
+        Context context = new Context();
+        JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
+        engine.stop(context);
+        JCoreStorage.setAppKey(context, "queue-budget-fixture");
+        JCoreStorage.setCollectionAuth(context, true);
+        JCoreStorage.setPushStopped(context, false);
+        AtomicInteger cancelled = new AtomicInteger(), overflow = new AtomicInteger();
+        for (int i = 0; i < 129; i++) {
+            final int index = i;
+            engine.enqueueOrSendRequest(context, JCoreWireCodec.CMD_PROPERTY_OP, JCoreWireCodec.VER_PROPERTY_OP,
+                7000L + i, new byte[0], 100L, 0, (frame, status) -> {
+                    check(frame == null && status == 6002, "Queue rejection and cancellation retain code 6002");
+                    if (index == 128) overflow.incrementAndGet(); else cancelled.incrementAndGet();
+                });
+        }
+        check(overflow.get() == 1 && cancelled.get() == 0 && engine.getPreLoginQueueSize() == 128,
+            "129th offline request must reject without replacing the first 128");
+        engine.stop(context);
+        awaitCondition(() -> cancelled.get() == 128, "Stop must complete all accepted offline requests once");
+        check(engine.getPreLoginQueueSize() == 0, "Stop must release the offline queue");
+
+        JPushModule.clearActiveReactContexts();
+        JPushHelper.clearNitroListeners();
+        final int[] ids = new int[2];
+        AtomicInteger callbacks = new AtomicInteger();
+        ids[0] = JPushHelper.registerNitroListener((name, payload) -> {
+            callbacks.incrementAndGet(); JPushHelper.unregisterNitroListener(ids[1]);
+        });
+        ids[1] = JPushHelper.registerNitroListener((name, payload) -> {
+            callbacks.incrementAndGet(); JPushHelper.unregisterNitroListener(ids[0]);
+        });
+        JPushHelper.sendEventMap(JConstants.CUSTOM_MESSAGE_EVENT, Collections.<String, Object>emptyMap());
+        check(callbacks.get() == 1, "A listener removed by an earlier snapshot callback cannot be invoked");
+        JPushHelper.clearNitroListeners();
+
+        ReactApplicationContext main = new ReactApplicationContext(), bg = new ReactApplicationContext();
+        JPushModule mainPush = new JPushModule(main), bgPush = new JPushModule(bg);
+        JCoreModule mainCore = new JCoreModule(main), bgCore = new JCoreModule(bg);
+        mainPush.invalidate(); mainPush.invalidate();
+        JPushHelper.sendEventMap(JConstants.CUSTOM_MESSAGE_EVENT, Collections.<String, Object>emptyMap());
+        check(main.emittedEvents.size() == 1 && bg.emittedEvents.size() == 1, "JCore retains its own context after JPush invalidation");
+        mainCore.invalidate(); mainCore.invalidate();
+        JPushHelper.sendEventMap(JConstants.CUSTOM_MESSAGE_EVENT, Collections.<String, Object>emptyMap());
+        check(main.emittedEvents.size() == 1 && bg.emittedEvents.size() == 2, "Destroying main's two owners must leave bg delivery active");
+        bgPush.invalidate(); bgCore.invalidate();
+        check(JPushModule.getActiveReactContexts().isEmpty(), "Each context must release after its final owner invalidates");
+        JPushHelper.clearNitroListeners();
+
+        AtomicReference<JPushModule> victim = new AtomicReference<JPushModule>();
+        AtomicInteger firstCalls = new AtomicInteger();
+        ReactApplicationContext first = new ReactApplicationContext() {
+            @Override @SuppressWarnings("unchecked")
+            public <T extends com.facebook.react.bridge.JavaScriptModule> T getJSModule(Class<T> type) {
+                return (T) new com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter() {
+                    @Override public void emit(String name, Object payload) { firstCalls.incrementAndGet(); victim.get().invalidate(); }
+                };
+            }
+        };
+        ReactApplicationContext removed = new ReactApplicationContext(), survivor = new ReactApplicationContext();
+        JPushModule firstOwner = new JPushModule(first);
+        victim.set(new JPushModule(removed));
+        JPushModule survivorOwner = new JPushModule(survivor);
+        JPushHelper.sendEventMap(JConstants.CUSTOM_MESSAGE_EVENT, Collections.<String, Object>emptyMap());
+        check(firstCalls.get() == 1 && removed.emittedEvents.isEmpty() && survivor.emittedEvents.size() == 1,
+            "Removing one native context inside a snapshot must skip it and continue to later live contexts");
+        firstOwner.invalidate(); survivorOwner.invalidate();
+        JPushModule.clearActiveReactContexts(); JPushHelper.clearNitroListeners();
+    }
+
+    private static void writeLoopbackAck(Socket socket, JCoreWireCodec.DecodedFrame request, long uid, int sid,
+        int status, byte[] body) throws Exception {
+        socket.getOutputStream().write(JCoreWireCodec.encodeResponseFrame(request.command, request.version,
+            request.requestId, sid, uid, status, body));
+        socket.getOutputStream().flush();
+    }
+
+    private static void testStartedHandshakeCancellationOwnership() throws Exception {
+        Context context = new Context();
+        JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
+        engine.stop(context); engine.setAutoReconnectEnabled(false);
+        JCoreStorage.setAppKey(context, "started-owner-fixture");
+        JCoreStorage.setCollectionAuth(context, true); JCoreStorage.setPushStopped(context, false);
+        JCoreStorage.clearRegistration(context);
+        CountDownLatch oldRegisterRead = new CountDownLatch(1), currentRegisterRead = new CountDownLatch(1);
+        CountDownLatch releaseCurrent = new CountDownLatch(1), finish = new CountDownLatch(1);
+        AtomicReference<Throwable> serverError = new AtomicReference<Throwable>();
+        try (ServerSocket listener = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"))) {
+            listener.setSoTimeout(3000);
+            Thread server = new Thread(() -> {
+                try (Socket oldSocket = listener.accept()) {
+                    oldSocket.setSoTimeout(3000);
+                    JCoreWireCodec.DecodedFrame oldRegister = JCoreWireCodec.readClientFrameFromStream(oldSocket.getInputStream(), 0L);
+                    check(oldRegister != null && oldRegister.command == JCoreWireCodec.CMD_REGISTER, "Old attempt must really start Register");
+                    oldRegisterRead.countDown();
+                    try (Socket currentSocket = listener.accept()) {
+                        currentSocket.setSoTimeout(3000);
+                        JCoreWireCodec.DecodedFrame currentRegister = JCoreWireCodec.readClientFrameFromStream(currentSocket.getInputStream(), 0L);
+                        check(currentRegister != null && currentRegister.command == JCoreWireCodec.CMD_REGISTER, "New attempt must own its Register");
+                        currentRegisterRead.countDown();
+                        try {
+                            writeLoopbackAck(oldSocket, oldRegister, 770001L, oldRegister.sessionId, 0,
+                                JCoreWireCodec.buildRegisterResponsePayload(770001L, "old-password", "obsolete-rid", "old-device"));
+                        } catch (java.io.IOException cancelledSocket) {
+                            // The old peer may observe cancellation before its delayed response can be written.
+                        }
+                        check(releaseCurrent.await(3000L, TimeUnit.MILLISECONDS), "Current Register release missing");
+                        writeLoopbackAck(currentSocket, currentRegister, 770002L, currentRegister.sessionId, 0,
+                            JCoreWireCodec.buildRegisterResponsePayload(770002L, "new-password", "current-rid", "new-device"));
+                        JCoreWireCodec.DecodedFrame login = JCoreWireCodec.readClientFrameFromStream(currentSocket.getInputStream(), 770002L);
+                        check(login != null && login.command == JCoreWireCodec.CMD_LOGIN && login.uid == 770002L, "Current login must use its own registration");
+                        writeLoopbackAck(currentSocket, login, 770002L, 7702, 0,
+                            JCoreWireCodec.buildLoginResponsePayload(7702, 520, "", 1700000000));
+                        JCoreWireCodec.DecodedFrame initialHeartbeat = JCoreWireCodec.readClientFrameFromStream(currentSocket.getInputStream(), 770002L);
+                        check(initialHeartbeat != null && initialHeartbeat.command == JCoreWireCodec.CMD_HEARTBEAT, "Login must send its initial heartbeat");
+                        writeLoopbackAck(currentSocket, initialHeartbeat, 770002L, 7702, 0, new byte[0]);
+                        JCoreWireCodec.DecodedFrame heartbeat = JCoreWireCodec.readClientFrameFromStream(currentSocket.getInputStream(), 770002L);
+                        check(heartbeat != null && heartbeat.command == JCoreWireCodec.CMD_HEARTBEAT, "New socket must survive obsolete worker teardown");
+                        writeLoopbackAck(currentSocket, heartbeat, 770002L, 7702, 0, new byte[0]);
+                        check(finish.await(3000L, TimeUnit.MILLISECONDS), "Ownership fixture finish missing");
+                    }
+                } catch (Throwable error) { serverError.set(error); }
+            }, "test-started-attempt-ownership");
+            server.setDaemon(true); server.start();
+            try {
+                engine.setCustomEndpoint("127.0.0.1", listener.getLocalPort()); engine.setDefaultRequestTimeoutMs(2000L);
+                engine.start(context);
+                check(oldRegisterRead.await(3000L, TimeUnit.MILLISECONDS), "Old registration did not reach localhost");
+                java.lang.reflect.Field latchField = JCoreTcpEngine.class.getDeclaredField("handshakeLatch"); latchField.setAccessible(true);
+                CountDownLatch oldLatch = (CountDownLatch) latchField.get(engine);
+                engine.stop(context); engine.start(context);
+                CountDownLatch currentLatch = (CountDownLatch) latchField.get(engine);
+                check(currentRegisterRead.await(3000L, TimeUnit.MILLISECONDS), "Current registration did not reach localhost");
+                check(oldLatch.await(1000L, TimeUnit.MILLISECONDS), "Cancelled old handshake must complete its own wait");
+                check(!currentLatch.await(100L, TimeUnit.MILLISECONDS) && JCoreStorage.getUid(context) == 0L,
+                    "Old success/failure must not finish the current latch or commit an obsolete UID");
+                releaseCurrent.countDown();
+                check(currentLatch.await(3000L, TimeUnit.MILLISECONDS), "Current handshake must finish after its own ACK");
+                check(engine.isLoggedIn() && JCoreStorage.getUid(context) == 770002L && "current-rid".equals(JCoreStorage.getRegistrationId(context)),
+                    "Current credentials and connection must survive the old attempt's completion");
+                check(engine.sendRequest(JCoreWireCodec.CMD_HEARTBEAT, JCoreWireCodec.VER_HEARTBEAT, new byte[0], 1000L) != null,
+                    "Current socket must still exchange a real ACK");
+            } finally {
+                releaseCurrent.countDown(); finish.countDown(); engine.stop(context); server.join(3000L);
+            }
+            check(serverError.get() == null && !server.isAlive(), "Started ownership fixture failed: " + serverError.get());
+        }
+    }
+
+    private static void testPreLoginFifoAndAcknowledgedMutations() throws Exception {
+        Context context = new Context();
+        JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
+        engine.stop(context); engine.setAutoReconnectEnabled(false); engine.setDefaultRequestTimeoutMs(200L);
+        JCoreStorage.setAppKey(context, "fifo-operation-fixture"); JCoreStorage.setCollectionAuth(context, true); JCoreStorage.setPushStopped(context, false);
+        JCoreStorage.updateRegistration(context, 780001L, "fifo-password", "fifo-rid", "fifo-device");
+        JCoreStorage.setServerRegistered(context, true);
+        JCoreStorage.saveTags(context, new java.util.HashSet<String>(Arrays.asList("base")));
+        JCoreStorage.saveProperties(context, Collections.<String, Object>singletonMap("tier", "old"));
+        CountDownLatch loginRead = new CountDownLatch(1), releaseLogin = new CountDownLatch(1);
+        CountDownLatch firstRead = new CountDownLatch(1), fourthQueued = new CountDownLatch(1);
+        CountDownLatch firstMutationRead = new CountDownLatch(1), releaseMutations = new CountDownLatch(1), finish = new CountDownLatch(1);
+        CountDownLatch fifoDone = new CountDownLatch(4), checkWriter = new CountDownLatch(1), noStaleWire = new CountDownLatch(1);
+        AtomicInteger writerCancelled = new AtomicInteger();
+        AtomicReference<Throwable> serverError = new AtomicReference<Throwable>();
+        Map<Integer, Integer> mutationCodes = new java.util.concurrent.ConcurrentHashMap<Integer, Integer>();
+        JPushMessageReceiver receiver = new JPushMessageReceiver() {
+            private void record(JPushMessage message) { mutationCodes.put(message.getSequence(), message.getErrorCode()); }
+            @Override public void onTagOperatorResult(Context c, JPushMessage message) { record(message); }
+            @Override public void onPropertyOperatorResult(Context c, JPushMessage message) { record(message); }
+        };
+        ActionHelper.getInstance().registerReceiver(receiver);
+        try (ServerSocket listener = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"))) {
+            listener.setSoTimeout(3000);
+            Thread server = new Thread(() -> {
+                try (Socket socket = listener.accept()) {
+                    socket.setSoTimeout(3000);
+                    JCoreWireCodec.DecodedFrame login = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 780001L);
+                    check(login != null && login.command == JCoreWireCodec.CMD_LOGIN, "FIFO fixture must fast-login");
+                    loginRead.countDown(); check(releaseLogin.await(3000L, TimeUnit.MILLISECONDS), "Login release missing");
+                    writeLoopbackAck(socket, login, 780001L, 7801, 0, JCoreWireCodec.buildLoginResponsePayload(7801, 520, "", 1700000000));
+                    JCoreWireCodec.DecodedFrame initialHeartbeat = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 780001L);
+                    check(initialHeartbeat != null && initialHeartbeat.command == JCoreWireCodec.CMD_HEARTBEAT, "FIFO login must send its initial heartbeat");
+                    writeLoopbackAck(socket, initialHeartbeat, 780001L, 7801, 0, new byte[0]);
+                    for (long rid = 8001L; rid <= 8004L; rid++) {
+                        JCoreWireCodec.DecodedFrame request = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 780001L);
+                        check(request != null && request.requestId == rid, "Pre-login and concurrent drain must retain FIFO rid " + rid);
+                        if (rid == 8001L) { firstRead.countDown(); check(fourthQueued.await(3000L, TimeUnit.MILLISECONDS), "Fourth offer missing"); }
+                        writeLoopbackAck(socket, request, 780001L, 7801, 0, new byte[0]);
+                    }
+                    for (int sequence : new int[]{8201, 8202, 8203, 65537, 8205, 8206}) {
+                        JCoreWireCodec.DecodedFrame request = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 780001L);
+                        check(request != null && JCoreWireCodec.extractJsonInt(JCoreWireCodec.parseJsonCommandPayload(request.body), "seq", -1) == sequence,
+                            "Business requests retain native FIFO order and their public sequence");
+                        if (sequence == 65537) check(request.requestId <= 65535L && request.requestId != 65537L, "Wire request ID must remain distinct from a large public sequence");
+                        if (sequence == 8201) { firstMutationRead.countDown(); check(releaseMutations.await(3000L, TimeUnit.MILLISECONDS), "Mutation release missing"); }
+                        if (sequence != 8206) writeLoopbackAck(socket, request, 780001L, 7801, sequence == 8205 ? 500 : 0, new byte[0]);
+                    }
+                    check(checkWriter.await(3000L, TimeUnit.MILLISECONDS), "Writer race release missing");
+                    socket.setSoTimeout(250);
+                    try {
+                        socket.getInputStream().read();
+                        throw new AssertionError("A request blocked at the writer must not cross a revoked generation after regrant");
+                    } catch (java.net.SocketTimeoutException expectedQuiet) { noStaleWire.countDown(); }
+                    check(finish.await(3000L, TimeUnit.MILLISECONDS), "FIFO fixture finish missing");
+                } catch (Throwable error) { serverError.set(error); }
+            }, "test-fifo-acknowledged-mutations");
+            server.setDaemon(true); server.start();
+            try {
+                engine.setCustomEndpoint("127.0.0.1", listener.getLocalPort()); engine.start(context);
+                check(loginRead.await(3000L, TimeUnit.MILLISECONDS), "Login must be in flight before enqueuing");
+                JCoreTcpEngine.RequestCallback fifoCallback = (frame, status) -> { check(frame != null && status == 0, "FIFO request requires its real ACK"); fifoDone.countDown(); };
+                for (long rid = 8001L; rid <= 8002L; rid++) engine.enqueueOrSendRequest(context, JCoreWireCodec.CMD_PROPERTY_OP,
+                    JCoreWireCodec.VER_PROPERTY_OP, rid, new byte[0], 1000L, 0, fifoCallback);
+                synchronized (engine) {
+                    releaseLogin.countDown();
+                    engine.enqueueOrSendRequest(context, JCoreWireCodec.CMD_PROPERTY_OP, JCoreWireCodec.VER_PROPERTY_OP, 8003L, new byte[0], 1000L, 0, fifoCallback);
+                }
+                check(firstRead.await(3000L, TimeUnit.MILLISECONDS), "Login must drain the first queued request");
+                engine.enqueueOrSendRequest(context, JCoreWireCodec.CMD_PROPERTY_OP, JCoreWireCodec.VER_PROPERTY_OP, 8004L, new byte[0], 1000L, 0, fifoCallback);
+                fourthQueued.countDown(); check(fifoDone.await(3000L, TimeUnit.MILLISECONDS), "Every queued FIFO request must receive an ACK");
+                JPushInterface.addTags(context, 8201, Collections.singleton("alpha"));
+                check(firstMutationRead.await(3000L, TimeUnit.MILLISECONDS), "First public mutation must reach the server");
+                JPushInterface.addTags(context, 8202, Collections.singleton("beta"));
+                JPushInterface.deleteTags(context, 8203, Collections.singleton("base"));
+                JPushInterface.setProperties(context, 65537, Collections.<String, Object>singletonMap("tier", "accepted"));
+                JPushInterface.setProperties(context, 8205, Collections.<String, Object>singletonMap("tier", "rejected"));
+                JPushInterface.setProperties(context, 8206, Collections.<String, Object>singletonMap("tier", "timed-out"));
+                check(JCoreStorage.getTags(context).equals(Collections.singleton("base")) && "old".equals(JCoreStorage.getProperties(context).get("tier")),
+                    "Unacknowledged mutations must not commit optimistic local state");
+                releaseMutations.countDown(); awaitCondition(() -> mutationCodes.size() == 6, "All business ACK/rejection/timeout callbacks must finish");
+                check(JCoreStorage.getTags(context).equals(new java.util.HashSet<String>(Arrays.asList("alpha", "beta"))),
+                    "Concurrent add/delete must commit against the latest acknowledged tags");
+                check("accepted".equals(JCoreStorage.getProperties(context).get("tier")) && mutationCodes.get(65537) == 0
+                    && mutationCodes.get(8205) == 500 && mutationCodes.get(8206) == 6002,
+                    "Rejected or timed-out mutations must not roll back the acknowledged cache value");
+                java.lang.reflect.Field attemptField = JCoreTcpEngine.class.getDeclaredField("activeAttempt"); attemptField.setAccessible(true);
+                Object attempt = attemptField.get(engine);
+                java.lang.reflect.Field writerField = attempt.getClass().getDeclaredField("writerLock"); writerField.setAccessible(true);
+                java.lang.reflect.Field slotsField = JCoreTcpEngine.class.getDeclaredField("pendingRequests"); slotsField.setAccessible(true);
+                @SuppressWarnings("unchecked") final Map<Long, ?> slots = (Map<Long, ?>) slotsField.get(engine);
+                synchronized (writerField.get(attempt)) {
+                    engine.enqueueOrSendRequest(context, JCoreWireCodec.CMD_PROPERTY_OP, JCoreWireCodec.VER_PROPERTY_OP, 8300L,
+                        JCoreWireCodec.buildPropertyOperationPayload(1, 8300, Collections.<String, Object>singletonMap("tier", "obsolete")),
+                        200L, 0, (frame, status) -> {
+                            check(frame == null && status == 6002, "Obsolete writer request must complete once with 6002");
+                            writerCancelled.incrementAndGet();
+                        });
+                    awaitCondition(() -> slots.containsKey(8300L), "Request must reach its original connection writer before revocation");
+                    cn.jiguang.api.utils.JCollectionAuth.setAuth(context, false);
+                    cn.jiguang.api.utils.JCollectionAuth.setAuth(context, true);
+                }
+                checkWriter.countDown();
+                awaitCondition(() -> writerCancelled.get() == 1, "Revoked writer request must finish once after regrant");
+                check(noStaleWire.await(2000L, TimeUnit.MILLISECONDS) && engine.isLoggedIn(),
+                    "Regrant must preserve the transport while discarding an obsolete blocked write");
+            } finally {
+                releaseLogin.countDown(); fourthQueued.countDown(); releaseMutations.countDown(); checkWriter.countDown(); finish.countDown(); engine.stop(context);
+                ActionHelper.getInstance().unregisterReceiver(receiver); server.join(3000L);
+            }
+            check(serverError.get() == null && !server.isAlive(), "FIFO fixture failed: " + serverError.get());
+        }
+    }
+
+    @org.junit.Test
+    public void testTerminalConfigurationErrorsRequireAnIdentityChange() throws Exception {
+        Context context = new Context();
+        JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
+        for (int terminalStatus : new int[]{1005, 1008, 1009}) {
+            engine.stop(context); engine.setAutoReconnectEnabled(true); engine.setReconnectBaseDelayMs(25L);
+            engine.setDefaultRequestTimeoutMs(500L);
+            JCoreStorage.setAppKey(context, "terminal-fixture-" + terminalStatus);
+            JCoreStorage.setCollectionAuth(context, true); JCoreStorage.setPushStopped(context, false); JCoreStorage.clearRegistration(context);
+            CountDownLatch terminalSent = new CountDownLatch(1), quietWindow = new CountDownLatch(1), finish = new CountDownLatch(1);
+            AtomicReference<Throwable> serverError = new AtomicReference<Throwable>();
+            AtomicInteger cancelledQueue = new AtomicInteger(), queuedCode = new AtomicInteger(-1);
+            try (ServerSocket listener = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"))) {
+                listener.setSoTimeout(3000);
+                Thread server = new Thread(() -> {
+                    try {
+                        try (Socket rejected = listener.accept()) {
+                            rejected.setSoTimeout(2000);
+                            JCoreWireCodec.DecodedFrame register = JCoreWireCodec.readClientFrameFromStream(rejected.getInputStream(), 0L);
+                            check(register != null && register.command == JCoreWireCodec.CMD_REGISTER, "Terminal fixture must receive Register");
+                            writeLoopbackAck(rejected, register, 0L, register.sessionId, terminalStatus, new byte[0]);
+                            terminalSent.countDown();
+                        }
+                        listener.setSoTimeout(250);
+                        try (Socket unexpected = listener.accept()) {
+                            throw new AssertionError("Terminal configuration must not reconnect before its identity changes");
+                        } catch (java.net.SocketTimeoutException expectedQuiet) {
+                            quietWindow.countDown();
+                        }
+                        listener.setSoTimeout(3000);
+                        try (Socket recovered = listener.accept()) {
+                            recovered.setSoTimeout(2000);
+                            JCoreWireCodec.DecodedFrame register = JCoreWireCodec.readClientFrameFromStream(recovered.getInputStream(), 0L);
+                            check(register != null && register.command == JCoreWireCodec.CMD_REGISTER, "Changed configuration must start a fresh Register");
+                            writeLoopbackAck(recovered, register, 790001L, register.sessionId, 0,
+                                JCoreWireCodec.buildRegisterResponsePayload(790001L, "recovered-password", "recovered-rid", "recovered-device"));
+                            JCoreWireCodec.DecodedFrame login = JCoreWireCodec.readClientFrameFromStream(recovered.getInputStream(), 790001L);
+                            check(login != null && login.command == JCoreWireCodec.CMD_LOGIN, "Changed configuration must complete login");
+                            writeLoopbackAck(recovered, login, 790001L, 7901, 0, JCoreWireCodec.buildLoginResponsePayload(7901, 520, "", 1700000000));
+                            JCoreWireCodec.DecodedFrame heartbeat = JCoreWireCodec.readClientFrameFromStream(recovered.getInputStream(), 790001L);
+                            check(heartbeat != null && heartbeat.command == JCoreWireCodec.CMD_HEARTBEAT, "Recovered login must send its initial heartbeat");
+                            writeLoopbackAck(recovered, heartbeat, 790001L, 7901, 0, new byte[0]);
+                            check(finish.await(3000L, TimeUnit.MILLISECONDS), "Terminal recovery finish missing");
+                        }
+                    } catch (Throwable error) { serverError.set(error); }
+                }, "test-terminal-configuration-" + terminalStatus);
+                server.setDaemon(true); server.start();
+                try {
+                    engine.setCustomEndpoint("127.0.0.1", listener.getLocalPort());
+                    engine.enqueueOrSendRequest(context, JCoreWireCodec.CMD_PROPERTY_OP, JCoreWireCodec.VER_PROPERTY_OP, 64601,
+                        JCoreWireCodec.buildPropertyOperationPayload(1, 64601, Collections.<String, Object>singletonMap("value", "terminal-pending")), 1000L, 0,
+                        (frame, code) -> { queuedCode.set(code); cancelledQueue.incrementAndGet(); });
+                    engine.start(context);
+                    check(terminalSent.await(3000L, TimeUnit.MILLISECONDS) && engine.awaitHandshake(2000L), "Terminal handshake must complete its wait");
+                    check(!engine.isLoggedIn(), "Terminal handshake must not become logged in");
+                    awaitCondition(() -> cancelledQueue.get() == 1, "Terminal configuration must cancel its unbound queue once");
+                    check(queuedCode.get() == 6002 && engine.getPreLoginQueueSize() == 0, "Terminal queue cannot be preserved");
+                    engine.start(context); engine.triggerReconnectNow(context); engine.onNetworkConnected(context);
+                    check(quietWindow.await(2000L, TimeUnit.MILLISECONDS), "Terminal status must suppress automatic and explicit retry");
+                    JCoreStorage.setAppKey(context, "terminal-fixture-" + terminalStatus + "-changed");
+                    engine.start(context);
+                    check(engine.awaitHandshake(2000L) && engine.isLoggedIn() && JCoreStorage.getUid(context) == 790001L,
+                        "Changing configuration identity must permit registration and login again");
+                    check(cancelledQueue.get() == 1 && engine.getPreLoginQueueSize() == 0, "Terminal work must not replay after configuration recovery");
+                } finally {
+                    finish.countDown(); engine.stop(context); server.join(3000L);
+                }
+                check(serverError.get() == null && !server.isAlive(), "Terminal fixture failed: " + serverError.get());
+            }
+        }
+        engine.setAutoReconnectEnabled(true); engine.setReconnectBaseDelayMs(3000L);
+    }
+
+    @org.junit.Test
+    public void testObsoleteConfigurationFailureCannotBlockNewConfiguration() throws Exception {
+        Context context = new Context();
+        JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
+        engine.stop(context); engine.setAutoReconnectEnabled(false); engine.setDefaultRequestTimeoutMs(200L);
+        JCoreStorage.setAppKey(context, "configuration-A-fixture");
+        JCoreStorage.setCollectionAuth(context, true); JCoreStorage.setPushStopped(context, false); JCoreStorage.clearRegistration(context);
+        CountDownLatch oldRead = new CountDownLatch(1), releaseOldFailure = new CountDownLatch(1), finish = new CountDownLatch(1);
+        AtomicReference<Throwable> serverError = new AtomicReference<Throwable>();
+        try (ServerSocket listener = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"))) {
+            listener.setSoTimeout(3000);
+            Thread server = new Thread(() -> {
+                try {
+                    try (Socket oldSocket = listener.accept()) {
+                        oldSocket.setSoTimeout(2000);
+                        JCoreWireCodec.DecodedFrame oldRegister = JCoreWireCodec.readClientFrameFromStream(oldSocket.getInputStream(), 0L);
+                        check(oldRegister != null && oldRegister.command == JCoreWireCodec.CMD_REGISTER, "Configuration A must really begin Register");
+                        oldRead.countDown(); check(releaseOldFailure.await(2000L, TimeUnit.MILLISECONDS), "Configuration change release missing");
+                        writeLoopbackAck(oldSocket, oldRegister, 0L, oldRegister.sessionId, 1005, new byte[0]);
+                    }
+                    try (Socket currentSocket = listener.accept()) {
+                        currentSocket.setSoTimeout(2000);
+                        JCoreWireCodec.DecodedFrame register = JCoreWireCodec.readClientFrameFromStream(currentSocket.getInputStream(), 0L);
+                        check(register != null && register.command == JCoreWireCodec.CMD_REGISTER, "Configuration B must be allowed to register");
+                        writeLoopbackAck(currentSocket, register, 795001L, register.sessionId, 0,
+                            JCoreWireCodec.buildRegisterResponsePayload(795001L, "configuration-B-password", "configuration-B-rid", "configuration-B-device"));
+                        JCoreWireCodec.DecodedFrame login = JCoreWireCodec.readClientFrameFromStream(currentSocket.getInputStream(), 795001L);
+                        check(login != null && login.command == JCoreWireCodec.CMD_LOGIN, "Configuration B must complete login");
+                        writeLoopbackAck(currentSocket, login, 795001L, 7951, 0, JCoreWireCodec.buildLoginResponsePayload(7951, 520, "", 1700000000));
+                        JCoreWireCodec.DecodedFrame heartbeat = JCoreWireCodec.readClientFrameFromStream(currentSocket.getInputStream(), 795001L);
+                        check(heartbeat != null && heartbeat.command == JCoreWireCodec.CMD_HEARTBEAT, "Configuration B must send its own heartbeat");
+                        writeLoopbackAck(currentSocket, heartbeat, 795001L, 7951, 0, new byte[0]);
+                        check(finish.await(3000L, TimeUnit.MILLISECONDS), "Configuration fixture finish missing");
+                    }
+                } catch (Throwable error) { serverError.set(error); }
+            }, "test-configuration-owner-failure");
+            server.setDaemon(true); server.start();
+            try {
+                engine.setCustomEndpoint("127.0.0.1", listener.getLocalPort()); engine.start(context);
+                check(oldRead.await(2000L, TimeUnit.MILLISECONDS), "Configuration A Register did not reach localhost");
+                JCoreStorage.setAppKey(context, "configuration-B-fixture"); releaseOldFailure.countDown();
+                check(engine.awaitHandshake(2000L), "Configuration A must finish its own failed wait");
+                check(!engine.isLoggedIn() && JCoreStorage.getUid(context) == 0L, "Obsolete configuration must not commit credentials");
+                engine.start(context);
+                check(engine.awaitHandshake(2000L) && engine.isLoggedIn() && JCoreStorage.getUid(context) == 795001L,
+                    "A terminal reply for configuration A must not mark B terminal or reserve its start");
+            } finally {
+                releaseOldFailure.countDown(); finish.countDown(); engine.stop(context); server.join(3000L);
+                engine.setAutoReconnectEnabled(true); engine.setDefaultRequestTimeoutMs(5000L);
+            }
+            check(serverError.get() == null && !server.isAlive(), "Configuration fixture failed: " + serverError.get());
+        }
+    }
+
+    @org.junit.Test
+    public void testNetworkReconnectPreservesUnboundPublicOperations() throws Exception {
+        Context context = new Context();
+        JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
+        JCoreStorage.setPushStopped(context, false); engine.stop(context);
+        engine.setAutoReconnectEnabled(false); engine.setDefaultRequestTimeoutMs(1000L);
+        JCoreStorage.setAppKey(context, "network-prelogin-fixture"); JCoreStorage.setCollectionAuth(context, true);
+        JCoreStorage.updateRegistration(context, 840001L, "prelogin-password", "prelogin-rid", "prelogin-device");
+        JCoreStorage.setServerRegistered(context, true);
+        CountDownLatch oldLoginRead = new CountDownLatch(1), newLoginRead = new CountDownLatch(1);
+        CountDownLatch releaseLogin = new CountDownLatch(1), finish = new CountDownLatch(1), callbacks = new CountDownLatch(4);
+        AtomicReference<Throwable> serverError = new AtomicReference<Throwable>();
+        Map<Integer, Integer> codes = new java.util.concurrent.ConcurrentHashMap<Integer, Integer>();
+        Map<Integer, AtomicInteger> counts = new java.util.concurrent.ConcurrentHashMap<Integer, AtomicInteger>();
+        List<Integer> commands = new java.util.concurrent.CopyOnWriteArrayList<Integer>();
+        JPushMessageReceiver receiver = new JPushMessageReceiver() {
+            private void record(JPushMessage message) {
+                int sequence = message.getSequence();
+                if (sequence < 64001 || sequence > 64004) return;
+                counts.computeIfAbsent(sequence, key -> new AtomicInteger()).incrementAndGet();
+                codes.put(sequence, message.getErrorCode()); callbacks.countDown();
+            }
+            @Override public void onAliasOperatorResult(Context c, JPushMessage message) { record(message); }
+            @Override public void onTagOperatorResult(Context c, JPushMessage message) { record(message); }
+            @Override public void onPropertyOperatorResult(Context c, JPushMessage message) { record(message); }
+            @Override public void onMobileNumberOperatorResult(Context c, JPushMessage message) { record(message); }
+        };
+        ActionHelper.getInstance().registerReceiver(receiver);
+        try (ServerSocket listener = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"))) {
+            listener.setSoTimeout(3000);
+            Thread server = new Thread(() -> {
+                try (Socket oldSocket = listener.accept()) {
+                    oldSocket.setSoTimeout(3000);
+                    JCoreWireCodec.DecodedFrame oldLogin = JCoreWireCodec.readClientFrameFromStream(oldSocket.getInputStream(), 840001L);
+                    check(oldLogin != null && oldLogin.command == JCoreWireCodec.CMD_LOGIN, "First connection must hold its real Login");
+                    oldLoginRead.countDown();
+                    try (Socket socket = listener.accept()) {
+                        socket.setSoTimeout(3000);
+                        JCoreWireCodec.DecodedFrame login = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 840001L);
+                        check(login != null && login.command == JCoreWireCodec.CMD_LOGIN, "Network reconnect must issue its own Login");
+                        newLoginRead.countDown();
+                        check(releaseLogin.await(3000L, TimeUnit.MILLISECONDS), "Reconnect Login release missing");
+                        if (finish.getCount() == 0) return;
+                        writeLoopbackAck(socket, login, 840001L, 8401, 0, JCoreWireCodec.buildLoginResponsePayload(8401, 520, "", 1700000000));
+                        JCoreWireCodec.DecodedFrame heartbeat = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 840001L);
+                        check(heartbeat != null && heartbeat.command == JCoreWireCodec.CMD_HEARTBEAT, "Reconnect must ACK its initial heartbeat");
+                        writeLoopbackAck(socket, heartbeat, 840001L, 8401, 0, new byte[0]);
+                        for (int index = 0; index < 4; index++) {
+                            JCoreWireCodec.DecodedFrame request = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 840001L);
+                            check(request != null, "Preserved request must reach the new connection"); commands.add(request.command);
+                            if (index < 3) check(JCoreWireCodec.extractJsonInt(JCoreWireCodec.parseJsonCommandPayload(request.body), "seq", -1) == 64001 + index,
+                                "Preserved public sequence must remain unchanged");
+                            else check("15500000000".equals(JCoreWireCodec.parseMobileNumberPayload(request.body).mobileNumber), "Preserved mobile payload changed");
+                            writeLoopbackAck(socket, request, 840001L, 8401, 0, new byte[0]);
+                        }
+                        check(finish.await(3000L, TimeUnit.MILLISECONDS), "Reconnect fixture finish missing");
+                    }
+                } catch (Throwable error) { serverError.set(error); }
+            }, "test-network-prelogin-preservation");
+            server.setDaemon(true); server.start();
+            try {
+                engine.setCustomEndpoint("127.0.0.1", listener.getLocalPort()); engine.start(context);
+                check(oldLoginRead.await(3000L, TimeUnit.MILLISECONDS), "Initial Login did not reach localhost");
+                JPushInterface.setAlias(context, 64001, "preserved-alias");
+                JPushInterface.addTags(context, 64002, Collections.singleton("preserved-tag"));
+                JPushInterface.setProperties(context, 64003, Collections.<String, Object>singletonMap("region", "local"));
+                JPushInterface.setMobileNumber(context, 64004, "15500000000");
+                check(engine.getPreLoginQueueSize() == 4, "Four public requests must queue before Login");
+                engine.onNetworkConnected(context);
+                check(newLoginRead.await(3000L, TimeUnit.MILLISECONDS), "Reconnect Login did not reach localhost");
+                check(engine.getPreLoginQueueSize() == 4, "Network reconnect must preserve four unbound requests; actual=" + engine.getPreLoginQueueSize());
+                check(codes.isEmpty(), "Unbound requests must not fail before the replacement Login");
+                releaseLogin.countDown(); check(callbacks.await(3000L, TimeUnit.MILLISECONDS), "Preserved requests need real ACK callbacks");
+                check(commands.equals(Arrays.asList(JCoreWireCodec.CMD_ALIAS_OP, JCoreWireCodec.CMD_TAG_OP,
+                    JCoreWireCodec.CMD_PROPERTY_OP, JCoreWireCodec.CMD_MOBILE_NUMBER)), "Reconnect must retain public FIFO order");
+                for (int sequence = 64001; sequence <= 64004; sequence++) check(codes.get(sequence) == 0 && counts.get(sequence).get() == 1,
+                    "Each preserved public request requires exactly one successful ACK callback");
+                engine.onNetworkConnected(context);
+                check(engine.isLoggedIn() && engine.awaitHandshake(0L), "A network callback after Login must leave the completed owner alone");
+            } finally {
+                finish.countDown(); releaseLogin.countDown(); engine.stop(context); server.join(3000L);
+                ActionHelper.getInstance().unregisterReceiver(receiver);
+                engine.setAutoReconnectEnabled(true); engine.setDefaultRequestTimeoutMs(5000L);
+            }
+            check(serverError.get() == null && !server.isAlive(), "Network reconnect fixture failed: " + serverError.get());
+        }
+    }
+
+    private static void runReconnectOwnerDrainIsolation(final boolean blockOldCallback) throws Exception {
+        Context context = new Context(); JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
+        JCoreStorage.setPushStopped(context, false); engine.stop(context);
+        engine.setAutoReconnectEnabled(false); engine.setDefaultRequestTimeoutMs(3000L);
+        JCoreStorage.setAppKey(context, "drain-handoff-" + blockOldCallback); JCoreStorage.setCollectionAuth(context, true);
+        JCoreStorage.updateRegistration(context, 850001L, "drain-password", "drain-rid", "drain-device");
+        JCoreStorage.setServerRegistered(context, true);
+        CountDownLatch firstRead = new CountDownLatch(1), oldEntered = new CountDownLatch(1), releaseOld = new CountDownLatch(1), oldExited = new CountDownLatch(1);
+        CountDownLatch newEntered = new CountDownLatch(1), releaseNew = new CountDownLatch(1), fourthQueued = new CountDownLatch(1);
+        CountDownLatch noParallelPoll = new CountDownLatch(1), fourthDone = new CountDownLatch(1), finish = new CountDownLatch(1);
+        AtomicReference<Throwable> serverError = new AtomicReference<Throwable>(), callbackError = new AtomicReference<Throwable>();
+        Map<Integer, Integer> codes = new java.util.concurrent.ConcurrentHashMap<Integer, Integer>();
+        Map<Integer, AtomicInteger> counts = new java.util.concurrent.ConcurrentHashMap<Integer, AtomicInteger>();
+        java.util.function.IntFunction<JCoreTcpEngine.RequestCallback> callback = sequence -> (frame, code) -> {
+            counts.computeIfAbsent(sequence, key -> new AtomicInteger()).incrementAndGet(); codes.put(sequence, code);
+            if (code == 0 && frame == null) callbackError.set(new AssertionError("Success requires a real ACK frame"));
+            try {
+                if (sequence == 65101) { oldEntered.countDown(); if (blockOldCallback && !releaseOld.await(3000L, TimeUnit.MILLISECONDS)) callbackError.set(new AssertionError("Old callback release missing")); }
+                if (sequence == 65103) { newEntered.countDown(); if (!releaseNew.await(3000L, TimeUnit.MILLISECONDS)) callbackError.set(new AssertionError("New callback release missing")); }
+            } catch (InterruptedException error) { Thread.currentThread().interrupt(); callbackError.set(error); }
+            finally { if (sequence == 65101) oldExited.countDown(); if (sequence == 65104) fourthDone.countDown(); }
+        };
+        try (ServerSocket listener = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"))) {
+            listener.setSoTimeout(3000);
+            Thread server = new Thread(() -> {
+                try (Socket oldSocket = listener.accept()) {
+                    oldSocket.setSoTimeout(3000);
+                    JCoreWireCodec.DecodedFrame login = JCoreWireCodec.readClientFrameFromStream(oldSocket.getInputStream(), 850001L);
+                    writeLoopbackAck(oldSocket, login, 850001L, 8501, 0, JCoreWireCodec.buildLoginResponsePayload(8501, 520, "", 1700000000));
+                    JCoreWireCodec.DecodedFrame heartbeat = JCoreWireCodec.readClientFrameFromStream(oldSocket.getInputStream(), 850001L);
+                    check(heartbeat.command == JCoreWireCodec.CMD_HEARTBEAT, "Old drain login heartbeat missing");
+                    writeLoopbackAck(oldSocket, heartbeat, 850001L, 8501, 0, new byte[0]);
+                    JCoreWireCodec.DecodedFrame first = JCoreWireCodec.readClientFrameFromStream(oldSocket.getInputStream(), 850001L);
+                    check(JCoreWireCodec.extractJsonInt(JCoreWireCodec.parseJsonCommandPayload(first.body), "seq", -1) == 65101, "Old owner must send its first request once");
+                    if (blockOldCallback) writeLoopbackAck(oldSocket, first, 850001L, 8501, 0, new byte[0]);
+                    firstRead.countDown();
+                    try (Socket socket = listener.accept()) {
+                        socket.setSoTimeout(3000);
+                        login = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 850001L);
+                        writeLoopbackAck(socket, login, 850001L, 8502, 0, JCoreWireCodec.buildLoginResponsePayload(8502, 520, "", 1700000000));
+                        heartbeat = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 850001L);
+                        check(heartbeat.command == JCoreWireCodec.CMD_HEARTBEAT, "New drain login heartbeat missing");
+                        writeLoopbackAck(socket, heartbeat, 850001L, 8502, 0, new byte[0]);
+                        JCoreWireCodec.DecodedFrame third = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 850001L);
+                        check(JCoreWireCodec.extractJsonInt(JCoreWireCodec.parseJsonCommandPayload(third.body), "seq", -1) == 65103,
+                            "Only the fresh unbound request may reach the new owner; no old request replay");
+                        writeLoopbackAck(socket, third, 850001L, 8502, 0, new byte[0]);
+                        check(fourthQueued.await(3000L, TimeUnit.MILLISECONDS), "Fourth request was not queued");
+                        socket.setSoTimeout(150);
+                        try { socket.getInputStream().read(); throw new AssertionError("An obsolete worker must not poll while the new callback owns the drain"); }
+                        catch (java.net.SocketTimeoutException expectedQuiet) { noParallelPoll.countDown(); }
+                        socket.setSoTimeout(3000);
+                        JCoreWireCodec.DecodedFrame fourth = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 850001L);
+                        check(JCoreWireCodec.extractJsonInt(JCoreWireCodec.parseJsonCommandPayload(fourth.body), "seq", -1) == 65104, "The current drainer must retain its next FIFO request");
+                        writeLoopbackAck(socket, fourth, 850001L, 8502, 0, new byte[0]);
+                        check(finish.await(3000L, TimeUnit.MILLISECONDS), "Drain handoff finish missing");
+                    }
+                } catch (Throwable error) { serverError.set(error); }
+            }, "test-drain-owner-handoff-" + blockOldCallback);
+            server.setDaemon(true); server.start();
+            try {
+                engine.setCustomEndpoint("127.0.0.1", listener.getLocalPort()); engine.start(context);
+                check(engine.awaitHandshake(3000L) && engine.isLoggedIn(), "Old drain owner must log in");
+                engine.enqueueOrSendRequest(context, JCoreWireCodec.CMD_PROPERTY_OP, JCoreWireCodec.VER_PROPERTY_OP, 65101,
+                    JCoreWireCodec.buildPropertyOperationPayload(1, 65101, Collections.<String, Object>singletonMap("value", "old-in-flight")), 3000L, 0, callback.apply(65101));
+                check(firstRead.await(3000L, TimeUnit.MILLISECONDS), "Old request did not reach its owner");
+                if (blockOldCallback) check(oldEntered.await(3000L, TimeUnit.MILLISECONDS), "Old callback must be in progress");
+                engine.enqueueOrSendRequest(context, JCoreWireCodec.CMD_PROPERTY_OP, JCoreWireCodec.VER_PROPERTY_OP, 65102,
+                    JCoreWireCodec.buildPropertyOperationPayload(1, 65102, Collections.<String, Object>singletonMap("value", "old-bound")), 3000L, 0, callback.apply(65102));
+                engine.closeSocket();
+                engine.enqueueOrSendRequest(context, JCoreWireCodec.CMD_PROPERTY_OP, JCoreWireCodec.VER_PROPERTY_OP, 65103,
+                    JCoreWireCodec.buildPropertyOperationPayload(1, 65103, Collections.<String, Object>singletonMap("value", "new-unbound")), 3000L, 0, callback.apply(65103));
+                engine.onNetworkConnected(context);
+                check(newEntered.await(3000L, TimeUnit.MILLISECONDS), "New owner must ACK its queue without waiting for the old callback");
+                releaseOld.countDown(); check(oldExited.await(1000L, TimeUnit.MILLISECONDS), "Old callback must finish its own request");
+                awaitCondition(() -> codes.containsKey(65102), "Bound queued request must be cancelled");
+                check(codes.get(65101) == (blockOldCallback ? 0 : 6002) && codes.get(65102) == 6002 && codes.get(65103) == 0,
+                    "Old sent/bound work must finish once without replay; the fresh queue must receive its ACK");
+                engine.enqueueOrSendRequest(context, JCoreWireCodec.CMD_PROPERTY_OP, JCoreWireCodec.VER_PROPERTY_OP, 65104,
+                    JCoreWireCodec.buildPropertyOperationPayload(1, 65104, Collections.<String, Object>singletonMap("value", "new-tail")), 3000L, 0, callback.apply(65104));
+                fourthQueued.countDown(); check(noParallelPoll.await(1000L, TimeUnit.MILLISECONDS), "A stale worker must not clear or steal the new drain token");
+                releaseNew.countDown(); check(fourthDone.await(3000L, TimeUnit.MILLISECONDS) && codes.get(65104) == 0, "New drainer must complete its own tail");
+                for (int sequence = 65101; sequence <= 65104; sequence++) check(counts.get(sequence).get() == 1, "Callbacks must remain exactly once across reconnect");
+                check(callbackError.get() == null, "Drain callback failed: " + callbackError.get());
+            } finally {
+                releaseOld.countDown(); releaseNew.countDown(); fourthQueued.countDown(); finish.countDown();
+                engine.stop(context); server.join(3000L); engine.setAutoReconnectEnabled(true); engine.setDefaultRequestTimeoutMs(5000L);
+            }
+            check(serverError.get() == null && !server.isAlive(), "Drain ownership fixture failed: " + serverError.get());
+        }
+    }
+
+    @org.junit.Test
+    public void testReconnectDoesNotReplaySentOrBoundRequests() throws Exception { runReconnectOwnerDrainIsolation(false); }
+
+    @org.junit.Test
+    public void testReconnectHandsOffDrainWhileOldCallbackIsBlocked() throws Exception { runReconnectOwnerDrainIsolation(true); }
+
+    @org.junit.Test
+    public void testReconnectPreservationRejectsInvalidPolicyAndExplicitCancellation() throws Exception {
+        Context context = new Context(); JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
+        for (int scenario = 0; scenario < 5; scenario++) {
+            final int mode = scenario;
+            JCoreStorage.setPushStopped(context, false); engine.stop(context);
+            engine.setAutoReconnectEnabled(false); engine.setDefaultRequestTimeoutMs(1000L);
+            JCoreStorage.setCollectionAuth(context, true); JCoreStorage.setAppKey(context, "queue-policy-" + mode);
+            JCoreStorage.updateRegistration(context, 860001L, "policy-password", "policy-rid", "policy-device"); JCoreStorage.setServerRegistered(context, true);
+            CountDownLatch quiet = new CountDownLatch(1), freshDone = new CountDownLatch(1), finish = new CountDownLatch(1);
+            AtomicInteger cancelled = new AtomicInteger(), cancelCode = new AtomicInteger(-1), freshCode = new AtomicInteger(-1);
+            AtomicReference<Throwable> serverError = new AtomicReference<Throwable>();
+            try (ServerSocket listener = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"))) {
+                listener.setSoTimeout(3000);
+                Thread server = new Thread(() -> {
+                    try (Socket socket = listener.accept()) {
+                        socket.setSoTimeout(3000);
+                        JCoreWireCodec.DecodedFrame login = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 860001L);
+                        check(login != null && login.command == JCoreWireCodec.CMD_LOGIN, "Policy fixture must login normally");
+                        writeLoopbackAck(socket, login, 860001L, 8601, 0, JCoreWireCodec.buildLoginResponsePayload(8601, 520, "", 1700000000));
+                        JCoreWireCodec.DecodedFrame heartbeat = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 860001L);
+                        check(heartbeat.command == JCoreWireCodec.CMD_HEARTBEAT, "Policy fixture initial heartbeat missing");
+                        writeLoopbackAck(socket, heartbeat, 860001L, 8601, 0, new byte[0]);
+                        if (mode == 0) {
+                            JCoreWireCodec.DecodedFrame resume = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 860001L);
+                            check(resume.command == JCoreWireCodec.CMD_PUSH_CTRL, "Public resume control must retain its own semantics");
+                            writeLoopbackAck(socket, resume, 860001L, 8601, 0, new byte[0]);
+                        }
+                        socket.setSoTimeout(150);
+                        try { socket.getInputStream().read(); throw new AssertionError("Cancelled or mismatched pre-login body must never reach the replacement connection"); }
+                        catch (java.net.SocketTimeoutException expectedQuiet) { quiet.countDown(); }
+                        socket.setSoTimeout(3000);
+                        JCoreWireCodec.DecodedFrame fresh = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 860001L);
+                        check(JCoreWireCodec.extractJsonInt(JCoreWireCodec.parseJsonCommandPayload(fresh.body), "seq", -1) == 65202, "Only the current-policy request may send");
+                        writeLoopbackAck(socket, fresh, 860001L, 8601, 0, new byte[0]);
+                        check(finish.await(3000L, TimeUnit.MILLISECONDS), "Policy fixture finish missing");
+                    } catch (Throwable error) { serverError.set(error); }
+                }, "test-queue-policy-" + mode);
+                server.setDaemon(true); server.start();
+                try {
+                    engine.setCustomEndpoint("127.0.0.1", listener.getLocalPort());
+                    engine.enqueueOrSendRequest(context, JCoreWireCodec.CMD_PROPERTY_OP, JCoreWireCodec.VER_PROPERTY_OP, 65201,
+                        JCoreWireCodec.buildPropertyOperationPayload(1, 65201, Collections.<String, Object>singletonMap("value", "obsolete")), 1000L, 0,
+                        (frame, code) -> { cancelCode.set(code); cancelled.incrementAndGet(); });
+                    check(engine.getPreLoginQueueSize() == 1, "Policy fixture must start with an unbound request");
+                    if (mode == 0) { JPushInterface.stopPush(context); JPushInterface.resumePush(context); }
+                    else if (mode == 1) {
+                        cn.jiguang.api.utils.JCollectionAuth.setAuth(context, false); cn.jiguang.api.utils.JCollectionAuth.setAuth(context, true);
+                        engine.onNetworkConnected(context);
+                    } else if (mode == 2) { JCoreStorage.setAppKey(context, "queue-policy-" + mode + "-changed"); engine.onNetworkConnected(context); }
+                    else if (mode == 3) engine.triggerReconnectNow(context);
+                    else { engine.closeSocket(); engine.onNetworkConnected(context); }
+                    check(engine.awaitHandshake(3000L) && engine.isLoggedIn(), "Current policy must still log in");
+                    awaitCondition(() -> cancelled.get() == 1, "Invalidated request must receive one cancellation callback");
+                    check(cancelCode.get() == 6002 && engine.getPreLoginQueueSize() == 0, "Policy/config/explicit cancellation must remain 6002 with no retained old item");
+                    check(quiet.await(2000L, TimeUnit.MILLISECONDS), "Old queue must remain absent after the new login: " + serverError.get());
+                    engine.enqueueOrSendRequest(context, JCoreWireCodec.CMD_PROPERTY_OP, JCoreWireCodec.VER_PROPERTY_OP, 65202,
+                        JCoreWireCodec.buildPropertyOperationPayload(1, 65202, Collections.<String, Object>singletonMap("value", "current")), 1000L, 0,
+                        (frame, code) -> { freshCode.set(frame != null ? code : -1); freshDone.countDown(); });
+                    check(freshDone.await(3000L, TimeUnit.MILLISECONDS) && freshCode.get() == 0 && cancelled.get() == 1,
+                        "A fresh request must ACK while the old request stays cancelled exactly once");
+                } finally {
+                    finish.countDown(); JCoreStorage.setPushStopped(context, false); engine.stop(context); server.join(3000L);
+                    engine.setAutoReconnectEnabled(true); engine.setDefaultRequestTimeoutMs(5000L);
+                }
+                check(serverError.get() == null && !server.isAlive(), "Policy queue fixture failed: " + serverError.get());
+            }
+        }
+    }
+
+    private static void runPublicStopCancellationFixture(final int mode) throws Exception {
+        final boolean holdWriter = mode == 1 || mode == 3;
+        final boolean blockOutput = mode == 2;
+        final boolean resumeImmediately = mode == 3;
+        Context context = new Context();
+        JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
+        engine.stop(context); engine.setAutoReconnectEnabled(false); engine.setDefaultRequestTimeoutMs(1000L);
+        JCoreStorage.setAppKey(context, "public-stop-fixture-" + mode);
+        JCoreStorage.setCollectionAuth(context, true); JCoreStorage.setPushStopped(context, false);
+        JCoreStorage.updateRegistration(context, 820001L, "stop-password", "stop-rid", "stop-device");
+        JCoreStorage.setServerRegistered(context, true);
+        CountDownLatch oldClosed = new CountDownLatch(1), outputEntered = new CountDownLatch(1), releaseOutput = new CountDownLatch(1);
+        CountDownLatch outputExited = new CountDownLatch(1), stopReturned = new CountDownLatch(1);
+        AtomicInteger stoppedControls = new AtomicInteger();
+        AtomicReference<Throwable> serverError = new AtomicReference<Throwable>(), stopError = new AtomicReference<Throwable>();
+        java.util.concurrent.atomic.AtomicLong returnedNanos = new java.util.concurrent.atomic.AtomicLong(), closedNanos = new java.util.concurrent.atomic.AtomicLong();
+        AtomicReference<Thread> stoppingThread = new AtomicReference<Thread>();
+        try (ServerSocket listener = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"))) {
+            listener.setSoTimeout(3000);
+            Thread server = new Thread(() -> {
+                try {
+                    for (int connection = 0; connection < (resumeImmediately ? 2 : 1); connection++) {
+                        try (Socket socket = listener.accept()) {
+                            socket.setSoTimeout(3000);
+                            JCoreWireCodec.DecodedFrame login = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 820001L);
+                            check(login != null && login.command == JCoreWireCodec.CMD_LOGIN, "Public stop fixture must use a real fast login");
+                            int sid = 8201 + connection;
+                            writeLoopbackAck(socket, login, 820001L, sid, 0, JCoreWireCodec.buildLoginResponsePayload(sid, 520, "", 1700000000));
+                            JCoreWireCodec.DecodedFrame initialHeartbeat = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 820001L);
+                            check(initialHeartbeat != null && initialHeartbeat.command == JCoreWireCodec.CMD_HEARTBEAT, "Public stop login must ACK its initial heartbeat");
+                            writeLoopbackAck(socket, initialHeartbeat, 820001L, sid, 0, new byte[0]);
+                            JCoreWireCodec.DecodedFrame request;
+                            while ((request = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 820001L)) != null) {
+                                if (connection == 0) {
+                                    check(mode == 0 && request.command == JCoreWireCodec.CMD_PUSH_CTRL
+                                        && Arrays.equals(request.body, JCoreWireCodec.buildPushControlPayload(true))
+                                        && request.uid == 820001L && request.sessionId == sid,
+                                        "Only a writable old owner may send its captured stopped control before EOF");
+                                    stoppedControls.incrementAndGet();
+                                } else {
+                                    check(request.command == JCoreWireCodec.CMD_HEARTBEAT ||
+                                        (request.command == JCoreWireCodec.CMD_PUSH_CTRL && Arrays.equals(request.body, JCoreWireCodec.buildPushControlPayload(false))),
+                                        "An obsolete stopped control must not be sent through the resumed connection");
+                                    writeLoopbackAck(socket, request, 820001L, sid, 0, new byte[0]);
+                                }
+                            }
+                            if (connection == 0) { closedNanos.set(System.nanoTime()); oldClosed.countDown(); }
+                        }
+                    }
+                } catch (Throwable error) { serverError.set(error); }
+            }, "test-public-stop-" + mode);
+            server.setDaemon(true); server.start();
+            try {
+                engine.setCustomEndpoint("127.0.0.1", listener.getLocalPort()); engine.start(context);
+                check(engine.awaitHandshake(2000L) && engine.isLoggedIn(), "Public stop fixture must complete login before stopping");
+                java.lang.reflect.Field attemptField = JCoreTcpEngine.class.getDeclaredField("activeAttempt"); attemptField.setAccessible(true);
+                final Object oldAttempt = attemptField.get(engine);
+                java.lang.reflect.Field writerField = oldAttempt.getClass().getDeclaredField("writerLock"); writerField.setAccessible(true);
+                java.lang.reflect.Field outputField = oldAttempt.getClass().getDeclaredField("output"); outputField.setAccessible(true);
+                if (blockOutput) {
+                    final OutputStream original = (OutputStream) outputField.get(oldAttempt);
+                    outputField.set(oldAttempt, new OutputStream() {
+                        @Override public void write(int value) throws java.io.IOException { write(new byte[]{(byte) value}, 0, 1); }
+                        @Override public void write(byte[] bytes, int offset, int length) throws java.io.IOException {
+                            outputEntered.countDown();
+                            try {
+                                if (!releaseOutput.await(2000L, TimeUnit.MILLISECONDS)) throw new java.io.IOException("Fixture output release missing");
+                                original.write(bytes, offset, length);
+                            } catch (InterruptedException interrupted) {
+                                Thread.currentThread().interrupt(); throw new java.io.IOException(interrupted);
+                            } finally { outputExited.countDown(); }
+                        }
+                        @Override public void flush() throws java.io.IOException { original.flush(); }
+                    });
+                }
+                java.util.concurrent.Callable<Void> exercise = () -> {
+                    final long requestedNanos = System.nanoTime();
+                    Thread stop = new Thread(() -> {
+                        long enteredNanos = System.nanoTime();
+                        try { JPushInterface.stopPush(context); }
+                        catch (Throwable error) { stopError.set(error); }
+                        finally { returnedNanos.set(System.nanoTime() - enteredNanos); stopReturned.countDown(); }
+                    }, "test-public-stop-caller-" + mode);
+                    stoppingThread.set(stop); stop.setDaemon(true); stop.start();
+                    check(stopReturned.await(150L, TimeUnit.MILLISECONDS) && stopError.get() == null,
+                        "Public stop must return without waiting for its writer/output: " + stopError.get());
+                    check(returnedNanos.get() < TimeUnit.MILLISECONDS.toNanos(150L) && JPushInterface.isPushStopped(context)
+                        && !engine.isLoggedIn() && !JCoreStorage.isConnected(context), "Public stop must disable local connected state immediately");
+                    if (blockOutput) check(outputEntered.await(100L, TimeUnit.MILLISECONDS), "Control write must actually enter the blocked fixture output");
+                    if (resumeImmediately) {
+                        JPushInterface.resumePush(context);
+                        check(engine.awaitHandshake(2000L) && engine.isLoggedIn() && attemptField.get(engine) != oldAttempt,
+                            "Immediate public resume must establish a new owner while the old writer remains blocked");
+                        Thread.sleep(300L);
+                        check(engine.isLoggedIn(), "The old stop deadline must not close the resumed owner");
+                    }
+                    check(oldClosed.await(750L, TimeUnit.MILLISECONDS), "Public stop deadline must close the old peer without writer progress: " + serverError.get());
+                    check(closedNanos.get() - requestedNanos < TimeUnit.MILLISECONDS.toNanos(750L),
+                        "Old socket close must fit the private 200 ms grace plus host scheduling allowance");
+                    check(stoppedControls.get() == (mode == 0 ? 1 : 0), "Stopped control must be sent once only on the writable ordinary path");
+                    System.out.println("[PASS] public stop mode=" + mode + " returnMs=" + TimeUnit.NANOSECONDS.toMillis(returnedNanos.get())
+                        + " closeMs=" + TimeUnit.NANOSECONDS.toMillis(closedNanos.get() - requestedNanos));
+                    return null;
+                };
+                if (holdWriter) { synchronized (writerField.get(oldAttempt)) { exercise.call(); } }
+                else exercise.call();
+                releaseOutput.countDown();
+                if (blockOutput) check(outputExited.await(1000L, TimeUnit.MILLISECONDS), "Blocked control writer must be released after the deadline check");
+                if (resumeImmediately) {
+                    Thread.sleep(50L);
+                    check(engine.sendRequest(JCoreWireCodec.CMD_HEARTBEAT, JCoreWireCodec.VER_HEARTBEAT, new byte[0], 1000L) != null
+                        && engine.isLoggedIn(), "Late old sender cleanup must leave the resumed socket able to exchange a real ACK");
+                }
+            } finally {
+                releaseOutput.countDown();
+                JCoreStorage.setPushStopped(context, false); engine.stop(context);
+                Thread stop = stoppingThread.get(); if (stop != null) stop.join(1000L);
+                server.join(3000L); engine.setAutoReconnectEnabled(true); engine.setDefaultRequestTimeoutMs(5000L);
+            }
+            check(serverError.get() == null && !server.isAlive(), "Public stop fixture failed: " + serverError.get());
+        }
+    }
+
+    @org.junit.Test
+    public void testPublicStopWritableControlPrecedesClose() throws Exception { runPublicStopCancellationFixture(0); }
+
+    @org.junit.Test
+    public void testPublicStopDeadlineDoesNotWaitForWriterLock() throws Exception { runPublicStopCancellationFixture(1); }
+
+    @org.junit.Test
+    public void testPublicStopDeadlineDoesNotWaitForControlWrite() throws Exception { runPublicStopCancellationFixture(2); }
+
+    @org.junit.Test
+    public void testPublicStopResumeIsolatesOldSenderAndDeadline() throws Exception { runPublicStopCancellationFixture(3); }
+
+    @org.junit.Test
+    public void testBoundedQueueAndNativeListenerOwnership() throws Exception {
+        try { testQueueBudgetAndListenerOwnership(); }
+        finally {
+            JCoreTcpEngine.getInstance().stop(null);
+            JCoreTcpEngine.getInstance().setAutoReconnectEnabled(true);
+            JCoreTcpEngine.getInstance().setDefaultRequestTimeoutMs(5000L);
+        }
+    }
+
+    @org.junit.Test
+    public void testStartedHandshakeOwnerIsolation() throws Exception {
+        try { testStartedHandshakeCancellationOwnership(); }
+        finally {
+            JCoreTcpEngine.getInstance().stop(null);
+            JCoreTcpEngine.getInstance().setAutoReconnectEnabled(true);
+            JCoreTcpEngine.getInstance().setDefaultRequestTimeoutMs(5000L);
+        }
+    }
+
+    @org.junit.Test
+    public void testPreLoginFifoAndRealBusinessAcknowledgements() throws Exception {
+        try { testPreLoginFifoAndAcknowledgedMutations(); }
+        finally {
+            JCoreTcpEngine.getInstance().stop(null);
+            JCoreTcpEngine.getInstance().setAutoReconnectEnabled(true);
+            JCoreTcpEngine.getInstance().setDefaultRequestTimeoutMs(5000L);
+        }
+    }
+
     @org.junit.Test
     public void testSdkHostRegressions() throws Exception {
         testCryptoParity();
@@ -1566,5 +2604,8 @@ public final class SdkHostRegressionTest {
         testFcmCallbacksAndPayloadBounds();
         testDefaultHostVerifier();
         testAutoReconnectScheduleAndBinderSecurity();
+        testStoppedInitAndRealLoginFcmRebind();
+        testContentQueueInvalidation();
+
     }
 }

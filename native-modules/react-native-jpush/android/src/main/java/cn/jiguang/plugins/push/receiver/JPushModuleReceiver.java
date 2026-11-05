@@ -88,9 +88,6 @@ public class JPushModuleReceiver extends JPushMessageReceiver {
               + notificationMessage.notificationId
       );
     }
-    if (!JPushModule.isAppForeground) {
-      JPushHelper.launchApp(context);
-    }
     Map<String, Object> map = JPushHelper.convertNotificationToMapObject(JConstants.NOTIFICATION_OPENED, notificationMessage);
     if (notificationMessage != null && notificationMessage.notificationType == 1) {
       JPushHelper.sendEventMap(JConstants.LOCAL_NOTIFICATION_EVENT, map);

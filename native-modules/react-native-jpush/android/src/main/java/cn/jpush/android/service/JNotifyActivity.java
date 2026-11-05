@@ -22,7 +22,7 @@ public class JNotifyActivity extends Activity {
 
     private void handleIntent(Intent intent) {
         if (intent != null) {
-            ActionHelper.getInstance().handleNotificationIntent(getApplicationContext(), intent);
+            ActionHelper.getInstance().handleNotificationIntent(this, intent);
         }
     }
 }
