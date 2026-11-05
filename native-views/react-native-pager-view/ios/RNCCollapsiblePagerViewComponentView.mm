@@ -511,6 +511,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   CGFloat _progressFraction;
   CGFloat _nativeProgress;
   BOOL _hasNativeProgress;
+  BOOL _hasMappedPageProgress;
   CGFloat _toolbarReservedWidth;
   BOOL _toolbarVisible;
   NSUInteger _toolbarAnimationGeneration;
@@ -1261,6 +1262,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
 
 - (void)setProgress:(CGFloat)progress
 {
+  _hasMappedPageProgress = NO;
   _nativeProgress = progress;
   _hasNativeProgress = YES;
   if (_items.count == 0) return;
@@ -1284,6 +1286,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
       if (_indicatorFrames.count == _items.count) [self updatePresentation];
       return;
     }
+    _hasMappedPageProgress = YES;
     CGFloat bounded = RNCClamp(progress, 0, pageKeys.count - 1);
     NSInteger lower = (NSInteger)floor(bounded);
     NSInteger upper = MIN(lower + 1, pageKeys.count - 1);
@@ -1294,6 +1297,13 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   }
   _progress = RNCClamp(progress, 0, _items.count - 1);
   if (_indicatorFrames.count == _items.count) [self updatePresentation];
+}
+
+- (NSInteger)visualFontOwnerIndex:(NSInteger)semanticIndex {
+  if (_textVariant && [_config[@"controlled"] boolValue] && _hasMappedPageProgress) {
+    return _progressFraction < 0.5 ? _progressSource : _progressDestination;
+  }
+  return semanticIndex;
 }
 
 - (void)updatePresentation
@@ -1320,6 +1330,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     NSUInteger selected = [_items indexOfObjectPassingTest:^BOOL(NSDictionary *item, NSUInteger i, BOOL *stop) { return [item[@"key"] isEqual:self->_config[@"selectedKey"]]; }];
     selectedIndex = selected == NSNotFound ? -1 : (NSInteger)selected;
   }
+  NSInteger fontOwnerIndex = [self visualFontOwnerIndex:selectedIndex];
   NSString *key = selectedIndex >= 0 && selectedIndex < count ? _items[selectedIndex][@"key"] : nil;
   [self updateToolbarForKey:key];
   [_buttons enumerateObjectsUsingBlock:^(UIButton *button, NSUInteger index, BOOL *stop) {
@@ -1336,7 +1347,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     );
     [button setTitleColor:color forState:UIControlStateNormal];
     if (self->_textVariant) {
-      button.titleLabel.font = index == selectedIndex
+      button.titleLabel.font = index == fontOwnerIndex
         ? ([UIFont fontWithName:self->_config[@"activeFontFamily"] ?: @"" size:self->_fontSize] ?: [UIFont systemFontOfSize:self->_fontSize weight:UIFontWeightSemibold])
         : self.tabFont;
     }

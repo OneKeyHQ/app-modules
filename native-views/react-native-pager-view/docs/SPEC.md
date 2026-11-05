@@ -1131,8 +1131,30 @@ budgets, Web runtime/type exports, and package source/module/declaration entries
 
 ## Text tabs, controlled selection and per-tab toolbar
 
-Revision status: Implemented and synchronized from the source-matched consumer
-prototype. Targeted independent runtime acceptance passed for Web (`f22adedb`),
+Physical font-owner revision: Implemented from source-matched consumer candidates
+and independently accepted for the scoped three-platform checks: iOS `e6dab83e`,
+Android Header `c7fdbb4d` and Web `c75c725c`. Native compiled objects/classes,
+archives/APKs and installed binaries are matched separately from runtime evidence.
+iOS original-resolution bidirectional slow motion pairs body displacement with
+normalized same-label glyph references across halfway, and actual adjacent and
+nonadjacent clicks were reviewed. Separate left/right gestures do not establish
+iOS same-contact out-and-back cancellation; that remains a gap. Its authorized
+lower-level runtime remains `normalDevSession=false` with the existing DeviceHub
+GUI limitation.
+
+Android actual slow and reverse motion, clicks and same-contact out-and-back
+input were reviewed with glyph/body evidence. The boundary estimate has a
+plus/minus two-physical-pixel uncertainty; the cancel input settled on Perps, so
+it is not evidence that cancellation returned to the source page. Web reviewed
+actual release-time CSS motion, normalized glyph ownership and stable neighboring
+tab geometry. Its existing touch path still moves the body after release. These
+are scoped runtime passes, not full gesture, typography or accessibility coverage.
+Two mounted DOM regressions exercise the physical-owner/semantic distinction and
+inherited-family/mode cleanup; they do not replace browser/native pixel evidence.
+
+Prior interaction revision evidence (retained for unchanged paths): Implemented
+and synchronized from the source-matched consumer prototype. Targeted independent
+runtime acceptance passed for Web (`f22adedb`),
 iOS (`14ac191c`) and Android (Header `bafa2c02`, Host `f80156f7`). The consumer
 records are `web-settled-review.json`, `ios-14ac-review.json` and
 `android-bafa-review.json`; the unchanged Android Host/component/history evidence
@@ -1186,7 +1208,16 @@ establish a full native baseline or resolve the separate accessibility issue.
 
 The existing `nativeTabBar` additionally accepts the `text` style variant. It
 uses scrollable, intrinsic-width labels, no indicator or track, and full-height
-hit areas with sufficient font ascent/descent space. Text labels use 18-point medium by default, with semibold selected text; consumers supply fontSize, fontFamily and activeFontFamily for their bundled brand faces. Width reserves the larger medium/semibold label to avoid clipping during selection. Existing underline and
+hit areas with sufficient font ascent/descent space. Text labels use 18-point medium by default, with semibold text for the visual
+font owner defined below; consumers supply fontSize, fontFamily and
+activeFontFamily for their bundled brand faces. Native width reserves the larger
+medium/semibold label. Controlled Web text buttons use a private overlapping grid
+with one visible label and two hidden normal/active face reservations, so a font
+handoff does not resize the button or move its neighboring tabs. Hidden copies
+are AX-hidden, noninteractive and unselectable; there remains one named button
+and one visible label. The normal face keeps its inherited family when
+fontFamily is omitted, and the active face falls back to that normal family.
+Other modes retain their existing structure and behavior. Existing underline and
 segmented defaults remain unchanged.
 
 `nativeTabBar.controlled` defaults to false. When true, a tab press emits its
@@ -1196,10 +1227,24 @@ and call the existing pager commands when appropriate. With unique item/page
 keys and every page matched, label colors follow actual pager progress, including
 integer samples. Only the two page endpoints interpolate; extra non-page items
 receive no transition emphasis. Config echoes and semantic selection callbacks
-MUST NOT replace this actual progress with the target endpoint. Selected semantics
-and medium/semibold font weight continue to follow `selectedKey`. Invalid mappings
-or selected non-page items use the existing semantic fallback; automatic mode
-retains its index behavior.
+MUST NOT replace this actual progress with the target endpoint. Semantic selection,
+including selectedKey, aria-selected/native selected traits and press callbacks,
+continues to follow the existing controlled contract. Toolbar snapshot ownership,
+activation and settlement are unchanged.
+
+For valid controlled text tabs with an actual progress sample, only the visual
+font owner follows the physical page: clamp raw page progress to the page range,
+choose its source page below fraction 0.5 and its destination at or above 0.5,
+then map that page key to its item. At 0.49 the source uses the active face; at
+0.50 and 0.51 the destination does. Reversing actual progress uses the same rule.
+Do not round interpolated item coordinates: an extra non-page item between the
+two endpoints must never become the transition font owner. Both font weight and
+normal/active font family use this owner, including native remeasurement and Web
+render/RAF synchronization. Config or semantic echoes do not move the font owner
+ahead of physical progress. Missing/invalid mappings, selected non-page items,
+no actual sample, uncontrolled and non-text modes retain their existing semantic
+or automatic fallback; stale valid mapping state must not survive a newly invalid
+configuration. Label color interpolation is unchanged.
 
 
 `nativeTabBar.toolbar` is one JSON-compatible dictionary indexed by stable tab
@@ -1295,7 +1340,9 @@ Platform settlement and progress:
   original row/track path. Toolbar presence/LP/hover/pressed fills do not change
   this background ownership.
 - Web samples the live computed CSS track transform and existing gesture progress.
-  Timeout or semantic state alone does not settle. Finish, resize and route return
+  Its existing touch path moves the body after release; the new font owner follows
+  that actual CSS movement and does not add continuous body dragging. Timeout or
+  semantic state alone does not settle. Finish, resize and route return
   require valid live width/transform and no active gesture/inactive route; old
   RAF/timer/transition owners cannot finish a newer transition.
 
@@ -1314,7 +1361,15 @@ pending/failed/late image completion, mode changes, no-animation, initial attach
 resize/reorder/route return and interrupted presence fades. Different-artwork
 acceptance must render the actual component, not infer it from Home's same icon.
 Rebuilt Android frames must remove semantic-endpoint flashes and retained-layout
-settle deadlocks. Source/type/JVM-double checks are not runtime proof.
+settle deadlocks. Focused mounted DOM regressions cover the actual track matrix
+around 0.49/0.50/0.51 and reversal with interleaved items and unchanged selected
+AX, plus inherited normal family and text-only reservation cleanup across mode
+changes. DOM style checks do not prove browser geometry or native glyph weight.
+Real frame acceptance pairs physical body displacement with normalized glyph
+shape using the same label's normal/active endpoint references; color darkness
+alone is not font-weight evidence. Separate bidirectional gestures do not prove
+same-contact out-and-back cancellation. Source/type/JVM-double checks are not
+runtime proof.
 
 ### React Native public type boundary
 

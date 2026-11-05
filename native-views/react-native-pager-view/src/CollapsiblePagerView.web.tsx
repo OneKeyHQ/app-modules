@@ -869,6 +869,15 @@ export class CollapsiblePagerView extends React.PureComponent<
     return new Map(keys.map((key, index) => [key, index === source ? 1 - fraction : index === destination ? fraction : 0]));
   }
 
+  private tabFontOwnerKey(weights: Map<string, number> | null) {
+    const config = this.props.nativeTabBar;
+    const semantic = config?.controlled ? config.selectedKey : config?.items[this.state.selectedPage]?.key;
+    if (!weights || this.tabProgress === null) return semantic;
+    const keys = Array.from(weights.keys());
+    const progress = Math.min(Math.max(0, this.tabProgress), keys.length - 1);
+    return keys[Math.floor(progress + 0.5)];
+  }
+
   private tabColor(selected: boolean, weight: number | undefined) {
     const style = this.props.nativeTabBar?.style;
     const active = style?.activeTextColor ?? "#000000";
@@ -888,7 +897,18 @@ export class CollapsiblePagerView extends React.PureComponent<
     const config = this.props.nativeTabBar;
     if (!config) return;
     const selectedKey = config.controlled ? config.selectedKey : config.items[this.state.selectedPage]?.key;
-    for (const [key, button] of this.tabButtons) button.style.color = this.tabColor(key === selectedKey, weights ? weights.get(key) ?? 0 : undefined);
+    const fontOwnerKey = this.tabFontOwnerKey(weights);
+    for (const [key, button] of this.tabButtons) {
+      const fontSelected = key === fontOwnerKey;
+      button.style.color = this.tabColor(key === selectedKey, weights ? weights.get(key) ?? 0 : undefined);
+      button.style.fontWeight = config.style?.variant === "text" && fontSelected ? "600" : "500";
+      const fontFamily = (fontSelected ? config.style?.activeFontFamily ?? config.style?.fontFamily : config.style?.fontFamily) ?? "";
+      if (config.controlled && config.style?.variant === "text") {
+        button.style.fontFamily = config.style?.fontFamily ?? "";
+        const label = button.querySelector<HTMLElement>(".ok-pager-tab-label");
+        if (label) label.style.fontFamily = fontFamily;
+      } else button.style.fontFamily = fontFamily;
+    }
   }
 
   private pageScrollElement(index: number) {
@@ -1721,7 +1741,9 @@ export class CollapsiblePagerView extends React.PureComponent<
       return Math.min(size, Math.max(0, entry.contentWidth ?? 24)) + Math.min(128, Math.max(0, entry.trailingInset ?? 20));
     }));
     const segmented = variant === "segmented";
+    const reserveTextFaces = config.controlled && variant === "text";
     const colorWeights = this.tabColorWeights();
+    const fontOwnerKey = this.tabFontOwnerKey(colorWeights);
     return React.createElement("div", {
       className: "ok-pager-tab-bar",
       dir: this.props.layoutDirection === "rtl" || ((this.props.layoutDirection ?? "locale") === "locale" && I18nManager.isRTL) ? "rtl" : "ltr",
@@ -1733,14 +1755,18 @@ export class CollapsiblePagerView extends React.PureComponent<
         padding: `${style?.contentPaddingVertical ?? 0}px ${style?.contentPaddingHorizontal ?? 20}px`, gap: style?.itemSpacing ?? 8 } },
         ...config.items.map((item, position) => {
           const selected = item.key === selectedKey;
+          const fontSelected = item.key === fontOwnerKey;
           return React.createElement("button", {
             key: item.key, role: "tab", type: "button", className: "ok-pager-tab", "aria-selected": selected,
             ref: (button: HTMLButtonElement | null) => { if (button) this.tabButtons.set(item.key, button); else this.tabButtons.delete(item.key); },
             "aria-label": item.accessibilityLabel ?? item.title, "data-testid": item.testID,
             style: { padding: variant === "text" ? "6px 10px" : "6px 8px", minWidth: 44, height: (style?.height ?? 44) - 2 * (style?.contentPaddingVertical ?? 0),
               fontSize: style?.fontSize ?? (variant === "text" ? 18 : 16),
-              fontWeight: variant === "text" && selected ? 600 : 500,
-              fontFamily: selected ? style?.activeFontFamily ?? style?.fontFamily : style?.fontFamily,
+              fontWeight: variant === "text" && fontSelected ? 600 : 500,
+              fontFamily: reserveTextFaces ? style?.fontFamily : fontSelected ? style?.activeFontFamily ?? style?.fontFamily : style?.fontFamily,
+              display: reserveTextFaces ? "inline-grid" : undefined,
+              gridTemplateAreas: reserveTextFaces ? '"label"' : undefined,
+              alignItems: reserveTextFaces ? "center" : undefined,
               color: this.tabColor(selected, colorWeights ? colorWeights.get(item.key) ?? 0 : undefined),
               flex: segmented ? 1 : undefined, borderRadius: segmented ? 999 : 0,
               backgroundColor: segmented && selected ? String(style?.indicatorColor ?? "transparent") : "transparent",
@@ -1752,7 +1778,17 @@ export class CollapsiblePagerView extends React.PureComponent<
               }
               this.props.onNativeTabPress?.({ nativeEvent: { position, key: item.key } } as CollapsiblePagerViewOnNativeTabPressEvent);
             },
-          }, item.title);
+          }, reserveTextFaces ? [
+            React.createElement("span", { key: "label", className: "ok-pager-tab-label", style: {
+              gridArea: "label", fontFamily: fontSelected ? style?.activeFontFamily ?? style?.fontFamily : style?.fontFamily,
+            } }, item.title),
+            ...[false, true].map(active => React.createElement("span", {
+              key: active ? "active-width" : "normal-width", "aria-hidden": true,
+              style: { gridArea: "label", visibility: "hidden", pointerEvents: "none", userSelect: "none",
+                fontWeight: active ? 600 : 500,
+                fontFamily: active ? style?.activeFontFamily ?? style?.fontFamily : style?.fontFamily },
+            }, item.title)),
+          ] : item.title);
         })),
       config.toolbar !== undefined ? React.createElement("div", { ref: this.setToolbarSlot, className: "ok-pager-toolbar-slot", style: { flexShrink: 0, width: reservedWidth, height: "100%", position: "relative" } }) : null);
   }

@@ -895,7 +895,7 @@ describe('home native text toolbar DOM contract', () => {
     expect(tabs.map(tab => tab.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false']);
     await act(async () => root.render(renderBar('extra', onTab, jest.fn(), toolbar, pager)));
     expect(tabs.map(tab => tab.getAttribute('aria-selected'))).toEqual(['false', 'false', 'true']);
-    expect(tabs[2].style.fontFamily).toBe('Semibold');
+    expect(tabs[2].querySelector<HTMLElement>('.ok-pager-tab-label')?.style.fontFamily).toBe('Semibold');
     expect(tabs[2].style.fontWeight).toBe('600');
   });
 
@@ -1234,4 +1234,82 @@ describe('home native text toolbar DOM contract', () => {
     expect(tabs.map(tab => tab.style.color)).toEqual(['rgb(102, 102, 102)', 'rgb(102, 102, 102)', 'rgb(0, 0, 0)']);
   });
 
+});
+
+describe('physical font owner mounted DOM regression', () => {
+  type Probe = { root: HTMLElement; track: HTMLElement };
+
+  it('reads actual track matrix across midpoint and reversal with interleaved items and unchanged AX', async () => {
+    const ref = React.createRef<CollapsiblePagerView>();
+    await act(async () => root.render(
+      <CollapsiblePagerView
+        ref={ref}
+        header={<div />}
+        headerHeight={0}
+        stickyHeaderHeight={44}
+        nativeTabBar={{
+          controlled: true,
+          selectedKey: 'B',
+          items: ['A', 'extra', 'B'].map(key => ({ key, title: key })),
+          style: {
+            variant: 'text',
+            fontFamily: 'NormalFace',
+            activeFontFamily: 'ActiveFace',
+          },
+        }}>
+        {makePage('A')}{makePage('B')}
+      </CollapsiblePagerView>,
+    ));
+    const pager = ref.current as unknown as Probe;
+    pager.root.getBoundingClientRect = () => ({
+      width: 800, height: 400, x: 0, y: 0, left: 0, top: 0,
+      right: 800, bottom: 400, toJSON() {},
+    });
+    await act(async () => ref.current!.setPage(1));
+    for (const [progress, expected] of [[.49, 'A'], [.50, 'B'], [.51, 'B'], [.49, 'A']] as const) {
+      pager.track.style.transform = `matrix(1, 0, 0, 1, ${-800 * progress}, 0)`;
+      await flushFrames();
+      const tabs = [...container.querySelectorAll<HTMLButtonElement>('[role=tab]')];
+      const activeTab = tabs.find(tab => tab.style.fontWeight === '600');
+      expect(activeTab?.getAttribute('aria-label')).toBe(expected);
+      expect(tabs.map(tab => tab.getAttribute('aria-selected'))).toEqual(['false', 'false', 'true']);
+      expect(activeTab?.querySelector<HTMLElement>('.ok-pager-tab-label')?.style.fontFamily).toBe('ActiveFace');
+      expect(tabs.every(tab => tab.querySelectorAll('[aria-hidden="true"]').length === 2)).toBe(true);
+      expect(tabs.every(tab => [...tab.querySelectorAll<HTMLElement>('[aria-hidden="true"]')].every(
+        span => span.style.visibility === 'hidden' && span.style.pointerEvents === 'none' && span.style.userSelect === 'none',
+      ))).toBe(true);
+    }
+  });
+
+  it('preserves inherited normal family and cleans text-only layers when switching variants', async () => {
+    const render = (variant: 'text' | 'underline') => (
+      <CollapsiblePagerView
+        header={<div />}
+        headerHeight={0}
+        stickyHeaderHeight={44}
+        nativeTabBar={{
+          controlled: true,
+          selectedKey: 'A',
+          items: [{ key: 'A', title: 'A' }, { key: 'B', title: 'B' }],
+          style: { variant, activeFontFamily: 'serif' },
+        }}>
+        {makePage('A')}{makePage('B')}
+      </CollapsiblePagerView>
+    );
+    for (const variant of ['underline', 'text', 'underline'] as const) {
+      await act(async () => root.render(render(variant)));
+      const first = container.querySelector<HTMLButtonElement>('[role=tab]')!;
+      if (variant === 'text') {
+        expect(first.style.fontFamily).toBe('');
+        expect(first.style.display).toBe('inline-grid');
+        expect([...first.querySelectorAll<HTMLElement>('[aria-hidden="true"]')].map(span => span.style.fontFamily)).toEqual(['', 'serif']);
+        expect(first.querySelector<HTMLElement>('.ok-pager-tab-label')?.style.fontFamily).toBe('serif');
+      } else {
+        expect(first.querySelectorAll('span').length).toBe(0);
+        expect(first.style.display).toBe('');
+        expect(first.style.gridTemplateAreas).toBe('');
+        expect(first.style.fontFamily).toBe('serif');
+      }
+    }
+  });
 });

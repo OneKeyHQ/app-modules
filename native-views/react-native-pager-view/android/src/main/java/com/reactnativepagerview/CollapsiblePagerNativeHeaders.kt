@@ -101,6 +101,7 @@ private class CollapsiblePagerHorizontalItemsView(
   private var mappedFraction = 0f
   private var activeFontFamily: String? = null
   private var controlledSelectedKey: String? = null
+  private var validControlledPageMapping = false
   private var centerSelectionWhenIdle = true
   private var isTouchDragging = false
 
@@ -208,7 +209,11 @@ private class CollapsiblePagerHorizontalItemsView(
     updatePresentation()
   }
 
-  fun setControlledSelectedKey(value: String?) { controlledSelectedKey = value; updatePresentation() }
+  fun setControlledSelectedKey(value: String?, validPageMapping: Boolean) {
+    controlledSelectedKey = value
+    validControlledPageMapping = validPageMapping
+    updatePresentation()
+  }
 
   fun usesTextVariant(): Boolean = textVariant
 
@@ -229,10 +234,20 @@ private class CollapsiblePagerHorizontalItemsView(
     ?: if (android.os.Build.VERSION.SDK_INT >= 28) Typeface.create(Typeface.create("sans-serif", Typeface.NORMAL), 600, false)
       else Typeface.create("sans-serif", Typeface.BOLD)
 
+  private fun visualFontOwnerIndex(semanticIndex: Int): Int {
+    val source = mappedSource
+    val destination = mappedDestination
+    if (textVariant && controlledSelectedKey != null && validControlledPageMapping && source != null && destination != null) {
+      return if (mappedFraction < 0.5f) source else destination
+    }
+    return semanticIndex
+  }
+
   private fun applyTypeface() {
     val typeface = resolveHeaderTypeface(context, fontFamily)
-    buttons.forEach { button ->
-      button.typeface = if (textVariant && button.isSelected) selectedTypeface() else typeface
+    val fontOwner = visualFontOwnerIndex(buttons.indexOfFirst { it.isSelected })
+    buttons.forEachIndexed { index, button ->
+      button.typeface = if (textVariant && index == fontOwner) selectedTypeface() else typeface
       button.setPadding(dp(if (textVariant) 10.0 else 8.0), 0, dp(if (textVariant) 10.0 else 8.0), 0)
       button.setTextSize(TypedValue.COMPLEX_UNIT_SP, fontSize.toFloat())
     }
@@ -379,6 +394,7 @@ private class CollapsiblePagerHorizontalItemsView(
       indicator.visibility = if (!textVariant && indicatorHeight > 0) VISIBLE else GONE
       scrollTargetCenterX = interpolatedIndicatorX + interpolatedIndicatorWidth / 2f
       selectedIndex = if (controlledSelectedKey != null) items.indexOfFirst { it.key == controlledSelectedKey } else clamped.roundToInt()
+      val fontOwner = visualFontOwnerIndex(selectedIndex)
       buttons.forEachIndexed { index, button ->
         val emphasis = if (mappedSource != null && mappedDestination != null) {
           (if (index == mappedSource) 1f - mappedFraction else 0f) + (if (index == mappedDestination) mappedFraction else 0f)
@@ -386,7 +402,7 @@ private class CollapsiblePagerHorizontalItemsView(
         button.setTextColor(ColorUtils.blendARGB(inactiveTextColor, activeTextColor, emphasis))
         button.background = null
         button.isSelected = index == selectedIndex
-        if (textVariant) button.typeface = if (button.isSelected) selectedTypeface() else resolveHeaderTypeface(context, fontFamily)
+        if (textVariant) button.typeface = if (index == fontOwner) selectedTypeface() else resolveHeaderTypeface(context, fontFamily)
       }
     } else {
       selectedIndex = items.indexOfFirst { item -> item.key == selectedKey }
@@ -453,7 +469,7 @@ internal class CollapsiblePagerNativeTabBarView(context: Context) : FrameLayout(
     config = runCatching { JSONObject(value ?: "{}") }.getOrDefault(JSONObject())
     row.setActiveFontFamily(config.optString("activeFontFamily").takeIf(String::isNotEmpty))
     selectedKey = if (config.optBoolean("controlled")) config.optString("selectedKey") else items.getOrNull(lastNativeProgress.roundToInt())?.key ?: ""
-    row.setControlledSelectedKey(if (config.optBoolean("controlled")) selectedKey else null)
+    row.setControlledSelectedKey(if (config.optBoolean("controlled")) selectedKey else null, controlledPageIndices() != null)
     if (hasNativeProgress) setProgress(lastNativeProgress)
     else {
       val index = items.indexOfFirst { it.key == selectedKey }
