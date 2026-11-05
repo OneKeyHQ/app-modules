@@ -3174,11 +3174,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isAllowedImageUri(value: unknown): value is string {
+  // Keep native file, content, Photos and bundled-resource URIs alongside web images.
+  // Android Release uses android.resource: instead of Metro's HTTP asset URLs.
   return (
     typeof value === 'string' &&
     value.trim().length > 0 &&
     (!/^[a-z][a-z\d+.-]*:/i.test(value) ||
-      /^(https?|file|content|ph|assets-library|asset|res|blob|onekey-avatar):/i.test(
+      /^(https?|file|content|ph|assets-library|asset|res|android\.resource|blob|onekey-avatar):/i.test(
         value
       ) ||
       /^data:image\//i.test(value))

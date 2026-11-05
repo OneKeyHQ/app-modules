@@ -153,6 +153,7 @@ describe.each([true, false])(
       // eslint-disable-next-line no-script-url -- Exercise executable URI rejection.
       'javascript:alert(1)',
       'onekey-avatar-other://files/avatar.png',
+      'android.resource-other://example/drawable/avatar',
       'ftp://example.com/avatar.png',
     ])('rejects %s in snapshots and row patches', (uri) => {
       const value = account(uri);
@@ -171,6 +172,57 @@ describe.each([true, false])(
       } else {
         expect(validateRow()).not.toHaveProperty('leading.image');
         expect(validatePatch()).not.toHaveProperty('leading.image');
+      }
+    });
+  }
+);
+
+describe.each([true, false])(
+  'mobile wallet image URIs in development=%s',
+  (development) => {
+    const environment = globalThis as typeof globalThis & { __DEV__: boolean };
+    it.each([
+      'android.resource://so.onekey.app.wallet/drawable/wallet_avatar_bear',
+      'ANDROID.RESOURCE://so.onekey.app.wallet/drawable/wallet_avatar_bear',
+      'http://localhost:8081/assets/wallet/avatar.png',
+      'https://example.com/wallet/avatar.png',
+      'file:///android_asset/wallet/avatar.png',
+      'file:///var/mobile/Containers/Bundle/Application/test/app.app/avatar.png',
+      'content://media/external/images/media/1',
+      'asset:/wallet/avatar.png',
+      'res://drawable/wallet_avatar_bear',
+      'ph://test-photo/L0/001',
+      'assets-library://asset/asset.JPG?id=test-photo&ext=JPG',
+      'data:image/png;base64,iVBORw0KGgo=',
+      'wallet_avatar_bear',
+      '/assets/wallet/avatar.png',
+    ])('preserves %s in snapshots and row patches', (uri) => {
+      const original = environment.__DEV__;
+      environment.__DEV__ = development;
+      try {
+        const leading: IdentityRow['leading'] = {
+          kind: 'wallet',
+          image: {
+            uri,
+            width: 40,
+            height: 40,
+            fallbackUri: uri,
+            fallbackUris: [uri],
+          },
+        };
+        const initial = snapshot([row('wallet')]);
+        expect(
+          validateSnapshot(snapshot([{ ...row('wallet'), leading }])).rows[0]
+        ).toMatchObject({ leading });
+        const patches: RowPatch[] = [
+          { type: 'identity', key: 'wallet', changes: { leading } },
+        ];
+        expect(validatePatches(patches)[0]!.changes).toMatchObject({ leading });
+        expect(applyRowPatches(initial, patches).rows[0]).toMatchObject({
+          leading,
+        });
+      } finally {
+        environment.__DEV__ = original;
       }
     });
   }

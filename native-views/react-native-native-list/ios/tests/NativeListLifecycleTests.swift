@@ -1601,8 +1601,15 @@ final class NativeListLifecycleTests: XCTestCase {
     let view = NativeListView(frame: window.bounds)
     controller.view.addSubview(view)
     window.isHidden = false
-    defer { window.isHidden = true }
+    defer {
+      view.dispose()
+      view.removeFromSuperview()
+      window.isHidden = true
+      window.rootViewController = nil
+    }
     let list = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+    // Measure renderer reuse without UIKit's timing-dependent speculative prefetch cells.
+    list.isPrefetchingEnabled = false
     func sampleCells(count: Int) throws -> [(visible: Int, attached: Int)] {
       view.applySnapshotJson(try structuralRowsSnapshot(count: count))
       view.layoutIfNeeded()
@@ -1610,6 +1617,8 @@ final class NativeListLifecycleTests: XCTestCase {
       let lastOffset = CGFloat(count * 60 - 600)
       return [CGFloat(0), lastOffset / 2, lastOffset].map { offset in
         list.setContentOffset(CGPoint(x: 0, y: offset), animated: false)
+        list.layoutIfNeeded()
+        drainMainQueue()
         list.layoutIfNeeded()
         return (list.visibleCells.count,
           list.subviews.compactMap { $0 as? NativeListRowHost }.count)
