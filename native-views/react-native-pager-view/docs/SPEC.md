@@ -1137,10 +1137,14 @@ Android Header `c7fdbb4d` and Web `c75c725c`. Native compiled objects/classes,
 archives/APKs and installed binaries are matched separately from runtime evidence.
 iOS original-resolution bidirectional slow motion pairs body displacement with
 normalized same-label glyph references across halfway, and actual adjacent and
-nonadjacent clicks were reviewed. Separate left/right gestures do not establish
-iOS same-contact out-and-back cancellation; that remains a gap. Its authorized
-lower-level runtime remains `normalDevSession=false` with the existing DeviceHub
-GUI limitation.
+nonadjacent clicks were reviewed. Supplemental same-contact out-and-back followed
+by UP also passed on the same task device/source: one native path contains 244
+events (1 DOWN, 242 MOVE, 1 UP). Selected-frame analysis of the 442-frame original
+recording independently pairs body displacement with normalized glyphs across the outgoing and returning
+halfway crossings, closing the out-and-back/UP evidence gap. An injected CANCEL
+event remains untested. Image-derived progress has plus/minus two-physical-pixel
+uncertainty; exact midpoint paint time is not claimed. Its authorized lower-level
+runtime remains `normalDevSession=false` with the existing DeviceHub GUI limitation.
 
 Android actual slow and reverse motion, clicks and same-contact out-and-back
 input were reviewed with glyph/body evidence. The boundary estimate has a
@@ -1368,8 +1372,8 @@ changes. DOM style checks do not prove browser geometry or native glyph weight.
 Real frame acceptance pairs physical body displacement with normalized glyph
 shape using the same label's normal/active endpoint references; color darkness
 alone is not font-weight evidence. Separate bidirectional gestures do not prove
-same-contact out-and-back cancellation. Source/type/JVM-double checks are not
-runtime proof.
+same-contact out-and-back behavior, and an out-and-back ending in UP does not prove
+CANCEL-event behavior. Source/type/JVM-double checks are not runtime proof.
 
 ### React Native public type boundary
 
