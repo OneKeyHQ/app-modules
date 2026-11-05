@@ -35,6 +35,7 @@ import com.google.android.gms.tasks.Tasks;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.FirebaseOptions;
 import com.google.firebase.messaging.FirebaseMessaging;
+import com.google.firebase.messaging.FirebaseMessagingService;
 import com.google.firebase.messaging.RemoteMessage;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -63,12 +64,13 @@ public class FcmAdapterTest {
     private Context context;
     private FcmMessagingService service;
     private NotificationManager notifications;
+    private Object firebaseRpc;
     private final List<NotificationMessage> arrived = new ArrayList<>();
     private final List<NotificationMessage> opened = new ArrayList<>();
     private final List<CustomMessage> custom = new ArrayList<>();
 
     @Before
-    public void setUp() {
+    public void setUp() throws Exception {
         context = RuntimeEnvironment.getApplication();
         ReflectionHelpers.setStaticField(JCoreStorage.class, "sAppContext", null);
         ReflectionHelpers.<Map<String, Object>>getStaticField(JCoreStorage.class, "MEMORY_FALLBACK").clear();
@@ -77,6 +79,7 @@ public class FcmAdapterTest {
         JCoreStorage.setPushStopped(context, false);
         ReflectionHelpers.setStaticField(JThirdPlatFormInterface.class, "fcmPlugin", null);
         ReflectionHelpers.setStaticField(JThirdPlatFormInterface.class, "fcmRegistered", false);
+        ReflectionHelpers.<java.util.Queue<String>>getStaticField(FirebaseMessagingService.class, "recentlyReceivedMessageIds").clear();
         JLogger.setLoggerEnable(true);
         JLogger.clearRecentLogs();
         notifications = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
@@ -89,6 +92,9 @@ public class FcmAdapterTest {
             @Override public void onMessage(Context c, CustomMessage message) { custom.add(message); }
         });
         service = Robolectric.buildService(FcmMessagingService.class).create().get();
+        // Isolate only the SDK's transport acknowledgement; run its real receive/display code.
+        firebaseRpc = mock(Class.forName("com.google.android.gms.cloudmessaging.Rpc"));
+        ReflectionHelpers.setField(service, "rpc", firebaseRpc);
     }
 
     @After
@@ -277,7 +283,7 @@ public class FcmAdapterTest {
         try (MockedStatic<JPushInterface> core = mockStatic(JPushInterface.class);
              MockedStatic<ActionHelper> helper = mockStatic(ActionHelper.class)) {
             helper.when(ActionHelper::getInstance).thenReturn(dispatcher);
-            service.onNewToken("new_secret_token");
+            service.handleIntent(new Intent("com.google.firebase.messaging.NEW_TOKEN").putExtra("token", "new_secret_token"));
             core.verify(() -> JPushInterface.init(context));
             assertEquals("new_secret_token", tokenAction(dispatcher).getString("token"));
             assertLogsExclude("new_secret_token");
@@ -472,6 +478,90 @@ public class FcmAdapterTest {
     }
 
     @Test
+    public void stoppedBackgroundCombinedIntentCannotUseFirebaseAutomaticDisplay() {
+        setProcessImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE);
+        JCoreStorage.setPushStopped(context, true);
+        service.handleIntent(firebaseReceiveIntent("stopped_combined", true));
+        assertTrue(arrived.isEmpty());
+        assertEquals(0, Shadows.shadowOf(notifications).getAllNotifications().size());
+        verifyNoInteractions(firebaseRpc);
+        assertLogsExclude("private_title", "private_body");
+    }
+
+    @Test
+    public void unauthorizedBackgroundNotificationIntentCannotUseFirebaseAutomaticDisplay() {
+        setProcessImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE);
+        JCoreStorage.setCollectionAuth(context, false);
+        Intent notificationOnly = firebaseReceiveIntent("unauthorized_notification", true);
+        notificationOnly.removeExtra("JMessageExtra");
+        service.handleIntent(notificationOnly);
+        assertTrue(arrived.isEmpty());
+        assertEquals(0, Shadows.shadowOf(notifications).getAllNotifications().size());
+        verifyNoInteractions(firebaseRpc);
+        assertLogsExclude("private_title", "private_body");
+    }
+
+    @Test
+    public void authorizedBackgroundCombinedIntentKeepsFirebaseDisplayAndDeduplication() {
+        setProcessImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE);
+        Intent receive = firebaseReceiveIntent("allowed_combined", true);
+        service.handleIntent(receive);
+        service.handleIntent(new Intent(receive));
+        assertEquals(1, Shadows.shadowOf(notifications).getAllNotifications().size());
+        assertTrue(arrived.isEmpty());
+        assertEquals(2, mockingDetails(firebaseRpc).getInvocations().size());
+    }
+
+    @Test
+    public void authorizedBackgroundDataOnlyIntentUsesNativeDisplayAndFirebaseDeduplication() {
+        setProcessImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE);
+        Intent receive = firebaseReceiveIntent("allowed_data", false);
+        service.handleIntent(receive);
+        service.handleIntent(new Intent(receive));
+        assertEquals(1, arrived.size());
+        assertEquals("allowed_data", arrived.get(0).msgId);
+        assertEquals(1, Shadows.shadowOf(notifications).getAllNotifications().size());
+    }
+
+    @Test
+    public void receiveGateRechecksStateAfterStopWithdrawalAndRegrant() {
+        setProcessImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE);
+        JCoreStorage.setPushStopped(context, true);
+        service.handleIntent(firebaseReceiveIntent("stopped", true));
+        JCoreStorage.setPushStopped(context, false);
+        JCoreStorage.setCollectionAuth(context, false);
+        service.handleIntent(firebaseReceiveIntent("withdrawn", true));
+        assertEquals(0, Shadows.shadowOf(notifications).getAllNotifications().size());
+        JCoreStorage.setCollectionAuth(context, true);
+        service.handleIntent(firebaseReceiveIntent("regranted", true));
+        assertEquals(1, Shadows.shadowOf(notifications).getAllNotifications().size());
+        assertEquals(1, mockingDetails(firebaseRpc).getInvocations().size());
+    }
+
+    @Test
+    @Config(sdk = 34)
+    public void startupRevokesOldPlayServicesDelegateWithoutTokenOrConsent() {
+        JCoreStorage.setPushStopped(context, true);
+        JCoreStorage.setCollectionAuth(context, false);
+        notifications.setNotificationDelegate("com.google.android.gms");
+        try (MockedStatic<FirebaseMessaging> firebase = mockStatic(FirebaseMessaging.class)) {
+            Robolectric.buildContentProvider(FcmInitProvider.class).create();
+            assertNull(notifications.getNotificationDelegate());
+            assertFalse(JCollectionAuth.isAuth(context));
+            assertTrue(JCoreStorage.isPushStopped(context));
+            firebase.verifyNoInteractions();
+        }
+    }
+
+    @Test
+    @Config(sdk = 34)
+    public void startupPreservesOtherNotificationDelegates() {
+        notifications.setNotificationDelegate("other.notification.delegate");
+        Robolectric.buildContentProvider(FcmInitProvider.class).create();
+        assertEquals("other.notification.delegate", notifications.getNotificationDelegate());
+    }
+
+    @Test
     public void automaticFirebaseTapLaunchesHostAndKeepsCompressedMetadata() {
         ActivityInfo activity = new ActivityInfo();
         activity.packageName = context.getPackageName();
@@ -500,6 +590,19 @@ public class FcmAdapterTest {
 
     private static RemoteMessage foregroundSuppressedMessage() {
         return new RemoteMessage(metadata("{\"msg_id\":\"foreground_suppressed\",\"n_content\":\"synthetic\",\"n_foreground\":\"0\"}"));
+    }
+
+    private static Intent firebaseReceiveIntent(String id, boolean notification) {
+        Intent receive = new Intent("com.google.android.c2dm.intent.RECEIVE")
+            .putExtra("google.message_id", id)
+            .putExtras(metadata("{\"msg_id\":\"" + id + "\",\"n_content\":\"private_body\",\"n_foreground\":\"0\"}"));
+        if (notification) {
+            receive.putExtra("gcm.n.e", "1");
+            receive.putExtra("gcm.n.title", "private_title");
+            receive.putExtra("gcm.n.body", "private_body");
+            receive.putExtra("gcm.n.icon", "android");
+        }
+        return receive;
     }
 
     private void setProcessImportance(int importance) {

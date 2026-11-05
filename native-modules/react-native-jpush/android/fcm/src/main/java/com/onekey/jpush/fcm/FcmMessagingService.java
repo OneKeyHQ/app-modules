@@ -1,5 +1,6 @@
 package com.onekey.jpush.fcm;
 
+import android.content.Intent;
 import android.os.Bundle;
 import cn.jiguang.core.JCoreStorage;
 import cn.jiguang.plugins.push.common.JLogger;
@@ -12,6 +13,16 @@ import java.util.Map;
 import org.json.JSONObject;
 
 public final class FcmMessagingService extends FirebaseMessagingService {
+    @Override
+    public void handleIntent(Intent intent) {
+        // Firebase may display background notifications before onMessageReceived is called.
+        if (JCoreStorage.isPushStopped(this) || !JCoreStorage.isCollectionAuth(this)) {
+            JLogger.i("FCM receive blocked by push or authorization state");
+            return;
+        }
+        super.handleIntent(intent);
+    }
+
     @Override
     public void onNewToken(String token) {
         if (JCoreStorage.isPushStopped(this) || !JCoreStorage.isCollectionAuth(this)) {
