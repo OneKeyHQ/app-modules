@@ -207,6 +207,7 @@ object OneKeySVG {
         for ((color, path) in paths) {
           val shape = document.createElementNS("http://www.w3.org/2000/svg", "path")
           shape.setAttribute("d", path.toString())
+          shape.setAttribute("stroke", "none")
           shape.setAttribute("fill", "rgb(${(color ushr 16) and 255},${(color ushr 8) and 255},${color and 255})")
           shape.setAttribute("fill-opacity", ((color ushr 24) / 255.0).toString())
           replacement.appendChild(shape)

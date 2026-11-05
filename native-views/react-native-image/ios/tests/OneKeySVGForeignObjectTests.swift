@@ -67,6 +67,28 @@ final class OneKeySVGForeignObjectTests: XCTestCase {
     }
   }
 
+  func testPixelPathsIgnoreInheritedStrokeAndKeepSiblingStroke() throws {
+    let content = foreign(pixelImage(), attributes: "x=\"4\" y=\"4\" width=\"16\" height=\"16\"")
+      .replacingOccurrences(of: "width=\"24\" height=\"24\"", with: "")
+    let css = "<style>img { image-rendering:pixelated; }</style>"
+    let sibling = "<path d=\"M1 1H23\" fill=\"none\"/>"
+    let plain = try pixels(document(content + css), size: 96)
+    for inherited in [
+      Data(String(decoding: document(content + sibling + css), as: UTF8.self).replacingOccurrences(of: "viewBox=", with: "stroke=\"green\" stroke-width=\"0.2\" viewBox=").utf8),
+      document("<g stroke=\"green\" stroke-width=\"0.2\">" + content + sibling + "</g>" + css),
+    ] {
+      let output = try pixels(inherited, size: 96)
+      for y in 16..<80 {
+        for x in 16..<80 {
+          let offset = (y * 96 + x) * 4
+          XCTAssertEqual(Array(output[offset..<offset + 4]), Array(plain[offset..<offset + 4]))
+        }
+      }
+      XCTAssertGreaterThan(output[(4 * 96 + 48) * 4 + 1], 0)
+      XCTAssertEqual(plain[(4 * 96 + 48) * 4 + 3], 0)
+    }
+  }
+
   func testSmoothDefaultAndLastStyleDeclarationAreRetained() throws {
     for css in ["", "<style>img { image-rendering:pixelated; image-rendering:auto; -ms-interpolation-mode:nearest-neighbor; }</style>",
       "<style>img { image-rendering:pixelated; }</style><style>img { image-rendering:smooth; }</style>"] {

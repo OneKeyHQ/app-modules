@@ -74,6 +74,30 @@ class OneKeySVGDecoderTest : InstrumentationTestCase() {
     finally { clipped.recycle() }
   }
 
+  fun testPixelPathsIgnoreInheritedStrokeAndKeepSiblingStroke() {
+    val source = document("<style>img { image-rendering:pixelated; }</style>")
+      .replace("<rect width='24' height='24' fill='#00ff00'/>", "")
+      .replace("<foreignObject width='24' height='24'>", "<foreignObject x='4' y='4' width='16' height='16'>")
+    val sibling = "<path d='M1 1H23' fill='none'/>"
+    val plain = displayed(source, 96, 96)
+    try {
+      for (inherited in listOf(
+        source.replace("viewBox=", "stroke='green' stroke-width='0.2' viewBox=").replace("</svg>", "$sibling</svg>"),
+        source.replace("<foreignObject", "<g stroke='green' stroke-width='0.2'><foreignObject")
+          .replace("</foreignObject>", "</foreignObject>$sibling</g>"),
+      )) {
+        val output = displayed(inherited, 96, 96)
+        try {
+          for (y in 16 until 80) for (x in 16 until 80) {
+            assertEquals("x=$x y=$y", plain.getPixel(x, y), output.getPixel(x, y))
+          }
+          assertTrue(Color.green(output.getPixel(48, 4)) > 0)
+          assertEquals(Color.TRANSPARENT, plain.getPixel(48, 4))
+        } finally { output.recycle() }
+      }
+    } finally { plain.recycle() }
+  }
+
   fun testSmoothDeclarationOverridesPixelatedInPictureDrawable() {
     for (css in listOf("", "<style>img { image-rendering:pixelated; image-rendering:auto; }</style>")) {
       val bitmap = displayed(document(css), 192, 32)

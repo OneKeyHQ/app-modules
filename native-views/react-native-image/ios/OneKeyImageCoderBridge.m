@@ -204,7 +204,7 @@ static NSString *OneKeySVGSerialize(OneKeySVGNode *node) {
     unsigned alpha = channels[3];
     OneKeySVGNode *path = [OneKeySVGNode new];
     path.name = @"path";
-    path.attributes = @{@"d": paths[key],
+    path.attributes = @{@"d": paths[key], @"stroke": @"none",
       @"fill": [NSString stringWithFormat:@"rgb(%u,%u,%u)",
         MIN(255u, (channels[0] * 255u + alpha / 2) / alpha),
         MIN(255u, (channels[1] * 255u + alpha / 2) / alpha),

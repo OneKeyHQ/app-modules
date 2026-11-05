@@ -279,6 +279,8 @@ surrounding SVG layers and clipping are retained; other images keep the raster
 path. Integer-aligned enlargement
 must not introduce interpolated colors. Fractional/transformed vector edges
 may cover one output pixel; this is not an exact browser CSS pixel-grid match.
+Generated pixel paths explicitly disable inherited stroke. Root/group stroke
+continues to apply to original SVG siblings, but MUST NOT outline PNG pixel runs.
 Generated geometry shares a document-wide 16,384-run and 512-KiB path-data
 budget and the existing 10,000-element budget; exceeding it fails through the
 ordinary image fallback. PNG decoding retains the existing aggregate 4MP
@@ -293,8 +295,8 @@ integer/fractional sizes, alpha/background, stylesheet order, smooth images,
 ordinary SVGs and generated-geometry limits; wallet list/detail verification
 and physical-device acceptance are recorded separately.
 
-The production iOS coder passes nine focused XCTest cases. Android passes
-23 SVG/safety JVM tests and three emulator instrumentation cases through
+The production iOS coder passes ten focused XCTest cases. Android passes
+23 SVG/safety JVM tests and four emulator instrumentation cases through
 `PictureDrawable` and `ImageView`, including fractional display sizes and
 geometry-budget rejection. The real #1982 document renders at 192, 197 and
 480 pixels through both backends: integer sizes have exactly the source's
