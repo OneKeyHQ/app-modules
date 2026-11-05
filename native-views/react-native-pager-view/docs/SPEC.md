@@ -136,6 +136,34 @@ style forwarding, overlay retention and disabling; UIKit tests cover native
 style switching and restoring the previous style. Rendered iOS acceptance must
 be reported separately from type, codegen and build checks.
 
+### iOS 27 local incoming transition hosts
+
+Status: Implemented; scoped iOS 27 simulator runtime verified.
+
+For the existing local smooth Hard direct-pager transition, incoming pages use
+the external path's transparent, noninteractive per-page top/sticky interaction
+hosts. Their horizontal origin follows each page's scroll viewport; vertical
+geometry follows the existing overlay and sticky references. The actual local
+overlay and source interaction/marker/borrowed-host identities remain unchanged.
+No replacement material, background, public API or additional mask is added.
+Existing completion, release-back-to-source, invalidation and recycle paths
+release only owned temporary hosts.
+
+Source-matched iOS 27 simulator checks passed for slow movement in both
+directions, same-contact over-half return followed by UP, retained nonzero scroll
+regions, light/dark header protection and actual toolbar sheet opening/closing.
+Selected fixed-label anchors retained their geometry. This is scoped main-UI
+native-view evidence; background runtime readiness and shared JS heaps are not
+assumed. Continuous/rapid alternation remains unproven: the final recording
+shows no discernible alternating page motion despite successful input ACKs.
+True CANCEL, resize/orientation and native lifecycle test execution remain
+unverified. The original physical-device recording's exact OS/build is unknown;
+selected-frame results do not establish exhaustive frame or numeric-offset parity.
+The run retains `normalDevSession=false` and its official launcher failure notice;
+diagnostic compilation and strict-input installation are separate build evidence.
+Market's equal-height secondary display-owner change is an independent consumer
+companion, not a new SDK public guarantee or JS/native same-frame contract.
+
 ### iOS 27 external-overlay interactive ownership
 
 Status: Implemented in iOS source; runtime acceptance is reported separately.

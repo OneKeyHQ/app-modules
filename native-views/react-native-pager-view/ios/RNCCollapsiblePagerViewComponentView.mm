@@ -3094,8 +3094,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
         [host addSubview:marker];
         return marker;
       };
-      owner.ownsTransitionHosts = allowExternalOverlay && _topOverlayView == nil &&
-        _externalTopOverlayTag > 0 && pageIndex != _currentIndex;
+      owner.ownsTransitionHosts = pageIndex != _currentIndex;
       UIView *(^transitionHost)(UIView *) = ^UIView *(UIView *referenceHost) {
         CGRect frame = [referenceHost convertRect:referenceHost.bounds toView:owner.page];
         CGRect viewport = [scrollView convertRect:scrollView.bounds toView:owner.page];

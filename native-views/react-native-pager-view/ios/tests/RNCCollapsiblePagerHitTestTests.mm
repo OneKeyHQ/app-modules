@@ -1013,6 +1013,20 @@ using namespace facebook::react;
     for (id owner in owners) {
       XCTAssertNotNil([owner valueForKey:@"topInteraction"]);
       XCTAssertNotNil([[owner valueForKey:@"topInteraction"] scrollView]);
+      if (owner == sourceOwner) continue;
+      XCTAssertTrue([[owner valueForKey:@"ownsTransitionHosts"] boolValue]);
+      UIView *page = [owner valueForKey:@"page"];
+      UIScrollView *list = [owner valueForKey:@"scrollView"];
+      UIView *incomingTop = [owner valueForKey:@"ownedTopHost"];
+      UIView *incomingSticky = [owner valueForKey:@"ownedStickyHost"];
+      XCTAssertEqual(incomingTop.superview, page);
+      XCTAssertEqual(incomingSticky.superview, page);
+      XCTAssertNotEqual(incomingTop, topHost);
+      XCTAssertNotEqual(incomingSticky, pinnedHost);
+      XCTAssertFalse(incomingTop.userInteractionEnabled);
+      XCTAssertFalse(incomingSticky.userInteractionEnabled);
+      XCTAssertEqualWithAccuracy(incomingTop.frame.origin.x,
+        CGRectGetMinX([list convertRect:list.bounds toView:page]), 0.001);
     }
   } else {
     XCTSkip(@"Direct local Hard drag handoff requires iOS 27 or newer");
@@ -1046,11 +1060,19 @@ using namespace facebook::react;
     XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 3);
     [self.pager scrollViewDidEndDragging:horizontal willDecelerate:YES];
     XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 3);
+    NSMutableArray<UIView *> *incomingHosts = [NSMutableArray new];
+    for (id owner in [self.pager valueForKey:@"programmaticScrollEdgeOwners"]) {
+      if (![[owner valueForKey:@"ownsTransitionHosts"] boolValue]) continue;
+      [incomingHosts addObject:[owner valueForKey:@"ownedTopHost"]];
+      [incomingHosts addObject:[owner valueForKey:@"ownedStickyHost"]];
+    }
     [self.pager scrollViewDidEndDecelerating:horizontal];
     XCTestExpectation *settled = [self expectationWithDescription:@"drag settled"];
     dispatch_async(dispatch_get_main_queue(), ^{ [settled fulfill]; });
     [self waitForExpectations:@[settled] timeout:2];
     XCTAssertEqual([[self.pager valueForKey:@"programmaticScrollEdgeOwners"] count], 0);
+    XCTAssertEqual(incomingHosts.count, 4);
+    for (UIView *host in incomingHosts) XCTAssertNil(host.superview);
     XCTAssertFalse([topHost.interactions containsObject:top]);
     XCTAssertNil(top.scrollView);
     XCTAssertEqual([[self.pager valueForKey:@"currentIndex"] integerValue], 1);
