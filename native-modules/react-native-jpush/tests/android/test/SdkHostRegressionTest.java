@@ -2058,6 +2058,7 @@ public final class SdkHostRegressionTest {
             JCoreStorage.setCollectionAuth(context, true); JCoreStorage.setPushStopped(context, false); JCoreStorage.clearRegistration(context);
             CountDownLatch terminalSent = new CountDownLatch(1), quietWindow = new CountDownLatch(1), finish = new CountDownLatch(1);
             AtomicReference<Throwable> serverError = new AtomicReference<Throwable>();
+            AtomicInteger cancelledQueue = new AtomicInteger(), queuedCode = new AtomicInteger(-1);
             try (ServerSocket listener = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"))) {
                 listener.setSoTimeout(3000);
                 Thread server = new Thread(() -> {
@@ -2094,15 +2095,22 @@ public final class SdkHostRegressionTest {
                 }, "test-terminal-configuration-" + terminalStatus);
                 server.setDaemon(true); server.start();
                 try {
-                    engine.setCustomEndpoint("127.0.0.1", listener.getLocalPort()); engine.start(context);
+                    engine.setCustomEndpoint("127.0.0.1", listener.getLocalPort());
+                    engine.enqueueOrSendRequest(context, JCoreWireCodec.CMD_PROPERTY_OP, JCoreWireCodec.VER_PROPERTY_OP, 64601,
+                        JCoreWireCodec.buildPropertyOperationPayload(1, 64601, Collections.<String, Object>singletonMap("value", "terminal-pending")), 1000L, 0,
+                        (frame, code) -> { queuedCode.set(code); cancelledQueue.incrementAndGet(); });
+                    engine.start(context);
                     check(terminalSent.await(3000L, TimeUnit.MILLISECONDS) && engine.awaitHandshake(2000L), "Terminal handshake must complete its wait");
                     check(!engine.isLoggedIn(), "Terminal handshake must not become logged in");
-                    engine.start(context); engine.triggerReconnectNow(context);
+                    awaitCondition(() -> cancelledQueue.get() == 1, "Terminal configuration must cancel its unbound queue once");
+                    check(queuedCode.get() == 6002 && engine.getPreLoginQueueSize() == 0, "Terminal queue cannot be preserved");
+                    engine.start(context); engine.triggerReconnectNow(context); engine.onNetworkConnected(context);
                     check(quietWindow.await(2000L, TimeUnit.MILLISECONDS), "Terminal status must suppress automatic and explicit retry");
                     JCoreStorage.setAppKey(context, "terminal-fixture-" + terminalStatus + "-changed");
                     engine.start(context);
                     check(engine.awaitHandshake(2000L) && engine.isLoggedIn() && JCoreStorage.getUid(context) == 790001L,
                         "Changing configuration identity must permit registration and login again");
+                    check(cancelledQueue.get() == 1 && engine.getPreLoginQueueSize() == 0, "Terminal work must not replay after configuration recovery");
                 } finally {
                     finish.countDown(); engine.stop(context); server.join(3000L);
                 }
@@ -2163,6 +2171,262 @@ public final class SdkHostRegressionTest {
                 engine.setAutoReconnectEnabled(true); engine.setDefaultRequestTimeoutMs(5000L);
             }
             check(serverError.get() == null && !server.isAlive(), "Configuration fixture failed: " + serverError.get());
+        }
+    }
+
+    @org.junit.Test
+    public void testNetworkReconnectPreservesUnboundPublicOperations() throws Exception {
+        Context context = new Context();
+        JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
+        JCoreStorage.setPushStopped(context, false); engine.stop(context);
+        engine.setAutoReconnectEnabled(false); engine.setDefaultRequestTimeoutMs(1000L);
+        JCoreStorage.setAppKey(context, "network-prelogin-fixture"); JCoreStorage.setCollectionAuth(context, true);
+        JCoreStorage.updateRegistration(context, 840001L, "prelogin-password", "prelogin-rid", "prelogin-device");
+        JCoreStorage.setServerRegistered(context, true);
+        CountDownLatch oldLoginRead = new CountDownLatch(1), newLoginRead = new CountDownLatch(1);
+        CountDownLatch releaseLogin = new CountDownLatch(1), finish = new CountDownLatch(1), callbacks = new CountDownLatch(4);
+        AtomicReference<Throwable> serverError = new AtomicReference<Throwable>();
+        Map<Integer, Integer> codes = new java.util.concurrent.ConcurrentHashMap<Integer, Integer>();
+        Map<Integer, AtomicInteger> counts = new java.util.concurrent.ConcurrentHashMap<Integer, AtomicInteger>();
+        List<Integer> commands = new java.util.concurrent.CopyOnWriteArrayList<Integer>();
+        JPushMessageReceiver receiver = new JPushMessageReceiver() {
+            private void record(JPushMessage message) {
+                int sequence = message.getSequence();
+                if (sequence < 64001 || sequence > 64004) return;
+                counts.computeIfAbsent(sequence, key -> new AtomicInteger()).incrementAndGet();
+                codes.put(sequence, message.getErrorCode()); callbacks.countDown();
+            }
+            @Override public void onAliasOperatorResult(Context c, JPushMessage message) { record(message); }
+            @Override public void onTagOperatorResult(Context c, JPushMessage message) { record(message); }
+            @Override public void onPropertyOperatorResult(Context c, JPushMessage message) { record(message); }
+            @Override public void onMobileNumberOperatorResult(Context c, JPushMessage message) { record(message); }
+        };
+        ActionHelper.getInstance().registerReceiver(receiver);
+        try (ServerSocket listener = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"))) {
+            listener.setSoTimeout(3000);
+            Thread server = new Thread(() -> {
+                try (Socket oldSocket = listener.accept()) {
+                    oldSocket.setSoTimeout(3000);
+                    JCoreWireCodec.DecodedFrame oldLogin = JCoreWireCodec.readClientFrameFromStream(oldSocket.getInputStream(), 840001L);
+                    check(oldLogin != null && oldLogin.command == JCoreWireCodec.CMD_LOGIN, "First connection must hold its real Login");
+                    oldLoginRead.countDown();
+                    try (Socket socket = listener.accept()) {
+                        socket.setSoTimeout(3000);
+                        JCoreWireCodec.DecodedFrame login = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 840001L);
+                        check(login != null && login.command == JCoreWireCodec.CMD_LOGIN, "Network reconnect must issue its own Login");
+                        newLoginRead.countDown();
+                        check(releaseLogin.await(3000L, TimeUnit.MILLISECONDS), "Reconnect Login release missing");
+                        if (finish.getCount() == 0) return;
+                        writeLoopbackAck(socket, login, 840001L, 8401, 0, JCoreWireCodec.buildLoginResponsePayload(8401, 520, "", 1700000000));
+                        JCoreWireCodec.DecodedFrame heartbeat = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 840001L);
+                        check(heartbeat != null && heartbeat.command == JCoreWireCodec.CMD_HEARTBEAT, "Reconnect must ACK its initial heartbeat");
+                        writeLoopbackAck(socket, heartbeat, 840001L, 8401, 0, new byte[0]);
+                        for (int index = 0; index < 4; index++) {
+                            JCoreWireCodec.DecodedFrame request = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 840001L);
+                            check(request != null, "Preserved request must reach the new connection"); commands.add(request.command);
+                            if (index < 3) check(JCoreWireCodec.extractJsonInt(JCoreWireCodec.parseJsonCommandPayload(request.body), "seq", -1) == 64001 + index,
+                                "Preserved public sequence must remain unchanged");
+                            else check("15500000000".equals(JCoreWireCodec.parseMobileNumberPayload(request.body).mobileNumber), "Preserved mobile payload changed");
+                            writeLoopbackAck(socket, request, 840001L, 8401, 0, new byte[0]);
+                        }
+                        check(finish.await(3000L, TimeUnit.MILLISECONDS), "Reconnect fixture finish missing");
+                    }
+                } catch (Throwable error) { serverError.set(error); }
+            }, "test-network-prelogin-preservation");
+            server.setDaemon(true); server.start();
+            try {
+                engine.setCustomEndpoint("127.0.0.1", listener.getLocalPort()); engine.start(context);
+                check(oldLoginRead.await(3000L, TimeUnit.MILLISECONDS), "Initial Login did not reach localhost");
+                JPushInterface.setAlias(context, 64001, "preserved-alias");
+                JPushInterface.addTags(context, 64002, Collections.singleton("preserved-tag"));
+                JPushInterface.setProperties(context, 64003, Collections.<String, Object>singletonMap("region", "local"));
+                JPushInterface.setMobileNumber(context, 64004, "15500000000");
+                check(engine.getPreLoginQueueSize() == 4, "Four public requests must queue before Login");
+                engine.onNetworkConnected(context);
+                check(newLoginRead.await(3000L, TimeUnit.MILLISECONDS), "Reconnect Login did not reach localhost");
+                check(engine.getPreLoginQueueSize() == 4, "Network reconnect must preserve four unbound requests; actual=" + engine.getPreLoginQueueSize());
+                check(codes.isEmpty(), "Unbound requests must not fail before the replacement Login");
+                releaseLogin.countDown(); check(callbacks.await(3000L, TimeUnit.MILLISECONDS), "Preserved requests need real ACK callbacks");
+                check(commands.equals(Arrays.asList(JCoreWireCodec.CMD_ALIAS_OP, JCoreWireCodec.CMD_TAG_OP,
+                    JCoreWireCodec.CMD_PROPERTY_OP, JCoreWireCodec.CMD_MOBILE_NUMBER)), "Reconnect must retain public FIFO order");
+                for (int sequence = 64001; sequence <= 64004; sequence++) check(codes.get(sequence) == 0 && counts.get(sequence).get() == 1,
+                    "Each preserved public request requires exactly one successful ACK callback");
+                engine.onNetworkConnected(context);
+                check(engine.isLoggedIn() && engine.awaitHandshake(0L), "A network callback after Login must leave the completed owner alone");
+            } finally {
+                finish.countDown(); releaseLogin.countDown(); engine.stop(context); server.join(3000L);
+                ActionHelper.getInstance().unregisterReceiver(receiver);
+                engine.setAutoReconnectEnabled(true); engine.setDefaultRequestTimeoutMs(5000L);
+            }
+            check(serverError.get() == null && !server.isAlive(), "Network reconnect fixture failed: " + serverError.get());
+        }
+    }
+
+    private static void runReconnectOwnerDrainIsolation(final boolean blockOldCallback) throws Exception {
+        Context context = new Context(); JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
+        JCoreStorage.setPushStopped(context, false); engine.stop(context);
+        engine.setAutoReconnectEnabled(false); engine.setDefaultRequestTimeoutMs(3000L);
+        JCoreStorage.setAppKey(context, "drain-handoff-" + blockOldCallback); JCoreStorage.setCollectionAuth(context, true);
+        JCoreStorage.updateRegistration(context, 850001L, "drain-password", "drain-rid", "drain-device");
+        JCoreStorage.setServerRegistered(context, true);
+        CountDownLatch firstRead = new CountDownLatch(1), oldEntered = new CountDownLatch(1), releaseOld = new CountDownLatch(1), oldExited = new CountDownLatch(1);
+        CountDownLatch newEntered = new CountDownLatch(1), releaseNew = new CountDownLatch(1), fourthQueued = new CountDownLatch(1);
+        CountDownLatch noParallelPoll = new CountDownLatch(1), fourthDone = new CountDownLatch(1), finish = new CountDownLatch(1);
+        AtomicReference<Throwable> serverError = new AtomicReference<Throwable>(), callbackError = new AtomicReference<Throwable>();
+        Map<Integer, Integer> codes = new java.util.concurrent.ConcurrentHashMap<Integer, Integer>();
+        Map<Integer, AtomicInteger> counts = new java.util.concurrent.ConcurrentHashMap<Integer, AtomicInteger>();
+        java.util.function.IntFunction<JCoreTcpEngine.RequestCallback> callback = sequence -> (frame, code) -> {
+            counts.computeIfAbsent(sequence, key -> new AtomicInteger()).incrementAndGet(); codes.put(sequence, code);
+            if (code == 0 && frame == null) callbackError.set(new AssertionError("Success requires a real ACK frame"));
+            try {
+                if (sequence == 65101) { oldEntered.countDown(); if (blockOldCallback && !releaseOld.await(3000L, TimeUnit.MILLISECONDS)) callbackError.set(new AssertionError("Old callback release missing")); }
+                if (sequence == 65103) { newEntered.countDown(); if (!releaseNew.await(3000L, TimeUnit.MILLISECONDS)) callbackError.set(new AssertionError("New callback release missing")); }
+            } catch (InterruptedException error) { Thread.currentThread().interrupt(); callbackError.set(error); }
+            finally { if (sequence == 65101) oldExited.countDown(); if (sequence == 65104) fourthDone.countDown(); }
+        };
+        try (ServerSocket listener = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"))) {
+            listener.setSoTimeout(3000);
+            Thread server = new Thread(() -> {
+                try (Socket oldSocket = listener.accept()) {
+                    oldSocket.setSoTimeout(3000);
+                    JCoreWireCodec.DecodedFrame login = JCoreWireCodec.readClientFrameFromStream(oldSocket.getInputStream(), 850001L);
+                    writeLoopbackAck(oldSocket, login, 850001L, 8501, 0, JCoreWireCodec.buildLoginResponsePayload(8501, 520, "", 1700000000));
+                    JCoreWireCodec.DecodedFrame heartbeat = JCoreWireCodec.readClientFrameFromStream(oldSocket.getInputStream(), 850001L);
+                    check(heartbeat.command == JCoreWireCodec.CMD_HEARTBEAT, "Old drain login heartbeat missing");
+                    writeLoopbackAck(oldSocket, heartbeat, 850001L, 8501, 0, new byte[0]);
+                    JCoreWireCodec.DecodedFrame first = JCoreWireCodec.readClientFrameFromStream(oldSocket.getInputStream(), 850001L);
+                    check(JCoreWireCodec.extractJsonInt(JCoreWireCodec.parseJsonCommandPayload(first.body), "seq", -1) == 65101, "Old owner must send its first request once");
+                    if (blockOldCallback) writeLoopbackAck(oldSocket, first, 850001L, 8501, 0, new byte[0]);
+                    firstRead.countDown();
+                    try (Socket socket = listener.accept()) {
+                        socket.setSoTimeout(3000);
+                        login = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 850001L);
+                        writeLoopbackAck(socket, login, 850001L, 8502, 0, JCoreWireCodec.buildLoginResponsePayload(8502, 520, "", 1700000000));
+                        heartbeat = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 850001L);
+                        check(heartbeat.command == JCoreWireCodec.CMD_HEARTBEAT, "New drain login heartbeat missing");
+                        writeLoopbackAck(socket, heartbeat, 850001L, 8502, 0, new byte[0]);
+                        JCoreWireCodec.DecodedFrame third = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 850001L);
+                        check(JCoreWireCodec.extractJsonInt(JCoreWireCodec.parseJsonCommandPayload(third.body), "seq", -1) == 65103,
+                            "Only the fresh unbound request may reach the new owner; no old request replay");
+                        writeLoopbackAck(socket, third, 850001L, 8502, 0, new byte[0]);
+                        check(fourthQueued.await(3000L, TimeUnit.MILLISECONDS), "Fourth request was not queued");
+                        socket.setSoTimeout(150);
+                        try { socket.getInputStream().read(); throw new AssertionError("An obsolete worker must not poll while the new callback owns the drain"); }
+                        catch (java.net.SocketTimeoutException expectedQuiet) { noParallelPoll.countDown(); }
+                        socket.setSoTimeout(3000);
+                        JCoreWireCodec.DecodedFrame fourth = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 850001L);
+                        check(JCoreWireCodec.extractJsonInt(JCoreWireCodec.parseJsonCommandPayload(fourth.body), "seq", -1) == 65104, "The current drainer must retain its next FIFO request");
+                        writeLoopbackAck(socket, fourth, 850001L, 8502, 0, new byte[0]);
+                        check(finish.await(3000L, TimeUnit.MILLISECONDS), "Drain handoff finish missing");
+                    }
+                } catch (Throwable error) { serverError.set(error); }
+            }, "test-drain-owner-handoff-" + blockOldCallback);
+            server.setDaemon(true); server.start();
+            try {
+                engine.setCustomEndpoint("127.0.0.1", listener.getLocalPort()); engine.start(context);
+                check(engine.awaitHandshake(3000L) && engine.isLoggedIn(), "Old drain owner must log in");
+                engine.enqueueOrSendRequest(context, JCoreWireCodec.CMD_PROPERTY_OP, JCoreWireCodec.VER_PROPERTY_OP, 65101,
+                    JCoreWireCodec.buildPropertyOperationPayload(1, 65101, Collections.<String, Object>singletonMap("value", "old-in-flight")), 3000L, 0, callback.apply(65101));
+                check(firstRead.await(3000L, TimeUnit.MILLISECONDS), "Old request did not reach its owner");
+                if (blockOldCallback) check(oldEntered.await(3000L, TimeUnit.MILLISECONDS), "Old callback must be in progress");
+                engine.enqueueOrSendRequest(context, JCoreWireCodec.CMD_PROPERTY_OP, JCoreWireCodec.VER_PROPERTY_OP, 65102,
+                    JCoreWireCodec.buildPropertyOperationPayload(1, 65102, Collections.<String, Object>singletonMap("value", "old-bound")), 3000L, 0, callback.apply(65102));
+                engine.closeSocket();
+                engine.enqueueOrSendRequest(context, JCoreWireCodec.CMD_PROPERTY_OP, JCoreWireCodec.VER_PROPERTY_OP, 65103,
+                    JCoreWireCodec.buildPropertyOperationPayload(1, 65103, Collections.<String, Object>singletonMap("value", "new-unbound")), 3000L, 0, callback.apply(65103));
+                engine.onNetworkConnected(context);
+                check(newEntered.await(3000L, TimeUnit.MILLISECONDS), "New owner must ACK its queue without waiting for the old callback");
+                releaseOld.countDown(); check(oldExited.await(1000L, TimeUnit.MILLISECONDS), "Old callback must finish its own request");
+                awaitCondition(() -> codes.containsKey(65102), "Bound queued request must be cancelled");
+                check(codes.get(65101) == (blockOldCallback ? 0 : 6002) && codes.get(65102) == 6002 && codes.get(65103) == 0,
+                    "Old sent/bound work must finish once without replay; the fresh queue must receive its ACK");
+                engine.enqueueOrSendRequest(context, JCoreWireCodec.CMD_PROPERTY_OP, JCoreWireCodec.VER_PROPERTY_OP, 65104,
+                    JCoreWireCodec.buildPropertyOperationPayload(1, 65104, Collections.<String, Object>singletonMap("value", "new-tail")), 3000L, 0, callback.apply(65104));
+                fourthQueued.countDown(); check(noParallelPoll.await(1000L, TimeUnit.MILLISECONDS), "A stale worker must not clear or steal the new drain token");
+                releaseNew.countDown(); check(fourthDone.await(3000L, TimeUnit.MILLISECONDS) && codes.get(65104) == 0, "New drainer must complete its own tail");
+                for (int sequence = 65101; sequence <= 65104; sequence++) check(counts.get(sequence).get() == 1, "Callbacks must remain exactly once across reconnect");
+                check(callbackError.get() == null, "Drain callback failed: " + callbackError.get());
+            } finally {
+                releaseOld.countDown(); releaseNew.countDown(); fourthQueued.countDown(); finish.countDown();
+                engine.stop(context); server.join(3000L); engine.setAutoReconnectEnabled(true); engine.setDefaultRequestTimeoutMs(5000L);
+            }
+            check(serverError.get() == null && !server.isAlive(), "Drain ownership fixture failed: " + serverError.get());
+        }
+    }
+
+    @org.junit.Test
+    public void testReconnectDoesNotReplaySentOrBoundRequests() throws Exception { runReconnectOwnerDrainIsolation(false); }
+
+    @org.junit.Test
+    public void testReconnectHandsOffDrainWhileOldCallbackIsBlocked() throws Exception { runReconnectOwnerDrainIsolation(true); }
+
+    @org.junit.Test
+    public void testReconnectPreservationRejectsInvalidPolicyAndExplicitCancellation() throws Exception {
+        Context context = new Context(); JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
+        for (int scenario = 0; scenario < 5; scenario++) {
+            final int mode = scenario;
+            JCoreStorage.setPushStopped(context, false); engine.stop(context);
+            engine.setAutoReconnectEnabled(false); engine.setDefaultRequestTimeoutMs(1000L);
+            JCoreStorage.setCollectionAuth(context, true); JCoreStorage.setAppKey(context, "queue-policy-" + mode);
+            JCoreStorage.updateRegistration(context, 860001L, "policy-password", "policy-rid", "policy-device"); JCoreStorage.setServerRegistered(context, true);
+            CountDownLatch quiet = new CountDownLatch(1), freshDone = new CountDownLatch(1), finish = new CountDownLatch(1);
+            AtomicInteger cancelled = new AtomicInteger(), cancelCode = new AtomicInteger(-1), freshCode = new AtomicInteger(-1);
+            AtomicReference<Throwable> serverError = new AtomicReference<Throwable>();
+            try (ServerSocket listener = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"))) {
+                listener.setSoTimeout(3000);
+                Thread server = new Thread(() -> {
+                    try (Socket socket = listener.accept()) {
+                        socket.setSoTimeout(3000);
+                        JCoreWireCodec.DecodedFrame login = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 860001L);
+                        check(login != null && login.command == JCoreWireCodec.CMD_LOGIN, "Policy fixture must login normally");
+                        writeLoopbackAck(socket, login, 860001L, 8601, 0, JCoreWireCodec.buildLoginResponsePayload(8601, 520, "", 1700000000));
+                        JCoreWireCodec.DecodedFrame heartbeat = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 860001L);
+                        check(heartbeat.command == JCoreWireCodec.CMD_HEARTBEAT, "Policy fixture initial heartbeat missing");
+                        writeLoopbackAck(socket, heartbeat, 860001L, 8601, 0, new byte[0]);
+                        if (mode == 0) {
+                            JCoreWireCodec.DecodedFrame resume = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 860001L);
+                            check(resume.command == JCoreWireCodec.CMD_PUSH_CTRL, "Public resume control must retain its own semantics");
+                            writeLoopbackAck(socket, resume, 860001L, 8601, 0, new byte[0]);
+                        }
+                        socket.setSoTimeout(150);
+                        try { socket.getInputStream().read(); throw new AssertionError("Cancelled or mismatched pre-login body must never reach the replacement connection"); }
+                        catch (java.net.SocketTimeoutException expectedQuiet) { quiet.countDown(); }
+                        socket.setSoTimeout(3000);
+                        JCoreWireCodec.DecodedFrame fresh = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 860001L);
+                        check(JCoreWireCodec.extractJsonInt(JCoreWireCodec.parseJsonCommandPayload(fresh.body), "seq", -1) == 65202, "Only the current-policy request may send");
+                        writeLoopbackAck(socket, fresh, 860001L, 8601, 0, new byte[0]);
+                        check(finish.await(3000L, TimeUnit.MILLISECONDS), "Policy fixture finish missing");
+                    } catch (Throwable error) { serverError.set(error); }
+                }, "test-queue-policy-" + mode);
+                server.setDaemon(true); server.start();
+                try {
+                    engine.setCustomEndpoint("127.0.0.1", listener.getLocalPort());
+                    engine.enqueueOrSendRequest(context, JCoreWireCodec.CMD_PROPERTY_OP, JCoreWireCodec.VER_PROPERTY_OP, 65201,
+                        JCoreWireCodec.buildPropertyOperationPayload(1, 65201, Collections.<String, Object>singletonMap("value", "obsolete")), 1000L, 0,
+                        (frame, code) -> { cancelCode.set(code); cancelled.incrementAndGet(); });
+                    check(engine.getPreLoginQueueSize() == 1, "Policy fixture must start with an unbound request");
+                    if (mode == 0) { JPushInterface.stopPush(context); JPushInterface.resumePush(context); }
+                    else if (mode == 1) {
+                        cn.jiguang.api.utils.JCollectionAuth.setAuth(context, false); cn.jiguang.api.utils.JCollectionAuth.setAuth(context, true);
+                        engine.onNetworkConnected(context);
+                    } else if (mode == 2) { JCoreStorage.setAppKey(context, "queue-policy-" + mode + "-changed"); engine.onNetworkConnected(context); }
+                    else if (mode == 3) engine.triggerReconnectNow(context);
+                    else { engine.closeSocket(); engine.onNetworkConnected(context); }
+                    check(engine.awaitHandshake(3000L) && engine.isLoggedIn(), "Current policy must still log in");
+                    awaitCondition(() -> cancelled.get() == 1, "Invalidated request must receive one cancellation callback");
+                    check(cancelCode.get() == 6002 && engine.getPreLoginQueueSize() == 0, "Policy/config/explicit cancellation must remain 6002 with no retained old item");
+                    check(quiet.await(2000L, TimeUnit.MILLISECONDS), "Old queue must remain absent after the new login: " + serverError.get());
+                    engine.enqueueOrSendRequest(context, JCoreWireCodec.CMD_PROPERTY_OP, JCoreWireCodec.VER_PROPERTY_OP, 65202,
+                        JCoreWireCodec.buildPropertyOperationPayload(1, 65202, Collections.<String, Object>singletonMap("value", "current")), 1000L, 0,
+                        (frame, code) -> { freshCode.set(frame != null ? code : -1); freshDone.countDown(); });
+                    check(freshDone.await(3000L, TimeUnit.MILLISECONDS) && freshCode.get() == 0 && cancelled.get() == 1,
+                        "A fresh request must ACK while the old request stays cancelled exactly once");
+                } finally {
+                    finish.countDown(); JCoreStorage.setPushStopped(context, false); engine.stop(context); server.join(3000L);
+                    engine.setAutoReconnectEnabled(true); engine.setDefaultRequestTimeoutMs(5000L);
+                }
+                check(serverError.get() == null && !server.isAlive(), "Policy queue fixture failed: " + serverError.get());
+            }
         }
     }
 

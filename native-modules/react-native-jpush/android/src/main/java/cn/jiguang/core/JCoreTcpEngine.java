@@ -53,7 +53,8 @@ public final class JCoreTcpEngine {
         final int maxRetries;
         final RequestCallback callback;
         volatile Attempt owner;
-        final long policyGeneration = JCoreStorage.getContentGeneration();
+        final long policyGeneration;
+        final String configuration;
         final java.util.concurrent.atomic.AtomicBoolean completed = new java.util.concurrent.atomic.AtomicBoolean();
 
         QueuedRequest(
@@ -63,7 +64,9 @@ public final class JCoreTcpEngine {
             byte[] body,
             long timeoutMs,
             int maxRetries,
-            RequestCallback callback
+            RequestCallback callback,
+            long policyGeneration,
+            String configuration
         ) {
             this.command = command;
             this.version = version;
@@ -72,9 +75,11 @@ public final class JCoreTcpEngine {
             this.timeoutMs = timeoutMs > 0L ? timeoutMs : 5000L;
             this.maxRetries = Math.max(0, maxRetries);
             this.callback = callback;
+            this.policyGeneration = policyGeneration;
+            this.configuration = configuration;
         }
         void complete(JCoreWireCodec.DecodedFrame frame, int code) {
-            if (code == 0 && (owner == null || !INSTANCE.owns(owner, null)
+            if (code == 0 && (owner == null || !configuration.equals(owner.configuration) || !INSTANCE.owns(owner, null)
                 || policyGeneration != JCoreStorage.getContentGeneration() || !JCoreStorage.isCollectionAuth(null))) {
                 frame = null;
                 code = JPushInterface.ErrorCode.TIMEOUT;
@@ -158,7 +163,7 @@ public final class JCoreTcpEngine {
 
     private volatile Attempt activeAttempt;
     private volatile String terminalConfiguration = "";
-    private boolean drainingRequests;
+    private Object drainingToken;
     private volatile boolean started = false;
     private volatile boolean loggedIn = false;
     private volatile boolean autoReconnectEnabled = true;
@@ -393,7 +398,12 @@ public final class JCoreTcpEngine {
     }
 
     public synchronized void closeSocket() {
+        closeSocket(null, false);
+    }
+
+    private synchronized void closeSocket(Context context, boolean preserveUnboundRequests) {
         this.connectionGeneration++;
+        drainingToken = null;
         activeAttempt = null;
         cancelHeartbeatTimer();
         synchronized (socketLock) {
@@ -412,11 +422,22 @@ public final class JCoreTcpEngine {
         pendingRequests.clear();
         loggedIn = false;
         JCoreStorage.setConnected(null, false);
+        String configuration = preserveUnboundRequests ? configurationIdentity(context) : "";
+        long policyGeneration = JCoreStorage.getContentGeneration();
+        boolean mayPreserve = preserveUnboundRequests && JCoreStorage.isCollectionAuth(context)
+            && !JCoreStorage.isPushStopped(context) && !terminalConfiguration.equals(configuration);
+        List<QueuedRequest> retained = new ArrayList<QueuedRequest>();
         QueuedRequest queued;
         while ((queued = preLoginQueue.poll()) != null) {
-            final QueuedRequest canceled = queued;
-            ioExecutor.execute(() -> canceled.complete(null, JPushInterface.ErrorCode.TIMEOUT));
+            if (mayPreserve && queued.owner == null && !queued.completed.get()
+                && queued.policyGeneration == policyGeneration && queued.configuration.equals(configuration)) {
+                retained.add(queued);
+            } else {
+                final QueuedRequest canceled = queued;
+                ioExecutor.execute(() -> canceled.complete(null, JPushInterface.ErrorCode.TIMEOUT));
+            }
         }
+        preLoginQueue.addAll(retained);
     }
 
     public void stop(Context context) {
@@ -434,6 +455,7 @@ public final class JCoreTcpEngine {
                 return;
             }
             owner.stopScheduled = true;
+            drainingToken = null;
             socket = activeSocket;
             uid = JCoreStorage.getUid(context);
             sid = sessionId;
@@ -475,6 +497,7 @@ public final class JCoreTcpEngine {
     private synchronized Attempt beginAttempt(Context context) {
         if (JCoreStorage.isPushStopped(context) || terminalConfiguration.equals(configurationIdentity(context))) return null;
         if (!terminalConfiguration.isEmpty()) terminalConfiguration = "";
+        drainingToken = null;
         if (activeAttempt != null) closeOwnedSocket(activeAttempt);
         started = true;
         handshakeLatch = new CountDownLatch(1);
@@ -502,9 +525,15 @@ public final class JCoreTcpEngine {
         if (owner != null) ioExecutor.execute(() -> connectAndHandshake(context, owner));
     }
 
-    public void onNetworkConnected(Context context) {
-        synchronized (this) { reconnectAttempt = 0; }
-        if (!loggedIn) triggerReconnectNow(context);
+    public void onNetworkConnected(final Context context) {
+        final Attempt owner;
+        synchronized (this) {
+            reconnectAttempt = 0;
+            if (loggedIn) return;
+            closeSocket(context, true);
+            owner = beginAttempt(context);
+        }
+        if (owner != null) ioExecutor.execute(() -> connectAndHandshake(context, owner));
     }
 
     public void executeAsync(Runnable task) {
@@ -630,6 +659,7 @@ public final class JCoreTcpEngine {
                 if (owner.socket != null) try { owner.socket.close(); } catch (Exception ignored) {}
                 return;
             }
+            drainingToken = null;
             synchronized (socketLock) {
                 if (activeSocket == owner.socket) {
                     if (activeSocket != null) try { activeSocket.close(); } catch (Exception ignored) {}
@@ -919,45 +949,59 @@ public final class JCoreTcpEngine {
         return true;
     }
 
-    private void flushPreLoginQueue(final Context context, Attempt expectedOwner) {
+    private void flushPreLoginQueue(final Context context, final Attempt expectedOwner) {
+        final Object token;
         synchronized (this) {
-            if (!owns(expectedOwner, context) || !loggedIn || drainingRequests || preLoginQueue.isEmpty()) return;
-            drainingRequests = true;
+            if (!owns(expectedOwner, context) || !loggedIn || drainingToken != null || preLoginQueue.isEmpty()) return;
+            token = new Object();
+            drainingToken = token;
         }
         ioExecutor.execute(() -> {
-            while (true) {
-                final QueuedRequest req;
-                final Attempt owner;
-                synchronized (JCoreTcpEngine.this) {
-                    owner = activeAttempt;
-                    if (!owns(owner, context) || !loggedIn || (req = preLoginQueue.poll()) == null) {
-                        drainingRequests = false;
-                        return;
+            try {
+                while (true) {
+                    final QueuedRequest req;
+                    synchronized (JCoreTcpEngine.this) {
+                        if (drainingToken != token) return;
+                        if (!owns(expectedOwner, context) || !loggedIn || (req = preLoginQueue.poll()) == null) {
+                            drainingToken = null;
+                            return;
+                        }
+                        if (req.owner == null) req.owner = expectedOwner;
+                    }
+                    try { executeQueuedRequestWithRetry(context, req, req.owner); }
+                    catch (Throwable callbackFailure) {
+                        try { req.complete(null, JPushInterface.ErrorCode.TIMEOUT); } catch (Throwable ignored) {}
                     }
                 }
-                if (req.owner == null) req.owner = owner;
-                try { executeQueuedRequestWithRetry(context, req, req.owner); }
-                catch (Throwable callbackFailure) {
-                    try { req.complete(null, JPushInterface.ErrorCode.TIMEOUT); } catch (Throwable ignored) {}
+            } finally {
+                boolean restart = false;
+                synchronized (JCoreTcpEngine.this) {
+                    if (drainingToken == token) {
+                        drainingToken = null;
+                        restart = owns(expectedOwner, context) && loggedIn && !preLoginQueue.isEmpty();
+                    }
                 }
+                if (restart) flushPreLoginQueue(context, expectedOwner);
             }
         });
     }
 
     public void enqueueOrSendRequest(final Context context, int command, int version, long rid, byte[] body,
         long timeoutMs, int maxRetries, RequestCallback callback) {
-        final QueuedRequest req = new QueuedRequest(command, version, rid > 0L ? rid : JCoreStorage.nextRid(),
-            body, timeoutMs > 0L ? timeoutMs : defaultRequestTimeoutMs, maxRetries, callback);
+        final QueuedRequest req;
         final Attempt owner;
         boolean rejected;
         final boolean queueFull;
         final boolean terminal;
         synchronized (this) {
+            req = new QueuedRequest(command, version, rid > 0L ? rid : JCoreStorage.nextRid(), body,
+                timeoutMs > 0L ? timeoutMs : defaultRequestTimeoutMs, maxRetries, callback,
+                JCoreStorage.getContentGeneration(), configurationIdentity(context));
             queueFull = preLoginQueue.size() >= 128;
             terminal = terminalConfiguration.equals(configurationIdentity(context));
             rejected = queueFull || terminal || !JCoreStorage.isCollectionAuth(context) || JCoreStorage.isPushStopped(context);
             if (!rejected) {
-                if (loggedIn) req.owner = activeAttempt;
+                if (loggedIn && owns(activeAttempt, context)) req.owner = activeAttempt;
                 preLoginQueue.offer(req);
             }
             owner = activeAttempt;
@@ -973,12 +1017,14 @@ public final class JCoreTcpEngine {
         final long uid = JCoreStorage.getUid(context);
         final int sid = sessionId;
         for (int attempt = 0; attempt <= req.maxRetries; attempt++) {
-            if (!owns(owner, context) || req.policyGeneration != JCoreStorage.getContentGeneration()
+            if (!owns(owner, context) || !req.configuration.equals(owner.configuration)
+                || req.policyGeneration != JCoreStorage.getContentGeneration()
                 || !JCoreStorage.isCollectionAuth(context)) break;
             long rid = attempt == 0 ? req.rid : JCoreStorage.nextRid();
             JCoreWireCodec.DecodedFrame response = sendRequestWithRidOnSocket(owner, req.command, req.version, rid,
                 sid, uid, req.body, req.timeoutMs, req.policyGeneration);
-            if (response != null && owns(owner, context) && req.policyGeneration == JCoreStorage.getContentGeneration()) {
+            if (response != null && owns(owner, context) && req.configuration.equals(owner.configuration)
+                && req.policyGeneration == JCoreStorage.getContentGeneration()) {
                 int code = response.statusCode;
                 if ((req.command == JCoreWireCodec.CMD_TAG_OP || req.command == JCoreWireCodec.CMD_ALIAS_OP
                     || req.command == JCoreWireCodec.CMD_PROPERTY_OP) && response.body != null && response.body.length > 0) {
