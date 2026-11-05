@@ -2216,3 +2216,24 @@ bidirectional compatibility against public `ViewInstance`. This is type-only:
 emitted JavaScript, native schemas, props and list behavior are unchanged by
 this ref declaration. Independent main-branch Web renderer changes and consumer
 runtime acceptance remain separately scoped.
+
+
+## Registry consumer integration (2026-11-05)
+
+Preview alpha.449 from source `76834daf9` was normally installed together with
+Pager; all 330 installed NativeList files match its verified registry tarball.
+The published runtime includes main's Web identity-row layout and iOS empty
+accessory constraint changes; the earlier types-only overlay is historical.
+New iOS source/object/built/installed binary hashes bind this Swift renderer.
+The existing App account-selector rows were opened and closed without importing
+accounts or editing the independent consumer WIP. This is row integration
+coverage; ellipsis accessory rows do not prove the empty-accessory branch.
+SDK iOS CI independently passed the empty-trailing, rebind and spinner layout
+cases. Actual Web Recipient auto-height rows and the installed public fixture's
+scale/width/long-word/same-DOM reuse checks were separately exercised. External
+notification/image/postinstall warnings and other prior limits remain recorded.
+
+Internal Pod edges use unversioned CocoaPods dependencies, matching the npm
+internal `*` policy while retaining external constraints. Real specification
+readback is `>= 0`; normal SDK example and consumer Pod installs passed. This
+does not retroactively make alpha.445's invalid `*` Pod requirement usable.

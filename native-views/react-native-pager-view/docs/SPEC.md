@@ -1423,3 +1423,26 @@ schemas relative to the pre-integration PR. Native source and erased JavaScript
 for the native wrapper/codegen files remain unchanged; the Web boolean forwarding
 above is a separate main-branch runtime change. These checks do not prove a new
 RN 0.88 SDK native example build or extend the scoped consumer UI acceptance.
+
+
+### Registry consumer integration (2026-11-05)
+
+Preview `6.7.0-alpha.449` was published from production source `76834daf9`.
+The consumer normally installed only Pager and NativeList, with exact package
+file/tarball parity; Image/logger/skeleton/bottom-tabs remain alpha.422.
+New official iOS/Android shell and vendor builds exercised Home tab/body/toolbar,
+Market primary tabs and sticky scrolling. Web exercised the actual narrow App
+Home and the installed public wrapper keyboard/ref/scroll contract. These are
+scoped consumer checks, not exact-frame/glyph/performance or rapid/CANCEL/resize
+acceptance. Earlier source-matched evidence and its limits above remain.
+
+The publish workflow's Image registry poll timed out; later all 45 exact versions
+were verified without republishing. Official launch notices record shell and
+vendor HTTP-404 local-build fallbacks, a shared-preparation wait, and the initial
+iOS deployment-lock failure (`[nativeDevShell] Command failed (1): node`). Normal
+App Pod installation refreshed the two selected versions before the successful
+official launch. Neither platform is described as a clean cache hit. Consumer
+commit checks passed 9/9; unrelated postinstall noble patch and Web notification/
+external-image warnings remain separately recorded. Alpha.445 failed Pod
+integration and was not reused. SDK iOS CI ran on iOS 26.5: iOS-27-only incoming
+lifecycle cases remained skipped; no local SDK UIKit execution is claimed.
