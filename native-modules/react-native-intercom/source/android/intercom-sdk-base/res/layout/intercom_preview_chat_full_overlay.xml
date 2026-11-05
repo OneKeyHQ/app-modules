@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/chathead_root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_gravity="bottom|center"
+    android:layout_marginHorizontal="16dp"
+    android:layout_marginTop="24dp"
+    android:clipChildren="false"
+    android:clipToPadding="false"
+    android:orientation="horizontal"
+    tools:layout_marginBottom="56dp">
+
+    <androidx.compose.ui.platform.ComposeView
+        android:id="@+id/chat_full_compose_view"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        tools:visibility="visible" />
+
+    <FrameLayout
+        android:id="@+id/parent_card"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        android:background="@drawable/intercom_card_background"
+        android:elevation="4dp">
+
+        <FrameLayout
+            android:id="@+id/chat_full_body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="top"
+                android:layout_margin="16dp"
+                android:orientation="vertical">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_gravity="center_vertical">
+
+                    <FrameLayout
+                        android:id="@+id/chat_avatar_container"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content">
+
+                        <ImageView
+                            android:id="@+id/chathead_avatar"
+                            android:layout_width="@dimen/intercom_container_card_avatar_size"
+                            android:layout_height="@dimen/intercom_container_card_avatar_size"
+                            android:layout_gravity="center_vertical"
+                            android:contentDescription="Teammate avatar"
+                            tools:src="@tools:sample/avatars" />
+
+                        <androidx.compose.ui.platform.ComposeView
+                            android:id="@+id/chathead_avatar_compose_view"
+                            android:layout_width="@dimen/intercom_container_card_avatar_size"
+                            android:layout_height="@dimen/intercom_container_card_avatar_size"
+                            android:layout_gravity="center_vertical"
+                            android:visibility="gone"
+                            tools:visibility="visible" />
+
+                    </FrameLayout>
+
+                    <TextView
+                        android:id="@+id/chathead_text_header"
+                        android:textAppearance="?android:attr/textAppearanceMedium"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:ellipsize="end"
+                        android:maxLines="1"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
+                        android:textStyle="bold"
+                        android:textColor="@color/intercom_grey_600"
+                        tools:text="Hannah" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/chathead_text_container"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:layout_marginTop="12dp"
+                    tools:layout_height="200dp"
+                    tools:background="@drawable/intercom_content_loading"/>
+            </LinearLayout>
+
+            <View
+                android:id="@+id/chat_overlay_overflow_fade"
+                android:layout_width="match_parent"
+                android:layout_height="100dp"
+                android:layout_gravity="bottom"
+                android:elevation="8dp"
+                android:alpha="0.7"
+                android:background="@drawable/intercom_part_fade_bottom"
+                android:visibility="visible"/>
+        </FrameLayout>
+
+    </FrameLayout>
+</FrameLayout>

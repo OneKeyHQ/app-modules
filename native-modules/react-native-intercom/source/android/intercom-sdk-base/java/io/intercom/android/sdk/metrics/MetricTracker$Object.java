@@ -1,0 +1,67 @@
+package io.intercom.android.sdk.metrics;
+
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+
+@Retention(RetentionPolicy.SOURCE)
+public @interface MetricTracker$Object {
+   String BADGE = "badge";
+   String CONVERSATION_LIST = "conversation_list";
+   String CONVERSATION = "conversation";
+   String NEW_CONVERSATION = "new_conversation";
+   String CREATE_TICKET_FORM = "create_ticket_form";
+   String TICKET_DETAILS = "ticket_details";
+   String MESSENGER = "messenger";
+   String MESSAGE = "message";
+   String REPLY = "reply";
+   String REACTION = "reaction";
+   String TEAMMATE_PROFILE = "teammate_profile";
+   String TEAM_PROFILE = "team_profile";
+   String ARTICLE = "article";
+   String HELP_CENTER = "help_center";
+   String HELP_CENTER_DATA_API = "help_center_data";
+   String OPERATOR_REPLY = "operator_reply";
+   String EXPANDED_GIF_INPUT = "expanded_gif_input";
+   String EXPANDED_IMAGE_INPUT = "expanded_image_input";
+   String EXTERNAL_LINK = "external_link";
+   String GIF_INPUT = "gif_input";
+   String TEXT_INPUT = "text_input";
+   String GALLERY_INPUT = "gallery_input";
+   String CAMERA_INPUT = "camera_input";
+   String INPUT = "input";
+   String IMAGE_INPUT = "image_input";
+   String FILE_INPUT = "file_input";
+   String IN_APP_ON_LEGACY_ACTIVITY = "in_app_on_legacy_activity";
+   String MESSENGER_SHEET = "messenger_sheet";
+   String QUICK_REPLY = "quick_reply";
+   String QUICK_REPLIES = "quick_replies";
+   String VIDEO_MESSAGE = "video_auto_message";
+   String COMPOSER_SUGGESTIONS = "composer_suggestions";
+   String SUGGESTION = "suggestion";
+   String CAROUSEL_MESSAGE = "carousel_message";
+   String CAROUSEL_MESSAGE_PRELOAD = "carousel_message_preload";
+   String CAROUSEL_PERMISSION_SKIPPED = "carousel_permission_skipped";
+   String CAROUSEL_PERMISSION_DIALOG = "carousel_permission_dialog";
+   String CAROUSEL_PERMISSION_SETTINGS = "carousel_permission_settings";
+   String ARTICLE_REACTION = "article_reaction";
+   String SEARCH_BROWSE_CARD = "search_browse_card";
+   String SEARCH_BROWSE_CARD_INPUT = "search_browse_card_input";
+   String SURVEY = "survey";
+   String SURVEY_STEP_ERROR = "step_error";
+   String SURVEY_STEP_LOADING = "step_load";
+   String ARTICLE_SUGGESTIONS = "article_suggestions";
+   String ARTICLE_SUGGESTION = "article_suggestion";
+   String LAUNCHER = "launcher";
+   String SPACE_HOME = "home";
+   String SPACE_MESSAGES = "messages";
+   String SPACE_HELP = "help";
+   String SPACE_TICKETS = "tickets";
+   String WE_RUN_ON_INTERCOM = "we_run_on_intercom";
+   String MORE_MENU = "more_menu";
+   String MESSAGES = "messages";
+   String TICKETS = "tickets";
+   String HELP = "help";
+   String RECENT_CONVERSATION = "recent_conversation";
+   String RECENT_TICKET = "recent_tickets";
+   String PUSH_BACKSTACK_ITEM = "push_backstack_item";
+}
