@@ -2,9 +2,9 @@ package com.onekey.jpush.fcm;
 
 import android.content.Intent;
 import android.os.Bundle;
+import cn.jiguang.api.JCoreManager;
 import cn.jiguang.core.JCoreStorage;
 import cn.jiguang.plugins.push.common.JLogger;
-import cn.jpush.android.api.JPushInterface;
 import cn.jpush.android.api.JThirdPlatFormInterface;
 import cn.jpush.android.local.ActionHelper;
 import com.google.firebase.messaging.FirebaseMessagingService;
@@ -28,7 +28,8 @@ public final class FcmMessagingService extends FirebaseMessagingService {
         if (JCoreStorage.isPushStopped(this) || !JCoreStorage.isCollectionAuth(this)) {
             return;
         }
-        JPushInterface.init(getApplicationContext());
+        // Initialize the transport without fetching and submitting this token a second time.
+        JCoreManager.init(getApplicationContext());
         FcmPushManager.acceptToken(getApplicationContext(), token);
     }
 

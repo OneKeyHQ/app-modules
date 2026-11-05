@@ -232,6 +232,10 @@ public class ActionHelper {
             }
             if (msg instanceof NotificationMessage) {
                 NotificationMessage notificationMessage = (NotificationMessage) msg;
+                if (notificationMessage.platform == 8
+                    && (JCoreStorage.isPushStopped(context) || !JCoreStorage.isCollectionAuth(context))) {
+                    return;
+                }
                 dispatchNotificationEvent(context, "notify_opened", notificationMessage);
                 broadcastNotificationOpened(context, notificationMessage);
                 if (fcmClick || notificationMessage.platform == 8) {

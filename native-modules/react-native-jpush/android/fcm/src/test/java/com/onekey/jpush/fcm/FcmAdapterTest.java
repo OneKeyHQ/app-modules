@@ -21,6 +21,7 @@ import cn.jiguang.api.utils.JCollectionAuth;
 import cn.jiguang.core.JCoreCrypto;
 import cn.jiguang.core.JCoreStorage;
 import cn.jiguang.core.JCoreTcpEngine;
+import cn.jiguang.core.JCoreWireCodec;
 import cn.jiguang.plugins.push.common.JLogger;
 import cn.jpush.android.api.CustomMessage;
 import cn.jpush.android.api.JPushInterface;
@@ -279,20 +280,36 @@ public class FcmAdapterTest {
 
     @Test
     public void newTokenInitializesCoreAndForwardsRotation() {
-        ActionHelper dispatcher = mock(ActionHelper.class);
-        try (MockedStatic<JPushInterface> core = mockStatic(JPushInterface.class);
-             MockedStatic<ActionHelper> helper = mockStatic(ActionHelper.class)) {
-            helper.when(ActionHelper::getInstance).thenReturn(dispatcher);
+        JCoreStorage.setConnected(context, true);
+        FirebaseMessaging provider = mock(FirebaseMessaging.class);
+        when(provider.getToken()).thenReturn(Tasks.forResult("new_secret_token"));
+        GoogleApiAvailabilityLight availability = mock(GoogleApiAvailabilityLight.class);
+        when(availability.isGooglePlayServicesAvailable(context)).thenReturn(0);
+        JCoreTcpEngine engine = synchronousEngine();
+        try (MockedStatic<JCoreManager> core = mockStatic(JCoreManager.class);
+             MockedStatic<FirebaseMessaging> firebase = mockStatic(FirebaseMessaging.class);
+             MockedStatic<FirebaseApp> app = mockStatic(FirebaseApp.class);
+             MockedStatic<GoogleApiAvailabilityLight> google = mockStatic(GoogleApiAvailabilityLight.class);
+             MockedStatic<JCoreTcpEngine> tcp = mockStatic(JCoreTcpEngine.class)) {
+            firebase.when(FirebaseMessaging::getInstance).thenReturn(provider);
+            google.when(GoogleApiAvailabilityLight::getInstance).thenReturn(availability);
+            tcp.when(JCoreTcpEngine::getInstance).thenReturn(engine);
             service.handleIntent(new Intent("com.google.firebase.messaging.NEW_TOKEN").putExtra("token", "new_secret_token"));
-            core.verify(() -> JPushInterface.init(context));
-            assertEquals("new_secret_token", tokenAction(dispatcher).getString("token"));
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+            core.verify(() -> JCoreManager.init(context));
+            ArgumentCaptor<byte[]> body = ArgumentCaptor.forClass(byte[].class);
+            verify(engine).enqueueOrSendRequest(eq(context), eq(JCoreWireCodec.CMD_THIRD_TOKEN),
+                eq(JCoreWireCodec.VER_THIRD_TOKEN), anyLong(), body.capture(), anyLong(), eq(3),
+                any(JCoreTcpEngine.RequestCallback.class));
+            assertArrayEquals(JCoreWireCodec.buildThirdTokenPayload("new_secret_token", (byte) 8, false), body.getValue());
+            verifyNoInteractions(provider);
             assertLogsExclude("new_secret_token");
         }
     }
 
     @Test
     public void stoppedOrUnauthorizedNewTokenDoesNotInitializeCore() {
-        try (MockedStatic<JPushInterface> core = mockStatic(JPushInterface.class)) {
+        try (MockedStatic<JCoreManager> core = mockStatic(JCoreManager.class)) {
             JCoreStorage.setPushStopped(context, true);
             service.onNewToken("ignored");
             JCoreStorage.setPushStopped(context, false);
@@ -371,6 +388,33 @@ public class FcmAdapterTest {
         assertEquals("fcm_notification", opened.get(0).msgId);
         assertTrue(opened.get(0).notificationExtras.contains("synthetic_route"));
         assertLogsExclude("private_title", "private_body", "synthetic_route");
+    }
+
+    @Test
+    public void postedDataOnlyTapIsIgnoredAfterStopOrAuthorizationWithdrawal() {
+        setProcessImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE);
+        ActivityInfo host = new ActivityInfo();
+        host.packageName = context.getPackageName();
+        host.name = context.getPackageName() + ".MainActivity";
+        host.applicationInfo = new ApplicationInfo(context.getApplicationInfo());
+        ResolveInfo resolvedHost = new ResolveInfo();
+        resolvedHost.activityInfo = host;
+        Intent launcher = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(context.getPackageName());
+        Shadows.shadowOf(context.getPackageManager()).addResolveInfoForIntent(launcher, resolvedHost);
+        for (boolean stopped : new boolean[]{true, false}) {
+            JCoreStorage.setPushStopped(context, false);
+            JCoreStorage.setCollectionAuth(context, true);
+            service.handleIntent(firebaseReceiveIntent("deferred_tap_" + stopped, false));
+            List<Notification> posted = Shadows.shadowOf(notifications).getAllNotifications();
+            assertEquals(1, posted.size());
+            Intent tap = Shadows.shadowOf(posted.get(0).contentIntent).getSavedIntent();
+            JCoreStorage.setPushStopped(context, stopped);
+            JCoreStorage.setCollectionAuth(context, stopped);
+            Robolectric.buildActivity(JNotifyActivity.class, tap).create();
+            assertTrue(opened.isEmpty());
+            assertNull(Shadows.shadowOf(RuntimeEnvironment.getApplication()).getNextStartedActivity());
+            notifications.cancelAll();
+        }
     }
 
     @Test
