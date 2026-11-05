@@ -3291,7 +3291,7 @@ __metadata:
     typescript: "npm:^5.9.2"
     use-latest-callback: "npm:^0.2.1"
   peerDependencies:
-    "@onekeyfe/react-native-image": 6.7.0-alpha.445
+    "@onekeyfe/react-native-image": 6.7.0-alpha.448
     react: "*"
     react-native: "*"
   languageName: unknown
@@ -3698,7 +3698,7 @@ __metadata:
     react-test-renderer: "npm:19.3.0"
     typescript: "npm:^5.9.2"
   peerDependencies:
-    "@onekeyfe/react-native-skeleton": 6.7.0-alpha.445
+    "@onekeyfe/react-native-skeleton": 6.7.0-alpha.448
     react: "*"
     react-native: "*"
     react-native-nitro-modules: 0.37.0
@@ -3735,7 +3735,7 @@ __metadata:
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
-    "@onekeyfe/react-native-native-logger": 6.7.0-alpha.445
+    "@onekeyfe/react-native-native-logger": 6.7.0-alpha.448
     react: "*"
     react-native: "*"
     react-native-nitro-modules: 0.37.0
@@ -3836,8 +3836,8 @@ __metadata:
     react-native-nitro-modules: "npm:0.37.0"
     typescript: "npm:^5.9.2"
   peerDependencies:
-    "@onekeyfe/react-native-image": 6.7.0-alpha.445
-    "@onekeyfe/react-native-native-logger": 6.7.0-alpha.445
+    "@onekeyfe/react-native-image": 6.7.0-alpha.448
+    "@onekeyfe/react-native-native-logger": 6.7.0-alpha.448
     react: "*"
     react-native: "*"
     react-native-nitro-modules: 0.37.0
@@ -3996,7 +3996,7 @@ __metadata:
     react-native-builder-bob: "npm:^0.40.13"
     typescript: "npm:^5.9.2"
   peerDependencies:
-    "@onekeyfe/react-native-native-logger": 6.7.0-alpha.445
+    "@onekeyfe/react-native-native-logger": 6.7.0-alpha.448
     react: "*"
     react-native: "*"
   languageName: unknown

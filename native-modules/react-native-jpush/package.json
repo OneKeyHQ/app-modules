@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-jpush",
-  "version": "6.7.0-alpha.445",
+  "version": "6.7.0-alpha.448",
   "description": "Clean-room JPush and JCore React Native Nitro module for OneKey",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -94,7 +94,7 @@
     "typescript": "^5.9.2"
   },
   "peerDependencies": {
-    "@onekeyfe/react-native-native-logger": "6.7.0-alpha.445",
+    "@onekeyfe/react-native-native-logger": "6.7.0-alpha.448",
     "react": "*",
     "react-native": "*",
     "react-native-nitro-modules": "0.37.0"

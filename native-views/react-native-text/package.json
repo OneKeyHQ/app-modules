@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-text",
-  "version": "6.7.0-alpha.445",
+  "version": "6.7.0-alpha.448",
   "description": "Opt-in native text rendering for React Native",
   "source": "./src/index.ts",
   "main": "./lib/module/index.js",
