@@ -66,6 +66,8 @@ class Connection(val isoDep: IsoDep, private val mCommandGenerator: CommandGener
     private var hasOpenSafeChannel: Boolean = false
     private var hasSetupPin: Boolean = false
     private var hasBackup: Boolean = false
+    private var pinStatusValid: Boolean = false
+    private var backupStatusValid: Boolean = false
     private var mCommandArea = CommandArea.None
 
     init {
@@ -224,8 +226,10 @@ class Connection(val isoDep: IsoDep, private val mCommandGenerator: CommandGener
         )
         val res = command.send(this)
         printLog(TAG, "<--- getBackupStatus end: ${res.getCode()} area:${mCommandArea}")
+        backupStatusValid = res.isSuccess() && !res.isEmptyData()
+        OneKeyLog.info("LiteCard", "stage=backup_state_read readSucceeded=$backupStatusValid hasBackup=${res.isSuccess() && res.data == "02"}")
 
-        if (!res.isSuccess()) {
+        if (!backupStatusValid) {
             return false
         }
 
@@ -239,8 +243,10 @@ class Connection(val isoDep: IsoDep, private val mCommandGenerator: CommandGener
         )
         val res = command.send(this)
         printLog(TAG, "<--- getPinStatus end: ${res.getCode()} area:${mCommandArea}")
+        pinStatusValid = res.isSuccess() && !res.isEmptyData()
+        OneKeyLog.info("LiteCard", "stage=pin_state_read readSucceeded=$pinStatusValid isNewCard=${res.isSuccess() && res.data == "02"}")
 
-        if (!res.isSuccess()) {
+        if (!pinStatusValid) {
             return false
         }
 
@@ -298,8 +304,10 @@ class Connection(val isoDep: IsoDep, private val mCommandGenerator: CommandGener
         }
 
         loadPinStatus()
+        if (!pinStatusValid) throw NFCExceptions.ConnectionFailException()
         if (mCardType == AppleCardType.V2) {
             loadBackupStatus()
+            if (!backupStatusValid) throw NFCExceptions.ConnectionFailException()
         } else {
             hasBackup = hasSetupPin
         }

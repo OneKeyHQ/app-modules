@@ -1,5 +1,8 @@
 package com.onekeyfe.reactnativelitecard.onekeyLite.nfc
 
+import com.margelo.nitro.nativelogger.OneKeyLog
+import java.util.concurrent.atomic.AtomicLong
+import org.haobtc.onekey.card.gpchannel.GPChannelNatives.nativeGetErrorCode
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import org.haobtc.onekey.card.gpchannel.GPChannelNatives.nativeGPCParseAPDUResponse
@@ -48,6 +51,7 @@ enum class CommandType(val code: String) {
 
 class Command(
     private val cardType: AppleCardType,
+    private val type: CommandType,
     val area: CommandArea,
     val command: String,
     private val ignoreSafeChannel: Boolean,
@@ -56,6 +60,10 @@ class Command(
     private val hasOpenSafeChannel: Boolean,
     val data: String,
 ) {
+    companion object {
+        private val diagnosticSequence = AtomicLong(0)
+    }
+
     private fun beforeConnecting(connection: Connection) {
         val needOpenSafeChannel = useSafeChannel || (useSafeChannelWhenOpen && hasOpenSafeChannel)
         val needCloseSafeChannel =
@@ -106,16 +114,25 @@ class Command(
     }
 
     fun send(connection: Connection): SendResponse {
+        val commandID = diagnosticSequence.incrementAndGet()
+        val secure = useSafeChannel || (useSafeChannelWhenOpen && hasOpenSafeChannel)
+        OneKeyLog.info("LiteCard", "commandID=$commandID command=${type.code} stage=before_connect secure=$secure")
         beforeConnecting(connection)
         // buildApdu && parseResponse Use in pairs
         val apdu = buildApdu()
+        OneKeyLog.info("LiteCard", "commandID=$commandID command=${type.code} stage=build buildSucceeded=${apdu.isNotEmpty()}")
         if (apdu.isEmpty()) {
             return SendResponse("0xFFFF", 0xFF.toByte(), 0xFF.toByte(), parseSuccess = false)
         }
         val result = Connection.send(connection.isoDep, apdu)
-        val resultObject = CardResponse.objectFromData(parseResponse(result.rawResponse))
+        val rawResponseBytes = if (result.rawResponse == "0xFFFF") -1 else result.rawResponse.length / 2
+        OneKeyLog.info("LiteCard", "commandID=$commandID command=${type.code} stage=transport_result rawResponseBytes=$rawResponseBytes rawSW1=${result.sw1.toInt() and 0xFF} rawSW2=${result.sw2.toInt() and 0xFF}")
+        val parsedResponse = parseResponse(result.rawResponse)
+        val lastSdkError = if (parsedResponse == null) nativeGetErrorCode() else 0
+        val resultObject = CardResponse.objectFromData(parsedResponse)
         result.result = resultObject?.response ?: ""
         result.parseSuccess = resultObject != null && resultObject.wRet == 0x9000
+        OneKeyLog.info("LiteCard", "commandID=$commandID command=${type.code} stage=parse lastSdkError=$lastSdkError parsePresent=${resultObject != null} parsedSW=${resultObject?.wRet ?: -1} parseSuccess=${result.parseSuccess}")
         return result
     }
 }
@@ -169,6 +186,7 @@ class CommandGenerator {
 
         return Command(
             cardType = cardType,
+            type = type,
             area = area,
             command = command,
             ignoreSafeChannel = ignoreSafeChannel,

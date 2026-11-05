@@ -64,6 +64,7 @@
     JUB_UINT16 wRet = 0;
     JUB_CHAR_PTR pDecResp = nullptr;
     rv = JUB_GPC_ParseSafeAPDUResponse(c_data ,&wRet, &pDecResp);
+    [LCLogger info:[NSString stringWithFormat:@"stage=parse_safe_response parseReturnCode=%lu parsedSW=%u parsePresent=%d", (unsigned long)rv, wRet, pDecResp != nullptr]];
     if (JUBR_OK != rv) {
         return nil;
     }

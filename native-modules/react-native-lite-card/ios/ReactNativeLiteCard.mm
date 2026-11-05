@@ -97,12 +97,12 @@ static RCTResponseSenderBlock OKLiteCallbackOnce(NSString *operation, RCTRespons
   }
 }
 
-- (void)setMnemonic:(NSString *)mnemonic pwd:(NSString *)pwd overwrite:(BOOL)overwrite callback:(RCTResponseSenderBlock)callBack
+- (void)setMnemonic:(NSString *)mnemonic pwd:(NSString *)pwd overwrite:(BOOL)overwrite expectedSerial:(NSString * _Nullable)expectedSerial callback:(RCTResponseSenderBlock)callBack
 {
   callBack = OKLiteCallbackOnce(@"setMnemonic", callBack);
   if ([ReactNativeLiteCard checkSDKVaild:callBack]) {
     __block OKNFCManager *liteManager = [[OKNFCManager alloc] init];
-    [liteManager setMnemonic:mnemonic withPin:pwd overwrite:overwrite complete:^(OKLiteV1 *lite, OKNFCLiteSetMncStatus status) {
+    [liteManager setMnemonic:mnemonic withPin:pwd overwrite:overwrite expectedSerial:expectedSerial complete:^(OKLiteV1 *lite, OKNFCLiteSetMncStatus status) {
       NSDictionary *cardInfo = [lite cardInfo];
       switch (status) {
         case OKNFCLiteSetMncStatusSuccess:

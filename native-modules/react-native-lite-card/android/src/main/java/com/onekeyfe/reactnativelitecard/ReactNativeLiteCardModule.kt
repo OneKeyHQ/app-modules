@@ -16,6 +16,7 @@ import com.facebook.react.module.annotations.ReactModule
 import com.onekeyfe.reactnativelitecard.nfc.NFCExceptions
 import com.onekeyfe.reactnativelitecard.nfc.NfcUtils
 import com.onekeyfe.reactnativelitecard.onekeyLite.OneKeyLiteCard
+import com.onekeyfe.reactnativelitecard.onekeyLite.NfcConstant
 import com.onekeyfe.reactnativelitecard.onekeyLite.entitys.CardState
 import com.onekeyfe.reactnativelitecard.utils.NfcPermissionUtils
 import com.onekeyfe.reactnativelitecard.utils.Utils
@@ -307,6 +308,7 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
     mnemonic: String?,
     pwd: String?,
     overwrite: Boolean,
+    expectedSerial: String?,
     callback: Callback?
   ) {
     if (pwd.isNullOrEmpty() || pwd.length != 6 || !pwd.all { it.isDigit() }) {
@@ -319,6 +321,12 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
     }
     launch {
       handleOperation(callback, "setMnemonic") { isoDep ->
+        val serial = mCurrentCardState?.serialNum
+        if (expectedSerial != null && (serial.isNullOrEmpty() ||
+            serial == NfcConstant.NOT_MATCH_DEVICE || expectedSerial != serial)) {
+          OneKeyLog.info("LiteCard", "operation=setMnemonic stage=identity_mismatch")
+          throw NFCExceptions.DeviceMismatchException()
+        }
         OneKeyLog.debug("LiteCard","setMnemonic Obtain the device")
         val isSuccess =
           OneKeyLiteCard.setMnemonic(

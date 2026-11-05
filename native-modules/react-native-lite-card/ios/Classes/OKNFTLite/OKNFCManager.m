@@ -37,6 +37,7 @@
 @property (nonatomic, copy) NSString *pin;
 @property (nonatomic, copy) NSString *neoPin;
 @property (nonatomic, copy) NSString *exportMnemonic;
+@property (nonatomic, copy) NSString *expectedSerial;
 @property (nonatomic, assign) BOOL certVerified;
 @property (nonatomic, assign) OKNFCLiteApp selectNFCApp;
 @property (nonatomic, strong) OKLiteV1 *lite;
@@ -132,6 +133,7 @@
         } break;
         case OKNFCLiteSessionTypeSetMnemonic:
         case OKNFCLiteSessionTypeSetMnemonicForce: {
+            self.expectedSerial = nil;
             SetMnemonicCallback callback = [self takeCompletionForKey:kSetMnemonicBlock];
             if (callback) {
                 callback(self.lite, asCancel ? OKNFCLiteSetMncStatusCancel : OKNFCLiteSetMncStatusError);
@@ -274,6 +276,7 @@
 - (void)setMnemonic:(NSString *)mnemonic
             withPin:(NSString *)pin
           overwrite:(BOOL)overwrite
+     expectedSerial:(NSString * _Nullable)expectedSerial
            complete:(SetMnemonicCallback)complete {
 
     if (pin.length != OKNFC_PIN_LENGTH) {
@@ -282,6 +285,7 @@
     }
     self.pin = pin;
     self.exportMnemonic = mnemonic;
+    self.expectedSerial = expectedSerial;
     if(overwrite) {
         // 写入强制覆盖
         self.sessionType = OKNFCLiteSessionTypeSetMnemonicForce;
@@ -296,9 +300,21 @@
 - (void)_setMnemonic:(BOOL)force {
     NSString *mnemonic = self.exportMnemonic;
     NSString *pin = self.pin;
+    NSString *expectedSerial = self.expectedSerial;
+    self.expectedSerial = nil;
     // Clear sensitive data from properties immediately
     self.exportMnemonic = nil;
     self.pin = nil;
+    if (expectedSerial != nil) {
+        BOOL infoValid = [self.lite syncLiteInfo];
+        if (!infoValid || ![expectedSerial isEqualToString:self.lite.SN]) {
+            [self logSessionStage:infoValid ? @"identity_mismatch" : @"identity_read_failed" details:@"operation=setMnemonic"];
+            SetMnemonicCallback callback = [self takeCompletionForKey:kSetMnemonicBlock];
+            [self endNFCSessionWithError:YES];
+            if (callback) callback(self.lite, infoValid ? OKNFCLiteSetMncStatusSNNotMatch : OKNFCLiteSetMncStatusError);
+            return;
+        }
+    }
     __weak typeof(self) weakSelf = self;
     [self.lite setMnemonic:mnemonic withPin:pin overwrite:force complete:^(OKLiteV1 *lite, OKNFCLiteSetMncStatus status) {
         SetMnemonicCallback callback = [weakSelf takeCompletionForKey:kSetMnemonicBlock];
