@@ -2,9 +2,13 @@ import UIKit
 
 private final class Owner: NativeOverlayWindowOwner, NativeOverlaySheetHost {
   var disconnects = 0
+  var onDisconnect: ((UIWindow) -> Void)?
   var unexpected = 0
   var dismissOnPanDown = true
-  func overlaySceneDidDisconnect() { disconnects += 1 }
+  func overlaySceneDidDisconnect(window: UIWindow) {
+    disconnects += 1
+    onDisconnect?(window)
+  }
   func sheetDidLoad(_ controller: NativeOverlaySheetController) {}
   func sheetDidLayout(_ controller: NativeOverlaySheetController) {}
   func sheetDidDismissInteractively(_ controller: NativeOverlaySheetController) {}
@@ -86,8 +90,18 @@ private func require(_ condition: @autoclosure () -> Bool, _ name: String) throw
               "reopen respects a newly focused input")
   replacement.removeFromSuperview()
   passed.append("scoped-reopen-focus-restoration")
+  let nested = Owner()
+  var disconnectWindow: UIWindow?
+  var reentrantWindow: UIWindow?
+  b.onDisconnect = { window in
+    disconnectWindow = window
+    reentrantWindow = manager.window(for: nested, level: .modal, stackOrder: 1,
+                                     blocking: true, appWindow: app)
+  }
   NotificationCenter.default.post(name: UIScene.didDisconnectNotification, object: scene)
   try require(b.disconnects == 1 && toast.disconnects == 1 && a.disconnects == 0, "disconnect targets only registered owners")
+  try require(disconnectWindow === wb && reentrantWindow == nil,
+              "disconnect identifies original window and blocks reentrant registration")
   try require(wb.windowScene == nil && wt.windowScene == nil && wb.rootViewController == nil, "disconnect releases native roots")
   let reused = manager.window(for: b, level: .modal, stackOrder: 1, blocking: true, appWindow: app)!
   try require(reused !== wb, "scene cleanup permits later registration")

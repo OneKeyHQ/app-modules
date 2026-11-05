@@ -774,7 +774,8 @@ extension NativeOverlayContainerView: NativeOverlaySheetHost {
 }
 
 extension NativeOverlayContainerView: NativeOverlayWindowOwner {
-  func overlaySceneDidDisconnect() {
+  func overlaySceneDidDisconnect(window: UIWindow) {
+    guard hostWindow === window else { return }
     finishDismiss(reason: "system")
   }
 }

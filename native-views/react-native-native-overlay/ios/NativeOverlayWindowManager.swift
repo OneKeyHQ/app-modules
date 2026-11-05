@@ -144,7 +144,7 @@ final class NativeOverlayRootViewController: UIViewController {
 }
 
 protocol NativeOverlayWindowOwner: AnyObject {
-  func overlaySceneDidDisconnect()
+  func overlaySceneDidDisconnect(window: UIWindow)
 }
 
 final class NativeOverlayWindowManager: NSObject {
@@ -175,6 +175,7 @@ final class NativeOverlayWindowManager: NSObject {
   }
 
   private var scenes: [ObjectIdentifier: [ObjectIdentifier: Entry]] = [:]
+  private var disconnectingScenes = Set<ObjectIdentifier>()
   private var sequence = 0
 
   override init() {
@@ -196,6 +197,7 @@ final class NativeOverlayWindowManager: NSObject {
         as? NativeOverlayRootViewController)?.appWindow ?? hostWindow
     guard let scene = appWindow.windowScene, scene.activationState != .unattached else { return nil }
     let sceneKey = ObjectIdentifier(scene)
+    guard !disconnectingScenes.contains(sceneKey) else { return nil }
     let orphanWindows = (scenes[sceneKey] ?? [:]).values.filter { $0.owner == nil }.map(\.window)
     orphanWindows.forEach { entryRemoved(from: $0) }
     let ownerKey = ObjectIdentifier(owner)
@@ -331,11 +333,14 @@ final class NativeOverlayWindowManager: NSObject {
 
   @objc private func sceneDidDisconnect(_ notification: Notification) {
     precondition(Thread.isMainThread)
-    guard let scene = notification.object as? UIWindowScene,
-          let entries = scenes.removeValue(forKey: ObjectIdentifier(scene)) else { return }
+    guard let scene = notification.object as? UIWindowScene else { return }
+    let sceneKey = ObjectIdentifier(scene)
+    guard let entries = scenes.removeValue(forKey: sceneKey) else { return }
+    disconnectingScenes.insert(sceneKey)
+    defer { disconnectingScenes.remove(sceneKey) }
     // Unregister first: owner callbacks must not restore a disconnected scene's key.
     for entry in entries.values {
-      entry.owner?.overlaySceneDidDisconnect()
+      entry.owner?.overlaySceneDidDisconnect(window: entry.window)
       release(entry.window)
     }
   }

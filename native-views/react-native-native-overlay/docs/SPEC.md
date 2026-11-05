@@ -341,9 +341,13 @@ not change React ownership. Public APIs, Android/Web, and page scope are unchang
   transition lock is introduced.
 - Invalidate, owner detachment and scene-disconnect invalidate obsolete work,
   detach only the owned touch handler, stage the owned child and release only
-  the owned window/root. Scene disconnect actively releases its resources;
-  cleanup does not depend on another entry opening. A terminal native event is
-  emitted at most once per close; timer expiry is not native completion.
+  the owned window/root. Scene disconnect callbacks identify their original
+  window lifetime: an owner already cleaned up by nested detachment, or now
+  owning another window, must ignore a stale callback. An entry cannot register
+  in a scene while that scene's disconnect callbacks run. Scene disconnect
+  actively releases its resources; cleanup does not depend on another entry
+  opening. A terminal native event is emitted at most once per close; timer
+  expiry is not native completion.
 - An entry with a presenter that is not ready remains owned by its current
   generation; stale deferred work cannot reopen or release a later generation.
 
@@ -638,7 +642,8 @@ Automated (P0):
 - `tests/ios/run.sh` compiles the production WindowManager, SheetController and
   Animation into an isolated UIKit test app. Its seven checks cover bounded/live
   ordering, key restoration eligibility, owning-entry release, injected scene
-  disconnect/reuse, conditional original-input focus restoration (including
+  disconnect/reuse with original-window identity and reentrant-registration
+  rejection, conditional original-input focus restoration (including
   higher/foreign/new-input guards), and a native sheet surviving another
   entry's dismissal.
   Sheet checks use `animated: false`; they do not compile the React/Fabric
