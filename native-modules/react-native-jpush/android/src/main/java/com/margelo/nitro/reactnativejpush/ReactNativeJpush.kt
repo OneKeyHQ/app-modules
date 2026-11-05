@@ -5,6 +5,8 @@ import android.app.NotificationManager
 import android.content.Context
 import android.net.Uri
 import android.os.Build
+import androidx.annotation.Keep
+import com.facebook.jni.HybridData
 import com.facebook.proguard.annotations.DoNotStrip
 import com.facebook.react.bridge.ReactApplicationContext
 import com.margelo.nitro.NitroModules
@@ -25,26 +27,56 @@ import org.json.JSONObject
 
 @DoNotStrip
 class ReactNativeJpush : HybridReactNativeJpushSpec() {
+  private val listenerLock = Any()
+  private val ownedListenerIds = mutableSetOf<Int>()
+  private var released = false
+  private var ownedContext: ReactApplicationContext? = null
+
+  @Keep
+  @DoNotStrip
+  protected class OwnedCxxPart(javaPart: ReactNativeJpush) : CxxPart(javaPart) {
+    external override fun initHybrid(): HybridData
+  }
+
+  override fun createCxxPart(): CxxPart = OwnedCxxPart(this)
+
+  override fun dispose() {
+    releaseOwnedListeners()
+    super.dispose()
+  }
+
+  @Keep
+  @DoNotStrip
+  fun releaseOwnedListeners() {
+    val ids: Set<Int>
+    val context: ReactApplicationContext?
+    synchronized(listenerLock) {
+      if (released) return
+      released = true
+      ids = ownedListenerIds.toSet()
+      ownedListenerIds.clear()
+      context = ownedContext
+      ownedContext = null
+    }
+    ids.forEach(JPushHelper::unregisterNitroListener)
+    if (context != null) JPushModule.releaseReactContext(context)
+  }
+
   init {
     getReactContext()
   }
 
   private fun getReactContext(): ReactApplicationContext? {
-    val nitroCtx = NitroModules.applicationContext
-    if (nitroCtx != null) {
-      JPushModule.registerReactContext(nitroCtx)
-    }
-    val ctx = JPushModule.reactContext ?: nitroCtx ?: JCoreModule.reactContext
-    if (ctx != null) {
-      JPushModule.registerReactContext(ctx)
-      if (JPushModule.reactContext == null) {
-        JPushModule.reactContext = ctx
+    synchronized(listenerLock) {
+      if (released) return null
+      ownedContext?.let { return it }
+      val ctx = NitroModules.applicationContext ?: JPushModule.reactContext ?: JCoreModule.reactContext
+      if (ctx != null) {
+        ownedContext = ctx
+        JPushModule.retainReactContext(ctx)
       }
-      if (JCoreModule.reactContext == null) {
-        JCoreModule.reactContext = ctx
-      }
+      return ctx
     }
-    return ctx
   }
 
   private fun getAppContext(): Context? {
@@ -443,13 +475,16 @@ class ReactNativeJpush : HybridReactNativeJpushSpec() {
   override fun addEventListener(
     callback: (eventName: String, payloadJson: String) -> Unit
   ): Double {
-    val id = JPushHelper.registerNitroListener { eventName, payloadJson ->
-      callback(eventName, payloadJson)
+    synchronized(listenerLock) { if (released) return 0.0 }
+    val id = JPushHelper.registerNitroListener { eventName, payloadJson -> callback(eventName, payloadJson) }
+    synchronized(listenerLock) {
+      if (released) JPushHelper.unregisterNitroListener(id) else ownedListenerIds.add(id)
     }
     return id.toDouble()
   }
 
   override fun removeEventListener(id: Double) {
-    JPushHelper.unregisterNitroListener(id.toInt())
+    val owned = synchronized(listenerLock) { ownedListenerIds.remove(id.toInt()) }
+    if (owned) JPushHelper.unregisterNitroListener(id.toInt())
   }
 }

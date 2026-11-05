@@ -8,6 +8,8 @@ public abstract class ReactContextBaseJavaModule implements NativeModule {
         this.reactContext = reactContext;
     }
 
+    public void invalidate() {}
+
     protected final ReactApplicationContext getReactApplicationContext() {
         return reactContext;
     }

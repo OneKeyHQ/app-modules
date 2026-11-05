@@ -478,22 +478,19 @@ public final class JCoreCrypto {
     }
 
     public static byte[] gzipDecompress(byte[] compressed) {
-        if (compressed == null || compressed.length == 0) {
-            return new byte[0];
-        }
-        try {
-            ByteArrayInputStream in = new ByteArrayInputStream(compressed);
-            GZIPInputStream gzip = new GZIPInputStream(in);
+        final int limit = 65536;
+        if (compressed == null || compressed.length == 0) return new byte[0];
+        try (GZIPInputStream gzip = new GZIPInputStream(new ByteArrayInputStream(compressed))) {
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             byte[] buffer = new byte[4096];
             int read;
             while ((read = gzip.read(buffer)) != -1) {
+                if (read > limit - out.size()) return new byte[0];
                 out.write(buffer, 0, read);
             }
-            gzip.close();
             return out.toByteArray();
-        } catch (Throwable ignored) {
-            return compressed;
+        } catch (Exception invalidGzip) {
+            return compressed.length <= limit ? compressed : new byte[0];
         }
     }
 

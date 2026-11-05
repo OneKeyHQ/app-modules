@@ -151,8 +151,9 @@ public class JPushHelper {
             if (pending == null || isEmpty(pending.eventName)) {
                 continue;
             }
-            for (NitroEventListener listener : NITRO_LISTENERS.values()) {
-                if (listener != null && canDeliver(pending.eventName, pending.contentGeneration)) {
+            for (Map.Entry<Integer, NitroEventListener> entry : NITRO_LISTENERS.entrySet()) {
+                NitroEventListener listener = entry.getValue();
+                if (listener != null && NITRO_LISTENERS.get(entry.getKey()) == listener && canDeliver(pending.eventName, pending.contentGeneration)) {
                     try {
                         listener.onEvent(pending.eventName, pending.payloadJson);
                     } catch (Throwable inner) {
@@ -186,9 +187,8 @@ public class JPushHelper {
                     }
                 }
                 for (ReactApplicationContext ctx : targets) {
-                    if (!canDeliver(pending.eventName, pending.contentGeneration)) {
-                        break;
-                    }
+                    if (!canDeliver(pending.eventName, pending.contentGeneration)) break;
+                    if (!getTargetContexts().contains(ctx)) continue;
                     try {
                         WritableMap payload = (total > 1 && index > 0)
                             ? cloneWritableMap(baseWritable)
@@ -212,8 +212,9 @@ public class JPushHelper {
         try {
             String payloadJson = mapToJsonString(params);
             if (!NITRO_LISTENERS.isEmpty()) {
-                for (NitroEventListener listener : NITRO_LISTENERS.values()) {
-                    if (listener != null && canDeliver(eventName, contentGeneration)) {
+                for (Map.Entry<Integer, NitroEventListener> entry : NITRO_LISTENERS.entrySet()) {
+                    NitroEventListener listener = entry.getValue();
+                    if (listener != null && NITRO_LISTENERS.get(entry.getKey()) == listener && canDeliver(eventName, contentGeneration)) {
                         try {
                             listener.onEvent(eventName, payloadJson);
                         } catch (Throwable inner) {
@@ -238,9 +239,8 @@ public class JPushHelper {
                     int index = 0;
                     int total = targets.size();
                     for (ReactApplicationContext ctx : targets) {
-                        if (!canDeliver(eventName, contentGeneration)) {
-                            break;
-                        }
+                        if (!canDeliver(eventName, contentGeneration)) break;
+                        if (!getTargetContexts().contains(ctx)) continue;
                         WritableMap payload = (total > 1 && index > 0) ? cloneWritableMap(writable) : writable;
                         index++;
                         ctx.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class).emit(eventName, payload);
@@ -284,8 +284,9 @@ public class JPushHelper {
         try {
             String payloadJson = readableMapToJsonObject(params).toString();
             if (!NITRO_LISTENERS.isEmpty()) {
-                for (NitroEventListener listener : NITRO_LISTENERS.values()) {
-                    if (listener != null && canDeliver(eventName, contentGeneration)) {
+                for (Map.Entry<Integer, NitroEventListener> entry : NITRO_LISTENERS.entrySet()) {
+                    NitroEventListener listener = entry.getValue();
+                    if (listener != null && NITRO_LISTENERS.get(entry.getKey()) == listener && canDeliver(eventName, contentGeneration)) {
                         try {
                             listener.onEvent(eventName, payloadJson);
                         } catch (Throwable inner) {
@@ -305,9 +306,8 @@ public class JPushHelper {
             int index = 0;
             int total = targets.size();
             for (ReactApplicationContext ctx : targets) {
-                if (!canDeliver(eventName, contentGeneration)) {
-                    break;
-                }
+                if (!canDeliver(eventName, contentGeneration)) break;
+                if (!getTargetContexts().contains(ctx)) continue;
                 try {
                     WritableMap payload = (total > 1 && index > 0) ? cloneWritableMap(params) : params;
                     index++;

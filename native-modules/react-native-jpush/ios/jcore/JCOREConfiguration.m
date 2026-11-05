@@ -5,6 +5,8 @@
 #import <UIKit/UIKit.h>
 #endif
 
+NSString *const JCOREPolicyDidChangeNotification = @"JCOREPolicyDidChangeNotification";
+
 static NSString *const kJCoreKeyUid = @"com.onekey.jcore.uid";
 static NSString *const kJCoreKeyPassword = @"com.onekey.jcore.password";
 static NSString *const kJCoreKeyRegistrationId = @"com.onekey.jcore.registration_id";
@@ -69,6 +71,7 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
 @interface JCOREConfiguration () {
     dispatch_queue_t _stateQueue;
     uint16_t _requestCounter;
+    NSUInteger _policyGeneration;
     NSArray<NSString *> *_ips;
     NSArray<NSString *> *_sslIps;
     NSArray<NSString *> *_sisIps;
@@ -85,6 +88,9 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
 @end
 
 @implementation JCOREConfiguration
+
+@synthesize collectionAuthorized = _collectionAuthorized;
+@synthesize pushStopped = _pushStopped;
 
 + (instancetype)shared {
     static JCOREConfiguration *instance = nil;
@@ -191,14 +197,48 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
     self.customConnectAddresses = nil;
 }
 
+- (BOOL)collectionAuthorized {
+    @synchronized (self) { return _collectionAuthorized; }
+}
+
+- (BOOL)pushStopped {
+    @synchronized (self) { return _pushStopped; }
+}
+
+- (NSUInteger)policyGeneration {
+    @synchronized (self) { return _policyGeneration; }
+}
+
+- (BOOL)policyAllowsPush {
+    @synchronized (self) { return _collectionAuthorized && !_pushStopped; }
+}
+
+- (BOOL)allowsPolicyGeneration:(NSUInteger)generation {
+    @synchronized (self) {
+        return _collectionAuthorized && !_pushStopped && _policyGeneration == generation;
+    }
+}
+
 - (void)setCollectionAuthorized:(BOOL)collectionAuthorized {
-    _collectionAuthorized = collectionAuthorized;
-    [[NSUserDefaults standardUserDefaults] setBool:collectionAuthorized forKey:kJCoreKeyAuth];
+    NSUInteger generation;
+    @synchronized (self) {
+        if (_collectionAuthorized == collectionAuthorized) { return; }
+        _collectionAuthorized = collectionAuthorized;
+        generation = ++_policyGeneration;
+        [[NSUserDefaults standardUserDefaults] setBool:collectionAuthorized forKey:kJCoreKeyAuth];
+    }
+    [[NSNotificationCenter defaultCenter] postNotificationName:JCOREPolicyDidChangeNotification object:self userInfo:@{@"generation": @(generation)}];
 }
 
 - (void)setPushStopped:(BOOL)pushStopped {
-    _pushStopped = pushStopped;
-    [[NSUserDefaults standardUserDefaults] setBool:pushStopped forKey:kJCoreKeyPushStopped];
+    NSUInteger generation;
+    @synchronized (self) {
+        if (_pushStopped == pushStopped) { return; }
+        _pushStopped = pushStopped;
+        generation = ++_policyGeneration;
+        [[NSUserDefaults standardUserDefaults] setBool:pushStopped forKey:kJCoreKeyPushStopped];
+    }
+    [[NSNotificationCenter defaultCenter] postNotificationName:JCOREPolicyDidChangeNotification object:self userInfo:@{@"generation": @(generation)}];
 }
 
 - (void)setDeviceTokenHex:(NSString *)deviceTokenHex {

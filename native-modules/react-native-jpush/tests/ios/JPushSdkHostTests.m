@@ -1,6 +1,7 @@
 
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
+#import <UserNotifications/UserNotifications.h>
 #import <sys/socket.h>
 #import <netinet/in.h>
 #import <arpa/inet.h>
@@ -117,6 +118,14 @@ static void testCryptoPrimitives(void) {
     ASSERT_TRUE(compressed.length > 0, "GZIP compression failed");
     NSData *decompressed = [JCORECrypto gzipDecompress:compressed];
     ASSERT_TRUE([decompressed isEqualToData:plain], "GZIP roundtrip mismatch");
+
+    for (NSNumber *length in @[@65535, @65536, @65537]) {
+        NSMutableData *boundary = [NSMutableData dataWithLength:length.unsignedIntegerValue];
+        arc4random_buf(boundary.mutableBytes, boundary.length);
+        NSData *decoded = [JCORECrypto gzipDecompress:[JCORECrypto gzipCompress:boundary]];
+        ASSERT_TRUE(length.unsignedIntegerValue <= 65536 ? [decoded isEqualToData:boundary] : decoded == nil,
+                    "GZIP decoded limit mismatch at %@ bytes", length);
+    }
 
     NSString *sisPubKey = @"MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCi0v4VEUhOdfIEfFCrPC72pcDsQF/"
                           @"luTmr4q34NY0EZYGKzfQuTrUAm916P52HCgF+342gjZ/Nvijts5543qYNyoLvgtu4NRcHJmuGI/"
@@ -1080,6 +1089,7 @@ static void testFailoverFastLoginReRegisterAndHttpReport(void) {
 @end
 
 @interface MockRCTBridge : RCTBridge
+@property (nonatomic, copy) void (^onEvent)(NSString *name);
 @property (nonatomic, strong) NSMutableArray<NSDictionary *> *emittedEvents;
 @end
 
@@ -1100,6 +1110,7 @@ static void testFailoverFastLoginReRegisterAndHttpReport(void) {
             @"name": args[0] ?: @"",
             @"payload": args[1] ?: @{},
         }];
+        if (self.onEvent) { self.onEvent(args[0]); }
     }
     if (completion) {
         completion();
@@ -1141,10 +1152,11 @@ static void testFailoverFastLoginReRegisterAndHttpReport(void) {
 @end
 
 @interface DummyRegisterDelegate : NSObject <JPUSHRegisterDelegate>
+@property (nonatomic, assign) NSUInteger callbackCount;
 @end
 @implementation DummyRegisterDelegate
-- (void)jpushNotificationCenter:(UNUserNotificationCenter *)center willPresentNotification:(UNNotification *)notification withCompletionHandler:(void (^)(NSInteger))completionHandler {}
-- (void)jpushNotificationCenter:(UNUserNotificationCenter *)center didReceiveNotificationResponse:(UNNotificationResponse *)response withCompletionHandler:(void (^)(void))completionHandler {}
+- (void)jpushNotificationCenter:(UNUserNotificationCenter *)center willPresentNotification:(UNNotification *)notification withCompletionHandler:(void (^)(NSInteger))completionHandler { self.callbackCount++; completionHandler(UNNotificationPresentationOptionAlert); }
+- (void)jpushNotificationCenter:(UNUserNotificationCenter *)center didReceiveNotificationResponse:(UNNotificationResponse *)response withCompletionHandler:(void (^)(void))completionHandler { self.callbackCount++; completionHandler(); }
 - (void)jpushNotificationCenter:(UNUserNotificationCenter *)center openSettingsForNotification:(UNNotification *)notification {}
 - (void)jpushNotificationAuthorization:(JPAuthorizationStatus)status withInfo:(NSDictionary *)info {}
 @end
@@ -1363,6 +1375,339 @@ static void testRctJPushModuleMultiRuntimeAndBridgelessEvents(void) {
     printf("[PASS] Suite 6: Pure Nitro Event Hub, RCTJPushModule DeviceEventEmitter (_hasListeners==NO), RN 0.88 Bridgeless (callableJSModules), Dual-Runtime (main + bg), & Delegate preservation verified\n");
 }
 
+static void runUntil(BOOL (^condition)(void), NSTimeInterval timeout, NSString *message) {
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:timeout];
+    while (!condition()) {
+        ASSERT_TRUE([deadline timeIntervalSinceNow] > 0, "%@", message);
+        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    }
+}
+
+static void testPolicyAndPendingContentCleanup(void) {
+    JCOREConfiguration *config = [JCOREConfiguration shared];
+    [[JCORETcpSession shared] disconnect];
+    config.collectionAuthorized = YES;
+    config.pushStopped = NO;
+    [RCTJPushModule clearActiveModules];
+    [RCTJPushModule ensureSharedNativeObservers];
+    [RCTJPushModule emitEventWithName:@"CustomMessageEvent" payload:@{@"messageID": @"pending-custom"}];
+    [[NSNotificationCenter defaultCenter] postNotificationName:J_APNS_NOTIFICATION_OPENED_EVENT object:@{@"_j_msgid": @"pending-apns"}];
+    [[NSNotificationCenter defaultCenter] postNotificationName:J_LOCAL_NOTIFICATION_OPENED_EVENT object:@{@"messageID": @"pending-local"}];
+    config.collectionAuthorized = NO;
+    ASSERT_TRUE([RCTJPushEventQueue sharedInstance]._notificationQueue.count == 0 &&
+                [RCTJPushEventQueue sharedInstance]._localNotificationQueue.count == 0, "Revocation must synchronously clear native queues");
+    [RCTJPushModule emitEventWithName:@"CustomMessageEvent" payload:@{@"messageID": @"disabled"}];
+    [[NSNotificationCenter defaultCenter] postNotificationName:J_APNS_NOTIFICATION_OPENED_EVENT object:@{@"_j_msgid": @"disabled-open"}];
+    __block NSUInteger contentCount = 0;
+    NSInteger listener = [RCTJPushModule registerNitroEventListener:^(NSString *name, NSString *json) {
+        if ([name isEqualToString:@"CustomMessageEvent"] || [name isEqualToString:@"NotificationEvent"]) { contentCount++; }
+    }];
+    config.collectionAuthorized = YES;
+    [RCTJPushModule flushQueuedNotifications];
+    ASSERT_TRUE(contentCount == 0, "Regrant must not replay old or disabled content");
+    [RCTJPushModule unregisterNitroEventListener:listener];
+    [RCTJPushModule clearActiveModules];
+
+    NSUInteger staleGeneration = config.policyGeneration;
+    config.pushStopped = YES;
+    [[NSNotificationCenter defaultCenter] postNotificationName:J_APNS_NOTIFICATION_OPENED_EVENT object:@{@"_j_msgid": @"stopped-open"}];
+    config.pushStopped = NO;
+    [[RCTJPushEventQueue sharedInstance]._notificationQueue addObject:@{@"_j_msgid": @"stale-raw-apns", @"_j_InternalPolicyGeneration": @(staleGeneration)}];
+    [[RCTJPushEventQueue sharedInstance]._localNotificationQueue addObject:@{@"messageID": @"stale-raw-local", @"_j_InternalPolicyGeneration": @(staleGeneration)}];
+    [RCTJPushModule emitEventWithName:@"CustomMessageEvent" payload:@{@"messageID": @"fresh-generation"}];
+    [[NSNotificationCenter defaultCenter] postNotificationName:JCOREPolicyDidChangeNotification object:config userInfo:@{@"generation": @(staleGeneration)}];
+    __block NSUInteger freshEvents = 0;
+    listener = [RCTJPushModule registerNitroEventListener:^(NSString *name, NSString *json) {
+        if ([name isEqualToString:@"CustomMessageEvent"]) { freshEvents++; }
+        else { ASSERT_TRUE(![name isEqualToString:@"NotificationEvent"] && ![name isEqualToString:@"LocalNotificationEvent"], "Old raw content must retain its original generation"); }
+    }];
+    ASSERT_TRUE(freshEvents == 1, "A delayed old policy notification must preserve fresh content");
+    [[NSNotificationCenter defaultCenter] postNotificationName:J_CUSTOM_NOTIFICATION_EVENT
+        object:@{@"_j_msgid": @"forwarded-old", @"_j_InternalPolicyGeneration": @(staleGeneration)}];
+    ASSERT_TRUE(freshEvents == 1, "AppDelegate-shaped forwarding must preserve and discard an obsolete origin generation");
+    [[NSNotificationCenter defaultCenter] postNotificationName:J_CUSTOM_NOTIFICATION_EVENT
+        object:@{@"_j_msgid": @"forwarded-current", @"_j_InternalPolicyGeneration": @(config.policyGeneration)}];
+    ASSERT_TRUE(freshEvents == 2, "AppDelegate-shaped forwarding must deliver current content once");
+    [RCTJPushModule unregisterNitroEventListener:listener];
+    [RCTJPushModule clearActiveModules];
+
+    // A callback can withdraw and immediately regrant; the rest of its snapshot stays obsolete.
+    [RCTJPushModule emitEventWithName:@"CustomMessageEvent" payload:@{@"messageID": @"snapshot-first"}];
+    [RCTJPushModule emitEventWithName:@"CustomMessageEvent" payload:@{@"messageID": @"snapshot-second"}];
+    __block NSUInteger snapshotCount = 0;
+    listener = [RCTJPushModule registerNitroEventListener:^(NSString *name, NSString *json) {
+        if (![name isEqualToString:@"CustomMessageEvent"]) { return; }
+        snapshotCount++;
+        config.collectionAuthorized = NO;
+        config.collectionAuthorized = YES;
+    }];
+    ASSERT_TRUE(snapshotCount == 1, "Revocation inside a callback must invalidate the remaining snapshot");
+    [RCTJPushModule unregisterNitroEventListener:listener];
+    [RCTJPushModule clearActiveModules];
+
+    RCTJPushModule *mainModule = [[RCTJPushModule alloc] init];
+    RCTJPushModule *bgModule = [[RCTJPushModule alloc] init];
+    MockRCTBridge *mainBridge = [[MockRCTBridge alloc] init];
+    MockRCTBridge *bgBridge = [[MockRCTBridge alloc] init];
+    [mainModule setValue:mainBridge forKey:@"bridge"];
+    [bgModule setValue:bgBridge forKey:@"bridge"];
+    [mainModule performSelector:NSSelectorFromString(@"invalidate")];
+    [RCTJPushModule emitEventWithName:@"CustomMessageEvent" payload:@{@"messageID": @"bg-survives"}];
+    ASSERT_TRUE(mainBridge.emittedEvents.count == 0 && bgBridge.emittedEvents.count == 1,
+                "Invalidating one native context must retain the other context");
+    [RCTJPushModule clearActiveModules];
+
+    [RCTJPushModule emitEventWithName:@"CustomMessageEvent" payload:@{@"messageID": @"legacy-first"}];
+    [RCTJPushModule emitEventWithName:@"CustomMessageEvent" payload:@{@"messageID": @"legacy-second"}];
+    RCTJPushModule *legacyModule = [[RCTJPushModule alloc] init];
+    MockRCTBridge *legacyBridge = [[MockRCTBridge alloc] init];
+    legacyBridge.onEvent = ^(NSString *name) {
+        if ([name isEqualToString:@"CustomMessageEvent"]) { config.collectionAuthorized = NO; config.collectionAuthorized = YES; }
+    };
+    [legacyModule setValue:legacyBridge forKey:@"bridge"];
+    ASSERT_TRUE(legacyBridge.emittedEvents.count == 1, "Legacy reentrant revocation must invalidate the remaining native snapshot");
+    legacyBridge.onEvent = nil;
+    [RCTJPushModule clearActiveModules];
+
+    // Unregistering another listener during delivery invalidates that listener's snapshot entry.
+    __block NSInteger firstListener = 0;
+    __block NSInteger secondListener = 0;
+    __block NSUInteger liveCallbacks = 0;
+    firstListener = [RCTJPushModule registerNitroEventListener:^(NSString *name, NSString *json) {
+        liveCallbacks++; [RCTJPushModule unregisterNitroEventListener:secondListener];
+    }];
+    secondListener = [RCTJPushModule registerNitroEventListener:^(NSString *name, NSString *json) {
+        liveCallbacks++; [RCTJPushModule unregisterNitroEventListener:firstListener];
+    }];
+    [RCTJPushModule emitEventWithName:@"CustomMessageEvent" payload:@{}];
+    ASSERT_TRUE(liveCallbacks == 1, "Unregistered listener must not receive a retained snapshot callback");
+    [RCTJPushModule clearActiveModules];
+
+    config.collectionAuthorized = NO;
+    DummyRegisterDelegate *delegate = [[DummyRegisterDelegate alloc] init];
+    [JPUSHNotificationManager shared].registerDelegate = delegate;
+    __block NSUInteger unCompletions = 0;
+    [(id<UNUserNotificationCenterDelegate>)[JPUSHNotificationManager shared] userNotificationCenter:nil willPresentNotification:nil
+        withCompletionHandler:^(UNNotificationPresentationOptions options) {
+        ASSERT_TRUE(options == UNNotificationPresentationOptionNone, "Disabled UN callback must suppress presentation"); unCompletions++;
+    }];
+    [(id<UNUserNotificationCenterDelegate>)[JPUSHNotificationManager shared] userNotificationCenter:nil didReceiveNotificationResponse:nil
+        withCompletionHandler:^{ unCompletions++; }];
+    ASSERT_TRUE(unCompletions == 2 && delegate.callbackCount == 0, "Disabled UN callbacks must complete without forwarding to the host");
+    [JPUSHNotificationManager shared].registerDelegate = nil;
+    __block NSUInteger httpFailures = 0;
+    [[JCOREHttpReporter shared] sendHttpReportItems:@[@{@"type": @"test"}] completion:^(BOOL ok, NSInteger status) {
+        ASSERT_TRUE(!ok, "Disabled HTTP report must fail"); httpFailures++;
+    }];
+    [[JCOREHttpReporter shared] reportBadgeValue:1 completion:^(BOOL ok, NSInteger status) {
+        ASSERT_TRUE(!ok, "Disabled badge report must fail"); httpFailures++;
+    }];
+    ASSERT_TRUE(httpFailures == 2, "Disabled HTTP entrypoints must complete immediately");
+    [JPUSHService setupWithOption:@{} appKey:@"1f2027d3cfb1b51dac664c42" channel:@"test" apsForProduction:NO];
+    __block BOOL blockedSend = NO;
+    [[JCORETcpSession shared] sendHeartbeatNowWithCompletion:^(JCOREWireFrame *frame, NSError *error) {
+        blockedSend = error.code == 6002;
+    }];
+    runUntil(^BOOL{ return blockedSend; }, 2, @"Disabled TCP send did not complete");
+    ASSERT_TRUE(![JCORETcpSession shared].isConnected, "Disabled setup must not connect");
+    [[JCORETcpSession shared] disconnect];
+    config.appKey = @"";
+    config.collectionAuthorized = YES;
+    [[JCORETcpSession shared] startIfNeeded];
+    __block NSUInteger cancelled = 0;
+    __block BOOL overflow = NO;
+    for (NSUInteger index = 0; index < 129; index++) {
+        [[JCORETcpSession shared] sendCommand:JCOREWireCommandTagOperation version:1 bodyData:[NSData data]
+            completion:^(JCOREWireFrame *frame, NSError *error) {
+            ASSERT_TRUE(error.code == 6002, "Pending cancellation/overflow must retain code 6002");
+            if (index == 128) { overflow = [error.localizedDescription containsString:@"queue full"]; }
+            else { cancelled++; }
+        }];
+    }
+    runUntil(^BOOL{ return overflow; }, 2, @"129th request was not rejected");
+    ASSERT_TRUE(cancelled == 0, "Queue overflow must retain the first 128 requests");
+    config.collectionAuthorized = NO;
+    runUntil(^BOOL{ return cancelled == 128; }, 2, @"Revocation did not complete pending requests");
+    config.collectionAuthorized = YES;
+    [[JCORETcpSession shared] disconnect];
+    printf("[PASS] Suite 7: Native policy, content snapshot invalidation, context isolation, disabled HTTP/TCP, and 128-request cleanup verified\n");
+}
+
+static void testTokenAcknowledgementAndConnectedPolicy(void) {
+    JCOREConfiguration *config = [JCOREConfiguration shared];
+    NSData *deviceTokenA = [NSData dataWithBytes:"\x01\x02\x03\x04" length:4];
+    NSData *deviceTokenB = [NSData dataWithBytes:"\x05\x06\x07\x08" length:4];
+    NSData *voipToken = [NSData dataWithBytes:"\xa0\xa1\xa2\xa3" length:4];
+    config.collectionAuthorized = NO;
+    config.deviceTokenHex = @"01020304";
+    config.voipTokenHex = @"a0a1a2a3";
+    [config updateRegistrationWithUid:900100200 password:@"fixture-password" registrationID:@"fixture-rid"];
+    config.requestTimeoutInterval = 0.25;
+    config.requestResendInterval = 0.1;
+    int listenFd = socket(AF_INET, SOCK_STREAM, 0);
+    int reuse = 1;
+    setsockopt(listenFd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    struct sockaddr_in addr = {0};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    ASSERT_TRUE(bind(listenFd, (struct sockaddr *)&addr, sizeof(addr)) == 0 && listen(listenFd, 4) == 0, "Token fixture listener failed");
+    socklen_t addrLength = sizeof(addr);
+    getsockname(listenFd, (struct sockaddr *)&addr, &addrLength);
+    [[JCORESisResolver shared] setCustomConnectHost:@"127.0.0.1" port:ntohs(addr.sin_port) useSSL:NO];
+    dispatch_semaphore_t initialReports = dispatch_semaphore_create(0);
+    dispatch_semaphore_t rotationStarted = dispatch_semaphore_create(0);
+    dispatch_semaphore_t rotationRejected = dispatch_semaphore_create(0);
+    dispatch_semaphore_t firstClosed = dispatch_semaphore_create(0);
+    dispatch_semaphore_t secondBound = dispatch_semaphore_create(0);
+    dispatch_semaphore_t serverDone = dispatch_semaphore_create(0);
+    __block NSUInteger loginCount = 0;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        for (NSUInteger connectionIndex = 0; connectionIndex < 2; connectionIndex++) {
+            int fd = accept(listenFd, NULL, NULL);
+            ASSERT_TRUE(fd >= 0, "Token fixture accept failed");
+            struct timeval tv = {.tv_sec = 5, .tv_usec = 0};
+            setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+            JCOREWireFrame *login = readSingleClientFrameOnServer(fd);
+            ASSERT_TRUE(login.command == JCOREWireCommandLogin, "Token fixture expected fast login");
+            NSData *loginAck = [JCOREWireProtocol encodeServerFrameWithCommand:JCOREWireCommandLogin version:27
+                requestId:login.requestId uid:config.uid algorithm:login.algorithm statusCode:0
+                bodyData:[JCOREWireProtocol buildLoginResponsePayloadWithSessionId:(uint32_t)(100 + connectionIndex) serverVersion:600 serverTimestamp:1]];
+            ASSERT_TRUE(writeExactBytes(fd, loginAck.bytes, loginAck.length), "Token fixture login ACK failed");
+            loginCount++;
+            NSUInteger heartbeatCount = 0;
+            NSUInteger deviceCount = 0;
+            NSUInteger voipCount = 0;
+            uint16_t firstVoipRid = 0;
+            BOOL initialSignalled = NO;
+            BOOL boundSignalled = NO;
+            JCOREWireFrame *pendingRotation = nil;
+            while (YES) {
+                JCOREWireFrame *request = readSingleClientFrameOnServer(fd);
+                if (request == nil) { break; }
+                uint16_t status = 0;
+                if (request.command == JCOREWireCommandDeviceToken) {
+                    deviceCount++;
+                    if (connectionIndex == 0 && deviceCount == 1) { status = 500; }
+                    if (connectionIndex == 0 && deviceCount == 3) {
+                        pendingRotation = request;
+                        dispatch_semaphore_signal(rotationStarted);
+                        continue;
+                    }
+                    if (connectionIndex == 0 && deviceCount == 6) {
+                        dispatch_semaphore_signal(rotationStarted);
+                        continue;
+                    }
+                    if (connectionIndex == 0 && deviceCount > 7) { ASSERT_TRUE(NO, "Superseded token must not resend after the current token ACK"); }
+                    if (connectionIndex == 0 && deviceCount == 4) {
+                        ASSERT_TRUE(pendingRotation != nil, "Expected the prior token report to remain pending");
+                        NSData *oldAck = [JCOREWireProtocol encodeServerFrameWithCommand:pendingRotation.command version:pendingRotation.version
+                            requestId:pendingRotation.requestId uid:config.uid algorithm:pendingRotation.algorithm statusCode:0 bodyData:[NSData data]];
+                        ASSERT_TRUE(writeExactBytes(fd, oldAck.bytes, oldAck.length), "Old token ACK failed");
+                        status = 500;
+                    }
+                } else if (request.command == JCOREWireCommandVoipToken) {
+                    if (firstVoipRid == 0) { firstVoipRid = request.requestId; voipCount++; }
+                    else if (request.requestId != firstVoipRid) { voipCount++; }
+                    if (connectionIndex == 0 && request.requestId == firstVoipRid) {
+                        if (deviceCount > 0 && !initialSignalled) { initialSignalled = YES; dispatch_semaphore_signal(initialReports); }
+                        continue;
+                    }
+                } else if (request.command == JCOREWireCommandHeartbeat) {
+                    heartbeatCount++;
+                    NSUInteger expectedDevices = heartbeatCount <= 2 ? 2 : (heartbeatCount == 3 ? 4 : (heartbeatCount == 4 ? 5 : 7));
+                    ASSERT_TRUE(connectionIndex == 0 && deviceCount == expectedDevices && voipCount == 2,
+                                "Failed/timeout token must retry once; successful token must deduplicate");
+                } else if (request.command == JCOREWireCommandPushCtrl) {
+                    ASSERT_TRUE(connectionIndex == 1, "Stop control must use the resumed connection");
+                    uint8_t byte = 0;
+                    ASSERT_TRUE(recv(fd, &byte, 1, 0) == 0, "Stop control must be followed by connection close");
+                    break;
+                } else {
+                    ASSERT_TRUE(NO, "Unexpected token fixture command %u", request.command);
+                }
+                NSData *ack = [JCOREWireProtocol encodeServerFrameWithCommand:request.command version:request.version
+                    requestId:request.requestId uid:config.uid algorithm:request.algorithm statusCode:status bodyData:[NSData data]];
+                ASSERT_TRUE(writeExactBytes(fd, ack.bytes, ack.length), "Token fixture ACK failed");
+                if (connectionIndex == 0 && request.command == JCOREWireCommandDeviceToken && (deviceCount == 4 || deviceCount == 7)) {
+                    dispatch_semaphore_signal(rotationRejected);
+                }
+                if (connectionIndex == 0 && deviceCount > 0 && firstVoipRid > 0 && !initialSignalled) {
+                    initialSignalled = YES; dispatch_semaphore_signal(initialReports);
+                }
+                if (connectionIndex == 1 && deviceCount == 1 && voipCount == 1 && !boundSignalled) {
+                    boundSignalled = YES; dispatch_semaphore_signal(secondBound);
+                }
+            }
+            close(fd);
+            if (connectionIndex == 0) { dispatch_semaphore_signal(firstClosed); }
+        }
+        close(listenFd);
+        dispatch_semaphore_signal(serverDone);
+    });
+    [JPUSHService setupWithOption:@{} appKey:@"1f2027d3cfb1b51dac664c42" channel:@"test" apsForProduction:NO];
+    config.collectionAuthorized = YES;
+    runUntil(^BOOL{ return dispatch_semaphore_wait(initialReports, DISPATCH_TIME_NOW) == 0; }, 3, @"Initial token reports missing");
+    NSDate *timeoutDeadline = [NSDate dateWithTimeIntervalSinceNow:0.4];
+    while ([timeoutDeadline timeIntervalSinceNow] > 0) {
+        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    }
+    [JPUSHService registerDeviceToken:([config.deviceTokenHex isEqualToString:@"05060708"] ? deviceTokenB : deviceTokenA)];
+    [JPUSHService registerVoipToken:voipToken];
+    [[NSNotificationCenter defaultCenter] postNotificationName:JCOREPolicyDidChangeNotification object:config
+        userInfo:@{@"generation": @(config.policyGeneration - 1)}];
+    // A heartbeat ACK is ordered after token ACKs on the same native connection.
+    __block BOOL firstBarrier = NO;
+    [[JCORETcpSession shared] sendHeartbeatNowWithCompletion:^(JCOREWireFrame *frame, NSError *error) { firstBarrier = frame != nil && error == nil; }];
+    runUntil(^BOOL{ return firstBarrier; }, 3, @"Retried tokens were not acknowledged");
+    [JPUSHService registerDeviceToken:([config.deviceTokenHex isEqualToString:@"05060708"] ? deviceTokenB : deviceTokenA)];
+    [JPUSHService registerVoipToken:voipToken];
+    __block BOOL secondBarrier = NO;
+    [[JCORETcpSession shared] sendHeartbeatNowWithCompletion:^(JCOREWireFrame *frame, NSError *error) { secondBarrier = frame != nil && error == nil; }];
+    runUntil(^BOOL{ return secondBarrier; }, 3, @"Successful token deduplication barrier failed");
+    // An acknowledged A cannot remain a dedup key while a different token B is pending.
+    config.deviceTokenHex = @"05060708";
+    [JPUSHService registerDeviceToken:([config.deviceTokenHex isEqualToString:@"05060708"] ? deviceTokenB : deviceTokenA)];
+    runUntil(^BOOL{ return dispatch_semaphore_wait(rotationStarted, DISPATCH_TIME_NOW) == 0; }, 2, @"Token B report missing");
+    config.deviceTokenHex = @"01020304";
+    [JPUSHService registerDeviceToken:([config.deviceTokenHex isEqualToString:@"05060708"] ? deviceTokenB : deviceTokenA)];
+    runUntil(^BOOL{ return dispatch_semaphore_wait(rotationRejected, DISPATCH_TIME_NOW) == 0; }, 2, @"Current A was incorrectly deduplicated against historical ACK");
+    __block BOOL rotationBarrier = NO;
+    [[JCORETcpSession shared] sendHeartbeatNowWithCompletion:^(JCOREWireFrame *frame, NSError *error) { rotationBarrier = frame != nil && error == nil; }];
+    runUntil(^BOOL{ return rotationBarrier; }, 2, @"Token rotation ACK barrier missing");
+    [JPUSHService registerDeviceToken:([config.deviceTokenHex isEqualToString:@"05060708"] ? deviceTokenB : deviceTokenA)];
+    __block BOOL finalTokenBarrier = NO;
+    [[JCORETcpSession shared] sendHeartbeatNowWithCompletion:^(JCOREWireFrame *frame, NSError *error) { finalTokenBarrier = frame != nil && error == nil; }];
+    runUntil(^BOOL{ return finalTokenBarrier; }, 2, @"Current A retry was poisoned by obsolete B acknowledgement");
+    config.deviceTokenHex = @"05060708";
+    [JPUSHService registerDeviceToken:([config.deviceTokenHex isEqualToString:@"05060708"] ? deviceTokenB : deviceTokenA)];
+    runUntil(^BOOL{ return dispatch_semaphore_wait(rotationStarted, DISPATCH_TIME_NOW) == 0; }, 2, @"Second token B report missing");
+    config.deviceTokenHex = @"01020304";
+    [JPUSHService registerDeviceToken:([config.deviceTokenHex isEqualToString:@"05060708"] ? deviceTokenB : deviceTokenA)];
+    runUntil(^BOOL{ return dispatch_semaphore_wait(rotationRejected, DISPATCH_TIME_NOW) == 0; }, 2, @"Current token replacement ACK missing");
+    NSDate *obsoleteResendDeadline = [NSDate dateWithTimeIntervalSinceNow:0.4];
+    while ([obsoleteResendDeadline timeIntervalSinceNow] > 0) {
+        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    }
+    __block BOOL obsoleteResendBarrier = NO;
+    [[JCORETcpSession shared] sendHeartbeatNowWithCompletion:^(JCOREWireFrame *frame, NSError *error) { obsoleteResendBarrier = frame != nil && error == nil; }];
+    runUntil(^BOOL{ return obsoleteResendBarrier; }, 2, @"Obsolete token resend check failed");
+    config.collectionAuthorized = NO;
+    runUntil(^BOOL{ return dispatch_semaphore_wait(firstClosed, DISPATCH_TIME_NOW) == 0; }, 3, @"Revocation did not close the existing connection");
+    ASSERT_TRUE(![JCORETcpSession shared].isConnected, "Revoked connection must be closed");
+    config.collectionAuthorized = YES;
+    runUntil(^BOOL{ return dispatch_semaphore_wait(secondBound, DISPATCH_TIME_NOW) == 0; }, 3, @"Regrant did not reconnect and rebind current tokens");
+    ASSERT_TRUE(loginCount == 2, "Regrant must make one new login");
+    [JPUSHService turnOFFPush];
+    runUntil(^BOOL{ return dispatch_semaphore_wait(serverDone, DISPATCH_TIME_NOW) == 0; }, 3, @"Stop did not send control and close");
+    config.requestTimeoutInterval = 20;
+    config.requestResendInterval = 10;
+    [[JCORETcpSession shared] disconnect];
+    [[JCORESisResolver shared] clearCustomConnectEndpoint];
+    config.appKey = @"";
+    config.pushStopped = NO;
+    printf("[PASS] Suite 8: Token failed-ACK/timeout retry, successful ACK deduplication, connected revocation/regrant, and stop control close verified\n");
+}
+
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
         testCryptoPrimitives();
@@ -1371,6 +1716,8 @@ int main(int argc, const char * argv[]) {
         testEndToEndMockServerHandshake();
         testFailoverFastLoginReRegisterAndHttpReport();
         testRctJPushModuleMultiRuntimeAndBridgelessEvents();
+        testPolicyAndPendingContentCleanup();
+        testTokenAcknowledgementAndConnectedPolicy();
     }
     return 0;
 }

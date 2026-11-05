@@ -232,7 +232,7 @@ public final class JCoreStorage {
         return getBooleanPref(null, KEY_DEBUG_MODE, sDebugMode);
     }
 
-    public static void setCollectionAuth(Context context, boolean auth) {
+    public static synchronized void setCollectionAuth(Context context, boolean auth) {
         putBooleanPref(context, KEY_COLLECTION_AUTH, auth);
         if (!auth) {
             CONTENT_GENERATION.incrementAndGet();
@@ -435,7 +435,7 @@ public final class JCoreStorage {
         return getBooleanPref(context, KEY_PUSH_STOPPED, false);
     }
 
-    public static void setPushStopped(Context context, boolean stopped) {
+    public static synchronized void setPushStopped(Context context, boolean stopped) {
         putBooleanPref(context, KEY_PUSH_STOPPED, stopped);
         if (stopped) {
             CONTENT_GENERATION.incrementAndGet();

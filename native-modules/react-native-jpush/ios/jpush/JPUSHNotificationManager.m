@@ -1,4 +1,5 @@
 #import "JPUSHNotificationManager.h"
+#import "../jcore/JCOREConfiguration.h"
 #import <UserNotifications/UserNotifications.h>
 #if __has_include(<UIKit/UIKit.h>)
 #import <UIKit/UIKit.h>
@@ -325,11 +326,14 @@
 - (void)userNotificationCenter:(UNUserNotificationCenter *)center
        willPresentNotification:(UNNotification *)notification
          withCompletionHandler:(void (^)(UNNotificationPresentationOptions options))completionHandler {
+    if (![JCOREConfiguration shared].policyAllowsPush) { completionHandler(UNNotificationPresentationOptionNone); return; }
+    NSUInteger generation = [JCOREConfiguration shared].policyGeneration;
     if ([self.registerDelegate respondsToSelector:@selector(jpushNotificationCenter:willPresentNotification:withCompletionHandler:)]) {
         [self.registerDelegate jpushNotificationCenter:center
                                willPresentNotification:notification
                                  withCompletionHandler:^(NSInteger options) {
-            completionHandler((UNNotificationPresentationOptions)options);
+            completionHandler([[JCOREConfiguration shared] allowsPolicyGeneration:generation]
+                ? (UNNotificationPresentationOptions)options : UNNotificationPresentationOptionNone);
         }];
     } else {
         completionHandler(UNNotificationPresentationOptionBadge |
@@ -341,6 +345,7 @@
 - (void)userNotificationCenter:(UNUserNotificationCenter *)center
 didReceiveNotificationResponse:(UNNotificationResponse *)response
          withCompletionHandler:(void (^)(void))completionHandler {
+    if (![JCOREConfiguration shared].policyAllowsPush) { completionHandler(); return; }
     if ([self.registerDelegate respondsToSelector:@selector(jpushNotificationCenter:didReceiveNotificationResponse:withCompletionHandler:)]) {
         [self.registerDelegate jpushNotificationCenter:center
                         didReceiveNotificationResponse:response
@@ -352,6 +357,7 @@ didReceiveNotificationResponse:(UNNotificationResponse *)response
 
 - (void)userNotificationCenter:(UNUserNotificationCenter *)center
    openSettingsForNotification:(UNNotification *)notification {
+    if (![JCOREConfiguration shared].policyAllowsPush) { return; }
     if ([self.registerDelegate respondsToSelector:@selector(jpushNotificationCenter:openSettingsForNotification:)]) {
         [self.registerDelegate jpushNotificationCenter:center openSettingsForNotification:notification];
     }

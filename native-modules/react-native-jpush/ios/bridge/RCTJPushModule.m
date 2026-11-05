@@ -75,6 +75,7 @@ static RCTJPushModule *sNotificationObserverHelper = nil;
 
 @interface RCTJPushModule () <RCTBridgeModule, JPUSHRegisterDelegate, JPUSHInAppMessageDelegate> {
     BOOL _hasListeners;
+    BOOL _invalidated;
 }
 @property (nonatomic, weak, nullable) RCTBridge *bridge;
 @end
@@ -86,7 +87,7 @@ static RCTJPushModule *sNotificationObserverHelper = nil;
 RCT_EXPORT_MODULE(JPushModule);
 
 + (void)registerActiveModule:(RCTJPushModule *)module {
-    if (module == nil) {
+    if (module == nil || module->_invalidated) {
         return;
     }
     @synchronized (RCTJPushModule.class) {
@@ -126,9 +127,43 @@ RCT_EXPORT_MODULE(JPushModule);
     }
 }
 
++ (BOOL)isContentEvent:(NSString *)name {
+    return [@[NOTIFICATION_EVENT, LOCAL_NOTIFICATION_EVENT, CUSTOM_MESSAGE_EVENT,
+               INAPP_MESSAGE_EVENT, @"NotifyButtonClickEvent"] containsObject:name];
+}
+
++ (BOOL)canDeliverEvent:(NSString *)name generation:(NSUInteger)generation {
+    return ![self isContentEvent:name] || [[JCOREConfiguration shared] allowsPolicyGeneration:generation];
+}
+
++ (void)policyDidChange:(NSNotification *)notification {
+    (void)notification;
+    @synchronized (RCTJPushModule.class) {
+        NSUInteger generation = [JCOREConfiguration shared].policyGeneration;
+        BOOL allowed = [JCOREConfiguration shared].policyAllowsPush;
+        NSIndexSet *events = [sPendingEvents indexesOfObjectsPassingTest:^BOOL(NSDictionary *item, NSUInteger index, BOOL *stop) {
+            return [self isContentEvent:item[@"name"]] && (!allowed || [item[@"generation"] unsignedIntegerValue] != generation);
+        }];
+        [sPendingEvents removeObjectsAtIndexes:events];
+        NSIndexSet *nitro = [sPendingNitroEvents indexesOfObjectsPassingTest:^BOOL(NSDictionary *item, NSUInteger index, BOOL *stop) {
+            return [self isContentEvent:item[@"name"]] && (!allowed || [item[@"generation"] unsignedIntegerValue] != generation);
+        }];
+        [sPendingNitroEvents removeObjectsAtIndexes:nitro];
+        for (NSMutableArray<NSDictionary *> *queue in @[[RCTJPushEventQueue sharedInstance]._notificationQueue ?: [NSMutableArray array],
+                                                       [RCTJPushEventQueue sharedInstance]._localNotificationQueue ?: [NSMutableArray array]]) {
+            NSIndexSet *stale = [queue indexesOfObjectsPassingTest:^BOOL(NSDictionary *item, NSUInteger index, BOOL *stop) {
+                return !allowed || item[@"_j_InternalPolicyGeneration"] == nil ||
+                    [item[@"_j_InternalPolicyGeneration"] unsignedIntegerValue] != generation;
+            }];
+            [queue removeObjectsAtIndexes:stale];
+        }
+    }
+}
+
 + (void)ensureSharedNativeObservers {
     @synchronized (RCTJPushModule.class) {
         if (sNotificationObserverHelper == nil) {
+            [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(policyDidChange:) name:JCOREPolicyDidChangeNotification object:nil];
             sNotificationObserverHelper = [[RCTJPushModule alloc] initAsSharedObserver];
         }
     }
@@ -235,6 +270,7 @@ RCT_EXPORT_METHOD(removeListeners:(double)count) {
 }
 
 - (BOOL)canEmitEventsNow {
+    if (_invalidated) { return NO; }
     if (self.bridge != nil) {
         return YES;
     }
@@ -251,7 +287,7 @@ RCT_EXPORT_METHOD(removeListeners:(double)count) {
 }
 
 - (BOOL)emitToDeviceEventEmitter:(NSString *)eventName payload:(NSDictionary *)payload {
-    if (eventName.length == 0) {
+    if (_invalidated || eventName.length == 0) {
         return NO;
     }
     NSDictionary *safePayload = payload ?: @{};
@@ -279,72 +315,62 @@ RCT_EXPORT_METHOD(removeListeners:(double)count) {
 }
 
 + (void)emitEventWithName:(NSString *)eventName payload:(NSDictionary *)payload {
-    if (eventName.length == 0) {
-        return;
-    }
+    [self emitEventWithName:eventName payload:payload generation:[JCOREConfiguration shared].policyGeneration];
+}
+
++ (void)emitEventWithName:(NSString *)eventName payload:(NSDictionary *)payload generation:(NSUInteger)generation {
+    if (eventName.length == 0 || ![self canDeliverEvent:eventName generation:generation]) { return; }
     [self ensureSharedNativeObservers];
     NSDictionary *safePayload = payload ?: @{};
-    NSArray<RCTJPushModule *> *modules = [self allActiveModules];
     BOOL emittedToLegacy = NO;
-    for (RCTJPushModule *module in modules) {
-        if ([module emitToDeviceEventEmitter:eventName payload:safePayload]) {
-            emittedToLegacy = YES;
-        }
-    }
-    if (!emittedToLegacy) {
+    for (RCTJPushModule *module in [self allActiveModules]) {
         @synchronized (RCTJPushModule.class) {
-            if (sPendingEvents == nil) {
-                sPendingEvents = [NSMutableArray array];
-            }
-            if (sPendingEvents.count >= 64) {
-                [sPendingEvents removeObjectAtIndex:0];
-            }
-            [sPendingEvents addObject:@{
-                @"name": eventName,
-                @"payload": safePayload,
-            }];
+            if (![self canDeliverEvent:eventName generation:generation]) { return; }
+            if ([module emitToDeviceEventEmitter:eventName payload:safePayload]) { emittedToLegacy = YES; }
         }
     }
-
-    NSString *payloadJson = [self dictionaryToJsonString:safePayload];
-    NSArray<RCTJPushNitroEventListener> *nitroListeners = nil;
+    NSString *json = [self dictionaryToJsonString:safePayload];
+    NSDictionary<NSNumber *, RCTJPushNitroEventListener> *listeners = nil;
     @synchronized (RCTJPushModule.class) {
-        if (sNitroListeners.count > 0) {
-            nitroListeners = [sNitroListeners.allValues copy];
-        } else {
-            if (sPendingNitroEvents == nil) {
-                sPendingNitroEvents = [NSMutableArray array];
-            }
-            if (sPendingNitroEvents.count >= 64) {
-                [sPendingNitroEvents removeObjectAtIndex:0];
-            }
-            [sPendingNitroEvents addObject:@{
-                @"name": eventName,
-                @"json": payloadJson,
-            }];
+        if (![self canDeliverEvent:eventName generation:generation]) { return; }
+        if (!emittedToLegacy) {
+            if (sPendingEvents == nil) { sPendingEvents = [NSMutableArray array]; }
+            if (sPendingEvents.count >= 64) { [sPendingEvents removeObjectAtIndex:0]; }
+            [sPendingEvents addObject:@{@"name": eventName, @"payload": safePayload, @"generation": @(generation)}];
+        }
+        listeners = [sNitroListeners copy];
+        if (listeners.count == 0) {
+            if (sPendingNitroEvents == nil) { sPendingNitroEvents = [NSMutableArray array]; }
+            if (sPendingNitroEvents.count >= 64) { [sPendingNitroEvents removeObjectAtIndex:0]; }
+            [sPendingNitroEvents addObject:@{@"name": eventName, @"json": json, @"generation": @(generation)}];
         }
     }
-    for (RCTJPushNitroEventListener listener in nitroListeners) {
-        listener(eventName, payloadJson);
+    for (NSNumber *listenerId in listeners) {
+        @synchronized (RCTJPushModule.class) {
+            if ([self canDeliverEvent:eventName generation:generation] && sNitroListeners[listenerId] == listeners[listenerId]) {
+                listeners[listenerId](eventName, json);
+            }
+        }
     }
 }
 
 + (void)flushPendingNitroEvents {
-    NSArray<RCTJPushNitroEventListener> *nitroListeners = nil;
-    NSArray<NSDictionary *> *pendingNitroSnapshot = nil;
+    NSDictionary<NSNumber *, RCTJPushNitroEventListener> *listeners = nil;
+    NSArray<NSDictionary *> *snapshot = nil;
     @synchronized (RCTJPushModule.class) {
-        if (sNitroListeners.count > 0 && sPendingNitroEvents.count > 0) {
-            nitroListeners = [sNitroListeners.allValues copy];
-            pendingNitroSnapshot = [sPendingNitroEvents copy];
+        if (sNitroListeners.count > 0) {
+            listeners = [sNitroListeners copy];
+            snapshot = [sPendingNitroEvents copy];
             [sPendingNitroEvents removeAllObjects];
         }
     }
-    for (NSDictionary *item in pendingNitroSnapshot) {
-        NSString *name = item[@"name"];
-        NSString *json = item[@"json"] ?: @"{}";
-        if (name.length > 0) {
-            for (RCTJPushNitroEventListener listener in nitroListeners) {
-                listener(name, json);
+    for (NSDictionary *item in snapshot) {
+        for (NSNumber *listenerId in listeners) {
+            @synchronized (RCTJPushModule.class) {
+                if ([self canDeliverEvent:item[@"name"] generation:[item[@"generation"] unsignedIntegerValue]] &&
+                    sNitroListeners[listenerId] == listeners[listenerId]) {
+                    listeners[listenerId](item[@"name"], item[@"json"] ?: @"{}");
+                }
             }
         }
     }
@@ -353,32 +379,22 @@ RCT_EXPORT_METHOD(removeListeners:(double)count) {
 + (void)flushPendingBridgeEvents {
     [self ensureSharedNativeObservers];
     [self flushPendingNitroEvents];
-
     NSArray<RCTJPushModule *> *modules = [self allActiveModules];
-    BOOL hasReadyLegacy = NO;
-    for (RCTJPushModule *mod in modules) {
-        if ([mod canEmitEventsNow]) {
-            hasReadyLegacy = YES;
-            break;
-        }
-    }
-    if (!hasReadyLegacy) {
-        return;
-    }
-
-    NSArray<NSDictionary *> *pendingSnapshot = nil;
+    BOOL ready = NO;
+    for (RCTJPushModule *module in modules) { if ([module canEmitEventsNow]) { ready = YES; break; } }
+    if (!ready) { return; }
+    NSArray<NSDictionary *> *snapshot = nil;
     @synchronized (RCTJPushModule.class) {
-        if (sPendingEvents.count > 0) {
-            pendingSnapshot = [sPendingEvents copy];
-            [sPendingEvents removeAllObjects];
-        }
+        snapshot = [sPendingEvents copy];
+        [sPendingEvents removeAllObjects];
     }
-    for (NSDictionary *item in pendingSnapshot) {
-        NSString *name = item[@"name"];
-        NSDictionary *payload = item[@"payload"] ?: @{};
-        if (name.length > 0) {
-            for (RCTJPushModule *module in modules) {
-                [module emitToDeviceEventEmitter:name payload:payload];
+    for (NSDictionary *item in snapshot) {
+        for (RCTJPushModule *module in modules) {
+            @synchronized (RCTJPushModule.class) {
+                if ([self canDeliverEvent:item[@"name"] generation:[item[@"generation"] unsignedIntegerValue]] &&
+                    [[self allActiveModules] containsObject:module]) {
+                    [module emitToDeviceEventEmitter:item[@"name"] payload:item[@"payload"] ?: @{}];
+                }
             }
         }
     }
@@ -388,24 +404,28 @@ RCT_EXPORT_METHOD(removeListeners:(double)count) {
     [self ensureSharedNativeObservers];
     [self flushPendingBridgeEvents];
 
-    RCTJPushModule *converter = sNotificationObserverHelper ?: [self allActiveModules].firstObject;
-    NSMutableArray *notificationList = [RCTJPushEventQueue sharedInstance]._notificationQueue;
-    if (notificationList.count > 0) {
-        NSArray *queuedApns = [notificationList copy];
-        [notificationList removeAllObjects];
-        for (id obj in queuedApns) {
-            if ([obj isKindOfClass:[NSDictionary class]]) {
-                [converter sendApnsNotificationEventByDictionary:(NSDictionary *)obj];
+    NSUInteger generation = [JCOREConfiguration shared].policyGeneration;
+    if (![JCOREConfiguration shared].policyAllowsPush) { [self policyDidChange:nil]; return; }
+    @synchronized (RCTJPushModule.class) {
+        RCTJPushModule *converter = sNotificationObserverHelper ?: [self allActiveModules].firstObject;
+        NSMutableArray *notificationList = [RCTJPushEventQueue sharedInstance]._notificationQueue;
+        if (notificationList.count > 0) {
+            NSArray *queuedApns = [notificationList copy];
+            [notificationList removeAllObjects];
+            for (id obj in queuedApns) {
+                if ([[JCOREConfiguration shared] allowsPolicyGeneration:generation] && [obj isKindOfClass:[NSDictionary class]]) {
+                    [converter sendApnsNotificationEventByDictionary:(NSDictionary *)obj];
+                }
             }
         }
-    }
-    NSMutableArray *localNotificationList = [RCTJPushEventQueue sharedInstance]._localNotificationQueue;
-    if (localNotificationList.count > 0) {
-        NSArray *queuedLocal = [localNotificationList copy];
-        [localNotificationList removeAllObjects];
-        for (id obj in queuedLocal) {
-            if ([obj isKindOfClass:[NSDictionary class]]) {
-                [converter sendLocalNotificationEventByDictionary:(NSDictionary *)obj];
+        NSMutableArray *localNotificationList = [RCTJPushEventQueue sharedInstance]._localNotificationQueue;
+        if (localNotificationList.count > 0) {
+            NSArray *queuedLocal = [localNotificationList copy];
+            [localNotificationList removeAllObjects];
+            for (id obj in queuedLocal) {
+                if ([[JCOREConfiguration shared] allowsPolicyGeneration:generation] && [obj isKindOfClass:[NSDictionary class]]) {
+                    [converter sendLocalNotificationEventByDictionary:(NSDictionary *)obj];
+                }
             }
         }
     }
@@ -484,6 +504,17 @@ RCT_EXPORT_METHOD(removeListeners:(double)count) {
         });
     }
     return self;
+}
+
+- (void)invalidate {
+    @synchronized (RCTJPushModule.class) {
+        _invalidated = YES;
+        _hasListeners = NO;
+        _bridge = nil;
+        [sActiveModules removeObject:self];
+        if (sSharedJPushModule == self) { sSharedJPushModule = sActiveModules.allObjects.lastObject; }
+    }
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
 - (void)dealloc {
@@ -730,21 +761,24 @@ RCT_EXPORT_METHOD(setBackgroundEnable:(BOOL)enable) {
         willPresentNotification:(UNNotification *)notification
           withCompletionHandler:(void (^)(NSInteger))completionHandler {
     (void)center;
+    NSUInteger generation = [JCOREConfiguration shared].policyGeneration;
     NSDictionary *userInfo = notification.request.content.userInfo ?: @{};
+    NSMutableDictionary *notificationInfo = [NSMutableDictionary dictionaryWithDictionary:userInfo];
+    notificationInfo[@"_j_InternalPolicyGeneration"] = @(generation);
     if ([notification.request.trigger isKindOfClass:[UNPushNotificationTrigger class]]) {
         [JPUSHService handleRemoteNotification:userInfo];
         [[NSNotificationCenter defaultCenter] postNotificationName:J_APNS_NOTIFICATION_ARRIVED_EVENT
                                                             object:userInfo
-                                                          userInfo:userInfo];
+                                                          userInfo:notificationInfo];
     } else {
         [[NSNotificationCenter defaultCenter] postNotificationName:J_LOCAL_NOTIFICATION_ARRIVED_EVENT
                                                             object:userInfo
-                                                          userInfo:userInfo];
+                                                          userInfo:notificationInfo];
     }
     if (completionHandler != nil) {
-        completionHandler(UNNotificationPresentationOptionBadge |
-                          UNNotificationPresentationOptionSound |
-                          UNNotificationPresentationOptionAlert);
+        completionHandler([[JCOREConfiguration shared] allowsPolicyGeneration:generation]
+            ? UNNotificationPresentationOptionBadge | UNNotificationPresentationOptionSound | UNNotificationPresentationOptionAlert
+            : UNNotificationPresentationOptionNone);
     }
 }
 
@@ -752,16 +786,19 @@ RCT_EXPORT_METHOD(setBackgroundEnable:(BOOL)enable) {
  didReceiveNotificationResponse:(UNNotificationResponse *)response
           withCompletionHandler:(void (^)(void))completionHandler {
     (void)center;
+    NSUInteger generation = [JCOREConfiguration shared].policyGeneration;
     NSDictionary *userInfo = response.notification.request.content.userInfo ?: @{};
+    NSMutableDictionary *notificationInfo = [NSMutableDictionary dictionaryWithDictionary:userInfo];
+    notificationInfo[@"_j_InternalPolicyGeneration"] = @(generation);
     if ([response.notification.request.trigger isKindOfClass:[UNPushNotificationTrigger class]]) {
         [JPUSHService handleRemoteNotification:userInfo];
         [[NSNotificationCenter defaultCenter] postNotificationName:J_APNS_NOTIFICATION_OPENED_EVENT
                                                             object:userInfo
-                                                          userInfo:userInfo];
+                                                          userInfo:notificationInfo];
     } else {
         [[NSNotificationCenter defaultCenter] postNotificationName:J_LOCAL_NOTIFICATION_OPENED_EVENT
                                                             object:userInfo
-                                                          userInfo:userInfo];
+                                                          userInfo:notificationInfo];
     }
     if (completionHandler != nil) {
         completionHandler();
@@ -926,81 +963,107 @@ RCT_EXPORT_METHOD(setGeofeneceMaxCount:(NSDictionary *)params) {
 }
 
 - (void)sendApnsNotificationEvent:(NSNotification *)data {
-    if (![RCTJPushModule hasReadyEventConsumer]) {
-        NSDictionary *objectData = [data.object isKindOfClass:[NSDictionary class]]
-            ? data.object
-            : ([data.userInfo isKindOfClass:[NSDictionary class]] ? data.userInfo : nil);
-        if (objectData != nil) {
-            if ([RCTJPushEventQueue sharedInstance]._notificationQueue == nil) {
-                [RCTJPushEventQueue sharedInstance]._notificationQueue = [NSMutableArray array];
+    NSUInteger generation = [data.userInfo[@"_j_InternalPolicyGeneration"] respondsToSelector:@selector(unsignedIntegerValue)]
+        ? [data.userInfo[@"_j_InternalPolicyGeneration"] unsignedIntegerValue] : [JCOREConfiguration shared].policyGeneration;
+    @synchronized (RCTJPushModule.class) {
+        if (![[JCOREConfiguration shared] allowsPolicyGeneration:generation]) { return; }
+        if (![RCTJPushModule hasReadyEventConsumer]) {
+            NSDictionary *objectData = [data.object isKindOfClass:[NSDictionary class]]
+                ? data.object
+                : ([data.userInfo isKindOfClass:[NSDictionary class]] ? data.userInfo : nil);
+            if (objectData != nil) {
+                if ([RCTJPushEventQueue sharedInstance]._notificationQueue == nil) {
+                    [RCTJPushEventQueue sharedInstance]._notificationQueue = [NSMutableArray array];
+                }
+                NSMutableDictionary *queuedItem = [NSMutableDictionary dictionaryWithDictionary:objectData];
+                queuedItem[@"_j_InternalPolicyGeneration"] = @(generation);
+                queuedItem[@"_j_InternalNotificationName"] = data.name ?: J_APNS_NOTIFICATION_OPENED_EVENT;
+                [[RCTJPushEventQueue sharedInstance]._notificationQueue addObject:[queuedItem copy]];
             }
-            NSMutableDictionary *queuedItem = [NSMutableDictionary dictionaryWithDictionary:objectData];
-            queuedItem[@"_j_InternalNotificationName"] = data.name ?: J_APNS_NOTIFICATION_OPENED_EVENT;
-            [[RCTJPushEventQueue sharedInstance]._notificationQueue addObject:[queuedItem copy]];
+            return;
         }
-        return;
-    }
-    NSDictionary *responseData = [self convertApnsMessage:data];
-    [JCOREConfiguration logInfo:[NSString stringWithFormat:@"onNotifyMessage type=%@ notificationType=remote msgId=%@",
-                                 responseData[NOTIFICATION_EVENT_TYPE] ?: @"",
-                                 responseData[MESSAGE_ID] ?: @""]];
-    [RCTJPushModule emitEventWithName:NOTIFICATION_EVENT payload:responseData];
-    if ([RCTJPushEventQueue sharedInstance]._notificationQueue.count > 0) {
-        [[RCTJPushEventQueue sharedInstance]._notificationQueue removeAllObjects];
+        NSDictionary *responseData = [self convertApnsMessage:data];
+        [JCOREConfiguration logInfo:[NSString stringWithFormat:@"onNotifyMessage type=%@ notificationType=remote msgId=%@",
+                                     responseData[NOTIFICATION_EVENT_TYPE] ?: @"",
+                                     responseData[MESSAGE_ID] ?: @""]];
+        [RCTJPushModule emitEventWithName:NOTIFICATION_EVENT payload:responseData generation:generation];
+        if ([RCTJPushEventQueue sharedInstance]._notificationQueue.count > 0) {
+            [[RCTJPushEventQueue sharedInstance]._notificationQueue removeAllObjects];
+        }
     }
 }
 
 - (void)sendApnsNotificationEventByDictionary:(NSDictionary *)data {
-    NSDictionary *responseData = [self convertApnsMessage:data];
-    [JCOREConfiguration logInfo:[NSString stringWithFormat:@"onNotifyMessage type=%@ notificationType=remote msgId=%@",
-                                 responseData[NOTIFICATION_EVENT_TYPE] ?: @"",
-                                 responseData[MESSAGE_ID] ?: @""]];
-    [RCTJPushModule emitEventWithName:NOTIFICATION_EVENT payload:responseData];
-    if ([RCTJPushEventQueue sharedInstance]._notificationQueue.count > 0) {
-        [[RCTJPushEventQueue sharedInstance]._notificationQueue removeAllObjects];
+    NSUInteger generation = [data[@"_j_InternalPolicyGeneration"] respondsToSelector:@selector(unsignedIntegerValue)]
+        ? [data[@"_j_InternalPolicyGeneration"] unsignedIntegerValue] : [JCOREConfiguration shared].policyGeneration;
+    @synchronized (RCTJPushModule.class) {
+        if (![[JCOREConfiguration shared] allowsPolicyGeneration:generation]) { return; }
+        NSDictionary *responseData = [self convertApnsMessage:data];
+        [JCOREConfiguration logInfo:[NSString stringWithFormat:@"onNotifyMessage type=%@ notificationType=remote msgId=%@",
+                                     responseData[NOTIFICATION_EVENT_TYPE] ?: @"",
+                                     responseData[MESSAGE_ID] ?: @""]];
+        [RCTJPushModule emitEventWithName:NOTIFICATION_EVENT payload:responseData generation:generation];
+        if ([RCTJPushEventQueue sharedInstance]._notificationQueue.count > 0) {
+            [[RCTJPushEventQueue sharedInstance]._notificationQueue removeAllObjects];
+        }
     }
 }
 
 - (void)sendLocalNotificationEventByDictionary:(NSDictionary *)data {
-    NSDictionary *responseData = [self convertLocalMessage:data];
-    [JCOREConfiguration logInfo:[NSString stringWithFormat:@"onLocalNotification type=%@ notificationType=local msgId=%@",
-                                 responseData[NOTIFICATION_EVENT_TYPE] ?: @"",
-                                 responseData[MESSAGE_ID] ?: @""]];
-    [RCTJPushModule emitEventWithName:LOCAL_NOTIFICATION_EVENT payload:responseData];
-    if ([RCTJPushEventQueue sharedInstance]._localNotificationQueue.count > 0) {
-        [[RCTJPushEventQueue sharedInstance]._localNotificationQueue removeAllObjects];
+    NSUInteger generation = [data[@"_j_InternalPolicyGeneration"] respondsToSelector:@selector(unsignedIntegerValue)]
+        ? [data[@"_j_InternalPolicyGeneration"] unsignedIntegerValue] : [JCOREConfiguration shared].policyGeneration;
+    @synchronized (RCTJPushModule.class) {
+        if (![[JCOREConfiguration shared] allowsPolicyGeneration:generation]) { return; }
+        NSDictionary *responseData = [self convertLocalMessage:data];
+        [JCOREConfiguration logInfo:[NSString stringWithFormat:@"onLocalNotification type=%@ notificationType=local msgId=%@",
+                                     responseData[NOTIFICATION_EVENT_TYPE] ?: @"",
+                                     responseData[MESSAGE_ID] ?: @""]];
+        [RCTJPushModule emitEventWithName:LOCAL_NOTIFICATION_EVENT payload:responseData generation:generation];
+        if ([RCTJPushEventQueue sharedInstance]._localNotificationQueue.count > 0) {
+            [[RCTJPushEventQueue sharedInstance]._localNotificationQueue removeAllObjects];
+        }
     }
 }
 
 - (void)sendCustomNotificationEvent:(NSNotification *)data {
+    NSDictionary *objectData = [data.object isKindOfClass:[NSDictionary class]] ? data.object : nil;
+    id originGeneration = data.userInfo[@"_j_InternalPolicyGeneration"] ?: objectData[@"_j_InternalPolicyGeneration"];
+    NSUInteger generation = [originGeneration respondsToSelector:@selector(unsignedIntegerValue)]
+        ? [originGeneration unsignedIntegerValue] : [JCOREConfiguration shared].policyGeneration;
     NSDictionary *responseData = [self convertCustomMessage:data];
     [JCOREConfiguration logInfo:[NSString stringWithFormat:@"onMessage type=customMessage msgId=%@",
                                  responseData[MESSAGE_ID] ?: @""]];
-    [RCTJPushModule emitEventWithName:CUSTOM_MESSAGE_EVENT payload:responseData];
+    [RCTJPushModule emitEventWithName:CUSTOM_MESSAGE_EVENT payload:responseData generation:generation];
 }
 
 - (void)sendLocalNotificationEvent:(NSNotification *)data {
-    if (![RCTJPushModule hasReadyEventConsumer]) {
-        NSDictionary *objectData = [data.object isKindOfClass:[NSDictionary class]]
-            ? data.object
-            : ([data.userInfo isKindOfClass:[NSDictionary class]] ? data.userInfo : nil);
-        if (objectData != nil) {
-            if ([RCTJPushEventQueue sharedInstance]._localNotificationQueue == nil) {
-                [RCTJPushEventQueue sharedInstance]._localNotificationQueue = [NSMutableArray array];
+    NSUInteger generation = [data.userInfo[@"_j_InternalPolicyGeneration"] respondsToSelector:@selector(unsignedIntegerValue)]
+        ? [data.userInfo[@"_j_InternalPolicyGeneration"] unsignedIntegerValue] : [JCOREConfiguration shared].policyGeneration;
+    @synchronized (RCTJPushModule.class) {
+        if (![[JCOREConfiguration shared] allowsPolicyGeneration:generation]) { return; }
+        if (![RCTJPushModule hasReadyEventConsumer]) {
+            NSDictionary *objectData = [data.object isKindOfClass:[NSDictionary class]]
+                ? data.object
+                : ([data.userInfo isKindOfClass:[NSDictionary class]] ? data.userInfo : nil);
+            if (objectData != nil) {
+                if ([RCTJPushEventQueue sharedInstance]._localNotificationQueue == nil) {
+                    [RCTJPushEventQueue sharedInstance]._localNotificationQueue = [NSMutableArray array];
+                }
+                NSMutableDictionary *queuedItem = [NSMutableDictionary dictionaryWithDictionary:objectData];
+                queuedItem[@"_j_InternalPolicyGeneration"] = @(generation);
+                queuedItem[@"_j_InternalNotificationName"] = data.name ?: J_LOCAL_NOTIFICATION_OPENED_EVENT;
+                [[RCTJPushEventQueue sharedInstance]._localNotificationQueue addObject:[queuedItem copy]];
             }
-            NSMutableDictionary *queuedItem = [NSMutableDictionary dictionaryWithDictionary:objectData];
-            queuedItem[@"_j_InternalNotificationName"] = data.name ?: J_LOCAL_NOTIFICATION_OPENED_EVENT;
-            [[RCTJPushEventQueue sharedInstance]._localNotificationQueue addObject:[queuedItem copy]];
+            return;
         }
-        return;
-    }
-    NSDictionary *responseData = [self convertLocalMessage:data];
-    [JCOREConfiguration logInfo:[NSString stringWithFormat:@"onLocalNotification type=%@ notificationType=local msgId=%@",
-                                 responseData[NOTIFICATION_EVENT_TYPE] ?: @"",
-                                 responseData[MESSAGE_ID] ?: @""]];
-    [RCTJPushModule emitEventWithName:LOCAL_NOTIFICATION_EVENT payload:responseData];
-    if ([RCTJPushEventQueue sharedInstance]._localNotificationQueue.count > 0) {
-        [[RCTJPushEventQueue sharedInstance]._localNotificationQueue removeAllObjects];
+        NSDictionary *responseData = [self convertLocalMessage:data];
+        [JCOREConfiguration logInfo:[NSString stringWithFormat:@"onLocalNotification type=%@ notificationType=local msgId=%@",
+                                     responseData[NOTIFICATION_EVENT_TYPE] ?: @"",
+                                     responseData[MESSAGE_ID] ?: @""]];
+        [RCTJPushModule emitEventWithName:LOCAL_NOTIFICATION_EVENT payload:responseData generation:generation];
+        if ([RCTJPushEventQueue sharedInstance]._localNotificationQueue.count > 0) {
+            [[RCTJPushEventQueue sharedInstance]._localNotificationQueue removeAllObjects];
+        }
     }
 }
 
@@ -1058,6 +1121,7 @@ RCT_EXPORT_METHOD(setGeofeneceMaxCount:(NSDictionary *)params) {
     [copyData removeObjectForKey:@"_j_uid"];
     [copyData removeObjectForKey:@"_j_msgid"];
     [copyData removeObjectForKey:@"_j_InternalNotificationName"];
+    [copyData removeObjectForKey:@"_j_InternalPolicyGeneration"];
     [copyData removeObjectForKey:@"aps"];
 
     NSMutableDictionary *extrasData = [NSMutableDictionary dictionary];
@@ -1105,6 +1169,7 @@ RCT_EXPORT_METHOD(setGeofeneceMaxCount:(NSDictionary *)params) {
         notificationName = internalName.length > 0 ? internalName : J_LOCAL_NOTIFICATION_OPENED_EVENT;
         NSMutableDictionary *cleanData = [NSMutableDictionary dictionaryWithDictionary:dictData];
         [cleanData removeObjectForKey:@"_j_InternalNotificationName"];
+        [cleanData removeObjectForKey:@"_j_InternalPolicyGeneration"];
         objectData = [cleanData copy];
     }
     NSString *notificationEventType = [notificationName isEqualToString:J_LOCAL_NOTIFICATION_OPENED_EVENT]

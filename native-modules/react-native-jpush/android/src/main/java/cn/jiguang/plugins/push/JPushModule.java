@@ -26,6 +26,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.lang.*;
 
@@ -40,9 +41,12 @@ import cn.jpush.android.data.JPushLocalNotification;
 
 public class JPushModule extends ReactContextBaseJavaModule {
 
-    public static ReactApplicationContext reactContext;
+    public static volatile ReactApplicationContext reactContext;
     private static final Set<ReactApplicationContext> ACTIVE_CONTEXTS =
         new CopyOnWriteArraySet<ReactApplicationContext>();
+
+    private static final Map<ReactApplicationContext, Integer> CONTEXT_OWNERS = new HashMap<ReactApplicationContext, Integer>();
+    private boolean invalidated;
 
     public static boolean isAppForeground = false;
 
@@ -56,11 +60,33 @@ public class JPushModule extends ReactContextBaseJavaModule {
         }
     }
 
+    public static void retainReactContext(ReactApplicationContext ctx) {
+        if (ctx == null) return;
+        synchronized (CONTEXT_OWNERS) {
+            Integer count = CONTEXT_OWNERS.get(ctx);
+            CONTEXT_OWNERS.put(ctx, count == null ? 1 : count + 1);
+        }
+        registerReactContext(ctx);
+    }
+
+    public static void releaseReactContext(ReactApplicationContext ctx) {
+        if (ctx == null) return;
+        synchronized (CONTEXT_OWNERS) {
+            Integer count = CONTEXT_OWNERS.get(ctx);
+            if (count != null && count > 1) { CONTEXT_OWNERS.put(ctx, count - 1); return; }
+            CONTEXT_OWNERS.remove(ctx);
+            ACTIVE_CONTEXTS.remove(ctx);
+            if (reactContext == ctx) reactContext = ACTIVE_CONTEXTS.isEmpty() ? null : ACTIVE_CONTEXTS.iterator().next();
+            if (cn.jiguang.plugins.core.JCoreModule.reactContext == ctx) cn.jiguang.plugins.core.JCoreModule.reactContext = reactContext;
+        }
+    }
+
     public static Set<ReactApplicationContext> getActiveReactContexts() {
         return Collections.unmodifiableSet(ACTIVE_CONTEXTS);
     }
 
     public static void clearActiveReactContexts() {
+        synchronized (CONTEXT_OWNERS) { CONTEXT_OWNERS.clear(); }
         ACTIVE_CONTEXTS.clear();
         reactContext = null;
     }
@@ -68,7 +94,17 @@ public class JPushModule extends ReactContextBaseJavaModule {
     public JPushModule(ReactApplicationContext reactApplicationContext) {
         super(reactApplicationContext);
         reactContext = reactApplicationContext;
-        registerReactContext(reactApplicationContext);
+        retainReactContext(reactApplicationContext);
+    }
+
+    @Override
+    public void invalidate() {
+        synchronized (this) {
+            if (invalidated) return;
+            invalidated = true;
+        }
+        releaseReactContext(getReactApplicationContext());
+        super.invalidate();
     }
 
     @Override

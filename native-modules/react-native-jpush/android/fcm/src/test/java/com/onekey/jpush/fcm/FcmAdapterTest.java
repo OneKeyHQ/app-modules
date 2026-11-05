@@ -28,6 +28,7 @@ import cn.jpush.android.api.JPushInterface;
 import cn.jpush.android.api.JThirdPlatFormInterface;
 import cn.jpush.android.api.NotificationMessage;
 import cn.jpush.android.local.ActionHelper;
+import cn.jpush.android.data.JPushLocalNotification;
 import cn.jpush.android.service.JNotifyActivity;
 import cn.jpush.android.service.JPushMessageReceiver;
 import com.google.android.gms.common.GoogleApiAvailabilityLight;
@@ -44,6 +45,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -102,6 +106,56 @@ public class FcmAdapterTest {
     public void tearDown() {
         ActionHelper.getInstance().clearRegisteredReceivers();
         notifications.cancelAll();
+    }
+
+    @Test
+    public void localSchedulingPostsAndDispatchesOnlyTheUncancelledNotification() throws Exception {
+        ActionHelper helper = ActionHelper.getInstance();
+        helper.clearActiveNotificationIds();
+        CountDownLatch fired = new CountDownLatch(1), cancelled = new CountDownLatch(1);
+        AtomicReference<NotificationMessage> delivered = new AtomicReference<>();
+        JPushMessageReceiver receiver = new JPushMessageReceiver() {
+            @Override public void onNotifyMessageArrived(Context c, NotificationMessage message) {
+                if (message.notificationId == 77001) cancelled.countDown();
+                if (message.notificationId == 77002) { delivered.set(message); fired.countDown(); }
+            }
+        };
+        helper.registerReceiver(receiver);
+        try {
+            JPushLocalNotification removed = new JPushLocalNotification();
+            removed.setNotificationId(77001L);
+            removed.setTitle("Cancelled local");
+            removed.setContent("Must not be delivered");
+            removed.setBroadcastTime(300L);
+            JPushInterface.addLocalNotification(context, removed);
+            JPushInterface.removeLocalNotification(context, 77001L);
+
+            JPushLocalNotification scheduled = new JPushLocalNotification();
+            scheduled.setNotificationId(77002L);
+            scheduled.setTitle("Scheduled local");
+            scheduled.setContent("Synthetic local scheduling verification");
+            scheduled.setBroadcastTime(70L);
+            JPushInterface.addLocalNotification(context, scheduled);
+            assertTrue("Scheduled local notification must arrive", fired.await(1000L, TimeUnit.MILLISECONDS));
+            assertEquals(1, delivered.get().notificationType);
+            assertEquals("77002", delivered.get().msgId);
+            Notification posted = Shadows.shadowOf(notifications).getNotification(77002);
+            assertNotNull(posted);
+            assertEquals("Scheduled local", posted.extras.getString(Notification.EXTRA_TITLE));
+            assertNotNull(posted.contentIntent);
+            NotificationMessage clicked = (NotificationMessage) Shadows.shadowOf(posted.contentIntent).getSavedIntent()
+                .getSerializableExtra("multi_notification_msg");
+            assertEquals(77002, clicked.notificationId);
+            assertEquals(1, clicked.notificationType);
+            assertTrue(helper.getActiveNotificationIds().contains(77002));
+            assertFalse("Cancelled local notification must stay cancelled", cancelled.await(360L, TimeUnit.MILLISECONDS));
+            assertNull(Shadows.shadowOf(notifications).getNotification(77001));
+            assertFalse(helper.getActiveNotificationIds().contains(77001));
+            assertEquals(1, arrived.size());
+        } finally {
+            helper.unregisterReceiver(receiver);
+            helper.clearActiveNotificationIds();
+        }
     }
 
     @Test
@@ -506,6 +560,51 @@ public class FcmAdapterTest {
         verify(manager, times(2)).createNotificationChannel(any(android.app.NotificationChannel.class));
         verify(manager, never()).notify(anyInt(), any(Notification.class));
         assertTrue(arrived.isEmpty());
+    }
+
+    @Test
+    public void revokedConstructionCannotMutateAnExistingClickIntentOrNotificationTracking() {
+        ActionHelper helper = ActionHelper.getInstance();
+        helper.clearActiveNotificationIds();
+        JCoreStorage.setLatestNotificationNumber(context, 2);
+        for (int id : new int[]{7105, 7106}) {
+            NotificationMessage previous = new NotificationMessage();
+            previous.msgId = "existing_" + id;
+            previous.notificationId = id;
+            previous.notificationTitle = "Existing notification";
+            helper.postSystemNotification(context, previous);
+        }
+        assertEquals(java.util.Arrays.asList(7105, 7106), helper.getActiveNotificationIds());
+        Notification previous = Shadows.shadowOf(notifications).getNotification(7105);
+        android.app.PendingIntent previousClick = previous.contentIntent;
+        NotificationManager manager = spy(notifications);
+        android.content.ContextWrapper wrapped = new android.content.ContextWrapper(context) {
+            @Override public Object getSystemService(String name) {
+                return Context.NOTIFICATION_SERVICE.equals(name) ? manager : super.getSystemService(name);
+            }
+        };
+        ReflectionHelpers.setStaticField(JCoreStorage.class, "sAppContext", wrapped);
+        doAnswer(call -> {
+            JCoreStorage.setCollectionAuth(wrapped, false);
+            return null;
+        }).when(manager).createNotificationChannel(any(android.app.NotificationChannel.class));
+        for (int id : new int[]{7105, 7107}) {
+            JCoreStorage.setCollectionAuth(wrapped, true);
+            NotificationMessage rejected = new NotificationMessage();
+            rejected.msgId = "rejected_" + id;
+            rejected.notificationId = id;
+            rejected.notificationTitle = "Rejected replacement";
+            helper.postSystemNotification(wrapped, rejected);
+            assertEquals(java.util.Arrays.asList(7105, 7106), helper.getActiveNotificationIds());
+            assertEquals(2, Shadows.shadowOf(notifications).getAllNotifications().size());
+            NotificationMessage saved = (NotificationMessage) Shadows.shadowOf(previousClick).getSavedIntent()
+                .getSerializableExtra("multi_notification_msg");
+            assertEquals("existing_7105", saved.msgId);
+            assertEquals("Existing notification", Shadows.shadowOf(notifications).getNotification(7105)
+                .extras.getString(Notification.EXTRA_TITLE));
+        }
+        verify(manager, never()).notify(anyInt(), any(Notification.class));
+        verify(manager, never()).cancel(anyInt());
     }
 
     @Test

@@ -173,7 +173,10 @@ public class ActionHelper {
                 cn.jiguang.plugins.push.common.JLogger.w("FCM payload rejected");
             }
         } else if (JThirdPlatFormInterface.ACTION_NOTIFICATION_ARRIVED.equals(action)) {
-            recordNotificationPosted(context, message.notificationId);
+            synchronized (JCoreStorage.class) {
+                if (contentGeneration != JCoreStorage.getContentGeneration() || !isContentAllowed(context)) return;
+                recordNotificationPosted(context, message.notificationId);
+            }
             dispatchNotificationEvent(context, "notify_arrived", message);
         } else if (JThirdPlatFormInterface.ACTION_NOTIFICATION_CLCKED.equals(action)) {
             Intent click = new Intent(JPushInterface.ACTION_NOTIFICATION_OPENED);
@@ -377,7 +380,6 @@ public class ActionHelper {
         int notifyId = message.notificationId != 0
             ? message.notificationId
             : (message.msgId != null ? Math.abs(message.msgId.hashCode()) : 1);
-        recordNotificationPosted(app, notifyId);
         if (app == null) {
             return;
         }
@@ -437,14 +439,13 @@ public class ActionHelper {
             if (Build.VERSION.SDK_INT >= 23) {
                 flags |= PendingIntent.FLAG_IMMUTABLE;
             }
-            PendingIntent pendingIntent = PendingIntent.getActivity(app, message.notificationId, clickIntent, flags);
-            if (pendingIntent != null) {
-                builder.setContentIntent(pendingIntent);
-            }
-
             Notification notification = builder.build();
-            if (contentGeneration == JCoreStorage.getContentGeneration() && isContentAllowed(app)) {
+            synchronized (JCoreStorage.class) {
+                if (contentGeneration != JCoreStorage.getContentGeneration() || !isContentAllowed(app)) return;
+                PendingIntent pendingIntent = PendingIntent.getActivity(app, message.notificationId, clickIntent, flags);
+                if (pendingIntent != null) notification.contentIntent = pendingIntent;
                 nm.notify(notifyId, notification);
+                recordNotificationPosted(app, notifyId);
             }
         } catch (Throwable ignored) {
         }
@@ -577,35 +578,32 @@ public class ActionHelper {
         return sb.toString();
     }
 
-    public void setAliasAndTagsWithCallBack(
-        final Context context,
-        final String alias,
-        final Set<String> tags,
-        final TagAliasCallback callback,
-        int protoType,
-        int action
-    ) {
-        JCoreTcpEngine.getInstance().executeAsync(new Runnable() {
-            @Override
-            public void run() {
-                if (alias != null) {
-                    JCoreStorage.saveAlias(context, alias);
-                }
-                Set<String> validTags = JPushInterface.filterValidTags(tags);
-                if (tags != null) {
-                    JCoreStorage.saveTags(context, validTags);
-                }
-                if (callback != null) {
-                    callback.gotResult(0, alias, validTags);
-                }
-            }
-        });
-    }
-
-    private boolean shouldQueueOrWaitForServerAck() {
+    public void setAliasAndTagsWithCallBack(final Context context, final String alias, final Set<String> tags,
+        final TagAliasCallback callback, int protoType, int action) {
+        final Set<String> validTags = JPushInterface.filterValidTags(tags);
+        final java.util.concurrent.atomic.AtomicInteger remaining = new java.util.concurrent.atomic.AtomicInteger(
+            (alias != null ? 1 : 0) + (tags != null ? 1 : 0));
+        final java.util.concurrent.atomic.AtomicInteger error = new java.util.concurrent.atomic.AtomicInteger();
+        if (remaining.get() == 0) {
+            if (callback != null) callback.gotResult(0, alias, validTags);
+            return;
+        }
+        final Runnable finish = () -> {
+            if (remaining.decrementAndGet() == 0 && callback != null) callback.gotResult(error.get(), alias, validTags);
+        };
         JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
-        return engine.isRequireServerAckForOperations()
-            || (!engine.isLoggedIn() && !engine.getCustomHost().isEmpty());
+        if (alias != null) engine.enqueueOrSendRequest(context, JCoreWireCodec.CMD_ALIAS_OP, JCoreWireCodec.VER_ALIAS_OP,
+            JCoreStorage.nextRid(), JCoreWireCodec.buildAliasOperationPayload(2, 0, alias), engine.getDefaultRequestTimeoutMs(), 0,
+            (frame, code) -> {
+                if (code == 0) JCoreStorage.saveAlias(context, alias); else error.compareAndSet(0, code);
+                finish.run();
+            });
+        if (tags != null) engine.enqueueOrSendRequest(context, JCoreWireCodec.CMD_TAG_OP, JCoreWireCodec.VER_TAG_OP,
+            JCoreStorage.nextRid(), JCoreWireCodec.buildTagOperationPayload(2, 0, validTags), engine.getDefaultRequestTimeoutMs(), 0,
+            (frame, code) -> {
+                if (code == 0) JCoreStorage.saveTags(context, validTags); else error.compareAndSet(0, code);
+                finish.run();
+            });
     }
 
     public void setAliasWithCallBack(
@@ -617,10 +615,7 @@ public class ActionHelper {
     ) {
         final String previousAlias = JCoreStorage.getAlias(context);
         String resolvedAlias = alias != null ? alias : "";
-        if (action == 2) {
-            JCoreStorage.saveAlias(context, resolvedAlias);
-        } else if (action == 3) {
-            JCoreStorage.saveAlias(context, "");
+        if (action == 3) {
             resolvedAlias = "";
         } else if (action == 5) {
             resolvedAlias = previousAlias;
@@ -628,69 +623,45 @@ public class ActionHelper {
         final String effectiveAlias = resolvedAlias;
 
         byte[] wireBody = JCoreWireCodec.buildAliasOperationPayload(action, sequence, effectiveAlias);
-        if (shouldQueueOrWaitForServerAck()) {
-            JCoreTcpEngine.getInstance().enqueueOrSendRequest(
-                context,
-                JCoreWireCodec.CMD_ALIAS_OP,
-                JCoreWireCodec.VER_ALIAS_OP,
-                sequence,
-                wireBody,
-                JCoreTcpEngine.getInstance().getDefaultRequestTimeoutMs(),
-                0,
-                new JCoreTcpEngine.RequestCallback() {
-                    @Override
-                    public void onResult(JCoreWireCodec.DecodedFrame responseFrame, int statusCode) {
-                        if (statusCode != 0 && (action == 2 || action == 3)) {
-                            JCoreStorage.saveAlias(context, previousAlias);
-                        }
-                        String resultAlias = effectiveAlias;
-                        if (statusCode == 0 && responseFrame != null && responseFrame.body != null && responseFrame.body.length > 0) {
-                            String respJson = JCoreWireCodec.parseJsonCommandBody(responseFrame.body);
-                            if (action == 5 && respJson.contains("\"alias\"")) {
-                                String srvAlias = JCoreWireCodec.extractJsonString(respJson, "alias");
-                                JCoreStorage.saveAlias(context, srvAlias);
-                                resultAlias = srvAlias;
-                            }
-                        }
-                        Intent intent = buildBaseReceiverIntent(context, "alias_op", sequence, statusCode);
-                        intent.putExtra(KEY_ALIAS, resultAlias);
-                        if (intent.getStringExtra(KEY_EVENT_TYPE) == null) {
-                            JPushMessage msg = new JPushMessage();
-                            msg.setSequence(sequence);
-                            msg.setErrorCode(statusCode);
-                            msg.setAlias(resultAlias);
-                            for (JPushMessageReceiver receiver : registeredReceivers) {
-                                receiver.onAliasOperatorResult(context, msg);
-                            }
-                        }
-                        sendToReceiver(context, intent);
-                    }
-                }
-            );
-            return;
-        }
 
-        JCoreTcpEngine.getInstance().sendFrameRaw(
+        JCoreTcpEngine.getInstance().enqueueOrSendRequest(
+            context,
             JCoreWireCodec.CMD_ALIAS_OP,
             JCoreWireCodec.VER_ALIAS_OP,
-            sequence,
-            JCoreTcpEngine.getInstance().getSessionId(),
-            JCoreStorage.getUid(context),
-            wireBody
-        );
-
-        Intent intent = buildBaseReceiverIntent(context, "alias_op", sequence, 0);
-        intent.putExtra(KEY_ALIAS, effectiveAlias);
-        if (intent.getStringExtra(KEY_EVENT_TYPE) == null) {
-            JPushMessage msg = new JPushMessage();
-            msg.setSequence(sequence);
-            msg.setErrorCode(0);
-            msg.setAlias(effectiveAlias);
-            for (JPushMessageReceiver receiver : registeredReceivers) {
-                receiver.onAliasOperatorResult(context, msg);
+            JCoreStorage.nextRid(),
+            wireBody,
+            JCoreTcpEngine.getInstance().getDefaultRequestTimeoutMs(),
+            0,
+            new JCoreTcpEngine.RequestCallback() {
+                @Override
+                public void onResult(JCoreWireCodec.DecodedFrame responseFrame, int statusCode) {
+                    if (statusCode == 0 && (action == 2 || action == 3)) {
+                        JCoreStorage.saveAlias(context, effectiveAlias);
+                    }
+                    String resultAlias = effectiveAlias;
+                    if (statusCode == 0 && responseFrame != null && responseFrame.body != null && responseFrame.body.length > 0) {
+                        String respJson = JCoreWireCodec.parseJsonCommandBody(responseFrame.body);
+                        if (action == 5 && respJson.contains("\"alias\"")) {
+                            String srvAlias = JCoreWireCodec.extractJsonString(respJson, "alias");
+                            JCoreStorage.saveAlias(context, srvAlias);
+                            resultAlias = srvAlias;
+                        }
+                    }
+                    Intent intent = buildBaseReceiverIntent(context, "alias_op", sequence, statusCode);
+                    intent.putExtra(KEY_ALIAS, resultAlias);
+                    if (intent.getStringExtra(KEY_EVENT_TYPE) == null) {
+                        JPushMessage msg = new JPushMessage();
+                        msg.setSequence(sequence);
+                        msg.setErrorCode(statusCode);
+                        msg.setAlias(resultAlias);
+                        for (JPushMessageReceiver receiver : registeredReceivers) {
+                            receiver.onAliasOperatorResult(context, msg);
+                        }
+                    }
+                    sendToReceiver(context, intent);
+                }
             }
-        }
-        sendToReceiver(context, intent);
+        );
     }
 
     public void setTagsWithCallBack(
@@ -702,55 +673,43 @@ public class ActionHelper {
     ) {
         final Set<String> validInput = JPushInterface.filterValidTags(tags);
         Set<String> stored = JCoreStorage.getTags(context);
-        final Set<String> previousTags = new HashSet<String>(stored);
 
         if (action == 1) { // add
             stored.addAll(validInput);
-            JCoreStorage.saveTags(context, stored);
         } else if (action == 2) { // set
             stored = new HashSet<String>(validInput);
-            JCoreStorage.saveTags(context, stored);
         } else if (action == 3) { // delete
             stored.removeAll(validInput);
-            JCoreStorage.saveTags(context, stored);
         } else if (action == 4) { // clean
             stored.clear();
-            JCoreStorage.saveTags(context, stored);
         }
         final Set<String> finalStored = new HashSet<String>(stored);
 
         byte[] wireBody = JCoreWireCodec.buildTagOperationPayload(action, sequence, validInput);
-        if (shouldQueueOrWaitForServerAck()) {
-            JCoreTcpEngine.getInstance().enqueueOrSendRequest(
-                context,
-                JCoreWireCodec.CMD_TAG_OP,
-                JCoreWireCodec.VER_TAG_OP,
-                sequence,
-                wireBody,
-                JCoreTcpEngine.getInstance().getDefaultRequestTimeoutMs(),
-                0,
-                new JCoreTcpEngine.RequestCallback() {
-                    @Override
-                    public void onResult(JCoreWireCodec.DecodedFrame responseFrame, int statusCode) {
-                        if (statusCode != 0 && action >= 1 && action <= 4) {
-                            JCoreStorage.saveTags(context, previousTags);
-                        }
-                        dispatchTagResultIntent(context, sequence, action, statusCode, validInput, finalStored, responseFrame);
-                    }
-                }
-            );
-            return;
-        }
 
-        JCoreTcpEngine.getInstance().sendFrameRaw(
+        JCoreTcpEngine.getInstance().enqueueOrSendRequest(
+            context,
             JCoreWireCodec.CMD_TAG_OP,
             JCoreWireCodec.VER_TAG_OP,
-            sequence,
-            JCoreTcpEngine.getInstance().getSessionId(),
-            JCoreStorage.getUid(context),
-            wireBody
+            JCoreStorage.nextRid(),
+            wireBody,
+            JCoreTcpEngine.getInstance().getDefaultRequestTimeoutMs(),
+            0,
+            new JCoreTcpEngine.RequestCallback() {
+                @Override
+                public void onResult(JCoreWireCodec.DecodedFrame responseFrame, int statusCode) {
+                    if (statusCode == 0 && action >= 1 && action <= 4) {
+                        Set<String> current = JCoreStorage.getTags(context);
+                        if (action == 1) current.addAll(validInput);
+                        else if (action == 2) current = new HashSet<String>(validInput);
+                        else if (action == 3) current.removeAll(validInput);
+                        else current.clear();
+                        JCoreStorage.saveTags(context, current);
+                    }
+                    dispatchTagResultIntent(context, sequence, action, statusCode, validInput, finalStored, responseFrame);
+                }
+            }
         );
-        dispatchTagResultIntent(context, sequence, action, 0, validInput, finalStored, null);
     }
 
     private static boolean parseJsonBindFlag(String respJson, boolean defaultBind) {
@@ -864,149 +823,95 @@ public class ActionHelper {
         int protoType,
         final int action
     ) {
+        final Map<String, Object> requestedProperties = properties != null ? new HashMap<String, Object>(properties) : null;
         Map<String, Object> stored = JCoreStorage.getProperties(context);
         final Map<String, Object> previousProps = new HashMap<String, Object>(stored);
-        if (action == 1 && properties != null) {
-            stored.putAll(properties);
-            JCoreStorage.saveProperties(context, stored);
-        } else if (action == 2 && properties != null) {
-            for (String key : properties.keySet()) {
+        if (action == 1 && requestedProperties != null) {
+            stored.putAll(requestedProperties);
+        } else if (action == 2 && requestedProperties != null) {
+            for (String key : requestedProperties.keySet()) {
                 stored.remove(key);
             }
-            JCoreStorage.saveProperties(context, stored);
         } else if (action == 3) {
             stored.clear();
-            JCoreStorage.saveProperties(context, stored);
         }
         final Map<String, Object> finalStored = new HashMap<String, Object>(stored);
 
-        byte[] wireBody = JCoreWireCodec.buildPropertyOperationPayload(action, sequence, properties);
-        if (shouldQueueOrWaitForServerAck()) {
-            JCoreTcpEngine.getInstance().enqueueOrSendRequest(
-                context,
-                JCoreWireCodec.CMD_PROPERTY_OP,
-                JCoreWireCodec.VER_PROPERTY_OP,
-                sequence,
-                wireBody,
-                JCoreTcpEngine.getInstance().getDefaultRequestTimeoutMs(),
-                0,
-                new JCoreTcpEngine.RequestCallback() {
-                    @Override
-                    public void onResult(JCoreWireCodec.DecodedFrame responseFrame, int statusCode) {
-                        if (statusCode != 0) {
-                            JCoreStorage.saveProperties(context, previousProps);
-                        }
-                        Intent intent = buildBaseReceiverIntent(context, "property_op", sequence, statusCode);
-                        HashMap<String, Object> serializableProps = new HashMap<String, Object>();
-                        if ((action == 1 || action == 2) && properties != null) {
-                            serializableProps.putAll(properties);
-                        } else {
-                            serializableProps.putAll(statusCode == 0 ? finalStored : previousProps);
-                        }
-                        intent.putExtra(KEY_PROPS_MAP, serializableProps);
-                        if (intent.getStringExtra(KEY_EVENT_TYPE) == null) {
-                            JPushMessage msg = new JPushMessage();
-                            msg.setSequence(sequence);
-                            msg.setErrorCode(statusCode);
-                            msg.setPros(serializableProps);
-                            for (JPushMessageReceiver receiver : registeredReceivers) {
-                                receiver.onPropertyOperatorResult(context, msg);
-                            }
-                        }
-                        sendToReceiver(context, intent);
-                    }
-                }
-            );
-            return;
-        }
+        byte[] wireBody = JCoreWireCodec.buildPropertyOperationPayload(action, sequence, requestedProperties);
 
-        JCoreTcpEngine.getInstance().sendFrameRaw(
+        JCoreTcpEngine.getInstance().enqueueOrSendRequest(
+            context,
             JCoreWireCodec.CMD_PROPERTY_OP,
             JCoreWireCodec.VER_PROPERTY_OP,
-            sequence,
-            JCoreTcpEngine.getInstance().getSessionId(),
-            JCoreStorage.getUid(context),
-            wireBody
-        );
-
-        Intent intent = buildBaseReceiverIntent(context, "property_op", sequence, 0);
-        HashMap<String, Object> serializableProps = new HashMap<String, Object>();
-        if ((action == 1 || action == 2) && properties != null) {
-            serializableProps.putAll(properties);
-        } else {
-            serializableProps.putAll(finalStored);
-        }
-        intent.putExtra(KEY_PROPS_MAP, serializableProps);
-        if (intent.getStringExtra(KEY_EVENT_TYPE) == null) {
-            JPushMessage msg = new JPushMessage();
-            msg.setSequence(sequence);
-            msg.setErrorCode(0);
-            msg.setPros(serializableProps);
-            for (JPushMessageReceiver receiver : registeredReceivers) {
-                receiver.onPropertyOperatorResult(context, msg);
+            JCoreStorage.nextRid(),
+            wireBody,
+            JCoreTcpEngine.getInstance().getDefaultRequestTimeoutMs(),
+            0,
+            new JCoreTcpEngine.RequestCallback() {
+                @Override
+                public void onResult(JCoreWireCodec.DecodedFrame responseFrame, int statusCode) {
+                    if (statusCode == 0) {
+                        Map<String, Object> current = JCoreStorage.getProperties(context);
+                        if (action == 1 && requestedProperties != null) current.putAll(requestedProperties);
+                        else if (action == 2 && requestedProperties != null) for (String key : requestedProperties.keySet()) current.remove(key);
+                        else if (action == 3) current.clear();
+                        JCoreStorage.saveProperties(context, current);
+                    }
+                    Intent intent = buildBaseReceiverIntent(context, "property_op", sequence, statusCode);
+                    HashMap<String, Object> serializableProps = new HashMap<String, Object>();
+                    if ((action == 1 || action == 2) && requestedProperties != null) {
+                        serializableProps.putAll(requestedProperties);
+                    } else {
+                        serializableProps.putAll(statusCode == 0 ? finalStored : previousProps);
+                    }
+                    intent.putExtra(KEY_PROPS_MAP, serializableProps);
+                    if (intent.getStringExtra(KEY_EVENT_TYPE) == null) {
+                        JPushMessage msg = new JPushMessage();
+                        msg.setSequence(sequence);
+                        msg.setErrorCode(statusCode);
+                        msg.setPros(serializableProps);
+                        for (JPushMessageReceiver receiver : registeredReceivers) {
+                            receiver.onPropertyOperatorResult(context, msg);
+                        }
+                    }
+                    sendToReceiver(context, intent);
+                }
             }
-        }
-        sendToReceiver(context, intent);
+        );
     }
 
     public void setMobileNumberWithCallBack(final Context context, final int sequence, final String mobileNumber) {
-        final String previousMobile = JCoreStorage.getMobileNumber(context);
-        JCoreStorage.saveMobileNumber(context, mobileNumber);
         byte[] wireBody = JCoreWireCodec.buildMobileNumberPayload(sequence, mobileNumber);
-        if (shouldQueueOrWaitForServerAck()) {
-            JCoreTcpEngine.getInstance().enqueueOrSendRequest(
-                context,
-                JCoreWireCodec.CMD_MOBILE_NUMBER,
-                JCoreWireCodec.VER_MOBILE_NUMBER,
-                sequence,
-                wireBody,
-                JCoreTcpEngine.getInstance().getDefaultRequestTimeoutMs(),
-                0,
-                new JCoreTcpEngine.RequestCallback() {
-                    @Override
-                    public void onResult(JCoreWireCodec.DecodedFrame responseFrame, int statusCode) {
-                        if (statusCode != 0) {
-                            JCoreStorage.saveMobileNumber(context, previousMobile);
-                        }
-                        Intent intent = buildBaseReceiverIntent(context, "mobile_number_op", sequence, statusCode);
-                        intent.putExtra(KEY_MOBILE_NUMBER, mobileNumber != null ? mobileNumber : "");
-                        if (intent.getStringExtra(KEY_EVENT_TYPE) == null) {
-                            JPushMessage msg = new JPushMessage();
-                            msg.setSequence(sequence);
-                            msg.setErrorCode(statusCode);
-                            msg.setMobileNumber(mobileNumber != null ? mobileNumber : "");
-                            for (JPushMessageReceiver receiver : registeredReceivers) {
-                                receiver.onMobileNumberOperatorResult(context, msg);
-                            }
-                        }
-                        sendToReceiver(context, intent);
-                    }
-                }
-            );
-            return;
-        }
 
-        JCoreTcpEngine.getInstance().sendFrameRaw(
+        JCoreTcpEngine.getInstance().enqueueOrSendRequest(
+            context,
             JCoreWireCodec.CMD_MOBILE_NUMBER,
             JCoreWireCodec.VER_MOBILE_NUMBER,
-            sequence,
-            JCoreTcpEngine.getInstance().getSessionId(),
-            JCoreStorage.getUid(context),
-            wireBody
-        );
-
-        Intent intent = buildBaseReceiverIntent(context, "mobile_number_op", sequence, 0);
-        intent.putExtra(KEY_MOBILE_NUMBER, mobileNumber != null ? mobileNumber : "");
-        if (intent.getStringExtra(KEY_EVENT_TYPE) == null) {
-            JPushMessage msg = new JPushMessage();
-            msg.setSequence(sequence);
-            msg.setErrorCode(0);
-            msg.setMobileNumber(mobileNumber != null ? mobileNumber : "");
-            for (JPushMessageReceiver receiver : registeredReceivers) {
-                receiver.onMobileNumberOperatorResult(context, msg);
+            JCoreStorage.nextRid(),
+            wireBody,
+            JCoreTcpEngine.getInstance().getDefaultRequestTimeoutMs(),
+            0,
+            new JCoreTcpEngine.RequestCallback() {
+                @Override
+                public void onResult(JCoreWireCodec.DecodedFrame responseFrame, int statusCode) {
+                    if (statusCode == 0) {
+                        JCoreStorage.saveMobileNumber(context, mobileNumber);
+                    }
+                    Intent intent = buildBaseReceiverIntent(context, "mobile_number_op", sequence, statusCode);
+                    intent.putExtra(KEY_MOBILE_NUMBER, mobileNumber != null ? mobileNumber : "");
+                    if (intent.getStringExtra(KEY_EVENT_TYPE) == null) {
+                        JPushMessage msg = new JPushMessage();
+                        msg.setSequence(sequence);
+                        msg.setErrorCode(statusCode);
+                        msg.setMobileNumber(mobileNumber != null ? mobileNumber : "");
+                        for (JPushMessageReceiver receiver : registeredReceivers) {
+                            receiver.onMobileNumberOperatorResult(context, msg);
+                        }
+                    }
+                    sendToReceiver(context, intent);
+                }
             }
-        }
-        sendToReceiver(context, intent);
+        );
     }
 
     public void setThirdTokenWithCallBack(
@@ -1045,7 +950,7 @@ public class ActionHelper {
     public void setPushStatusWithCallBack(Context context, int protoType, int action) {
         boolean stopped = (action == 0);
         byte[] wireBody = JCoreWireCodec.buildPushControlPayload(stopped);
-        if (!stopped && shouldQueueOrWaitForServerAck()) {
+        if (!stopped) {
             JCoreTcpEngine.getInstance().enqueueOrSendRequest(
                 context,
                 JCoreWireCodec.CMD_PUSH_CTRL,

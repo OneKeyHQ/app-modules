@@ -98,7 +98,6 @@ public class JPushInterface {
 
     public static void stopPush(Context context) {
         JCoreStorage.setPushStopped(context, true);
-        ActionHelper.getInstance().setPushStatusWithCallBack(context, 4, 0);
         JCoreTcpEngine.getInstance().stop(context);
     }
 
