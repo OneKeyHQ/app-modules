@@ -380,7 +380,7 @@ jobs:
             ~/Library/Caches/CocoaPods/Pods
             ~/Library/Caches/ReactNative/*.tar.gz
           key: ${{ steps.pod-cache.outputs.cache-primary-key }}
-      - name: Compile native overlay pod and run ten pod XCTest suites on iOS Simulator
+      - name: Compile native overlay and Lite Card pods and run ten pod XCTest suites on iOS Simulator
         shell: bash
         timeout-minutes: 20
         run: |
@@ -388,7 +388,7 @@ jobs:
           mkdir -p artifacts/ios
           workspace=example/react-native/ios/example.xcworkspace
           schemes=(react-native-pager-view-Unit-Tests OneKeyTextInput-Unit-Tests OneKeyImage-Unit-Tests react-native-native-list-Unit-Tests PerpDepthBar-Unit-Tests ReactNativeBundleCrypto-Unit-Tests ReactNativeImageCropPicker-Unit-Tests ReactNativeCaptureProtection-Unit-Tests ReactNativePhotoLibrary-Unit-Tests ReactNativeJpush-Unit-Tests)
-          # Plan and build NativeOverlay plus shared pod dependencies once for all ten bundles.
+          # Plan and build NativeOverlay, Lite Card and shared pod dependencies once for all ten bundles.
           BUNDLE_GEMFILE="$PWD/example/react-native/Gemfile" bundle exec ruby - "${schemes[@]}" <<'RUBY'
           require 'xcodeproj'
 
@@ -398,6 +398,9 @@ jobs:
           overlay = project.targets.find { |candidate| candidate.name == 'NativeOverlay' }
           abort 'Missing pod target: NativeOverlay' unless overlay
           scheme.add_build_target(overlay, false)
+          lite = project.targets.find { |candidate| candidate.name == 'ReactNativeLiteCard' }
+          abort 'Missing pod target: ReactNativeLiteCard' unless lite
+          scheme.add_build_target(lite, false)
           ARGV.each do |name|
             target = project.targets.find { |candidate| candidate.name == name }
             abort "Missing unit test target: #{name}" unless target && target.product_type == 'com.apple.product-type.bundle.unit-test'
