@@ -26,6 +26,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import cn.jiguang.core.JCoreStorage;
 import cn.jiguang.plugins.push.JPushModule;
 import cn.jiguang.plugins.push.common.JConstants;
 import cn.jiguang.plugins.push.common.JLogger;
@@ -42,16 +43,19 @@ public class JPushHelper {
 
     private static final class PendingEvent {
         final String eventName;
+        final long contentGeneration;
         final WritableMap params;
         final Map<String, Object> mapParams;
 
-        PendingEvent(String eventName, WritableMap params) {
+        PendingEvent(String eventName, WritableMap params, long contentGeneration) {
+            this.contentGeneration = contentGeneration;
             this.eventName = eventName;
             this.params = params;
             this.mapParams = null;
         }
 
-        PendingEvent(String eventName, Map<String, Object> mapParams) {
+        PendingEvent(String eventName, Map<String, Object> mapParams, long contentGeneration) {
+            this.contentGeneration = contentGeneration;
             this.eventName = eventName;
             this.params = null;
             this.mapParams = mapParams != null
@@ -62,9 +66,11 @@ public class JPushHelper {
 
     private static final class PendingNitroEvent {
         final String eventName;
+        final long contentGeneration;
         final String payloadJson;
 
-        PendingNitroEvent(String eventName, String payloadJson) {
+        PendingNitroEvent(String eventName, String payloadJson, long contentGeneration) {
+            this.contentGeneration = contentGeneration;
             this.eventName = eventName;
             this.payloadJson = payloadJson;
         }
@@ -121,6 +127,20 @@ public class JPushHelper {
         return s == null || s.length() == 0;
     }
 
+    private static boolean isContentEvent(String eventName) {
+        return JConstants.NOTIFICATION_EVENT.equals(eventName)
+            || JConstants.LOCAL_NOTIFICATION_EVENT.equals(eventName)
+            || JConstants.CUSTOM_MESSAGE_EVENT.equals(eventName)
+            || JConstants.INAPP_MESSAGE_EVENT.equals(eventName)
+            || JConstants.NOTIFY_BUTTON_CLICK_EVENT.equals(eventName);
+    }
+
+    private static boolean canDeliver(String eventName, long contentGeneration) {
+        Context context = JCoreStorage.getAppContext(null);
+        return !isContentEvent(eventName) || (contentGeneration == JCoreStorage.getContentGeneration()
+            && JCoreStorage.isCollectionAuth(context) && !JCoreStorage.isPushStopped(context));
+    }
+
     public static void flushPendingNitroEvents() {
         if (PENDING_NITRO_EVENTS.isEmpty() || NITRO_LISTENERS.isEmpty()) {
             return;
@@ -132,7 +152,7 @@ public class JPushHelper {
                 continue;
             }
             for (NitroEventListener listener : NITRO_LISTENERS.values()) {
-                if (listener != null) {
+                if (listener != null && canDeliver(pending.eventName, pending.contentGeneration)) {
                     try {
                         listener.onEvent(pending.eventName, pending.payloadJson);
                     } catch (Throwable inner) {
@@ -166,6 +186,9 @@ public class JPushHelper {
                     }
                 }
                 for (ReactApplicationContext ctx : targets) {
+                    if (!canDeliver(pending.eventName, pending.contentGeneration)) {
+                        break;
+                    }
                     try {
                         WritableMap payload = (total > 1 && index > 0)
                             ? cloneWritableMap(baseWritable)
@@ -182,14 +205,15 @@ public class JPushHelper {
     }
 
     public static void sendEventMap(String eventName, Map<String, Object> params) {
-        if (isEmpty(eventName)) {
+        long contentGeneration = JCoreStorage.getContentGeneration();
+        if (isEmpty(eventName) || !canDeliver(eventName, contentGeneration)) {
             return;
         }
         try {
             String payloadJson = mapToJsonString(params);
             if (!NITRO_LISTENERS.isEmpty()) {
                 for (NitroEventListener listener : NITRO_LISTENERS.values()) {
-                    if (listener != null) {
+                    if (listener != null && canDeliver(eventName, contentGeneration)) {
                         try {
                             listener.onEvent(eventName, payloadJson);
                         } catch (Throwable inner) {
@@ -201,7 +225,7 @@ public class JPushHelper {
                 if (PENDING_NITRO_EVENTS.size() >= 64) {
                     PENDING_NITRO_EVENTS.remove(0);
                 }
-                PENDING_NITRO_EVENTS.add(new PendingNitroEvent(eventName, payloadJson));
+                PENDING_NITRO_EVENTS.add(new PendingNitroEvent(eventName, payloadJson, contentGeneration));
             }
 
             Set<ReactApplicationContext> targets = getTargetContexts();
@@ -214,6 +238,9 @@ public class JPushHelper {
                     int index = 0;
                     int total = targets.size();
                     for (ReactApplicationContext ctx : targets) {
+                        if (!canDeliver(eventName, contentGeneration)) {
+                            break;
+                        }
                         WritableMap payload = (total > 1 && index > 0) ? cloneWritableMap(writable) : writable;
                         index++;
                         ctx.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class).emit(eventName, payload);
@@ -226,7 +253,7 @@ public class JPushHelper {
                 if (PENDING_EVENTS.size() >= 64) {
                     PENDING_EVENTS.remove(0);
                 }
-                PENDING_EVENTS.add(new PendingEvent(eventName, params));
+                PENDING_EVENTS.add(new PendingEvent(eventName, params, contentGeneration));
             }
         } catch (Throwable throwable) {
             JLogger.e("sendEventMap error:" + throwable.getMessage());
@@ -250,14 +277,15 @@ public class JPushHelper {
     }
 
     public static void sendEvent(String eventName, WritableMap params) {
-        if (isEmpty(eventName)) {
+        long contentGeneration = JCoreStorage.getContentGeneration();
+        if (isEmpty(eventName) || !canDeliver(eventName, contentGeneration)) {
             return;
         }
         try {
             String payloadJson = readableMapToJsonObject(params).toString();
             if (!NITRO_LISTENERS.isEmpty()) {
                 for (NitroEventListener listener : NITRO_LISTENERS.values()) {
-                    if (listener != null) {
+                    if (listener != null && canDeliver(eventName, contentGeneration)) {
                         try {
                             listener.onEvent(eventName, payloadJson);
                         } catch (Throwable inner) {
@@ -269,7 +297,7 @@ public class JPushHelper {
                 if (PENDING_NITRO_EVENTS.size() >= 64) {
                     PENDING_NITRO_EVENTS.remove(0);
                 }
-                PENDING_NITRO_EVENTS.add(new PendingNitroEvent(eventName, payloadJson));
+                PENDING_NITRO_EVENTS.add(new PendingNitroEvent(eventName, payloadJson, contentGeneration));
             }
 
             Set<ReactApplicationContext> targets = getTargetContexts();
@@ -277,6 +305,9 @@ public class JPushHelper {
             int index = 0;
             int total = targets.size();
             for (ReactApplicationContext ctx : targets) {
+                if (!canDeliver(eventName, contentGeneration)) {
+                    break;
+                }
                 try {
                     WritableMap payload = (total > 1 && index > 0) ? cloneWritableMap(params) : params;
                     index++;
@@ -291,7 +322,7 @@ public class JPushHelper {
                 if (PENDING_EVENTS.size() >= 64) {
                     PENDING_EVENTS.remove(0);
                 }
-                PENDING_EVENTS.add(new PendingEvent(eventName, cloneWritableMap(params)));
+                PENDING_EVENTS.add(new PendingEvent(eventName, cloneWritableMap(params), contentGeneration));
             }
         } catch (Throwable throwable) {
             JLogger.e("sendEvent error:" + throwable.getMessage());

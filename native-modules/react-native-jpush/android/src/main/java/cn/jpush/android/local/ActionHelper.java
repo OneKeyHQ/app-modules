@@ -51,6 +51,7 @@ public class ActionHelper {
     public static final String DEFAULT_CHANNEL_ID = "jpush_default_channel";
     public static final String DEFAULT_SILENT_CHANNEL_ID = "jpush_silent_channel";
 
+    private static final String KEY_CONTENT_GENERATION = "jpush_content_generation";
     private static final String KEY_EVENT_TYPE = "jpush_event_type";
     private static final String KEY_SEQUENCE = "jpush_sequence";
     private static final String KEY_ERROR_CODE = "jpush_error_code";
@@ -114,6 +115,7 @@ public class ActionHelper {
     }
 
     public void doAction(Context context, String action, Object data) {
+        long contentGeneration = JCoreStorage.getContentGeneration();
         if (!(data instanceof Bundle) || JCoreStorage.isPushStopped(context) || !JCoreStorage.isCollectionAuth(context)) {
             return;
         }
@@ -143,6 +145,9 @@ public class ActionHelper {
             return;
         }
         message.notificationId = bundle.getInt("noti_id", message.notificationId);
+        if (contentGeneration != JCoreStorage.getContentGeneration() || !isContentAllowed(context)) {
+            return;
+        }
         if (JThirdPlatFormInterface.ACTION_PLUGIN_PALTFORM_ON_MESSAGING.equals(action)) {
             try {
                 JSONObject json = new JSONObject(decoded);
@@ -160,7 +165,9 @@ public class ActionHelper {
                         return;
                     }
                     postSystemNotification(context, message);
-                    dispatchNotificationEvent(context, "notify_arrived", message);
+                    if (contentGeneration == JCoreStorage.getContentGeneration()) {
+                        dispatchNotificationEvent(context, "notify_arrived", message);
+                    }
                 }
             } catch (Exception invalidMessage) {
                 cn.jiguang.plugins.push.common.JLogger.w("FCM payload rejected");
@@ -169,8 +176,10 @@ public class ActionHelper {
             recordNotificationPosted(context, message.notificationId);
             dispatchNotificationEvent(context, "notify_arrived", message);
         } else if (JThirdPlatFormInterface.ACTION_NOTIFICATION_CLCKED.equals(action)) {
-            dispatchNotificationEvent(context, "notify_opened", message);
-            broadcastNotificationOpened(context, message);
+            Intent click = new Intent(JPushInterface.ACTION_NOTIFICATION_OPENED);
+            click.setPackage(context.getPackageName());
+            click.putExtra("multi_notification_msg", message);
+            handleNotificationIntent(context, click);
         }
     }
 
@@ -201,8 +210,18 @@ public class ActionHelper {
         return null;
     }
 
+    private static boolean isContentAllowed(Context context) {
+        return !JCoreStorage.isPushStopped(context) && JCoreStorage.isCollectionAuth(context);
+    }
+
+    private static boolean isContentEvent(String eventType) {
+        return eventType != null && (eventType.startsWith("notify_")
+            || eventType.startsWith("inapp_") || "custom_msg".equals(eventType));
+    }
+
     public void handleNotificationIntent(Context context, Intent intent) {
-        if (context == null || intent == null) {
+        long contentGeneration = JCoreStorage.getContentGeneration();
+        if (context == null || intent == null || !isContentAllowed(context)) {
             return;
         }
         try {
@@ -216,6 +235,9 @@ public class ActionHelper {
             String appPkg = context.getPackageName();
             if (targetPkg != null && !targetPkg.isEmpty() && appPkg != null && !appPkg.isEmpty()
                 && !appPkg.equals(targetPkg)) {
+                return;
+            }
+            if (intent.getComponent() != null && !appPkg.equals(intent.getComponent().getPackageName())) {
                 return;
             }
             Serializable msg = intent.getSerializableExtra("multi_notification_msg");
@@ -232,19 +254,22 @@ public class ActionHelper {
             }
             if (msg instanceof NotificationMessage) {
                 NotificationMessage notificationMessage = (NotificationMessage) msg;
-                if (notificationMessage.platform == 8
-                    && (JCoreStorage.isPushStopped(context) || !JCoreStorage.isCollectionAuth(context))) {
+                if (notificationMessage.msgId == null || notificationMessage.msgId.isEmpty() || !isContentAllowed(context)
+                    || contentGeneration != JCoreStorage.getContentGeneration()) {
                     return;
                 }
                 dispatchNotificationEvent(context, "notify_opened", notificationMessage);
+                if (contentGeneration != JCoreStorage.getContentGeneration() || !isContentAllowed(context)) {
+                    return;
+                }
                 broadcastNotificationOpened(context, notificationMessage);
-                if (fcmClick || notificationMessage.platform == 8) {
-                    android.content.pm.PackageManager manager = context.getPackageManager();
-                    Intent launcher = manager != null ? manager.getLaunchIntentForPackage(appPkg) : null;
-                    if (launcher != null) {
-                        launcher.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                        context.startActivity(launcher);
-                    }
+                android.content.pm.PackageManager manager = context.getPackageManager();
+                Intent launcher = manager != null ? manager.getLaunchIntentForPackage(appPkg) : null;
+                if (launcher != null && launcher.getComponent() != null
+                    && appPkg.equals(launcher.getComponent().getPackageName()) && isContentAllowed(context)
+                    && contentGeneration == JCoreStorage.getContentGeneration()) {
+                    launcher.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                    context.startActivity(launcher);
                 }
             }
         } catch (Throwable ignored) {
@@ -253,7 +278,7 @@ public class ActionHelper {
 
     public void broadcastNotificationOpened(Context context, NotificationMessage message) {
         Context app = JCoreStorage.getAppContext(context);
-        if (app == null || message == null) {
+        if (app == null || message == null || !isContentAllowed(app)) {
             return;
         }
         try {
@@ -336,7 +361,8 @@ public class ActionHelper {
     }
 
     public void postSystemNotification(Context context, NotificationMessage message) {
-        if (message == null) {
+        long contentGeneration = JCoreStorage.getContentGeneration();
+        if (message == null || !isContentAllowed(context)) {
             return;
         }
         Context app = JCoreStorage.getAppContext(context);
@@ -417,12 +443,18 @@ public class ActionHelper {
             }
 
             Notification notification = builder.build();
-            nm.notify(notifyId, notification);
+            if (contentGeneration == JCoreStorage.getContentGeneration() && isContentAllowed(app)) {
+                nm.notify(notifyId, notification);
+            }
         } catch (Throwable ignored) {
         }
     }
 
     public void handleDownlinkPushMessage(Context context, byte messageType, long messageId, String rawContent) {
+        long contentGeneration = JCoreStorage.getContentGeneration();
+        if (!isContentAllowed(context)) {
+            return;
+        }
         String content = rawContent != null ? rawContent : "";
         int lastNewline = content.lastIndexOf('\n');
         if (lastNewline >= 0 && lastNewline + 1 < content.length()) {
@@ -471,8 +503,13 @@ public class ActionHelper {
                 JCoreWireCodec.extractJsonInt(content, "notificaion_type", 0)
             );
             notification.platform = JCoreWireCodec.extractJsonInt(content, "platform", 0);
+            if (contentGeneration != JCoreStorage.getContentGeneration() || !isContentAllowed(context)) {
+                return;
+            }
             postSystemNotification(context, notification);
-            dispatchNotificationEvent(context, "notify_arrived", notification);
+            if (contentGeneration == JCoreStorage.getContentGeneration()) {
+                dispatchNotificationEvent(context, "notify_arrived", notification);
+            }
             return;
         }
 
@@ -490,7 +527,9 @@ public class ActionHelper {
         custom.contentType = JCoreWireCodec.extractJsonString(content, "content_type");
         custom.extra = extractJsonObjectAsString(content, "extras", "n_extras");
         custom.platform = (byte) JCoreWireCodec.extractJsonInt(content, "platform", 0);
-        dispatchCustomMessageEvent(context, custom);
+        if (contentGeneration == JCoreStorage.getContentGeneration()) {
+            dispatchCustomMessageEvent(context, custom);
+        }
     }
 
     private static String extractJsonObjectAsString(String json, String primaryKey, String fallbackKey) {
@@ -1087,7 +1126,7 @@ public class ActionHelper {
     }
 
     public void dispatchNotificationEvent(Context context, String eventType, NotificationMessage message) {
-        if (message == null) {
+        if (message == null || !isContentAllowed(context)) {
             return;
         }
         Intent intent = buildBaseReceiverIntent(context, eventType, 0, 0);
@@ -1096,7 +1135,7 @@ public class ActionHelper {
     }
 
     public void dispatchCustomMessageEvent(Context context, CustomMessage message) {
-        if (message == null) {
+        if (message == null || !isContentAllowed(context)) {
             return;
         }
         Intent intent = buildBaseReceiverIntent(context, "custom_msg", 0, 0);
@@ -1116,6 +1155,9 @@ public class ActionHelper {
                 }
             } catch (Throwable ignored) {
             }
+        }
+        if (isContentEvent(eventType)) {
+            intent.putExtra(KEY_CONTENT_GENERATION, JCoreStorage.getContentGeneration());
         }
         intent.putExtra(KEY_EVENT_TYPE, eventType);
         intent.putExtra(KEY_SEQUENCE, sequence);
@@ -1149,6 +1191,10 @@ public class ActionHelper {
         }
         String eventType = intent.getStringExtra(KEY_EVENT_TYPE);
         if (eventType == null) {
+            return;
+        }
+        if (isContentEvent(eventType) && (!isContentAllowed(context)
+            || intent.getLongExtra(KEY_CONTENT_GENERATION, JCoreStorage.getContentGeneration()) != JCoreStorage.getContentGeneration())) {
             return;
         }
         int sequence = intent.getIntExtra(KEY_SEQUENCE, 0);

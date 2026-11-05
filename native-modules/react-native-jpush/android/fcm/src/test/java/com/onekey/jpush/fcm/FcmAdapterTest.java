@@ -417,6 +417,119 @@ public class FcmAdapterTest {
         }
     }
 
+    private void installHostLauncher() {
+        ActivityInfo host = new ActivityInfo();
+        host.packageName = context.getPackageName();
+        host.name = context.getPackageName() + ".MainActivity";
+        host.applicationInfo = new ApplicationInfo(context.getApplicationInfo());
+        ResolveInfo resolvedHost = new ResolveInfo();
+        resolvedHost.activityInfo = host;
+        Intent launcher = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(context.getPackageName());
+        Shadows.shadowOf(context.getPackageManager()).addResolveInfoForIntent(launcher, resolvedHost);
+    }
+
+    @Test
+    public void tcpReceiveAndSerializedTapsRespectStopAndAuthorization() {
+        installHostLauncher();
+        ActionHelper helper = ActionHelper.getInstance();
+        for (boolean stopped : new boolean[]{true, false}) {
+            JCoreStorage.setPushStopped(context, false);
+            JCoreStorage.setCollectionAuth(context, true);
+            helper.handleDownlinkPushMessage(context, (byte) 0, 7101, "{\"n_title\":\"TCP\",\"n_content\":\"body\"}");
+            helper.handleDownlinkPushMessage(context, (byte) 2, 7102, "{\"message\":\"custom\"}");
+            assertEquals(1, arrived.size());
+            assertEquals(1, custom.size());
+            Intent tap = Shadows.shadowOf(Shadows.shadowOf(notifications).getAllNotifications().get(0).contentIntent).getSavedIntent();
+            notifications.cancelAll();
+            JCoreStorage.setPushStopped(context, stopped);
+            JCoreStorage.setCollectionAuth(context, stopped);
+            helper.handleDownlinkPushMessage(context, (byte) 0, 7103, "{\"n_title\":\"blocked\",\"n_content\":\"body\"}");
+            helper.handleDownlinkPushMessage(context, (byte) 2, 7104, "{\"message\":\"blocked\"}");
+            Robolectric.buildActivity(JNotifyActivity.class, tap).create();
+            assertTrue(Shadows.shadowOf(notifications).getAllNotifications().isEmpty());
+            assertEquals(1, arrived.size());
+            assertEquals(1, custom.size());
+            assertTrue(opened.isEmpty());
+            assertNull(Shadows.shadowOf(RuntimeEnvironment.getApplication()).getNextStartedActivity());
+            arrived.clear();
+            custom.clear();
+        }
+    }
+
+    @Test
+    public void bothTransportTapsLaunchTheHostOnceAndRejectForeignOrInvalidIntents() {
+        installHostLauncher();
+        ActionHelper helper = ActionHelper.getInstance();
+        for (int platform : new int[]{0, 8}) {
+            NotificationMessage message = new NotificationMessage();
+            message.msgId = "tap_" + platform;
+            message.platform = platform;
+            Intent tap = new Intent(context, JNotifyActivity.class)
+                .setAction(JPushInterface.ACTION_NOTIFICATION_OPENED)
+                .putExtra("multi_notification_msg", message);
+            JNotifyActivity activity = Robolectric.buildActivity(JNotifyActivity.class, tap).create().get();
+            assertTrue(activity.isFinishing());
+            assertEquals(platform == 0 ? 1 : 2, opened.size());
+            Intent launched = Shadows.shadowOf(RuntimeEnvironment.getApplication()).getNextStartedActivity();
+            assertNotNull(launched);
+            assertEquals(context.getPackageName() + ".MainActivity", launched.getComponent().getClassName());
+            assertNull(Shadows.shadowOf(RuntimeEnvironment.getApplication()).getNextStartedActivity());
+            helper.handleNotificationIntent(context, new Intent(tap).setAction("unrelated"));
+            helper.handleNotificationIntent(context, new Intent(tap).setPackage("foreign.package"));
+            helper.handleNotificationIntent(context, new Intent(tap).setComponent(new android.content.ComponentName("foreign.package", "Foreign")));
+            message.msgId = "";
+            helper.handleNotificationIntent(context, tap);
+            assertEquals(platform == 0 ? 1 : 2, opened.size());
+            assertNull(Shadows.shadowOf(RuntimeEnvironment.getApplication()).getNextStartedActivity());
+        }
+    }
+
+    @Test
+    public void notificationConstructionCannotCrossAnAuthorizationGeneration() {
+        NotificationManager manager = mock(NotificationManager.class);
+        android.content.ContextWrapper wrapped = new android.content.ContextWrapper(context) {
+            @Override public Object getSystemService(String name) {
+                return Context.NOTIFICATION_SERVICE.equals(name) ? manager : super.getSystemService(name);
+            }
+        };
+        ReflectionHelpers.setStaticField(JCoreStorage.class, "sAppContext", wrapped);
+        doAnswer(call -> {
+            JCoreStorage.setCollectionAuth(wrapped, false);
+            JCoreStorage.setCollectionAuth(wrapped, true);
+            return null;
+        }).when(manager).createNotificationChannel(any(android.app.NotificationChannel.class));
+        ActionHelper helper = ActionHelper.getInstance();
+        helper.handleDownlinkPushMessage(wrapped, (byte) 0, 7105, "{\"n_title\":\"TCP\",\"n_content\":\"body\"}");
+        Bundle payload = new Bundle();
+        payload.putString("data", "{\"msg_id\":\"fcm_generation\",\"n_title\":\"FCM\",\"n_content\":\"body\"}");
+        helper.doAction(wrapped, JThirdPlatFormInterface.ACTION_PLUGIN_PALTFORM_ON_MESSAGING, payload);
+        verify(manager, times(2)).createNotificationChannel(any(android.app.NotificationChannel.class));
+        verify(manager, never()).notify(anyInt(), any(Notification.class));
+        assertTrue(arrived.isEmpty());
+    }
+
+    @Test
+    public void openedCallbackRevocationAndRegrantCannotContinueTheOldTapLaunch() {
+        installHostLauncher();
+        ActionHelper helper = ActionHelper.getInstance();
+        JPushMessageReceiver revoke = new JPushMessageReceiver() {
+            @Override public void onNotifyMessageOpened(Context c, NotificationMessage message) {
+                JCoreStorage.setCollectionAuth(c, false);
+                JCoreStorage.setCollectionAuth(c, true);
+            }
+        };
+        helper.registerReceiver(revoke);
+        NotificationMessage message = new NotificationMessage();
+        message.msgId = "tap_generation";
+        Intent tap = new Intent(context, JNotifyActivity.class)
+            .setAction(JPushInterface.ACTION_NOTIFICATION_OPENED)
+            .putExtra("multi_notification_msg", message);
+        Robolectric.buildActivity(JNotifyActivity.class, tap).create();
+        assertEquals(1, opened.size());
+        assertNull(Shadows.shadowOf(RuntimeEnvironment.getApplication()).getNextStartedActivity());
+        helper.unregisterReceiver(revoke);
+    }
+
     @Test
     public void compressedMetadataRetainsItsOwnTitleAndExtras() {
         Bundle payload = metadata(compress("{\"msg_id\":\"zipped\",\"override_msg_id\":\"\",\"n_title\":\"metadata_title\",\"n_content\":\"metadata_body\",\"n_extras\":{\"route\":\"private_route\"}}"));

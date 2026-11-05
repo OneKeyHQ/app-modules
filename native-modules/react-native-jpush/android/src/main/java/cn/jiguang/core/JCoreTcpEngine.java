@@ -383,7 +383,7 @@ public final class JCoreTcpEngine {
         final long startGen;
         final CountDownLatch latchForStart;
         synchronized (this) {
-            if (started) {
+            if (started || JCoreStorage.isPushStopped(JCoreStorage.getAppContext(context))) {
                 return;
             }
             started = true;
@@ -391,21 +391,18 @@ public final class JCoreTcpEngine {
             startGen = this.connectionGeneration;
             latchForStart = this.handshakeLatch;
         }
-        if (JCoreStorage.isPushStopped(JCoreStorage.getAppContext(context))) {
-            latchForStart.countDown();
-            return;
-        }
         ioExecutor.execute(new Runnable() {
             @Override
             public void run() {
-                if (!started || startGen != connectionGeneration) {
-                    latchForStart.countDown();
-                    return;
-                }
                 Context app = JCoreStorage.getAppContext(context);
-                if (JCoreStorage.isPushStopped(app)) {
-                    latchForStart.countDown();
-                    return;
+                synchronized (JCoreTcpEngine.this) {
+                    if (!started || startGen != connectionGeneration || JCoreStorage.isPushStopped(app)) {
+                        if (startGen == connectionGeneration && handshakeLatch == latchForStart) {
+                            started = false;
+                        }
+                        latchForStart.countDown();
+                        return;
+                    }
                 }
                 connectAndHandshake(app);
             }
@@ -764,6 +761,7 @@ public final class JCoreTcpEngine {
 
             startHeartbeatTimer(context, connectedSocket);
             flushPreLoginQueue(context);
+            cn.jpush.android.api.JThirdPlatFormInterface.initializeFcm(context);
             return true;
         } catch (Throwable ignored) {
             closeSocket();

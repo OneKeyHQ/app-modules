@@ -18,6 +18,7 @@ import cn.jiguang.plugins.core.JCoreModule;
 import cn.jiguang.plugins.push.JPushModule;
 import cn.jiguang.plugins.push.common.JConstants;
 import cn.jiguang.plugins.push.common.JLogger;
+import cn.jiguang.plugins.push.helper.JPushHelper;
 import cn.jiguang.plugins.push.receiver.JPushModuleReceiver;
 import cn.jpush.android.api.CmdMessage;
 import cn.jpush.android.api.CustomMessage;
@@ -828,6 +829,8 @@ public final class SdkHostRegressionTest {
 
         // 4. Exercise React Native bridge methods on JCoreModule and JPushModule
         jcoreModule.setAuth(false);
+        check(!JCoreStorage.isCollectionAuth(reactContext), "Legacy bridge revokes collection authorization");
+        jcoreModule.setAuth(true);
         jcoreModule.enableAutoWakeup(false);
         WritableMap logCfg = Arguments.createMap();
         logCfg.putBoolean("enable", true);
@@ -1557,6 +1560,203 @@ public final class SdkHostRegressionTest {
         );
     }
 
+    private interface AwaitCondition { boolean ready(); }
+
+    private static void awaitCondition(AwaitCondition condition, String message) throws Exception {
+        long end = System.currentTimeMillis() + 5000L;
+        while (!condition.ready() && System.currentTimeMillis() < end) Thread.sleep(10L);
+        check(condition.ready(), message);
+    }
+
+    private static void testStoppedInitAndRealLoginFcmRebind() throws Exception {
+        final Context context = new Context();
+        final JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
+        engine.setAutoReconnectEnabled(false);
+        engine.stop(context);
+        JCoreStorage.setCollectionAuth(context, true);
+        JCoreStorage.setPushStopped(context, false);
+        JCoreStorage.clearRegistration(context);
+        final AtomicInteger tokenRequests = new AtomicInteger();
+        cn.jpush.android.api.JThirdPlatFormInterface adapter = new cn.jpush.android.api.JThirdPlatFormInterface() {
+            public void init(Context c) {} public void register(Context c, Bundle b) {}
+            public String getToken(Context c) {
+                tokenRequests.incrementAndGet();
+                ActionHelper.getInstance().setThirdTokenWithCallBack(c, "loopback_rebind_token", (byte) 8, false);
+                return "loopback_rebind_token";
+            }
+            public boolean isSupport(Context c) { return true; } public byte getRomType(Context c) { return 8; }
+            public String getRomName() { return "test"; } public String getAppkey(Context c) { return "test"; }
+            public String getAppId(Context c) { return "test"; } public boolean isNeedClearToken(Context c) { return false; }
+            public void clearNotification(Context c, int id) {} public void clearAllNotification(Context c) {}
+        };
+        java.lang.reflect.Field plugin = cn.jpush.android.api.JThirdPlatFormInterface.class.getDeclaredField("fcmPlugin");
+        java.lang.reflect.Field registered = cn.jpush.android.api.JThirdPlatFormInterface.class.getDeclaredField("fcmRegistered");
+        plugin.setAccessible(true); registered.setAccessible(true);
+        plugin.set(null, adapter); registered.setBoolean(null, false);
+        final AtomicInteger connections = new AtomicInteger(), registrations = new AtomicInteger(), binds = new AtomicInteger();
+        final java.util.Set<Long> boundUids = java.util.concurrent.ConcurrentHashMap.<Long>newKeySet();
+        final AtomicBoolean failLogin = new AtomicBoolean(false), done = new AtomicBoolean(false);
+        final AtomicReference<Throwable> serverError = new AtomicReference<Throwable>();
+        final AtomicReference<Socket> active = new AtomicReference<Socket>();
+        try (ServerSocket listener = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"))) {
+            Thread server = new Thread(() -> {
+                while (!done.get()) {
+                    try (Socket socket = listener.accept()) {
+                        active.set(socket); connections.incrementAndGet();
+                        long uid = 0L;
+                        while (!done.get()) {
+                            JCoreWireCodec.DecodedFrame frame = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), uid);
+                            if (frame == null) break;
+                            byte[] body = new byte[0]; int status = 0;
+                            if (frame.command == JCoreWireCodec.CMD_REGISTER) {
+                                int registration = registrations.incrementAndGet(); uid = 880000L + registration;
+                                body = JCoreWireCodec.buildRegisterResponsePayload(uid, "loopback_password", "rebind_rid_" + registration, "loopback_device");
+                            } else if (frame.command == JCoreWireCodec.CMD_LOGIN) {
+                                status = failLogin.get() ? 1005 : 0;
+                                body = JCoreWireCodec.buildLoginResponsePayload(9001, 520, "", 1700000000);
+                            }
+                            socket.getOutputStream().write(JCoreWireCodec.encodeResponseFrame(frame.command, frame.version,
+                                frame.requestId, frame.command == JCoreWireCodec.CMD_REGISTER ? frame.sessionId : 9001, uid, status, body));
+                            socket.getOutputStream().flush();
+                            if (frame.command == JCoreWireCodec.CMD_THIRD_TOKEN) { binds.incrementAndGet(); boundUids.add(uid); }
+                        }
+                    } catch (java.net.SocketException closed) {
+                        // A client stop closes its active session; the next iteration accepts its resume.
+                    } catch (Throwable error) { serverError.set(error); return; }
+                }
+            }, "test-real-login-fcm-rebind");
+            server.setDaemon(true); server.start();
+            try {
+                engine.setCustomEndpoint("127.0.0.1", listener.getLocalPort());
+                engine.setDefaultRequestTimeoutMs(500L);
+                JPushInterface.stopPush(context);
+                JPushInterface.init(context);
+                java.lang.reflect.Field started = JCoreTcpEngine.class.getDeclaredField("started"); started.setAccessible(true);
+                check(!started.getBoolean(engine), "Stopped init must not reserve started");
+                JPushInterface.resumePush(context);
+                awaitCondition(() -> engine.isLoggedIn() && binds.get() >= 1, "First resume must register, login and bind");
+                CountDownLatch stable = new CountDownLatch(1); engine.executeAsync(stable::countDown);
+                check(stable.await(3000L, TimeUnit.MILLISECONDS), "Initial FCM request work must stabilize");
+                int initialRequests = tokenRequests.get();
+                String initialRid = JCoreStorage.getRegistrationId(context);
+                engine.start(context); engine.start(context);
+                check(connections.get() == 1, "Repeated init must not establish another connection");
+                engine.stop(context); JCoreStorage.clearRegistration(context); engine.start(context);
+                awaitCondition(() -> engine.isLoggedIn() && boundUids.contains(880002L), "Second real registration must receive a bind ACK on its new UID");
+                check(registrations.get() == 2 && !initialRid.equals(JCoreStorage.getRegistrationId(context)), "Rebind must follow a changed RID from real Register");
+                check(tokenRequests.get() == initialRequests + 1, "Successful re-registration requests the current FCM token once");
+                awaitCondition(() -> "loopback_rebind_token".equals(JCoreStorage.getThirdToken(context, (byte) 8)), "Successful bind acknowledgement persists current token");
+
+                engine.stop(context); JCoreStorage.clearRegistration(context);
+                CountDownLatch blocked = new CountDownLatch(1), release = new CountDownLatch(1);
+                engine.executeAsync(() -> { blocked.countDown(); try { release.await(3000L, TimeUnit.MILLISECONDS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); } });
+                check(blocked.await(3000L, TimeUnit.MILLISECONDS), "Block only the I/O queue before scheduling generations");
+                engine.start(context); JPushInterface.stopPush(context); JPushInterface.resumePush(context); release.countDown();
+                awaitCondition(() -> engine.isLoggedIn() && registrations.get() == 3, "An obsolete queued start cannot cancel the newer resume");
+                check(connections.get() == 3, "Only current start generation may connect");
+                CountDownLatch generationStable = new CountDownLatch(1); engine.executeAsync(generationStable::countDown);
+                check(generationStable.await(3000L, TimeUnit.MILLISECONDS), "Current login FCM work stabilizes");
+                int beforeFailedLogin = tokenRequests.get();
+                engine.stop(context); JCoreStorage.clearRegistration(context); failLogin.set(true); engine.start(context);
+                check(engine.awaitHandshake(3000L), "Failed login must complete the handshake wait");
+                CountDownLatch failedStable = new CountDownLatch(1); engine.executeAsync(failedStable::countDown);
+                check(failedStable.await(3000L, TimeUnit.MILLISECONDS), "Failed login work completes");
+                check(!engine.isLoggedIn() && tokenRequests.get() == beforeFailedLogin, "Failed login does not initialize FCM");
+                check(serverError.get() == null, "Loopback registration server must remain healthy");
+            } finally {
+                done.set(true); engine.stop(context);
+                Socket socket = active.get(); if (socket != null) socket.close();
+                plugin.set(null, null); registered.setBoolean(null, false);
+            }
+        }
+    }
+
+    private static void disableAndEnableContent(Context context, boolean stop) {
+        if (stop) {
+            JCoreStorage.setPushStopped(context, true);
+            JCoreStorage.setPushStopped(context, false);
+        } else {
+            JCoreStorage.setCollectionAuth(context, false);
+            JCoreStorage.setCollectionAuth(context, true);
+        }
+    }
+
+    private static void testContentQueueInvalidation() throws Exception {
+        Context context = new Context();
+        JCoreStorage.setAppContext(context);
+        JCoreStorage.setCollectionAuth(context, true);
+        JCoreStorage.setPushStopped(context, false);
+        JPushModule.clearActiveReactContexts();
+        JPushHelper.clearNitroListeners();
+        for (boolean stop : new boolean[]{false, true}) {
+            JPushHelper.sendEventMap(JConstants.NOTIFICATION_EVENT, Collections.<String, Object>emptyMap());
+            JPushHelper.sendEvent(JConstants.CUSTOM_MESSAGE_EVENT, Arguments.createMap());
+            JPushHelper.sendEventMap(JConstants.COMMAND_EVENT, Collections.<String, Object>emptyMap());
+            disableAndEnableContent(context, stop);
+            final List<String> nitro = new java.util.ArrayList<String>();
+            int listener = JPushHelper.registerNitroListener((name, payload) -> nitro.add(name));
+            check(nitro.equals(Collections.singletonList(JConstants.COMMAND_EVENT)), "Reenabled Nitro must discard content queued before disable and retain control");
+            JPushHelper.unregisterNitroListener(listener);
+            ReactApplicationContext legacy = new ReactApplicationContext();
+            JPushModule.registerReactContext(legacy);
+            check(legacy.emittedEvents.size() == 1 && JConstants.COMMAND_EVENT.equals(legacy.emittedEvents.get(0).name), "Reenabled legacy must discard content queued before disable and retain control");
+            JPushModule.clearActiveReactContexts();
+            JPushHelper.clearNitroListeners();
+
+            JPushHelper.sendEventMap(JConstants.NOTIFICATION_EVENT, Collections.<String, Object>emptyMap());
+            JPushHelper.sendEventMap(JConstants.CUSTOM_MESSAGE_EVENT, Collections.<String, Object>emptyMap());
+            JPushHelper.sendEventMap(JConstants.COMMAND_EVENT, Collections.<String, Object>emptyMap());
+            nitro.clear();
+            listener = JPushHelper.registerNitroListener((name, payload) -> {
+                nitro.add(name);
+                if (JConstants.NOTIFICATION_EVENT.equals(name)) disableAndEnableContent(context, stop);
+            });
+            check(nitro.equals(Arrays.asList(JConstants.NOTIFICATION_EVENT, JConstants.COMMAND_EVENT)), "Disable while flushing a Nitro snapshot invalidates its remaining content");
+            JPushHelper.unregisterNitroListener(listener);
+            JPushHelper.clearNitroListeners();
+
+            JPushHelper.sendEvent(JConstants.NOTIFICATION_EVENT, Arguments.createMap());
+            JPushHelper.sendEvent(JConstants.CUSTOM_MESSAGE_EVENT, Arguments.createMap());
+            JPushHelper.sendEvent(JConstants.CONNECT_EVENT, Arguments.createMap());
+            final List<String> legacyEvents = new java.util.ArrayList<String>();
+            ReactApplicationContext flushingContext = new ReactApplicationContext() {
+                @Override @SuppressWarnings("unchecked")
+                public <T extends com.facebook.react.bridge.JavaScriptModule> T getJSModule(Class<T> type) {
+                    return (T) new com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter() {
+                        @Override public void emit(String name, Object payload) {
+                            legacyEvents.add(name);
+                            if (JConstants.NOTIFICATION_EVENT.equals(name)) disableAndEnableContent(context, stop);
+                        }
+                    };
+                }
+            };
+            JPushModule.registerReactContext(flushingContext);
+            check(legacyEvents.equals(Arrays.asList(JConstants.NOTIFICATION_EVENT, JConstants.CONNECT_EVENT)), "Disable while flushing a legacy snapshot invalidates its remaining content");
+            JPushModule.clearActiveReactContexts();
+            JPushHelper.clearNitroListeners();
+        }
+
+        final AtomicReference<android.content.Intent> broadcast = new AtomicReference<android.content.Intent>();
+        Context broadcastContext = new Context() {
+            @Override public void sendBroadcast(android.content.Intent intent) { broadcast.set(intent); }
+        };
+        java.lang.reflect.Field appContext = JCoreStorage.class.getDeclaredField("sAppContext");
+        appContext.setAccessible(true);
+        appContext.set(null, broadcastContext);
+        ActionHelper helper = ActionHelper.getInstance();
+        helper.clearRegisteredReceivers();
+        NotificationMessage message = new NotificationMessage();
+        message.msgId = "queued_broadcast";
+        helper.dispatchNotificationEvent(broadcastContext, "notify_arrived", message);
+        check(broadcast.get() != null, "Authorized content is broadcast");
+        disableAndEnableContent(broadcastContext, false);
+        final AtomicInteger arrivals = new AtomicInteger();
+        helper.onJPushMessageReceive(broadcastContext, new JPushMessageReceiver() {
+            @Override public void onNotifyMessageArrived(Context c, NotificationMessage m) { arrivals.incrementAndGet(); }
+        }, broadcast.get());
+        check(arrivals.get() == 0, "A delayed native broadcast from before revocation cannot replay after regrant");
+    }
+
     @org.junit.Test
     public void testSdkHostRegressions() throws Exception {
         testCryptoParity();
@@ -1566,5 +1766,7 @@ public final class SdkHostRegressionTest {
         testFcmCallbacksAndPayloadBounds();
         testDefaultHostVerifier();
         testAutoReconnectScheduleAndBinderSecurity();
+        testStoppedInitAndRealLoginFcmRebind();
+        testContentQueueInvalidation();
     }
 }
