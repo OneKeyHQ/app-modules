@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-native-list",
-  "version": "6.7.0-22",
+  "version": "6.7.0-24",
   "description": "Template-driven native RecyclerView and UICollectionView for React Native",
   "source": "./src/index.ts",
   "main": "./lib/module/index.js",
