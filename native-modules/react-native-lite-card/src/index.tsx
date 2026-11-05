@@ -39,12 +39,18 @@ class OnekeyLite {
     });
   }
 
-  setMnemonic(mnemonic: string, pwd: string, overwrite = false) {
+  setMnemonic(
+    mnemonic: string,
+    pwd: string,
+    overwrite = false,
+    expectedSerial?: string
+  ) {
     return new Promise<PromiseResult<boolean>>((resolve) => {
       OKLiteManager.setMnemonic(
         mnemonic,
         pwd,
         overwrite,
+        expectedSerial ?? null,
         this.convertToPromise(resolve)
       );
     });

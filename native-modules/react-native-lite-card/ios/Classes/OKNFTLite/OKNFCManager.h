@@ -30,7 +30,7 @@
 
 - (void)reset:(ResetCallback)callBack;
 
-- (void)setMnemonic:(NSString *)mnemonic withPin:(NSString *)pin overwrite:(BOOL)overwrite complete:(SetMnemonicCallback)complete;
+- (void)setMnemonic:(NSString *)mnemonic withPin:(NSString *)pin overwrite:(BOOL)overwrite expectedSerial:(NSString * _Nullable)expectedSerial complete:(SetMnemonicCallback)complete;
 
 - (void)getMnemonicWithPin:(NSString *)pin complete:(GetMnemonicCallback)complete;
 

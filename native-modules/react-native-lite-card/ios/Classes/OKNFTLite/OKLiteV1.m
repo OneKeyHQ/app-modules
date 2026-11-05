@@ -98,6 +98,7 @@
 
 - (BOOL)syncLiteInfo {
 
+  self.status = OKNFCLiteStatusError;
   OKNFCLiteStatus status = OKNFCLiteStatusError;
   self.pinRTL = 0;
   NSUInteger PinStatus = OKNFC_PIN_ERROR;
@@ -112,6 +113,11 @@
     return NO;
   }
   PinStatus = [self getPINStatus];
+  [LCLogger info:[NSString stringWithFormat:@"stage=pin_state_read readSucceeded=%d", PinStatus != OKNFC_PIN_ERROR]];
+  if (PinStatus == OKNFC_PIN_ERROR) {
+    self.status = OKNFCLiteStatusError;
+    return NO;
+  }
   status = PinStatus == OKNFC_PIN_UNSET ? OKNFCLiteStatusNewCard : OKNFCLiteStatusActivated;
   self.status = status;
   self.pinRTL = PinStatus == OKNFC_PIN_UNSET ? 10 : PinStatus;
@@ -489,7 +495,7 @@
   [self.commandTool sendCommandWithAPDU:[modal buildAPDU]
                                   modal:modal
                       completionHandler:^(NSData * _Nonnull responseData, uint8_t sw1, uint8_t sw2, NSError * _Nullable error, NSString * _Nonnull parseRespon) {
-    if (sw1 != OKNFC_SW1_OK) {
+    if (error != nil || sw1 != OKNFC_SW1_OK || responseData.length == 0) {
       [LCLogger error:@"获取 PIN 状态失败"];
       dispatch_semaphore_signal(sema);
       return;
@@ -501,12 +507,13 @@
       return;
     } else {
       OKLiteCommandModal *modal2 = [[OKLiteCommandModal alloc] initWithCommand:OKLiteCommandPinRTL version:self.version];
-      [self.commandTool sendCommandWithAPDU:[modal2 buildAPDU] modal:modal completionHandler:^(NSData * _Nonnull responseData, uint8_t sw1, uint8_t sw2, NSError * _Nullable error, NSString * _Nonnull parseRespon) {
-        if (sw1 == OKNFC_SW1_OK) {
-          unsigned int outVal;
+      [self.commandTool sendCommandWithAPDU:[modal2 buildAPDU] modal:modal2 completionHandler:^(NSData * _Nonnull responseData, uint8_t sw1, uint8_t sw2, NSError * _Nullable error, NSString * _Nonnull parseRespon) {
+        if (error == nil && sw1 == OKNFC_SW1_OK && responseData.length > 0) {
+          unsigned int outVal = 0;
           NSScanner* scanner = [NSScanner scannerWithString:responseData.toHexString];
-          [scanner scanHexInt:&outVal];
-          pinStatus = outVal;
+          if ([scanner scanHexInt:&outVal]) {
+            pinStatus = outVal;
+          }
         }
         dispatch_semaphore_signal(sema);
       }];

@@ -16,6 +16,7 @@ import com.facebook.react.module.annotations.ReactModule
 import com.onekeyfe.reactnativelitecard.nfc.NFCExceptions
 import com.onekeyfe.reactnativelitecard.nfc.NfcUtils
 import com.onekeyfe.reactnativelitecard.onekeyLite.OneKeyLiteCard
+import com.onekeyfe.reactnativelitecard.onekeyLite.PendingTag
 import com.onekeyfe.reactnativelitecard.onekeyLite.entitys.CardState
 import com.onekeyfe.reactnativelitecard.utils.NfcPermissionUtils
 import com.onekeyfe.reactnativelitecard.utils.Utils
@@ -66,12 +67,11 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
     }
 }
 
-  private val mNFCConnectedChannel = Channel<IsoDep?>(1)
+  private val mNFCConnectedChannel = Channel<PendingTag?>(1)
   private var lastIsoDep: IsoDep? = null
   private val diagnosticSequence = AtomicInteger(0)
   private val mNFCState = AtomicInteger(NFCState.Dead)
   private val mShowDialogNumber = AtomicInteger(0)
-  private var mCurrentCardState: CardState? = null
 
   private val mActivityEventListener = object : BaseActivityEventListener() {
     override fun onNewIntent(intent: Intent) {
@@ -97,15 +97,14 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
         }
 
         OneKeyLog.info("LiteCard", "stage=tag_received wallTimeMs=${System.currentTimeMillis()}")
+        val pendingTag = PendingTag(isoDep)
+        if (mNFCConnectedChannel.trySend(pendingTag).isFailure) return
         launch(Dispatchers.IO) {
-          mNFCConnectedChannel.trySend(isoDep)
           try {
             // 处理主动触发 NFC
             delay(100)
-            if (!mNFCConnectedChannel.isEmpty) {
-              OneKeyLog.error("LiteCard","There is no way to use NFC")
-//                            mNFCConnectedChannel.receive()
-              val startRequest = OneKeyLiteCard.initRequest(isoDep)
+            val startRequest = OneKeyLiteCard.tryDiscover(pendingTag)
+            if (startRequest != null && !pendingTag.isClaimed()) {
               val dataMap = Arguments.createMap().apply {
                 putInt("code", -1)
                 putString("type", "OneKey_Lite")
@@ -117,6 +116,7 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
             }
           } catch (e: Exception) {
             OneKeyLog.error("LiteCard", "stage=connection_failure type=${if (e is NFCExceptions) "nfc" else "other"}")
+            if (pendingTag.isClaimed()) return@launch
             // 未知设备或连接失败
             val dataMap = Arguments.createMap().apply {
               putInt("code", -1)
@@ -137,7 +137,6 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
   private fun releaseDevice() {
     if (mShowDialogNumber.get() <= 0) return
 
-    mCurrentCardState = null
     val decrementAndGet = mShowDialogNumber.decrementAndGet()
 
     // 关闭连接结束 ui
@@ -174,11 +173,8 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
     var receiveIsoDep: IsoDep? = null
 
     if (tryReceiveResult.isSuccess) {
-      receiveIsoDep = tryReceiveResult.getOrNull()
+      receiveIsoDep = tryReceiveResult.getOrNull()?.claim()
       OneKeyLog.info("LiteCard", "acquireID=$acquireID stage=acquire_source source=channel connected=${receiveIsoDep.isSafeConnected()}")
-      if (!receiveIsoDep.isSafeConnected()) {
-        receiveIsoDep = null
-      }
     }
 
     if (receiveIsoDep == null && lastIsoDep.isSafeConnected()) {
@@ -187,33 +183,18 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
     }
     if (receiveIsoDep == null) {
       OneKeyLog.info("LiteCard", "acquireID=$acquireID stage=acquire_source source=wait")
-      receiveIsoDep = mNFCConnectedChannel.receive()
+      receiveIsoDep = mNFCConnectedChannel.receive()?.claim()
     }
 
     OneKeyLog.info("LiteCard", "acquireID=$acquireID stage=acquire_result available=${receiveIsoDep != null} connected=${receiveIsoDep.isSafeConnected()}")
     lastIsoDep = receiveIsoDep
-    if (receiveIsoDep == null) {
-      // 取消连接
-      releaseDevice()
-    } else {
-      val initChannelRequest = OneKeyLiteCard.initRequest(receiveIsoDep)
-
-      mCurrentCardState = initChannelRequest
-      OneKeyLog.info("LiteCard", "acquireID=$acquireID stage=card_state isNewCard=${initChannelRequest.isNewCard} hasBackup=${initChannelRequest.hasBackup}")
-
-      // 展示连接结束 ui
-      emitOnNFCUIEvent(Arguments.createMap().also {
-        it.putInt("code", 2)
-        it.putString("message", "connected")
-      }.copy())
-    }
     return receiveIsoDep
   }
 
   private suspend fun <T> handleOperation(
     callback: Callback?,
     operation: String,
-    execute: (isoDep: IsoDep) -> T
+    execute: (session: OneKeyLiteCard.CardSession) -> T
   ) {
     val operationID = diagnosticSequence.incrementAndGet()
     val started = SystemClock.elapsedRealtime()
@@ -223,15 +204,25 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
       return
     }
     NfcPermissionUtils.checkPermission(topActivity) {
+      var cardState: CardState? = null
       try {
         OneKeyLog.debug("LiteCard","NFC permission check success")
         val isoDep = acquireDevice() ?: return
-        val executeResult = execute(isoDep)
+        val executeResult = OneKeyLiteCard.withCardSession(isoDep) { session ->
+          cardState = session.cardState
+          OneKeyLog.info("LiteCard", "operation=$operation operationID=$operationID stage=card_state isNewCard=${session.cardState.isNewCard} hasBackup=${session.cardState.hasBackup}")
+          // This queues a React Native event; completion callbacks stay outside ownership.
+          emitOnNFCUIEvent(Arguments.createMap().also {
+            it.putInt("code", 2)
+            it.putString("message", "connected")
+          }.copy())
+          execute(session)
+        }
         OneKeyLog.info("LiteCard", "operation=$operation operationID=$operationID stage=callback code=0 elapsedMs=${SystemClock.elapsedRealtime() - started}")
-        callback?.invoke(null, executeResult, mCurrentCardState.createArguments())
+        callback?.invoke(null, executeResult, cardState.createArguments())
       } catch (e: NFCExceptions) {
         OneKeyLog.info("LiteCard", "operation=$operation operationID=$operationID stage=callback code=${e.code} elapsedMs=${SystemClock.elapsedRealtime() - started}")
-        callback?.invoke(e.createArguments(), null, mCurrentCardState.createArguments())
+        callback?.invoke(e.createArguments(), null, cardState.createArguments())
       } finally {
         releaseDevice()
       }
@@ -264,9 +255,9 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
   override fun getLiteInfo(callback: Callback?) {
     launch {
       OneKeyLog.debug("LiteCard","getLiteInfo")
-      handleOperation<Any>(callback, "getLiteInfo") { isoDep ->
+      handleOperation<Any>(callback, "getLiteInfo") { session ->
         OneKeyLog.debug("LiteCard","getLiteInfo Obtain the device")
-        val cardInfo = OneKeyLiteCard.getCardInfo(isoDep)
+        val cardInfo = OneKeyLiteCard.getCardInfo(session)
         OneKeyLog.debug("LiteCard","getLiteInfo result obtained")
         cardInfo.createArguments()
       }
@@ -307,6 +298,7 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
     mnemonic: String?,
     pwd: String?,
     overwrite: Boolean,
+    expectedSerial: String?,
     callback: Callback?
   ) {
     if (pwd.isNullOrEmpty() || pwd.length != 6 || !pwd.all { it.isDigit() }) {
@@ -318,15 +310,15 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
       return
     }
     launch {
-      handleOperation(callback, "setMnemonic") { isoDep ->
+      handleOperation(callback, "setMnemonic") { session ->
         OneKeyLog.debug("LiteCard","setMnemonic Obtain the device")
         val isSuccess =
           OneKeyLiteCard.setMnemonic(
-            mCurrentCardState,
-            isoDep,
+            session,
             mnemonic,
             pwd,
-            overwrite
+            overwrite,
+            expectedSerial
           )
         if (!isSuccess) throw NFCExceptions.ExecFailureException()
         OneKeyLog.debug("LiteCard","setMnemonic result success")
@@ -345,9 +337,9 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
     }
     launch {
       OneKeyLog.debug("LiteCard","getMnemonicWithPin")
-      handleOperation(callback, "getMnemonicWithPin") { isoDep ->
+      handleOperation(callback, "getMnemonicWithPin") { session ->
         OneKeyLog.debug("LiteCard","getMnemonicWithPin Obtain the device")
-        OneKeyLiteCard.getMnemonicWithPin(mCurrentCardState, isoDep, pwd)
+        OneKeyLiteCard.getMnemonicWithPin(session, pwd)
       }
     }
   }
@@ -359,9 +351,9 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
   ) {
     launch {
       OneKeyLog.debug("LiteCard","changePin")
-      handleOperation(callback, "changePin") { isoDep ->
+      handleOperation(callback, "changePin") { session ->
         OneKeyLog.debug("LiteCard","changePin Obtain the device")
-        OneKeyLiteCard.changPin(mCurrentCardState, isoDep, oldPin, newPin)
+        OneKeyLiteCard.changPin(session, oldPin, newPin)
       }
     }
   }
@@ -369,9 +361,9 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
   override fun reset(callback: Callback?) {
     launch {
       OneKeyLog.debug("LiteCard","reset")
-      handleOperation(callback, "reset") { isoDep ->
+      handleOperation(callback, "reset") { session ->
         OneKeyLog.debug("LiteCard","reset Obtain the device")
-        val isSuccess = OneKeyLiteCard.reset(isoDep)
+        val isSuccess = OneKeyLiteCard.reset(session)
         if (!isSuccess) throw NFCExceptions.ExecFailureException()
         OneKeyLog.debug("LiteCard","reset result success")
         true

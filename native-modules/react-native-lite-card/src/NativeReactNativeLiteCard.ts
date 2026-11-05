@@ -72,6 +72,7 @@ export interface Spec extends TurboModule {
     mnemonic: string,
     pwd: string,
     overwrite: boolean,
+    expectedSerial: string | null,
     callback: (
       error: CallbackError | null,
       data: boolean | null,

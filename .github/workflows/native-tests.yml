@@ -108,6 +108,12 @@ jobs:
             -include-runtime -d "$RUNNER_TEMP/picker-error-privacy-tests.jar"
           java -jar "$RUNNER_TEMP/picker-error-privacy-tests.jar" | tee "$RUNNER_TEMP/picker-error-privacy-tests.log"
           grep -Eq '^ImageCropPickerException: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/picker-error-privacy-tests.log"
+      - name: Run Lite Card Android session ownership regressions
+        working-directory: native-modules/react-native-lite-card
+        shell: bash
+        run: |
+          node tests/android-session.cjs | tee "$RUNNER_TEMP/lite-card-session-tests.log"
+          grep -Eq '^CardSession: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/lite-card-session-tests.log"
       - name: Run Lite Card SDK C++ and JNI native regressions
         working-directory: native-modules/react-native-lite-card/sdk
         shell: bash
