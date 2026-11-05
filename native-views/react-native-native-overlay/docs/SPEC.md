@@ -129,8 +129,9 @@ come only from props.
 - `reopen(id)` restores a closing entry to active, cancels its fallback timer,
   and keeps its ordering, content and removal handler. A declarative
   false-to-true change before exit completion uses this path; it does not
-  report a completed close. Hosts retarget the in-flight animation, including
-  cancelling the host-requested UIKit sheet dismissal when still running.
+  report a completed close. Hosts retarget the in-flight animation except iOS
+  global system sheets, which complete their own native exit before reconciling
+  desired visibility with a new controller and the same React child.
 - Removing a queued entry detaches its removal handler before notifying store
   subscribers or scheduling its callback. Same-tick reuse of that ID owns a
   separate handler; the old removal cannot invoke or delete the new handler.
@@ -252,7 +253,9 @@ request ─► queued ─► active ─► (enter anim) presented
   finalized, so exit and enter never overlap. `replace` is the exception: the
   new entry enters while the replaced one exits.
 - Reopening an entry that is still closing retargets the running animation from
-  its current value. It does not restart.
+  its current value without restarting, except iOS global system sheets: those
+  finish their own exit, then re-present if still desired visible. The entry and
+  React content survive without a terminal event; its own controller may change.
 - `onRemoved` fires exactly once per entry, even when a finalize and the
   timeout race.
 - **Android exit ownership (Implemented; blocking page/global touch and global
@@ -283,6 +286,70 @@ request ─► queued ─► active ─► (enter anim) presented
   - Web: navigation focus.
 - Threads: store mutations happen on the JS thread. Native animation and layout
   run on the UI thread. Events are delivered as direct events.
+
+### Independent iOS global windows
+
+Implemented; the final v3 independently passed core OneKey/Fabric Gallery
+verification on iOS 27.0. See [IOS_OVERLAY_ACCEPTANCE.md](../../../IOS_OVERLAY_ACCEPTANCE.md)
+for covered paths and unverified boundaries; the full runtime matrix below is
+not marked complete. iOS
+`main` owns the React store/content; `bg` has an independent JS heap and does
+not own these resources. The native manager is process-shared and confined to
+the main thread. Each scene owns one passthrough UIWindow/root presenter per
+active global entry, for every presentation kind. A system sheet presents only
+from its own root, so closing any other global entry MUST NOT dismiss,
+reconstruct, reparent, or emit terminal events for the surviving entries.
+Independent transparent roots do not apply UIKit presentation-chain push-back
+scaling to lower entries. Each sheet retains its own system geometry and motion.
+React parent unmounting can still unmount a child overlay; native isolation does
+not change React ownership. Public APIs, Android/Web, and page scope are unchanged.
+
+- Preserve the real UISheetPresentationController, custom detent, existing
+  transition animator/dimming, content width, Fabric touch/staging/measurement,
+  contentSize, status/orientation and React Native dimension correction paths.
+- Order windows by level then stackOrder, using a stable native entry sequence
+  only to break ties. Recompute a bounded fractional rank in [0, 1) above each
+  existing level base; raw/unbounded stackOrder MUST NOT increase the level band.
+  Live stackOrder updates reorder the same windows without making them key.
+  Level/strategy changes apply only to the next open cycle, matching the JS
+  store. Keep the initial effective global level through this entry's own
+  non-terminal re-presentation; clear it on terminal close or invalidation.
+- Preserve existing touch-driven input activation. Removing a non-key window
+  MUST NOT change the key window or a surviving first responder. Removing the
+  key window restores the highest-ranked desired-visible, attached, non-closing eligible
+  entry in the same scene, otherwise the app window. Eligible entries are
+  effectively blocking (system sheets always block), or actually contain a
+  first responder; passive toast/debug entries do not win solely by level.
+  Keyboard restoration may finish after dismissal completion; callers/tests
+  requiring keyboard geometry must observe the new keyboard readiness event.
+- Every presentation lifetime has a generation. Asynchronous present, dismiss,
+  and animation completions must match the generation, controller/entry
+  identity and applicable phase before changing state or emitting callbacks.
+  Close during enter waits for that entry's presentation completion. Reopening
+  an exiting global system sheet records the latest desired visibility and
+  waits for its own native dismissal completion. If still desired visible, it
+  stages the same React child and presents a new owned window/controller without
+  emitting a terminal event. Its draft/mount survive; its own controller may
+  change. Only an entry that was key when dismissal began may weakly retain its
+  original first responder. After re-presentation completes, restore that input
+  once only if it still belongs to the same child, the entry remains highest
+  eligible in an active scene, no newer input in that window replaced it, and
+  the current key belongs to the app or this manager without a higher entry
+  owning key. Foreign/system key ownership prevents restoration. A non-key
+  lower entry never captures focus for its reopen. Non-sheet reversal is
+  unchanged. No timer/retry, cross-entry polling, business queue or scene-wide
+  transition lock is introduced.
+- Invalidate, owner detachment and scene-disconnect invalidate obsolete work,
+  detach only the owned touch handler, stage the owned child and release only
+  the owned window/root. Scene disconnect callbacks identify their original
+  window lifetime: an owner already cleaned up by nested detachment, or now
+  owning another window, must ignore a stale callback. An entry cannot register
+  in a scene while that scene's disconnect callbacks run. Scene disconnect
+  actively releases its resources; cleanup does not depend on another entry
+  opening. A terminal native event is emitted at most once per close; timer
+  expiry is not native completion.
+- An entry with a presenter that is not ready remains owned by its current
+  generation; stale deferred work cannot reopen or release a later generation.
 
 ### Web presentation updates (OK-50653)
 
@@ -472,15 +539,15 @@ a non-blocking entry remains pointer-transparent.
 
 | Concern                                    | iOS                                                                                                                                                          | Android                                                                                                                                                                                                                                                                                                                                                                                                                 | Web                                                                                                                 |
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| Global level host                          | One passthrough `UIWindow` per active level per `UIWindowScene`, ordered by `windowLevel`. `lock` sits above RN Alert (2001).                                | One `OverlayHost` FrameLayout in `android.R.id.content` above the ReactRootView, with one child container per level.                                                                                                                                                                                                                                                                                                    | Sibling `div[data-onekey-layer]` roots under `body`, one z-index band per level (`OVERLAY_WEB_Z_INDEX_BASE`).       |
-| Order within a level                       | The window's presentation chain (sheet) and subview order (other presentations).                                                                             | Child order.                                                                                                                                                                                                                                                                                                                                                                                                            | DOM order.                                                                                                          |
-| Global sheet                               | `UISheetPresentationController`, presented from the level window's root VC (reuses native-sheet).                                                            | View sheet: CoordinatorLayout + BottomSheetBehavior + dimming view (native-sheet reworked off `BottomSheetDialog`).                                                                                                                                                                                                                                                                                                     | Custom sheet: pointer drag, snap by velocity, `visualViewport` keyboard.                                            |
+| Global level host                          | One passthrough `UIWindow`/root per active global entry per `UIWindowScene`; bounded ranks preserve level bands. `lock` sits above RN Alert (2001).                                | One `OverlayHost` FrameLayout in `android.R.id.content` above the ReactRootView, with one child container per level.                                                                                                                                                                                                                                                                                                    | Sibling `div[data-onekey-layer]` roots under `body`, one z-index band per level (`OVERLAY_WEB_Z_INDEX_BASE`).       |
+| Order within a level                       | Entry window rank by stackOrder, with stable native tie-breaking across all presentations.                                                                             | Child order.                                                                                                                                                                                                                                                                                                                                                                                                            | DOM order.                                                                                                          |
+| Global sheet                               | `UISheetPresentationController`, presented only from the entry window's own root VC (reuses native-sheet).                                                            | View sheet: CoordinatorLayout + BottomSheetBehavior + dimming view (native-sheet reworked off `BottomSheetDialog`).                                                                                                                                                                                                                                                                                                     | Custom sheet: pointer drag, snap by velocity, `visualViewport` keyboard.                                            |
 | Page host                                  | Fabric `PageOverlayHost` as the last child of the root-route screen. Custom-drawn sheet, because UIKit sheets cannot be page-scoped.                         | The same host inside the root-route screen. The ReactRootView already dispatches touches, so no nested RootView.                                                                                                                                                                                                                                                                                                        | `position: absolute` host inside the root-route card.                                                               |
 | Header / tab bar coverage (page)           | Covered: the host is above the tab controller and navigation bars.                                                                                           | Covered.                                                                                                                                                                                                                                                                                                                                                                                                                | Covered.                                                                                                            |
 | Touch passthrough (toast, debug, box-none) | `hitTest` returns nil on the window or root view.                                                                                                            | A non-blocking entry hit-tests its React content with `TouchTargetHelper` (honoring `box-none`) and falls through to the FrameLayout sibling on a miss.                                                                                                                                                                                                                                                                 | `pointer-events: none` root, `auto` per entry.                                                                      |
 | Back / Escape                              | Escape via `accessibilityPerformEscape`. The interactive pop gesture is disabled while a blocking page overlay is shown.                                     | A `Window.Callback` wrapper consumes `KEYCODE_BACK` for the topmost input-ready blocking or dismissible overlay. `ReactActivity.onBackPressed` hands back to JS BackHandler (react-navigation) before the `OnBackPressedDispatcher`, and the app opts out of predictive back, so a dispatcher callback alone never runs first. The dispatcher callback is kept for the predictive-back path. The IME still gets back first to close the keyboard. | Capture-phase `keydown` that ignores IME composition.                                                               |
-| Modality / accessibility                   | `accessibilityViewIsModal` on the blocking level window; `.screenChanged` posted on present.                                                                 | `IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS` on the content below.                                                                                                                                                                                                                                                                                                                                                 | `inert` on the app root and lower layers, `role=dialog`, `aria-modal`, focus trap and restore.                      |
-| Keyboard                                   | System sheet avoidance; `keyboardLayoutGuide` for custom presentations. The main window regains key status on dismiss.                                       | `WindowInsetsAnimationCompat` per sheet (the app uses `adjustPan`).                                                                                                                                                                                                                                                                                                                                                     | `visualViewport`.                                                                                                   |
+| Modality / accessibility                   | `accessibilityViewIsModal` on blocking EntryViews; sheets retain UIKit modality. `.screenChanged` on present; cross-window VoiceOver remains pending.                                                                 | `IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS` on the content below.                                                                                                                                                                                                                                                                                                                                                 | `inert` on the app root and lower layers, `role=dialog`, `aria-modal`, focus trap and restore.                      |
+| Keyboard                                   | System sheet avoidance and custom keyboard layer. Only key-entry removal restores an eligible same-scene entry or app window.                                       | `WindowInsetsAnimationCompat` per sheet (the app uses `adjustPan`).                                                                                                                                                                                                                                                                                                                                                     | `visualViewport`.                                                                                                   |
 | Animation engine                           | `UIViewPropertyAnimator` + `UISpringTimingParameters(mass:stiffness:damping:)`, which maps 1:1 and supports damping ratio > 1.                               | `SpringAnimation` with `stiffness = k/m` and `dampingRatio`; `PathInterpolator` for timing curves.                                                                                                                                                                                                                                                                                                                      | WAAPI `element.animate`. Timing presets use `cubic-bezier`; custom springs use `linear()`.                          |
 | Content hosting                            | `RCTSurfaceTouchHandler` on the host root. A state-driven shadow node sizes Yoga, which replaces native-sheet's forced `frame`. A nested `SafeAreaProvider`. | A `RootView` + `JSTouchDispatcher` container for global levels. A state-driven shadow node, like RN Modal.                                                                                                                                                                                                                                                                                                              | `createPortal`. The Tamagui theme class is set on the layer root, and React event bubbling stops at the entry root. |
 
@@ -534,8 +601,11 @@ of these UIKit resources. Native logger persistence is owned by the logger.
 
 ## 5.8 Performance and resource budget
 
-- iOS level windows are created lazily per active level and hidden when empty.
-  There are at most 6 per scene.
+- iOS entry windows are created lazily and released after their entry detaches.
+  Window count is O(active global entries) per scene, rather than a six-window
+  level cache. No new public limit/configuration is introduced; page entries
+  remain views. Re-ranking is O(n log n) for the affected scene and creates no
+  per-frame bridge work.
 - Android layers are views, not windows: no extra surfaces or WindowManager IPC.
 - Store operations are O(n) in the number of live entries. Snapshots are
   rebuilt once per mutation.
@@ -569,6 +639,16 @@ navigation remains a separate runtime acceptance item.
 
 Automated (P0):
 
+- `tests/ios/run.sh` compiles the production WindowManager, SheetController and
+  Animation into an isolated UIKit test app. Its seven checks cover bounded/live
+  ordering, key restoration eligibility, owning-entry release, injected scene
+  disconnect/reuse with original-window identity and reentrant-registration
+  rejection, conditional original-input focus restoration (including
+  higher/foreign/new-input guards), and a native sheet surviving another
+  entry's dismissal.
+  Sheet checks use `animated: false`; they do not compile the React/Fabric
+  Container or replace Gallery coverage of animated reversal/generation races,
+  real multi-scene/disconnect, keyboard geometry or accessibility.
 - `src/__tests__/focusTrap.web.test.ts` mounts real Web overlays and checks
   both Tab boundaries, root/empty fallback, inaccessible children, positive
   tabindex order, top-entry precedence, page scope, suspension and parking.
@@ -666,12 +746,12 @@ P3 page scope notes:
 
 P2 sheet notes:
 
-- iOS presents the sheet (`.pageSheet` + one custom detent, ported from
-  native-sheet) from the top of its level window's presentation chain.
-  Non-sheet entries are subviews of the same window, so within a level,
-  sheets and center / toast entries stack by request order. Dismissing a
-  lower sheet makes UIKit dismiss the sheets presented above it; those report
-  `onDismissed('system')` and the store closes them.
+- iOS presents each global sheet (`.pageSheet` + one custom detent, ported
+  from native-sheet) from its own entry window root. Non-sheet entries also
+  have independent windows. All global presentations share level/request-order
+  ranking, and dismissing a lower entry leaves upper entries presented with
+  their original native controller, content, input and lifecycle. Genuine
+  unexpected UIKit dismissal still reports `onDismissed('system')`.
 - Android hosts the sheet in a CoordinatorLayout + BottomSheetBehavior inside
   the level container (no BottomSheetDialog window). Enter / exit use the
   overlay motion; dragging fades the backdrop; a drag to hidden reports
@@ -857,7 +937,7 @@ P5c tooltip and nested-level notes:
     stay open while the pointer is over the content.
   - A controlled `open` wins; requests go to `onOpenChange`.
   - Native Tooltip still renders only the trigger.
-- iOS: an overlay whose host view lives inside a level window resolves that
+- iOS: an overlay whose host view lives inside an entry window resolves that
   window back to the app window. Before this, closing a sheet opened from a
   `secure` overlay recursed forever in `preferredStatusBarStyle`
   (`_appearingOrAppearedChildModalViewController` stack overflow). The level
@@ -909,10 +989,10 @@ P5f full-window container notes:
   hosts at `debug`.
 - The Market desktop fullscreen chart stays in place (a remount would reload
   TradingView), fixed at `OVERLAY_WEB_Z_INDEX_BASE.modal - 1`.
-- iOS: a touched level window becomes key, and React Native reads its window
+- iOS: a touched entry window becomes key, and React Native reads its window
   dimensions from the key window. After a rotation while one was key (the
   fullscreen chart), JS kept the landscape size, so the page stayed in its
-  wide layout and the native header stayed hidden. A level window now
+  wide layout and the native header stayed hidden. An entry window now
   re-reports the dimensions when it resigns key or resizes while key, by
   re-assigning the app window's frame (React Native observes it).
 
@@ -921,7 +1001,7 @@ Measurement:
 - `RNCNativeOverlay` has a hand-written shadow node (`common/cpp`, codegen
   `interfaceOnly`), like `<Modal>`: it is a `RootNodeKind` (measurements stop
   at it) and `Unstable_uncullableView`. Its state holds the window origin of
-  the view the content currently lives in (level window, sheet, page host,
+  the view the content currently lives in (entry window, sheet, page host,
   or the host itself while staged), returned from
   `getContentOriginOffset`, so Fabric `measure` / `measureInWindow` report
   on-screen frames.
@@ -961,7 +1041,7 @@ Status bar:
 - The owner mounts a React Native `<StatusBar>`, the same stack the pages
   use: the app runs without view-controller-based status bar appearance on
   iOS, and Android sets the window appearance. Web has no status bar.
-- iOS asks the root view controller of level windows above the status bar
+- iOS asks the root view controller of entry windows above the status bar
   (`lock`, `debug`) anyway; without view-controller-based appearance it
   answers with the app-wide style, so the StatusBar stack still decides.
 

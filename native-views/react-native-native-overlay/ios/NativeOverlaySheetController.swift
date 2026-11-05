@@ -7,8 +7,7 @@ protocol NativeOverlaySheetHost: AnyObject {
   /// The sheet's frame settled (presentation, detent or keyboard change).
   func sheetDidLayout(_ controller: NativeOverlaySheetController)
   func sheetDidDismissInteractively(_ controller: NativeOverlaySheetController)
-  /// UIKit dismissed the sheet without being asked, e.g. because a sheet
-  /// below it in the same level window was dismissed.
+  /// UIKit dismissed the sheet without the owning host requesting it.
   func sheetDidDisappearUnexpectedly(_ controller: NativeOverlaySheetController)
   func sheetRequestedDismiss(_ controller: NativeOverlaySheetController, reason: String)
 }
@@ -31,7 +30,6 @@ private final class NativeOverlaySheetTransitionAnimator: NSObject,
   private let presenting: Bool
   private let motion: NativeOverlayMotion
   private var animator: UIViewPropertyAnimator?
-  private var cancellationCompletion: (() -> Void)?
 
   init(presenting: Bool, motion: NativeOverlayMotion) {
     self.presenting = presenting
@@ -96,25 +94,9 @@ private final class NativeOverlaySheetTransitionAnimator: NSObject,
         sheetController.setDimmingAlpha(self.presenting ? 0 : 1)
       }
       transitionContext.completeTransition(completed)
-      if position == .start { self.cancellationCompletion?() }
-      self.cancellationCompletion = nil
     }
     self.animator = animator
     return animator
-  }
-
-  func reverseDismissal(completion: @escaping () -> Void) -> Bool {
-    guard !presenting, let animator, animator.isRunning, !animator.isReversed else { return false }
-    cancellationCompletion = completion
-    animator.isReversed = true
-    return true
-  }
-
-  func resumeDismissal() -> Bool {
-    guard !presenting, let animator, animator.isRunning, animator.isReversed else { return false }
-    cancellationCompletion = nil
-    animator.isReversed = false
-    return true
   }
 
   func animationEnded(_ transitionCompleted: Bool) {
@@ -123,8 +105,7 @@ private final class NativeOverlaySheetTransitionAnimator: NSObject,
 }
 
 /// A `.pageSheet` with one custom detent, ported from native-sheet. It is
-/// presented from its level window, so sheets of different levels never
-/// share a presentation chain.
+/// presented from its own entry window, independently of all other overlays.
 final class NativeOverlaySheetController: UIViewController,
   UIAdaptivePresentationControllerDelegate,
   UIViewControllerTransitioningDelegate {
@@ -137,7 +118,6 @@ final class NativeOverlaySheetController: UIViewController,
   private var dimmingView: UIView?
   private var backdropTap: UITapGestureRecognizer?
   private var heightAnimator: UIViewPropertyAnimator?
-  private var dismissalAnimator: NativeOverlaySheetTransitionAnimator?
   private var shadowSuppressionDisplayLink: CADisplayLink?
   /// Set while the host itself asked UIKit to dismiss.
   var dismissRequestedByHost = false
@@ -251,22 +231,7 @@ final class NativeOverlaySheetController: UIViewController,
   func animationController(
     forDismissed dismissed: UIViewController
   ) -> UIViewControllerAnimatedTransitioning? {
-    let animator = NativeOverlaySheetTransitionAnimator(presenting: false, motion: style.exitMotion)
-    dismissalAnimator = animator
-    return animator
-  }
-
-  func cancelHostDismissal(completion: @escaping () -> Void) -> Bool {
-    guard dismissRequestedByHost,
-          dismissalAnimator?.reverseDismissal(completion: completion) == true else { return false }
-    dismissRequestedByHost = false
-    return true
-  }
-
-  func resumeHostDismissal() -> Bool {
-    guard dismissalAnimator?.resumeDismissal() == true else { return false }
-    dismissRequestedByHost = true
-    return true
+    NativeOverlaySheetTransitionAnimator(presenting: false, motion: style.exitMotion)
   }
 
   override func viewWillAppear(_ animated: Bool) {
