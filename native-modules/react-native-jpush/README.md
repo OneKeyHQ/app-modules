@@ -44,4 +44,14 @@ project(':onekey-jpush-fcm').projectDir = new File(project(':jpush-react-native'
 googleImplementation project(':onekey-jpush-fcm')
 ```
 
-The host retains its existing `google-services.json` and Google Services Gradle plugin. Firebase auto-init stays disabled; JPush initialization requests the token after authorization. Cloud acceptance requires the matching Firebase credentials configured in the Jiguang sender. For Firebase-managed background notification payloads, use `cn.jpush.android.intent.NOTIFICATION_OPENED` as the click action so the private JPush activity receives `JMessageExtra`.
+The host retains its existing `google-services.json` and Google Services Gradle plugin. Firebase auto-init stays disabled; JPush initialization requests the token after authorization. Granting authorization after a previously unauthorized init also requests registration without reconnecting. Cloud acceptance requires the matching Firebase credentials configured in the Jiguang sender.
+
+### Required sender contract for stopped/authorization controls
+
+FCM notifications governed by `stopPush()` or collection authorization **must be delivered as data-only FCM messages**. Put the notification metadata in `message.data.JMessageExtra`; omit both FCM `message.notification` and `message.android.notification`. The guarded native path parses the metadata, displays the system notification and dispatches arrival/opened events.
+
+Firebase automatically displays background notification/combined payloads before `onMessageReceived`. Their display cannot obey the guards inside that callback. A notification click action only routes taps; it does not fix that display boundary. Such payloads are not an accepted delivery mode for notifications governed by JPush state.
+
+The Jiguang REST `notification.android` object is not the same field as a Firebase HTTP v1 `message.notification`. When sending through Jiguang, verify the vendor channel's resulting FCM payload/configuration rather than deleting Jiguang's notification object. The sender/conversion configuration lives outside this SDK.
+
+Device acceptance must cover data-only delivery in the background: one display/arrival/tap while authorized, no display/callback after stop or authorization withdrawal, and token registration after authorization is granted again. Host tests and direct callback injection do not establish this cloud/device acceptance.

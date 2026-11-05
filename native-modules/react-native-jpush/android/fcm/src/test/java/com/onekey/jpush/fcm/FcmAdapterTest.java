@@ -16,6 +16,8 @@ import android.content.pm.ResolveInfo;
 import android.os.Bundle;
 import android.os.Looper;
 import android.os.Process;
+import cn.jiguang.api.JCoreManager;
+import cn.jiguang.api.utils.JCollectionAuth;
 import cn.jiguang.core.JCoreCrypto;
 import cn.jiguang.core.JCoreStorage;
 import cn.jiguang.core.JCoreTcpEngine;
@@ -39,6 +41,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -67,6 +70,8 @@ public class FcmAdapterTest {
     @Before
     public void setUp() {
         context = RuntimeEnvironment.getApplication();
+        ReflectionHelpers.setStaticField(JCoreStorage.class, "sAppContext", null);
+        ReflectionHelpers.<Map<String, Object>>getStaticField(JCoreStorage.class, "MEMORY_FALLBACK").clear();
         JCoreStorage.setAppContext(context);
         JCoreStorage.setCollectionAuth(context, true);
         JCoreStorage.setPushStopped(context, false);
@@ -139,6 +144,67 @@ public class FcmAdapterTest {
             JThirdPlatFormInterface.initializeFcm(context);
             assertTrue(JLogger.getRecentLogs().toString().contains("FCM registration unavailable"));
             assertLogsExclude("private_configuration_details");
+        }
+    }
+
+    @Test
+    public void authorizationGrantedAfterSkippedInitRequestsTokenWithoutReconnect() {
+        JCoreStorage.setCollectionAuth(context, false);
+        JCoreStorage.setConnected(context, true);
+        FirebaseMessaging provider = mock(FirebaseMessaging.class);
+        when(provider.getToken()).thenReturn(Tasks.forResult("consented_secret_token"));
+        GoogleApiAvailabilityLight availability = mock(GoogleApiAvailabilityLight.class);
+        when(availability.isGooglePlayServicesAvailable(context)).thenReturn(0);
+        ActionHelper dispatcher = mock(ActionHelper.class);
+        JCoreTcpEngine engine = synchronousEngine();
+        try (MockedStatic<FirebaseMessaging> firebase = mockStatic(FirebaseMessaging.class);
+             MockedStatic<FirebaseApp> app = mockStatic(FirebaseApp.class);
+             MockedStatic<GoogleApiAvailabilityLight> google = mockStatic(GoogleApiAvailabilityLight.class);
+             MockedStatic<ActionHelper> helper = mockStatic(ActionHelper.class);
+             MockedStatic<JCoreTcpEngine> tcp = mockStatic(JCoreTcpEngine.class);
+             MockedStatic<JCoreManager> core = mockStatic(JCoreManager.class)) {
+            firebase.when(FirebaseMessaging::getInstance).thenReturn(provider);
+            google.when(GoogleApiAvailabilityLight::getInstance).thenReturn(availability);
+            helper.when(ActionHelper::getInstance).thenReturn(dispatcher);
+            tcp.when(JCoreTcpEngine::getInstance).thenReturn(engine);
+            JPushInterface.init(context);
+            verifyNoInteractions(provider);
+            JCollectionAuth.setAuth(context, true);
+            JCollectionAuth.setAuth(context, true);
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+            verify(provider).getToken();
+            assertEquals("consented_secret_token", tokenAction(dispatcher).getString("token"));
+            assertTrue(JCoreStorage.isConnected(context));
+            core.verify(() -> JCoreManager.init(context));
+            assertLogsExclude("consented_secret_token");
+        }
+    }
+
+    @Test
+    public void grantingAuthorizationWhileStoppedDoesNotRequestRegistration() {
+        JCoreStorage.setCollectionAuth(context, false);
+        JCoreStorage.setPushStopped(context, true);
+        try (MockedStatic<JCoreTcpEngine> tcp = mockStatic(JCoreTcpEngine.class)) {
+            JCollectionAuth.setAuth(context, true);
+            assertTrue(JCollectionAuth.isAuth(context));
+            tcp.verifyNoInteractions();
+        }
+    }
+
+    @Test
+    public void revokedAuthorizationCancelsQueuedFcmRegistration() {
+        JCoreStorage.setCollectionAuth(context, false);
+        JCoreTcpEngine engine = mock(JCoreTcpEngine.class);
+        try (MockedStatic<JCoreTcpEngine> tcp = mockStatic(JCoreTcpEngine.class);
+             MockedStatic<FirebaseMessaging> firebase = mockStatic(FirebaseMessaging.class)) {
+            tcp.when(JCoreTcpEngine::getInstance).thenReturn(engine);
+            JCollectionAuth.setAuth(context, true);
+            ArgumentCaptor<Runnable> work = ArgumentCaptor.forClass(Runnable.class);
+            verify(engine).executeAsync(work.capture());
+            JCollectionAuth.setAuth(context, false);
+            work.getValue().run();
+            firebase.verifyNoInteractions();
+            assertFalse(JCollectionAuth.isAuth(context));
         }
     }
 
