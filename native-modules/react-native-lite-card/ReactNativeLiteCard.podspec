@@ -39,6 +39,7 @@ Pod::Spec.new do |s|
   s.script_phase = {
     :name => 'Generate Lite native source identity',
     :execution_position => :before_compile,
+    :show_env_vars_in_log => '0',
     :script => 'set -e; ruby "${PODS_TARGET_SRCROOT}/sdk/scripts/generate-source-id.rb" "${DERIVED_FILE_DIR}/GPChannelSourceId.h"'
   }
   s.pod_target_xcconfig = {

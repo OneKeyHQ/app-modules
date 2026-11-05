@@ -149,6 +149,8 @@ test data, generated output, environment values, absolute paths, users and hosts
 do not participate. CMake tracks manifest/content changes for reconfiguration;
 CocoaPods regenerates a private header before compilation on every native build. No new C,
 JNI or React Native ABI is introduced.
+The source-identity shell phase disables Xcode environment-variable logging;
+build-time environment values must not be dumped by this added phase.
 
 Input preflight records only input presence, backup UTF-16 character count/parity,
 whether the card version is known, numeric version, overwrite, accepted boolean

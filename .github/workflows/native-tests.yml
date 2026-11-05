@@ -400,6 +400,8 @@ jobs:
           scheme.add_build_target(overlay, false)
           lite = project.targets.find { |candidate| candidate.name == 'ReactNativeLiteCard' }
           abort 'Missing pod target: ReactNativeLiteCard' unless lite
+          identity_phase = lite.shell_script_build_phases.find { |phase| phase.name == '[CP-User] Generate Lite native source identity' }
+          abort 'Lite source identity phase must hide environment variables' unless identity_phase&.show_env_vars_in_log == '0'
           scheme.add_build_target(lite, false)
           ARGV.each do |name|
             target = project.targets.find { |candidate| candidate.name == name }

@@ -71,6 +71,7 @@ def install_modules_dependencies(*); end
 load ARGV.fetch(0)`;
   const phase = JSON.parse(run('ruby', ['-e', podAdapter, join(first, 'ReactNativeLiteCard.podspec')]));
   expect(phase.execution_position === 'before_compile', 'Native identity phase runs before compilation');
+  expect(phase.show_env_vars_in_log === '0', 'Source identity phase must not dump build environment values');
   const derived = join(output, 'pod-derived');
   const phaseEnv = { PODS_TARGET_SRCROOT: first, DERIVED_FILE_DIR: derived };
   run('sh', ['-c', phase.script], phaseEnv);
