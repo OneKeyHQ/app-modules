@@ -899,6 +899,30 @@ describe('home native text toolbar DOM contract', () => {
     expect(tabs[2].style.fontWeight).toBe('600');
   });
 
+  it('inherits the selected toolbar base for omitted feedback and preserves explicit overrides', async () => {
+    const pager = React.createRef<CollapsiblePagerView>();
+    const { hoverBackgroundColor: _hover, pressedBackgroundColor: _pressed, ...entry } = toolbar.tokens;
+    const render = async (next: typeof entry & { hoverBackgroundColor?: string; pressedBackgroundColor?: string }) => {
+      await act(async () => root.render(renderBar('tokens', jest.fn(), jest.fn(),
+        { ...toolbar, tokens: next } as typeof toolbar, pager)));
+      return container.querySelector<HTMLButtonElement>('.ok-pager-toolbar')!;
+    };
+    let button = await render(entry);
+    expect(button.style.getPropertyValue('--pager-toolbar-base')).toBe('#cccccc');
+    expect(button.style.getPropertyValue('--pager-toolbar-hover')).toBe('#cccccc');
+    expect(button.style.getPropertyValue('--pager-toolbar-pressed')).toBe('#cccccc');
+    button = await render({ ...entry, hoverBackgroundColor: 'transparent', pressedBackgroundColor: '#123456' });
+    expect(button.style.getPropertyValue('--pager-toolbar-hover')).toBe('transparent');
+    expect(button.style.getPropertyValue('--pager-toolbar-pressed')).toBe('#123456');
+    button = await render({ ...entry, selected: false });
+    for (const state of ['base', 'hover', 'pressed']) {
+      expect(button.style.getPropertyValue(`--pager-toolbar-${state}`)).toBe('transparent');
+    }
+    button = await render(entry);
+    expect(button.style.getPropertyValue('--pager-toolbar-hover')).toBe('#cccccc');
+    expect(button.style.getPropertyValue('--pager-toolbar-pressed')).toBe('#cccccc');
+  });
+
   it('renders no toolbar for a selected key with no toolbar entry', async () => {
     await act(async () => root.render(renderBar('activity')));
     expect(container.querySelector('.ok-pager-toolbar')).toBeNull();

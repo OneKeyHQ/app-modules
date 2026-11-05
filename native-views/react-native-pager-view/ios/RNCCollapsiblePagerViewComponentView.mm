@@ -15,6 +15,7 @@
 #import "React/RCTTouchHandler.h"
 #import <objc/runtime.h>
 #import <React/RCTConvert.h>
+#import <React/RCTFont.h>
 #import <UIKit/UIGestureRecognizerSubclass.h>
 
 // OneKey patch: deduplicate structural mutation parents before scanning the page.
@@ -604,6 +605,18 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   return [UIFont systemFontOfSize:_fontSize weight:UIFontWeightMedium];
 }
 
+- (UIFont *)activeTabFont
+{
+  NSString *activeFamily = _config[@"activeFontFamily"];
+  if (activeFamily.length > 0) {
+    return [UIFont fontWithName:activeFamily size:_fontSize]
+      ?: [UIFont systemFontOfSize:_fontSize weight:UIFontWeightSemibold];
+  }
+  UIFont *normalFont = _fontFamily.length > 0 ? [UIFont fontWithName:_fontFamily size:_fontSize] : nil;
+  return normalFont != nil ? [RCTFont updateFont:normalFont withWeight:@"600"]
+    : [UIFont systemFontOfSize:_fontSize weight:UIFontWeightSemibold];
+}
+
 - (void)updateItemsJSON:(NSString *)itemsJSON
 {
   NSData *data = [itemsJSON dataUsingEncoding:NSUTF8StringEncoding];
@@ -670,7 +683,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
   _fontSize = MAX(1, fontSize);
   _fontFamily = [fontFamily copy];
   self.backgroundColor = _segmented ? UIColor.clearColor : (backgroundColor ?: UIColor.clearColor);
-  _scrollView.backgroundColor = self.backgroundColor;
+  _scrollView.backgroundColor = _textVariant ? UIColor.clearColor : self.backgroundColor;
   _scrollView.scrollEnabled = !_segmented;
   if (_segmented && !wasSegmented) [_scrollView setContentOffset:CGPointZero animated:NO];
   _trackView.hidden = !_segmented;
@@ -780,8 +793,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     NSString *title = [button titleForState:UIControlStateNormal] ?: @"";
     CGFloat textWidth = ceil([title sizeWithAttributes:@{NSFontAttributeName: font}].width);
     if (_textVariant) {
-      UIFont *activeFont = [UIFont fontWithName:_config[@"activeFontFamily"] ?: @"" size:_fontSize]
-        ?: [UIFont systemFontOfSize:_fontSize weight:UIFontWeightSemibold];
+      UIFont *activeFont = self.activeTabFont;
       textWidth = MAX(textWidth, ceil([title sizeWithAttributes:@{NSFontAttributeName: activeFont}].width));
     }
     CGFloat buttonWidth = MAX(44, textWidth + (_textVariant ? 20 : 16));
@@ -1348,7 +1360,7 @@ static CGFloat RNCPagerToolbarDimension(NSDictionary *entry, NSString *key, CGFl
     [button setTitleColor:color forState:UIControlStateNormal];
     if (self->_textVariant) {
       button.titleLabel.font = index == fontOwnerIndex
-        ? ([UIFont fontWithName:self->_config[@"activeFontFamily"] ?: @"" size:self->_fontSize] ?: [UIFont systemFontOfSize:self->_fontSize weight:UIFontWeightSemibold])
+        ? self.activeTabFont
         : self.tabFont;
     }
     button.accessibilityTraits = index == selectedIndex

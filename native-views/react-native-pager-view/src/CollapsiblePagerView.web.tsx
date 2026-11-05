@@ -1629,9 +1629,10 @@ export class CollapsiblePagerView extends React.PureComponent<
     if (button.firstChild !== icon) button.replaceChildren(icon);
     Object.assign(button.style, { position: "absolute", width: `${size}px`, height: `${size}px`, borderRadius: "50%", top: "50%", transform: "translateY(-50%)",
       insetInlineEnd: `${trailingInset - (size - contentWidth) / 2}px`, padding: `${(size - iconSize) / 2}px`, color: entry.iconColor ?? "#000000" });
-    button.style.setProperty("--pager-toolbar-base", entry.selected ? entry.selectedBackgroundColor ?? "transparent" : "transparent");
-    button.style.setProperty("--pager-toolbar-hover", entry.hoverBackgroundColor ?? "transparent");
-    button.style.setProperty("--pager-toolbar-pressed", entry.pressedBackgroundColor ?? "transparent");
+    const base = entry.selected ? entry.selectedBackgroundColor ?? "transparent" : "transparent";
+    button.style.setProperty("--pager-toolbar-base", base);
+    button.style.setProperty("--pager-toolbar-hover", entry.hoverBackgroundColor ?? base);
+    button.style.setProperty("--pager-toolbar-pressed", entry.pressedBackgroundColor ?? base);
     button.setAttribute("aria-label", entry.accessibilityLabel ?? "");
     if (entry.testID) button.setAttribute("data-testid", entry.testID); else button.removeAttribute("data-testid");
     this.toolbarOwnerKey = key;

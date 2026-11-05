@@ -2,6 +2,7 @@
 #import "RNCCollapsiblePagerViewComponentView.h"
 #import "RNCNativeScrollerComponentView.h"
 #import <React/RCTScrollViewComponentView.h>
+#import <React/RCTFont.h>
 #import <react/renderer/components/pagerview/Props.h>
 #import <react/renderer/mounting/MountingTransaction.h>
 
@@ -41,6 +42,14 @@ using namespace facebook::react;
 - (void)updateConfigJSON:(NSString *)json;
 - (void)updateToolbarPagerIndex:(NSInteger)index busy:(BOOL)busy;
 - (BOOL)toolbarCanCommit;
+- (UIFont *)tabFont;
+- (UIFont *)activeTabFont;
+- (void)updateStyleWithHeight:(CGFloat)height variant:(NSString *)variant
+     contentPaddingHorizontal:(CGFloat)horizontal contentPaddingVertical:(CGFloat)vertical
+                  itemSpacing:(CGFloat)spacing fontSize:(CGFloat)size fontFamily:(NSString *)family
+              backgroundColor:(UIColor *)background activeTextColor:(UIColor *)active
+            inactiveTextColor:(UIColor *)inactive indicatorColor:(UIColor *)indicator
+              indicatorHeight:(CGFloat)indicatorHeight indicatorBottom:(CGFloat)bottom;
 @end
 
 @interface RNCCollapsiblePagerFirstFrameTests : XCTestCase
@@ -962,6 +971,52 @@ using namespace facebook::react;
   [bar updateToolbarPagerIndex:1 busy:NO];
   XCTAssertTrue([bar toolbarCanCommit]);
   XCTAssertFalse(button.enabled);
+}
+
+- (void)testTextActiveFontInheritsNormalFamilyAndReservesItsRenderedFace
+{
+  RNCCollapsiblePagerNativeTabBarView *bar = [[RNCCollapsiblePagerNativeTabBarView alloc] initWithFrame:CGRectMake(0, 0, 320, 44)];
+  [bar updateItemsJSON:@"[{\"key\":\"a\",\"title\":\"Wide glyphs pygy\"}]"];
+  [bar setValue:@18 forKey:@"fontSize"];
+  [bar setValue:@YES forKey:@"textVariant"];
+  [bar setValue:@"AvenirNext-Medium" forKey:@"fontFamily"];
+  UIFont *expected = [RCTFont updateFont:bar.tabFont withWeight:@"600"];
+  for (NSString *config in @[@"{}", @"{\"activeFontFamily\":\"\"}"]) {
+    [bar updateConfigJSON:config];
+    [bar setNeedsLayout];
+    [bar layoutIfNeeded];
+    XCTAssertEqualObjects(bar.activeTabFont, expected);
+    XCTAssertEqualObjects(bar.activeTabFont.familyName, bar.tabFont.familyName);
+    XCTAssertGreaterThan(RCTGetFontWeight(bar.activeTabFont), RCTGetFontWeight(bar.tabFont));
+    UIButton *button = [bar valueForKey:@"buttons"][0];
+    XCTAssertEqualObjects(button.titleLabel.font, bar.activeTabFont);
+    CGFloat reserved = MAX(44, MAX(ceil([button.currentTitle sizeWithAttributes:@{NSFontAttributeName: bar.tabFont}].width),
+      ceil([button.currentTitle sizeWithAttributes:@{NSFontAttributeName: expected}].width)) + 20);
+    XCTAssertEqualWithAccuracy(CGRectGetWidth(button.frame), reserved, 0.01);
+  }
+  [bar updateConfigJSON:@"{\"activeFontFamily\":\"Courier-Bold\"}"];
+  XCTAssertEqualObjects(bar.activeTabFont.fontName, @"Courier-Bold");
+  [bar updateConfigJSON:@"{\"activeFontFamily\":\"MissingReviewFont\"}"];
+  XCTAssertEqualObjects(bar.activeTabFont, [UIFont systemFontOfSize:18 weight:UIFontWeightSemibold]);
+  [bar setValue:@"MissingReviewFont" forKey:@"fontFamily"];
+  [bar updateConfigJSON:@"{}"];
+  XCTAssertEqualObjects(bar.activeTabFont, [UIFont systemFontOfSize:18 weight:UIFontWeightSemibold]);
+}
+
+- (void)testTextBackgroundPaintsOnlyTheParentAndRestoresOtherVariants
+{
+  RNCCollapsiblePagerNativeTabBarView *bar = [RNCCollapsiblePagerNativeTabBarView new];
+  UIColor *background = [UIColor colorWithRed:0.2 green:0.4 blue:0.6 alpha:0.5];
+  for (NSString *variant in @[@"text", @"underline", @"segmented", @"text"]) {
+    [bar updateStyleWithHeight:44 variant:variant contentPaddingHorizontal:0 contentPaddingVertical:0
+      itemSpacing:0 fontSize:18 fontFamily:nil backgroundColor:background activeTextColor:nil
+      inactiveTextColor:nil indicatorColor:nil indicatorHeight:2 indicatorBottom:0];
+    UIScrollView *scroll = [bar valueForKey:@"scrollView"];
+    XCTAssertEqualObjects(bar.backgroundColor, [variant isEqualToString:@"segmented"] ? UIColor.clearColor : background);
+    XCTAssertEqualObjects(scroll.backgroundColor, [variant isEqualToString:@"text"] ? UIColor.clearColor : bar.backgroundColor);
+    UIView *track = [bar valueForKey:@"trackView"];
+    XCTAssertEqualObjects(track.backgroundColor, background);
+  }
 }
 
 @end

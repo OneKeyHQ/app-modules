@@ -231,6 +231,11 @@ private class CollapsiblePagerHorizontalItemsView(
   }
 
   private fun selectedTypeface(): Typeface = activeFontFamily?.takeIf(String::isNotEmpty)?.let { resolveHeaderTypeface(context, it) }
+    ?: fontFamily?.takeIf(String::isNotEmpty)?.let { family ->
+      val normal = resolveHeaderTypeface(context, family)
+      if (android.os.Build.VERSION.SDK_INT >= 28) Typeface.create(normal, 600, normal.isItalic)
+      else Typeface.create(normal, Typeface.BOLD)
+    }
     ?: if (android.os.Build.VERSION.SDK_INT >= 28) Typeface.create(Typeface.create("sans-serif", Typeface.NORMAL), 600, false)
       else Typeface.create("sans-serif", Typeface.BOLD)
 

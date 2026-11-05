@@ -6,6 +6,7 @@ import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.test.InstrumentationTestCase
@@ -435,6 +436,40 @@ class CollapsiblePagerTabReservationTest : InstrumentationTestCase() {
     } finally {
       instrumentation.runOnMainSync { activity.finish() }
       instrumentation.waitForIdleSync()
+    }
+  }
+
+  fun testTextActiveTypefaceInheritsNormalFamilyAndKeepsExplicitFace() {
+    instrumentation.runOnMainSync {
+      val tab = CollapsiblePagerNativeTabBarView(instrumentation.targetContext)
+      tab.updateItemsJSON("""[{"key":"a","title":"Wide glyphs pygy"}]""")
+      tab.updateStyle(44.0, "text", 0.0, 0.0, 0.0, 18.0, "serif", 0.0, 0.0)
+      val row = tab.getChildAt(0) as HorizontalScrollView
+      val content = row.getChildAt(0) as ViewGroup
+      val button = (0 until content.childCount).map(content::getChildAt).filterIsInstance<TextView>().single()
+      val normal = com.facebook.react.common.assets.ReactFontManager.getInstance()
+        .getTypeface("serif", Typeface.NORMAL, instrumentation.targetContext.assets)
+      val expected = if (android.os.Build.VERSION.SDK_INT >= 28) Typeface.create(normal, 600, normal.isItalic)
+        else Typeface.create(normal, Typeface.BOLD)
+      for (config in listOf("{}", """{"activeFontFamily":""}""")) {
+        tab.updateConfigJSON(config)
+        tab.measure(View.MeasureSpec.makeMeasureSpec(320, View.MeasureSpec.EXACTLY),
+          View.MeasureSpec.makeMeasureSpec(44, View.MeasureSpec.EXACTLY))
+        tab.layout(0, 0, 320, 44)
+        assertEquals(expected, button.typeface)
+        if (android.os.Build.VERSION.SDK_INT >= 28) assertEquals(600, button.typeface.weight)
+      }
+      tab.updateConfigJSON("""{"activeFontFamily":"monospace"}""")
+      tab.setProgress(0f)
+      val explicit = com.facebook.react.common.assets.ReactFontManager.getInstance()
+        .getTypeface("monospace", Typeface.NORMAL, instrumentation.targetContext.assets)
+      assertEquals(explicit, button.typeface)
+      tab.updateStyle(44.0, "text", 0.0, 0.0, 0.0, 18.0, null, 0.0, 0.0)
+      tab.updateConfigJSON("{}")
+      tab.setProgress(0f)
+      val system = if (android.os.Build.VERSION.SDK_INT >= 28) Typeface.create(Typeface.create("sans-serif", Typeface.NORMAL), 600, false)
+        else Typeface.create("sans-serif", Typeface.BOLD)
+      assertEquals(system, button.typeface)
     }
   }
 

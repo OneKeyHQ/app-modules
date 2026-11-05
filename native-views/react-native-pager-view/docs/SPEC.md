@@ -1249,6 +1249,16 @@ handoff does not resize the button or move its neighboring tabs. Hidden copies
 are AX-hidden, noninteractive and unselectable; there remains one named button
 and one visible label. The normal face keeps its inherited family when
 fontFamily is omitted, and the active face falls back to that normal family.
+On native text tabs, an omitted or empty `activeFontFamily` derives the active
+semibold weight (600, or Android legacy bold) from the resolved normal face,
+using the nearest available family weight on iOS.
+A nonempty explicit active face takes precedence and retains its named weight;
+an unavailable explicit iOS face retains the existing system-semibold fallback.
+Invalid normal iOS faces resolve to system medium before deriving active weight;
+Android family resolution retains ReactFontManager fallback behavior. Native
+measurement and rendering use the same resolved active face. On iOS text bars,
+the parent paints the full row background once and the inner scroll view is
+transparent, including fractional-alpha colors and the fixed toolbar slot.
 Other modes retain their existing structure and behavior. Existing underline and
 segmented defaults remain unchanged.
 
@@ -1296,6 +1306,8 @@ inputs. Colors are normalized at the native wrapper boundary: iconColor uses
 OneKeyImage's rgba representation and native background colors use ARGB.
 This does not add a second toolbar configuration or a JavaScript feedback loop. Default background is transparent;
 selected background remains the base color after hover, press or cancellation.
+Omitted hover and pressed colors inherit that resolved base on every platform;
+explicit colors, including transparent, override it.
 iOS UIKit and Android drawable state own feedback without JavaScript roundtrips
 or default Android ripples. No menus or business capability checks live here.
 
