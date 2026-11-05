@@ -98,6 +98,10 @@ final class OneKeySVGForeignObjectTests: XCTestCase {
     XCTAssertTrue(abs(Int(output[alpha]) - 128) <= 1)
     XCTAssertTrue(abs(Int(output[alpha + 1]) - 127) <= 1)
     XCTAssertEqual(output[alpha + 3], 255)
+    let clipped = "<defs><clipPath id=\"box\" clipPathUnits=\"objectBoundingBox\"><rect width=\"0.5\" height=\"1\"/></clipPath></defs><rect width=\"24\" height=\"24\" fill=\"#00ff00\"/>" + foreign(content, attributes: "clip-path=\"url(#box)\"")
+    let clippedSharp = try pixels(document(clipped + "<style>img { image-rendering:pixelated; }</style>"), size: 32)
+    let outsideClip = (8 * 32 + 20) * 4
+    XCTAssertEqual(Array(clippedSharp[outsideClip..<outsideClip + 4]), [0, 255, 0, 255])
   }
 
   func testGeneratedPixelGeometryIsBoundedAcrossTheDocument() {

@@ -62,6 +62,16 @@ class OneKeySVGDecoderTest : InstrumentationTestCase() {
         assertEquals(255, Color.alpha(alpha))
       } finally { bitmap.recycle() }
     }
+    val raster = Bitmap.createBitmap(intArrayOf(0, Color.RED, 0, Color.RED), 2, 2, Bitmap.Config.ARGB_8888)
+    val encoded = ByteArrayOutputStream()
+    raster.compress(Bitmap.CompressFormat.PNG, 100, encoded)
+    raster.recycle()
+    val data = Base64.encodeToString(encoded.toByteArray(), Base64.NO_WRAP)
+    val clippedSource = source.replace(Regex("src='data:image/png;base64,[^']+'"), "src='data:image/png;base64,$data'")
+      .replace("<foreignObject", "<defs><clipPath id='box' clipPathUnits='objectBoundingBox'><rect width='0.5' height='1'/></clipPath></defs><foreignObject clip-path='url(#box)'")
+    val clipped = displayed(clippedSource, 192, 32)
+    try { assertEquals(Color.GREEN, clipped.getPixel(20, 8)) }
+    finally { clipped.recycle() }
   }
 
   fun testSmoothDeclarationOverridesPixelatedInPictureDrawable() {
