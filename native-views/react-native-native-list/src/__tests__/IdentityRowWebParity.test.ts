@@ -31,7 +31,10 @@ function renderIdentity(row: IdentityRow) {
     iconAction: () => document.createElement('span'),
     dispose: () => undefined,
   } as unknown as RowPrimitives;
-  return identityRowRenderer.create(document, row, primitives);
+  return {
+    body: identityRowRenderer.create(document, row, primitives),
+    primitives,
+  };
 }
 
 describe('Web identity row visual and expanded text', () => {
@@ -43,7 +46,7 @@ describe('Web identity row visual and expanded text', () => {
       leading: { kind: 'token', image: mainImage, networkImage },
       style: { image: { width: 40, height: 40, shape: 'circle' } },
     };
-    const body = renderIdentity(row);
+    const { body } = renderIdentity(row);
     const main = body.querySelector<HTMLElement>('.ok-native-list-visual-main');
     const corner = body.querySelector<HTMLElement>(
       '.ok-native-list-visual-corner'
@@ -55,30 +58,117 @@ describe('Web identity row visual and expanded text', () => {
     expect(corner?.style.borderRadius).toBe('');
   });
 
-  it('allows an unbounded subtitle and measures its rendered height when opted in', () => {
+  it('wraps an unspaced subtitle and measures untransformed layout height when opted in', () => {
     const row: IdentityRow = {
       type: 'identity',
       key: 'long-token',
       title: 'TOKEN',
-      subtitle: 'A long token name that wraps across multiple lines',
+      subtitle: '0xc19f5C3b2471D36c7C164088297A674Afec0fD25',
       subtitleLines: 0,
       contentHeight: 'auto',
       leading: { kind: 'token', image: mainImage },
     };
-    const body = renderIdentity(row);
+    const { body } = renderIdentity(row);
     const subtitle = body.querySelector<HTMLElement>(
       '[data-nl-slot="subtitle"]'
     );
     expect(subtitle?.style.whiteSpace).toBe('pre-wrap');
+    expect(subtitle?.style.overflowWrap).toBe('anywhere');
     expect(subtitle?.style.getPropertyValue('-webkit-line-clamp')).toBe('');
-    body.getBoundingClientRect = () => ({ height: 128 } as DOMRect);
+    expect(body.style.height).toBe('auto');
+    let layoutHeight = 128;
+    Object.defineProperty(body, 'offsetHeight', { get: () => layoutHeight });
+    const visualBounds = jest
+      .spyOn(body, 'getBoundingClientRect')
+      .mockReturnValue({ height: 128 * 0.95 } as DOMRect);
     expect(identityRowRenderer.measureRendered(body, row)).toBe(128);
+    visualBounds.mockReturnValue({ height: 128 * 1.004 } as DOMRect);
+    expect(identityRowRenderer.measureRendered(body, row)).toBe(128);
+    layoutHeight = 0;
+    expect(identityRowRenderer.measureRendered(body, row)).toBeUndefined();
+    layoutHeight = 128;
+    expect(identityRowRenderer.measureRendered(body, row)).toBe(128);
+    expect(visualBounds).not.toHaveBeenCalled();
     expect(
       identityRowRenderer.measureRendered(body, {
         ...row,
         contentHeight: undefined,
       })
     ).toBeUndefined();
+  });
+
+  it.each([
+    { subtitleLines: undefined, style: undefined, wrap: '', whiteSpace: '' },
+    { subtitleLines: 1, style: undefined, wrap: '', whiteSpace: 'nowrap' },
+    {
+      subtitleLines: 0,
+      style: { subtitle: { lines: 1 } },
+      wrap: '',
+      whiteSpace: 'nowrap',
+    },
+    {
+      subtitleLines: 2,
+      style: undefined,
+      wrap: 'anywhere',
+      whiteSpace: 'pre-wrap',
+    },
+  ] as const)(
+    'preserves subtitle line defaults and precedence: %j',
+    (testCase) => {
+      const { body } = renderIdentity({
+        type: 'identity',
+        key: 'subtitle-lines',
+        title: 'Recipient',
+        subtitle: '0xc19f5C3b2471D36c7C164088297A674Afec0fD25',
+        leading: { kind: 'account' },
+        subtitleLines: testCase.subtitleLines,
+        style: testCase.style,
+      });
+      const subtitle = body.querySelector<HTMLElement>(
+        '[data-nl-slot="subtitle"]'
+      );
+      expect(subtitle?.style.overflowWrap).toBe(testCase.wrap);
+      expect(subtitle?.style.whiteSpace).toBe(testCase.whiteSpace);
+      expect(body.style.height).toBe('100%');
+    }
+  );
+
+  it('restores body sizing when auto-height rows are rebound with explicit or omitted height', () => {
+    const row: IdentityRow = {
+      type: 'identity',
+      key: 'reused-recipient',
+      title: 'Recipient',
+      subtitle: '0xc19f5C3b2471D36c7C164088297A674Afec0fD25',
+      subtitleLines: 0,
+      contentHeight: 'auto',
+      leading: { kind: 'account' },
+    };
+    const { body, primitives } = renderIdentity(row);
+    Object.defineProperty(body, 'offsetHeight', { value: 128 });
+    expect(body.style.height).toBe('auto');
+    for (const fixed of [
+      { ...row, height: 90 },
+      { ...row, style: { container: { height: 80 } } },
+      { ...row, height: 90, style: { container: { height: 80 } } },
+      { ...row, contentHeight: undefined },
+    ]) {
+      identityRowRenderer.bind(body, fixed, primitives);
+      expect(body.style.height).toBe('100%');
+      expect(identityRowRenderer.measureRendered(body, fixed)).toBeUndefined();
+      identityRowRenderer.bind(body, row, primitives);
+      expect(body.style.height).toBe('auto');
+      expect(identityRowRenderer.measureRendered(body, row)).toBe(128);
+    }
+    identityRowRenderer.bind(body, { ...row, subtitleLines: 1 }, primitives);
+    expect(
+      body.querySelector<HTMLElement>('[data-nl-slot="subtitle"]')?.style
+        .overflowWrap
+    ).toBe('');
+    identityRowRenderer.bind(body, row, primitives);
+    expect(
+      body.querySelector<HTMLElement>('[data-nl-slot="subtitle"]')?.style
+        .overflowWrap
+    ).toBe('anywhere');
   });
 
   it('renders Recent metadata as independently truncated title text, not badges', () => {
@@ -92,7 +182,7 @@ describe('Web identity row visual and expanded text', () => {
         { text: '2 days ago', tone: 'disabled' },
       ],
     };
-    const body = renderIdentity(row);
+    const { body } = renderIdentity(row);
     const title = body.querySelector<HTMLElement>('[data-nl-slot="title"]');
     const suffixes = body.querySelectorAll<HTMLElement>(
       '.ok-native-list-identity-title-suffix'
@@ -122,7 +212,7 @@ describe('Web identity row visual and expanded text', () => {
       titleIcon: { name: 'GasSolid', hoverActionKey: 'gas-info' },
       style: { title: { token: '$bodyLg', fontWeight: 'medium', lines: 1 } },
     };
-    const body = renderIdentity(row);
+    const { body } = renderIdentity(row);
     const line = body.querySelector<HTMLElement>('.ok-native-list-title')!;
     const text = body.querySelector<HTMLElement>(
       '.ok-native-list-identity-title-text'
@@ -153,7 +243,7 @@ describe('Web identity row visual and expanded text', () => {
       badges: [{ key: 'network', text: 'Ethereum' }],
       style: { title: { lines: 1 } },
     };
-    const body = renderIdentity(row);
+    const { body } = renderIdentity(row);
     const line = body.querySelector<HTMLElement>('.ok-native-list-title')!;
     const text = body.querySelector<HTMLElement>(
       '.ok-native-list-identity-title-text'
