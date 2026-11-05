@@ -6,6 +6,7 @@ import android.view.View
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import com.facebook.react.bridge.BridgeReactContext
+import com.facebook.react.internal.featureflags.ReactNativeFeatureFlags
 import com.facebook.react.uimanager.PointerEvents
 import com.facebook.react.uimanager.ThemedReactContext
 import com.facebook.react.uimanager.TouchTargetHelper
@@ -34,6 +35,13 @@ class NativeOverlayBackTest {
 
   @Before
   fun setUp() {
+    val localAccessor = Class.forName(
+      "com.facebook.react.internal.featureflags.ReactNativeFeatureFlagsLocalAccessor"
+    ).getDeclaredConstructor().newInstance()
+    ReactNativeFeatureFlags::class.java.getDeclaredField("accessor").apply {
+      isAccessible = true
+      set(null, localAccessor)
+    }
     activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible().get()
     val reactContext = BridgeReactContext(activity)
     reactContext.onHostResume(activity)

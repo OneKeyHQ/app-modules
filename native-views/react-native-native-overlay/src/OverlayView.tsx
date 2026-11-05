@@ -13,6 +13,7 @@ import {
 import NativeOverlay from './NativeOverlayNativeComponent';
 import { OverlayLevelProvider } from './OverlayLevelContext';
 import { isBlockingLevel } from './OverlayLevels';
+import { resolveContentSize } from './contentSize';
 import { resolveSheetWidth } from './sheetWidth';
 import { useOverlayController } from './useOverlayController';
 
@@ -72,6 +73,7 @@ export function OverlayView(props: IOverlayViewProps) {
     testID,
     windowOffsetRequest,
     onWindowOffset,
+    contentSize,
   } = props;
   // A plain sibling at the host's spot: its JS-measured origin shares the
   // modal-relative space of the caller's measurements, while native reports
@@ -284,7 +286,14 @@ export function OverlayView(props: IOverlayViewProps) {
           <View
             collapsable={false}
             pointerEvents="box-none"
-            style={{ width, height, flexShrink: 0 }}
+            style={{
+              ...resolveContentSize({
+                windowWidth: width,
+                windowHeight: height,
+                contentSize,
+              }),
+              flexShrink: 0,
+            }}
           >
             <OverlayLevelProvider value={level}>
               {children}

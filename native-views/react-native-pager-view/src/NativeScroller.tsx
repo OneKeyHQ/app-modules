@@ -34,7 +34,6 @@ export interface NativeScrollerProps
       | "alwaysBounceVertical"
       | "contentInset"
       | "keyboardDismissMode"
-      | "keyboardShouldPersistTaps"
       | "scrollEventThrottle"
       | "decelerationRate"
       | "onScroll"
@@ -52,12 +51,24 @@ export interface NativeScrollerProps
   decelerationRate?: ScrollViewProps["decelerationRate"];
   /** Standard RefreshControl props are mapped to the independently owned native controller. */
   refreshControl?: React.ReactElement<RefreshControlProps>;
+  /** Boolean values are deprecated compatibility aliases (`true` -> `always`, `false` -> `never`). */
+  keyboardShouldPersistTaps?:
+    | ScrollViewProps["keyboardShouldPersistTaps"]
+    | boolean;
 }
 
 type HostRef = React.ElementRef<typeof NativeScrollerHost>;
 
 export interface NativeScrollerRef
-  extends Pick<HostRef, "measure" | "measureInWindow" | "measureLayout" | "setNativeProps" | "focus" | "blur">,
+  extends Pick<
+      HostRef,
+      | "measure"
+      | "measureInWindow"
+      | "measureLayout"
+      | "setNativeProps"
+      | "focus"
+      | "blur"
+    >,
     Pick<
       React.ElementRef<typeof ScrollView>,
       "scrollTo" | "scrollToEnd" | "flashScrollIndicators"
@@ -129,11 +140,11 @@ export const NativeScroller = React.forwardRef<
   const momentum = React.useRef(false);
   const grantedDuringMomentum = React.useRef(false);
   const persistTaps =
-    (keyboardShouldPersistTaps as ScrollViewProps["keyboardShouldPersistTaps"] | boolean) === true
+    keyboardShouldPersistTaps === true
       ? "always"
-      : (keyboardShouldPersistTaps as ScrollViewProps["keyboardShouldPersistTaps"] | boolean) === false
+      : keyboardShouldPersistTaps === false
       ? "never"
-      : keyboardShouldPersistTaps as Exclude<ScrollViewProps["keyboardShouldPersistTaps"], boolean>;
+      : keyboardShouldPersistTaps;
   const contentStyle = StyleSheet.flatten(contentContainerStyle);
   const refresh = refreshControl?.props;
   const rate =

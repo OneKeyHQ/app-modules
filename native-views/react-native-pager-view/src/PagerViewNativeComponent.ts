@@ -2,11 +2,11 @@ import type * as React from 'react';
 import {
   codegenNativeCommands,
   codegenNativeComponent,
+  type CodegenTypes,
   type HostComponent,
   type ViewProps,
 } from 'react-native';
 
-import type { CodegenTypes } from "react-native";
 
 export type OnPageScrollEventData = Readonly<{
   position: CodegenTypes.Double;

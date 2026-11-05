@@ -1,13 +1,13 @@
-import { codegenNativeComponent } from 'react-native';
-import type { ViewProps } from 'react-native';
-import type {
-  DirectEventHandler,
-  Double,
-} from 'react-native/Libraries/Types/CodegenTypes';
+import {
+  codegenNativeComponent,
+  type CodegenTypes,
+  type ViewProps,
+} from 'react-native';
+
 
 export type OnNativeLayout = Readonly<{
-  width: Double;
-  height: Double;
+  width: CodegenTypes.Double;
+  height: CodegenTypes.Double;
 }>;
 
 export type OnPlacementChanged = Readonly<{
@@ -15,8 +15,8 @@ export type OnPlacementChanged = Readonly<{
 }>;
 
 export interface BottomAccessoryViewNativeProps extends ViewProps {
-  onNativeLayout?: DirectEventHandler<OnNativeLayout>;
-  onPlacementChanged?: DirectEventHandler<OnPlacementChanged>;
+  onNativeLayout?: CodegenTypes.DirectEventHandler<OnNativeLayout>;
+  onPlacementChanged?: CodegenTypes.DirectEventHandler<OnPlacementChanged>;
 }
 
 export default codegenNativeComponent<BottomAccessoryViewNativeProps>(

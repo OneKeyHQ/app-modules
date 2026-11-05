@@ -1406,9 +1406,20 @@ CANCEL-event behavior. Source/type/JVM-double checks are not runtime proof.
 ### React Native public type boundary
 
 The three codegen specs import the public `CodegenTypes` namespace from
-`react-native`. NativeScroller host methods derive from its existing native host
-ref, retaining the same public method set and valid parameter calls. These are
-type-only changes: emitted JavaScript and generated native schemas are unchanged.
-Normal declaration builds and codegen parser parity are checked with RN 0.86.2
-and RN 0.88.0, including positive calls and rejected invalid typed input; this
-does not expand the supported runtime API or prove native rendering.
+`react-native`. NativeScroller's six host methods derive from its existing
+native `HostRef`, preserving the 11-method ref API and valid parameter calls.
+`keyboardShouldPersistTaps` explicitly retains the deprecated boolean aliases
+(`true` to `always`, `false` to `never`) alongside the standard string values;
+the Web wrapper also normalizes these aliases before forwarding to ScrollView,
+as in the merged main branch. Other values and owner/ref behavior are unchanged.
+
+The merged development workspace follows main's RN 0.88/React 19.3 dependency
+baseline. Fresh normal package prepare/typecheck passed there; isolated copies of
+the current sources also passed normal declaration builds with RN 0.86.2.
+Actual ref/parameter fixtures passed on both RN versions, and RN 0.88 checks
+established bidirectional compatibility of the derived six host methods with
+public `HostInstance`. Both Codegen parsers produced unchanged three-component
+schemas relative to the pre-integration PR. Native source and erased JavaScript
+for the native wrapper/codegen files remain unchanged; the Web boolean forwarding
+above is a separate main-branch runtime change. These checks do not prove a new
+RN 0.88 SDK native example build or extend the scoped consumer UI acceptance.

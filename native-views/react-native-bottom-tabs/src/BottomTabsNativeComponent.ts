@@ -1,12 +1,11 @@
-import codegenNativeComponent from 'react-native/Libraries/Utilities/codegenNativeComponent';
-import type { ColorValue, ProcessedColorValue, ViewProps } from 'react-native';
-import type {
-  DirectEventHandler,
-  Double,
-  Int32,
-  WithDefault,
-} from 'react-native/Libraries/Types/CodegenTypes';
-//@ts-ignore
+import {
+  codegenNativeComponent,
+  type CodegenTypes,
+  type ColorValue,
+  type ProcessedColorValue,
+  type ViewProps,
+} from 'react-native';
+// @ts-ignore
 import type { ImageSource } from 'react-native/Libraries/Image/ImageSource';
 
 export type OnPageSelectedEventData = Readonly<{
@@ -14,12 +13,12 @@ export type OnPageSelectedEventData = Readonly<{
 }>;
 
 export type OnTabBarMeasured = Readonly<{
-  height: Int32;
+  height: CodegenTypes.Int32;
 }>;
 
 export type OnNativeLayout = Readonly<{
-  width: Double;
-  height: Double;
+  width: CodegenTypes.Double;
+  height: CodegenTypes.Double;
 }>;
 
 // Where the system draws the tab bar: 'bottom', or 'leading' / 'trailing' for
@@ -47,10 +46,10 @@ export type BottomTabsItems = ReadonlyArray<{
 export interface BottomTabsNativeProps extends ViewProps {
   items: BottomTabsItems;
   selectedPage: string;
-  onPageSelected?: DirectEventHandler<OnPageSelectedEventData>;
-  onTabDoublePress?: DirectEventHandler<OnPageSelectedEventData>;
-  onTabBarMeasured?: DirectEventHandler<OnTabBarMeasured>;
-  onNativeLayout?: DirectEventHandler<OnNativeLayout>;
+  onPageSelected?: CodegenTypes.DirectEventHandler<OnPageSelectedEventData>;
+  onTabDoublePress?: CodegenTypes.DirectEventHandler<OnPageSelectedEventData>;
+  onTabBarMeasured?: CodegenTypes.DirectEventHandler<OnTabBarMeasured>;
+  onNativeLayout?: CodegenTypes.DirectEventHandler<OnNativeLayout>;
   icons?: ReadonlyArray<ImageSource>;
   selectedIcons?: ReadonlyArray<ImageSource>;
   tabBarHidden?: boolean;
@@ -58,8 +57,8 @@ export interface BottomTabsNativeProps extends ViewProps {
   sidebarAdaptable?: boolean;
   scrollEdgeAppearance?: string;
   barTintColor?: ColorValue;
-  translucent?: WithDefault<boolean, true>;
-  androidBottomBlurEnabled?: WithDefault<boolean, false>;
+  translucent?: CodegenTypes.WithDefault<boolean, true>;
+  androidBottomBlurEnabled?: CodegenTypes.WithDefault<boolean, false>;
   rippleColor?: ColorValue;
   activeTintColor?: ColorValue;
   inactiveTintColor?: ColorValue;
@@ -69,15 +68,15 @@ export interface BottomTabsNativeProps extends ViewProps {
   minimizeBehavior?: string;
   fontFamily?: string;
   fontWeight?: string;
-  fontSize?: Int32;
+  fontSize?: CodegenTypes.Int32;
   ignoreBottomInsets?: boolean;
-  androidTabBarStyle?: WithDefault<'default' | 'floating', 'default'>;
-  ignoreKeyboardInsets?: WithDefault<boolean, true>;
-  onTabBarPlacementChange?: DirectEventHandler<OnTabBarPlacementChange>;
+  androidTabBarStyle?: CodegenTypes.WithDefault<'default' | 'floating', 'default'>;
+  ignoreKeyboardInsets?: CodegenTypes.WithDefault<boolean, true>;
+  onTabBarPlacementChange?: CodegenTypes.DirectEventHandler<OnTabBarPlacementChange>;
   // A round button drawn above a vertical tab bar; iOS only.
   sideAccessoryIcon?: ImageSource;
   sideAccessoryLabel?: string;
-  onSideAccessoryPress?: DirectEventHandler<OnSideAccessoryPress>;
+  onSideAccessoryPress?: CodegenTypes.DirectEventHandler<OnSideAccessoryPress>;
 }
 
 export default codegenNativeComponent<BottomTabsNativeProps>('RNBottomTabsView');

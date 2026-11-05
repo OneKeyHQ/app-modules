@@ -54,9 +54,9 @@
     "react-native": "*"
   },
   "devDependencies": {
-    "@react-native/babel-preset": "0.86.2",
-    "react": "19.2.3",
-    "react-native": "patch:react-native@npm%3A0.86.2#~/.yarn/patches/react-native-npm-0.86.2-c9d546616f.patch",
+    "@react-native/babel-preset": "0.88.0",
+    "react": "19.3.0",
+    "react-native": "patch:react-native@npm%3A0.88.0#~/.yarn/patches/react-native-npm-0.88.0-60c6201dd2.patch",
     "react-native-builder-bob": "^0.40.17",
     "typescript": "^5.9.2"
   },

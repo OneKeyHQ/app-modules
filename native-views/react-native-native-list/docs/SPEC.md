@@ -74,7 +74,7 @@ prevention; there is no automatic fitting or shrinking pass.
 ### Recipient identity and inline warning rows
 
 Status: implemented in local source for the Select Address and Swap selectors;
-native device and Web runtime verification remain pending. These fields travel in snapshot/patch JSON
+native device and broader Web runtime verification remain pending. These fields travel in snapshot/patch JSON
 and do not change the Nitro ABI.
 
 An `identity` row may opt into `subtitleLines: 0`, meaning the complete subtitle
@@ -87,6 +87,18 @@ or `row.height` still wins over content measurement, in that order. Content
 height changes with row width, text, style or configured font and may not retain
 a stale prior width's measurement. The existing 4096 UTF-16-code-unit bound per
 text field still applies; zero is not an unlimited data-size allowance.
+
+On Web, opt-in auto-height identity rows without an explicit height use the
+intrinsic body height in CSS layout pixels, before ancestor transforms. A hidden
+body with zero layout height supplies no rendered measurement; zero MUST NOT
+replace a valid layout height. Rebinding between automatic and explicit height
+restores the corresponding body sizing. Multiline subtitles, including
+`subtitleLines: 0`, break unspaced words within the text-column width; single-line
+behavior remains unchanged.
+
+Auto-height recipient rows are production-consumer verified with isolated wallet
+fixtures, including modal scaling, width changes and row reuse. This scoped
+acceptance does not establish Electron or browser-extension runtime acceptance.
 
 An `identity` row may set `longPressActionKey` to a nonempty action key. A valid
 touch long press on an enabled row emits one `onRowAction` with its current row key,
@@ -2193,9 +2205,14 @@ coverage, while the App's independent generator verifies all 1,909 resources.
 
 ## Public host-ref types
 
-`webSectionIndexContainerRef` derives its host instance from
+`webSectionIndexContainerRef` continues to derive its host instance from
 `React.ElementRef<typeof View>` with the existing nullable `RefObject` shape.
-It accepts the actual React Native View ref on RN 0.86.2 and 0.88.0 without a
-private type import or consumer declaration patch. Normal declaration builds and
-positive/negative typed ref assignments verify the boundary. This is type-only:
-emitted JavaScript, native schemas, props and runtime behavior are unchanged.
+The main integration preserves this existing declaration boundary without a
+private type import, extra compatibility layer or consumer declaration patch.
+Fresh normal package prepare/typecheck passed with RN 0.88/React 19.3; an isolated
+copy of the current sources passed a normal RN 0.86.2 declaration build.
+Actual View-ref positive/negative fixtures passed on both versions, with RN 0.88
+bidirectional compatibility against public `ViewInstance`. This is type-only:
+emitted JavaScript, native schemas, props and list behavior are unchanged by
+this ref declaration. Independent main-branch Web renderer changes and consumer
+runtime acceptance remain separately scoped.

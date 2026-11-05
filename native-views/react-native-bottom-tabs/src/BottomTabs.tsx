@@ -392,14 +392,19 @@ const BottomTabs = <Route extends BaseRoute>({
 }: Props<Route>) => {
   // @ts-ignore
   const focusedKey = navigationState.routes[navigationState.index].key;
-  const customTabBarWrapperRef = useRef<View>(null) as React.RefObject<any>;
+  const customTabBarWrapperRef = useRef<React.ComponentRef<typeof View>>(
+    null
+  ) as React.RefObject<any>;
   const nativeBottomTabsRef =
     useRef<React.ElementRef<typeof NativeBottomTabs>>(null);
   const [nativeTabBarHeight, setNativeTabBarHeight] = React.useState(0);
   const [customTabBarHeight, setCustomTabBarHeight] = React.useState(0);
+  const [tabBarPlacement, setTabBarPlacement] =
+    React.useState<TabBarPlacement>("bottom");
+  // A vertical bar measures its full column height but takes no bottom space.
   const tabBarHeight = renderCustomTabBar
     ? customTabBarHeight
-    : props.tabBarHidden
+    : props.tabBarHidden || tabBarPlacement !== "bottom"
     ? 0
     : nativeTabBarHeight;
   const [measuredDimensions, setMeasuredDimensions] = React.useState<
@@ -564,7 +569,9 @@ const BottomTabs = <Route extends BaseRoute>({
 
   const handleTabBarPlacementChange = React.useCallback(
     (event: NativeSyntheticEvent<{ placement: string }>) => {
-      onTabBarPlacementChange?.(event.nativeEvent.placement as TabBarPlacement);
+      const placement = event.nativeEvent.placement as TabBarPlacement;
+      setTabBarPlacement(placement);
+      onTabBarPlacementChange?.(placement);
     },
     [onTabBarPlacementChange]
   );
