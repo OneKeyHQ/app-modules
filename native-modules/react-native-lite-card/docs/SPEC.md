@@ -80,6 +80,28 @@ DeviceMismatch (2003) without unguarded retry. A failed card info read instead
 returns the existing read/connection error. The expectation
 is neither persisted nor logged. iOS syncs card info before checking identity.
 
+Android operation ownership (source implementation; physical-card acceptance is
+open): each operation owns one `Connection` and its freshly read `CardState`.
+The identity check, PIN setup/verification, reset and backup use that same
+connection. A process-wide coroutine mutex shared by all native module instances
+owns the GPChannel context from connection construction through the entire
+operation and finalization. Construction failure, command failure and coroutine
+cancellation release that ownership in `finally`; cancellation cannot interrupt
+an already running synchronous NFC command. Permission checks, waiting for a
+tag and bridge callbacks do not hold the mutex. Callback state belongs to the
+completed operation rather than a module-level current-card slot.
+The existing connected UI event is queued through React Native's asynchronous
+event emitter after initialization while ownership is held, before PIN/write
+commands. Completion callbacks and terminal UI cleanup happen after release.
+
+Passive Android discovery shares the same mutex, skips a busy context without
+queuing an old discovery, and never replaces an operation's connection. Only a
+successfully queued tag may be inspected. Consumed tags are marked before active
+acquisition; passive inspection and its event discard consumed discoveries.
+Freshly delivered tags may connect during acquisition; only reuse of the previous
+tag requires an existing connection. Cancellation before acquiring a tag retains
+the existing null-channel behavior and releases the operation UI once.
+
 The native method adds nullable expectedSerial before callback. This changes the
 TurboModule ABI and requires generated bindings and rebuilt iOS/Android apps to
 ship with the wrapper. It cannot be delivered through JS-only OTA.
@@ -94,10 +116,10 @@ counts, parser presence/return status and effective status words.
 
 ### API, lifecycle, and compatibility
 
-Except for the identity guard and fail-closed state reads above, card commands,
-callback payloads, validation, operation ordering, cancellation, retry and timeout
-behavior remain unchanged. No server logs, new dependencies, or cross-layer
-correlation parameters are added.
+Except for the identity guard, fail-closed state reads and Android operation
+ownership above, card commands, callback payloads, validation, operation ordering,
+cancellation, retry and timeout behavior remain unchanged. No server logs, new
+dependencies, or cross-layer correlation parameters are added.
 
 - iOS records native method entry, SDK checks, callback error codes and elapsed
   time through LCLogger / OneKeyLog. Manager/session lifecycle records begin,
@@ -136,6 +158,14 @@ interpolations against the allowlist and compile the affected native sources.
 No storage/schema migration is introduced. The wrapper argument and native ABI
 change are described above. Wrapper tests prove optional/empty serial forwarding
 and mismatch-result preservation, not native identity checks or card writes.
+`node tests/android-session.cjs` compiles the production Android session,
+identity guard and operation methods against fake transport/lifecycle adapters.
+It covers all write phases sharing one connection, two clients sharing the
+process gate, busy/consumed passive discoveries, unconnected tag delivery,
+cancelled waiters, initialization/command failure cleanup and completion reentry.
+The fake transport does not prove Android NFC, React Native event delivery,
+module lifecycle or physical-card behavior. The module keeps tag waits outside
+ownership and terminal UI cleanup in its single operation `finally`.
 Physical iOS/Android card runs must confirm entry-to-callback timelines,
 PIN-to-NFC handoff, first backup failure, cancellation, and successful backup.
 Source inspection/builds do not prove those device outcomes or identify the
