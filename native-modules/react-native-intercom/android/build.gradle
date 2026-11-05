@@ -1,3 +1,12 @@
+['intercom-base', 'intercom-ui'].each { artifact ->
+  ['aar', 'pom'].each { extension ->
+    def generated = file("maven/com/onekey/intercom/source/${artifact}/18.10.0-source.1/${artifact}-18.10.0-source.1.${extension}")
+    if (!generated.isFile()) {
+      throw new GradleException('Missing generated Intercom SDK artifacts. Install the packed SDK, or configure the SDK production toolchain and run yarn workspace @onekeyfe/react-native-intercom build:android-source before building a source checkout. See the package README.')
+    }
+  }
+}
+
 apply plugin: 'com.android.library'
 
 apply plugin: 'com.facebook.react'

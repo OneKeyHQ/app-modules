@@ -14,7 +14,10 @@ import zipfile
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SOURCE = ROOT / 'source/android/intercom-sdk-push'
 BUILD = ROOT / '.build/android-push-source'
-fetch = runpy.run_path(str(ROOT / 'scripts/android-build-source.py'))['fetch']
+shared = runpy.run_path(str(ROOT / 'scripts/android-build-source.py'))
+fetch = shared['fetch']
+java_bin = shared['java_bin']
+android_sdk = shared['android_sdk']
 
 
 def sha(path):
@@ -76,9 +79,9 @@ def main():
             shutil.copy2(artifact, target)
             jars.append(target)
             receipt.setdefault('source_prerequisites', []).append(dict(receipt=str(path.relative_to(ROOT)), receipt_sha256=sha(path), artifact_sha256=sha(artifact)))
-        android = pathlib.Path(os.environ.get('ANDROID_HOME', str(pathlib.Path.home() / 'Library/Android/sdk'))) / 'platforms/android-35/android.jar'
+        android = android_sdk() / 'platforms/android-35/android.jar'
         jars.append(android)
-        jvm = pathlib.Path('/opt/homebrew/opt/openjdk@17/bin')
+        jvm = java_bin(17)
         asm = [fetch(row, deps, args.offline) for row in json.loads((ROOT / 'source/android/tool-dependencies.json').read_text())]
         toolcp = os.pathsep.join(map(str, asm))
         tool = ROOT / 'tools/RestoreBuildMetadata.java'

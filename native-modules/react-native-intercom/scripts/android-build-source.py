@@ -1,17 +1,52 @@
 #!/usr/bin/env python3
 """Build recovered UI from checked-in Java/resources/metadata only, without vendor inputs."""
-import argparse,hashlib,json,os,pathlib,shutil,subprocess,sys,urllib.request,zipfile
+import argparse,hashlib,json,os,pathlib,re,shutil,subprocess,sys,urllib.request,zipfile
 ROOT=pathlib.Path(__file__).resolve().parent.parent
 BUILD=ROOT/'.build/android-ui-source'
 SOURCE=ROOT/'source/android/intercom-sdk-ui'
 def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
+def java_bin(version):
+ key='JAVA'+str(version)+'_HOME'
+ home=os.environ.get(key)
+ if not home:raise RuntimeError('Set '+key+' to a JDK '+str(version)+' installation for SDK package production')
+ folder=pathlib.Path(home).expanduser().resolve()/'bin'
+ for name in ['java','javac']:
+  if not (folder/name).is_file():raise RuntimeError(key+' must contain bin/'+name+': '+str(folder))
+ return folder
+def android_sdk():
+ homes=[pathlib.Path(os.environ[key]).expanduser().resolve() for key in ['ANDROID_HOME','ANDROID_SDK_ROOT'] if os.environ.get(key)]
+ if not homes:raise RuntimeError('Set ANDROID_HOME or ANDROID_SDK_ROOT to the Android SDK for SDK package production')
+ if len(set(homes))!=1:raise RuntimeError('ANDROID_HOME and ANDROID_SDK_ROOT must identify the same Android SDK')
+ return homes[0]
+def production_environment(gradle=None):
+ if sys.version_info<(3,9):raise RuntimeError('SDK package production requires Python 3.9 or newer')
+ env=dict(os.environ)
+ for version in [17,24]:
+  folder=java_bin(version)
+  for executable,pattern in [('java',r'version "(\d+)'),('javac',r'javac (\d+)')]:
+   result=subprocess.run([str(folder/executable),'-version'],capture_output=True,text=True)
+   match=re.search(pattern,result.stdout+result.stderr)
+   if result.returncode or not match or int(match[1])!=version:raise RuntimeError('JAVA'+str(version)+'_HOME must select JDK '+str(version)+': '+result.stdout+result.stderr)
+  env['JAVA'+str(version)+'_HOME']=str(folder.parent)
+ env['JAVA_HOME']=env['JAVA17_HOME']
+ sdk=android_sdk()
+ for relative in ['platforms/android-35/android.jar','platforms/android-36/android.jar','build-tools/35.0.0/aapt2','build-tools/35.0.0/lib/d8.jar']:
+  if not (sdk/relative).is_file():raise RuntimeError('Install Android SDK platforms 35/36 and build-tools 35.0.0; missing '+str(sdk/relative))
+ if not os.access(sdk/'build-tools/35.0.0/aapt2',os.X_OK):raise RuntimeError('Android SDK build-tools/35.0.0/aapt2 must be executable')
+ env['ANDROID_HOME']=env['ANDROID_SDK_ROOT']=str(sdk)
+ selected=str(gradle or env.get('INTERCOM_GRADLE_BIN') or shutil.which('gradle') or '')
+ executable=shutil.which(selected) if selected else None
+ if not executable:raise RuntimeError('Set INTERCOM_GRADLE_BIN or pass --gradle to an existing Gradle 8.13 executable')
+ result=subprocess.run([executable,'--version'],capture_output=True,text=True,env=env)
+ if result.returncode or not re.search(r'^Gradle 8\.13\s*$',result.stdout,re.M):raise RuntimeError('SDK package production requires Gradle 8.13: '+result.stdout+result.stderr)
+ return pathlib.Path(executable).resolve(),env
 def run(command,log):
  with log.open('w') as stream:result=subprocess.run([str(v) for v in command],stdout=stream,stderr=subprocess.STDOUT)
  if result.returncode:raise RuntimeError(f'exit {result.returncode}: {log}')
 def fetch(row,folder,offline):
  target=folder/(row['artifact']+'-'+row['version']+row['extension'])
  if target.exists() and sha(target)==row['sha256']:return target
- cache=pathlib.Path.home()/'.gradle/caches/modules-2/files-2.1'/row['group']/row['artifact']/row['version']
+ cache=pathlib.Path(os.environ.get('GRADLE_USER_HOME',str(pathlib.Path.home()/'.gradle'))).expanduser()/'caches/modules-2/files-2.1'/row['group']/row['artifact']/row['version']
  for candidate in cache.glob('*/*'):
   if candidate.suffix==row['extension'] and sha(candidate)==row['sha256']:shutil.copy2(candidate,target);return target
  if offline:raise RuntimeError('Offline dependency missing: '+str(row))
@@ -24,7 +59,7 @@ def main():
  BUILD.mkdir(parents=True,exist_ok=True)
  receipt={'status':'FAIL','scope':'intercom-sdk-ui 18.10.0 source-only module, not full Intercom SDK','reads_original_sdk':False,'vendor_sdk_on_classpath':False,'vendor_sdk_packaged':False,'runtime_verified':False}
  try:
-  for name in ['classes','restored','tools','classpath','normalized','resources-java']:
+  for name in ['classes','restored','tools','classpath','normalized','resources-java','module-metadata']:
    folder=BUILD/name
    if folder.exists():shutil.rmtree(folder)
    folder.mkdir()
@@ -42,8 +77,8 @@ def main():
    with zipfile.ZipFile(target) as z:
     if any(n.startswith(('io/intercom/android/','com/intercom/twig/')) and n.endswith('.class') for n in z.namelist()):raise RuntimeError('Vendor SDK class in external dependency: '+str(artifact))
    jars.append(target)
-  sdk=pathlib.Path(os.environ.get('ANDROID_HOME',str(pathlib.Path.home()/'Library/Android/sdk')))
-  android=sdk/'platforms/android-35/android.jar';aapt=sdk/'build-tools/35.0.0/aapt2';jvm=pathlib.Path('/opt/homebrew/opt/openjdk@17/bin');javac=jvm/'javac';java=jvm/'java'
+  sdk=android_sdk()
+  android=sdk/'platforms/android-35/android.jar';aapt=sdk/'build-tools/35.0.0/aapt2';jvm=java_bin(17);javac=jvm/'javac';java=jvm/'java'
   target=BUILD/'classpath/android.jar';shutil.copy2(android,target);jars.append(target)
   toolcp=os.pathsep.join(str(v) for v in asm)
   run([javac,'-cp',toolcp,'-d',BUILD/'tools',ROOT/'tools/NormalizeJvmNames.java',ROOT/'tools/RestoreBuildMetadata.java'],BUILD/'compile-tools.log')

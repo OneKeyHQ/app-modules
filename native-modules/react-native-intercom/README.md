@@ -8,19 +8,35 @@ Local React Native 0.88.0 / React 19.3.0 consumer builds pass: Android assembleD
 
 Add this workspace package to the consumer's dependencies and use React Native autolinking/codegen. Import the API from `@onekeyfe/react-native-intercom`; declarations are in `src/index.tsx` and `src/NativeIntercomSpec.ts`.
 
-- Android: minimum SDK 24 for React Native 0.88 (native source AAR minimum 23). Consume the provided two AARs and two POMs under `android/maven`. The consumer retains ownership of its React Native and Android toolchain.
+- Android: minimum SDK 24 for React Native 0.88 (native source AAR minimum 23). The packed SDK contains two generated AARs and two POMs under `android/maven`. Installing a registry/tgz package does not run the native SDK producer or require Python, JDK 24 or Gradle 8.13. The consumer retains ownership of its normal React Native and Android toolchain.
 - iOS: minimum iOS 15.1 and Xcode 16.1 for React Native 0.88. Run the consumer's normal `pod install`; `ReactNativeIntercom.podspec` compiles the checked-in native sources and packages `Intercom.bundle` and `IntercomTranslations.bundle`. Retain the initialization, permissions and push/notification-extension configuration required by the features used.
 
 The package must not link vendor Intercom pods, XCFrameworks or Android SDK artifacts alongside its source-built SDK. Native SDK state is shared within the process; separate mobile JavaScript runtimes do not isolate native sessions.
 
-## Rebuild Android artifacts
+## Produce the SDK package
 
-After modifying native SDK sources, rebuild the Android artifacts from this package directory:
+The four Android artifacts are generated and ignored by Git. SDK package production requires Python 3.9+, Gradle 8.13, JDK 17 and 24, Android SDK platforms 35/36 and build tools 35.0.0. Configure the production machine before packing:
 
 ```sh
-python3 scripts/android-build-artifacts.py --gradle /absolute/path/to/gradle-8.13/bin/gradle
+export JAVA17_HOME=/absolute/path/to/jdk-17
+export JAVA24_HOME=/absolute/path/to/jdk-24
+export ANDROID_HOME=/absolute/path/to/android-sdk
+export INTERCOM_GRADLE_BIN=/absolute/path/to/gradle-8.13/bin/gradle
+yarn workspace @onekeyfe/react-native-intercom pack --out /absolute/path/to/intercom.tgz
 ```
 
-Use `--offline` after pinned dependencies are cached. The independent build requires Python 3, Gradle 8.13, JDK 17, JDK 24 for recovered Java sources, Android SDK platforms 35/36 and build tools 35.0.0. Current compiler paths are declared in the retained scripts. It compiles checked-in Java/Kotlin/resources and text metadata, then generates package-local AARs under `android/maven`; it does not publish remotely. Original SDK binaries and local audit directories are not build inputs.
+`npm pack` also runs the same `prepack` hook: build JavaScript/declarations, then unconditionally rebuild all native source producers from checked-in Java/Kotlin/resources and text metadata. Packing requires lifecycle scripts to be enabled. Raw Git/source installations that invoke packing also require the production toolchain. `prepare` only builds JavaScript/declarations. No install/postinstall native build is added. The package remains private; existing shared publication CI has not been configured with this SDK production toolchain.
+
+`ANDROID_SDK_ROOT` may replace `ANDROID_HOME`; if both are set they must resolve to the same SDK. Gradle selection is `--gradle`, then `INTERCOM_GRADLE_BIN`, then PATH. External downloads are SHA-pinned and use `GRADLE_USER_HOME` (default `~/.gradle`) when available. A dependency cache does not skip native source compilation. Original SDK binaries and local audit directories are not build inputs.
+
+For a local workspace Android build, generate the same artifacts first:
+
+```sh
+yarn workspace @onekeyfe/react-native-intercom build:android-source
+# For cached external dependencies only:
+python3 scripts/android-build-artifacts.py --offline
+```
+
+Python production invalidates old `android/maven` output before checking tools. It verifies the complete source/scripts/tools inventory before promoting exactly four staged files; missing tools, changed inputs or compilation failures leave no old or partial consumer set. A failed pack exits without creating a new package. Consumer Gradle reports missing artifacts and the local production command; it never invokes the producer.
 
 Build logs and receipts remain local under `.build`. `LICENSE`, `LICENSES` and `NOTICE` retain the applicable license and attribution terms.

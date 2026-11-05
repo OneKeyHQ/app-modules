@@ -6,6 +6,7 @@ import json
 import os
 import pathlib
 import re
+import runpy
 import shutil
 import subprocess
 import sys
@@ -16,10 +17,18 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 BUILD = ROOT / '.build/android-artifacts'
 GROUP = 'com.onekey.intercom.source'
 VERSION = '18.10.0-source.1'
+production_environment = runpy.run_path(str(ROOT / 'scripts/android-build-source.py'))['production_environment']
 
 
 def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def source_inventory():
+    return {str(path.relative_to(ROOT)): sha(path)
+            for folder in ['source/android', 'scripts', 'tools']
+            for path in sorted((ROOT / folder).rglob('*'))
+            if path.is_file() and '__pycache__' not in path.parts and path.suffix != '.pyc'}
 
 
 def run(command, log, env=None):
@@ -112,24 +121,30 @@ def integration_pom(module, pom, target):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--offline', action='store_true')
-    parser.add_argument('--gradle', type=pathlib.Path, default=shutil.which('gradle'), help='Gradle 8.13 executable for the independent SDK build')
+    parser.add_argument('--gradle', type=pathlib.Path, help='Gradle 8.13 executable; otherwise INTERCOM_GRADLE_BIN or PATH')
     args = parser.parse_args()
-    if not args.gradle or not args.gradle.is_file():
-        parser.error('Pass an existing Gradle 8.13 executable with --gradle')
     BUILD.mkdir(parents=True, exist_ok=True)
     receipt = dict(status='FAIL', vendor_sdk_inputs=False, scope='Source-built native AARs; no SDK session/account/runtime acceptance')
+    integration_repository = ROOT / 'android/maven'
+    staging_repository = BUILD / 'integration-maven'
     try:
+        if integration_repository.exists():
+            shutil.rmtree(integration_repository)
+        for name in ['project', 'inputs', 'published-maven', 'integration-maven', 'source-provenance']:
+            if (BUILD / name).exists():
+                shutil.rmtree(BUILD / name)
+        initial_inputs = source_inventory()
+        (BUILD / 'source-inputs-before.json').write_text(json.dumps(initial_inputs, indent=2) + '\n')
+        gradle, env = production_environment(args.gradle)
+        receipt['toolchain'] = {key: env[key] for key in ['JAVA17_HOME', 'JAVA24_HOME', 'ANDROID_HOME']}
+        receipt['toolchain']['gradle'] = str(gradle)
         project = BUILD / 'project'
         project.mkdir(exist_ok=True)
         repository = BUILD / 'published-maven'
-        integration_repository = ROOT / 'android/maven'
-        env = dict(os.environ)
-        java17 = env.get('JAVA17_HOME', '/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home')
-        env['JAVA_HOME'] = java17
         (project / 'settings.gradle').write_text("pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }\ndependencyResolutionManagement { repositories { google(); mavenCentral() } }\nrootProject.name='intercom-source-artifacts'\ninclude ':base', ':ui', ':resources'\n")
         (project / 'build.gradle').write_text("plugins { id 'com.android.library' version '8.13.2' apply false; id 'com.android.application' version '8.13.2' apply false }\n")
         (project / 'gradle.properties').write_text('android.useAndroidX=true\nandroid.enableJetifier=false\nandroid.nonTransitiveRClass=true\nandroid.nonFinalResIds=true\norg.gradle.jvmargs=-Xmx3072m\n')
-        sdk = os.environ.get('ANDROID_HOME', str(pathlib.Path.home() / 'Library/Android/sdk'))
+        sdk = env['ANDROID_HOME']
         (project / 'local.properties').write_text('sdk.dir=' + sdk + '\n')
         inputs = BUILD / 'inputs'
         inputs.mkdir(exist_ok=True)
@@ -151,7 +166,7 @@ def main():
         resources.mkdir(exist_ok=True)
         (resources / 'AndroidManifest.xml').write_text('<manifest xmlns:android="http://schemas.android.com/apk/res/android"><application /></manifest>')
         (resources / 'build.gradle').write_text("plugins { id 'com.android.application' }\nandroid { namespace 'com.onekey.intercom.source.resources'; compileSdk 36; defaultConfig { applicationId 'com.onekey.intercom.source.resources'; minSdk 23; targetSdk 36 }; sourceSets.main.manifest.srcFile 'AndroidManifest.xml' }\ndependencies { implementation project(':base') }\n")
-        command = [args.gradle.resolve(), '-p', project, '--console=plain', '--no-daemon'] + (['--offline'] if args.offline else [])
+        command = [gradle, '-p', project, '--console=plain', '--no-daemon'] + (['--offline'] if args.offline else [])
         run(command + [':resources:processDebugResources', ':base:generateDebugRFile'], BUILD / 'resources.log', env)
         resource_header = resources / 'build/intermediates/compile_and_runtime_not_namespaced_r_class_jar/debug/processDebugResources/R.jar'
         if not resource_header.is_file():
@@ -161,7 +176,7 @@ def main():
             ['android-build-icon-source.py', '--resource-header', str(project / 'base/build/intermediates/compile_r_class_jar/debug/generateDebugRFile/R.jar')],
             ['android-build-base-source.py', '--resource-header', str(resource_header)], ['android-build-push-source.py']]
         for arguments in source_commands:
-            run([sys.executable, ROOT / 'scripts' / arguments[0], *arguments[1:], *(['--offline'] if args.offline else [])], BUILD / (arguments[0] + '.log'))
+            run([sys.executable, ROOT / 'scripts' / arguments[0], *arguments[1:], *(['--offline'] if args.offline else [])], BUILD / (arguments[0] + '.log'), env)
         receipt['sources'] = []
         expected = {}
         for part, name, status in [('ui', 'android-ui-source', 'PASS_SOURCE_AND_ABI_SYMBOLS'), ('base', 'android-base-source', 'PASS_SOURCE_ABI_AND_ANDROID_CLASS_GATES'), ('base', 'android-push-source', 'PASS_SOURCE_AND_ABI_SYMBOLS')]:
@@ -205,13 +220,19 @@ def main():
             pom = aar.with_suffix('.pom')
             if 'io.intercom.android' in pom.read_text():
                 raise RuntimeError('Vendor dependency in own-source POM')
-            destination = integration_repository / aar.relative_to(repository)
+            destination = staging_repository / aar.relative_to(repository)
             dependency_proof = integration_pom(aar.with_suffix('.module'), pom, destination.with_suffix('.pom'))
             shutil.copy2(aar, destination)
             integration_files.update([destination, destination.with_suffix('.pom')])
-            receipt['artifacts'].append(dict(path=str(destination.relative_to(ROOT)), sha256=sha(destination), classes=sum(n.endswith('.class') for n in actual), kotlin_modules=sum(n.endswith('.kotlin_module') for n in actual), pom=dependency_proof))
-        if {path for path in integration_repository.rglob('*') if path.is_file()} != integration_files:
+            receipt['artifacts'].append(dict(path=str((integration_repository / aar.relative_to(repository)).relative_to(ROOT)), sha256=sha(destination), classes=sum(n.endswith('.class') for n in actual), kotlin_modules=sum(n.endswith('.kotlin_module') for n in actual), pom=dependency_proof))
+        if len(integration_files) != 4 or {path for path in staging_repository.rglob('*') if path.is_file()} != integration_files:
             raise RuntimeError('Integration repository must contain only the two AARs and two POMs')
+        final_inputs = source_inventory()
+        (BUILD / 'source-inputs-after.json').write_text(json.dumps(final_inputs, indent=2) + '\n')
+        if initial_inputs != final_inputs:
+            receipt['changed_source_inputs'] = sorted(path for path in set(initial_inputs) | set(final_inputs) if initial_inputs.get(path) != final_inputs.get(path))
+            raise RuntimeError('Source inputs changed during SDK production; rerun from a stable source tree')
+        receipt['source_inventory'] = dict(files=len(initial_inputs), before_sha256=sha(BUILD / 'source-inputs-before.json'), after_sha256=sha(BUILD / 'source-inputs-after.json'))
         receipt['resource_header'] = dict(sha256=sha(resource_header), path=str(resource_header.relative_to(ROOT)))
         receipt['status'] = 'PASS_SOURCE_AAR_PACKAGING'
         proof_folder = BUILD / 'source-provenance'
@@ -222,8 +243,13 @@ def main():
         receipt['packaging_inputs'] = [dict(path=str(path.relative_to(ROOT)), sha256=sha(path)) for path in sorted(
             [pathlib.Path(__file__).resolve()] + [p for folder in ['intercom-sdk-base', 'intercom-sdk-ui', 'intercom-sdk-push'] for p in (ROOT / 'source/android' / folder).rglob('*') if p.is_file() and (p.name in ['AndroidManifest.xml', 'proguard.txt', 'nexus-proguard.txt', 'external-dependencies.json'] or 'res' in p.relative_to(ROOT / 'source/android' / folder).parts)])]
         (proof_folder / 'artifacts-receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
+        staging_repository.replace(integration_repository)
     except Exception as failure:
+        receipt['status'] = 'FAIL'
         receipt['error'] = str(failure)
+        for folder in [integration_repository, staging_repository]:
+            if folder.exists():
+                shutil.rmtree(folder)
         print(failure, file=sys.stderr)
     (BUILD / 'receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
     print(json.dumps(receipt, indent=2))

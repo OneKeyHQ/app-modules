@@ -3,7 +3,8 @@
 import argparse,hashlib,json,os,pathlib,runpy,shutil,subprocess,sys,zipfile
 ROOT=pathlib.Path(__file__).resolve().parent.parent
 SOURCE=ROOT/'source/android/intercom-sdk-base';BUILD=ROOT/'.build/android-realtime-source'
-fetch=runpy.run_path(str(ROOT/'scripts/android-build-source.py'))['fetch']
+shared=runpy.run_path(str(ROOT/'scripts/android-build-source.py'))
+fetch=shared['fetch'];java_bin=shared['java_bin'];android_sdk=shared['android_sdk']
 def sha(path):return hashlib.sha256(path.read_bytes()).hexdigest()
 def run(command,log):
  with log.open('w')as stream:result=subprocess.run([str(value)for value in command],stdout=stream,stderr=subprocess.STDOUT)
@@ -22,8 +23,8 @@ def main():
    with zipfile.ZipFile(jar)as archive:
     if any(name.startswith(('io/intercom/android/','com/intercom/twig/'))and name.endswith('.class')for name in archive.namelist()):raise RuntimeError('Original SDK payload in external dependency')
   tools=json.loads((ROOT/'source/android/tool-dependencies.json').read_text());asm=[fetch(row,dependencies,args.offline)for row in tools]
-  sdk=pathlib.Path(os.environ.get('ANDROID_HOME',str(pathlib.Path.home()/'Library/Android/sdk')));android=sdk/'platforms/android-35/android.jar';jars.append(android)
-  jvm=pathlib.Path('/opt/homebrew/opt/openjdk@17/bin');java=jvm/'java';javac=jvm/'javac';toolcp=os.pathsep.join(map(str,asm));tool=ROOT/'tools/RestoreBuildMetadata.java'
+  sdk=android_sdk();android=sdk/'platforms/android-35/android.jar';jars.append(android)
+  jvm=java_bin(17);java=jvm/'java';javac=jvm/'javac';toolcp=os.pathsep.join(map(str,asm));tool=ROOT/'tools/RestoreBuildMetadata.java'
   run([javac,'-cp',toolcp,'-d',BUILD/'tools',tool],BUILD/'compile-tools.log')
   sources=sorted((SOURCE/'java/io/intercom/android/nexus').glob('*.java'))+sorted((SOURCE/'java/com/intercom/twig').glob('*.java'))
   if len(sources)!=22:raise RuntimeError('Unexpected realtime source count')

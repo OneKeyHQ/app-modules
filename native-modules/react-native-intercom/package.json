@@ -29,6 +29,8 @@
     "!**/__fixtures__",
     "!**/__mocks__",
     "!**/.*",
+    "!**/.*/**",
+    "!.*/**",
     "LICENSES",
     "NOTICE",
     "docs",
@@ -40,6 +42,7 @@
   "scripts": {
     "clean": "del-cli android/build example/android/build example/android/app/build example/ios/build lib",
     "prepare": "bob build",
+    "prepack": "bob build && python3 scripts/android-build-artifacts.py",
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
     "test": "jest",

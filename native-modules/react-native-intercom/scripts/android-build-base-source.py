@@ -14,7 +14,10 @@ import zipfile
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SOURCE = ROOT / 'source/android/intercom-sdk-base'
 BUILD = ROOT / '.build/android-base-source'
-fetch = runpy.run_path(str(ROOT / 'scripts/android-build-source.py'))['fetch']
+shared = runpy.run_path(str(ROOT / 'scripts/android-build-source.py'))
+fetch = shared['fetch']
+java_bin = shared['java_bin']
+android_sdk = shared['android_sdk']
 
 
 def sha(path):
@@ -91,10 +94,10 @@ def main():
             if name != 'android-ui-source':
                 runtime, _ = prerequisite(name)
                 runtime_prerequisites.append(runtime)
-        android = pathlib.Path(os.environ.get('ANDROID_HOME', str(pathlib.Path.home() / 'Library/Android/sdk'))) / 'platforms/android-35/android.jar'
+        android = android_sdk() / 'platforms/android-35/android.jar'
         shutil.copy2(android, BUILD / 'classpath/android.jar')
-        jvm = pathlib.Path('/opt/homebrew/opt/openjdk@17/bin')
-        compiler = pathlib.Path('/Library/Java/JavaVirtualMachines/zulu-24.jdk/Contents/Home/bin/javac')
+        jvm = java_bin(17)
+        compiler = java_bin(24) / 'javac'
         asm = [fetch(row, dependencies, args.offline) for row in json.loads((ROOT / 'source/android/tool-dependencies.json').read_text())]
         toolcp = os.pathsep.join(map(str, asm))
         tools = ['NormalizeJvmNames', 'RestoreCompileBridgeFlags', 'RestoreFunctionSamSignatures',

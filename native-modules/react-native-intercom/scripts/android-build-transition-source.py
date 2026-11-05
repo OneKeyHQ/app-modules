@@ -14,7 +14,10 @@ import zipfile
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SOURCE = ROOT / 'source/android/intercom-sdk-base'
 BUILD = ROOT / '.build/android-transitions-source'
-fetch = runpy.run_path(str(ROOT / 'scripts/android-build-source.py'))['fetch']
+shared = runpy.run_path(str(ROOT / 'scripts/android-build-source.py'))
+fetch = shared['fetch']
+java_bin = shared['java_bin']
+android_sdk = shared['android_sdk']
 
 
 def sha(path):
@@ -61,7 +64,7 @@ def main():
                     raise RuntimeError('Original SDK payload in external library')
             libraries.append(output)
         source = SOURCE / 'kotlin/io/intercom/android/sdk/m5/navigation/transitions/TransitionStyle.kt'
-        jvm = pathlib.Path('/opt/homebrew/opt/openjdk@17/bin')
+        jvm = java_bin(17)
         command = [jvm / 'java', '-cp', os.pathsep.join(map(str, compiler_jars)), 'org.jetbrains.kotlin.cli.jvm.K2JVMCompiler',
                    '-no-stdlib', '-no-reflect', '-language-version', compiler['language_version'], '-api-version', compiler['api_version'],
                    '-jvm-target', compiler['jvm_target'], '-Xlambdas=' + compiler['lambdas'], '-module-name', compiler['module_name'],
