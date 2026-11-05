@@ -138,7 +138,7 @@ internal class NativeListMediaTileRowView(context: ThemedReactContext, fonts: Na
         val state = item.json.optString("imageState")
         errorIcon.visibility = if (state == "error") VISIBLE else GONE
         errorIcon.iconName = "ImageSquareWavesOutline"
-        errorIcon.tintColor = parseNativeListColor("#00000044")
+        errorIcon.tintColor = tint("disabledText", "#8C8C8C")
         errorIcon.useSourceScale = sourceScale
         errorIcon.layoutParams = FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER)
         val media = item.json.optJSONObject("media")

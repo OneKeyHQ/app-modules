@@ -71,6 +71,16 @@ prevention; there is no automatic fitting or shrinking pass.
 
 ## Public API and defaults
 
+### Media failure placeholder — Implemented
+
+Native media-tile failures use the current theme's `disabledText` color for the
+existing local `ImageSquareWavesOutline` icon, including explicit `imageState:
+'error'` and exhausted media probes. A theme rebind updates that tint. Image
+content and SVG decoding remain owned by OneKeyImage; no per-cell WebView or
+fallback network source is added.
+Full-wallet dark/light placeholder acceptance remains a runtime check; source
+completion does not establish that visual result.
+
 ### Recipient identity and inline warning rows
 
 Status: implemented in local source for the Select Address and Swap selectors;

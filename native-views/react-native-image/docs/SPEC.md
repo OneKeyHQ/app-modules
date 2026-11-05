@@ -211,6 +211,57 @@ Rendered and preloaded requests must use equivalent logical-size, pixel-ratio,
 overscan, headers, cache policy, and optimization inputs when the caller expects
 an exact decoded-memory hit.
 
+### 7.1 Embedded PNGs in SVG foreign objects — Implemented
+
+The native image decoder, including preload and reusable native-list hosts,
+recognizes SVG content independently of URL extensions. A `foreignObject`
+containing exactly one XHTML `img` with a base64 PNG source may be converted
+to an SVG `image`. The image must fill the explicitly sized foreign-object
+viewport; its geometry, transform, opacity, mask and clip remain in the SVG.
+Eight-digit hexadecimal paint attributes are translated to RGBA for both
+backends so the retained background and its alpha do not become black.
+Converted iOS thumbnails compensate for SVGCoder's screen-scale rasterization:
+requested physical pixels are not multiplied by display density again. Their
+output canvas is capped at 4,194,304 pixels, matching the 16 MiB decode target.
+This is a static image subset, not an HTML renderer. Other HTML, external
+sources, unsupported attributes/layout/CSS, malformed XML, DTDs and entities
+fail decoding instead of reporting a partially rendered image as successful.
+
+Normalization runs in the existing native decode job, never in a synchronous
+UI memory probe or a JS runtime. Existing request generations, cancellation,
+thumbnail sizing and native caches retain ownership. No WebView or additional
+network request is created. The native cache generation changes so earlier
+partially decoded SVGs cannot bypass the new decoder after an upgrade.
+
+Documents requiring conversion are limited to 8 MiB, 10,000 XML elements,
+64 levels and 16 foreign objects. Embedded PNGs share an aggregate 8 MiB encoded
+and 4,194,304-pixel budget, have sides at most 8,192, and must be static.
+The bounded PNG must also pass the platform raster decoder before conversion;
+a valid metadata header alone is insufficient to claim successful rendering.
+Only full-viewport `img` dimensions (omitted or `100%`) are supported. The
+supported HTML stylesheet is an `img` rule containing only full-viewport width
+and height and nearest-neighbor image-rendering declarations. Unsupported
+foreign-object documents return the ordinary image-error/fallback result.
+Ordinary SVGs without foreign objects keep their existing decoder path.
+
+Acceptance requires the real On-Chain All-Stars #1982 document, a standard SVG,
+an unsupported HTML subtree, malformed and over-budget embedded PNGs, cached
+reloads and recycled hosts on both platforms. Source completion alone does not
+establish runtime or full-wallet acceptance.
+
+Focused regression coverage is in `OneKeySVGForeignObjectTests.swift` and
+`OneKeySVGForeignObjectTest.kt`; cache-identity expectations remain in the
+existing infrastructure/safety suites. The real #1982 source has been rendered
+with the production iOS coder on iOS Simulator and the production Android SVG
+decoder in an Android emulator Activity. Both reject unsupported HTML. This
+records decoder-level runtime evidence. The iOS wallet also displays the
+all-networks NFT list in light/dark themes and an On-Chain All-Stars detail.
+Thirty downward swipe gestures and a return to cached rows completed without
+an app restart, but the current list reached its end early; this does not
+establish thirty distinct screens or physical-device crash acceptance.
+Android full-wallet acceptance remains open. Native interpolation may differ
+from browser CSS pixelation.
+
 ## 8. Safety and resource limits
 
 Both platforms reject oversized or malformed encoded data before allowing an

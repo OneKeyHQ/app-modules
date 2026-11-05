@@ -126,7 +126,7 @@ final class NativeListMediaTileCell: NativeListRendererCell {
     let placeholder = theme?.string("strongBackground", default: "#0000000F") ?? "#0000000F"
     errorIcon.isHidden = state != "error"
     errorIcon.bindIcon("ImageSquareWavesOutline")
-    errorIcon.tintColor = UIColor(nativeListHex: "#00000044", fallback: .lightGray)
+    errorIcon.tintColor = nativeListColor(theme, "disabledText", "#8C8C8C")
     let media = item.data.dictionary("media")
     if state != "empty", state != "error", let source = media?.dictionary("source") ?? item.data.dictionary("image") {
       // Legacy source-backed media had a transparent container. Clear only a fill this
