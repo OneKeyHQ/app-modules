@@ -29,7 +29,12 @@ class Lifecycle {
 class FragmentActivity : android.app.Activity() { val lifecycle = androidx.lifecycle.Lifecycle() }`,
   OneKeyLog: `package com.margelo.nitro.nativelogger
 object OneKeyLog {
-  fun info(tag: String, message: String) {}
+  val messages = java.util.concurrent.CopyOnWriteArrayList<String>()
+  var throwPreflight = false
+  fun info(tag: String, message: String) {
+    if (message.contains("stage=input_preflight") && throwPreflight) throw IllegalStateException("PRIVATE-LOGGER-EXCEPTION")
+    messages.add(message)
+  }
   fun error(tag: String, message: String) {}
 }`,
   Gson: 'package com.google.gson\nclass Gson',

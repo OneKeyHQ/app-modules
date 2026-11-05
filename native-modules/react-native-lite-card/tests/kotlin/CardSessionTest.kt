@@ -3,6 +3,7 @@ package com.onekeyfe.reactnativelitecard.onekeyLite
 import android.nfc.tech.IsoDep
 import com.onekeyfe.reactnativelitecard.nfc.NFCExceptions
 import com.onekeyfe.reactnativelitecard.onekeyLite.nfc.Probe
+import com.margelo.nitro.nativelogger.OneKeyLog
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.*
@@ -94,6 +95,7 @@ fun main() = runBlocking {
             for (overwrite in listOf(false, true)) {
                 for (input in listOf(null, "", "g", "12g", " 1", "0x1", "1\u0000", "１２", "a".repeat(maxDigits + 1))) {
                     Probe.reset()
+                    OneKeyLog.messages.clear()
                     val tag = IsoDep("invalid-input", newCard = !overwrite, backedUp = overwrite, v2 = v2)
                     val result = runCatching {
                         OneKeyLiteCard.withCardSession(tag) {
@@ -102,17 +104,62 @@ fun main() = runBlocking {
                     }
                     expect((result.exceptionOrNull() as? NFCExceptions)?.code == 4000, "Invalid input returns existing execution error")
                     expect(phases(tag) == listOf("construct", "info", "finalize"), "Input rejection precedes PIN, reset, overwrite and backup phases")
+                    val reason = when {
+                        input == null -> "missing"
+                        input.isEmpty() -> "empty"
+                        input.length > maxDigits -> "too_large"
+                        else -> "non_hex"
+                    }
+                    expect(OneKeyLog.messages.filter { it.contains("stage=input_preflight") } == listOf(
+                        "operation=setMnemonic stage=input_preflight inputPresent=${input != null} inputChars=${input?.length ?: 0} odd=${(input?.length ?: 0) % 2 != 0} versionKnown=true cardVersion=${if (v2) 2 else 1} overwrite=$overwrite reason=$reason accepted=false"
+                    ), "Preflight logs only exact allowlisted rejection metadata")
                 }
             }
             for (input in listOf("1", "AbC", "12", "a".repeat(maxDigits - 1), "a".repeat(maxDigits))) {
                 Probe.reset()
+                OneKeyLog.messages.clear()
                 val tag = IsoDep("valid-input", v2 = v2)
                 expect(OneKeyLiteCard.withCardSession(tag) {
                     OneKeyLiteCard.setMnemonic(it, input, "synthetic-pin")
                 }, "Odd/even input and decoded-byte boundaries retain write phases")
                 expect(phases(tag) == listOf("construct", "info", "setup", "verify", "backup", "finalize"), "Valid input executes original write sequence")
+                expect(OneKeyLog.messages.filter { it.contains("stage=input_preflight") } == listOf(
+                    "operation=setMnemonic stage=input_preflight inputPresent=true inputChars=${input.length} odd=${input.length % 2 != 0} versionKnown=true cardVersion=${if (v2) 2 else 1} overwrite=false reason=accepted accepted=true"
+                ), "Accepted preflight logs correct counts and parity without input")
             }
         }
+        for (input in listOf("12345678901234567890123456789012345678900000001", "PRIVATE-SEED-CERT-KEY-WALLET\n/path/user@host")) {
+            Probe.reset()
+            OneKeyLog.messages.clear()
+            val privatePin = "PRIVATE-PIN"
+            val privateSerial = "PRIVATE-SERIAL"
+            val result = runCatching {
+                OneKeyLiteCard.withCardSession(IsoDep("private", privateSerial)) {
+                    OneKeyLiteCard.setMnemonic(it, input, privatePin, false, privateSerial)
+                }
+            }
+            expect(result.isSuccess == input.all { it in '0'..'9' }, "Privacy fixture retains validation result")
+            val allowed = listOf(
+                Regex("operation=setMnemonic stage=input_preflight inputPresent=(true|false) inputChars=[0-9]+ odd=(true|false) versionKnown=true cardVersion=[12] overwrite=(true|false) reason=(missing|empty|too_large|non_hex|accepted) accepted=(true|false)"),
+                Regex("operation=setMnemonic stage=card_state isNewCard=(true|false) hasBackup=(true|false) overwrite=(true|false) wallTimeMs=[0-9]+"),
+                Regex("operation=setMnemonic stage=(identity_mismatch|already_initialized|overwrite_verify_begin|set_pin_begin|verify_pin_begin|backup_begin)"),
+                Regex("operation=setMnemonic stage=(overwrite_verify_result|set_pin_result|verify_pin_result|backup_result) success=(true|false)")
+            )
+            for (line in OneKeyLog.messages) {
+                expect(allowed.any { it.matches(line) }, "Every captured log field is allowlisted without extra text")
+                expect(listOf(input, privatePin, privateSerial, "PRIVATE-SEED", "/path/user@host").none { line.contains(it) }, "No synthetic sensitive input, path or identity appears in logs")
+            }
+        }
+        Probe.reset()
+        OneKeyLog.throwPreflight = true
+        expect(runCatching { OneKeyLiteCard.withCardSession(IsoDep("logger-failure")) {
+            OneKeyLiteCard.setMnemonic(it, "PRIVATE-INVALID", "PRIVATE-PIN")
+        } }.exceptionOrNull() is NFCExceptions.ExecFailureException, "Logger failure preserves existing input error")
+        Probe.reset()
+        expect(OneKeyLiteCard.withCardSession(IsoDep("logger-success")) {
+            OneKeyLiteCard.setMnemonic(it, "123", "PRIVATE-PIN")
+        }, "Logger failure preserves accepted input and successful operation")
+        OneKeyLog.throwPreflight = false
         println("PASS input preflight without PIN or write side effects")
 
         for (failure in listOf("construct", "info", "setup", "verify", "backup")) {

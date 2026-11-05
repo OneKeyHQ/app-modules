@@ -9,6 +9,7 @@
 #if !TARGET_OS_SIMULATOR
 
 #import "GPChannelSDK.h"
+#import "GPChannelSDKCore.h"
 #import "OKNFCLiteDefine.h"
 #import "NFCConfig.h"
 
@@ -38,6 +39,11 @@
         rv = JUB_GPC_BuildSafeAPDU(cla, ins, p1, p2, c_data, &c_apdu);
     } else {
         rv = JUB_GPC_BuildAPDU(cla, ins, p1, p2, c_data, &c_apdu);
+    }
+    @try {
+        [LCLogger info:[NSString stringWithFormat:@"stage=command_build nativeSourceId=%s safe=%d sdkReturnCode=%lu outputPresent=%d", GPChannelSDKCoreVersionString, encrypt, (unsigned long)rv, c_apdu != nullptr]];
+    } @catch (NSException *exception) {
+        // Diagnostics must not replace the SDK result.
     }
 
     if (JUBR_OK != rv) {

@@ -128,6 +128,8 @@ jobs:
         run: |
           node tests/ios-input.cjs | tee "$RUNNER_TEMP/lite-card-input-tests.log"
           grep -Eq '^ManagerInput: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/lite-card-input-tests.log"
+          node tests/source-id.cjs | tee "$RUNNER_TEMP/lite-card-source-id-tests.log"
+          grep -Eq '^SourceIdentity: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/lite-card-source-id-tests.log"
       - name: Run JPush & JCore iOS native E2E regressions
         working-directory: native-modules/react-native-jpush
         shell: bash

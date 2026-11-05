@@ -1,4 +1,5 @@
 #include "GPChannelSDK.h"
+#include "GPChannelSDKCore.h"
 #include <TrezorCrypto/aes.h>
 #include <TrezorCrypto/cmac.h>
 #include <TrezorCrypto/ecdsa.h>
@@ -7,6 +8,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
+#include <cstdarg>
 #include <iostream>
 #include <map>
 #include <random>
@@ -196,6 +198,11 @@ struct MockJniRuntime {
     JavaVM vm;
     std::map<std::string, void*> methods;
     std::vector<std::string> allocatedStrings;
+    std::vector<std::string> logs;
+    bool exceptionPending = false;
+    bool loggerAvailable = true;
+    bool loggerThrows = false;
+    size_t clearedExceptions = 0;
 
     static MockJniRuntime*& active() {
         static MockJniRuntime* instance = nullptr;
@@ -208,9 +215,28 @@ struct MockJniRuntime {
     }
 
     static jclass JNICALL mockFindClass(JNIEnv*, const char* name) {
+        if (name && std::string(name) == "com/margelo/nitro/nativelogger/OneKeyLog") {
+            if (!active()->loggerAvailable) { active()->exceptionPending = true; return nullptr; }
+            return reinterpret_cast<jclass>(0x2);
+        }
         require(name && std::string(name) == "org/haobtc/onekey/card/gpchannel/GPChannelNatives",
                 "Unexpected JNI class lookup");
         return reinterpret_cast<jclass>(0x1);
+    }
+
+    static jboolean JNICALL mockExceptionCheck(JNIEnv*) { return active()->exceptionPending; }
+    static void JNICALL mockExceptionClear(JNIEnv*) { active()->exceptionPending = false; ++active()->clearedExceptions; }
+    static jmethodID JNICALL mockGetStaticMethodID(JNIEnv*, jclass type, const char* name, const char* signature) {
+        require(type == reinterpret_cast<jclass>(0x2) && std::string(name) == "info" &&
+                std::string(signature) == "(Ljava/lang/String;Ljava/lang/String;)V", "Existing logger method contract");
+        return reinterpret_cast<jmethodID>(0x3);
+    }
+    static void JNICALL mockCallStaticVoidMethodV(JNIEnv*, jclass, jmethodID, va_list args) {
+        const auto tag = va_arg(args, jstring);
+        const auto message = va_arg(args, jstring);
+        require(readJString(tag) == "LiteCard", "Diagnostic tag is fixed");
+        active()->logs.push_back(readJString(message));
+        if (active()->loggerThrows) active()->exceptionPending = true;
     }
 
     static jint JNICALL mockRegisterNatives(JNIEnv*, jclass, const JNINativeMethod* methods, jint count) {
@@ -245,6 +271,10 @@ struct MockJniRuntime {
         envTable.GetStringUTFChars = &mockGetStringUTFChars;
         envTable.ReleaseStringUTFChars = &mockReleaseStringUTFChars;
         envTable.NewStringUTF = &mockNewStringUTF;
+        envTable.ExceptionCheck = &mockExceptionCheck;
+        envTable.ExceptionClear = &mockExceptionClear;
+        envTable.GetStaticMethodID = &mockGetStaticMethodID;
+        envTable.CallStaticVoidMethodV = &mockCallStaticVoidMethodV;
         env.functions = &envTable;
         vmTable.GetEnv = &mockGetEnv;
         vm.functions = &vmTable;
@@ -579,6 +609,7 @@ int main() {
         typedef jint (*OpenFn)(JNIEnv*, jobject, jstring);
         typedef jstring (*MutualFn)(JNIEnv*, jobject);
         typedef jstring (*ParseFn)(JNIEnv*, jobject, jstring);
+        typedef jstring (*BuildFn)(JNIEnv*, jobject, jlong, jlong, jlong, jlong, jstring);
 
         GetErrorFn jniGetError = reinterpret_cast<GetErrorFn>(jni.methods["nativeGetErrorCode"]);
         InitFn jniInit = reinterpret_cast<InitFn>(jni.methods["nativeGPCInitialize"]);
@@ -587,6 +618,41 @@ int main() {
         MutualFn jniMutual = reinterpret_cast<MutualFn>(jni.methods["nativeGPCBuildMutualAuthData"]);
         ParseFn jniParseSafe = reinterpret_cast<ParseFn>(jni.methods["nativeGPCParseSafeAPDUResponse"]);
         ParseFn jniParseCert = reinterpret_cast<ParseFn>(jni.methods["nativeGPCParseCertificate"]);
+        BuildFn jniBuild = reinterpret_cast<BuildFn>(jni.methods["nativeGPCBuildAPDU"]);
+        BuildFn jniBuildSafe = reinterpret_cast<BuildFn>(jni.methods["nativeGPCBuildSafeAPDU"]);
+
+        const std::string sourceId(reinterpret_cast<const char*>(GPChannelSDKCoreVersionString));
+        require(sourceId.size() == 74 && sourceId.substr(0, 10) == "source-v1:" &&
+                sourceId.find_first_not_of("0123456789abcdef", 10) == std::string::npos, "Compiled native source identity format");
+        auto expectedBuildLog = [&](bool safe, int code, bool present) {
+            return "stage=command_build nativeSourceId=" + sourceId + " safe=" + (safe ? "true" : "false") +
+                   " sdkReturnCode=" + std::to_string(code) + " outputPresent=" + (present ? "true" : "false");
+        };
+        const std::string privateBackup = "12345678901234567890123456789012345678900000001";
+        require(jniBuildSafe(&jni.env, nullptr, 0x80, 0x3b, 0, 0, jni.makeJString(privateBackup)) == nullptr);
+        require(jni.logs.back() == expectedBuildLog(true, 6, false), "Unavailable context diagnostic uses actual local code 6");
+        const std::string privateInvalid = "PIN-SEED-CERT-SERIAL-WALLET-PRIVATE\n/path/user@host";
+        require(jniBuild(&jni.env, nullptr, 0x80, 0x3b, 0, 0, jni.makeJString(privateInvalid)) == nullptr);
+        require(jni.logs.back() == expectedBuildLog(false, 3, false), "Invalid command diagnostic uses actual local code 3");
+        auto plain = jniBuild(&jni.env, nullptr, 0x80, 0x3b, 0, 0, jni.makeJString(privateBackup));
+        require(plain && jni.logs.back() == expectedBuildLog(false, 0, true), "Success diagnostic reports 0 despite stale global error");
+        const auto privateApdu = MockJniRuntime::readJString(plain);
+        jni.loggerAvailable = false;
+        const auto beforeMissingLogger = jni.logs.size();
+        require(jniBuild(&jni.env, nullptr, 0x80, 0x3b, 0, 0, jni.makeJString(privateBackup)) != nullptr &&
+                !jni.exceptionPending && jni.logs.size() == beforeMissingLogger, "Missing logger leaves SDK success intact");
+        jni.loggerAvailable = true;
+        jni.loggerThrows = true;
+        require(jniBuild(&jni.env, nullptr, 0x80, 0x3b, 0, 0, jni.makeJString(privateBackup)) != nullptr &&
+                !jni.exceptionPending, "Logger exception leaves SDK success intact");
+        jni.loggerThrows = false;
+        jni.exceptionPending = true;
+        const auto beforePending = jni.logs.size();
+        const auto beforeClears = jni.clearedExceptions;
+        require(jniBuild(&jni.env, nullptr, 0x80, 0x3b, 0, 0, jni.makeJString(privateBackup)) != nullptr &&
+                jni.exceptionPending && jni.logs.size() == beforePending && jni.clearedExceptions == beforeClears,
+                "Diagnostic helper must preserve a pre-existing pending exception");
+        jni.exceptionPending = false;
 
         require(jniFinalize(&jni.env, nullptr) == JUBR_OK);
         require(jniInit(&jni.env, nullptr, nullptr) == JUBR_ARGUMENTS_BAD,
@@ -633,6 +699,15 @@ int main() {
         require(jniMa != nullptr);
         std::string jniMaResp = buildCardMutualAuthResponse(validCardPriv, ocePub, MockJniRuntime::readJString(jniMa));
         require(jniOpen(&jni.env, nullptr, jni.makeJString(jniMaResp)) == JUBR_OK);
+        require(jniBuildSafe(&jni.env, nullptr, 0x80, 0x3b, 0, 0, jni.makeJString(privateBackup)) != nullptr &&
+                jni.logs.back() == expectedBuildLog(true, 0, true), "Safe success logs actual local code");
+        for (const auto& line : jni.logs) {
+            require(line == expectedBuildLog(false, 0, true) || line == expectedBuildLog(true, 0, true) ||
+                    line == expectedBuildLog(false, 3, false) || line == expectedBuildLog(true, 6, false),
+                    "Every emitted field is allowlisted; no extra diagnostic content");
+            for (const auto& secret : {privateBackup, privateInvalid, privateApdu, validOcePriv, validCert, jniMaResp})
+                require(line.find(secret) == std::string::npos, "Diagnostic must not contain synthetic sensitive input or output");
+        }
 
         // Unauthenticated "9000" safe response through JNI must return nullptr and set errorCode
         require(jniParseSafe(&jni.env, nullptr, jni.makeJString("9000")) == nullptr,

@@ -27,14 +27,24 @@
 #define kChangePinBlock      @"kChangePinBlock"
 #define kResetBlock          @"kResetBlock"
 
-static BOOL validBackupInput(NSString *input, NSUInteger maxBytes) {
-    if (!input.length || input.length > maxBytes * 2) return NO;
+static NSString *backupInputReason(NSString *input, NSUInteger maxBytes) {
+    if (!input) return @"missing";
+    if (!input.length) return @"empty";
+    if (input.length > maxBytes * 2) return @"too_large";
     for (NSUInteger index = 0; index < input.length; ++index) {
         const unichar digit = [input characterAtIndex:index];
         if (!((digit >= '0' && digit <= '9') || (digit >= 'a' && digit <= 'f') ||
-              (digit >= 'A' && digit <= 'F'))) return NO;
+              (digit >= 'A' && digit <= 'F'))) return @"non_hex";
     }
-    return YES;
+    return @"accepted";
+}
+
+static void logBackupPreflight(NSString *input, BOOL overwrite, NSString *reason, NSInteger version) {
+    @try {
+        [LCLogger info:[NSString stringWithFormat:@"operation=setMnemonic stage=input_preflight_%@ inputPresent=%d inputChars=%lu odd=%d versionKnown=%d cardVersion=%ld overwrite=%d reason=%@ accepted=%d", version ? @"detected" : @"entry", input != nil, (unsigned long)input.length, input.length % 2 != 0, version != 0, (long)version, overwrite, reason, [reason isEqualToString:@"accepted"]]];
+    } @catch (NSException *exception) {
+        // Diagnostics must not alter the input decision or callback.
+    }
 }
 
 
@@ -288,7 +298,10 @@ static BOOL validBackupInput(NSString *input, NSUInteger maxBytes) {
      expectedSerial:(NSString * _Nullable)expectedSerial
            complete:(SetMnemonicCallback)complete {
 
-    if (!validBackupInput(mnemonic, 65535)) {
+    NSString *reason = backupInputReason(mnemonic, 65535);
+    BOOL accepted = [reason isEqualToString:@"accepted"];
+    logBackupPreflight(mnemonic, overwrite, reason, 0);
+    if (!accepted) {
         complete(nil, OKNFCLiteSetMncStatusError);
         return;
     }
@@ -319,7 +332,10 @@ static BOOL validBackupInput(NSString *input, NSUInteger maxBytes) {
     self.exportMnemonic = nil;
     self.pin = nil;
     const NSUInteger maxBytes = self.lite.version == OKNFCLiteVersionV2 ? 65511 : 65535;
-    if (!validBackupInput(mnemonic, maxBytes)) {
+    NSString *reason = backupInputReason(mnemonic, maxBytes);
+    BOOL accepted = [reason isEqualToString:@"accepted"];
+    logBackupPreflight(mnemonic, force, reason, self.lite.version + 1);
+    if (!accepted) {
         SetMnemonicCallback callback = [self takeCompletionForKey:kSetMnemonicBlock];
         [self endNFCSessionWithError:YES];
         if (callback) callback(nil, OKNFCLiteSetMncStatusError);

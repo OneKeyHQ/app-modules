@@ -11,6 +11,7 @@
 @protocol NFCTagReaderSessionDelegate <NSObject>
 @end
 @interface NFCISO7816APDU : NSObject
+- (instancetype)initWithData:(NSData *)data;
 @end
 @interface NFCTagReaderSession : NSObject
 @property (nonatomic, strong) id<NFCTag> connectedTag;

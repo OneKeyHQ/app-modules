@@ -147,9 +147,23 @@ object OneKeyLiteCard {
       overwrite: Boolean = false,
       expectedSerial: String? = null
     ): Boolean {
-        val maxBytes = if (session.connection.getCardType() == AppleCardType.V2) 65511 else 65535
-        if (mnemonic.isNullOrEmpty() || mnemonic.length > maxBytes * 2 ||
-            mnemonic.any { it !in '0'..'9' && it !in 'a'..'f' && it !in 'A'..'F' }) {
+        val version = if (session.connection.getCardType() == AppleCardType.V2) 2 else 1
+        val maxBytes = if (version == 2) 65511 else 65535
+        val reason = when {
+            mnemonic == null -> "missing"
+            mnemonic.isEmpty() -> "empty"
+            mnemonic.length > maxBytes * 2 -> "too_large"
+            mnemonic.any { it !in '0'..'9' && it !in 'a'..'f' && it !in 'A'..'F' } -> "non_hex"
+            else -> "accepted"
+        }
+        val accepted = reason == "accepted"
+        val inputChars = mnemonic?.length ?: 0
+        try {
+            OneKeyLog.info("LiteCard", "operation=setMnemonic stage=input_preflight inputPresent=${mnemonic != null} inputChars=$inputChars odd=${inputChars % 2 != 0} versionKnown=true cardVersion=$version overwrite=$overwrite reason=$reason accepted=$accepted")
+        } catch (_: Exception) {
+            // Diagnostics must not alter the input decision.
+        }
+        if (mnemonic == null || !accepted) {
             throw NFCExceptions.ExecFailureException()
         }
         val cardState = session.cardState

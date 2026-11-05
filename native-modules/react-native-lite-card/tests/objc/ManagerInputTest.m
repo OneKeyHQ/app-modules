@@ -5,6 +5,23 @@
 #import "OKNFCUtility.h"
 #import "LCLogger.h"
 #import "OKTools.h"
+#import "NFCConfig.h"
+
+extern const unsigned char GPChannelSDKCoreVersionString[];
+static NSMutableArray<NSString *> *messages;
+static BOOL loggerThrows;
+
+@interface OneKeyLog : NSObject
++ (void)info:(NSString *)tag :(NSString *)message;
++ (void)debug:(NSString *)tag :(NSString *)message;
+@end
+@implementation OneKeyLog
++ (void)info:(NSString *)tag :(NSString *)message {
+    if (loggerThrows) @throw [NSException exceptionWithName:@"PRIVATE-LOGGER" reason:@"PRIVATE-EXCEPTION" userInfo:nil];
+    [messages addObject:message];
+}
++ (void)debug:(NSString *)tag :(NSString *)message { [messages addObject:message]; }
+@end
 
 static NSUInteger assertions;
 static void expect(BOOL value, NSString *scenario) {
@@ -15,6 +32,7 @@ static void expect(BOOL value, NSString *scenario) {
 // The production manager owns validation, retention, callbacks and operation dispatch.
 // These card and NFC adapters never construct commands or touch a device.
 @implementation NFCISO7816APDU
+- (instancetype)initWithData:(NSData *)data { return [super init]; }
 @end
 @implementation NFCTagReaderSession
 - (instancetype)initWithPollingOption:(NSInteger)option delegate:(id)delegate queue:(dispatch_queue_t)queue { return [super init]; }
@@ -23,9 +41,8 @@ static void expect(BOOL value, NSString *scenario) {
 - (void)invalidateSessionWithErrorMessage:(NSString *)message {}
 - (void)connectToTag:(id<NFCTag>)tag completionHandler:(void (^)(NSError *))completion { abort(); }
 @end
-@implementation LCLogger
-+ (void)info:(NSString *)message {}
-+ (void)debug:(NSString *)message {}
+@implementation NFCConfig
++ (NSString *)envFor:(NSString *)key { abort(); }
 @end
 @implementation OKTools
 + (BOOL)isChineseLan { return NO; }
@@ -72,18 +89,19 @@ static void expect(BOOL value, NSString *scenario) {
 @end
 
 static void checkInput(NSString *input, BOOL v2, BOOL overwrite, BOOL valid, BOOL starts) {
+    [messages removeAllObjects];
     TestManager *manager = [TestManager new];
     FakeCard *card = [FakeCard new];
     card.version = v2 ? OKNFCLiteVersionV2 : OKNFCLiteVersionV1;
     card.status = overwrite ? OKNFCLiteStatusActivated : OKNFCLiteStatusNewCard;
-    card.SN = @"synthetic-identity";
+    card.SN = @"PRIVATE-SERIAL-WALLET-IDENTITY";
     manager.card = card;
     // An existing activated card must not turn a preflight failure into AlreadyInitialized.
     [manager setValue:card forKey:@"lite"];
     __block NSUInteger completions = 0;
     __block OKNFCLiteSetMncStatus result = OKNFCLiteSetMncStatusCancel;
     __block BOOL nilCard = NO;
-    [manager setMnemonic:input withPin:@"000000" overwrite:overwrite expectedSerial:@"synthetic-identity"
+    [manager setMnemonic:input withPin:@"p!N789" overwrite:overwrite expectedSerial:card.SN
                complete:^(OKLiteV1 *lite, OKNFCLiteSetMncStatus status) {
         ++completions; result = status; nilCard = lite == nil;
     }];
@@ -97,10 +115,23 @@ static void checkInput(NSString *input, BOOL v2, BOOL overwrite, BOOL valid, BOO
     expect([manager valueForKey:@"pin"] == nil && [manager valueForKey:@"exportMnemonic"] == nil &&
            [manager valueForKey:@"expectedSerial"] == nil, @"Rejected/completed input is not retained");
     if (valid) expect([card.received isEqualToString:input], @"Odd/even input reaches existing operation unchanged");
+    if (!loggerThrows) {
+        NSString *reason = !input ? @"missing" : !input.length ? @"empty" : input.length > 131070 ? @"too_large" : !starts ? @"non_hex" : @"accepted";
+        NSString *entry = [NSString stringWithFormat:@"operation=setMnemonic stage=input_preflight_entry inputPresent=%d inputChars=%lu odd=%d versionKnown=0 cardVersion=0 overwrite=%d reason=%@ accepted=%d", input != nil, (unsigned long)input.length, input.length % 2 != 0, overwrite, reason, starts];
+        NSMutableArray *expected = [NSMutableArray arrayWithObject:entry];
+        if (starts) [expected addObject:[NSString stringWithFormat:@"operation=setMnemonic stage=input_preflight_detected inputPresent=1 inputChars=%lu odd=%d versionKnown=1 cardVersion=%d overwrite=%d reason=%@ accepted=%d", (unsigned long)input.length, input.length % 2 != 0, v2 ? 2 : 1, overwrite, valid ? @"accepted" : @"too_large", valid]];
+        expect([messages isEqualToArray:expected], @"Every preflight field is allowlisted with actual decision/count/version");
+    }
+    for (NSString *line in messages) {
+        for (NSString *secret in @[@"p!N789", card.SN, @"PRIVATE-SEED", @"/path/user@host"])
+            expect([line rangeOfString:secret].location == NSNotFound, @"No sensitive fixture or path appears in native logs");
+        if (input.length >= 16) expect([line rangeOfString:input].location == NSNotFound, @"No encoded backup appears in logs");
+    }
 }
 
 int main() {
     @autoreleasepool {
+        messages = [NSMutableArray array];
         NSString *nul = [NSString stringWithCharacters:(unichar[]){'1', 0} length:2];
         for (NSNumber *v2 in @[@NO, @YES]) {
             NSUInteger maxDigits = (v2.boolValue ? 65511 : 65535) * 2;
@@ -115,6 +146,29 @@ int main() {
                     [@"" stringByPaddingToLength:maxDigits withString:@"a" startingAtIndex:0]])
                     checkInput(input, v2.boolValue, overwrite.boolValue, YES, YES);
             }
+        }
+        checkInput(@"PRIVATE-SEED-CERT-KEY\n/path/user@host", YES, YES, NO, NO);
+        loggerThrows = YES;
+        checkInput(@"PRIVATE-INVALID", YES, YES, NO, NO);
+        checkInput(@"12345678901234567890123456789012345678900000001", YES, NO, YES, YES);
+        loggerThrows = NO;
+
+        NSString *sourceId = [NSString stringWithUTF8String:(const char *)GPChannelSDKCoreVersionString];
+        expect([sourceId rangeOfString:@"^source-v1:[0-9a-f]{64}$" options:NSRegularExpressionSearch].location != NSNotFound, @"Build identity comes from linked native core symbol");
+        NSString *backup = @"12345678901234567890123456789012345678900000001";
+        NSArray *cases = @[@[@NO, backup, @0], @[@NO, @"PRIVATE-KEY-SEED\n/path/user@host", @3], @[@YES, backup, @6]];
+        for (NSArray *test in cases) {
+            [messages removeAllObjects];
+            BOOL safe = [test[0] boolValue];
+            NFCISO7816APDU *apdu = [OKNFCBridge buildAPDUWith_cla:0x80 ins:0x3b p1:0 p2:0 data:test[1] encrypt:safe];
+            NSInteger code = [test[2] integerValue];
+            expect((apdu != nil) == (code == 0), @"Actual SDK build result is preserved");
+            NSString *expected = [NSString stringWithFormat:@"stage=command_build nativeSourceId=%@ safe=%d sdkReturnCode=%ld outputPresent=%d", sourceId, safe, (long)code, code == 0];
+            expect([messages isEqualToArray:@[expected]], @"Actual bridge/LCLogger path contains only exact build metadata");
+            loggerThrows = YES;
+            apdu = [OKNFCBridge buildAPDUWith_cla:0x80 ins:0x3b p1:0 p2:0 data:test[1] encrypt:safe];
+            expect((apdu != nil) == (code == 0), @"Logger exception must preserve actual SDK result");
+            loggerThrows = NO;
         }
         printf("ManagerInput: %lu assertions passed\n", (unsigned long)assertions);
     }

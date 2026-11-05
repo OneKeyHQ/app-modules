@@ -36,8 +36,13 @@ Pod::Spec.new do |s|
   s.private_header_files = "ios/**/*.h"
   s.preserve_paths = "sdk/**/*"
   s.libraries = "c++"
+  s.script_phase = {
+    :name => 'Generate Lite native source identity',
+    :execution_position => :before_compile,
+    :script => 'set -e; ruby "${PODS_TARGET_SRCROOT}/sdk/scripts/generate-source-id.rb" "${DERIVED_FILE_DIR}/GPChannelSourceId.h"'
+  }
   s.pod_target_xcconfig = {
-    "HEADER_SEARCH_PATHS" => '$(inherited) "$(PODS_TARGET_SRCROOT)/sdk/include" "$(PODS_TARGET_SRCROOT)/sdk/gpc/include" "$(PODS_TARGET_SRCROOT)/sdk/deps/trezor-crypto/include" "$(PODS_TARGET_SRCROOT)/sdk/deps/trezor-crypto/src"'
+    "HEADER_SEARCH_PATHS" => '$(inherited) "$(DERIVED_FILE_DIR)" "$(PODS_TARGET_SRCROOT)/sdk/include" "$(PODS_TARGET_SRCROOT)/sdk/gpc/include" "$(PODS_TARGET_SRCROOT)/sdk/deps/trezor-crypto/include" "$(PODS_TARGET_SRCROOT)/sdk/deps/trezor-crypto/src"'
   }
 
 

@@ -3,10 +3,37 @@
 #include <atomic>
 #include <string>
 #include "GPChannelSDK.h"
+#include "GPChannelSDKCore.h"
 #include "json/json.h"
 
 namespace {
 std::atomic<int> errorCode{0};
+void logBuild(JNIEnv* env, bool safe, JUB_RV code, bool outputPresent) {
+    // Preserve caller exceptions; only diagnostics-owned lookup/call failures may be cleared.
+    if (env->ExceptionCheck()) return;
+    try {
+        jclass logger = env->FindClass("com/margelo/nitro/nativelogger/OneKeyLog");
+        if (logger) {
+            jmethodID info = env->GetStaticMethodID(logger, "info", "(Ljava/lang/String;Ljava/lang/String;)V");
+            if (info) {
+                const std::string message = std::string("stage=command_build nativeSourceId=") +
+                    reinterpret_cast<const char*>(GPChannelSDKCoreVersionString) +
+                    " safe=" + (safe ? "true" : "false") +
+                    " sdkReturnCode=" + std::to_string(code) +
+                    " outputPresent=" + (outputPresent ? "true" : "false");
+                jstring tag = env->NewStringUTF("LiteCard");
+                jstring text = tag && !env->ExceptionCheck() ? env->NewStringUTF(message.c_str()) : nullptr;
+                if (tag && text && !env->ExceptionCheck()) env->CallStaticVoidMethod(logger, info, tag, text);
+                if (tag) env->DeleteLocalRef(tag);
+                if (text) env->DeleteLocalRef(text);
+            }
+            env->DeleteLocalRef(logger);
+        }
+    } catch (...) {
+        // Diagnostics must not replace the actual command result on allocation failure.
+    }
+    if (env->ExceptionCheck()) env->ExceptionClear();
+}
 class UtfChars {
 public:
     UtfChars(JNIEnv* env, jstring value) : env(env), value(value),
@@ -87,6 +114,7 @@ jstring build(JNIEnv* env, bool safe, jlong cla, jlong ins, jlong p1, jlong p2, 
         Output output;
         auto code = safe ? JUB_GPC_BuildSafeAPDU(cla, ins, p1, p2, text.get(), &output.value)
                          : JUB_GPC_BuildAPDU(cla, ins, p1, p2, text.get(), &output.value);
+        logBuild(env, safe, code, output.value != nullptr);
         return result(env, code, output);
     } catch (...) {
         errorCode.store(static_cast<int>(JUBR_ERROR));

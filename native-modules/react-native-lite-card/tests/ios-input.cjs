@@ -11,14 +11,24 @@ function run(command, args) {
   if (result.status !== 0) throw new Error(`${command} exited ${result.status}`);
 }
 try {
-  // Compile the actual manager; only CoreNFC and its card/transport adapters are fakes.
-  run('xcrun', ['clang', '-fobjc-arc', '-fblocks', '-framework', 'Foundation',
+  const sdkBuild = join(output, 'sdk');
+  run('cmake', ['-S', join(root, 'sdk'), '-B', sdkBuild, '-DBUILD_TESTING=OFF']);
+  run('cmake', ['--build', sdkBuild, '--parallel', '4']);
+  // Compile the actual manager, SDK bridge and LCLogger; only device/card adapters are fakes.
+  run('xcrun', ['clang++', '-fobjc-arc', '-fblocks', '-framework', 'Foundation',
     '-Wno-nullability-completeness', '-Wno-protocol', '-Wno-incomplete-implementation',
     '-I', join(__dirname, 'objc'),
+    '-I', join(root, 'sdk/include'),
     ...['', '/OKNFTLite', '/OKLiteCommand', '/Utils'].flatMap((directory) =>
       ['-I', join(root, `ios/Classes${directory}`)]),
     join(root, 'ios/Classes/OKNFTLite/OKNFCManager.m'),
-    join(__dirname, 'objc/ManagerInputTest.m'), '-o', join(output, 'input-tests')]);
+    join(root, 'ios/Classes/OKNFCBridge.mm'),
+    join(root, 'ios/Classes/Utils/LCLogger.m'),
+    join(root, 'ios/Classes/Utils/NSString+OKNFCHexStr.m'),
+    join(root, 'ios/Classes/Utils/NSData+OKNFCHexData.m'),
+    join(__dirname, 'objc/ManagerInputTest.m'),
+    '-L', sdkBuild, '-lGPChannelSDKCore', '-Wl,-rpath,' + sdkBuild,
+    '-o', join(output, 'input-tests')]);
   run(join(output, 'input-tests'), []);
 } finally {
   rmSync(output, { recursive: true, force: true });

@@ -137,6 +137,34 @@ reported separately. This section scopes diagnostics only.
 Command diagnostics distinguish build failure, raw status words, response byte
 counts, parser presence/return status and effective status words.
 
+Native build and input diagnostics (Implemented in source; host adapter checks
+verified; physical-card acceptance open): the existing native
+`GPChannelSDKCoreVersionString` contains `source-v1:<SHA256>`, generated from a
+fixed package-relative manifest of source/configuration content. The manifest
+covers SDK sources/dependencies, native iOS/Android sources, command routing and
+build configuration. Directory entries select source suffixes only and exclude
+hidden/cache/build directories. It identifies
+the compiled native source snapshot, not the JS package or binary hash. Keys,
+test data, generated output, environment values, absolute paths, users and hosts
+do not participate. CMake tracks manifest/content changes for reconfiguration;
+CocoaPods regenerates a private header before compilation on every native build. No new C,
+JNI or React Native ABI is introduced.
+
+Input preflight records only input presence, backup UTF-16 character count/parity,
+whether the card version is known, numeric version, overwrite, accepted boolean
+and a fixed reason (`missing`, `empty`, `too_large`, `non_hex`, `accepted`). iOS
+distinguishes entry (unknown version) and detected-version validation; Android
+records its known session version. It never hashes or logs the input, a prefix,
+PIN length or backup metadata values. Actual command build logs use the native source
+ID, safe/plain boolean, the return code from that same build call and output
+presence. They do not reconstruct a command or consult a stale global error.
+Logging is best effort: logger failures must not change SDK results or clear a
+previously pending JNI exception. Only exceptions raised by logger lookup/calls
+may be cleared by diagnostics.
+Android consumer rules preserve only the existing logger class and static
+`info(String, String)` entry used by JNI under shrinking. This wiring is source
+reviewed; a minified Android application logging run remains unverified.
+
 ### API, lifecycle, and compatibility
 
 Except for command input compatibility/preflight, the identity guard, fail-closed
@@ -158,11 +186,13 @@ dependencies, or cross-layer correlation parameters are added.
 
 ### Safety and performance
 
-New logs allow only temporary local IDs, fixed operations/stages/reasons,
-wall/elapsed times, counts, state booleans, known error codes, and fixed error
+New logs allow only native source IDs, temporary local IDs, fixed
+operations/stages/reasons, wall/elapsed times, counts, state booleans, known error
+codes, and fixed error
 categories or recognized-domain booleans. They must never include PINs,
 mnemonics/encoded backups, card serials, wallet identifiers, APDU/response bodies,
-certificates/keys, arbitrary exception messages/descriptions/stacks, or payloads.
+certificates/keys, arbitrary exception messages/descriptions/stacks, input hashes
+or fragments, local paths/users/hosts, or payloads.
 Existing verbose APDU debug gating is unchanged; diagnostics do not enable it.
 Logging is restricted to operation/session boundaries and command stages, with
 no polling or frame logs. iOS responseDataBytes excludes SW; Android
@@ -213,6 +243,20 @@ Command compatibility/preflight regressions:
   input forwarding for V1/V2 and both write modes. It does not execute a real
   card's PIN/backup commands or React Native callback mapping. The runner is part
   of the existing native CI job.
+- The same iOS runner now compiles the actual SDK bridge, core and LCLogger
+  adapter and captures the existing logger endpoint. It checks exact metadata
+  fields and synthetic sensitive-data absence, actual build codes 0/3/6 and
+  unchanged callbacks/results when diagnostics throw. Android's operation
+  harness captures the actual preflight call; the C++ JNI harness captures the
+  production JNI logger call, including unavailable/throwing loggers and pending
+  exception preservation. These are adapter tests, not device log-file evidence.
+- `node tests/source-id.cjs` executes both generators and the real podspec phase
+  using declaration adapters, compiles its generated version symbol, checks
+  directory/environment/ignored-file independence, and verifies a source edit
+  changes the identity through incremental CMake rebuilding. Package archive
+  validation must also confirm the installed package can generate the same ID.
+  This does not prove a complete CocoaPods/Xcode application build or a binary
+  hash; external toolchains and dependency builds are not identified by the ID.
 
 Physical iOS/Android card runs must confirm entry-to-callback timelines,
 PIN-to-NFC handoff, first backup failure, cancellation, and successful backup.
